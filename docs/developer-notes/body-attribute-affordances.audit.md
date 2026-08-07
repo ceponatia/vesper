@@ -1,14 +1,25 @@
 # Body-attribute affordances — promotion readiness audit
 
-Status: detail for
-[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(code/docs re-verified 2026-07-28)
+Status: reference (audit run 2026-07-28) — detail for
+[body-attribute-affordances.plan.md](body-attribute-affordances.plan.md).
+A dated snapshot, deliberately not maintained; see §"Changed since this audit"
+for the one ruling the code has since overtaken.
 
 ## Purpose
 
-Record which proposed inputs have authoritative producers today. This is the
-baseline for Slice 0; it prevents a coding agent from satisfying a missing
-state contract by parsing narrator prose or assigning an optimistic default.
+Record which proposed inputs had authoritative producers on the audit date.
+This was the baseline for Slice 0; it prevents a coding agent from satisfying a
+missing state contract by parsing narrator prose or assigning an optimistic
+default.
+
+## Changed since this audit
+
+Coarse posture, support, proximity, and active contact gained an owner on
+2026-07-31 (details in the plan's §"Dependencies and related plans"). Every
+**fixture-only** ruling below that names a missing contact, pose, or support
+owner is therefore about wiring now, not about a gap. Body impulse is the
+exception: still unowned, so `hair.sheds_droplets` stays fixture-only for the
+original reason.
 
 ## Capability matrix
 
@@ -182,12 +193,12 @@ position, and the ruling.
 
 ### Phenomenon → production status (first hair corpus)
 
-| Phenomenon                     | Requires                                      | Production status                                                                                 |
-| ------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `hair.wet_clumping`            | structure + wetness (+ arrangement)           | Production (legacy) once Slice 4 lands the wetness owner                                          |
-| `hair.wind_or_motion_response` | mechanics + current wind or motion            | Production (legacy) for **wind** via the environment read; body-motion/impulse input fixture-only |
-| `hair.strands_adhere_to_skin`  | reach + asserted contact + wetness + exposure | **Fixture-only** (no contact owner)                                                               |
-| `hair.sheds_droplets`          | retained water + committed impulse            | **Fixture-only** (no impulse owner)                                                               |
+| Phenomenon                     | Requires                                      | Production status                   |
+| ------------------------------ | --------------------------------------------- | ----------------------------------- |
+| `hair.wet_clumping`            | structure + wetness (+ arrangement)           | production once slice 4 lands       |
+| `hair.wind_or_motion_response` | mechanics + current wind or motion            | wind only; motion is fixture-only   |
+| `hair.strands_adhere_to_skin`  | reach + asserted contact + wetness + exposure | **fixture-only** — no contact read  |
+| `hair.sheds_droplets`          | retained water + committed impulse            | **fixture-only** — no impulse owner |
 
 ### Diagnostic convention for missing inputs
 

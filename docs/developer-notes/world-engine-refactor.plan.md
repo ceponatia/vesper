@@ -1,555 +1,536 @@
 # World engine refactor — a simulated world under the chat lane
 
-Status: draft (partly superseded) — [engine.plan.md](engine.plan.md) was built from this
-document but does not cover all of it. The remainder is uncommitted; reconciling the two
-waits until the engine plan ships.
+Status: draft — an umbrella, never a build item. Written 2026-07-16 as a brainstorming
+superset; **its architectural half was then built**, as the successor engine
+([engine.plan.md](engine.plan.md), gates 0–6, closed 2026-07-21, rolled out 2026-07-22).
+Re-audited against the tree 2026-08-07 and rewritten so the catalog says where each idea
+actually lives. Nothing is committed *as* this doc; its remaining pieces promote out into
+their own plans.
 
 Outcome: A developer can tell, for any proposed world-simulation feature, whether it is
 free to compute from the story clock or costs a model call on the turn, so that the next
 ten features get scheduled by what they actually cost rather than by how appealing they
 sound.
 
-A brainstorming superset, not a build queue. Everything here is a
-candidate to tune, cut, or promote into its own `<topic>.plan.md`. Nothing in this doc is
-committed; the roadmap line points here as the north star that the meter-economy and
-body-needs plans are already walking toward.
+**What this doc is for, now that the engine exists.** It was written to answer "what could
+a world under the chat lane be?", and the successor engine answered a large part of that
+question by building it. Two things keep it alive:
 
-This is the `world-simulation.plan.md` that [deferred.plan.md](deferred.plan.md) §"Old
-World-Model Plans" anticipated — re-derived, per that section's instruction, now that the
-direction is settled. It is **not** a revival of the session lane. Per the owner's lean
-recorded there: _"we will eventually incorporate all desired features into character chat
-and character chat will become less 1-on-1 focused."_ The successor is **chat,
-generalized**. This doc asks what a world underneath that lane could be.
+- **It is the ledger of unowned ideas.** A dozen entries below are built in neither lane
+  and sit in no plan. The catalog is where they stay findable, with an honest cost tag.
+- **The two lanes are separate, and the legacy chat lane is still the live product for
+  ordinary chats.** An idea being built engine-side does *not* make it available to a
+  legacy chat. Each catalog entry therefore records both lanes.
+
+The cost ladder in §2 and the thesis in §1 are the doc's actual contribution and are
+unchanged by the engine's arrival.
 
 ---
 
 ## 1. The thesis: derive the world, remember the people
 
 The old world model stored the world and needed a tick to move it. That tick never
-shipped — in reverie it was specced (`finished/offscreen-simulation-spec.phase3.md`: LOD
-tiers, a batched world-tick, hysteresis, eviction) and abandoned with the rest of the
-phase-3 cluster; in vesper the session lane's movement problem ("characters couldn't move
-to locations in a timely fashion, which broke the narrative") is the same failure wearing
-different clothes. Both are symptoms of one choice: **the world was state, so something
-had to advance it.**
+shipped, and the session lane's movement problem ("characters couldn't move to locations in
+a timely fashion, which broke the narrative") was the symptom of one choice: **the world was
+state, so something had to advance it.**
 
-The chat lane already has the escape. `character_chats.clock_minutes` + `calendar_start`
-give an authoritative, real-calendar story time. Anything that is a **pure function of
-(authored data, a seed, the clock)** needs no storage, no tick, no job, and no agent — you
-compute it at read time, it is consistent across skips, replayable, and free.
+The chat lane already has the escape. Its story clock plus a real-calendar anchor give an
+authoritative story time. Anything that is a **pure function of (authored data, a seed, the
+clock)** needs no storage, no tick, no job, and no agent — you compute it at read time, it
+is consistent across skips, replayable, and free.
 
-That covers far more of a "realistic living world" than it looks:
+That covers far more of a "realistic living world" than it looks: weather, season, daylight
+and sunset, ambient temperature, circadian pressure, hunger against her own mealtime, sleep
+debt, age and birthdays, lunar phase, the tide, whether she'd normally be at work right now,
+whether it's a holiday. None of that is state. All of it is a function of the clock.
 
-> Weather. Season. Daylight and sunset. Ambient temperature. Circadian pressure. Hunger
-> against her own mealtime. Sleep debt. Age and birthdays. Lunar phase. What the tide is
-> doing. Whether she'd normally be at work right now. Whether it's a holiday.
-
-None of that is state. All of it is a function of the clock. The meter-economy plan
-already found this shape independently — `deriveCircadianPressure` is "derived, never
-stored," and the spec's argument for exponential decay includes "**exactly composable**:
-`exp(−a)·exp(−b) = exp(−(a+b))`", which is precisely the property that lets you jump the
-clock without integrating through it.
-
-What genuinely cannot be derived is **history**: what she actually did, who saw it, how
-she felt about it, what she now believes. That is hysteresis — path-dependent state — and
-it is exactly what the shipped machinery already handles (facts, episodes, drives, plans,
-the meanwhile pass).
+What genuinely cannot be derived is **history**: what she actually did, who saw it, how she
+felt about it, what she now believes. That is path-dependent state, and it is exactly what
+the shipped machinery handles — facts, episodes, drives, plans, the meanwhile pass.
 
 **So: derive the world, remember the people.** The world layer is code and costs nothing.
-The model is spent only where meaning is required. This is the answer to "don't drop
-everything on a custom agent" — most of this doc's catalog needs _no agent at all_.
+The model is spent only where meaning is required.
 
-### Corollary: lazy derivation keeps D3/D8 reversible
+**The engine agreed and went further.** Its third decision is "there is no per-minute world
+tick — a durable scheduler jumps between due triggers, integrates continuous rates
+analytically, and records only material outcomes." That is this thesis with durability
+added: derived where possible, and where state is unavoidable, advanced by solving for the
+next material moment rather than by ticking to it.
 
-The standing law is no wall clock in the fiction (D8) and wall-clock absence is not a
-trigger (D3), cited in every time-touching plan. Worth noting for the record: a **stored,
-ticked** world welds that decision shut (you'd have to backfill every tick you didn't
-run), while a **derived** world leaves it open — flipping to real time later would mean
-mapping elapsed real minutes into story minutes at one seam and changing nothing else.
+### Corollary: lazy derivation keeps the no-wall-clock ruling reversible
+
+The standing law is no wall clock in the fiction, and wall-clock absence is not a trigger.
+A **stored, ticked** world welds that decision shut — you would have to backfill every tick
+you didn't run — while a **derived** world leaves it open: flipping to real time later would
+mean mapping elapsed real minutes into story minutes at one seam and changing nothing else.
 That is not an argument to flip it. It is an argument that deriving costs us no options.
 
 ---
 
 ## 2. The cost ladder — the doc's organizing device
 
-Every candidate below is tagged with the tier it lands in. The tier _is_ the feasibility
-argument; "we can build new agents as needed, but not for everything" is the whole reason
-this ladder exists.
+Every candidate below is tagged with the tier it lands in. The tier *is* the feasibility
+argument.
 
-| Tier   | Mechanism                                                                      | Marginal cost | Turn latency                     |
-| ------ | ------------------------------------------------------------------------------ | ------------- | -------------------------------- |
-| **T0** | Pure derivation from authored data + seed + clock                              | none          | none                             |
-| **T1** | Deterministic fold on a write that already happens (drift, skip, action)       | none          | none                             |
-| **T2** | One more field on an agent leg that already runs                               | a few tokens  | none                             |
-| **T3** | A new parallel leg in the post-reply settle                                    | +1 call       | none _perceived_ — but see below |
-| **T4** | A detached background job (the `chat_meanwhile` / `chat_scene_sketch` pattern) | +1 call       | none (eventual)                  |
-| **T5** | Anything before the reply                                                      | +1 call       | **directly on turn time**        |
+| Tier   | Mechanism                                          | Cost per turn         |
+| ------ | -------------------------------------------------- | --------------------- |
+| **T0** | Pure derivation from authored data + seed + clock  | none                  |
+| **T1** | Deterministic fold on a write that already happens | none                  |
+| **T2** | One more field on an agent leg that already runs   | a few tokens          |
+| **T3** | A new parallel leg in the post-reply settle        | +1 call, holds lock   |
+| **T4** | A detached background job                          | +1 call, eventual     |
+| **T5** | Anything before the reply                          | +1 call, on turn time |
 
-The house rule already exists — the agent-improvements playbook: _"cheap deterministic
-checks decide what runs… never an AI call to decide whether to make an AI call"_, and
-_"nothing slow runs before the reply."_ **T5 is closed.** The session lane's intake is the
-only pre-narration LLM in the codebase and it bought a 3s budget, `disableReasoning`,
-`repair: false`, and a regex fallback that _is_ the previously-live path. Nothing in a
-world sim earns that.
+The house rule already exists: cheap deterministic checks decide what runs, never an AI
+call to decide whether to make an AI call, and nothing slow runs before the reply. **T5 is
+closed.**
 
-**T3 is not actually free, and this matters.** The settle holds the `chat_exchange:{chatId}`
-keyed lock; a slow settle surfaces to a fast-typing player as a 409 `chat_busy`. Right now
-`CHAT_PULSE_TIMEOUT_MS`, `CHAT_EXTRACTOR_TIMEOUT_MS`, and `CHAT_PERSONAL_NOTES_TIMEOUT_MS`
-are all at **60_000** — a deliberate, dated, marked-REVERT diagnostic
-(`constants.ts:107-112`, 2026-07-15) to measure DeepSeek 4 Flash's real latency. Until
-that reverts, the lock can be held for a minute. **Any T3 proposal is blocked on that
-measurement landing.** Budget T3 slots as scarce; prefer T2.
+**T3 is not actually free, and this still matters.** The settle holds the per-chat exchange
+lock; a slow settle surfaces to a fast-typing player as a busy error. The chat pulse,
+extractor and personal-notes timeouts are **still at 60 seconds** — a deliberate, dated,
+marked-REVERT diagnostic from 2026-07-15 to measure real model latency, and it has not been
+reverted. Until it is, the lock can be held for a minute, so **any T3 proposal is blocked on
+that measurement landing.** Budget T3 slots as scarce; prefer T2. **Reverting those three
+constants is currently in no plan** — the nearest neighbour is
+[chat-reply-latency.plan.md](chat-reply-latency.plan.md), which covers pre-reply latency and
+not the settle's budget.
 
-The scoring below is deliberately blunt: if a thing can be T0, it is a bug to make it T2.
+If a thing can be T0, it is a bug to make it T2.
 
 ---
 
-## 3. Substrate already in place
+## 3. Substrate as it stands
 
-Terse, so the catalog doesn't re-invent it. Detail lives in the linked docs.
+Terse, so the catalog doesn't re-invent it. Detail lives in the linked docs. Note which
+lane each item belongs to — the legacy chat lane and the successor engine are separate
+codebases with separate substrate.
 
-- **Clock** — `clock_minutes` (per-exchange tick **1 min**), `calendar_start`
-  (`Date.UTC`-backed, real months/leap years, author-editable), `timeOfDayFor`,
-  `SCHEDULE_DAY_PARTS` as the one time vocabulary, skips as the primary time mover
-  (`moments` 30 / `hours` 180 / `overnight` 540 / `days` 4320). Where:
-  `contracts/turns/chat-clock.ts`, `lib/clock.ts`.
-- **Meters** — six (`hygiene`, `energy`, `stress`, `arousal`, `intoxication`, `mood`),
-  all 0–1, `perHour` drift, optional `baseline`/`recoveryPerHour`, threshold
-  `promptHint`/`pipLabel`; `personalizeMeters` couples traits → baselines. Where:
-  `contracts/meters/registry.ts`.
-- **Rhythm** — `profile.schedule`: day-part rows, custom windows, weekday masks;
-  `formatScheduleRhythm`, `groundSchedule`, `rhythmOutfitPatch` (auto-dress on skips).
-  Where: `contracts/world/profile.ts`.
-- **Body** — 48-node location tree with `expand()`, realized bodies (plan → species →
-  heritage → body-config), coverage sets stored exploded, `exposedRegions` computed from
-  worn items. Where: `contracts/body/`, `contracts/items/visibility.ts`.
-- **Conditions** — free-label instances, self-expiring on the story clock,
-  `upsertCondition` dedupes; three small label-keyed effect tables. Where:
-  `contracts/conditions/`.
-- **Relationship** — `familiarity` (0–100, ratchets, never down) × `regard` (−100..100,
-  volatile); `attraction` reserved as a third axis. Where:
-  `contracts/relationships/bands.ts`.
-- **Mind** — `drives` (≤3, secrecy + reveal band, ships a scoped lie license), `plans`
-  (`derivePlanSalience`, `advancePlans`, deterministic `missed`), `open_loops`,
-  `mind_note`, `feeling`. Where: `contracts/turns/chat-plans.ts`,
-  `contracts/personality/drives.ts`.
-- **Off-screen** — the `chat_meanwhile` detached job, the lane's world tick; cumulative
-  1440-minute gate; ≤3 developments; `whereabouts` (a phrase, ≤120 chars); per-member
-  fact routing so members know _different things_. Where: `engine/chat-meanwhile.ts`.
-- **Perception** — session lane: 4-axis `ExposureMask`, attention × salience witness
-  matrix, `darknessVerdict`, proximity. Chat lane: `exposedRegions` +
-  `deriveChatSensoryAllowance` + regex focus reads. Where: `contracts/perception/`,
-  `engine/chat-intent.ts`.
-- **Agents** — pre-reply: none (regex only) + one embed. Settle: pulse ‖ [memory scribe ‖
-  continuity tracker ‖ character tracker]. Detached: summary fold, scene sketch,
-  meanwhile. Where: `docs/character-chat/pipeline.md`.
+**Legacy chat lane** — the live product for ordinary chats:
 
-**The load-bearing observation:** `profile.schedule` is quietly the world-sim spine. Six
-shipped or planned consumers already key off it (initiative cue, `rhythmOutfitPatch`,
-rhythm line, weekday fix, meanwhile dossier, and the proposed `deriveCircadianPressure` /
-`rhythmBodyPatch` / `deriveRhythmPressure`). Nearly every idea below plugs into it too.
-The meter-economy spec calls its one enabler — `ScheduleEntry.activity.kind`
-(`sleep`|`wash`|`meal`|`work`|`leisure`) — "the one field that makes the awake clock,
-off-screen self-care, and circadian hunger possible." It is a jsonb profile field: **no
-migration.** That field is the cheapest unlock in the entire corpus and this doc leans on
-it everywhere.
+- **Clock** — story minutes plus a real-calendar anchor (real months, leap years,
+  author-editable), one minute per exchange, four day parts as the one time vocabulary, and
+  skips as the primary time mover.
+- **Meters** — six (hygiene, energy, stress, arousal, intoxication, mood), all 0–1, one flat
+  linear drift law, threshold hints and pip labels, traits coupled to baselines.
+- **Rhythm** — a character's schedule: day-part rows, custom windows, weekday masks, plus
+  the shipped rhythm auto-dress on skips. Rows carry free-form activity text and no kind.
+- **Body** — a 48-node location tree, realized bodies, coverage sets stored exploded,
+  exposed regions computed from worn items, and the affordance layer built on top of it
+  (garment interaction, recognizable features, hair phenomena including wetness).
+- **Environment** — wind, precipitation and an indoors flag, chat-wide, proposed by the
+  continuity leg and committed deterministically. The lane's first authoritative weather
+  owner, and narrator-sourced rather than derived.
+- **Conditions** — free-label instances, self-expiring on the story clock, deduped on id.
+- **Relationship** — familiarity (ratchets, never down) × regard (volatile); attraction
+  reserved as an unbuilt third axis.
+- **Mind** — drives with a secrecy and reveal band, plans with salience and deterministic
+  missed-ness, open loops, a mind note, a feeling.
+- **Off-screen** — the detached meanwhile job, the lane's world tick: a cumulative
+  story-day gate, a small number of developments, a whereabouts phrase, and per-member fact
+  routing so members know *different things*.
+- **Perception** — exposed regions plus a sensory allowance and regex focus reads.
+- **Agents** — pre-reply: none but regex and one embed. Settle: pulse in parallel with the
+  memory, continuity and character legs. Detached: summary fold, scene sketch, meanwhile.
+
+**Successor engine** — authoritative for successor chats, and where most of this doc's
+catalog was actually built. Event-sourced and branch-scoped, with a durable scheduler,
+zones and access, perception and observation, assertions/beliefs/gossip, a relationship
+ledger with consent scopes, bodies and materials, households and means, and per-actor level
+of detail. See [engine.spec.md](engine.spec.md)'s § index.
+
+**Deleted, and no longer available to take** (rollout R6, 2026-07-22): the session lane's
+action registry, its merge-phase meter pass, its exposure mask and witness matrix, its
+atmosphere resolver, and the generic world-map graph layout. Several catalog entries below
+were written assuming those could be adopted; they cannot.
+
+**The load-bearing observation still holds:** the character's schedule is quietly the
+world-sim spine. Six shipped or planned consumers key off it, and nearly every idea below
+plugs into it. Its one missing field — a **typed kind** on a rhythm row (sleep, wash, meal,
+work, leisure) — is the cheapest unlock in the entire corpus: it is a jsonb profile field,
+so **no migration**, and it is owned by [character-schema.plan.md](character-schema.plan.md)
+§2.1 and consumed by [chat-meter-economy.plan.md](chat-meter-economy.plan.md) §4. The engine
+already runs typed rhythm rows; the authored side is what is missing.
 
 ---
 
-## 4. Inherited law — what to respect, what to challenge
-
-The corpus has seven standing decisions. A world-sim design must respect each or supersede
-it out loud.
+## 4. Inherited law — what to respect, what has since been answered
 
 **Respect, unchanged:**
 
-1. **The substrate/read law** (meter-economy spec) — _a meter is physiological substrate
-   on the story clock; the narrator never sees a meter, only a derived, perception-gated
-   read of one._ Plus the taxonomy (reserve · load · valence · rate · phase) and its two
-   invariants: **reserves are the push channel**; **phase modulates baselines, never
-   values**. This is the most valuable idea in the corpus and everything below obeys it.
-2. **The rhythm is the circumstance** (OQ3) — off-screen effects are credited from crossed
-   `profile.schedule` slots, not from skip rules. D14 is deleted, not revised. Circumstance
-   is _authored_, never assumed. The same move recurs everywhere and should keep recurring:
-   `doesn't-eat-breakfast` is a disposition tag suppressing morning pressure, not a meter
-   edit; "NPCs eat twice a day" is an authoring invariant, not an engine rule.
+1. **The substrate/read law** ([chat-meter-economy.spec.md](chat-meter-economy.spec.md)) —
+   a meter is physiological substrate on the story clock; the narrator never sees a meter,
+   only a derived, perception-gated read of one. Plus the taxonomy (reserve, load, valence,
+   rate, phase) and its two invariants: **reserves are the push channel**; **phase modulates
+   baselines, never values**. This remains the most valuable idea in the corpus, and the
+   engine adopted it verbatim as the normative source for its body meters.
+2. **The rhythm is the circumstance** — off-screen effects are credited from crossed rhythm
+   slots, not from skip rules. Circumstance is *authored*, never assumed. The same move
+   recurs everywhere and should keep recurring: "doesn't eat breakfast" is a disposition tag
+   suppressing morning pressure, not a meter edit; "NPCs eat twice a day" is an authoring
+   invariant, not an engine rule.
 3. **The teamwork playbook** — deterministic gates decide; focused agents propose in
-   parallel _after_ the reply; plain code folds; slow work detaches; **no AI call before
-   the reply**.
-   > **Correction (2026-07-16, [gpt-sim-design.claude.md](gpt-sim-design.claude.md) §2):**
-   > the "agents propose, code disposes" half of this is **aspirational, not descriptive** —
-   > this doc cited it as settled fact and was wrong. Verified: it holds for **meters,
-   > `plans.missed`, and selfies**. For wardrobe, presence, plans struck/kept/canceled,
-   > drives/secrets revealed, facts, scene, and cast, the "deterministic fold" only _parses
-   > the narrator's prose_ — the narrator is the de facto authority, and a hallucinated
-   > secret reveal **ratchets permanently**. The catalog below is unaffected (it is almost
-   > entirely derive-and-arm, which sits upstream of narration), but the law as stated
-   > overclaims. See that doc's §7 for the small in-place fixes and §6.1 for why the
-   > distinction between authority-as-input and authority-as-veto is the whole argument.
+   parallel *after* the reply; plain code folds; slow work detaches; no AI call before the
+   reply. With the standing correction that "agents propose, code disposes" is
+   **aspirational for the legacy lane, not descriptive**: it holds for meters, plan
+   missed-ness and selfies, but for wardrobe, presence, plans struck or kept, drives
+   revealed, facts, scene and cast, the "deterministic fold" only *parses the narrator's
+   prose* — the narrator is the de facto authority there, and a hallucinated secret reveal
+   ratchets permanently. The successor engine is the answer to that gap and enforces the
+   law properly; the legacy lane still doesn't.
 4. **Authored canon is never machine-edited; evolution is bounded and rolls back.** The
-   relationship matrix, authored traits, cast `relation` — read-only to agents. Overlays
-   clamp to one band step. Everything rides `pre_exchange_state` / `pre_exchange_scenario`.
-5. **The world model is spoils, not a parallel.** `actions/registry.ts` gets taken;
-   `scheduleEntryAt` moves to contracts; `merge/phases/meters.ts` donates its pattern. No
-   parity to protect.
+   relationship matrix, authored traits and cast relations are read-only to agents.
+   Overlays clamp to one band step. Everything rides the pre-exchange snapshots.
 
-**Challenge — with a narrow, specific counter-proposal:**
+**Answered since:**
 
-6. **"No location model."** Respect the _reason_, reject the _scope_. See §D — the old
-   model didn't fail because places existed; it failed because **movement between them was
-   authoritative and the narration had to wait for it.** Places as inert property bags have
-   none of that failure mode and are the missing hook for the entire environmental layer.
-7. **"Every meter is a character meter."** The player has `playerPersona` — a name and a
-   blob — and no body. In a lane where "I lick her foot" is a first-class beat and the
-   `drink` chip exists, the asymmetry is real. See §A.12. This is a product call, not an
-   engineering one.
-
-**Keep, but note the cost:** D3/D8 (no wall clock). See §1's corollary — deriving keeps the
-option open at zero cost, which is reason enough not to store.
+5. ~~"The world model is spoils, not a parallel."~~ **Void.** There are no spoils. The
+   session lane's code and tables were deleted outright; anything it once offered must now
+   be written new or borrowed from the engine.
+6. **"No location model."** Answered by owner ruling (2026-07-16) and then built: locations
+   came back in the successor lane, simpler — zones with access and privacy policies, and
+   movement resolved by a scheduler rather than by making narration wait. §D below records
+   what that means for the legacy lane, which still has no location model and should keep
+   not having one.
+7. **"Every meter is a character meter."** Answered by owner ruling (2026-07-16): the player
+   gets a body. The persona library shipped the identity and wardrobe half — who the player
+   is in this conversation and what they are wearing. Player *meters* remain unbuilt.
 
 ---
 
 ## 5. The catalog
 
-Tier tags are per §2. **Shape** uses the meter-economy taxonomy. "Seam" names the existing
-thing it plugs into — an idea with no seam is a red flag, not a feature.
+Each entry carries its cost tier, its taxonomy shape, and — the part that matters now —
+**where it stands in each lane**. "Unowned" means it is in neither lane and in no plan.
 
 ### §A — Physiology (the body)
 
-- **A.1 · energy** — `reserve × exp(−t/τ)` minus circadian pressure, read
-  bidirectionally. T1, reserve. **Planned** (meter-economy §2). τ=16h, sleep restores
-  linearly (the asymmetry _is_ the debt mechanic). The template for every reserve below.
-- **A.2 · satiation** — T1, reserve. **Planned** (body-needs §2). Zero at _her_ mealtime,
-  not a global hour.
-- **A.3 · hydration** — T1, reserve. **Planned** (body-needs §3). Drains ~2× satiation;
-  arousal and exertion drain it faster.
-- **A.4 · bladder** — T1, load. **Planned** (body-needs §4), with an honest open question
-  about whether it survives contact with a romance scene (OQ-A).
-- **A.5 · desire** — days without intimacy raise the _arousal baseline_ and feed
-  initiative. T1, reserve. **Named in three docs, scheduled in none.** It is the
-  load-bearing unblocker: arousal's −0.30/h is knowingly wrong ("honest value is nearer
-  −0.50/h") purely because arousal is doing desire's job. Rides the `personalizeMeters`
-  baseline seam. The most on-brand meter available and the clearest unowned item in the
-  corpus. **Promote it.**
-- **A.6 · exertion / breath** — fast load, τ in minutes. T1, load. Fills from physical
-  beats (stairs, a run, sex), decays in minutes. Feeds hydration drain, arousal signs
-  (breathlessness is already in the arousal hint), and energy cost. The spec's OQ2
-  explicitly wants "**exertion → energy** so an intimate scene actually costs something."
-  Cheap, and it gives physical scenes a body.
-- **A.7 · warmth / body temperature** — T1, load. **The physiology↔environment bridge,
-  and the best-value new meter in this doc.** Driven by `ambientTemp × exposedRegions` —
-  and _the gate is already built_ (`resolveChatWardrobe`). Crossing bands mints
-  `shivering` / `overheated` conditions. This is what makes weather matter to a body
-  instead of being scenery.
-- **A.8 · social battery** — T1, reserve. `social.extraversion` sets τ (the
-  `personalizeMeters` seam again). Explains why someone wants to _leave_ — which the
-  ensemble lane badly needs and currently has no honest reason for.
-- **A.9 · caffeine** — T1, load. Suppresses circadian pressure without restoring reserve
-  — i.e. it lies to the read, which is exactly what caffeine does. Falls out of A.1
-  nearly free. Fun, low priority.
-- **A.10 · worn scent (perfume)** — T1, load. Distinct from `hygiene`. Applied by an
-  action/item, decays over hours. Sensory-grounding's leftovers explicitly want "hair
-  scent distinct from perfume, breath, skin warmth." An item-conferred load meter that a
-  sense-gated read consumes.
-- **A.11 · hair-wet / makeup** — T1, condition. Not meters — conditions with durations,
-  which the machinery already self-expires. Wet hair after a shower (~45 min). Makeup
-  degrades with time, crying, sweat, sex. Very romance-lane, nearly free, high
-  felt-realism per unit of effort.
-- **A.12 · player body (minimal)** — T1, no shape yet. The asymmetry from §4.7. A minimal
-  set (intoxication, energy, arousal?) driven by declared actions and chips. **Product
-  call:** is the player's body the sim's to model or the player's to declare? A middle
-  path: the sim tracks only what the player _did_ (the `drink` chip already implies it)
-  and never contradicts them.
-- **A.13 · illness with a course** — T1, condition. **A genuinely good pure-code sim.**
-  `deriveIllnessRisk` from sleep debt + stress + hydration + cold exposure + season; a
-  **seeded** roll at a skip crossing (seed = chatId + clockMinutes ⇒ deterministic and
-  replayable, matching the house style of `scheduleJitter` and `world-graph-layout`)
-  mints an `unwell` condition with a multi-day course. She gets sick _because_ she's been
-  running on 4h sleep in the rain. Zero calls.
-- **A.14 · injury / soreness** — T1, condition. Healing courses on the clock. Body-needs
-  already rules soreness is "probably conditions, not a meter" — agreed.
-- **A.15 · hormonal phase** — T2, phase. The "hyper realistic" ask. Modulates baselines,
-  never values (the invariant). **Deliberately parked** as a product-judgment call — and
-  note the taxonomy is very good at saying what a meter _is_ and has no rule for what a
-  meter _should be_ in a romance product. Same bucket: fertility, pregnancy arcs. Needs
-  an owner ruling before design, not after.
+- **A.1 · energy** — reserve on an exponential law minus circadian pressure, read
+  bidirectionally. T1. **Engine: built** (Gate 5). **Chat: planned**
+  ([chat-meter-economy.plan.md](chat-meter-economy.plan.md) §2). The template for every
+  reserve below.
+- **A.2 · satiation** — T1, reserve. **Unbuilt both lanes; planned**
+  ([chat-body-needs.plan.md](chat-body-needs.plan.md) §2). Zero at *her* mealtime, not a
+  global hour.
+- **A.3 · hydration** — T1, reserve. **Unbuilt both; planned** (body-needs §3). Drains about
+  twice as fast as satiation; arousal and exertion drain it faster.
+- **A.4 · bladder** — T1, load. **Unbuilt both; planned** (body-needs §4), with an honest
+  open question about whether it survives contact with a romance scene.
+- **A.5 · desire** — days without intimacy raise the *arousal baseline* and feed initiative.
+  T1, reserve. **Unbuilt both, owner-scheduled 2026-07-16, and still in no plan's slices** —
+  the clearest unowned item in the corpus. It is the load-bearing unblocker: arousal's rate
+  is knowingly wrong in both lanes purely because arousal is doing desire's job. **Promote
+  it.**
+- **A.6 · exertion / breath** — fast load. T1. **Engine: built as a coupling** (an exertion
+  source costs energy and drains hygiene at half that rate). **Chat: unbuilt.** As a
+  standalone meter with its own decay it is unbuilt everywhere — the engine models the
+  *cost*, not the breathlessness.
+- **A.7 · warmth / body temperature** — T1, load. **Unowned, and now cheaper than when this
+  was written**: the exposure half was already built (coverage-computed exposed regions) and
+  the environment half arrived with the chat lane's wind / precipitation / indoors state.
+  Crossing bands mints shivering or overheated conditions. Still the best-value new meter in
+  this doc.
+- **A.8 · social battery** — T1, reserve. **Unowned.** Extraversion sets the time constant.
+  Explains why someone wants to *leave*, which the ensemble lane needs and has no honest
+  reason for.
+- **A.9 · caffeine** — T1, load. **Unowned.** Suppresses circadian pressure without
+  restoring reserve — it lies to the read, which is what caffeine does. Nearly free once A.1
+  lands. Low priority.
+- **A.10 · worn scent** — T1, load. **Unowned.** Distinct from hygiene; applied by an action
+  or item, decays over hours, consumed by a sense-gated read.
+- **A.11 · hair-wet / makeup** — T1, conditions rather than meters. **Partly built**: hair
+  wetness is a real affordance phenomenon with bands and clumping behavior. Makeup
+  degradation over time, crying, sweat and sex is **unowned** and remains high felt-realism
+  per unit of effort.
+- **A.12 · player body** — T1. **Half built.** The owner ruled yes; the persona library
+  shipped the player's identity and worn state. Player *meters* — intoxication, energy,
+  arousal — are unbuilt, and the middle path still stands: the sim tracks only what the
+  player *did* and never contradicts them.
+- **A.13 · illness with a course** — T1, condition. **Unowned**, and still a genuinely good
+  pure-code sim: risk derived from sleep debt, stress, hydration, cold exposure and season;
+  a **seeded** roll at a skip crossing (seed from the chat and clock ⇒ deterministic and
+  replayable) mints an unwell condition with a multi-day course. She gets sick *because*
+  she's been running on four hours' sleep in the rain. Zero calls.
+- **A.14 · injury / soreness** — T1, condition with a healing course on the clock.
+  **Unowned.** Conditions, not a meter.
+- **A.15 · hormonal phase** — T2, phase. **Deliberately parked** as a product-judgment call.
+  Modulates baselines, never values. Same bucket: fertility, pregnancy arcs. Needs an owner
+  ruling before design, not after.
 
-**Rejected as over-modeling:** blood sugar (folds into satiation), grooming-as-a-meter and
-hangover-as-a-meter (already rejected in body-needs — conditions and attributes cover
-them), garment-level laundry state (a whole second wear economy for a detail prose handles).
+**Rejected as over-modeling:** blood sugar (folds into satiation), grooming and hangover as
+meters (conditions and attributes cover them), garment-level laundry state (a whole second
+wear economy for a detail prose handles).
 
 ### §B — Environment (the world's body)
 
-**The biggest genuine gap, explicitly asked for, and almost entirely T0.** The chat lane
-has no weather, no temperature, no season, no ambient anything. The session lane has
-`atmosphere` (`resolveAtmosphere`, `atmosphereMoodBaselineShift`) with no chat twin.
+**Still the biggest genuine gap for the legacy chat lane, explicitly asked for, and almost
+entirely T0.** One thing changed since this was written: the chat lane now has an
+authoritative environment record — wind, precipitation and an indoors flag, chat-wide,
+proposed by the continuity leg. So there is a **consumer and a commit path**; what is
+missing is a *derived source* for it.
 
-- **B.1 · `deriveWeather(seed, climate, clockMinutes)`** — **T0**. Pure, seeded,
-  clock-keyed → `{ tempC, precip, wind, cloud, band }`. Layered value noise: a daily
-  cycle + synoptic fronts (~3–7 day period) + a seasonal envelope. **No storage, no tick,
-  consistent under any skip, identical on replay, queryable at any past or future moment
-  for free.** An authored `climate` on the chat/world picks the envelope. This single
-  function is the entire weather system.
-- **B.2 · `deriveSeason(calendarStart, clockMinutes)`** — **T0**. Free from the real
-  calendar. Feeds B.1's envelope, daylight, wardrobe, food, holidays, mood baseline.
-- **B.3 · `deriveDaylight(calendarStart, clockMinutes, latitude?)`** — **T0**. Real
-  sunrise/sunset — a ~20-line solar approximation, or a sinusoid if that's too much.
-  Feeds a light level → the **existing** `darknessVerdict` machinery → perception gating
-  → intimacy staging. `lib/clock.ts`'s `daylightBand` already exists session-side.
-- **B.4 · ambient temperature** — **T0**. `f(weather, season, timeOfDay, indoor)`. The
-  input to A.7.
-- **B.5 · lunar phase** — **T0**. Free from the calendar. Matters for some species,
-  tides, and atmosphere. Cheap enough that the only question is whether anything reads
-  it.
-- **B.6 · holidays & calendar events** — T0. Authored per world; the calendar already
-  resolves real dates. Feeds plans, rhythm exceptions (she's off work), mood, gift beats.
-- **B.7 · `weatherOutfitPatch`** — T1. The deterministic sibling of the shipped
-  `rhythmOutfitPatch`, same crossed-slot pattern: **she dresses for the weather.** Rain,
-  cold, heat. One of the highest realism-per-line ideas here — and it composes with
-  rhythm (work clothes _and_ a coat).
-- **B.8 · atmosphere, ported to chat** — T1. `atmosphereMoodBaselineShift` exists and is
-  session-only. Weather → mood baseline is the same shape. Note the shift must be
-  **standing** (a drift target), never a per-turn impulse — the existing constant caps at
-  ±0.2.
-- **B.9 · weather → plans** — T1. Rain cancels the pier. `derivePlanSalience` already
-  computes due-ness; a due outdoor plan in a storm is a _beat_, not a failure. Feeds the
-  pulse as context (T2), never a deterministic cancel.
-- **B.10 · weather/season → off-screen life** — T2. One line in the meanwhile dossier.
-  She had a week of rain. Zero new calls.
-- **B.11 · place properties: noise, crowding, air** — T1. Needs §D. Feeds stress, social
-  battery, and the perception gate.
+- **B.1 · derived weather** — **T0. Unowned.** A pure, seeded, clock-keyed function to
+  temperature, precipitation, wind, cloud and a band, built from a daily cycle plus synoptic
+  fronts plus a seasonal envelope, with an authored climate picking the envelope. **No
+  storage, no tick, consistent under any skip, identical on replay, queryable at any past or
+  future moment for free.** This one function is the entire weather system, and it would now
+  *feed an existing record* rather than needing one invented. (Weather is also named as a
+  candidate package in the engine's optional Gate 7, which is owner-gated and uncommitted —
+  the two are different builds for different lanes.)
+- **B.2 · season** — **T0. Unowned.** Free from the real calendar. Feeds B.1's envelope,
+  daylight, wardrobe, food, holidays, mood baseline.
+- **B.3 · daylight** — **T0. Unowned.** Real sunrise and sunset from a short solar
+  approximation, or a sinusoid. Feeds a light level → perception gating → intimacy staging.
+- **B.4 · ambient temperature** — **T0. Unowned.** A function of weather, season, time of
+  day and the indoors flag. The input to A.7.
+- **B.5 · lunar phase** — T0. **Unowned.** Free from the calendar. Cheap enough that the
+  only question is whether anything reads it.
+- **B.6 · holidays and calendar events** — T0. **Unowned.** Authored per world; the calendar
+  already resolves real dates. Feeds plans, rhythm exceptions, mood, gift beats.
+- **B.7 · weather-driven dressing** — T1. **Unowned.** The deterministic sibling of the
+  shipped rhythm auto-dress, same crossed-slot pattern: **she dresses for the weather.** One
+  of the highest realism-per-line ideas here, and it composes with rhythm — work clothes
+  *and* a coat.
+- **B.8 · weather → mood baseline** — T1. **Unowned, and now write-new.** The session lane's
+  atmosphere resolver is deleted, so there is nothing to port. The shape is the same as the
+  condition mood shift: a **standing** drift target, never a per-turn impulse.
+- **B.9 · weather → plans** — T1. **Unowned.** Rain cancels the pier. Plan salience already
+  computes due-ness; a due outdoor plan in a storm is a *beat*, not a failure. Feeds the
+  pulse as context, never a deterministic cancel.
+- **B.10 · weather and season → off-screen life** — T2. **Unowned.** One line in the
+  meanwhile dossier. She had a week of rain. Zero new calls.
+- **B.11 · place properties: noise, crowding, air** — T1. **Engine: built** as zone
+  attributes. **Chat: unbuilt**, and needs §D.
 
 **Why this is the right shape:** an environmental "meter" is not a character meter and must
-not enter `meterDefinitions`. The body **stores** (it has hysteresis — she stays cold after
-coming inside); the world **derives** (it has none). Clean split, and it keeps the registry
-honest.
+not enter the meter registry. The body **stores** — it has hysteresis, she stays cold after
+coming inside — while the world **derives**. Clean split, and it keeps the registry honest.
 
 ### §C — Time, rhythm, calendar
 
-- **C.1 · `ScheduleEntry.activity.kind`** — T0. The one enabler.
-  `sleep`\|`wash`\|`meal`\|`work`\|`leisure` + `inferScheduleKind`. jsonb ⇒ **no
-  migration**. Everything in §A and half of §B depends on it.
-- **C.2 · `deriveRhythmPressure(profile, kind, clock)`** — T0. **One** circadian curve
-  serving sleep, meals, and later desire. Body-needs says it plainly: _"If this plan
-  writes a second circadian curve by hand, that is the bug."_ Also resolves C8 in the
-  corpus (the proliferation of time granularities) by making the continuous curve the
-  _derived_ layer under the four `SCHEDULE_DAY_PARTS`, not a fifth vocabulary beside
-  them.
-- **C.3 · `rhythmBodyPatch`** — T1. **Planned** (meter-economy §4). Credits only rhythm
-  slots the skipped window crossed. Overnight → 8am past a 7am `wash` row = slept _and_
-  showered; → 6am = slept, not showered.
-- **C.4 · weekly / seasonal rhythm** — T0. Weekday masks exist. Weekends, seasonal
-  schedule shifts.
-- **C.5 · aging + birthdays** — T0. The clock runs; nobody ages. Add `profile.birthday`
-  (month/day) → `deriveAge` from `calendar_start`. **A birthday is a calendar event she
-  knows about and can be hurt if the player forgets** — plan-shaped, milestone-shaped,
-  and almost free. Strong romance beat for a tiny field.
+- **C.1 · typed rhythm kinds** — T0. **Engine: built** (typed rhythm rows). **Chat:
+  unbuilt** — a jsonb profile field, so no migration. Owned by
+  [character-schema.plan.md](character-schema.plan.md) §2.1. Everything in §A and half of §B
+  depends on it.
+- **C.2 · one rhythm-pressure curve** — T0. **Engine: built for sleep**; the generalization
+  that serves meals and later desire from the *same* function is **unbuilt**. Body-needs
+  says it plainly: if that plan writes a second circadian curve by hand, that is the bug.
+- **C.3 · rhythm self-care on crossed slots** — T1. **Engine: built** (window-crossing, no
+  blanket restore). **Chat: planned** (meter-economy §4).
+- **C.4 · weekly / seasonal rhythm** — T0. **Partly built**: weekday masks exist. Weekends
+  and seasonal schedule shifts are **unowned**.
+- **C.5 · aging and birthdays** — T0. **Unbuilt.** The clock runs; nobody ages. A structured
+  birthday makes age a derivation, and **a birthday is a calendar event she knows about and
+  can be hurt if the player forgets** — plan-shaped, milestone-shaped, and almost free.
+  Owned by [character-schema.plan.md](character-schema.plan.md) §2.2.
 
 ### §D — Space (places without a map)
 
-**The narrow challenge to law #6.** The distinction the corpus hasn't drawn:
+The distinction this doc drew — the old world model failed at **navigation**, not at
+**places having properties** — was accepted by the owner and then settled by construction:
+the successor engine built zones, access, privacy and scheduler-resolved movement, and it
+works, because narration never waits on it. That closes the argument for the successor lane
+and changes nothing for the legacy one.
 
-> The old world model failed at **navigation** — authoritative movement between located
-> entities, which the narrative had to wait on. It did not fail at **places having
-> properties.** Those are different features and only one of them broke.
-
-`scene_memory` already stores places and connections (migration 0030). They carry no
-properties. Proposal: **places as inert property bags.**
-
-- **D.1 · `{ indoor, privacy, noise, shelter }` on scene-memory places** — T1/T2. jsonb ⇒
-  no migration. `indoor` gates weather exposure (the hook §B needs). The continuity
-  tracker already reads the scene — this is one more field on a leg that runs (T2). **No
-  graph, no pathfinding, no travel time, no movement authority.** The narrator still
-  imagines and moves freely.
-- **D.2 · `privacy` → the escalation gate** — T1. **The romance-lane payoff, and it's
-  missing today.** The escalation floor is keyed to regard only — a crowded café and a
-  locked bedroom are mechanically identical. Privacy is exactly the environmental factor
-  this product wants and it costs one field.
-- **D.3 · `SceneFrame`** — T1. See §6.4 — the composed read
-  `{ indoor, privacy, proximity, intimate, temp, light, noise }`. Resolves corpus tension
-  C6 (chat has no `ExposureMask`, which blocks `deriveArousalSigns` and the
-  intimacy-notes chat port).
-- **D.4 · proximity within a scene** — T2. Across the room vs. in her lap. The session
-  lane has `proximity.ts`; chat has nothing. Feeds `SceneFrame` and intimacy staging. A
-  continuity-tracker field, not a system.
-- **D.5 · chat story map (places graph, read-only)** — T4/UI. Already parked in
-  `deferred.plan.md` as "garnish." `lib/world-graph-layout.ts` + `world-map-graph.tsx`
-  were written generically and would just work. Agreed: garnish. Listed for
-  completeness.
-- **D.6 · travel time / pathfinding / movement authority** — no tier. **Do not build.**
-  This is the thing that broke. Skips are the time mover; the plan arrival/exit license
-  is the one principled don't-teleport exception and it is _granted by a commitment, not
-  computed from a path_. That design is correct — leave it.
+- **D.1 · place properties** — T1/T2. **Engine: built.** **Chat: partly** — the indoors
+  flag exists chat-wide, but the scene-memory places (name, details, connections) carry no
+  properties. Adding them is a jsonb field on a leg that already runs. **No graph, no
+  pathfinding, no travel time, no movement authority** in the legacy lane.
+- **D.2 · privacy → the escalation gate** — T1. **Unbuilt in the legacy lane**, and the
+  successor answered the question differently: consent there is **ledger-gated** — a
+  boundary or permission entry under a named scope — and privacy zones gate access and
+  observation rather than escalation. The legacy lane's escalation floor is still keyed to
+  regard only, so a crowded café and a locked bedroom remain mechanically identical. That
+  is still the romance-lane gap this entry names.
+- **D.3 · a composed scene frame** — T1. **Unbuilt by that name in either lane.** See §6.4.
+- **D.4 · proximity within a scene** — T2. **Engine: built** via zones and perception.
+  **Chat: unbuilt** — across the room versus in her lap. A continuity-tracker field, not a
+  system.
+- **D.5 · a read-only chat story map** — **Cost has gone up.** The generic graph layout and
+  map component this entry assumed "would just work" were deleted with the session lane, so
+  it is now a build rather than a rewire. Still garnish; still listed only for completeness.
+- **D.6 · travel time / pathfinding / movement authority in the legacy lane** — **Do not
+  build.** This is the thing that broke. Skips are the time mover, and the plan
+  arrival/exit license is the one principled don't-teleport exception, granted by a
+  commitment rather than computed from a path. The successor engine builds the authoritative
+  version properly; that is not a licence to retrofit it here.
 
 ### §E — Social
 
-- **E.1 · `attraction` — the reserved third axis** — T1/T2. Already a reserved record
-  field (a record addition, never a migration). Familiarity ratchets, regard is volatile,
-  attraction is… unbuilt. In a romance product this is a conspicuous gap and the cheapest
-  axis anyone will ever add.
-- **E.2 · jealousy / audience effects** — **T2**. Affection toward X in front of Y should
-  move Y. A pulse field — the pulse already sees the exchange and proposes regard deltas.
-  **Zero new calls, high drama yield, ensemble-lane native.** Probably the best
-  value/cost ratio in this section.
-- **E.3 · knowledge propagation (gossip)** — **T4**. Facts already route per-member so
-  members know _different things_ (offscreen-life ruling C). Gossip = a meanwhile
-  development that **copies a fact into another member's memory group** with a `heardFrom`
-  tag. Real information spread, riding the job that already runs. Fold it into the
-  meanwhile pass; do not build a sibling.
-- **E.4 · belief vs. truth** — T1. `facts.canon = false` (belief-only, a told lie)
-  **already exists and is underused**. Drives already ship a scoped lie license. Wire the
-  two: she believes X, X is false, the divergence persists and can be discovered. The
-  column is sitting there.
-- **E.5 · NPC↔NPC relationship state** — T2. Ruling D (matrix never machine-edited) is
-  right for _authored canon_ but caps how much NPC social life can actually change —
-  today it can only accrete facts. A **derived** relationship read over accumulated
-  NPC↔NPC facts respects the ruling and still lets things move.
-- **E.6 · reputation** — T2. What the wider cast believes about the player. A derived
-  read over facts tagged by subject, not a new store.
-- **E.7 · cast promotion (supporting → roster)** — T3. Deferred in two docs; the
-  meanwhile pass explicitly never promotes. A living world needs the path. Blocked on
-  §6.6 (LOD), not on this doc.
-- **E.8 · group dynamics** — T2. Who's talking to whom; who's been quiet.
-  `ensembleQuietThreshold` and `quiet_exchanges` exist.
+- **E.1 · the attraction axis** — T1/T2. **Engine: built** — trust, attraction and
+  resentment are derived from the relationship ledger. **Chat: still a reserved, unbuilt
+  record field.** In a romance product that is a conspicuous gap and the cheapest axis
+  anyone will ever add. Owned by [character-schema.plan.md](character-schema.plan.md) §2.3.
+- **E.2 · jealousy / audience effects** — **T2. Unowned.** Affection toward one character in
+  front of another should move the second. A pulse field — the pulse already sees the
+  exchange and proposes regard deltas. **Zero new calls, high drama yield, ensemble-lane
+  native.** Probably the best value-to-cost ratio in this section, and it is still nobody's.
+- **E.3 · knowledge propagation (gossip)** — **T4. Engine: built** — assertions, beliefs and
+  gossip chains with teller provenance. **Chat: unbuilt**, and the shape still holds: facts
+  already route per-member so members know *different things*, so gossip is a meanwhile
+  development that copies a fact into another member's memory group with a heard-from tag.
+  Fold it into the pass that already runs; do not build a sibling.
+- **E.4 · belief versus truth** — T1. **Engine: built.** **Chat: the column is sitting
+  there** — a fact can already be marked non-canonical (a told lie) and is underused, and
+  drives already ship a scoped lie licence. Wiring the two is cheap and unowned.
+- **E.5 · NPC↔NPC relationship state** — T2. **Engine: built** — the ledger is directional
+  between any two actors. **Chat: unbuilt**; the authored matrix is still never
+  machine-edited, so NPC social life can only accrete facts. A **derived** read over
+  accumulated NPC-to-NPC facts respects the ruling and still lets things move.
+- **E.6 · reputation** — T2. **Unowned.** What the wider cast believes about the player. A
+  derived read over facts tagged by subject, not a new store.
+- **E.7 · cast promotion (supporting → roster)** — T3. **Engine: built** (cohort member
+  promoted to a full actor). **Chat: unbuilt** — the meanwhile pass explicitly never
+  promotes.
+- **E.8 · group dynamics** — T2. **Partly built**: a quiet-exchange counter and an
+  extraversion-keyed threshold exist. Who is talking to whom is unowned.
 
 ### §F — Mind & motivation
 
-- **F.1 · the salience bus** — **T0**. See §6.3. The corpus's clearest unowned seam
-  (tension C5): `buildInitiativeCue` has accreted five input classes with **no priority
-  model and no budget owner**. Every idea in this doc wants to push a want into it.
-  **This is the prerequisite for the catalog, not an item in it.**
-- **F.2 · needs → wants** — T0. **Planned** (body-needs §4): a deficit read going negative
-  emits `{ kind, urgency, want }` — _"the sign is the gate, so 'she is overdue for X'
-  needs no per-meter threshold table."_ Elegant; generalize it to every reserve.
-- **F.3 · attention / what she noticed** — T2. The session lane has the attention ×
-  salience witness matrix; chat has regex focus reads. Not obviously needed at 1-on-1;
-  needed at N characters.
-- **F.4 · theory of mind** — T2. What she thinks _the player_ feels. A pulse field at
-  most. Easy to over-build; the narrator already does this implicitly and probably
-  better.
-- **F.5 · anticipation / dread** — T0. Falls out of `derivePlanSalience`'s `imminent` —
-  an approaching plan she _doesn't_ want is dread. Free.
+- **F.1 · the salience bus** — **T0. Unbuilt in either lane, and still the corpus's clearest
+  unowned seam.** The chat lane's initiative cue has accreted five input classes with **no
+  priority model and no budget owner**, and the successor lane has no initiative cue at all
+  (parked as [deferred/successor-npc-initiative.plan.md](deferred/successor-npc-initiative.plan.md)).
+  Every idea in this doc wants to push a want into it. **This is the prerequisite for the
+  catalog, not an item in it.** See §6.3.
+- **F.2 · needs → wants** — T0. **Unbuilt; planned** (body-needs §4). A deficit read going
+  negative emits a need — the sign *is* the gate, so "she is overdue for X" needs no
+  per-meter threshold table. Generalize it to every reserve.
+- **F.3 · attention / what she noticed** — T2. **Engine: built** (perception and
+  observation). **Chat: regex focus reads only.** Not obviously needed at one-on-one; needed
+  at N characters.
+- **F.4 · theory of mind** — T2. **Unowned.** What she thinks *the player* feels. A pulse
+  field at most; easy to over-build, and the narrator already does this implicitly and
+  probably better.
+- **F.5 · anticipation / dread** — T0. **Unowned.** Falls out of plan salience: an
+  approaching plan she *doesn't* want is dread. Free.
 
 ### §G — Objects & means
 
-- **G.1 · `means` as an authored band** — **T0**. Broke / getting by / comfortable /
-  wealthy, as an authored attribute the narrator respects. **90% of the value of an
-  economy for 1% of the cost**, and no transaction ledger to keep consistent. Strongly
-  preferred over G.2.
-- **G.2 · money & transactions** — T3+. Parked. A ledger every agent can desync. Ask what
-  beat needs it that G.1 can't serve.
-- **G.3 · item acquisition during play** — T2. Parked in `deferred.plan.md`:
-  _"characters acquire items in play (purchases, gifts) that become owned at acquisition
-  time — a second provenance path the items model doesn't have yet."_
-- **G.4 · gifts** — T1. A fact + an item + a milestone. Romance-lane native. Composes
-  with G.1 (what she can afford), B.6 (holidays), C.5 (birthdays).
-- **G.5 · consumables** — T1. The `drink` chip consumes nothing from nowhere. Minor; only
-  worth it if G.3 lands.
+- **G.1 · an authored means band** — **T0. Engine: built** (means bands with a derived read
+  and an explicit unknown default). **Chat: unbuilt** — no authored band exists, so the
+  narrator invents affordability every time. **90% of the value of an economy for 1% of the
+  cost.** Owned by [character-schema.plan.md](character-schema.plan.md) §2.5, which should
+  adopt the engine's six-key vocabulary rather than invent a coarser one.
+- **G.2 · money and transactions** — T3+. **Engine: built at level of detail** (households,
+  means and money). **Chat: parked** — a ledger every agent can desync. Ask what beat needs
+  it that G.1 can't serve.
+- **G.3 · item acquisition during play** — T2. **Engine: built** (materials with holding
+  loci). **Chat: unbuilt** — characters acquiring items in play that become owned at
+  acquisition time is a second provenance path the chat items model still lacks.
+- **G.4 · gifts** — T1. **Unowned.** A fact, an item, a milestone. Romance-lane native, and
+  it composes with G.1 (what she can afford), B.6 (holidays) and C.5 (birthdays).
+- **G.5 · consumables** — T1. **Unowned in chat.** The drink chip consumes nothing from
+  nowhere. Minor; only worth it if G.3 lands.
 
 ### §H — Life & continuity
 
-- **H.1 · cross-chat continuity** — tier unknown. **The largest unscoped question in the
-  corpus.** Everything keys to `(chatId)`; a character in two conversations has two
-  lives, two bodies, two clocks. If chat becomes "less 1-on-1 focused," this stops being
-  theoretical. Needs an owner ruling on the _product_ question (is a character one person
-  or one per conversation?) before any design. Flagged, not proposed.
-- **H.2 · long arcs** — T4. Life events over story-months. The meanwhile pass is the
-  vehicle; nothing new needed.
-- **H.3 · session-lane fate** — no tier. Not deleted, not maintained, not planned. "Batch
-  2 & 4 (session-side remainder)" sits in Next with no plans — and §C of it would port
-  chat improvements _into_ the deprecated lane. Out of scope here; worth an explicit
-  ruling somewhere.
+- **H.1 · cross-chat continuity** — **Answered structurally.** The owner ruled many worlds
+  (2026-07-16), and the successor lane realized it: a successor chat is bound to its own
+  simulated world, with the engine authoritative. So the question "is a character one person
+  or one per conversation?" has a shipped answer *for successor chats*. The **legacy** lane
+  still keys everything to the chat, and a character in two legacy conversations still has
+  two lives, two bodies and two clocks. That is now a known, bounded limitation of the
+  legacy lane rather than the corpus's largest unscoped question.
+- **H.2 · long arcs** — T4. **Unowned.** Life events over story-months; the meanwhile pass is
+  the vehicle and nothing new is needed.
+- **H.3 · session-lane fate** — **Resolved: deleted** (rollout R6, 2026-07-22). This entry
+  is closed.
 
 ---
 
 ## 6. Architecture seams the catalog needs
 
-Six seams. The catalog is mostly cheap **if these exist** and mostly awkward if they don't.
-Four of the six already have a partial owner in a queued plan.
+Six seams. Four have since been built — **in the engine, not in the chat lane** — which
+makes them worked examples rather than open designs. Two remain genuinely open, and both
+are prerequisites rather than features.
 
-### 6.1 — Meter law by class
+### 6.1 — Meter law by class — BUILT (engine)
 
-The registry is one flat array with one drift law (`driftToward`, linear toward a pole).
-The taxonomy already names five classes wanting different laws — the meter-economy plan
-carves out energy as "the one meter on the exponential law, not `perHour`," which is the
-tell that the law belongs on the class, not the meter.
+The proposal was to put the drift law on the meter's *class* rather than on the meter, so a
+new physiological meter is a registry row again. The engine did exactly this: a class field
+(reserve / load / valence / rate / phase) plus a per-meter drift law of none, linear, or
+proportional decay, with the registry versioned so adding satiation or desire is a data edit
+and a version bump.
 
-Proposal: `class: "reserve" | "load" | "valence" | "rate" | "phase"` on the definition,
-with the law selected per class (reserve → exponential τ; load → decay to baseline; rate →
-linear; valence → baseline-seeking; phase → derived, never stored). Then **a new
-physiological meter is a registry row again** — which is the whole promise of the
-registries as extension points, and what makes §A's list of a dozen candidates tractable
-instead of a dozen bespoke code paths.
+**The chat lane's registry is still one flat array with one linear law.** So this seam is
+now a *port with a reference implementation*, not a design question — and the warning still
+applies: it is a genuine registry redesign, not an additive field. Do it *with*
+[chat-meter-economy.plan.md](chat-meter-economy.plan.md) or after it, never in parallel.
 
-Watch: this is a genuine registry redesign, not an additive field. Do it _with_
-meter-economy or _after_ it, never in parallel.
+### 6.2 — The read seam — BUILT (engine), unbuilt (chat)
 
-### 6.2 — The read seam (`meters/reads.ts`)
+The corpus's most-depended-on module was `meters/reads.ts`, to be created by the meter
+economy and consumed by body-needs. **In the chat lane it still does not exist.** The engine
+built its equivalent and generalized it further than the plan asked: circadian pressure, a
+generic signed deficit read, the energy read, the intimacy read, and a closed registry of
+witness-visible signs.
 
-**The corpus's most-depended-on unbuilt module.** Created by meter-economy §2 (mood,
-energy, arousal signs), second customer is body-needs (hunger, thirst, needs), generalized
-by the spec's deficit-read section: `read = clamp(−1, +1, reserve − pressure)`, signed,
-zero at the character's own act-point, both poles saturating.
+Everything environmental lands here too — a warmth read is a function of ambient temperature
+and exposure, which is a read, not a meter. **Nothing in §A or §B is designable chat-side
+until this exists there**; the open question is whether to import the engine's pure modules
+across the unit boundary or write chat-native twins
+([chat-meter-economy.plan.md](chat-meter-economy.plan.md) OQ4).
 
-Everything environmental lands here too — the warmth read is `f(ambient, exposure)`, which
-is a read, not a meter. **Nothing in §A or §B is designable until this exists.**
+### 6.3 — The salience bus — STILL UNBUILT, and still the prerequisite
 
-### 6.3 — The salience bus (F.1)
+The chat lane's initiative cue is the universal motivation aggregator: loops, wants, rhythm,
+plans, cast, meanwhile — and this doc wants to add needs, weather, jealousy, birthdays and
+illness. **Nobody owns its budget.** Meanwhile the lane has a whole anti-noise regime the cue
+does not participate in: the surfaced-cue band-change gate, the foreground/standing state-cue
+split, the tiered "right now" digest with pre-burn deferral, and the callback ring's cooldown.
 
-`buildInitiativeCue` is becoming the universal motivation aggregator: loops, wants, rhythm,
-plans, cast, meanwhile — and this doc wants to add needs, weather, jealousy, birthdays,
-illness. Nobody owns its budget. Meanwhile the lane has a whole anti-noise regime the cue
-doesn't participate in: the `surfaced_cues` band-change gate, `splitStateCues`'s
-foreground/standing split, the "Right now" digest's tiers (binding → gate → license →
-flavor) with **pre-burn** deferral, the callback ring's cooldown.
-
-Proposal: every producer emits `{ kind, urgency, want, source }`; a pure `rankSalience()`
-picks **one foreground + standing context**, mirroring `splitStateCues` exactly; a
-recently-surfaced ring prevents repetition, mirroring `callback_history`. Consumers: the
-initiative cue, the narrator tail digest, the pulse's context.
+Proposal, unchanged: every producer emits a kind, an urgency, a want and a source; a pure
+ranking picks **one foreground plus standing context**, mirroring the existing state-cue
+split; a recently-surfaced ring prevents repetition, mirroring the callback history.
+Consumers are the initiative cue, the narrator tail digest and the pulse's context.
 
 Note what this fixes: the digest's tiers are a **prompt-assembly** priority; there is no
-**motivation** priority anywhere. Body-needs names the failure mode ("a character who talks
-about nothing but her body") and body-needs is only one producer. With a dozen, hand-tuning
+**motivation** priority anywhere. Body-needs names the failure mode — a character who talks
+about nothing but her body — and body-needs is only one producer. With a dozen, hand-tuning
 is not an option. **Build this before the catalog, or the catalog is noise.**
 
-### 6.4 — `SceneFrame` (D.3)
+### 6.4 — A composed scene frame — STILL UNBUILT in both lanes
 
-Resolves C6. The chat lane has no four-axis `ExposureMask`, which is why intimacy-notes
-shipped session-only and why `deriveArousalSigns` has no frame to gate on. Rather than port
-the session mask, compose a chat-native frame from what chat already has: coverage-computed
-`exposedRegions` + place properties + proximity + the intimate-frame signal that the
-`aroused` emotion label already gates on.
+The chat lane has no single composed frame object, which is why perception-gated arousal
+signs have nothing to gate on and why intimacy staging is assembled ad hoc. The session
+lane's four-axis exposure mask, which this entry proposed porting, **is deleted** — so this
+is a write-new, and it should be chat-native anyway: coverage-computed exposed regions, plus
+the environment's indoors flag, plus proximity, plus the intimate-frame signal the emotion
+label already gates on.
 
-One derived object, and it unblocks: `deriveArousalSigns`, the intimacy-notes chat port,
-privacy-gated escalation, weather exposure, and light-gated perception.
+The engine has the same ingredients arranged differently — zones with privacy policies,
+perception and observation, consent scopes — but no single frame object either, and its
+visible-sign registry deliberately omits contact-gated signs *because* the frame to gate
+them on isn't composed yet. One derived object would unblock, in the chat lane: arousal
+signs, privacy-gated escalation, weather exposure, and light-gated perception.
 
 ### 6.5 — Composite-subject extraction
 
-The field library is **single-subject** — "every `ExtractorField` instruction closure bakes
-in one `ctx.characterName`." The meanwhile pass already hit this wall and had to become a
-sibling module in the library's _style_ rather than a fourth leg. Any ensemble-wide or
+The chat field library is **single-subject** — every extractor field's instruction closure
+bakes in one character name. The meanwhile pass already hit this wall and had to become a
+sibling module in the library's *style* rather than a fourth leg. Any ensemble-wide or
 world-wide agent hits the same wall. If §E's gossip or §H's arcs extend the pass, plan for a
-composite-subject shape rather than assuming library reuse.
+composite-subject shape rather than assuming library reuse. **Unchanged and unowned.**
 
-### 6.6 — LOD: ration the settle, not the world
+### 6.6 — LOD: ration the settle, not the world — BUILT (engine), unbuilt (chat)
 
-**Reverie's abandoned idea, finally earning its place — for a different reason than it was
-designed for.** Reverie specced LOD tiers (live/active/background/dormant) to ration a
-_world tick_. §1 says there is no tick. But there is a real budget wall in the other
-direction:
+Reverie specced level-of-detail tiers to ration a *world tick*; §1 says there is no tick. The
+real budget wall is in the other direction: a four-member roster settles at roughly ten model
+calls per exchange, all inside the exchange lock, and that cost is **linear in roster size**
+while the direction is explicitly "less one-on-one focused". The world sim is not the scaling
+problem; **the settle is.**
 
-A 4-member roster settles at roughly **1 streamed narrator + pulse + 3 extractors + 3
-members × (pulse + personal notes) ≈ 10 calls per exchange** — all inside the lock. That
-cost is **linear in roster size**, and the direction is explicitly "less 1-on-1 focused."
-The world sim is not the scaling problem; **the settle is.**
+The engine built the general answer at Gate 6: per-actor level of detail with **two** axes —
+a simulation tier and an **inference tier** (no model / small model / deliberator /
+narrator) — with demotion guards and dependency wake trains, so an actor's model budget is a
+first-class, assignable property.
 
-So: LOD rations the settle. Present + engaged → full settle. Present + quiet → pulse only.
-Away → nothing per-exchange; the meanwhile pass covers them. This is also exactly the owner's
-own caveat on parking the tier/companion system — _"in large worlds with many characters
-running in the background, this would become an issue and tiers / companion flags would be
-necessary."_ The parked system and this need are the same system. **The 4→N path runs
-through here, and nothing else in this doc is blocked on it.**
+**The chat settle rations nothing.** Applying the same idea there is unbuilt and unowned:
+present and engaged → full settle; present but quiet → pulse only; away → nothing
+per-exchange, since the meanwhile pass covers them. This is also exactly the owner's caveat
+on parking the tier and companion system — in large worlds with many background characters,
+tiers become necessary. **The 4→N path for the legacy lane runs through here, and nothing
+else in this doc is blocked on it.**
 
 ---
 
@@ -567,136 +548,125 @@ crossings · the salience ranking.
 
 **What genuinely needs a model:**
 
-| Job                       | Why code can't              | Where it runs                 |
-| ------------------------- | --------------------------- | ----------------------------- |
-| The reply                 | —                           | the stream                    |
-| What happened off-screen  | invention grounded in state | `chat_meanwhile` (T4, exists) |
-| How she feels about it    | judgment                    | pulse (T2 slot, exists)       |
-| What's worth remembering  | salience judgment           | memory scribe (exists)        |
-| What changed in the scene | comprehension               | continuity tracker (exists)   |
+| Job                       | Why code can't              | Where it runs          |
+| ------------------------- | --------------------------- | ---------------------- |
+| The reply                 | —                           | the stream             |
+| What happened off-screen  | invention grounded in state | the meanwhile job      |
+| How she feels about it    | judgment                    | the pulse              |
+| What's worth remembering  | salience judgment           | the memory scribe      |
+| What changed in the scene | comprehension               | the continuity tracker |
 
 **Proposed new agent legs: zero.**
 
 Everything in the catalog is T0/T1/T2 or extends the one detached job that already exists.
 Jealousy is a pulse field. Gossip is a meanwhile development. Place properties are a
-continuity-tracker field. This is not a coincidence or restraint — it's what §1 predicts.
-A world that is _derived_ needs no one to describe it; it only needs someone to _live_ in
-it, and those agents already exist.
+continuity-tracker field. This is not a coincidence or restraint — it is what §1 predicts. A
+world that is *derived* needs no one to describe it; it only needs someone to *live* in it,
+and those agents already exist.
 
-If a candidate here seems to need a new leg, that is the signal to re-examine whether it
-should be derived instead.
+The engine's inference tiers are the same argument made general: model spend became an
+assignable per-actor property rather than a per-feature negotiation. If a candidate here
+seems to need a new leg, that is the signal to re-examine whether it should be derived
+instead.
 
 ---
 
 ## 8. Open questions
 
-- **OQ1 — Is the world one place or many?** (H.1) Does a character in two conversations
-  have one body and one clock, or two lives? Everything keys to `(chatId)` today. The
-  answer gates cross-chat continuity, and "chat becomes less 1-on-1" makes it urgent. **A
-  product ruling, not a design one.**
-  - Owner ruling (2026-07-16): it will be many worlds. Pursue one or more of the
-    following, whichever proves the better design:
-    1. Keep characters as isolated entities and put as much world-related design on
-       sessions, so characters can be used in many worlds.
-    2. Allow worlds to have different lore and gameplay mechanics while the core
-       simulation mechanics stay the same.
-    3. Require characters to be associated with a world _type_ on creation. There can be
-       template types and users can create their own; characters are nested in those
-       worlds so their attributes align with the world's settings.
-- **OQ2 — Do places get properties?** (§D) The narrow challenge to "no location model." The
-  claim is that properties ≠ navigation and only navigation broke. If that's accepted, §B
-  has a hook and D.2's privacy gate lands cheaply. If not, the environmental layer has
-  nowhere to attach and §B shrinks to weather-as-mood-tint.
-  - Owner ruling (2026-07-16): locations come back, but simpler. The old way was tedious
-    and messy; what is worth keeping is the ability to build rich locations — furniture,
-    linked characters as owners or inhabitants, inclusion in routines, mapping between
-    locations. Whatever is designed must also be procedurally generable in-game, with
-    strong guardrails to reduce false positives and to prevent worlds with hundreds of
-    duplicate or erroneous locations that are never used or that confuse the game logic.
-- **OQ3 — Where's the ceiling on realism?** (A.4, A.15) Bladder, hormonal phase, fertility.
-  The taxonomy says what a meter _is_; nothing says what a meter _should be_ in a romance
-  product. Body-needs already frames it honestly: _"A romance scene interrupted by a
-  bathroom beat is either charming or fatal, and nobody knows which until it is played."_
-  Needs a rule, not case-by-case rulings.
-  - Owner ruling (2026-07-16): there is no ceiling. Order the work most-useful-to-the-game
-    first, but leave room to implement more niche and advanced systems as development
-    continues. On the romance scene interrupted by a bathroom beat: allow some degree of
-    _sway_ within these systems, so an NPC doing something it finds important (such as
-    making love) can hold off on eating, sleeping and so on — to a degree; an exhausted
-    person probably wouldn't want to have sex.
-- **OQ4 — Does the player have a body?** (A.12, §4.7) Sim-tracked or player-declared?
-  - Owner ruling (2026-07-16): yes. It was modelled in the world sessions and simplified
-    while testing character chat; it is close to time to bring it back and flesh it out.
-    The player character must abide by most of the same rules as NPCs, but its initial
-    contracts are simpler because personality and demeanor fields need not be stored —
-    the player acts the player character out.
-- **OQ5 — Does `desire` get scheduled?** (A.5) Arousal is knowingly mistuned until it lands,
-  and it currently sits in no plan's slices. Either schedule it or accept the compromise
-  permanently and say so.
-  - Owner ruling (2026-07-16): yes, `desire` gets scheduled. This doc is still at the
-    brainstorming phase, so slot it wherever is logical; it can be moved later.
-- **OQ6 — What arbitrates the salience bus?** (6.3) Urgency alone, or a kind priority? And
-  does a need _interrupt_ or only _color_? Body-needs OQ-B says "settle on the first
-  playtest, not in this doc" — agreed, but the bus has to exist to be playtested.
-  - Owner ruling (2026-07-16): agrees with the GPT design review's recommendation to
-    start breaking up the state management system, which is too siloed. Those
-    recommendations are still to be reviewed in full.
-- **OQ7 — Which overlay path wins?** Four separate paths move dispositions today
-  (`stateDispositionOverlays` for arousal/intoxication, `regardDispositionOverlays`,
-  `applyChatTraitOverlays`, `conditionMoodBaselineShift`) with **no declared composition
-  order** — and two shipped fixes (fidelity's one-band clamp, meter-economy's arousal
-  re-scope) are both chipping at it from different sides. Every meter in §A adds a
-  potential fifth. In-house precedent to reuse: attribute provenance already has
-  `SOURCE_PRECEDENCE` + `resolveProvenance`. Same shape, plus a total band-step budget so
-  overlays can't stack into a different person.
-  - Owner ruling (2026-07-16): these paths may need redesigning entirely so they compose
-    more elegantly. A deeper look is still owed.
+All seven were ruled on by the owner in 2026-07-16. Recorded with what happened to each.
+
+- **OQ1 — Is the world one place or many?** **Ruled: many worlds**, pursuing whichever
+  design proves better among: characters as isolated entities reusable across worlds; worlds
+  with their own lore and mechanics over shared core simulation; or characters associated
+  with a world *type* at creation, with template types plus user-created ones, so a
+  character's attributes align with her world's settings. **Realized** for the successor
+  lane — a chat is bound to its own world. The legacy lane is unchanged (H.1).
+- **OQ2 — Do places get properties?** **Ruled: locations come back, but simpler** — rich
+  locations with furniture, linked characters as owners or inhabitants, inclusion in
+  routines, and mapping between locations; procedurally generable in-game with strong
+  guardrails against hundreds of duplicate or erroneous locations. **Realized** engine-side
+  as zones with access and privacy. The legacy lane still has none (§D).
+- **OQ3 — Where's the ceiling on realism?** **Ruled: there is no ceiling.** Order the work
+  most-useful-to-the-game first, but leave room for niche and advanced systems later. On the
+  romance scene interrupted by a bathroom beat: allow some *sway*, so a character doing
+  something she finds important can hold off on eating or sleeping — to a degree; an
+  exhausted person probably wouldn't want sex. **The sway mechanic is unbuilt** and belongs
+  with body-needs OQ-A.
+- **OQ4 — Does the player have a body?** **Ruled: yes.** It was modelled in world sessions
+  and simplified while testing character chat; the player character must abide by most of
+  the same rules as NPCs, though its contracts are simpler because personality and demeanor
+  need not be stored — the player acts the character out. **Half realized** (A.12).
+- **OQ5 — Does `desire` get scheduled?** **Ruled: yes**, slotted wherever is logical.
+  **Not done** — it is still in no plan's slices (A.5). This is the one ruling with nothing
+  behind it.
+- **OQ6 — What arbitrates the salience bus?** **Ruled** in favor of starting to break up the
+  over-siloed state management. **Not done** (§6.3) in either lane.
+- **OQ7 — Which overlay path wins?** Four separate paths move dispositions today —
+  arousal/intoxication state overlays, regard overlays, trait overlays, and condition mood
+  shifts — with **no declared composition order**, and every meter in §A adds a potential
+  fifth. **Ruled: these paths may need redesigning entirely so they compose more elegantly;
+  a deeper look is still owed.** Unchanged, and the in-house precedent to reuse is still
+  attribute provenance's source precedence — same shape, plus a total band-step budget so
+  overlays cannot stack into a different person.
 
 ---
 
-## 9. Sequencing sketch (not a commitment)
+## 9. What to build next, from this doc
 
-Dependency order, since much of it is already implied by the queue:
+The dependency order, restated against what now exists:
 
-1. **meter-economy** (queued) — lands `meters/reads.ts`, clock-keyed drift, `ScheduleEntry.kind`,
-   `rhythmBodyPatch`. **Nothing here is designable before it.**
-2. **body-needs** (queued) — proves the reserve template a second time, lands
-   `deriveRhythmPressure` and the needs channel, collapses the action fork.
-3. **The salience bus** (6.3) — before the catalog can push into it. Small, pure, testable.
-4. **Environment core** (B.1–B.4, B.7) — all T0/T1, no dependencies beyond the read seam.
-   The single biggest felt change per line of code in this doc.
-5. **`SceneFrame` + place properties** (D.1–D.3) — unblocks privacy, the intimacy-notes chat
-   port, and `deriveArousalSigns`.
-6. **`desire`** (A.5) — unblocks honest arousal.
-7. **Meter law by class** (6.1) — once there are enough meters to justify it. Probably
-   after §A has four or five more members, not before.
-8. **LOD** (6.6) — when roster > 4 is real, and not one day sooner.
+1. **The salience bus** (§6.3) — small, pure, testable, and the only true prerequisite left.
+   Every catalog entry that produces a want is noise without it, and it is unbuilt in both
+   lanes. Build it first.
+2. **`desire`** (A.5) — owner-scheduled, unowned, and the unblocker for honest arousal
+   tuning in both lanes.
+3. **Environment core** (B.1–B.4, B.7) — all T0/T1, and cheaper than when this was written
+   because the chat lane now has a place to put the answer. The single biggest felt change
+   per line of code in this doc.
+4. **A composed scene frame** (§6.4, D.1–D.2) — unblocks perception-gated arousal signs and
+   privacy-gated escalation in the legacy lane.
+5. **The chat-lane ports of what the engine proved** — meter law by class (§6.1), the read
+   seam (§6.2), and settle rationing (§6.6). Each now has a working reference
+   implementation, which changes them from designs into ports.
 
-Everything else is opportunistic: A.11 (wet hair, makeup), C.5 (birthdays), E.2 (jealousy),
-G.1 (means) are each a day's work with no dependencies and disproportionate felt effect.
-Good candidates to fold into whatever plan is adjacent rather than to plan on their own.
+The queued [chat-meter-economy.plan.md](chat-meter-economy.plan.md) and
+[chat-body-needs.plan.md](chat-body-needs.plan.md) remain the first two steps of items 2–5
+and should stay ahead of anything promoted from here.
+
+Everything else is opportunistic: makeup degradation (A.11), birthdays (C.5), jealousy
+(E.2), gifts (G.4) are each a day's work with no dependencies and disproportionate felt
+effect. Good candidates to fold into whatever plan is adjacent rather than to plan on their
+own.
 
 ---
 
 ## 10. Relationship to sibling plans
 
-**This doc supersedes nothing.** It is the umbrella the queued plans are already building
-toward, written down so the next ten features have a shape to fit.
+**This doc supersedes nothing and is superseded by nothing.** It is the umbrella the queued
+plans build toward, plus the ledger of what nobody owns.
 
-- [chat-meter-economy.plan.md](chat-meter-economy.plan.md) + [spec](chat-meter-economy.spec.md)
-  — owns the substrate/read law, the taxonomy, and the read seam. **This doc adopts all of
-  it wholesale**; §A and §B are downstream of it.
-- [chat-body-needs.plan.md](chat-body-needs.plan.md) — owns the needs channel and the action-fork
-  collapse. §A.2–A.4 are its slices, not this doc's.
-- [chat-offscreen-life.plan.md](chat-offscreen-life.plan.md) — owns the world tick. §E.3 and §H.2
-  extend it rather than parallel it.
-- [chat-plans-promises.plan.md](chat-plans-promises.plan.md) — owns commitments and the one
-  don't-teleport exception. §B.9 and §C.5 feed it.
-- [deferred.plan.md](deferred.plan.md) §"Old World-Model Plans" — this doc is the
-  `world-simulation.plan.md` that section anticipated; that entry now points here.
-- [world-map.plan.md](world-map.plan.md) — stays demoted. §D.5 agrees it's garnish; §D.6
-  agrees the navigation half should never come back.
+- [chat-meter-economy.plan.md](chat-meter-economy.plan.md) and its
+  [spec](chat-meter-economy.spec.md) own the substrate/read law, the taxonomy and the read
+  seam. **This doc adopts all of it wholesale**; §A and §B are downstream of it. The engine
+  adopted it too, which is why several catalog entries now read "built".
+- [chat-body-needs.plan.md](chat-body-needs.plan.md) owns the needs channel and the action
+  vocabulary. §A.2–A.4 are its slices, not this doc's.
+- [character-schema.plan.md](character-schema.plan.md) owns the authored fields this doc
+  keeps naming: typed rhythm kinds (C.1), birthdays (C.5), the attraction band (E.1) and
+  the means band (G.1).
+- [engine.plan.md](engine.plan.md) and [engine.spec.md](engine.spec.md) own the successor
+  lane, where much of this catalog was built. Read them for *how* an entry marked "built"
+  works; this doc only records that it does.
+- [finished/chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md) owns the
+  legacy lane's world tick. §E.3 and §H.2 extend it rather than parallel it.
+- [finished/chat-plans-promises.plan.md](finished/chat-plans-promises.plan.md) owns
+  commitments and the one don't-teleport exception. §B.9 and §C.5 feed it.
+- [deferred.plan.md](deferred.plan.md) — this doc is the world-simulation plan its "Old
+  World-Model Plans" section anticipated. Related parked stubs:
+  [deferred/physiology.plan.md](deferred/physiology.plan.md) (§A's triggered-response
+  generalization) and
+  [deferred/successor-npc-initiative.plan.md](deferred/successor-npc-initiative.plan.md)
+  (the successor lane's missing initiative cue, which §6.3 would serve).
 
-**If this doc leaves draft**, it should split rather than grow: `world-engine-refactor.spec.md`
-for rulings, and `world-engine-refactor.environment.md` for §B, which is the part most
-likely to become a real plan first.
+**If this doc ever leaves draft**, it should split rather than grow: a rulings companion,
+and an environment doc for §B, which is the part most likely to become a real plan first.

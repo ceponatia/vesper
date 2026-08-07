@@ -1,7 +1,16 @@
 # Body-attribute affordances — code organization
 
-Status: technical companion to
-[body-attribute-affordances.spec.architecture.md](body-attribute-affordances.spec.architecture.md)
+Status: **implemented** — technical companion to
+[body-attribute-affordances.spec.architecture.md](body-attribute-affordances.spec.architecture.md).
+The tree below was built as proposed for the domains that shipped; §"Shipped
+file map" records what exists.
+
+`src/contracts/affordances/` has since grown four siblings that this plan does
+not own — `contact/`, `scene/`, `permission/`, `guidance/`, and
+`domains/foot/`, all from the
+[romantic-contact](romantic-contact-affordances.plan.md) and
+[narrator-guidance](narrator-physical-guidance.plan.md) plans. They obey the
+same import direction and the same core; each is specified by its own plan.
 
 ## Proposed tree
 
@@ -178,11 +187,14 @@ regional rather than singular (the architecture spec's "regional collections").
 
 ### Developer preview surface
 
-| Path                                                             | What it owns                                                                                  |
-| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `src/app/api/admin/chat-inspector/[chatId]/affordances/route.ts` | The self-scoped admin route (`/api/admin/self/chat-inspector/:id/affordances` re-exports it). |
-| `src/components/chat/chat-inspector-affordances.tsx`             | The staged read-only panel on the memory inspector page.                                      |
-| `src/lib/api-inspector.ts`                                       | The healing client schema for the preview payload.                                            |
+- `src/app/api/admin/chat-inspector/[chatId]/affordances/route.ts` — the
+  self-scoped admin route; `/api/admin/self/chat-inspector/:id/affordances`
+  re-exports it.
+- `src/components/chat/chat-inspector-affordances.tsx` — the staged read-only
+  panel on the memory inspector page. It does not render the slice-7
+  recognition line (minor follow-up).
+- `src/lib/api-inspector.ts` — the healing client schema for the preview
+  payload.
 
 ## Rulings
 

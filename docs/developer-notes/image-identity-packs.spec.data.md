@@ -215,8 +215,7 @@ Relational rules:
 - an indexed derivation key covers character id, source hash, schema version,
   derivation version, and revision attempt for coalescing and diagnostics.
 
-The implementation migration takes the next available migration number. The docs
-do not reserve a number while other image work is active.
+Shipped as migration 0101.
 
 ### Why revisions are rows
 

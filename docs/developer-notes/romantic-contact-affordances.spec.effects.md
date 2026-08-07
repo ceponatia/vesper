@@ -1,7 +1,10 @@
 # Romantic contact affordances — observations, effects, and presentation
 
 Status: technical companion to
-[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md).
+**Not built** — slice 4's marks, material transfer, and effect commits are parked
+by owner ruling, and no shared regional mutation owner exists in either lane.
+This document is the requirement set for when the track is unparked.
 
 ## Contracts
 

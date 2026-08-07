@@ -1,8 +1,8 @@
 # Engine plan — Gate 0: establish trustworthy evidence
 
 Status: **ADVANCE — closed 2026-07-16.** See the exact evidence and bounded follow-ups in
-[gate0.closeout.md](gate0.closeout.md). This status permits Gate 1 only; no spike was
-promoted to production.
+[finished/engine/gate0.closeout.md](finished/engine/gate0.closeout.md). This status
+permitted Gate 1 only; no spike was promoted to production.
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in

@@ -1,8 +1,13 @@
 # Affordance spec draft — recognizable features
 
-Status: companion to
+Status: **implemented, dark** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted 2026-07-28)
+(promoted 2026-07-28; built as `src/contracts/appearance-features/` plus
+`src/contracts/affordances/recognition/` and the chat adapter in slice 7,
+behind `CHAT_RECOGNITION_CUES`, default OFF). No production turn can reach it:
+chat asserts exposure only for garment-covered locations and hair, so an
+uncovered nose reads unknown and recognition fails closed. Details in
+§"Honest silences".
 
 ## Purpose
 

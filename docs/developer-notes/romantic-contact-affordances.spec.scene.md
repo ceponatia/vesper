@@ -2,10 +2,12 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(slice 3A — the minimal scene/body-relations owner; contracts built 2026-07-31,
-fixture-driven, not lane-wired. Correction pass **3A.1**, 2026-07-31: the
-version law, the ordering law and support-set provenance, the boundary
-contradiction-drop law, and scene/contact referential integrity.)
+(slice 3A — the minimal scene/body-relations owner). Contracts built 2026-07-31
+with correction pass **3A.1** the same day: the version law, the ordering law and
+support-set provenance, the boundary contradiction-drop law, and scene/contact
+referential integrity. **Live in character chat since 2026-08-02** — the lane
+adapter seeds and folds this state on every turn while `CHAT_CONTACT_ACTIONS` is
+on, and the dark NPC authority executor resolves against the same owner.
 
 ## Why this exists
 
@@ -433,17 +435,30 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 
 ## File map
 
-| File              | Responsibility                                                                                                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vocabulary.ts`   | The closed vocabularies, the posture/zone rung table, the reach spans, and the actor-control table.                                                                                     |
-| `provenance.ts`   | `SceneProvenance`, `SceneFact`, `SceneEventRef`, the support id (reused `ContactEntityId`), evidence projection.                                                                        |
-| `state.ts`        | The five collections, canonical construction, keys, accessors, and the contact-projection door.                                                                                         |
-| `intents.ts`      | `SceneMovementIntent`, the actor-control law, the ordering law, `commitSceneIntent`, `applySceneIntents`.                                                                               |
-| `relations.ts`    | `sceneBodyZoneOf`, `sceneReach`, `sceneSupportOf`, and the `sceneGeometryRead` / `sceneSupportRead` projections.                                                                        |
-| `snapshot.ts`     | Boundary schemas, the version and contradiction laws, referential integrity, `parseSceneState`.                                                                                         |
-| `diagnostics.ts`  | The six codes this module emits.                                                                                                                                                        |
-| `test-support.ts` | `probe*` fixture builders. Deliberately **not** in the barrel.                                                                                                                          |
-| `scene.test.ts`   | 82 cases: vocabularies, zones, reach, absent facts, support, provenance, actor control, the ordering law, snapshot/replay, stored contradictions, housing, contact integration, purity. |
+All under `src/contracts/affordances/scene/`:
+
+- **`vocabulary.ts`** — the closed vocabularies, the posture/zone rung table, the
+  reach spans, and the actor-control table.
+- **`provenance.ts`** — `SceneProvenance`, `SceneFact`, `SceneEventRef`, the
+  support id (reused `ContactEntityId`), evidence projection.
+- **`state.ts`** — the five collections, canonical construction, keys,
+  accessors, and the contact-projection door.
+- **`intents.ts`** — `SceneMovementIntent`, the actor-control law, the ordering
+  law, `commitSceneIntent`, `applySceneIntents`.
+- **`relations.ts`** — `sceneBodyZoneOf`, `sceneReach`, `sceneSupportOf`, and the
+  `sceneGeometryRead` / `sceneSupportRead` projections.
+- **`snapshot.ts`** — boundary schemas, the version and contradiction laws,
+  referential integrity, `parseSceneState`.
+- **`diagnostics.ts`** — the six codes this module emits.
+- **`test-support.ts`** — `probe*` fixture builders. Deliberately **not** in the
+  barrel.
+- **`scene.test.ts`** — vocabularies, zones, reach, absent facts, support,
+  provenance, actor control, the ordering law, snapshot/replay, stored
+  contradictions, housing, contact integration, and purity.
+
+The lane adapter that fills this state from chat lives outside the module, in
+`src/server/engine/chat-contact-adapter.ts` (`seededChatScene` and the intent
+folds) and `src/server/engine/chat-npc-scene-execute.ts`.
 
 ## Public API
 
@@ -469,9 +484,9 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 - **No pathfinding, collision, gait, balance, cloth, or fluid.** Crossing a
   `distant` gap is `out_of_reach`; how a body would cross it is the scene's
   problem, not this module's.
-- **No production wiring.** Nothing is registered in `domains/` or any registry,
-  nothing is persisted, no schema changes. 3A is fixture-driven contracts; the
-  lane adapter that fills a scene from chat or simulation state is later work.
+- **No domain registration.** This module is not registered in `domains/` or any
+  phenomenon registry, and it owns no schema of its own — the state is persisted
+  by the lane, inside `character_chats.scene`.
 - **No behaviour.** This module never decides that a character moves, only
   whether a stated movement may be committed and what the result lets them
   reach. Desire, willingness, and reaction remain elsewhere, exactly as the
@@ -515,8 +530,9 @@ or contradictory fact, so the gap is nameable rather than a shrug.
 - **Nothing consumes `sceneSupportKind` yet.** It is carried for evidence and
   for a lane's own rendering; only `height` affects an answer. If it never earns
   its keep, it should go rather than become decoration.
-- **Who fills a scene, and when?** The lane adapter is out of 3A's scope, but
-  the shape of the question is already visible: a chat lane has no placement
-  facts at all today, so its first scenes will be authored ones, and the
-  provenance vocabulary's `authored` / `scene_default` split exists to keep that
-  visible rather than letting seeded facts masquerade as observed ones.
+- ~~**Who fills a scene, and when?**~~ **Answered 2026-08-02.** The character-chat
+  adapter seeds a scene from the present roster on every turn and folds the
+  movements the player wrote; the dark NPC executor seeds arriving participants
+  before resolving anything about them. Seeded facts stay distinguishable from
+  observed ones through the provenance vocabulary's `authored` / `scene_default`
+  split, exactly as anticipated.

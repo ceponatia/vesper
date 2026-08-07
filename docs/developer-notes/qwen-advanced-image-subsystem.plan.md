@@ -1,81 +1,137 @@
 # Qwen-family advanced image subsystem — controlled portraits and scenes
 
-Status: draft for owner review — revised 2026-08-06
+Status: draft — model choice ruled 2026-08-07 (build on Qwen Image Edit 2511;
+Qwen Image Edit Plus is the fallback). No code exists, the rest of the direction
+still awaits owner review, and no technical spec is written until it settles.
 
 Outcome: The owner can run a portrait or scene through a controlled experiment —
 supplying a pose or depth guide, a face reference, and an optional style — and
 compare it side by side with the ordinary result, so that an advanced image
 technique reaches players only when the comparison shows it is better.
 
-This is a product plan rather than a technical specification. It is intentionally
-plain English so the direction can be reviewed and revised before implementation
-details are locked down.
+## What this plan does not own
 
-Related work:
+Every advanced technique below rides on machinery three sibling plans already
+own. This plan owns only the Qwen-family recipes and the comparison lab that
+judges them; where a capability appears in both places, the sibling plan is the
+owner and this one is a consumer.
 
-- [image-model-capabilities.plan.md](image-model-capabilities.plan.md) provides the
-  shared model profiles, reference roles, controls, and Replicate transport that
-  every model-specific subsystem should reuse;
-- [image-render-quality.plan.md](image-render-quality.plan.md) owns prompt quality,
-  identity trials, result review, and repair policy;
-- [image-identity-packs.plan.md](image-identity-packs.plan.md) provides the
-  canonical portrait and face-detail references used to preserve identity;
-- [spatial-scene-images.plan.md](spatial-scene-images.plan.md) owns the larger
-  future system for producing consistent pose, depth, masks, and physically
-  controlled scenes.
+- [image-model-capabilities.plan.md](image-model-capabilities.plan.md) owns the
+  shared model profiles, reference roles, controls, and Replicate transport every
+  model-specific subsystem reuses. Two of its slices cover ground this plan
+  assumes: its Qwen LoRA library slice owns hosted LoRA selection, scale
+  validation, and compatibility, and its future-visual-controls slice owns the
+  input-binding vocabulary for mask, pose, and depth images. This plan does not
+  build a second copy of either.
+- [image-render-quality.plan.md](image-render-quality.plan.md) owns prompt
+  quality, identity trials, result review, and repair policy.
+- [image-identity-packs.plan.md](image-identity-packs.plan.md) owns the canonical
+  portrait and face-detail references used to preserve identity, and the
+  profile-aware gate that decides whether they may be sent.
+- [spatial-scene-images.plan.md](spatial-scene-images.plan.md) owns producing
+  consistent pose, depth, mask, and segmentation controls from a validated scene
+  frame. This plan consumes control maps; it does not invent a competing pose
+  representation, and its first fixtures are hand-reviewed stand-ins for that
+  system's later output.
+
+## Which model this plan runs on
+
+**Owner ruling (2026-08-07): build on Qwen Image Edit 2511. Register Qwen Image
+Edit Plus only if 2511 turns out not to honour control maps.**
+
+2511 is already seeded, already probed, and already the default for scenes and
+variants, so building on it costs no new registry work and keeps the experiment
+on the better identity model. Plus is the older 2509-generation checkpoint under
+a marketing name; 2511 is its successor.
+
+The one open fact is whether 2511 honours control maps, and the documentation
+cannot settle it in either direction:
+
+- 2509 (shipped on Replicate as "Qwen Image Edit Plus") explicitly advertises
+  native ControlNet support for depth, edge, and keypoint maps.
+- 2511's model card never mentions ControlNet. It lists only what is new —
+  reduced drift, character consistency, integrated LoRAs, geometric reasoning.
+- But 2511 is described as "an enhanced version over Qwen-Image-Edit-2509", and
+  **neither model exposes a control input at all**. The map travels as one of the
+  numbered images and the model interprets it, so there is no interface through
+  which the capability could have been removed — only training could have lost
+  it, and an enhancement release is unlikely to have.
+
+So the prior is that 2511 retains it, and one generation settles the question:
+send a pose or depth map as a numbered image to 2511 with a matching instruction
+and see whether the output honours the skeleton. This is Stage 0's first step. If
+it holds, every stage below runs on 2511 and Plus is never registered. If it
+fails, register and probe Plus as the controlled-composition connector and keep
+2511 for identity finishing — the two-model shape the earlier draft assumed.
+
+## Prerequisites
+
+- **Reference transport is not yet shared.** Role-aware reference selection and
+  the normalized render intent belong to the capabilities plan's early slices,
+  which are unbuilt. Stage 0's lab shell does not need them, but Stage 1 onward
+  does: without them a lab connector would arrange provider inputs itself, which
+  is exactly the duplication this plan's boundary forbids.
+- **Control-map input binding is not built.** The capabilities plan's future
+  visual-controls slice owns the mask/pose/depth input vocabulary this plan
+  consumes.
 
 ## Recommendation
 
 Use a **Qwen-family subsystem** as Vesper's first advanced, model-specific image
 prototype.
 
-Qwen Image Edit 2511 on its own is too narrow a base for the prototype. That
-model is useful for identity-preserving edits and LoRAs, but it does not by
-itself test the technically intricate controls this prototype is meant to explore.
-
-The revised subsystem should combine several Qwen workflows, each used for the
-job it actually supports:
+The subsystem combines Qwen workflows, each used for the job it actually
+supports:
 
 - **Qwen Image 2512** remains the normal starting point for a portrait created
   from text;
-- **Qwen Image Edit Plus** is the first controlled-composition connector, using
-  pose keypoints, depth maps, edge maps, and ordinary visual references;
-- **Qwen Image Edit 2511** is a candidate identity-finishing and LoRA connector;
+- **Qwen Image Edit 2511** is the controlled-composition connector, using pose
+  keypoints, depth maps, edge maps, and ordinary visual references, and is also
+  the identity and LoRA connector;
+- **Qwen Image Edit Plus** is held in reserve, registered only if the Stage 0
+  probe shows 2511 ignores control maps.
 
-This gives the prototype meaningful advanced tools immediately while keeping it
-close to a model family the application already understands.
+Running both roles on one model is the cheaper and better-identity arrangement,
+and it keeps the prototype on a model the application already understands. Should
+the probe fail, the roles split across two connectors and every stage below still
+holds — only the model behind the controlled-composition connector changes.
 
 ## Current provider facts
 
 The prototype should begin with a fresh live probe, but the following facts were
 verified against the Replicate model pages on 2026-08-06.
 
-### Qwen Image Edit Plus
+**Neither model exposes a control input.** No field named `pose`, `depth`, or
+`controlnet` exists on either Replicate interface. A control map is supplied as
+one of the numbered images, and the prompt states which image carries identity,
+pose, depth, clothing, location, or another role. That is still a real controlled
+workflow, but it means Vesper must understand the role of every input image
+rather than treating the inputs as an anonymous list — and it means no capability
+probe can detect control support. Only a generated result can.
 
-Qwen Image Edit Plus accepts one to three input images and advertises native
-ControlNet support for common structural conditions, including:
+### Qwen Image Edit 2511 — the plan's model
 
-- pose or keypoint maps;
-- depth maps;
-- edge maps.
+Accepts up to three reference images and one compatible LoRA, with instruction
+editing, seeds, quality controls, and adjustable LoRA strength. Already seeded,
+probed, and serving scenes and variants.
 
-Its Replicate interface does not expose a separate field named `pose`, `depth`, or
-`controlnet`. The control map is supplied as one of the numbered images, and the
-prompt explains which image supplies identity, pose, depth, clothing, location,
-or another role.
+Its model card does not mention ControlNet. It is nonetheless the expected
+control-capable model: it is published as an enhancement over 2509, its feature
+list covers only what is new, and control support lives in the weights rather
+than in an interface that could have been dropped. Community ComfyUI workflows
+report pose and depth control working on 2511. Stage 0 confirms this empirically
+before anything is built on it.
 
-That is still a real controlled workflow, but it means Vesper must understand the
-role of every input image rather than treating the inputs as an anonymous list.
+### Qwen Image Edit Plus — the fallback
 
-### Qwen Image Edit 2511
+The 2509-generation checkpoint. Accepts one to three input images and explicitly
+advertises native ControlNet support for pose or keypoint maps, depth maps, and
+edge maps — the only Qwen edit model to document the capability outright.
 
-Qwen Image Edit 2511 accepts up to three reference images and one compatible LoRA.
-It supports instruction editing, seeds, quality controls, and an adjustable LoRA
-strength.
-
-It does not expose dedicated mask, pose, depth, edge, or ControlNet fields. It
-should therefore be used for the capabilities it actually has: identity-aware
-editing, reference-guided refinement, and LoRA-assisted finishing.
+It is older than 2511 and weaker at identity, so it is registered only if Stage 0
+shows 2511 ignoring control maps. It has no registry row, no probed version, and
+no page under `docs/image-models/`; registering and probing it would be the first
+step of the fallback path.
 
 ## Goal
 
@@ -187,10 +243,12 @@ training and lifecycle cost.
 
 ### Honest multi-stage comparison
 
-The prototype should compare a controlled Qwen Image Edit Plus result against an
-optional Qwen Image Edit 2511 finishing pass. It must not assume that the finishing
-pass is better. A second pass that improves the face but changes the pose, outfit,
-body, camera, lighting, or setting is a regression.
+The prototype should compare a controlled result against an optional identity
+finishing pass. It must not assume that the finishing pass is better. A second
+pass that improves the face but changes the pose, outfit, body, camera, lighting,
+or setting is a regression — and when both passes run on 2511, the second pass
+has to justify its cost against a model that has already seen the same
+references.
 
 ### A repeatable subsystem pattern
 
@@ -289,7 +347,8 @@ starting point for a portrait without a source image.
 
 ### Controlled-composition connector
 
-Uses Qwen Image Edit Plus with numbered visual roles. It is responsible for pose,
+Uses Qwen Image Edit 2511 with numbered visual roles — or Qwen Image Edit Plus
+instead, if Stage 0 shows 2511 ignoring control maps. It is responsible for pose,
 depth, edge, outfit, location, and other controlled combinations.
 
 Because control maps travel through the same image list as ordinary references,
@@ -298,11 +357,18 @@ recorded order.
 
 ### Identity and LoRA finishing connector
 
-Uses Qwen Image Edit 2511 or another live-probed Qwen LoRA endpoint when a trial
-calls for identity reinforcement or a LoRA.
+Uses Qwen Image Edit 2511, or another live-probed Qwen LoRA endpoint, when a
+trial calls for identity reinforcement or a LoRA.
 
 This connector is optional for each job. A controlled result may be accepted
 without a finishing pass when it is already better.
+
+**When 2511 serves both roles, a finishing pass is a second pass of the same
+model** — identity references, no control map, a narrower instruction. That is a
+weaker prior than a genuine model change, so the trial must show the second pass
+earning its cost rather than assuming it does. If the fallback path is taken and
+the two connectors run different models, the finishing pass becomes a real model
+change and the comparison regains its original force.
 
 It remains behind the same subsystem boundary so the rest of Vesper does not need
 to understand node names or workflow files.
@@ -319,8 +385,8 @@ an optional identity-finishing pass. This is the default advanced portrait mode.
 
 ### Controlled Composition
 
-Uses pose, depth, or edge guidance through Qwen Image Edit Plus. It is the core
-experimental mode for both portraits and scenes.
+Uses pose, depth, or edge guidance through the controlled-composition connector.
+It is the core experimental mode for both portraits and scenes.
 
 ### Balanced
 
@@ -457,12 +523,21 @@ leaving every ordinary picker and default untouched.
 Pin or explicitly record the tested versions and run live capability probes.
 Record current normal portrait-variant and scene results on a fixed corpus.
 
-Exit: the lab can run and save an experimental job without changing normal image
-behavior.
+**First, settle the control question.** Send a pose or depth map to Qwen Image
+Edit 2511 as a numbered image with a matching instruction, and check whether the
+output honours the skeleton. This is one generation, and it decides the plan's
+shape: if 2511 honours control maps, every stage below runs on it and Plus is
+never registered; if it does not, register and probe Plus as the
+controlled-composition connector and keep 2511 for identity finishing. Record the
+result either way — no probe can answer this, so this generation is the only
+evidence that will ever exist.
 
-### Stage 1 — Qwen Image Edit Plus controlled portraits
+Exit: the control question is answered and recorded, and the lab can run and save
+an experimental job without changing normal image behavior.
 
-Add Qwen Image Edit Plus as an experimental connector and prove numbered roles for:
+### Stage 1 — controlled portraits
+
+Prove numbered roles on the controlled-composition connector for:
 
 - identity plus pose;
 - identity plus depth;
@@ -489,9 +564,9 @@ an unacceptable identity regression.
 Pass selected controlled results through Qwen Image Edit 2511 using the identity
 pack. Compare:
 
-- direct 2511 edit;
-- Edit Plus controlled result;
-- Edit Plus followed by 2511 finishing.
+- direct 2511 edit, no control map;
+- the controlled result;
+- the controlled result followed by an identity-finishing pass.
 
 Do not promote the finishing pass unless it improves identity without materially
 changing structure, clothing, body, camera, lighting, or setting.
@@ -569,8 +644,8 @@ The prototype succeeds when:
   baseline on the fixed corpus;
 - required identity references are never displaced silently by optional style,
   location, or control inputs;
-- Qwen Image Edit Plus alone and the optional 2511 finishing path are compared
-  rather than assuming the more complicated path wins;
+- the controlled result alone and the optional finishing path are compared rather
+  than assuming the more complicated path wins;
 - at least one compatible LoRA can be selected, validated, run, and reproduced;
 - the character LoRA pilot produces a clear evidence-based decision, including a
   valid decision not to ship it;
@@ -587,10 +662,10 @@ The prototype succeeds when:
 
 ### Control maps share the ordinary image input
 
-The Replicate Qwen Image Edit Plus interface accepts control maps in the same image
-list as identity and style references. Vesper must preserve explicit roles,
-ordering, and prompt wording so a pose map is never mistaken for a character
-reference.
+The Replicate Qwen edit interfaces accept control maps in the same image list as
+identity and style references — this is true of 2511 and Plus alike. Vesper must
+preserve explicit roles, ordering, and prompt wording so a pose map is never
+mistaken for a character reference.
 
 ### More stages can produce a worse image
 
@@ -648,12 +723,13 @@ image records.
 
 ## Recommended defaults
 
-- Build a Qwen-family subsystem, not a 2511-only subsystem.
-- Make Qwen Image Edit Plus controlled composition part of the initial prototype,
-  not a deferred optional stage.
+- Build on Qwen Image Edit 2511, and settle the control question with one
+  generation before building anything on top of it.
+- Make controlled composition part of the initial prototype, not a deferred
+  optional stage.
 - Test pose, depth, and edge independently before stacking controls.
-- Keep Qwen Image Edit 2511 as an optional identity and LoRA finisher rather than
-  assuming it belongs in every workflow.
+- Treat the identity and LoRA finishing pass as optional and evidence-gated
+  rather than assuming it belongs in every workflow.
 - Reuse the same `REPLICATE_API_TOKEN` and shared Replicate client.
 - Build an admin-only parallel lab path in the existing dev deployment.
 - Keep all ordinary model selections and buttons unchanged during the trial.
@@ -667,11 +743,15 @@ These decisions are unresolved and settle before implementation:
 
 - whether the first vertical slice should include both a controlled portrait and
   a controlled scene, or prove portraits first;
-- whether the existing seven-image test character set is suitable for the first
-  character LoRA pilot;
+- whether the owner's seven-image reference set for one test character is
+  suitable for the first character LoRA pilot (those files live on the owner's
+  disk only — the repository deliberately does not track them);
 - which initial control fixtures should be hand-reviewed pose, depth, and edge
   maps;
-- whether Qwen Image Edit 2511 or a Qwen Image Edit Plus LoRA variant should be
-  the preferred LoRA connector after live probing;
+- whether 2511's integrated LoRA support is sufficient for the LoRA stages, or a
+  separately probed Qwen LoRA endpoint is still wanted;
 - how much of the Advanced Image Lab should later remain available to ordinary
   character owners;
+- whether the LoRA stages belong here at all, or should be folded into the
+  capabilities plan's Qwen LoRA library slice, which already owns hosted LoRA
+  selection and compatibility.

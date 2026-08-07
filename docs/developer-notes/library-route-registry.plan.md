@@ -1,6 +1,9 @@
 # Library-kind registry + route factories — adding a kind should be a data edit
 
-Status: draft (sequenced after the measured client tranche; sequential suggestion writes are a settled invariant)
+Status: draft (sequenced after the measured client tranche; sequential suggestion
+writes are a settled invariant. Re-verified 2026-08-07: the kind→table map is
+still written three times, the four clone routes are still four files, and
+`withOwnedEntity` is still adopted by one detail route of five)
 
 Outcome: A developer can teach the library about a sixth kind of authored thing
 by adding one registry entry and re-exporting its routes, so that a fix to
@@ -129,8 +132,8 @@ view, and so each slice is independently verifiable.
   dispatch, ~180 of route duplication, three duplicate maps gone.
 - **Bounded queries:** alias resolution no longer scales with library size; a
   character save with many forge suggestions issues a bounded statement count.
-- Full gate one command at a time (lint → lint:cycles → typecheck → test →
-  jscpd), plus the route-authz check.
+- **The pull request's `verify` check is green**, including the route-authz job.
+  Validation is CI-only (root `CLAUDE.md`) — never invoke a gate locally.
 
 ## Risks & coordination
 

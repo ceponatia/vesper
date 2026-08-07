@@ -19,25 +19,34 @@ skip; the first subsequent exchange writes the ending — see §Rerun B — S5).
 
 ## Shared configuration
 
-| Item           | Value                                                                                                                                                              |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| App            | `vesper` on Fly.io, `https://vesper.fly.dev`                                                                                                                       |
-| Database       | Neon project `round-sky-30947574` (production)                                                                                                                     |
-| Account        | dedicated QA account `uxtest-main@vesper.local` (`uxtestmaina1b2c3d4e5f6g7`)                                                                                       |
-| Character      | Sabrina Vale, id `wdijgtnp5dnosx3or16wwsvv` — every chat fresh-start (`memory: "fresh"`), 1-on-1                                                                   |
-| Model          | chat default: `z-ai/glm-5.2` via OpenRouter (per-model reasoning `effort: low`), temperature = the narrative default                                               |
-| Flags          | `CHAT_CONTACT_ACTIONS` / `CHAT_PHYSICAL_CONSTRAINTS` — exact values per section below; **both off outside the labeled windows and returned to off after the runs** |
-| Player wording | player lines sent via `POST /api/chats/:id {kind:"send"}`; the reply is the streamed text verbatim; timestamps are client wall-clock UTC around each stream        |
+- **App:** `vesper` on Fly.io, `https://vesper.fly.dev`.
+- **Database:** Neon project `round-sky-30947574` (production).
+- **Account:** dedicated QA account `uxtest-main@vesper.local`
+  (`uxtestmaina1b2c3d4e5f6g7`).
+- **Character:** Sabrina Vale, id `wdijgtnp5dnosx3or16wwsvv` — every chat
+  fresh-start (`memory: "fresh"`), 1-on-1.
+- **Model:** chat default `z-ai/glm-5.2` via OpenRouter (per-model reasoning
+  `effort: low`), temperature = the narrative default.
+- **Flags:** `CHAT_CONTACT_ACTIONS` / `CHAT_PHYSICAL_CONSTRAINTS`, exact values
+  per section below; **both off outside the labeled windows and returned to off
+  after the runs**.
+- **Player wording:** player lines sent via `POST /api/chats/:id {kind:"send"}`;
+  the reply is the streamed text verbatim; timestamps are client wall-clock UTC
+  around each stream.
 
 **Deployments.**
 
-| Window                                   | Fly release               | Git commit                                        | Notes                        |
-| ---------------------------------------- | ------------------------- | ------------------------------------------------- | ---------------------------- |
-| Original trial (2026-07-31 19:20–19:57Z) | v13x (pre-1.2 build)      | `875ddb7` lineage (item 1.1 build)                | both flags ON for the window |
-| Rerun flag-off baselines (23:12–23:14Z)  | v139                      | `7eb1ea1` (item 1.2)                              | flags off                    |
-| Rerun flag-on attempt 1 (23:15–23:16Z)   | v140 (same image as v139) | `7eb1ea1`                                         | flags ON via secrets         |
-| Rerun flag-on attempts 2+ (23:27–23:38Z) | v141                      | `370d583` (item 1.2 + wardrobe restatement guard) | flags ON                     |
-| After the window                         | v142                      | `370d583`                                         | flags unset (off)            |
+| Window                                   | Fly release               | Notes                        |
+| ---------------------------------------- | ------------------------- | ---------------------------- |
+| Original trial (2026-07-31 19:20–19:57Z) | v13x (pre-1.2 build)      | both flags ON for the window |
+| Rerun flag-off baselines (23:12–23:14Z)  | v139                      | flags off                    |
+| Rerun flag-on attempt 1 (23:15–23:16Z)   | v140 (same image as v139) | flags ON via secrets         |
+| Rerun flag-on attempts 2+ (23:27–23:38Z) | v141                      | flags ON                     |
+| After the window                         | v142                      | flags unset (off)            |
+
+Commits behind those releases: v13x is the `875ddb7` lineage (the item-1.1
+build); v139 and v140 are `7eb1ea1` (item 1.2); v141 and v142 are `370d583`
+(item 1.2 plus the wardrobe restatement guard).
 
 **Disclosed setup change for the rerun.** The rerun requirements name a
 *modeled dressed* target. The original trial's Sabrina had **no modeled
@@ -127,10 +136,18 @@ the prose had already shed two beats earlier). Scores C4 / Ct3 / N5 / NI5.
 
 **B-S1 ledger rows** (`chat_contact_events`, complete):
 
-| guard                      | event_ref                          | seq | kind            | contact_id                                                                                       | reason    | story_minute | payload highlights                                                                                                                                               |
-| -------------------------- | ---------------------------------- | --- | --------------- | ------------------------------------------------------------------------------------------------ | --------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `m5klutduf30i5sko42jxhn5j` | `contact:m5klutduf30i5sko42jxhn5j` | 0   | contact_started | `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j` | —         | 2            | affectionate rest, pressure light, `materialBetween: []`, `directSkinContact: true` (the state said nothing was worn), actorControl allowed, policy not_required |
-| `myp9c520wfy09lris5mdra46` | `contact:myp9c520wfy09lris5mdra46` | 0   | contact_ended   | same contact id                                                                                  | withdrawn | 4            | endedByEventRef = the release exchange's own ref                                                                                                                 |
+Two rows, both `seq` 0.
+
+- **`contact_started`**, story minute 2 — guard `m5klutduf30i5sko42jxhn5j`,
+  event_ref `contact:m5klutduf30i5sko42jxhn5j`, contact_id
+  `body␟player␟hands␟␟␞body␟wdijgtnp5dnosx3or16wwsvv␟shoulders␟␟␝contact:m5klutduf30i5sko42jxhn5j`,
+  no reason. Payload: affectionate rest, pressure light, `materialBetween: []`,
+  `directSkinContact: true` (the state said nothing was worn), actorControl
+  allowed, policy not_required.
+- **`contact_ended`**, story minute 4, reason `withdrawn` — guard
+  `myp9c520wfy09lris5mdra46`, event_ref
+  `contact:myp9c520wfy09lris5mdra46`, same contact id. Payload:
+  `endedByEventRef` = the release exchange's own ref.
 
 Scores C5 / Ct5 / N5 / NI5 — held across an unrelated beat ("still under your
 hand"), clean state-aligned release, no resurrection.
@@ -260,10 +277,12 @@ Double teleport; held-touch continuity vanished silently. C2/Ct3.
 
 **B-S6 ledger rows** (complete):
 
-| guard                      | event_ref                          | seq | kind            | reason        | story_minute |
-| -------------------------- | ---------------------------------- | --- | --------------- | ------------- | ------------ |
-| `v128hcbpx09rq1mhagemendp` | `contact:v128hcbpx09rq1mhagemendp` | 0   | contact_started | —             | 2            |
-| `xdame1lrkhcowsm0ovj42b3t` | `contact:xdame1lrkhcowsm0ovj42b3t` | 0   | contact_ended   | scene_changed | 3            |
+Two rows, both `seq` 0, each event_ref being `contact:<guard>`.
+
+- **`contact_started`**, story minute 2, no reason — guard
+  `v128hcbpx09rq1mhagemendp`.
+- **`contact_ended`**, story minute 3, reason `scene_changed` — guard
+  `xdame1lrkhcowsm0ovj42b3t`.
 
 State-level win (the held touch ended durably through the place change);
 prose-level failure (the invented desk scene still rendered). Partial.
@@ -372,10 +391,23 @@ send).
 
 **Ledger rows (complete):**
 
-| guard                      | event_ref                          | seq | kind            | reason        | story_minute | payload (decisive fields)                                                                                                                                                                                                                                                                                                                             |
-| -------------------------- | ---------------------------------- | --- | --------------- | ------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hfd48gsby9ts24716zvm26lk` | `contact:hfd48gsby9ts24716zvm26lk` | 0   | contact_started | —             | 2            | `materialBetween: [{layerId: "osj9y0tvpcplggns5vljdgev:root", order: 0, tactileTransmission: 6000, thermalTransmission: 4000, moistureTransmission: 0, visibleThrough: false, evidence: [{kind: "coverage", ref: "coverage:shoulders", detail: "opaque"}]}]` — **the cloth layer, from the CURRENT cut with no persisted capture and no settle wait** |
-| `f1nzendkis4xwq42ixgp4zoe` | `contact:f1nzendkis4xwq42ixgp4zoe` | 0   | contact_ended   | **separated** | 3            | same contact id; endedBy the step-back exchange's ref                                                                                                                                                                                                                                                                                                 |
+Two rows, both `seq` 0, each event_ref being `contact:<guard>`.
+
+- **`contact_started`**, story minute 2, no reason — guard
+  `hfd48gsby9ts24716zvm26lk`. Decisive payload field:
+
+  ```json
+  { "materialBetween": [{ "layerId": "osj9y0tvpcplggns5vljdgev:root", "order": 0,
+    "tactileTransmission": 6000, "thermalTransmission": 4000,
+    "moistureTransmission": 0, "visibleThrough": false,
+    "evidence": [{ "kind": "coverage", "ref": "coverage:shoulders", "detail": "opaque" }] }] }
+  ```
+
+  That is **the cloth layer, from the CURRENT cut with no persisted capture and
+  no settle wait** — the point the rerun existed to prove.
+- **`contact_ended`**, story minute 3, reason **`separated`** — guard
+  `f1nzendkis4xwq42ixgp4zoe`, same contact id, endedBy the step-back exchange's
+  ref.
 
 **Scene projection after:** `contacts: []`; proximity `player ↔ Sabrina =
 near`, provenance evidence `chat.contact.departure` (storyTime 3); facing

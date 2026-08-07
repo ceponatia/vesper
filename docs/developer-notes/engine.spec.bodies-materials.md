@@ -61,16 +61,26 @@ between post-turn agents are forbidden.
 
 ### 25.5 Rhythm and window crossing
 
-Schedule-driven body support is a current-lane migration aid, not the successor's final
-action history.
+An actor's authored rhythm is a set of `sim_body_rhythms` rows — a typed kind, a window in
+minutes of day, and the actor it belongs to — seeded like action definitions and copied to
+fork children. Three kinds are live:
 
-The owner-approved rhythm body behavior is window crossing: landing at 6am may not cross
-the same routine window as landing at 8am. It MUST NOT blanket-restore meals, hygiene, or
-sleep. The arrival-covering rhythm outfit behavior is a different function and does not
-prove the body algorithm.
+- **`sleep`** anchors the circadian pressure curve (§25.4). Pressure is derived purely
+  from the story clock against the actor's own window and is never stored.
+- **`wash`** rows are window-crossing self-care. A crossing is a deterministic clock point
+  folded into the §25.2 piecewise integration and into the threshold solver, so landing at
+  6am and landing at 8am genuinely differ and a crossing MAY suppress or preempt a pending
+  hygiene threshold. A skip credits only the windows it actually crossed; crossings MUST
+  NOT blanket-restore meals, hygiene, or sleep.
+- **`meal`** rows are routine-controller boundaries (§19.2.1), never a crossing credit. An
+  event-LOD actor's routine alarm fires at the window start and eating happens as real
+  §26.6 item consumption.
 
-inferScheduleKind is a temporary migration adapter. New schedule data MUST use a typed
-kind. Unknown text MUST remain unknown and MUST NOT cause hard body or location effects.
+No per-day tick and no per-rhythm trigger exists: a window is a boundary the solver
+already sees.
+
+Schedule kind is typed data. There is no text inference over authored schedule prose, and
+untyped text MUST NOT produce hard body or location effects.
 
 ## 26. Materials, inventory, and resources
 

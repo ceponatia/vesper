@@ -1,8 +1,12 @@
 # Affordance spec draft — garment interaction
 
-Status: companion to
+Status: **implemented** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; built as `src/contracts/affordances/domains/garment/`
+plus its chat adapter in slice 6). Wet surface state and effective opacity run;
+`garment.wet_cling` is built and production-silent because no wardrobe field
+records fit; `garment.wind_or_motion_response` and `garment.pose_drape` are
+deferred, and are now unblocked but unwired — see §"First release scope".
 
 ## Purpose
 
@@ -263,7 +267,11 @@ final coverage read. Effective opacity ships **alongside** cling because it
 decides what underlying details remain perceptible.
 
 Deferred until the shared scene/body-relations owner exists:
-`garment.wind_or_motion_response` and `garment.pose_drape`.
+`garment.wind_or_motion_response` and `garment.pose_drape`. That owner shipped
+2026-07-31 (`src/contracts/affordances/scene/`), so both are now waiting on
+adapter wiring rather than on a missing owner — neither phenomenon is
+registered, and the garment payload still carries no pose. Wind additionally
+needs a per-body motion read, which nothing owns in either lane.
 
 ### Effective coverage is captured, not reconstructed
 
@@ -386,12 +394,12 @@ no counterpart there and always survive.
 
 ### Deferred, and the diagnostics that hold the silence
 
-| Deferred                              | Why                                                      | Where the silence shows                                        |
-| ------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| `garment.wind_or_motion_response`     | no wind/motion owner (shared scene/body-relations owner) | not registered at all — no permanently-suppressed row per read |
-| `garment.pose_drape`                  | no pose owner                                            | not registered                                                 |
-| `garment.wet_cling` **in production** | no fit and no pose ⇒ no contact                          | `affordance.input.unavailable` on the `contacts` dependency    |
-| intimate garment cues                 | chat lane has no narrative-focus/consent owner           | `intimate_gated` (consent) / `not_narrative_focus` (relevance) |
+| Deferred                              | Why                                           | Where the silence shows                      |
+| ------------------------------------- | --------------------------------------------- | -------------------------------------------- |
+| `garment.wind_or_motion_response`     | scoped out of the first release; wind exists  | not registered                               |
+| `garment.pose_drape`                  | needs pose — owner exists 2026-07-31, unwired | not registered                               |
+| `garment.wet_cling` **in production** | no fit recorded ⇒ no contact established      | `affordance.input.unavailable` on `contacts` |
+| intimate garment cues                 | no narrative-focus/consent owner in chat      | `intimate_gated` / `not_narrative_focus`     |
 
 `effectiveFlutterLoad` and `effectiveDrapeStiffness` are derived and
 fixture-tested anyway: the spec names them as shared mechanics, stiffness feeds

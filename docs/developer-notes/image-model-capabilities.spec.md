@@ -3,9 +3,9 @@
 Status: companion to
 [image-model-capabilities.plan.md](image-model-capabilities.plan.md)
 
-Related shipped foundation:
-[image-model-registry.plan.md](image-model-registry.plan.md) and
-[image-model-registry.spec.md](image-model-registry.spec.md).
+Shipped foundation this extends:
+[image-model-registry.plan.md](finished/image-model-registry.plan.md) and
+[image-model-registry.spec.md](finished/image-model-registry.spec.md).
 
 ## Scope
 
@@ -25,29 +25,67 @@ The first migration and profile seed must be behavior-preserving. Existing model
 ids and slugs remain valid stored selections and resolve to a default profile for
 the requested task.
 
+## Implementation status
+
+Everything below is design unless this table says otherwise. "Trial only" means
+the code exists and is exercised by the identity-pack fixed-trial harness, but no
+player-facing render lane calls it.
+
+| Section                             | Status                        |
+| ----------------------------------- | ----------------------------- |
+| Extensions to `image_models`        | shipped 2026-08-05 (mig 0100) |
+| Advanced capability contract        | shipped; probe fills nothing  |
+| `image_model_profiles`              | shipped 2026-08-05 (mig 0100) |
+| Profile task eligibility            | shipped 2026-08-05            |
+| Reference policy                    | contract only; no selector    |
+| Normalized controls                 | shipped 2026-08-05            |
+| `image_loras`                       | not started                   |
+| Image sets                          | not started                   |
+| Profile resolution                  | shipped 2026-08-05, dormant   |
+| Normalized render intent            | not started                   |
+| Prompt strategies                   | trial only; 3 of 7 arms       |
+| Reference preparation and transport | not started                   |
+| Control mapping                     | trial only                    |
+| Dimension negotiation               | not started                   |
+| Replicate prediction shell          | timeouts only; single-output  |
+| Version candidate and promotion     | not started                   |
+| Model-specific seeded profiles      | not started                   |
+| Admin UI                            | not started                   |
+
 ## Current anchors
 
-The current implementation is spread across these seams:
+The implementation is spread across these seams:
 
 - `src/contracts/images/image-models.ts` — model record, surface filtering,
   reference capacity, and aspect selection;
+- `src/contracts/images/image-model-capabilities.ts` — reviewed capability
+  vocabulary and the advanced-capability contract;
+- `src/contracts/images/image-model-profiles.ts` — profile record, normalized
+  controls, eligibility, and the pure resolver;
 - `src/server/ai/replicate-probe.ts` — save-time OpenAPI probe;
-- `src/server/ai/replicate.ts` — input construction, reference transport,
-  prediction polling, output download, and file cleanup;
+- `src/server/ai/replicate.ts` — input construction, the reserved-field set,
+  reference transport, prediction polling, output download, and file cleanup;
+- `src/server/ai/image-control-mapping.ts` — normalized controls onto one
+  version's declared fields, plus provider-override validation;
 - `src/server/ai/image-providers.ts` — scene attempt ordering and capability
   checks;
 - `src/server/images/models.ts` — registry resolution, shape negotiation, and
   crop normalization;
+- `src/server/images/model-profiles.ts` — profile loading and task resolution;
+- `src/server/images/render-profile.ts` — the profile compile step
+  (`compileProfileRenderPlan`) and the version-pin rule;
+- `src/server/images/quality-presets.ts` — the reviewed-quality seam that
+  rewrites a model's constants and prompt dialect at the render boundary;
 - `src/server/images/scene.ts` — scene degradation ladder and the current
   three-reference buffer cap;
 - `src/server/images/variants.ts`, `entity.ts`, `chat-look.ts`, and the portrait
   lane — individual callers that should eventually emit the shared render
   intent.
 
-The current registry fields remain useful. In particular,
-`referenceField`, `referenceArity`, `referenceTransport`, `maxReferences`,
-`aspectMode`, `supportedAspects`, `outputFormat`, and `extraInput` continue to
-serve the basic request path.
+The registry fields remain useful. In particular, `referenceField`,
+`referenceArity`, `referenceTransport`, `maxReferences`, `aspectMode`,
+`supportedAspects`, `outputFormat`, and `extraInput` continue to serve the basic
+request path.
 
 ## Design invariants
 
@@ -74,7 +112,11 @@ The following rules are normative:
 
 ### Extensions to `image_models`
 
-Add the following fields to the existing table:
+**Shipped 2026-08-05** in `drizzle/0100_daffy_mystique.sql`, which also rates the
+six seeded models. These fields are the registry table's, but they are specified
+here rather than in the registry spec because the capabilities work owns them.
+
+The fields:
 
 - `probedVersionId` — nullable text. The exact version whose schema produced the
   stored mechanical capabilities. For a pinned slug, this must equal the pinned
@@ -89,19 +131,28 @@ Add the following fields to the existing table:
   constraints not represented by the current normalized columns.
 - `updatedAt` — timestamp used when showing capability and version changes.
 
-The reviewed fields are never overwritten by a normal re-probe. A candidate
-version flow may copy them forward but must not silently improve or downgrade a
-quality judgment.
+The reviewed fields are never overwritten by a normal re-probe — the admin PATCH
+route accepts them and deliberately excludes them from the re-probe write set. A
+candidate version flow may copy them forward but must not silently improve or
+downgrade a quality judgment.
 
 `advancedCapabilities` is version-specific provider data. It is replaced
-atomically when the active version changes.
+atomically when the active version changes. It is also deliberately not settable
+through the admin route: the probe cannot derive control bindings yet, so a write
+path would only ever blank it.
+
+`probedVersionId` is written by the create route and by an explicit re-probe. The
+six seeded rows carry null, because the seed predates the column — a controlled
+comparison therefore refuses them until an admin re-probes.
 
 ### Advanced capability contract
 
-The contract should use a zod schema exported from
-`src/contracts/images/image-model-capabilities.ts`.
+**Shipped 2026-08-05** as `src/contracts/images/image-model-capabilities.ts`. The
+probe does not populate it, so every row holds `{}` and every optional control is
+dropped with a `no_binding` reason at mapping time — which is exactly current
+render behavior.
 
-A representative shape is:
+The shape:
 
 ```ts
 export interface ImageInputBinding {
@@ -164,7 +215,8 @@ used to construct a payload by itself.
 
 ### `image_model_profiles`
 
-Add a profile table with:
+**Shipped 2026-08-05** in `drizzle/0100_daffy_mystique.sql`, with 17 built-in
+profiles seeded. The table:
 
 - `id` — text primary key;
 - `imageModelId` — foreign key to `image_models`, delete cascade;
@@ -207,27 +259,38 @@ enabled. Tasks without a legacy surface use enabled profiles directly.
 A later cleanup may replace the legacy toggles, but this plan does not require
 that cleanup.
 
-Only one enabled profile may be the global default for a task. Enforce this with
-a transaction and, where supported cleanly by the migration conventions, a
-partial unique index.
+Only one enabled profile may be the global default for a task. Enforced by the
+partial unique index `image_model_profiles_default_per_task` on `(task) WHERE
+is_default AND enabled`. `timeoutMs` is bounded by a table check constraint at
+30 seconds through 15 minutes, matching the zod schema.
 
 ### Profile task eligibility
+
+**Shipped 2026-08-05** as `profileEligibility` /
+`imageProfileOffered`.
 
 A profile with `operation: generate` requires `model.canGenerate`.
 
 A profile with `operation: edit` requires `model.canEdit` and a non-`none`
 `editKind`.
 
-Identity-critical tasks such as `variant`, `scene`, and `chat_look` should reject
-or visibly warn on `identityPreservation: weak`. They must not automatically
-enable a model merely because `canEdit` is true.
+Identity-critical tasks (`variant`, `scene`, `chat_look`) **reject** rather than
+warn: `identityPreservation: weak` yields `identity_too_weak` and
+`editKind: img2img` yields `img2img_identity_task`, and either drops the profile
+from the offered set. See the slice 1 rulings at the end of this document.
+`unknown` stays permissive.
 
 `img2img` models may be used by a deliberate remix profile. They are not eligible
-for the ordinary scene default without an explicit owner override.
+for the ordinary scene default without an explicit owner override, which is not
+implemented.
 
 ### Reference policy
 
-A profile’s `referencePolicy` has this shape:
+Contract only — `imageReferencePolicySchema` exists and the seeded profiles carry
+policies, but nothing reads them: no role-aware selector exists yet, and lanes
+still pass positional buffers. Slice 3 builds the selector.
+
+A profile's `referencePolicy` has this shape:
 
 ```ts
 export const imageReferenceRoles = [
@@ -278,7 +341,9 @@ which roles were omitted.
 
 ### Normalized controls
 
-Profiles and per-render advanced choices use normalized names:
+**Shipped 2026-08-05** as `imageRenderControlsSchema` /
+`imageControlDefaultsSchema`. Profiles and per-render advanced choices use
+normalized names:
 
 ```ts
 export interface ImageRenderControls {
@@ -307,7 +372,9 @@ image attempt.
 
 ### `image_loras`
 
-Add an administrator-managed LoRA library:
+Not started — no table, no contract, no route. Slice 6. The design:
+
+An administrator-managed LoRA library:
 
 - `id` — text primary key;
 - `label`;
@@ -350,7 +417,8 @@ prompt fitting.
 
 ### Image sets
 
-The multiple-output slice adds:
+Not started — no tables, no columns, and the provider shell still returns one
+image. Slice 8. The multiple-output slice adds:
 
 - `image_sets` with `id`, `ownerId`, `task`, `profileId`, `prompt`, `status`,
   `meta`, `createdAt`, and `updatedAt`;
@@ -366,8 +434,11 @@ create an image set.
 
 ## Profile resolution
 
-Add a pure resolver in `src/contracts/images/image-model-profiles.ts` and a
-server loader in `src/server/images/model-profiles.ts`.
+**Shipped 2026-08-05.** The pure resolver is `resolveImageProfile` in
+`src/contracts/images/image-model-profiles.ts`; the server loader is
+`resolveImageProfileForTask` in `src/server/images/model-profiles.ts`. No
+player-facing lane calls either — the identity-pack trial harness is the only
+consumer, and every production lane still calls `resolveSurfaceModel`.
 
 The resolver receives a task and a stored selection. It applies this order:
 
@@ -386,6 +457,22 @@ A resolved profile includes the parsed model record. Callers never load the
 model and profile independently.
 
 ## Normalized render intent
+
+Not started — neither file exists and no lane emits an intent. This is slice 2,
+and it is the gate on the identity-pack plan's render-lane slice and the
+visual-state plan.
+
+**What already exists and must be reused rather than re-invented.**
+`compileProfileRenderPlan` in `src/server/images/render-profile.ts` performs
+steps 5–11 of the resolution order below for a single-image render: reviewed
+quality seam, strategy-compiled prompt, model-dialect preparation, negative
+resolution, control mapping, override validation, aspect choice, and version pin.
+It returns a plan carrying the final prompt, the provider-shaped `controlInput`,
+an always-numeric `timeoutMs`, and the pinned version. `renderWithModel` accepts
+exactly those three as optional pass-throughs, so a caller that resolves a
+profile can already drive a payload end to end. `renderImageIntent` should call
+the compile step and add only what a trial has no use for: reference selection by
+policy, LoRA resolution, per-request control overrides, and image sets.
 
 Create `src/contracts/images/render-intent.ts` for serializable types and
 `src/server/images/render-intent.ts` for the buffer-bearing server type.
@@ -454,6 +541,18 @@ returns `Buffer[]` and persists through the image-set pipeline.
 `promptStrategy` is not arbitrary code stored in the database. It is an enum
 resolved through a code registry.
 
+**Partly built, trial only.** `compilePromptForStrategy` in
+`src/server/images/render-profile.ts` is that registry, written as an exhaustive
+switch rather than a framework because only three arms have an implementation.
+`instruction_edit` and `text_to_image_description` compile the identity-reference
+prompt and name references only when two or more need disambiguating;
+`multi_reference_compose` names every reference from one upward. The other four
+— `text_repair`, `example_transform`, `style_render`, `coherent_set` — refuse
+with `unsupported_prompt_strategy`, because each needs a contract the identity
+vocabulary does not carry, and compiling one anyway would produce a prompt that
+is not the strategy it claims to be. An eighth strategy is a compile error there
+rather than a silent fall-through.
+
 Initial strategies:
 
 - `text_to_image_description` — portrait, item, and location descriptions;
@@ -476,8 +575,12 @@ through the shared intent does not silently rewrite current images.
 
 ### Prompt fitting
 
-The probe records exact and recommended prompt limits when they can be derived
-reliably. Owner overrides may correct them.
+Not started. `fitPromptToModel` does not exist, the probe records no prompt
+limits, and the reference-edit paths still use the fixed character budget
+inherited from Venice in `src/server/images/prompts.ts`.
+
+The probe should record exact and recommended prompt limits when they can be
+derived reliably. Owner overrides may correct them.
 
 Prompt builders should produce named segments:
 
@@ -496,6 +599,10 @@ segments alone exceed the hard limit, fail with
 safety-critical facts.
 
 ## Reference preparation and transport
+
+Not started. Today `runRegistryImageModel` uploads references serially and
+inlines them for `data_url` models, with no preparation step and no role
+awareness. Slice 3.
 
 ### Preparation
 
@@ -534,10 +641,26 @@ image bytes or signed URL query strings.
 
 ## Control mapping
 
-Create `src/server/ai/image-control-mapping.ts`.
+**Built 2026-08-06 as `src/server/ai/image-control-mapping.ts`, trial only** —
+`compileProfileRenderPlan` is its sole caller, and no production lane resolves a
+profile. Three deviations from the design below, all deliberate:
 
-The mapper consumes normalized controls and the active version’s bindings. It
-never guesses a field at render time. Alias discovery belongs to the probe.
+- **Out-of-range is a drop, never a clamp.** The design says numeric values are
+  clamped only where a profile explicitly allows a bounded range. No such opt-in
+  exists, so the mapper refuses the value with an `invalid` reason rather than
+  sending something nobody configured under a record that claims otherwise.
+- **`seed`, `coherentSet`, and `lora` are explicitly unsupported.** They drop with
+  an `unsupported` reason rather than falling through as `no_binding`, keeping
+  "this version has no field" distinct from "Vesper does not send this yet".
+- **`filterReservedInputFields` was added.** Override validation was not enough:
+  a *mapped* control lands on whatever field the probe declared for it, and those
+  declarations genuinely collide (a `size` shape input against a
+  `resolutionTier` probed as `size`). Filtering there keeps what is recorded
+  identical to what is sent.
+
+The mapper consumes normalized controls and the active version's bindings. It
+never guesses a field at render time. Alias discovery belongs to the probe —
+which does not yet derive any, so every control currently drops as `no_binding`.
 
 Known aliases during probing include:
 
@@ -560,15 +683,23 @@ The resolved payload merge order is:
 6. system-enforced values such as safety mode and output-count behavior required
    by the selected single-image or image-set path.
 
-A later layer wins. `providerOverrides` may only use `knownInputFields`. It may
-not override prompt, reference fields, version, safety enforcement, or the
-single-image path’s forced output count of one.
+A later layer wins. `providerOverrides` may only use `knownInputFields`, and an
+empty `knownInputFields` fails **closed** — it means the probe recorded nothing,
+not that everything is permitted. It may not override prompt, reference fields,
+the aspect key, version, safety enforcement, or the single-image path's forced
+output count of one; `reservedImageInputFields` in `src/server/ai/replicate.ts`
+is the single spelling of that set, shared by the override validator and the
+payload overlay.
 
-Numeric values are clamped only when the profile explicitly allows a bounded
-range. Otherwise an out-of-range configuration is rejected at save time rather
-than silently changed.
+In the built path the merge is build-then-overlay rather than a six-layer merge:
+`buildRegistryModelInput` writes the prompt, references, aspect and `extraInput`,
+and the compiled `controlInput` merges over it minus the reserved fields. A
+refused key raises `image_model.reserved_field_ignored`.
 
 ## Dimension negotiation
+
+Not started. `chooseAspect` still takes only a model and a target ratio, and
+`renderWithModel` crops afterwards. Slice 4/7.
 
 Extend the existing `chooseAspect` seam rather than replacing it.
 
@@ -601,6 +732,12 @@ Cropping remains post-download and never stretches or pads unless a future task
 explicitly requests padding.
 
 ## Replicate prediction shell
+
+Not started for multi-output. `ReplicateImageResult` still carries one `image`,
+there are no `…One` / `…Many` wrappers, and no `outputUrls` helper. The result
+did gain `predictionId` and `executedVersionId` (the version the provider says it
+actually ran, which a pin states intent for but cannot confirm). The timeout
+rules below **are** built.
 
 Refactor `runReplicateImageModel` so its core returns every output URI instead
 of the first one.
@@ -635,18 +772,26 @@ siblings. A single-image run fails if its first output cannot be downloaded.
 
 ### Timeouts
 
-Resolve timeout in this order:
+**Built.** Resolve timeout in this order:
 
 1. profile `timeoutMs`;
 2. `REPLICATE_PREDICTION_TIMEOUT_MS`;
 3. current five-minute default.
 
-Apply the same resolved value to the provider `Cancel-After` header and the local
-poll deadline. Keep request and output-download timeouts separate and global.
+One resolution drives both the provider `Cancel-After` header and the local poll
+deadline. Anything outside a sane 30s–30m band is clamped. Request and
+output-download timeouts stay separate and global.
 
-Record the resolved timeout in attempt metadata.
+A compiled plan always carries a numeric timeout rather than deferring to the
+environment, so a run's budget is a fact the plan can state and hash.
 
 ## Version candidate and promotion flow
+
+Not started — none of the three routes exist, and all six built-in models are
+still bare official slugs tracking `latest_version` with `probedVersionId` null.
+Slice 5. Note the practical cost of leaving it: `pinnedImageModelVersion` returns
+null for those rows, so a controlled comparison refuses them as
+`version_unpinned` until an admin re-probes each one.
 
 The active model slug should be pinned after this slice. A bare slug may remain
 accepted for manually added experimental rows.
@@ -686,7 +831,12 @@ it to latest.
 
 ## Model-specific seeded profiles
 
-Profiles are ordinary database rows and deletable, matching the model registry’s
+Not started. Migration 0100 seeded 17 deliberately plain profiles — one per model
+per job its lane already runs, named "… Standard" — because slice 1 had to change
+nothing. The curated profiles below are slice 7 and depend on the control
+transports of slices 4–6.
+
+Profiles are ordinary database rows and deletable, matching the model registry's
 single-source-of-truth ruling.
 
 ### Qwen Image 2512
@@ -768,6 +918,12 @@ claims to bypass moderation.
 
 ## Admin UI
 
+Not started. `/settings/image-models` today adds a model by slug, ticks its three
+surface toggles, re-probes it, switches its reference transport, and deletes it.
+Nothing on the page shows the reviewed ratings, the operator warning, the pinned
+version, or profiles — the PATCH route accepts the three reviewed fields, so they
+are currently only settable by API call or migration.
+
 Extend `/settings/image-models` rather than creating six separate settings
 pages.
 
@@ -795,16 +951,22 @@ does not change the model automatically.
 
 ## Caller migration
 
-### Slice A: schema and compatibility profiles
+These lettered slices are the migration sequence; the numbered slices in the plan
+are the delivery order. Slice A is done, Slice B half done, C–F untouched.
+
+### Slice A: schema and compatibility profiles — done 2026-08-05
 
 Add fields and tables, then seed one behavior-equivalent default profile for
 each currently offered model and surface. Do not change callers.
 
-### Slice B: resolver at existing seams
+### Slice B: resolver at existing seams — pure half only
 
 Change `resolveSurfaceModel` into or wrap it with `resolveImageProfile`. Existing
 stored model ids and slugs resolve to the equivalent profile. Continue returning
 the embedded model to old callers temporarily.
+
+The resolver exists (`resolveImageProfile`, `resolveImageProfileForTask`). The
+rewiring does not: every lane still calls `resolveSurfaceModel`.
 
 ### Slice C: shared intent behind current functions
 
@@ -835,8 +997,11 @@ Slice 1 shipped Slice A above plus Slice B's **pure** resolver only: the reviewe
 capability fields, `image_model_profiles`, 17 built-in profiles, and
 `resolveImageProfile`. Slice B's rewiring of `resolveSurfaceModel` did **not**
 happen — no caller was touched, no lane resolves a profile, and no rendered image
-changed. The rulings below were made while writing that code; each one is what kept
-the migration payload-neutral, and none should be re-litigated without a reason.
+changed. That remains true of every player-facing lane; the identity-pack trial
+harness became the first consumer of the profile layer on 2026-08-06, and it is
+deliberately off the render path. The rulings below were made while writing slice
+1; each one is what kept the migration payload-neutral, and none should be
+re-litigated without a reason.
 
 - **Resolver step 2 falls back to the stored model's first eligible profile.** When
   the stored value is a model id or slug, resolution prefers that model's own
@@ -894,7 +1059,11 @@ the migration payload-neutral, and none should be re-litigated without a reason.
 
 ## Observability and reproducibility
 
-Every completed or failed provider attempt records, in image metadata or a
+Not started for ordinary renders. The only place any of this exists is the
+identity trial's own attempt record, which carries the resolved controls, drops
+included, plus the prediction id and the executed version the provider echoed.
+
+Every completed or failed provider attempt should record, in image metadata or a
 normalized attempt record:
 
 - model id, slug, and exact version;
@@ -922,8 +1091,15 @@ reuse temporary Replicate file URLs.
 
 ## Failure behavior
 
-Configuration errors fail before reserving provider work where the caller’s
-existing lane semantics permit it. They use specific diagnostics:
+None of these diagnostic codes are emitted yet. The ones the built path uses
+instead are `image_profile.row_invalid` and `image_profile.none_offered` from the
+resolver, `image_model.reserved_field_ignored` from the payload overlay, and the
+mapper's typed drop reasons (`no_binding`, `invalid`, `unsupported`,
+`unknown_field`, `reserved`), which are recorded on the plan rather than pushed
+as diagnostics.
+
+Configuration errors should fail before reserving provider work where the
+caller's existing lane semantics permit it, using specific diagnostics:
 
 - `image_profile.invalid_for_model`;
 - `image_profile.required_reference_missing`;
@@ -957,6 +1133,26 @@ segment.
   ceiling per reference and per request.
 
 ## Tests
+
+What exists today, all pure except the last:
+
+- `src/contracts/images/image-model-profiles.test.ts` — profile and control
+  schemas, identity-critical task classification, legacy surface mapping,
+  eligibility, offering, candidates, and the five-step resolver;
+- `src/contracts/images/image-model-capabilities.test.ts` — the advanced
+  capability schema including its per-row default isolation, and the two binding
+  schemas;
+- `src/server/ai/image-control-mapping.test.ts` — control mapping, reserved-field
+  filtering, and provider-override validation;
+- `src/server/images/render-profile.test.ts` — the version-pin rule, the
+  prompt-strategy dispatch, `compileProfileRenderPlan`, prompt-preparation
+  idempotency, and the control hash;
+- `src/server/images/model-profiles.int.test.ts` — the seeded profile set, the
+  registry's per-row resilience, and the model-deletion cascade, plus the
+  assertion that every anchor task still resolves to the model its lane renders
+  with today.
+
+The rest of this section is the target coverage for the unbuilt slices.
 
 ### Pure contract tests
 
