@@ -1,7 +1,8 @@
 # Clothing state graph and condition gradients
 
-Status: active — slices 0–6 shipped 2026-07-27, slice 8 closed 2026-07-29; slice
-7 and one measurement remain.
+Status: active — slices 0–6 shipped 2026-07-27, slice 8 closed 2026-07-29; the
+slice-6 comparison instrument shipped 2026-08-07. Slice 7 and the paid tuning
+run remain.
 
 Outcome: A player can undo two buttons, roll one sleeve, or leave a jacket over
 a chair and have the story keep it that way for the rest of the conversation,
@@ -21,15 +22,24 @@ Slice 6 is the narrator digest and ≤2-cue block, built behind `CHAT_GARMENT_CU
 — an env flag still defaulting OFF and never enabled. The OQ8 `chat_look`
 pre/post key-comparison trigger shipped unconditionally as a correctness fix.
 
+The missing slice-6 measurement instrument shipped 2026-08-07 under
+`scripts/eval/garment-cues`, using the shared mechanics in
+`scripts/eval/narrator-comparison`. It builds treatment/control prompts through
+the production character-chat and garment-narration builders, keeps independent
+arm histories, audits each arm blind with quote verification, and measures the
+production continuity extractor against a separate opaque-handle corpus. A
+model-free dry run validates the fixed stores, digests, cue memory, prompt-arm
+isolation, and extraction handles before any paid call.
+
 ## What remains
 
 - **Slice 7 — the successor adapter.** Untouched, and blocked on nothing:
   `readSimChatOutfit` still joins `sim_items.name` into a comma list.
-- **The `CHAT_GARMENT_CUES` tuning run**, which decides whether the narrator
-  digest flips on. This is **not owner spend alone — no eval harness for it
-  exists.** The only narrator harness in the tree belongs to the closed
-  affordance-cue campaign, whose arms are `cues`/`control`. Building the
-  instrument is comparable in size to running the comparison.
+- **The paid `CHAT_GARMENT_CUES` tuning run**, which decides whether the narrator
+  digest flips on. The instrument now exists; what remains is owner-approved
+  model spend, review of the generated evidence, any treatment tuning that
+  evidence demands, and the explicit ship/park ruling. The runner never flips
+  the production flag or promotes its own result.
 - **Widening the extraction lane past the primary** — a small pipeline change,
   gated by one signature that does not yet carry character ids.
 
@@ -483,8 +493,10 @@ memory work. It supplies garment observations to those consumers.
 
 ## Slices
 
-Slices 0–6 shipped 2026-07-27. Slice 7 has not started. Slice 8's first bullet
-landed 2026-07-28 and the rest of it is closed.
+Slices 0–6 shipped 2026-07-27. The slice-6 measurement instrument shipped
+2026-08-07, but the paid comparison and promotion ruling have not run. Slice 7
+has not started. Slice 8's first bullet landed 2026-07-28 and the rest of it is
+closed.
 
 ### Slice 0 — audit, corpus, and promotion rulings (shipped)
 
@@ -540,11 +552,11 @@ landed 2026-07-28 and the rest of it is closed.
 - Apply repeat/change gating and compare against the garment-name baseline.
   Gating is built; the comparison has not been run.
 - Tune contradiction, repetition, concrete-detail, and extraction accuracy
-  before enabling by default. **Outstanding, and the reason the flag is still
-  off.** This needs a harness that does not exist: the tree's only narrator
-  comparison harness is the closed affordance-cue campaign's, pinned to arms
-  `cues` and `control`, so a garment run means building the instrument as well
-  as spending on it.
+  before enabling by default. **The instrument is built; the paid run and
+  verdict remain.** `scripts/eval/garment-cues` compares the real treatment and
+  control prompts, audits each arm blind with quote verification, and runs the
+  real continuity extractor over its own fixed handle corpus. Its dry-run path
+  makes no model calls and must pass before paid evidence is accepted.
 
 ### Slice 7 — successor adapter (not started)
 
@@ -611,13 +623,8 @@ landed 2026-07-28 and the rest of it is closed.
 
 ## Open questions
 
-Three remain, all raised by what shipped rather than by the original draft:
+Two remain, both raised by what shipped rather than by the original draft:
 
-- **Does the `CHAT_GARMENT_CUES` tuning run get an instrument, or a decision
-  without one?** The slice-6 gate names four things to tune and there is no
-  harness that can measure any of them for garments. Building one is comparable
-  in size to the run it precedes, which makes "run the comparison" a larger
-  queued item than the roadmap currently implies.
 - **Who adds garment fit, and when?** It is one field on the blueprint or the
   instance, and it is the only thing standing between the affordance layer's
   wet-cling read and production. Nothing schedules it.
