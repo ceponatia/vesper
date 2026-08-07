@@ -1977,6 +1977,105 @@ function packRowToAdminRevision(row: IdentityPackRow, sink: DiagnosticSink | und
 }
 
 /* ------------------------------------------------------------------------ *
+ * Pinned-revision read (trial)                                              *
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Why a pinned revision could not be handed back. `source_missing` is
+ * deliberately the answer for BOTH "no such character" and "not your character"
+ * — the same not-yours ≡ gone indistinguishability every pack surface keeps, and
+ * the same code `resolveSource` already returns for a character with no
+ * canonical portrait.
+ */
+export type IdentityPackRevisionForTrialCode = "source_missing" | "revision_missing";
+
+export interface IdentityPackRevisionForTrialInput {
+  ownerId: string;
+  characterId: string;
+  /** 1-based, as stored — the revision the trial cell pinned, not an offset. */
+  revision: number;
+  sink?: DiagnosticSink;
+}
+
+export type IdentityPackRevisionForTrialResult =
+  | { ok: true; pack: ImageIdentityPackV1 }
+  | { ok: false; code: IdentityPackRevisionForTrialCode };
+
+/**
+ * One NAMED historical revision of a character's identity pack, read-only
+ * (spec.trial.md §"Fixed variables", the pack-variant axis).
+ *
+ * It exists for the trial's pinned-revision comparison arms — manual-vs-automatic
+ * crops, detector-vs-heuristic derivations — where the whole question is how the
+ * SAME character renders from two different pack revisions. Nothing else in the
+ * system reads a non-current revision as a usable pack: the render path always
+ * wants the current one, which is why this is a separate entry rather than a
+ * parameter on {@link ensureIdentityPack}.
+ *
+ * Three properties are load-bearing:
+ *
+ * 1. **Owner-rooted, exactly like every other pack surface.** The character is
+ *    resolved under `ownerId` first (the `getIdentityPackForOwner` /
+ *    `resolveSource` authorization root: never from a bare pack id), so a foreign
+ *    character answers identically to one that does not exist. There is no second
+ *    authz interpretation here to drift from the first.
+ * 2. **Strictly read-only.** No ensure, no derivation, no promotion, no status
+ *    write. A pinned-revision read that could regenerate or supersede anything
+ *    would let the act of MEASURING a comparison change the thing being compared.
+ * 3. **Eligibility is the caller's ruling, not this function's.** A revision
+ *    whose status is `failed`/`unusable`, or whose face detail is incomplete for
+ *    one strategy, still comes back `ok`. Planning decides per strategy what it
+ *    can build from the returned contract (through the same
+ *    `evaluateIdentityPackContractForProfile` the current-pack path uses); this
+ *    function's job is honest retrieval plus ownership, and nothing more.
+ *
+ * **Retention window.** Superseded revisions survive only until the sweep
+ * removes them ({@link IDENTITY_PACK_REVISION_RETENTION_MS}, 7 days), so a
+ * cross-revision comparison must be planned, executed and reviewed inside that
+ * window. Execution re-checks the pinned revision and refuses `cell_conflict`
+ * when it has been swept — a comparison arm whose pack is gone is not run
+ * against some other revision under its name.
+ */
+export async function getIdentityPackRevisionForTrial(
+  input: IdentityPackRevisionForTrialInput,
+): Promise<IdentityPackRevisionForTrialResult> {
+  const { ownerId, characterId, revision, sink } = input;
+
+  const [character] = await db()
+    .select({ id: characters.id })
+    .from(characters)
+    .where(and(eq(characters.id, characterId), eq(characters.ownerId, ownerId)))
+    .limit(1);
+  if (!character) {
+    sink?.push(
+      diag("warn", "images.identity_pack.source_missing", "no such character for this owner", {
+        context: { characterId, revision },
+      }),
+    );
+    return { ok: false, code: "source_missing" };
+  }
+
+  const [row] = await db()
+    .select()
+    .from(imageIdentityPacks)
+    .where(and(eq(imageIdentityPacks.characterId, characterId), eq(imageIdentityPacks.revision, revision)))
+    .limit(1);
+  if (!row) {
+    // Expected, not exceptional: a revision the sweep has already retired reads
+    // exactly like one that never existed, and both mean "this comparison arm
+    // cannot be built" to the caller.
+    sink?.push(
+      diag("warn", "images.identity_pack.source_missing", "no such pack revision for this character", {
+        context: { characterId, revision },
+      }),
+    );
+    return { ok: false, code: "revision_missing" };
+  }
+
+  return { ok: true, pack: packRowToContract(row, sink) };
+}
+
+/* ------------------------------------------------------------------------ *
  * Manual correction                                                         *
  * ------------------------------------------------------------------------ */
 

@@ -2,9 +2,11 @@
 
 Status: active (slices 1–4 and 5A — pack-side evaluation — shipped 2026-08-06;
 slice 5B — render-lane consumption — waits on the image-model-capabilities
-shared render intent; slice 6 — fixed trial — infrastructure built 2026-08-06,
-but the paid corpus run, threshold calibration, detector decision, and verdict
-remain owner actions; slice 7 — production close-out — remains)
+shared render intent; slice 6 — fixed trial — harness implementation complete
+and hardened 2026-08-06 and ready for the real trial, but the trial evidence —
+corpus characters, paid runs, the detector decision, threshold calibration,
+the repeat subset, and verdicts — does not exist yet and remains owner
+actions; slice 7 — production close-out — remains)
 
 Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md)
 
@@ -361,6 +363,27 @@ their owner for review — and are deleted with the run. A run that would need a
 face detector, more references than the model accepts, or a blocked pack
 refuses those cells up front with an explanation instead of quietly trimming
 them.
+
+Hardened the same day, before any money is spent. A review of the first build
+found ways the harness could have produced evidence that looked controlled but
+was not, and a correctness pass closed them. The trial now refuses any
+model-and-profile pairing that could not run that job in production, and it
+proves what it claims: the settings a cell records are the settings actually
+sent, the exact provider version a cell names is the version that runs, and a
+prompt with two reference images tells the model in plain numbered words which
+image is the identity and which is the face detail. Two computers can no
+longer accidentally pay for the same render; a claim on a cell now lives in
+the database, a broken cell settles once instead of being billed again on
+every click, and an output that loses its cell is cleaned up rather than
+left as an invisible stored image. Verdicts are individually stored rulings
+that cannot overwrite each other, they cannot be recorded while renders are
+still outstanding or before the blind review is finished (recording one
+early is an explicit, labeled override), and a run only counts as complete
+when both the review and the rulings are. Finally, the comparison grid can
+now express everything the trial spec asks for: canonical-only versus
+face-detail arms, two crop revisions of the same character side by side
+(manual versus automatic), and a no-pack baseline where that is genuinely
+reproducible.
 
 The trial itself has not run. No corpus characters exist yet, no paid renders
 have happened, no thresholds are calibrated, no detector is chosen, and no

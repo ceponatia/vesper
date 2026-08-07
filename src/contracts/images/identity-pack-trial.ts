@@ -5,17 +5,20 @@ import {
   imageIdentityCropMethodSchema,
   sourcePixelCropSchema,
 } from "./identity-pack";
-import { imageProfileTaskSchema } from "./image-model-profiles";
+import { imageProfileOperationSchema, imageProfileTaskSchema } from "./image-model-profiles";
 
 /**
  * The fixed identity-reference trial's vocabulary and contracts
  * (docs/developer-notes/image-identity-packs.spec.trial.md).
  *
  * A trial run renders the SAME character, prompt fixture, and pinned profile
- * under different identity-reference strategies, then collects blinded pairwise
+ * across different identity-reference ARMS, then collects blinded pairwise
  * grades so a strategy is promoted on provider evidence rather than on a sharp
- * crop or a hunch. Everything here is data and vocabulary: the pure expansion,
- * pairing, and aggregation logic lives in `src/lib/images/identity-pack-trial.ts`,
+ * crop or a hunch. An arm varies one of two things — the reference strategy
+ * (which roles, in what order) or the pack variant (which revision, or none at
+ * all) — and never both at once, or the grade could not be attributed to either.
+ * Everything here is data and vocabulary: the pure expansion, pairing, and
+ * aggregation logic lives in `src/lib/images/identity-pack-trial.ts`,
  * persistence and rendering in `src/server/images/identity-pack-trial.ts`.
  *
  * The identity vocabulary (strategies, roles, crop methods, crop rectangles) is
@@ -51,57 +54,227 @@ export type TrialRunStatus = (typeof trialRunStatuses)[number];
  * whose pack is blocked or whose profile cannot carry the strategy is recorded
  * with its refusal code so the run report can say WHY that comparison never
  * spent provider budget. `failed` means the provider was actually asked.
+ *
+ * `running` is the DURABLE CLAIM: an execution pass moves a cell out of
+ * `planned` in the database BEFORE it calls the provider, so the claim is
+ * visible to every process, not just to the in-process execution lock. Without
+ * it, two machines (or one machine restarted mid-pass) both read the cell as
+ * `planned` and both pay for the same render. A cell left `running` by a crashed
+ * pass is therefore a real state a later pass has to reason about — it is not a
+ * transient in-memory flag, and nothing may silently reset it to `planned`,
+ * because "this render may already have been paid for" is exactly what it
+ * records.
  */
-export const trialCellStatuses = ["planned", "rendered", "failed", "refused"] as const;
+export const trialCellStatuses = ["planned", "running", "rendered", "failed", "refused"] as const;
 export const trialCellStatusSchema = z.enum(trialCellStatuses);
 export type TrialCellStatus = (typeof trialCellStatuses)[number];
 
 /**
- * The spec-time identity of one comparison cell
- * (spec.trial.md §"Trial manifest"): everything held constant plus the one
- * variable under test (`identityStrategy`), snapshotted at planning time so the
- * cell stays explainable after the pack, profile, or model version moves on.
+ * Which identity-reference pack a cell renders from — the SECOND comparison
+ * axis beside the strategy (spec.trial.md §"Fixed variables").
  *
- * `requestedSeed` is always null in v1 — no seed transport exists yet (the
- * capabilities plan owns seeds) — but the field is modelled now so a seeded rerun
- * is a value change, not a schema change.
+ * - `current` pins whatever pack revision is current for each character at
+ *   planning time. This is the historical single-variant behavior and stays the
+ *   default when a run names no variants.
+ * - `revision` pins one NAMED historical or manually prepared revision of ONE
+ *   character. It is deliberately character-scoped: revision 3 of one character
+ *   has nothing to do with revision 3 of another, so a run carrying this
+ *   selector generates cells only for `characterId` and simply produces none for
+ *   the run's other characters.
+ * - `none` is the no-pack baseline: zero identity references, the control arm
+ *   that answers "is the pack helping at all?". It is only expressible on
+ *   `generate`-operation profiles (an edit profile with no reference image has
+ *   nothing to edit), carries a NULL `identityStrategy` because there is no
+ *   reference order to choose, is excluded from verdict slots (a verdict rules
+ *   on a (profile, strategy), and the baseline has no strategy), and pairs
+ *   against pack cells purely as evidence.
  */
-export const imageIdentityPackTrialCellSpecSchema = z.object({
-  id: z.string().min(1),
-  characterId: z.string().min(1),
-  task: imageProfileTaskSchema,
-  promptFixtureId: z.string().min(1),
-
-  modelSlug: z.string().min(1),
-  modelVersion: z.string().min(1),
-  profileId: z.string().min(1),
-  profileKey: z.string().min(1),
-  identityStrategy: identityReferenceStrategySchema,
-
-  packId: z.string().min(1),
-  packRevision: z.number().int().min(1),
-  sourceImageId: z.string().min(1),
-  sourceContentHash: z.string().min(1),
-  cropMethod: imageIdentityCropMethodSchema.nullable(),
-  crop: sourcePixelCropSchema.nullable(),
-  derivationVersion: z.string().min(1),
-  policyVersion: z.string().min(1),
-
-  /** Null is "not measured", never zero — the identity-pack measurement rule. */
-  effectiveReferenceSize: z.object({
-    widthPx: z.number().int().nullable(),
-    heightPx: z.number().int().nullable(),
-    faceWidthPx: z.number().int().nullable(),
-    faceHeightPx: z.number().int().nullable(),
+export const trialPackVariantSelectorSchema = z.discriminatedUnion("source", [
+  z.object({ source: z.literal("current") }),
+  z.object({ source: z.literal("none") }),
+  z.object({
+    source: z.literal("revision"),
+    characterId: z.string().min(1),
+    revision: z.number().int().min(1),
   }),
+]);
+export type TrialPackVariantSelector = z.infer<typeof trialPackVariantSelectorSchema>;
 
-  orderedReferenceRoles: z.array(identityReferenceRoleSchema).max(4),
-  resolvedControlsHash: z.string().min(1),
-  positivePromptHash: z.string().min(1),
-  negativePromptHash: z.string().min(1).nullable(),
-  requestedSeed: z.number().int().min(0).nullable(),
+/**
+ * The stable string identity of a pack variant — what a cell stores, what the
+ * pairing rule compares, and what a comparison bucket is keyed by. Derived
+ * rather than stored on the selector so two spellings of the same variant can
+ * never claim to be different arms of the same run.
+ *
+ * The revision form embeds colons, which is why every key layout built from it
+ * (`trialCellPlan.cellKey`) puts the variant key LAST.
+ */
+export function trialPackVariantKey(selector: TrialPackVariantSelector): string {
+  switch (selector.source) {
+    case "current":
+      return "current";
+    case "none":
+      return "none";
+    case "revision":
+      return `rev:${selector.characterId}:${selector.revision}`;
+  }
+}
+
+/**
+ * The compiled configuration a cell actually hands the provider — the resolved
+ * profile controls after every unsupported knob has been dropped, not the
+ * profile row's wishes.
+ *
+ * `resolvedControlsHash` proves the configuration did not MOVE; this proves what
+ * the configuration WAS. Both are needed: a hash that matches tells you nothing
+ * about which controls the model silently ignored, and a grid where one arm
+ * quietly lost its guidance setting is a comparison of two different renders
+ * wearing one name. `droppedControls` therefore records every omission with its
+ * reason instead of leaving the absence to be inferred.
+ */
+export const trialResolvedControlsSchema = z.object({
+  operation: imageProfileOperationSchema,
+  /** Null means "no per-profile budget" — the env/default timeout applies. */
+  timeoutMs: z.number().int().min(1).nullable(),
+  /** The provider-shaped control payload, already mapped to this version's field names. */
+  controlInput: z.record(z.string(), z.unknown()),
+  droppedControls: z.array(z.object({ control: z.string().min(1), reason: z.string().min(1) })),
 });
+export type TrialResolvedControls = z.infer<typeof trialResolvedControlsSchema>;
+
+/**
+ * The spec-time identity of one comparison cell
+ * (spec.trial.md §"Trial manifest"): everything held constant plus the variables
+ * under test (`identityStrategy` and `packVariantKey`), snapshotted at planning
+ * time so the cell stays explainable after the pack, profile, or model version
+ * moves on.
+ *
+ * Three fields are load-bearing in ways their names understate:
+ *
+ * - `positivePromptHash` / `negativePromptHash` hash the FINAL COMPILED text
+ *   actually sent — role preamble included (`compileIdentityReferencePrompt`) —
+ *   not the raw fixture. Two cells whose fixture matches but whose reference
+ *   role bindings differ are not the same prompt, and hashing the fixture would
+ *   claim they were.
+ * - `modelVersion` is always a real pinned provider version. A model whose exact
+ *   version cannot be identified refuses `version_unpinned` at planning: the old
+ *   `"unprobed"` floor let a cell claim a pin it did not have, so an unannounced
+ *   provider-side version bump mid-run read as a matching re-check.
+ * - `requestedSeed` is still always null — no seed transport exists yet (the
+ *   capabilities plan owns seeds) — but the field is modelled now so a seeded
+ *   rerun is a value change, not a schema change.
+ *
+ * The pack columns are nullable ONLY for the no-pack baseline
+ * (`referenceSource: "none"`), and the `superRefine` below is what keeps that
+ * from becoming a general licence to store a half-resolved pack identity: a
+ * pack-source cell must carry every pack field, a none-source cell must carry
+ * none of them and no reference roles at all.
+ */
+export const imageIdentityPackTrialCellSpecSchema = z
+  .object({
+    id: z.string().min(1),
+    characterId: z.string().min(1),
+    task: imageProfileTaskSchema,
+    promptFixtureId: z.string().min(1),
+
+    modelSlug: z.string().min(1),
+    modelVersion: z.string().min(1),
+    profileId: z.string().min(1),
+    profileKey: z.string().min(1),
+    /** Null ONLY on the no-pack baseline: with zero references there is no order to pick. */
+    identityStrategy: identityReferenceStrategySchema.nullable(),
+
+    /**
+     * Which pack variant this cell renders from ({@link trialPackVariantKey}).
+     * Defaulted so specs stored before the variant axis existed parse as what
+     * they were: single-variant cells against the then-current revision.
+     */
+    packVariantKey: z.string().min(1).max(80).default("current"),
+    referenceSource: z.enum(["pack", "none"]).default("pack"),
+
+    packId: z.string().min(1).nullable(),
+    packRevision: z.number().int().min(1).nullable(),
+    sourceImageId: z.string().min(1).nullable(),
+    sourceContentHash: z.string().min(1).nullable(),
+    cropMethod: imageIdentityCropMethodSchema.nullable(),
+    crop: sourcePixelCropSchema.nullable(),
+    derivationVersion: z.string().min(1).nullable(),
+    policyVersion: z.string().min(1).nullable(),
+
+    /** Null is "not measured", never zero — the identity-pack measurement rule. */
+    effectiveReferenceSize: z.object({
+      widthPx: z.number().int().nullable(),
+      heightPx: z.number().int().nullable(),
+      faceWidthPx: z.number().int().nullable(),
+      faceHeightPx: z.number().int().nullable(),
+    }),
+
+    orderedReferenceRoles: z.array(identityReferenceRoleSchema).max(4),
+    resolvedControlsHash: z.string().min(1),
+    /**
+     * Null means the cell was planned before the control-compile step existed,
+     * so nothing can say what it would send. Such a cell refuses `cell_conflict`
+     * at execution rather than rendering under a guess — an un-compiled cell in
+     * a grid of compiled ones is not a comparison, it is a confound.
+     */
+    resolvedControls: trialResolvedControlsSchema.nullable().default(null),
+    positivePromptHash: z.string().min(1),
+    negativePromptHash: z.string().min(1).nullable(),
+    requestedSeed: z.number().int().min(0).nullable(),
+  })
+  .superRefine((spec, ctx) => {
+    const packFields = [
+      "packId",
+      "packRevision",
+      "sourceImageId",
+      "sourceContentHash",
+      "derivationVersion",
+      "policyVersion",
+    ] as const;
+    if (spec.referenceSource === "pack") {
+      if (spec.identityStrategy === null) {
+        ctx.addIssue({ code: "custom", path: ["identityStrategy"], message: "a pack-source cell must name a strategy" });
+      }
+      for (const field of packFields) {
+        if (spec[field] === null) {
+          ctx.addIssue({ code: "custom", path: [field], message: "a pack-source cell must carry its pack identity" });
+        }
+      }
+      return;
+    }
+    if (spec.identityStrategy !== null) {
+      ctx.addIssue({ code: "custom", path: ["identityStrategy"], message: "the no-pack baseline carries no strategy" });
+    }
+    for (const field of packFields) {
+      if (spec[field] !== null) {
+        ctx.addIssue({ code: "custom", path: [field], message: "the no-pack baseline carries no pack identity" });
+      }
+    }
+    if (spec.orderedReferenceRoles.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["orderedReferenceRoles"],
+        message: "the no-pack baseline sends no references",
+      });
+    }
+  });
 export type ImageIdentityPackTrialCellSpec = z.infer<typeof imageIdentityPackTrialCellSpecSchema>;
+
+/**
+ * The two fields a verdict must match against a cell, as a schema of its own.
+ *
+ * It exists as a separate export rather than a `.pick()` off the spec schema for
+ * a hard reason and a soft one. Hard: zod refuses `.pick()` on an object
+ * carrying refinements, and the spec schema now carries the pack/baseline
+ * cross-field rules. Soft: this read is deliberately LENIENT — a cell refused
+ * before full resolution stores an honestly partial spec that fails the whole
+ * contract, yet its plan fields (profile and strategy among them) are always
+ * present, and a combo the run refused is still a combo the run named.
+ */
+export const trialCellComboSchema = z.object({
+  profileId: z.string().min(1),
+  identityStrategy: identityReferenceStrategySchema.nullable(),
+});
 
 /**
  * What one execution attempt produced. Everything is nullable because a refused
@@ -239,16 +412,18 @@ export const trialVerdictSchema = z.object({
   policyVersion: z.string().min(1),
   decidedByUserId: z.string().min(1),
   decidedAt: z.string().min(1),
+  /**
+   * Recorded true when an admin deliberately ruled before every reviewable pair
+   * was graded (`review_incomplete` otherwise refuses the verdict). Stored on the
+   * ruling itself rather than inferred later: whether the evidence was complete
+   * AT DECISION TIME is unrecoverable once more grades arrive, and a promotion
+   * made on half the pairs must stay distinguishable from one made on all of
+   * them. Defaulted so verdicts written before the gate existed parse as what
+   * they were — decisions nobody was asked to override.
+   */
+  overrideIncompleteReview: z.boolean().default(false),
 });
 export type TrialVerdict = z.infer<typeof trialVerdictSchema>;
-
-/**
- * List shape for the run row's `verdicts_json` column. No `.catch` here: the
- * read site goes through `parseOr` with a `[]` fallback, which must be allowed
- * to fail so malformed stored verdicts surface as a warn diagnostic instead of
- * degrading silently.
- */
-export const trialVerdictListSchema = z.array(trialVerdictSchema);
 
 /**
  * Every way the trial surface says no, as stable codes. Refusals are product
@@ -261,6 +436,25 @@ export const trialVerdictListSchema = z.array(trialVerdictSchema);
  * `verdict_unknown_combo` keeps the verdict ledger honest: a ruling must name a
  * (profile, strategy) some cell of the run actually carried, or a typo'd id
  * would record a meaningless verdict nothing can ever surface.
+ *
+ * The four later codes exist because a CONTROLLED trial has to refuse where a
+ * production render would degrade:
+ *
+ * - `version_unpinned` — the exact provider version cannot be identified, so the
+ *   cell cannot promise it rendered what it claims. Production may happily run
+ *   the model's floating latest; a trial that did would be comparing whatever
+ *   the provider shipped that hour.
+ * - `spec_invalid` — a planned cell's stored spec is malformed or incompatible
+ *   with the current contract. It settles TERMINALLY, is never charged, and is
+ *   never sent to a provider: an unreadable cell cannot be executed honestly,
+ *   and leaving it `planned` would make every later pass re-pick and re-skip it
+ *   forever.
+ * - `review_incomplete` — a verdict was refused because the run is not in
+ *   review, executable cells remain, or reviewable pairs are still ungraded and
+ *   no explicit override was given. A ruling recorded over unseen evidence is
+ *   the one failure mode the whole blinded procedure exists to prevent.
+ * - `pack_revision_unavailable` — a pinned pack revision does not exist, is no
+ *   longer usable, or its selector names a character outside this run.
  */
 export const imageIdentityPackTrialRefusalCodes = [
   "unknown_corpus",
@@ -276,6 +470,10 @@ export const imageIdentityPackTrialRefusalCodes = [
   "grade_conflict",
   "verdict_unknown_combo",
   "run_locked",
+  "version_unpinned",
+  "spec_invalid",
+  "review_incomplete",
+  "pack_revision_unavailable",
 ] as const;
 export const imageIdentityPackTrialRefusalCodeSchema = z.enum(imageIdentityPackTrialRefusalCodes);
 export type ImageIdentityPackTrialRefusalCode = (typeof imageIdentityPackTrialRefusalCodes)[number];
@@ -292,8 +490,14 @@ export function imageIdentityPackTrialDiagnosticCode(code: ImageIdentityPackTria
  * Exactly one selector — explicit character ids or a checked-in trial corpus —
  * for the reason `identityPackBatchRequestSchema` gives: accepting both would
  * make "which characters did this run against?" unanswerable. The axis bounds
- * (12 × 6 × 4 × 8) are wire sanity rails; the real ceiling is the planner's
- * `TRIAL_MAX_CELLS` refusal over the deduped cartesian product.
+ * (12 × 6 × 4 × 8 × 4) are wire sanity rails; the real ceiling is the planner's
+ * `TRIAL_MAX_CELLS` refusal over the cells actually generated.
+ *
+ * `packVariants` omitted means one `current` variant, which is exactly the
+ * pre-variant behavior — an old stored config still describes the run it ran.
+ * The uniqueness refinement is over DERIVED KEYS, not over the objects: two
+ * selectors that spell the same variant would silently collapse in the planner
+ * and leave the reviewer believing they configured two arms.
  */
 export const imageIdentityPackTrialCreateRequestSchema = z
   .object({
@@ -303,11 +507,19 @@ export const imageIdentityPackTrialCreateRequestSchema = z
     profileIds: z.array(z.string().min(1)).min(1).max(6),
     strategies: z.array(identityReferenceStrategySchema).min(1).max(4),
     promptFixtureIds: z.array(z.string().min(1)).min(1).max(8),
+    packVariants: z.array(trialPackVariantSelectorSchema).min(1).max(4).optional(),
   })
   .refine((value) => (value.characterIds === undefined) !== (value.corpusId === undefined), {
     message: "supply exactly one of characterIds or corpusId",
     path: ["characterIds"],
-  });
+  })
+  .refine(
+    (value) => {
+      const keys = (value.packVariants ?? []).map((selector) => trialPackVariantKey(selector));
+      return new Set(keys).size === keys.length;
+    },
+    { message: "packVariants must name distinct variants", path: ["packVariants"] },
+  );
 export type ImageIdentityPackTrialCreateRequest = z.infer<typeof imageIdentityPackTrialCreateRequestSchema>;
 
 /**
@@ -321,9 +533,13 @@ export const imageIdentityPackTrialExecuteRequestSchema = z.object({
 });
 export type ImageIdentityPackTrialExecuteRequest = z.infer<typeof imageIdentityPackTrialExecuteRequestSchema>;
 
-/** Cell counts by status — the progress numbers every run surface shows. */
+/** Cell counts by status — the progress numbers every run surface shows.
+ * `running` is surfaced rather than folded into `planned` because a nonzero
+ * count there after a pass ends is the operator's signal that a claim outlived
+ * its pass. */
 export const trialCellCountsSchema = z.object({
   planned: z.number().int().min(0),
+  running: z.number().int().min(0),
   rendered: z.number().int().min(0),
   failed: z.number().int().min(0),
   refused: z.number().int().min(0),
@@ -366,10 +582,13 @@ export type ImageIdentityPackTrialRunDetail = z.infer<typeof imageIdentityPackTr
 
 /**
  * The next unreviewed pair, BLINDED: image ids, the shared task, and the shared
- * prompt fixture — deliberately no strategy, pack, or crop fields, because the
- * reviewer must not know which reference strategy produced which side
- * (spec.trial.md §"Review procedure"). The client resolves `promptFixtureId`
- * against the checked-in fixture list to show the instruction being judged.
+ * prompt fixture — deliberately no strategy, pack, crop, or pack-variant fields,
+ * because the reviewer must not know which reference strategy or which pack
+ * revision produced which side (spec.trial.md §"Review procedure"). The pack
+ * variant axis changes nothing here on purpose: "this side used the newer pack"
+ * would bias a grade exactly as effectively as naming the strategy. The client
+ * resolves `promptFixtureId` against the checked-in fixture list to show the
+ * instruction being judged.
  */
 export const imageIdentityPackTrialReviewPairSchema = z.object({
   pairId: z.string().min(1),
@@ -408,16 +627,27 @@ export const trialDimensionAggregateSchema = z.object({
 export type TrialDimensionAggregate = z.infer<typeof trialDimensionAggregateSchema>;
 
 /**
- * One profile's strategy-vs-strategy aggregate, in canonical A/B space (A is
- * always the strategy earlier in `identityReferenceStrategies` order, so every
- * pair of the same two strategies lands in the same bucket). Wins and losses
- * come from the sign of `overall_preference`; catastrophic counts are total
- * recorded defect labels per side.
+ * One profile's arm-vs-arm aggregate, in canonical A/B space. An "arm" is a
+ * (strategy, pack variant) pair, and every comparison here differs in EXACTLY
+ * ONE of the two — or has the no-pack baseline (null strategy) on one side.
+ * Comparing two cells that differ in both would be a confounded result dressed
+ * up as a measurement, so the pairing rule never builds one and no bucket here
+ * can contain one.
+ *
+ * A/B is canonical, not presentation: A is the arm that sorts first (strategy in
+ * `identityReferenceStrategies` order with the null baseline last, then variant),
+ * so every pair of the same two arms lands in the same bucket rather than
+ * splitting across (A vs B) and (B vs A). Wins and losses come from the sign of
+ * `overall_preference`; catastrophic counts are total recorded defect labels per
+ * side.
  */
 export const trialStrategyComparisonSchema = z.object({
   profileId: z.string().min(1),
-  strategyA: identityReferenceStrategySchema,
-  strategyB: identityReferenceStrategySchema,
+  /** Null on the no-pack baseline side — it carries no reference strategy. */
+  strategyA: identityReferenceStrategySchema.nullable(),
+  strategyB: identityReferenceStrategySchema.nullable(),
+  variantKeyA: z.string().min(1),
+  variantKeyB: z.string().min(1),
   totalPairs: z.number().int().min(0),
   gradedPairs: z.number().int().min(0),
   dimensions: z.object(perTrialGradeDimension(() => trialDimensionAggregateSchema)),
@@ -439,11 +669,22 @@ export type TrialStrategyComparison = z.infer<typeof trialStrategyComparisonSche
  * counterpart cell failed still rendered evidence and still needs a ruling, and
  * deriving slots from comparisons alone would make `complete` unreachable for
  * such a run.
+ *
+ * The no-pack baseline never appears here: it has no strategy, so there is
+ * nothing for a verdict to rule on. It is evidence, not a verdict slot.
+ *
+ * `totalPairs`/`gradedPairs` count the pairs this combo takes part in on either
+ * side. They ride along so a slot with zero pairs says so out loud — "this
+ * ruling has no pairwise evidence" is a fact the reviewer must see BEFORE
+ * promoting, and an empty comparison list next to a populated verdict list does
+ * not communicate it.
  */
 export const trialRenderedComboSchema = z.object({
   profileId: z.string().min(1),
   identityStrategy: identityReferenceStrategySchema,
   renderedCells: z.number().int().min(1),
+  totalPairs: z.number().int().min(0),
+  gradedPairs: z.number().int().min(0),
 });
 export type TrialRenderedCombo = z.infer<typeof trialRenderedComboSchema>;
 

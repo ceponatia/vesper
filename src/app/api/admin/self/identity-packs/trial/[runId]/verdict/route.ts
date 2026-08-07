@@ -17,6 +17,12 @@ const trialVerdictRequestSchema = z.object({
   identityStrategy: identityReferenceStrategySchema,
   verdict: trialVerdictValueSchema,
   reason: z.string().trim().min(1).max(2000),
+  /**
+   * Rule with reviewable pairs still ungraded. Optional and never defaulted to
+   * true: the absence of the flag must mean "I expect complete evidence", so a
+   * client that has never heard of the gate cannot bypass it by omission.
+   */
+  overrideIncompleteReview: z.boolean().optional(),
 });
 
 /**
@@ -26,12 +32,17 @@ const trialVerdictRequestSchema = z.object({
  * no stated reason is indistinguishable from a mistake six months later.
  *
  * The response carries the run's settled status — when every combination
- * present in the rendered cells is ruled, `review` becomes `complete` here,
- * with no separate close action — plus the full verdict list, so the summary
- * screen updates from the write it just made instead of racing a second read.
+ * present in the rendered cells is ruled AND every reviewable pair is graded,
+ * `review` becomes `complete` here, with no separate close action — plus the
+ * full verdict list, so the summary screen updates from the write it just made
+ * instead of racing a second read.
  *
- * A combo no cell of the run carries refuses `verdict_unknown_combo` as a 400
- * in the same envelope every other trial refusal uses.
+ * Two refusals arrive as a 400 in the same envelope every other trial refusal
+ * uses: `verdict_unknown_combo` for a combo no cell of the run carries, and
+ * `review_incomplete` when the run is still executing or its pairs are still
+ * ungraded. The second is what `overrideIncompleteReview` deliberately overrides
+ * — the service records the flag on the ruling, so the override is visible in
+ * the verdict list this route hands straight back.
  */
 export const POST = withOwnerAdmin<Params>(async (user, req: NextRequest, ctx) => {
   const { runId } = await ctx.params;

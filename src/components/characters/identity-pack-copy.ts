@@ -168,6 +168,14 @@ export function identityPackTrialRefusalCopy(code: ImageIdentityPackTrialRefusal
       return "No cell in this run tested that profile and strategy combination. A verdict can only rule on what the run actually ran.";
     case "run_locked":
       return "Another execution pass is still running for this run. Let it finish, then refresh.";
+    case "version_unpinned":
+      return "This model's exact provider version can't be identified, so a cell can't promise what it rendered. Probe the model, then plan a new run.";
+    case "spec_invalid":
+      return "This cell's stored configuration can't be read, so it was settled without ever being sent to a provider. Plan a new run.";
+    case "review_incomplete":
+      return "There's still evidence to collect — cells left to run, or pairs left to grade. Finish the review, or record the verdict as a deliberate override.";
+    case "pack_revision_unavailable":
+      return "The pinned identity-pack revision isn't available for that character. Pick a revision that exists, or use the current pack.";
   }
 }
 
@@ -185,11 +193,14 @@ export function trialRunStatusChip(status: TrialRunStatus): { label: string; ton
   }
 }
 
-/** One cell's outcome as a chip. `refused` is an expected outcome, not a failure. */
+/** One cell's outcome as a chip. `refused` is an expected outcome, not a failure;
+ * `running` is a durable claim, so it may legitimately be seen between passes. */
 export function trialCellStatusChip(status: TrialCellStatus): { label: string; tone: TagTone } {
   switch (status) {
     case "planned":
       return { label: "planned", tone: "default" };
+    case "running":
+      return { label: "running", tone: "accent" };
     case "rendered":
       return { label: "rendered", tone: "ok" };
     case "failed":
@@ -211,6 +222,35 @@ export function identityReferenceStrategyLabel(strategy: IdentityReferenceStrate
     case "face_detail_then_canonical":
       return "Face detail, then canonical";
   }
+}
+
+/**
+ * One comparison arm's strategy in English, with the no-pack baseline NAMED
+ * rather than blanked. A null strategy here is a real arm — the zero-reference
+ * control — not missing data, and rendering it as an em dash would read as a
+ * cell whose spec failed to load.
+ */
+export function trialArmStrategyLabel(strategy: IdentityReferenceStrategy | null): string {
+  return strategy === null ? "No pack (baseline)" : identityReferenceStrategyLabel(strategy);
+}
+
+/**
+ * One pack-variant key (`trialPackVariantKey`) in English, WITHOUT dropping the
+ * identity inside it.
+ *
+ * The rule is narrower than it looks: two arms of the same run can differ only
+ * in the character and revision a `rev:…` key names, so this replaces the
+ * punctuation with words and keeps both verbatim. A key it does not recognize
+ * falls through raw rather than being blanked — an unlabelled arm must still
+ * read as a DIFFERENT arm, which is the whole point of showing the key at all.
+ */
+export function trialPackVariantLabel(variantKey: string): string {
+  if (variantKey === "current") return "current pack";
+  if (variantKey === "none") return "no pack";
+  const match = /^rev:(.+):(\d+)$/.exec(variantKey);
+  const characterId = match?.[1];
+  const revision = match?.[2];
+  return characterId === undefined || revision === undefined ? variantKey : `pack rev ${revision} · ${characterId}`;
 }
 
 /** The eleven review dimensions in English (spec.trial.md §"Review procedure"). */
@@ -241,9 +281,14 @@ export function trialGradeDimensionLabel(dimension: TrialGradeDimension): string
   }
 }
 
-/** The progress numbers every trial-run surface shows, as one line. */
+/** The progress numbers every trial-run surface shows, as one line. `running`
+ * sits beside `planned` rather than folded into it: a claimed cell has left the
+ * queue, and a nonzero count here once no pass is active is worth seeing. */
 export function trialCountsLine(counts: TrialCellCounts): string {
-  return `${counts.planned} planned · ${counts.rendered} rendered · ${counts.failed} failed · ${counts.refused} refused`;
+  return (
+    `${counts.planned} planned · ${counts.running} running · ${counts.rendered} rendered · ` +
+    `${counts.failed} failed · ${counts.refused} refused`
+  );
 }
 
 /** The verdict vocabulary in English (spec.trial.md §"Version promotion"). */

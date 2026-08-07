@@ -334,6 +334,44 @@ export function legacySurfaceForImageTask(task: ImageProfileTask): ImageModelSur
   }
 }
 
+/**
+ * Why a profile is not offered on a model. The two codes beyond
+ * `ImageProfileIneligibility` are the operator-facing halves of the answer — the
+ * profile is switched off, or the task's legacy model surface excludes this
+ * model — as opposed to the structural halves, which say the model cannot
+ * mechanically or safely do the job.
+ */
+export type ImageProfileUnoffered = "disabled" | "legacy_surface_excluded" | ImageProfileIneligibility;
+
+export type ImageProfileOffering = { ok: true } | { ok: false; reason: ImageProfileUnoffered };
+
+/**
+ * THE one interpretation of "may this profile run on this model", and the
+ * only place the three gates are composed: the profile's own `enabled` switch,
+ * the task's legacy model surface, and {@link profileEligibility}.
+ *
+ * It exists as a named export rather than inline filtering because production
+ * selection is no longer its only caller. The identity-reference trial planner
+ * asks the same question when it decides which cells are even buildable, and if
+ * it asked it differently the harness would grade a profile/model combination
+ * that production would never run — evidence for a render nobody can have. Trial
+ * eligibility must be unable to drift from production eligibility, so both read
+ * this function.
+ *
+ * The surface is derived from `profile.task` rather than taken as an argument so
+ * the predicate stands alone; {@link imageProfileCandidates} still matches the
+ * requested task itself, because "this profile is for a different job" is not a
+ * reason a profile is unofferable — it is a different question entirely.
+ */
+export function imageProfileOffered(profile: ImageModelProfile, model: ImageModel): ImageProfileOffering {
+  if (!profile.enabled) return { ok: false, reason: "disabled" };
+  const surface = legacySurfaceForImageTask(profile.task);
+  if (surface !== null && !imageModelOffersSurface(model, surface)) {
+    return { ok: false, reason: "legacy_surface_excluded" };
+  }
+  return profileEligibility(profile, model);
+}
+
 /** A profile with the model it configures. Callers never load the two separately —
  * a profile without its model cannot be rendered, and joining at the boundary is
  * what keeps a deleted model row from reaching the render path at all. */
@@ -344,10 +382,10 @@ export interface ResolvedImageProfile {
 
 /**
  * Every profile actually offerable for one task, joined to its model and in sort
- * order. Four things drop a row: a disabled profile, a profile whose model is not
- * in the list at all (deleted, or dropped by `imageModelListSchema` because the
- * row failed to parse), a model the task's legacy surface excludes, and a profile
- * its model is ineligible for.
+ * order. Two things drop a row here — a profile for a different task, and a
+ * profile whose model is not in the list at all (deleted, or dropped by
+ * `imageModelListSchema` because the row failed to parse) — and everything else
+ * is {@link imageProfileOffered}'s judgment.
  *
  * This is the profile analogue of `imageModelsForSurface`, and the shared step for
  * both the resolver below and the pickers that list choices — computing the
@@ -360,14 +398,12 @@ export function imageProfileCandidates(
   task: ImageProfileTask,
 ): ResolvedImageProfile[] {
   const modelsById = new Map(models.map((model) => [model.id, model]));
-  const surface = legacySurfaceForImageTask(task);
   const offered: ResolvedImageProfile[] = [];
   for (const profile of profiles) {
-    if (profile.task !== task || !profile.enabled) continue;
+    if (profile.task !== task) continue;
     const model = modelsById.get(profile.imageModelId);
     if (!model) continue;
-    if (surface !== null && !imageModelOffersSurface(model, surface)) continue;
-    if (!profileEligibility(profile, model).ok) continue;
+    if (!imageProfileOffered(profile, model).ok) continue;
     offered.push({ profile, model });
   }
   return offered.sort((a, b) => a.profile.sort - b.profile.sort);

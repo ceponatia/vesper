@@ -135,12 +135,29 @@ export interface RenderWithModelInput {
    * 3:4; the entity lanes ask for 1 (items) and 1.5 (locations).
    */
   targetRatio?: number;
+  /**
+   * Provider-shaped control fields, already mapped against this version's
+   * bindings (`compileProfileRenderPlan`). Passed straight through — this
+   * wrapper deliberately knows nothing about control names, so the compile step
+   * stays the single place a normalized control becomes a provider field.
+   */
+  controlInput?: Record<string, unknown>;
+  /** This run's prediction budget (a profile's `timeoutMs`); null uses env/default. */
+  timeoutMs?: number | null;
+  /** Execute exactly this provider version; null takes the slug's own resolution. */
+  versionId?: string | null;
 }
 
 export interface RenderWithModelResult {
   ok: boolean;
   image?: Buffer;
   error?: string;
+  /**
+   * The provider's prediction id when one exists, on success AND failure — the
+   * provenance handle a caller records so a stored render can be traced back to
+   * the provider's own record of it.
+   */
+  predictionId?: string;
 }
 
 /**
@@ -160,6 +177,20 @@ export interface RenderWithModelResult {
  *
  * A crop failure is not fatal — the uncropped image beats no image — so it
  * degrades with a diagnostic.
+ *
+ * `controlInput`, `timeoutMs` and `versionId` are threaded through untouched
+ * for callers that resolved a profile themselves (`compileProfileRenderPlan`).
+ * Every existing lane — avatar, variants, scene, chat-look, entity — passes
+ * none of them, so their payload, their prediction budget and their version
+ * resolution are byte-identical to before: absent fields reach
+ * `runRegistryImageModel` as absent, and absent means "no overlay, env budget,
+ * slug-resolved version".
+ *
+ * The prompt crosses `preparePromptForImageModel` here even when the caller
+ * already compiled it. That is safe because the rewrite is IDEMPOTENT — it
+ * replaces the legacy identity lock with a Qwen-dialect one, and a prompt that
+ * no longer contains the legacy sentence passes through untouched — so a
+ * pre-compiled prompt arrives at the provider exactly as it was hashed.
  */
 export async function renderWithModel(
   input: RenderWithModelInput,
@@ -175,17 +206,23 @@ export async function renderWithModel(
       prompt,
       ...(input.references ? { references: input.references } : {}),
       aspect: aspect.value,
+      ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+      ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.versionId ? { versionId: input.versionId } : {}),
     },
     sink,
   );
+  // Spread rather than assigned, so a run the provider never got a prediction id
+  // for reports no field at all instead of an explicit undefined.
+  const provenance = result.predictionId ? { predictionId: result.predictionId } : {};
   if (!result.ok || !result.image) {
-    return { ok: false, error: result.error ?? `${model.slug} returned no image` };
+    return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };
   }
   // Crop when the model had no exact shape, and also when it offered none at
   // all — in that case it used its own default, which is unlikely to match.
-  if (!aspect.needsCrop && aspect.value !== null) return { ok: true, image: result.image };
+  if (!aspect.needsCrop && aspect.value !== null) return { ok: true, ...provenance, image: result.image };
   try {
-    return { ok: true, image: await cropToTargetAspect(result.image, targetRatio) };
+    return { ok: true, ...provenance, image: await cropToTargetAspect(result.image, targetRatio) };
   } catch (error) {
     sink?.push(
       diag("warn", "image_model.crop_failed", "could not crop the render to the requested shape", {
@@ -193,7 +230,7 @@ export async function renderWithModel(
         context: { slug: model.slug, targetRatio, error: error instanceof Error ? error.message : String(error) },
       }),
     );
-    return { ok: true, image: result.image };
+    return { ok: true, ...provenance, image: result.image };
   }
 }
 
