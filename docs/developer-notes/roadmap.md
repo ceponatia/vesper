@@ -13,16 +13,6 @@ progress) · **shipped — <date>** · **parked**.
 > explains it. Each plan carries its own `Status:` line; this index does not
 > restate it.
 
-## To be Planned
-
-This section is for the product owner to add ideas for features and improvements. AI agents
-must _not_ add anything to this section. AI agents _may_ remove items from this section once
-they have incorporated them into the roadmap below and either created a new plan or updated
-an existing plan that will include this work.
-
-_(Currently empty — the two character-chat ideas that were here graduated to plans on
-2026-06-30.)_
-
 ## Active (building now)
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
