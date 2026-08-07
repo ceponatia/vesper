@@ -143,6 +143,32 @@ One `.plan.md` is deliberately exempt: `deferred.plan.md` is the parking-lot
 index, not a plan, and carries `Status: parking lot` with no Outcome line. Its
 individual stubs under `deferred/` each carry an `Outcome (provisional):` line.
 
+## Document length
+
+**The ~400-line guideline is a reference-tier rule only.** It exists because
+`docs/` is read by a person orienting themselves, and a long reference doc
+buries the thing they came for. A `docs/<system>.md` past ~400 lines gets
+promoted to `docs/<system>/` with a `README.md` index plus one file per
+sub-topic (`docs/README.md` has the procedure).
+
+**Working docs under `docs/developer-notes/` have no line limit.** A plan, spec,
+trial, or audit is as long as its subject requires, and a 900-line spec is not a
+defect — splitting one to hit a number produces artificial seams that scatter a
+single argument across files and make the topic harder to follow, not easier.
+
+Split a working doc when its **content** justifies it, never its length:
+
+- A spec covering several genuinely separate domains, where a reader needs one
+  and not the others → `<topic>.spec.<area>.md`.
+- A topic whose parts are edited independently by different work → a hub plus
+  unit docs, the way the engine gate and spec-cluster docs are organized
+  (`docs/developer-notes/CLAUDE.md` §"Engine gate docs").
+- A plan carrying spec-grade technical detail → that detail moves to the spec.
+  This is a boundary fix that happens to shorten the plan, not a length fix.
+
+Do not open a split-for-length pass over `docs/developer-notes/`, and do not
+report a working doc as oversized on line count alone.
+
 ## Table formatting
 
 A Markdown table is read far more often in the raw `.md` file than in a
@@ -264,9 +290,9 @@ do not need CI (root `CLAUDE.md`). Validate by hand before finishing:
   2–4 columns, short cells — or it is a list instead.
 - No residue phrases (see the guardrail) in any plan or trial body.
 - Reference docs you touched stay present-tense and dateless.
-- Any doc that would exceed ~400 lines is split (reference tier: promote to a
-  folder per `docs/README.md`; working tier: split into `<topic>.<subtopic>.md`
-  or a hub-plus-units set like the engine docs).
+- **Reference-tier only:** a `docs/` doc over ~400 lines is promoted to a folder
+  per `docs/README.md`. **The line guideline does not apply to
+  `docs/developer-notes/`** — see [Document length](#document-length).
 
 If the change also touches code, the normal PR + CI rule applies; the docs
 checks above are additional, not a substitute.

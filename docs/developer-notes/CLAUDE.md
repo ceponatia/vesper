@@ -10,6 +10,26 @@ close-out sequence, and the validation checklist — plus copyable templates for
 plans, specs, trials, audits, and deferred stubs in its `templates/` folder.
 This file states the folder's local rules; the skill states how to apply them.
 
+## No line limit in this folder
+
+The ~400-line split guideline in the root `CLAUDE.md` and `docs/README.md` is a
+**reference-tier rule** — it governs `docs/` only. Documents here have no length
+limit. A plan, spec, trial, or audit is as long as its subject requires, and a
+900-line spec is not a defect; splitting one to hit a number scatters a single
+argument across files and makes the topic harder to follow.
+
+Split a document here when its **content** justifies it:
+
+- A spec covering separate domains a reader needs individually →
+  `<topic>.spec.<area>.md`.
+- A topic whose parts are edited independently by different work → a hub plus
+  unit docs, per §"Engine gate docs" below.
+- A plan carrying spec-grade technical detail → that detail moves to the spec.
+  That is a boundary fix which happens to shorten the plan, not a length fix.
+
+Never open a split-for-length pass over this folder, and never report a document
+here as oversized on line count alone.
+
 ## Every document opens with Status, and every plan with Outcome
 
 - **`Status:` on the line after the H1, in every file.** Plans use the lifecycle
