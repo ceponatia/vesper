@@ -52,6 +52,7 @@ export * from "./images/scene-reference";
 export * from "./images/image-models";
 export * from "./images/image-model-capabilities";
 export * from "./images/image-model-profiles";
+export * from "./images/render-intent";
 export * from "./images/identity-pack";
 export * from "./images/identity-pack-trial";
 export * from "./images/viewer-body";

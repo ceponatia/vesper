@@ -277,28 +277,11 @@ export function chooseAspect(model: ImageModel, targetRatio: number = IMAGE_TARG
   return { value: closest.value, needsCrop: true };
 }
 
-/**
- * The seeded defaults, by slug (owner ruling 2 — 2026-08-05). Slugs rather than
- * ids because ids are minted at migration time. A deployment that deletes these
- * rows falls back to whatever the surface's first offered model is.
+/*
+ * Model-level resolution used to live here, with the two seeded default slugs it
+ * fell back to. Both are gone: every render lane now resolves a PROFILE
+ * (`resolveImageProfile`) and reaches its model through the profile row, so a
+ * stored pick degrades to the task's default rather than a surface's, and the
+ * defaults themselves are rows the migration seeds rather than constants the
+ * code carries.
  */
-export const DEFAULT_PORTRAIT_MODEL_SLUG = "qwen/qwen-image-2512";
-export const DEFAULT_EDIT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
-
-/**
- * Resolve a stored pick to a usable model for one surface. A pick that no
- * longer exists — a deleted row, or a legacy Venice key from before the
- * registry — degrades to the surface's default rather than failing the render
- * (owner ruling 5: existing chats are not migrated).
- */
-export function resolveImageModel(
-  models: readonly ImageModel[],
-  surface: ImageModelSurface,
-  storedId: string | null | undefined,
-): ImageModel | null {
-  const offered = imageModelsForSurface(models, surface);
-  const picked = offered.find((model) => model.id === storedId || model.slug === storedId);
-  if (picked) return picked;
-  const defaultSlug = surface === "portrait" ? DEFAULT_PORTRAIT_MODEL_SLUG : DEFAULT_EDIT_MODEL_SLUG;
-  return offered.find((model) => model.slug === defaultSlug) ?? offered[0] ?? null;
-}

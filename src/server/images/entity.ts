@@ -3,10 +3,11 @@ import { db, images, items, locations } from "../db";
 import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
-import { parseAspectValue, type ImageModel } from "@/contracts";
+import { parseAspectValue, type ResolvedImageProfile } from "@/contracts";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { purgeImagesWhere, runImagePipeline } from "./assets";
-import { renderWithModel, resolveSurfaceModel } from "./models";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { renderImageIntent } from "./render-intent";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
 
@@ -34,9 +35,11 @@ const ASPECT: Record<EntityImageKind, `${number}:${number}`> = { item: "1:1", lo
  */
 export async function generateEntityImage(input: GenerateEntityImageInput): Promise<string> {
   const demo = isDemoMode();
-  // Entity images have no picker of their own — they take the portrait surface's
-  // default, which is the app's general-purpose text-to-image model.
-  const model = demo ? null : await resolveSurfaceModel("portrait", null, input.sink);
+  // Entity images have no picker of their own — each kind has its OWN task whose
+  // default profile is seeded on the general-purpose text-to-image model the
+  // lane used when it borrowed the portrait surface.
+  const resolved = demo ? null : await resolveImageProfileForTask(input.entityKind, null, input.sink);
+  const model = resolved?.model ?? null;
   const loaded =
     input.entityKind === "item"
       ? await loadItemPrompt(input.entityId, input.userId)
@@ -62,9 +65,9 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     produce: async () => ({
       ok: true,
       image:
-        demo || !model
+        demo || !resolved
           ? monogramSvg(loaded?.name ?? "")
-          : await generateEntityBuffer(model, prompt, ASPECT[input.entityKind], input.sink),
+          : await generateEntityBuffer(resolved, prompt, ASPECT[input.entityKind], input.sink),
     }),
     onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
@@ -163,14 +166,14 @@ async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: stri
  * A missing key / API error throws and the caller marks the row failed.
  */
 async function generateEntityBuffer(
-  model: ImageModel,
+  profile: ResolvedImageProfile,
   prompt: string,
   aspectRatio: `${number}:${number}`,
   sink?: DiagnosticSink,
 ): Promise<Buffer> {
   const targetRatio = parseAspectValue(aspectRatio) ?? 1;
-  const result = await renderWithModel({ model, prompt, targetRatio }, sink);
-  if (!result.ok || !result.image) throw new Error(result.error ?? `${model.slug} returned no image`);
+  const result = await renderImageIntent({ profile, prompt, references: [], target: { aspectRatio: targetRatio } }, sink);
+  if (!result.ok || !result.image) throw new Error(result.error ?? `${profile.model.slug} returned no image`);
   return result.image;
 }
 

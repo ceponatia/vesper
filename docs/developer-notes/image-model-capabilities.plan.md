@@ -1,10 +1,9 @@
 # Image model capabilities — profiles, shared controls, and richer workflows
 
 Status: active. Slice 1 shipped 2026-08-05 (reviewed capability ratings, the
-profile table, 17 built-in profiles, and the resolver — all dormant: no player
-render goes through them). Parts of slices 2 and 4 landed early on 2026-08-06/07
-inside the identity-pack trial harness and are waiting to be adopted rather than
-re-invented. Slices 2–9 remain queued.
+profile table, 17 built-in profiles, and the resolver). Slice 2 shipped
+2026-08-07: every player render now resolves a profile and goes through the
+shared render intent, with payloads unchanged. Slices 3–9 remain queued.
 
 Outcome: The owner can pick a named, curated setup for each image model — a quick
 portrait, a 4K location, a scene that keeps the same character — so that one
@@ -68,19 +67,25 @@ the combinations that would quietly swap out a character's face. None of this
 changes a rendered image: no player-facing lane calls the profile layer, and each
 seeded profile describes exactly what its lane already does.
 
-**Landed early, used only by the identity trial.** The identity-pack fixed-trial
-harness needed the part of this plan that turns one profile plus one prompt into
-the exact provider payload, because a comparison that records a profile's
-settings but sends the model's raw defaults grades a configuration nobody ran. So
-the profile compile step, the control mapper, and the plumbing that lets a caller
-hand a compiled payload, prediction budget, and pinned version to the renderer
-all exist. They were written to be adopted by the shared render intent rather
-than duplicated beside it.
+**Shipped and live (slice 2).** All seven ordinary lanes — portrait, variant,
+scene, item, location, and the two chat anchors — now pick a profile for their
+job and describe what they want in one shared vocabulary before any model is
+called. A reference is no longer "the second image": it says whether it is the
+character, the room, or a style example, which is what the identity-pack and
+visual-state work were both waiting for.
 
-**Not started.** The ordinary lanes — portrait, variant, scene, item, location,
-and the two chat anchors — still resolve a model rather than a profile. Role-aware
-references, recorded seeds, safe version promotion, the LoRA library, image sets,
-and any admin or player UI for profiles remain ahead.
+Nothing about the pictures changed, and that was the requirement. Each of the
+seventeen profiles was written to describe exactly what its lane already did, so
+the move changed where the configuration comes from and not what the provider
+receives. The model-level selection code the lanes used before was deleted rather
+than left beside the profile layer.
+
+**Not started.** Role-aware reference priority and parallel uploads, recorded
+seeds, safe version promotion, the LoRA library, image sets, and any admin or
+player UI for profiles remain ahead. One gap the migration opens: the model
+pickers still list models, while renders resolve profiles, so a model an operator
+adds without a profile is offered and then quietly passed over for the default —
+visible in the diagnostics, and closed by the picker slice.
 
 ## What stays unchanged
 
@@ -294,10 +299,11 @@ version change must not update the active model's stored capabilities until the
 version itself is activated.
 
 This is especially important for optional features such as LoRAs, where one
-version may expose a field that another does not. It also has an immediate
-practical cost: a controlled comparison refuses to run against a model whose
-exact version is unknown, so the identity trial cannot use a built-in until an
-admin has re-probed it.
+version may expose a field that another does not.
+
+Until this slice lands, ordinary renders deliberately follow the floating latest
+version. A controlled comparison cannot: it refuses a model whose exact version
+it cannot pin, which is why trial setup re-probes the models a run will use.
 
 ## Multiple outputs and coherent sets
 
@@ -316,14 +322,18 @@ pipelines to understand batches.
    kind and identity-preservation metadata, task-specific profiles, and a
    resolver that maps an existing model selection to a default profile without
    changing a single render.
-2. **Shared render intent.** Introduce the normalized request and refactor the
-   existing portrait, variant, scene, item, location, chat-look, and chat-place
-   lanes through it while preserving their prompts and outputs. The profile
-   compile step and control mapper this needs already exist; the missing half is
-   the request itself and the lane migration.
+2. **Shared render intent** — **shipped 2026-08-07.** The normalized request,
+   with the portrait, variant, scene, item, location, chat-look and chat-place
+   lanes refactored through it, prompts and outputs preserved. Two things it
+   deliberately left alone, both of which would have changed live renders:
+   production still follows each model's floating latest version rather than the
+   compile step's pin, and still takes its prediction budget from the environment
+   unless a profile declares one.
 3. **Role-aware references and transport.** Replace positional trimming with
    priority selection, add bounded concurrent uploads, and preserve Wan's inline
-   path.
+   path. References now carry roles and a profile's required roles are enforced;
+   what remains is choosing WHICH references survive when capacity is short, and
+   the general-vocabulary wording that lets a profile name each one in the prompt.
 4. **Common controls and reproducibility.** Store seeds, add quality profiles,
    map guidance, steps, negative prompt, and edit strength only where supported,
    and use per-profile prediction timeouts. Mapping and timeouts are done;
@@ -340,13 +350,12 @@ pipelines to understand batches.
 9. **Future visual controls.** Extend the input-binding vocabulary to masks,
    pose, depth, and other control images when a selected model requires them.
 
-Each slice should be independently usable. The shared render-intent refactor must
-not wait for image sets or LoRAs, and image sets must not change ordinary scene
-generation.
+Each slice should be independently usable. Image sets must not change ordinary
+scene generation.
 
-Slice 2 is also the gate on other work: the identity-pack plan's render-lane
-consumption slice and the visual-state plan both wait for the shared render
-intent to exist.
+Slice 2 was the gate on other work, and that gate is now open: the identity-pack
+plan's render-lane consumption slice and the visual-state plan can both supply
+role-carrying references.
 
 ## Success criteria
 
