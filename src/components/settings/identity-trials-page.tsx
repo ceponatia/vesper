@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { identityReferenceStrategies, type IdentityReferenceStrategy } from "@/contracts";
+import {
+  identityReferenceStrategies,
+  trialPackVariantKey,
+  type IdentityReferenceStrategy,
+  type TrialPackVariantSelector,
+} from "@/contracts";
 import { IDENTITY_PACK_TRIAL_PROMPT_FIXTURES } from "@/lib/images/identity-pack-trial";
 import { adminIdentityPacksApi, identityPackTrialRefusal, meApi } from "@/lib/client/api";
 import {
@@ -17,6 +22,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,6 +53,20 @@ function idLines(text: string): string[] {
 
 function toggled<T>(current: readonly T[], value: T): T[] {
   return current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value];
+}
+
+/**
+ * The whole-run ceiling on pack-variant arms, mirroring the create request's
+ * `packVariants` bound (contracts `imageIdentityPackTrialCreateRequestSchema`) —
+ * the same local-mirror shape the execute batch bounds use in the run detail.
+ * `current` occupies one of them, so the form offers three extras.
+ */
+const MAX_PACK_VARIANTS = 4;
+
+/** One pinned-revision arm as the form holds it, before it becomes a selector. */
+interface RevisionArm {
+  characterId: string;
+  revision: number;
 }
 
 export function IdentityTrialsPage() {
@@ -160,16 +180,43 @@ function CreateTrialRunDialog({
   const [profilesText, setProfilesText] = useState("");
   const [strategies, setStrategies] = useState<IdentityReferenceStrategy[]>([]);
   const [fixtureIds, setFixtureIds] = useState<string[]>([]);
+  const [baseline, setBaseline] = useState(false);
+  const [revisionArms, setRevisionArms] = useState<RevisionArm[]>([]);
   const [creating, setCreating] = useState(false);
 
   const characterIds = idLines(charactersText);
   const profileIds = idLines(profilesText);
+
+  // `current` is always the first arm: it is what the run compares everything
+  // else against, and it is also what the server plans when no variants are
+  // named. The extras this control adds ride behind it.
+  const packVariants: TrialPackVariantSelector[] = [
+    { source: "current" },
+    ...(baseline ? [{ source: "none" as const }] : []),
+    ...revisionArms.map((arm) => ({ source: "revision" as const, ...arm })),
+  ];
+  const variantKeys = packVariants.map((selector) => trialPackVariantKey(selector));
+  // Two selectors spelling the same variant would collapse into one arm and
+  // leave the reviewer believing they configured two, so the contract refuses
+  // them — the form refuses first, where the fix is visible.
+  const duplicateVariants = new Set(variantKeys).size !== variantKeys.length;
+  // A revision selector naming a character outside the run refuses the WHOLE
+  // run server-side. The picker only offers ids from the box above; this catches
+  // the one way to strand an arm anyway — deleting the id after choosing it.
+  const strandedRevision = revisionArms.some((arm) => !characterIds.includes(arm.characterId));
+  const variantsFull = packVariants.length >= MAX_PACK_VARIANTS;
+
   const ready =
     label.trim().length > 0 &&
     characterIds.length > 0 &&
     profileIds.length > 0 &&
     strategies.length > 0 &&
-    fixtureIds.length > 0;
+    fixtureIds.length > 0 &&
+    !duplicateVariants &&
+    !strandedRevision;
+
+  const patchArm = (index: number, patch: Partial<RevisionArm>) =>
+    setRevisionArms((current) => current.map((arm, at) => (at === index ? { ...arm, ...patch } : arm)));
 
   const create = async () => {
     setCreating(true);
@@ -179,6 +226,9 @@ function CreateTrialRunDialog({
       profileIds,
       strategies,
       promptFixtureIds: fixtureIds,
+      // Omitted entirely when it would say exactly "current only" — the server's
+      // own default — so an untouched form sends the body it always sent.
+      packVariants: packVariants.length > 1 ? packVariants : undefined,
     });
     setCreating(false);
     if (!result.ok) {
@@ -277,9 +327,85 @@ function CreateTrialRunDialog({
             ))}
           </div>
         </Field>
+        <Field
+          label="Pack variants"
+          hint={`The current pack is always one arm. Add up to ${MAX_PACK_VARIANTS - 1} more to compare a pinned revision or the no-pack control.`}
+        >
+          <div className="flex flex-col gap-2">
+            <label className="flex items-start gap-2 text-sm text-paper-300">
+              <input
+                type="checkbox"
+                checked={baseline}
+                disabled={!baseline && variantsFull}
+                onChange={() => setBaseline((on) => !on)}
+                className="mt-1 accent-accent-500"
+              />
+              <span>
+                Include the no-pack baseline
+                <span className="ml-2 text-[11px] text-paper-500">
+                  generate profiles only — on an edit profile the cell records refused
+                </span>
+              </span>
+            </label>
+            {revisionArms.map((arm, index) => (
+              <div key={index} className="flex flex-wrap items-center gap-2">
+                <Select
+                  aria-label="Pinned revision character"
+                  value={arm.characterId}
+                  onChange={(e) => patchArm(index, { characterId: e.target.value })}
+                  className="h-8 max-w-full text-xs sm:w-72"
+                >
+                  <option value="">Character…</option>
+                  {characterIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  aria-label="Pinned revision number"
+                  type="number"
+                  min={1}
+                  value={arm.revision}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isInteger(next) && next >= 1) patchArm(index, { revision: next });
+                  }}
+                  className="h-8 w-20 text-sm"
+                />
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  onClick={() => setRevisionArms((current) => current.filter((_, at) => at !== index))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <div>
+              <Button
+                size="sm"
+                disabled={characterIds.length === 0 || variantsFull}
+                onClick={() => setRevisionArms((current) => [...current, { characterId: characterIds[0] ?? "", revision: 1 }])}
+              >
+                Add pinned revision
+              </Button>
+            </div>
+            {duplicateVariants ? (
+              <p className="text-xs text-danger-300">
+                Two arms name the same pack variant — they would be one arm, not two.
+              </p>
+            ) : null}
+            {strandedRevision ? (
+              <p className="text-xs text-danger-300">
+                Every pinned revision must name a character from the list above, or the whole run is refused.
+              </p>
+            ) : null}
+          </div>
+        </Field>
         <p className="text-[11px] text-paper-600">
-          Cells are characters × profiles × strategies × fixtures, capped at 96 per run. Planning is free; each Execute
-          click is charged against the daily render budget.
+          Cells are characters × profiles × strategies × fixtures × pack variants, capped at 96 per run. Planning is
+          free; each Execute click is charged against the daily render budget.
         </p>
       </div>
     </Dialog>

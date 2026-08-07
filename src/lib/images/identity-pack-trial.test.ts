@@ -11,6 +11,7 @@ import { imageIdentityCriticalTasks } from "@/contracts/images/image-model-profi
 import {
   aggregateTrialGrades,
   buildTrialCellPlans,
+  compareTrialCellKeys,
   IDENTITY_PACK_TRIAL_PROMPT_FIXTURES,
   pairTrialCells,
   trialPromptFixtureById,
@@ -19,6 +20,9 @@ import {
   type TrialGradeRecord,
   type TrialPairableCell,
 } from "./identity-pack-trial";
+
+/** The variant key a `{ source: "revision" }` selector for char_1 rev 2 derives. */
+const REV_KEY = "rev:char_1:2";
 
 function planInput(overrides: Partial<TrialCellPlanInput> = {}): TrialCellPlanInput {
   return {
@@ -39,8 +43,15 @@ function cell(id: string, overrides: Partial<TrialPairableCell> = {}): TrialPair
     promptFixtureId: "variant_wardrobe_v1",
     task: "variant",
     identityStrategy: "canonical_only",
+    packVariantKey: "current",
+    referenceSource: "pack",
     ...overrides,
   };
+}
+
+/** The no-pack baseline arm: no strategy, no references, its own variant key. */
+function baselineCell(id: string, overrides: Partial<TrialPairableCell> = {}): TrialPairableCell {
+  return cell(id, { identityStrategy: null, packVariantKey: "none", referenceSource: "none", ...overrides });
 }
 
 function gradesFixture(overrides: Partial<TrialPairGrades> = {}): TrialPairGrades {
@@ -62,6 +73,22 @@ function gradeRecord(
       ...extra,
     },
   };
+}
+
+/** The comparison-group identity a cell key leads with. */
+function groupPrefix(cellKey: string): string {
+  return cellKey.split(":").slice(0, 3).join(":");
+}
+
+/** The sequence of groups a key list visits, collapsing consecutive repeats.
+ * A group appearing twice in this list means its arms were NOT contiguous. */
+function groupRuns(cellKeys: readonly string[]): string[] {
+  const runs: string[] = [];
+  for (const key of cellKeys) {
+    const prefix = groupPrefix(key);
+    if (runs[runs.length - 1] !== prefix) runs.push(prefix);
+  }
+  return runs;
 }
 
 describe("prompt fixtures", () => {
@@ -121,16 +148,29 @@ describe("cell planning", () => {
       }),
     );
     if (!result.ok) throw new Error("expected a plan");
+    // character : profile : fixture : strategy : variant — the group prefix
+    // leads, so every arm of one comparison lands together.
     expect(result.plans.map((plan) => plan.cellKey)).toEqual([
-      "char_1:profile_1:canonical_only:fixture_a",
-      "char_1:profile_1:canonical_only:fixture_b",
-      "char_1:profile_1:canonical_then_face_detail:fixture_a",
-      "char_1:profile_1:canonical_then_face_detail:fixture_b",
-      "char_2:profile_1:canonical_only:fixture_a",
-      "char_2:profile_1:canonical_only:fixture_b",
-      "char_2:profile_1:canonical_then_face_detail:fixture_a",
-      "char_2:profile_1:canonical_then_face_detail:fixture_b",
+      "char_1:profile_1:fixture_a:canonical_only:current",
+      "char_1:profile_1:fixture_a:canonical_then_face_detail:current",
+      "char_1:profile_1:fixture_b:canonical_only:current",
+      "char_1:profile_1:fixture_b:canonical_then_face_detail:current",
+      "char_2:profile_1:fixture_a:canonical_only:current",
+      "char_2:profile_1:fixture_a:canonical_then_face_detail:current",
+      "char_2:profile_1:fixture_b:canonical_only:current",
+      "char_2:profile_1:fixture_b:canonical_then_face_detail:current",
     ]);
+  });
+
+  it("defaults to a single `current` pack variant when none is named", () => {
+    const result = buildTrialCellPlans(planInput());
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.plans).toHaveLength(1);
+    expect(result.plans[0]).toMatchObject({
+      packVariantKey: "current",
+      packVariant: { source: "current" },
+      identityStrategy: "canonical_only",
+    });
   });
 
   it("plans exactly the cap, and refuses one cell past it with a typed refusal", () => {
@@ -164,6 +204,121 @@ describe("cell planning", () => {
     if (!result.ok) throw new Error("expected a plan");
     expect(result.plans).toHaveLength(TRIAL_MAX_CELLS);
   });
+
+  it("collapses variants by DERIVED KEY, not by object identity", () => {
+    const result = buildTrialCellPlans(
+      planInput({
+        packVariants: [
+          { source: "current" },
+          { source: "current" },
+          { source: "revision", characterId: "char_1", revision: 2 },
+          { source: "revision", characterId: "char_1", revision: 2 },
+        ],
+      }),
+    );
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.plans.map((plan) => plan.packVariantKey)).toEqual(["current", REV_KEY]);
+    expect(result.plans.map((plan) => plan.cellKey)).toEqual([
+      "char_1:profile_1:variant_wardrobe_v1:canonical_only:current",
+      `char_1:profile_1:variant_wardrobe_v1:canonical_only:${REV_KEY}`,
+    ]);
+  });
+
+  it("scopes a revision variant to its own character and plans nothing for the others", () => {
+    const result = buildTrialCellPlans(
+      planInput({
+        characterIds: ["char_1", "char_2"],
+        packVariants: [{ source: "current" }, { source: "revision", characterId: "char_1", revision: 2 }],
+      }),
+    );
+    if (!result.ok) throw new Error("expected a plan");
+    const byCharacter = new Map<string, string[]>();
+    for (const plan of result.plans) {
+      byCharacter.set(plan.characterId, [...(byCharacter.get(plan.characterId) ?? []), plan.packVariantKey]);
+    }
+    expect(byCharacter.get("char_1")).toEqual(["current", REV_KEY]);
+    // char_2 has nothing to do with char_1's revision 2 — it simply gets no cell.
+    expect(byCharacter.get("char_2")).toEqual(["current"]);
+  });
+
+  it("plans exactly ONE no-pack baseline cell per group, with a null strategy", () => {
+    const result = buildTrialCellPlans(
+      planInput({
+        strategies: ["canonical_only", "face_detail_only"],
+        packVariants: [{ source: "current" }, { source: "none" }],
+      }),
+    );
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.plans.map((plan) => plan.cellKey)).toEqual([
+      "char_1:profile_1:variant_wardrobe_v1:canonical_only:current",
+      "char_1:profile_1:variant_wardrobe_v1:face_detail_only:current",
+      "char_1:profile_1:variant_wardrobe_v1:none:none",
+    ]);
+    const baseline = result.plans.filter((plan) => plan.identityStrategy === null);
+    expect(baseline).toHaveLength(1);
+    expect(baseline[0]).toMatchObject({ packVariantKey: "none", packVariant: { source: "none" } });
+  });
+
+  it("counts the cells actually generated against the cap, not an axis product", () => {
+    // 95 characters × 1 current variant + one character's extra pinned revision
+    // = 96. A naive characters × variants product would have said 190 and refused.
+    const scoped = buildTrialCellPlans(
+      planInput({
+        characterIds: characters(TRIAL_MAX_CELLS - 1),
+        packVariants: [{ source: "current" }, { source: "revision", characterId: "char_0", revision: 2 }],
+      }),
+    );
+    if (!scoped.ok) throw new Error("expected the scoped run to plan");
+    expect(scoped.plans).toHaveLength(TRIAL_MAX_CELLS);
+
+    // The baseline DOES apply to every character, so it doubles the count.
+    const withBaseline = buildTrialCellPlans(
+      planInput({
+        characterIds: characters(TRIAL_MAX_CELLS / 2),
+        packVariants: [{ source: "current" }, { source: "none" }],
+      }),
+    );
+    if (!withBaseline.ok) throw new Error("expected the baseline run to plan");
+    expect(withBaseline.plans).toHaveLength(TRIAL_MAX_CELLS);
+
+    const overCap = buildTrialCellPlans(
+      planInput({
+        characterIds: characters(TRIAL_MAX_CELLS / 2 + 1),
+        packVariants: [{ source: "current" }, { source: "none" }],
+      }),
+    );
+    if (overCap.ok) throw new Error("expected refusal");
+    expect(overCap.requestedCells).toBe(TRIAL_MAX_CELLS + 2);
+  });
+
+  it("keeps every comparison group's arms contiguous — in plan order AND in cellKey order", () => {
+    const result = buildTrialCellPlans({
+      characterIds: ["char_2", "char_1"],
+      profileIds: ["profile_1", "profile_2"],
+      strategies: ["face_detail_only", "canonical_only"],
+      promptFixtureIds: ["fixture_b", "fixture_a"],
+      packVariants: [
+        { source: "current" },
+        { source: "revision", characterId: "char_1", revision: 2 },
+        { source: "none" },
+      ],
+    });
+    if (!result.ok) throw new Error("expected a plan");
+    const planned = result.plans.map((plan) => plan.cellKey);
+    const executed = [...planned].sort(compareTrialCellKeys);
+
+    // 2 characters × 2 profiles × 2 fixtures = 8 groups, each visited exactly
+    // once in both orderings: no group is interleaved with another.
+    for (const order of [planned, executed]) {
+      const runs = groupRuns(order);
+      expect(runs).toHaveLength(8);
+      expect(new Set(runs).size).toBe(runs.length);
+    }
+    // char_1 carries three arms per group (2 strategies × 2 variants + baseline
+    // is 5); char_2 has no revision variant, so it carries 3.
+    expect(planned.filter((key) => key.startsWith("char_1:profile_1:fixture_a:"))).toHaveLength(5);
+    expect(planned.filter((key) => key.startsWith("char_2:profile_1:fixture_a:"))).toHaveLength(3);
+  });
 });
 
 describe("pairing", () => {
@@ -173,6 +328,7 @@ describe("pairing", () => {
       cell("a_both", { identityStrategy: "canonical_then_face_detail" }),
       cell("a_failed", { identityStrategy: "face_detail_only", status: "failed" }),
       cell("a_refused", { identityStrategy: "face_detail_then_canonical", status: "refused" }),
+      cell("a_running", { identityStrategy: "face_detail_only", status: "running" }),
       cell("a_planned", { promptFixtureId: "variant_pose_v1", status: "planned" }),
       cell("b_alone", { characterId: "char_2" }),
       cell("p2_alone", { profileId: "profile_2", identityStrategy: "canonical_then_face_detail" }),
@@ -184,6 +340,8 @@ describe("pairing", () => {
     expect(pair.cellBId).toBe("a_both");
     expect(pair.strategyA).toBe("canonical_only");
     expect(pair.strategyB).toBe("canonical_then_face_detail");
+    expect(pair.variantKeyA).toBe("current");
+    expect(pair.variantKeyB).toBe("current");
   });
 
   it("assigns A/B by canonical strategy order, and the pair id by sorted cell ids", () => {
@@ -223,6 +381,64 @@ describe("pairing", () => {
     ]);
     const pairedIds = new Set(forward.flatMap((pair) => [pair.cellAId, pair.cellBId]));
     expect(pairedIds.has("noise_failed")).toBe(false);
+  });
+
+  it("never pairs two cells that differ in BOTH strategy and pack variant", () => {
+    const pairs = pairTrialCells([
+      cell("x_canon_current"),
+      cell("x_canon_rev", { packVariantKey: REV_KEY }),
+      cell("x_face_rev", { identityStrategy: "face_detail_only", packVariantKey: REV_KEY }),
+    ]);
+    // Three cells, three unordered combinations — but the confounded one
+    // (canonical/current vs face-detail/revision) is not a measurement.
+    expect(pairs).toHaveLength(2);
+    expect(
+      pairs.map((pair) => [pair.strategyA, pair.variantKeyA, pair.strategyB, pair.variantKeyB]),
+    ).toEqual([
+      ["canonical_only", "current", "canonical_only", REV_KEY],
+      ["canonical_only", REV_KEY, "face_detail_only", REV_KEY],
+    ]);
+    const confounded = pairs.some(
+      (pair) => pair.strategyA !== pair.strategyB && pair.variantKeyA !== pair.variantKeyB,
+    );
+    expect(confounded).toBe(false);
+  });
+
+  it("pairs the same strategy across two pack variants", () => {
+    const pairs = pairTrialCells([cell("v_current"), cell("v_revision", { packVariantKey: REV_KEY })]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]).toMatchObject({
+      cellAId: "v_current",
+      cellBId: "v_revision",
+      strategyA: "canonical_only",
+      strategyB: "canonical_only",
+      variantKeyA: "current",
+      variantKeyB: REV_KEY,
+    });
+  });
+
+  it("pairs the no-pack baseline against every pack cell, always as side B", () => {
+    const pairs = pairTrialCells([
+      cell("n_canon"),
+      cell("n_face", { identityStrategy: "face_detail_only" }),
+      baselineCell("n_base"),
+    ]);
+    expect(pairs).toHaveLength(3);
+    expect(pairs.map((pair) => [pair.cellAId, pair.cellBId])).toEqual([
+      ["n_canon", "n_face"],
+      ["n_canon", "n_base"],
+      ["n_face", "n_base"],
+    ]);
+    // The baseline ranks after every real strategy, so it never displaces a
+    // pack arm onto the B side.
+    for (const pair of pairs) expect(pair.strategyA).not.toBeNull();
+    const baselinePairs = pairs.filter((pair) => pair.variantKeyB === "none");
+    expect(baselinePairs).toHaveLength(2);
+    for (const pair of baselinePairs) expect(pair.strategyB).toBeNull();
+  });
+
+  it("never pairs two baselines with each other — they are the same arm", () => {
+    expect(pairTrialCells([baselineCell("base_1"), baselineCell("base_2")])).toEqual([]);
   });
 });
 
@@ -280,6 +496,8 @@ describe("aggregation", () => {
     expect(comparison.profileId).toBe("profile_1");
     expect(comparison.strategyA).toBe("canonical_only");
     expect(comparison.strategyB).toBe("canonical_then_face_detail");
+    expect(comparison.variantKeyA).toBe("current");
+    expect(comparison.variantKeyB).toBe("current");
     expect(comparison.totalPairs).toBe(4);
     expect(comparison.gradedPairs).toBe(3);
     // (2 + 1 + 0) / 3 = 1; (1 + 1 + 2) / 3 rounds to 1.33; (1 - 2 + 0) / 3 to -0.33.
@@ -322,5 +540,47 @@ describe("aggregation", () => {
       ["profile_1", "canonical_only", "face_detail_only"],
       ["profile_2", "canonical_only", "canonical_then_face_detail"],
     ]);
+  });
+
+  it("keeps the same two strategies in SEPARATE buckets when the pack variant differs", () => {
+    const pairs = pairTrialCells([
+      cell("v_canon_cur"),
+      cell("v_canon_rev", { packVariantKey: REV_KEY }),
+      cell("v_face_cur", { identityStrategy: "face_detail_only" }),
+      cell("v_face_rev", { identityStrategy: "face_detail_only", packVariantKey: REV_KEY }),
+    ]);
+    expect(pairs).toHaveLength(4);
+    const comparisons = aggregateTrialGrades(pairs, []);
+    expect(
+      comparisons.map((comparison) => [
+        comparison.strategyA,
+        comparison.variantKeyA,
+        comparison.strategyB,
+        comparison.variantKeyB,
+      ]),
+    ).toEqual([
+      ["canonical_only", "current", "canonical_only", REV_KEY],
+      ["canonical_only", "current", "face_detail_only", "current"],
+      ["canonical_only", REV_KEY, "face_detail_only", REV_KEY],
+      ["face_detail_only", "current", "face_detail_only", REV_KEY],
+    ]);
+    // canonical-vs-face-detail appears twice — once per pack revision. Folding
+    // them together would average away the effect the variant axis measures.
+    for (const comparison of comparisons) expect(comparison.totalPairs).toBe(1);
+  });
+
+  it("buckets a no-pack baseline comparison under a null strategy B", () => {
+    const pairs = pairTrialCells([cell("z_canon"), baselineCell("z_base")]);
+    const comparisons = aggregateTrialGrades(pairs, [gradeRecord("z_base:z_canon", { overall_preference: -2 })]);
+    expect(comparisons).toHaveLength(1);
+    expect(comparisons[0]).toMatchObject({
+      strategyA: "canonical_only",
+      variantKeyA: "current",
+      strategyB: null,
+      variantKeyB: "none",
+      totalPairs: 1,
+      gradedPairs: 1,
+      overall: { winsA: 1, ties: 0, winsB: 0 },
+    });
   });
 });

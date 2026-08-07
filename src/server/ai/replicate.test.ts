@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,
+  overlayControlInput,
   referenceDataUrl,
   replicatePredictionTarget,
+  reservedImageInputFields,
   runRegistryImageModel,
   unwrapReplicateImage,
   withinDataUrlBudget,
+  type RegistryModelRequest,
 } from "./replicate";
 
 const originalToken = process.env.REPLICATE_API_TOKEN;
@@ -54,8 +58,10 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   ...overrides,
 });
 
-/** Capture the prediction POST for one succeeded-immediately generation. */
-async function predictionRequest(): Promise<RequestInit | undefined> {
+/** Capture the prediction POST (url + init) for one succeeded-immediately generation. */
+async function predictionCall(
+  over: Partial<RegistryModelRequest> = {},
+): Promise<{ url: string; init?: RequestInit } | undefined> {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   vi.stubGlobal(
     "fetch",
@@ -68,8 +74,12 @@ async function predictionRequest(): Promise<RequestInit | undefined> {
       return new Response(Buffer.from("image-bytes"), { status: 200 });
     }),
   );
-  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
-  return calls[0]?.init;
+  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4", ...over });
+  return calls[0];
+}
+
+async function predictionRequest(over: Partial<RegistryModelRequest> = {}): Promise<RequestInit | undefined> {
+  return (await predictionCall(over))?.init;
 }
 
 describe("buildRegistryModelInput", () => {
@@ -148,6 +158,45 @@ describe("buildRegistryModelInput", () => {
   });
 });
 
+describe("control input overlay", () => {
+  it("merges mapped fields over the built payload, later winning", () => {
+    // The capabilities spec's merge order: model `extraInput` first, the
+    // profile's resolved controls after it.
+    const built = buildRegistryModelInput(model({ extraInput: { guidance_scale: 3 } }), "p", [], "3:4");
+    const merged = overlayControlInput(built, { guidance_scale: 7, negative_prompt: "blurry" }, model());
+    expect(merged).toMatchObject({ prompt: "p", aspect_ratio: "3:4", guidance_scale: 7, negative_prompt: "blurry" });
+  });
+
+  it("refuses to let control input rewrite the prompt, reference, or aspect field", () => {
+    // A stored profile row must not be able to redirect where the prompt goes.
+    const target = model({ referenceField: "image_input", referenceArity: "array" });
+    const built = buildRegistryModelInput(target, "the real prompt", ["u1"], "3:4");
+    const sink = new DiagnosticCollector();
+    const merged = overlayControlInput(
+      built,
+      { prompt: "hijacked", image_input: ["evil"], aspect_ratio: "16:9", guidance_scale: 4 },
+      target,
+      sink,
+    );
+    expect(merged).toMatchObject({ prompt: "the real prompt", image_input: ["u1"], aspect_ratio: "3:4", guidance_scale: 4 });
+    expect(sink.items.map((entry) => entry.code)).toEqual(["image_model.reserved_field_ignored"]);
+  });
+
+  it("returns the built payload untouched when there is no control input", () => {
+    const built = buildRegistryModelInput(model(), "p", [], null);
+    expect(overlayControlInput(built, undefined, model())).toBe(built);
+  });
+
+  it("names the aspect key each model actually writes as reserved", () => {
+    expect(reservedImageInputFields(model())).toContain("aspect_ratio");
+    expect(reservedImageInputFields(model({ aspectMode: "size" }))).toContain("size");
+    // Safety enforcement and the version pin are the render path's, not a profile's.
+    expect(reservedImageInputFields(model())).toEqual(
+      expect.arrayContaining(["prompt", "image", "version", "disable_safety_checker"]),
+    );
+  });
+});
+
 describe("inline reference transport", () => {
   it("stamps the stored webp media type into the URI", () => {
     expect(referenceDataUrl(Buffer.from("bytes"))).toBe(`data:image/webp;base64,${Buffer.from("bytes").toString("base64")}`);
@@ -189,10 +238,27 @@ describe("replicatePredictionTarget", () => {
     });
   });
 
+  it("routes a BARE slug with an explicit version to /predictions carrying it", () => {
+    // The controlled-trial case: a bare slug would otherwise run whatever
+    // `latest_version` is that hour, which is not a comparison.
+    expect(replicatePredictionTarget("qwen/qwen-image-2512", "v-probed")).toEqual({
+      path: "/predictions",
+      version: "v-probed",
+    });
+  });
+
+  it("lets an explicit version win over one pinned in the slug", () => {
+    expect(replicatePredictionTarget("qwen/qwen-image-2512:slugpin", "explicit")).toEqual({
+      path: "/predictions",
+      version: "explicit",
+    });
+  });
+
   it("rejects malformed slugs", () => {
     expect(() => replicatePredictionTarget("qwen")).toThrow(/invalid Replicate model id/);
     expect(() => replicatePredictionTarget("a/b/c")).toThrow(/invalid Replicate model id/);
     expect(() => replicatePredictionTarget("a/b:c:d")).toThrow(/invalid Replicate model id/);
+    expect(() => replicatePredictionTarget("qwen", "explicit")).toThrow(/invalid Replicate model id/);
   });
 });
 
@@ -378,6 +444,31 @@ describe("runRegistryImageModel", () => {
 
     process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "not-a-number";
     expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "300s" } });
+  });
+
+  it("prefers the request's own prediction budget over the env value", async () => {
+    // The capabilities spec's order: profile timeout, then env, then default.
+    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "600000";
+    expect(await predictionRequest({ timeoutMs: 90_000 })).toMatchObject({ headers: { "Cancel-After": "90s" } });
+  });
+
+  it("clamps a request budget outside the sane band", async () => {
+    expect(await predictionRequest({ timeoutMs: 1_000 })).toMatchObject({ headers: { "Cancel-After": "30s" } });
+    expect(await predictionRequest({ timeoutMs: 99_999_999 })).toMatchObject({ headers: { "Cancel-After": "1800s" } });
+  });
+
+  it("posts an explicitly pinned version to /predictions even for a bare slug", async () => {
+    const call = await predictionCall({ versionId: "version-abc" });
+    expect(call?.url).toBe("https://api.replicate.com/v1/predictions");
+    const body = JSON.parse(String(call?.init?.body)) as { version?: string; input: Record<string, unknown> };
+    expect(body.version).toBe("version-abc");
+    expect(body.input).toMatchObject({ prompt: "portrait" });
+  });
+
+  it("merges control input into the posted payload without touching the prompt", async () => {
+    const call = await predictionCall({ controlInput: { guidance_scale: 6, prompt: "hijacked" } });
+    const body = JSON.parse(String(call?.init?.body)) as { input: Record<string, unknown> };
+    expect(body.input).toMatchObject({ prompt: "portrait", guidance_scale: 6 });
   });
 
   it("unwraps bytes and preserves provider error text", () => {

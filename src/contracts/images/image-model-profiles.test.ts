@@ -5,6 +5,7 @@ import {
   imageModelProfileListSchema,
   imageModelProfileSchema,
   imageProfileCandidates,
+  imageProfileOffered,
   isImageIdentityCriticalTask,
   legacySurfaceForImageTask,
   profileEligibility,
@@ -243,6 +244,34 @@ const sceneCompose4k = profile({ id: "prf-scene-compose-4k", key: "scene-4k", im
 const sceneRemix = profile({ id: "prf-scene-remix", imageModelId: "mdl-remix", sort: 50 });
 // Deliberately not in sort order — the join is what imposes it.
 const allProfiles = [sceneRemix, sceneCompose4k, sceneCompose, sceneDefault];
+
+describe("imageProfileOffered", () => {
+  it("names the switch, the legacy surface, and the structural gate separately", () => {
+    expect(imageProfileOffered(sceneDefault, editModel)).toEqual({ ok: true });
+    expect(imageProfileOffered(profile({ ...sceneDefault, enabled: false }), editModel)).toEqual({
+      ok: false,
+      reason: "disabled",
+    });
+    expect(imageProfileOffered(sceneCompose, model({ ...composeModel, forScene: false }))).toEqual({
+      ok: false,
+      reason: "legacy_surface_excluded",
+    });
+    // The structural half is `profileEligibility`'s verdict, passed through
+    // verbatim — the trial planner reads the reason, not just the boolean.
+    expect(imageProfileOffered(sceneRemix, remixModel)).toEqual({ ok: false, reason: "identity_too_weak" });
+  });
+
+  it("is the SAME judgment the candidate join applies", () => {
+    // Trial eligibility must be unable to drift from production eligibility, so
+    // every profile the join keeps is one this predicate offers, and vice versa.
+    const offeredHere = allProfiles.filter((candidate) => {
+      const owner = allModels.find((m) => m.id === candidate.imageModelId);
+      return owner !== undefined && imageProfileOffered(candidate, owner).ok;
+    });
+    const joined = imageProfileCandidates(allProfiles, allModels, "scene");
+    expect(new Set(offeredHere.map((p) => p.id))).toEqual(new Set(joined.map((c) => c.profile.id)));
+  });
+});
 
 describe("imageProfileCandidates", () => {
   it("joins each profile to its model and returns them in sort order", () => {

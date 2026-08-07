@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, lt } from "drizzle-orm";
 import {
-  chooseAspect,
   imageIdentityPackTrialCellSpecSchema,
   imageIdentityPackTrialDiagnosticCode,
   imageIdentityPackTrialResultSchema,
+  imageProfileOffered,
   referenceCapacity,
+  trialCellComboSchema,
   trialPairGradeSchema,
-  trialVerdictListSchema,
+  type IdentityReferenceRole,
   type IdentityReferenceStrategy,
+  type ImageIdentityPackStatus,
   type ImageIdentityPackTrialCellSpec,
   type ImageIdentityPackTrialCreateRequest,
   type ImageIdentityPackTrialGradeRequest,
@@ -27,18 +29,20 @@ import {
   type TrialVerdictValue,
   type EnsureIdentityPackResult,
   type EvaluateIdentityPackResult,
+  type ImageIdentityPackV1,
 } from "@/contracts";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
-import { parseOr } from "@/lib/parse";
 import { IDENTITY_PACK_POLICY_VERSION } from "@/lib/images/identity-pack-policy";
 import {
   buildTrialCellPlans,
+  compareTrialCellKeys,
   pairTrialCells,
   trialPromptFixtureById,
   unblindTrialPairGrade,
   aggregateTrialGrades,
   type IdentityPackTrialPromptFixture,
   type TrialCellPair,
+  type TrialCellPlan,
   type TrialGradeRecord,
   type TrialPairableCell,
 } from "@/lib/images/identity-pack-trial";
@@ -49,6 +53,7 @@ import {
   imageIdentityPackTrialCells,
   imageIdentityPackTrialGrades,
   imageIdentityPackTrialRuns,
+  imageIdentityPackTrialVerdicts,
   images,
 } from "../db";
 // Direct module path for the reason identity-packs.ts records on ITS import of
@@ -57,10 +62,26 @@ import {
 // cycle. `keyed-lock.ts` itself imports nothing.
 import { tryKeyedLock } from "../engine/keyed-lock";
 import { createImageAsset, deleteOwnedImage, imageMeta, purgeImagesWhere, readImageBytes, saveImageBuffer } from "./assets";
-import { ensureIdentityPack, IDENTITY_PACK_TRIAL_CORPORA, readJsonColumn } from "./identity-packs";
-import { evaluateIdentityPackForProfile } from "./identity-pack-references";
+import {
+  ensureIdentityPack,
+  getIdentityPackRevisionForTrial,
+  IDENTITY_PACK_TRIAL_CORPORA,
+  readJsonColumn,
+  type IdentityPackRevisionForTrialResult,
+} from "./identity-packs";
+import {
+  evaluateIdentityPackContractForProfile,
+  evaluateIdentityPackForProfile,
+} from "./identity-pack-references";
 import { loadImageModels, renderWithModel, type RenderWithModelResult } from "./models";
 import { loadImageModelProfiles } from "./model-profiles";
+import {
+  compileProfileRenderPlan,
+  pinnedImageModelVersion,
+  profileRenderControlsHash,
+  sha256Hex,
+  type ProfileRenderPlan,
+} from "./render-profile";
 
 /**
  * The fixed identity-reference trial service
@@ -72,28 +93,43 @@ import { loadImageModelProfiles } from "./model-profiles";
  * `src/lib/images/identity-pack-trial.ts`; this module owns persistence, the
  * pack/profile resolution at planning time, and the provider call.
  *
- * Three rules shape it:
+ * Four rules shape it:
  *
  * 1. **Everything is owner-scoped.** Runs are selected by `(id, owner)`; a
  *    character the run owner does not own resolves exactly like a character
  *    that does not exist (`ensureIdentityPack`'s owner-rooted source
  *    resolution), so its cells are recorded `refused` and nothing about the
  *    foreign character leaks.
- * 2. **A cell settles once.** `failed` and `refused` are terminal — a rerun is
- *    a NEW run, never a retry — and every settle is a compare-and-set against
- *    `status = 'planned'`, so no writer can overwrite another's outcome.
+ * 2. **A cell is CLAIMED before it is rendered, and settles once.** A pass moves
+ *    the cell from `planned` to `running` with its own token in the database
+ *    before the provider is called, and every settle is a compare-and-set
+ *    against that exact claim. The in-process lock cannot see a second machine
+ *    or survive a restart; this can. `failed` and `refused` remain terminal — a
+ *    rerun is a NEW run, never a retry.
  * 3. **The daily render budget is charged INSIDE the execution lock, through
- *    the caller's injected `chargeBudget`** — sized to exactly the planned
- *    cells this pass picked, after `run_locked` can no longer refuse the pass.
- *    The route supplies the charge function (`imageRenderRejection` bound to
- *    the request), because the guard needs the request and its user; this
- *    module decides WHEN and for HOW MANY, because charging before the lock
- *    billed passes that were then refused, with no refund path.
+ *    the caller's injected `chargeBudget`** — sized to exactly the cells this
+ *    pass CLAIMED and can honestly execute, after `run_locked` can no longer
+ *    refuse the pass. The route supplies the charge function
+ *    (`imageRenderRejection` bound to the request), because the guard needs the
+ *    request and its user; this module decides WHEN and for HOW MANY, because
+ *    charging before the lock billed passes that were then refused, with no
+ *    refund path.
+ * 4. **What is hashed is what is sent.** Planning and execution both compile the
+ *    cell through `compileProfileRenderPlan`, so the prompt, negative and
+ *    control payload a cell pinned are the ones the provider receives — and any
+ *    drift between the two is a `cell_conflict` rather than a silently
+ *    different render wearing a pinned cell's name.
  *
  * Run status is derived-but-persisted, and every transition goes through
  * {@link nextTrialRunStatus}: draft → running on the first execute, running →
- * review when no planned cell remains, review → complete when a verdict covers
- * every (profile, strategy) present in the rendered cells.
+ * review when no cell is left planned OR claimed, review → complete when a
+ * verdict covers every (profile, strategy) present in the rendered cells AND
+ * every reviewable pair has been graded.
+ *
+ * Verdicts are rows in `image_identity_pack_trial_verdicts`, one per ruling,
+ * upserted under `(run, profile, strategy)` — never a jsonb array on the run
+ * row, which made every ruling a read-modify-write that could erase a
+ * concurrent one.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -104,16 +140,13 @@ import { loadImageModelProfiles } from "./model-profiles";
  * The one spelling of the per-run execution key, for the reason
  * `identityPackLockKey` gives: a second copy that drifts serializes against
  * nobody and looks completely normal. In-process is correct on the
- * single-machine Fly deploy (the `keyed-lock.ts` ruling); the per-cell
- * compare-and-set on `status = 'planned'` is what keeps a second machine from
- * double-settling a cell regardless.
+ * single-machine Fly deploy (the `keyed-lock.ts` ruling); the durable per-cell
+ * claim — `planned` → `running` under a token, settled by compare-and-set
+ * against that same token — is what keeps a second machine from double-paying
+ * for a cell regardless.
  */
 export function identityPackTrialLockKey(runId: string): string {
   return `identity_pack_trial:${runId}`;
-}
-
-function sha256HexOf(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
 }
 
 /**
@@ -130,72 +163,41 @@ export function trialPairLeftIsA(runId: string, pairId: string): boolean {
   return (digest[0] ?? 0) % 2 === 0;
 }
 
-/**
- * Deterministic JSON for hashing: keys sorted recursively, `undefined` members
- * dropped. Local rather than imported from the engine's `canonicalJson` because
- * that module carries the contact-ledger machinery and reaching into it from
- * the image lane for a string formatter would couple two systems over nothing.
- */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const body = Object.keys(record)
-      .sort()
-      .filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-      .join(",");
-    return `{${body}}`;
-  }
-  return JSON.stringify(value) ?? "null";
+/** The three fingerprints a cell pins and execution re-checks. */
+interface TrialCellCompiledIdentity {
+  positivePromptHash: string;
+  negativePromptHash: string | null;
+  resolvedControlsHash: string;
 }
 
 /**
- * The version a cell pins. Prefers the probed Replicate version, then a version
- * pinned in the slug itself; `"unprobed"` is the honest floor for a row probed
- * before the version column existed — the execute-time re-check compares this
- * exact string, so a version that appears later is a conflict, not a match.
+ * The one place a cell's compiled identity is derived — at planning time and
+ * again at execution time, through the same function, so the check cannot drift
+ * from the thing it checks.
+ *
+ * Everything here comes out of {@link compileProfileRenderPlan}: the prompt the
+ * provider will receive (role preamble and model dialect included), the negative
+ * text that will accompany it, and the fingerprint of the resolved controls.
+ * Planning stores these; execution recomputes them from the rows in force and
+ * refuses `cell_conflict` on any difference, because a cell that renders under a
+ * configuration other than the one it pinned is not the comparison the grid
+ * claims.
  */
-function trialModelVersion(model: ImageModel): string {
-  if (model.probedVersionId !== null) return model.probedVersionId;
-  const pinned = model.slug.split(":")[1];
-  return pinned !== undefined && pinned.length > 0 ? pinned : "unprobed";
-}
-
-/**
- * Everything about HOW this cell renders beyond the prompt and references,
- * hashed for provenance and drift detection: the execute-time re-check
- * recomputes this from the freshly loaded rows and refuses `cell_conflict` on
- * a mismatch. The fields are the resolved render-shaping configuration —
- * transport, capacity, aspect choice, control defaults, overrides — not the
- * whole rows, so an edit to a display label does not invalidate a cell. Note
- * that `controlDefaults` / `providerOverrides` / `timeoutMs` are recorded but
- * not yet applied by `renderWithModel` (task profiles reach the render path in
- * a later capabilities slice); hashing them now means the cell already
- * describes the configuration that WILL apply, not just what does today.
- */
-function resolvedControlsHashFor(profile: ImageModelProfile, model: ImageModel): string {
-  return sha256HexOf(
-    stableJson({
-      modelId: model.id,
-      modelSlug: model.slug,
-      modelVersion: trialModelVersion(model),
-      referenceField: model.referenceField,
-      referenceArity: model.referenceArity,
-      referenceTransport: model.referenceTransport,
-      maxReferences: model.maxReferences,
-      aspect: chooseAspect(model).value,
-      outputFormat: model.outputFormat,
-      extraInput: model.extraInput,
+function trialCellCompiledIdentity(
+  plan: ProfileRenderPlan,
+  profile: ImageModelProfile,
+  roles: readonly IdentityReferenceRole[],
+): TrialCellCompiledIdentity {
+  return {
+    positivePromptHash: sha256Hex(plan.finalPrompt),
+    negativePromptHash: plan.negativePrompt === null ? null : sha256Hex(plan.negativePrompt),
+    resolvedControlsHash: profileRenderControlsHash(plan, {
       profileId: profile.id,
       profileKey: profile.key,
-      operation: profile.operation,
       promptStrategy: profile.promptStrategy,
-      controlDefaults: profile.controlDefaults,
-      providerOverrides: profile.providerOverrides,
-      timeoutMs: profile.timeoutMs,
+      orderedReferenceRoles: roles,
     }),
-  );
+  };
 }
 
 /* ------------------------------------------------------------------------ *
@@ -214,7 +216,6 @@ export interface IdentityPackTrialRefusal {
 const SPEC_JSON_PATH = "image_identity_pack_trial_cells.spec_json";
 const RESULT_JSON_PATH = "image_identity_pack_trial_cells.result_json";
 const GRADES_JSON_PATH = "image_identity_pack_trial_grades.grades_json";
-const VERDICTS_JSON_PATH = "image_identity_pack_trial_runs.verdicts_json";
 
 function refusal(
   code: ImageIdentityPackTrialRefusalCode,
@@ -280,7 +281,7 @@ function readTrialCellSpec(
 }
 
 function zeroTrialCellCounts(): TrialCellCounts {
-  return { planned: 0, rendered: 0, failed: 0, refused: 0 };
+  return { planned: 0, running: 0, rendered: 0, failed: 0, refused: 0 };
 }
 
 function countTrialCells(rows: readonly Pick<IdentityPackTrialCellRow, "status">[]): TrialCellCounts {
@@ -300,8 +301,33 @@ function runSummary(run: IdentityPackTrialRunRow, counts: TrialCellCounts): Imag
   };
 }
 
-function runVerdicts(run: IdentityPackTrialRunRow, sink: DiagnosticSink | undefined): TrialVerdict[] {
-  return parseOr(trialVerdictListSchema, run.verdictsJson, [], sink, VERDICTS_JSON_PATH);
+/**
+ * The run's verdict ledger, one row per ruling, in a stable (profile, strategy)
+ * order so two reads of an unchanged run are byte-identical on the wire.
+ *
+ * No parse step and no `parseOr` fallback: every field is a typed column
+ * (`identity_strategy` and `verdict` are enum-typed against the contract
+ * vocabularies), so the row IS the contract shape and there is no stored-JSON
+ * trust boundary left to degrade at. That is the whole point of normalizing the
+ * old `verdicts_json` array — a ledger that could half-parse was a ledger that
+ * could silently lose a ruling.
+ */
+export async function readTrialVerdicts(runId: string): Promise<TrialVerdict[]> {
+  const rows = await db()
+    .select()
+    .from(imageIdentityPackTrialVerdicts)
+    .where(eq(imageIdentityPackTrialVerdicts.runId, runId))
+    .orderBy(asc(imageIdentityPackTrialVerdicts.profileId), asc(imageIdentityPackTrialVerdicts.identityStrategy));
+  return rows.map((row) => ({
+    profileId: row.profileId,
+    identityStrategy: row.identityStrategy,
+    verdict: row.verdict,
+    reason: row.reason,
+    policyVersion: row.policyVersion,
+    decidedByUserId: row.decidedByUserId,
+    decidedAt: row.decidedAt.toISOString(),
+    overrideIncompleteReview: row.overrideIncompleteReview,
+  }));
 }
 
 /* ------------------------------------------------------------------------ *
@@ -311,27 +337,48 @@ function runVerdicts(run: IdentityPackTrialRunRow, sink: DiagnosticSink | undefi
 /**
  * The one place a run's derived-but-persisted status moves. Exhaustive over the
  * current status so a new lifecycle position cannot ship without deciding what
- * it may become. `review` → `complete` requires the coverage fact to be TRUE of
- * something: a run with no rendered cell at all stays in `review` as the record
- * of a trial nothing came of, rather than claiming completion vacuously.
+ * it may become.
+ *
+ * Two facts changed when the durable execution claim and the review gate landed:
+ *
+ * - **`unexecutedRemaining` counts `planned` AND `running`.** A run with claimed
+ *   cells still in flight is not reviewable: its pairs are incomplete, and
+ *   settling it into `review` would open the verdict surface over evidence that
+ *   is still being paid for. The old `plannedRemaining` reached zero the instant
+ *   the last cell was CLAIMED, which is exactly the wrong moment.
+ * - **`review` → `complete` requires graded pairs as well as ruled combos.** A
+ *   run whose every slot carries a verdict but whose pairs were never graded is
+ *   a set of opinions, not a trial: `complete` is the claim that the blinded
+ *   procedure actually ran, so both halves of the evidence must be in.
+ *
+ * The coverage fact must still be TRUE of something — a run with no rendered
+ * cell at all stays in `review` as the record of a trial nothing came of, rather
+ * than claiming completion vacuously.
  */
 function nextTrialRunStatus(
   current: TrialRunStatus,
-  facts: { executing: boolean; plannedRemaining: number; verdictsCoverEveryRenderedCombo: boolean },
+  facts: {
+    executing: boolean;
+    unexecutedRemaining: number;
+    allReviewablePairsGraded: boolean;
+    verdictsCoverEveryRenderedCombo: boolean;
+  },
 ): TrialRunStatus {
   let status = current;
   switch (status) {
     case "draft":
-      if (facts.executing) status = facts.plannedRemaining === 0 ? "review" : "running";
+      if (facts.executing) status = facts.unexecutedRemaining === 0 ? "review" : "running";
       break;
     case "running":
-      if (facts.plannedRemaining === 0) status = "review";
+      if (facts.unexecutedRemaining === 0) status = "review";
       break;
     case "review":
     case "complete":
       break;
   }
-  if (status === "review" && facts.verdictsCoverEveryRenderedCombo) status = "complete";
+  if (status === "review" && facts.verdictsCoverEveryRenderedCombo && facts.allReviewablePairsGraded) {
+    status = "complete";
+  }
   return status;
 }
 
@@ -341,26 +388,42 @@ function verdictComboKey(profileId: string, strategy: IdentityReferenceStrategy)
 }
 
 /**
+ * A rendered (profile, strategy) before its pairwise evidence is counted. The
+ * wire shape ({@link TrialRenderedCombo}) additionally carries `totalPairs` /
+ * `gradedPairs`, which only the summary path can compute — {@link
+ * verdictsCoverRenderedCombos} needs the combo IDENTITY and nothing else, and
+ * handing it a shape padded with zero counts would be a fabricated number
+ * travelling under a real field name.
+ */
+type RenderedComboTally = Omit<TrialRenderedCombo, "totalPairs" | "gradedPairs">;
+
+/**
  * Every (profile, strategy) with at least one rendered cell, in cell-key order.
  * The ONE derivation shared by run completion ({@link verdictsCoverRenderedCombos})
  * and the summary wire's `renderedCombos`: the verdict slots the UI offers must
  * be exactly the set completion waits on, or a run whose strategy lost every
  * counterpart cell (no pair, so no comparison) wedges in `review` with no slot
  * to rule it through.
+ *
+ * A null-strategy cell — the no-pack baseline — is deliberately SKIPPED. It is
+ * evidence, not a verdict slot: a verdict rules on a (profile, strategy), and
+ * the baseline has no strategy to promote or reject. Counting it would create a
+ * slot nothing can ever fill and wedge the run short of `complete`.
  */
 function renderedTrialCombos(
   rows: readonly IdentityPackTrialCellRow[],
   sink: DiagnosticSink | undefined,
-): TrialRenderedCombo[] {
-  const combos = new Map<string, TrialRenderedCombo>();
+): RenderedComboTally[] {
+  const combos = new Map<string, RenderedComboTally>();
   for (const row of rows) {
     if (row.status !== "rendered") continue;
     const spec = readTrialCellSpec(row, sink);
-    if (!spec) continue;
-    const key = verdictComboKey(spec.profileId, spec.identityStrategy);
+    if (!spec || spec.identityStrategy === null) continue;
+    const strategy = spec.identityStrategy;
+    const key = verdictComboKey(spec.profileId, strategy);
     const existing = combos.get(key);
     if (existing) existing.renderedCells += 1;
-    else combos.set(key, { profileId: spec.profileId, identityStrategy: spec.identityStrategy, renderedCells: 1 });
+    else combos.set(key, { profileId: spec.profileId, identityStrategy: strategy, renderedCells: 1 });
   }
   return [...combos.values()];
 }
@@ -376,18 +439,31 @@ function verdictsCoverRenderedCombos(
   return combos.every((combo) => ruled.has(verdictComboKey(combo.profileId, combo.identityStrategy)));
 }
 
-/** Recompute and persist the run's status from its cells and verdicts. */
+/**
+ * Recompute and persist the run's status from its cells, its grades and its
+ * verdicts.
+ *
+ * Every fact {@link nextTrialRunStatus} needs is gathered HERE rather than
+ * passed in by the caller, verdicts included. Two callers reach this — the
+ * execute pass and the verdict write — and each knows only its own half of the
+ * evidence; a caller-supplied ledger was how the pre-normalization code let an
+ * execute pass settle a run against a verdict list it had read before the last
+ * ruling landed. One reader, one moment, no skew.
+ */
 async function settleTrialRunStatus(
   runId: string,
   current: TrialRunStatus,
-  verdicts: readonly TrialVerdict[],
   executing: boolean,
   sink: DiagnosticSink | undefined,
 ): Promise<TrialRunStatus> {
   const rows = await trialCellRows(runId);
+  const counts = countTrialCells(rows);
+  const { pairable } = reviewableTrialCells(rows, sink);
+  const [graded, verdicts] = await Promise.all([gradedPairIds(runId), readTrialVerdicts(runId)]);
   const next = nextTrialRunStatus(current, {
     executing,
-    plannedRemaining: countTrialCells(rows).planned,
+    unexecutedRemaining: counts.planned + counts.running,
+    allReviewablePairsGraded: pairTrialCells(pairable).every((pair) => graded.has(pair.pairId)),
     verdictsCoverEveryRenderedCombo: verdictsCoverRenderedCombos(rows, verdicts, sink),
   });
   if (next !== current) {
@@ -426,104 +502,162 @@ interface TrialPlanResolution {
   modelsById: Map<string, ImageModel>;
   /** One `ensureIdentityPack` per character per create call. */
   packs: Map<string, Promise<EnsureIdentityPackResult>>;
-  /** One profile-eligibility evaluation per (character, strategy). */
+  /** One read per pinned `(character, revision)` per create call. */
+  revisions: Map<string, Promise<IdentityPackRevisionForTrialResult>>;
+  /** One profile-eligibility evaluation per (character, strategy, pack variant). */
   evaluations: Map<string, Promise<EvaluateIdentityPackResult>>;
   sink: DiagnosticSink | undefined;
 }
 
-function ensurePackOnce(resolution: TrialPlanResolution, characterId: string): Promise<EnsureIdentityPackResult> {
-  const cached = resolution.packs.get(characterId);
+/**
+ * The one memo spelling the per-create caches share.
+ *
+ * Each of them keys work that is either expensive (a pack ensure, a pinned
+ * revision read) or noisy (an evaluation that pushes diagnostics), and whose
+ * answer cannot change inside one create call. The get/set dance is written once
+ * because the DANGEROUS mistake in a cache like this is not the lookup, it is the
+ * key: a cache whose key omits an axis silently answers one arm's question with
+ * another arm's answer, and nothing about the code reads as wrong. Keeping the
+ * mechanics in one place leaves the key expressions as the only thing to review.
+ */
+function memoized<T>(store: Map<string, Promise<T>>, key: string, produce: () => Promise<T>): Promise<T> {
+  const cached = store.get(key);
   if (cached) return cached;
-  const ensured = ensureIdentityPack({
-    ownerId: resolution.ownerId,
-    characterId,
-    purpose: "admin_trial",
-    sink: resolution.sink,
-  });
-  resolution.packs.set(characterId, ensured);
-  return ensured;
+  const created = produce();
+  store.set(key, created);
+  return created;
+}
+
+function ensurePackOnce(resolution: TrialPlanResolution, characterId: string): Promise<EnsureIdentityPackResult> {
+  return memoized(resolution.packs, characterId, () =>
+    ensureIdentityPack({ ownerId: resolution.ownerId, characterId, purpose: "admin_trial", sink: resolution.sink }),
+  );
+}
+
+function pinnedRevisionOnce(
+  resolution: TrialPlanResolution,
+  characterId: string,
+  revision: number,
+): Promise<IdentityPackRevisionForTrialResult> {
+  return memoized(resolution.revisions, `${characterId}:${revision}`, () =>
+    getIdentityPackRevisionForTrial({
+      ownerId: resolution.ownerId,
+      characterId,
+      revision,
+      sink: resolution.sink,
+    }),
+  );
 }
 
 /**
- * The evaluation depends only on the character's pack and the strategy — the
- * profile policy in force is the v1 defaults for every profile, and no reviewed
- * effective-size fact exists yet (`effectiveReferenceSize` omitted keeps the
- * evaluation conservative) — so it is cached per (character, strategy) rather
- * than run once per cell.
+ * The evaluation depends only on the pack a variant resolved and the strategy —
+ * the profile policy in force is the v1 defaults for every profile, and no
+ * reviewed effective-size fact exists yet (`effectiveReferenceSize` omitted keeps
+ * the evaluation conservative) — so it is cached rather than run once per cell.
+ *
+ * The VARIANT KEY is part of the cache key, and that is load-bearing rather than
+ * defensive: two arms of one run may ask the same (character, strategy) question
+ * of two different pack revisions, and a cache that could not tell them apart
+ * would hand one revision's verdict — its roles, its measurements — to the other
+ * and call the result a comparison.
  */
-function evaluateOnce(
+function evaluateCurrentPackOnce(
   resolution: TrialPlanResolution,
   characterId: string,
   strategy: IdentityReferenceStrategy,
 ): Promise<EvaluateIdentityPackResult> {
-  const key = `${characterId}:${strategy}`;
-  const cached = resolution.evaluations.get(key);
-  if (cached) return cached;
-  const evaluated = evaluateIdentityPackForProfile({
-    ownerId: resolution.ownerId,
-    characterId,
-    strategy,
-    purpose: "admin_trial",
-    sink: resolution.sink,
-  });
-  resolution.evaluations.set(key, evaluated);
-  return evaluated;
+  return memoized(resolution.evaluations, `${characterId}:${strategy}:current`, () =>
+    evaluateIdentityPackForProfile({
+      ownerId: resolution.ownerId,
+      characterId,
+      strategy,
+      purpose: "admin_trial",
+      sink: resolution.sink,
+    }),
+  );
 }
 
 /**
- * Resolve one planned cell to a full spec, or to the refusal that stops it
- * (spec.trial.md §"Trial manifest"). The order is the design's: profile, then
- * pack, then strategy evaluation, then capacity — each refusal records
- * everything that DID resolve, so the run report can say how far a cell got.
+ * The SAME eligibility interpretation, run against a pinned historical revision
+ * the caller already read.
+ *
+ * `evaluateIdentityPackContractForProfile` is the render path's own judgment
+ * minus the ensure, which is the whole point: a trial-local copy of "may this
+ * role be sent?" would drift, and the harness would end up measuring its own
+ * rules. `treatRetiredRevisionAsReady` is set because a superseded or stale
+ * revision — the OLD side of every old-vs-new comparison — would otherwise walk
+ * past the policy projection unjudged.
  */
-async function resolveTrialCell(
+function evaluatePinnedRevisionOnce(
   resolution: TrialPlanResolution,
-  cellId: string,
-  plan: { characterId: string; profileId: string; identityStrategy: IdentityReferenceStrategy; promptFixtureId: string },
-  fixture: IdentityPackTrialPromptFixture,
-): Promise<ResolvedTrialCell> {
-  const planFields = {
-    id: cellId,
-    characterId: plan.characterId,
-    task: fixture.task,
-    promptFixtureId: plan.promptFixtureId,
-    profileId: plan.profileId,
-    identityStrategy: plan.identityStrategy,
-    positivePromptHash: sha256HexOf(fixture.prompt),
-    negativePromptHash: fixture.negativePrompt === null ? null : sha256HexOf(fixture.negativePrompt),
-    requestedSeed: null,
-  };
+  pack: ImageIdentityPackV1,
+  strategy: IdentityReferenceStrategy,
+  variantKey: string,
+): Promise<EvaluateIdentityPackResult> {
+  return memoized(resolution.evaluations, `${pack.characterId}:${strategy}:${variantKey}`, () =>
+    Promise.resolve(
+      evaluateIdentityPackContractForProfile({
+        pack,
+        strategy,
+        treatRetiredRevisionAsReady: true,
+        sink: resolution.sink,
+      }),
+    ),
+  );
+}
 
-  const profile = resolution.profilesById.get(plan.profileId);
-  const model = profile ? resolution.modelsById.get(profile.imageModelId) : undefined;
-  if (!profile || !profile.enabled || !model) {
-    return {
-      status: "refused",
-      code: "profile_ineligible",
-      message: `profile ${plan.profileId} is not a runnable registry profile`,
-      spec: planFields,
-    };
-  }
-  const profileFields = {
-    modelSlug: model.slug,
-    modelVersion: trialModelVersion(model),
-    profileKey: profile.key,
-    resolvedControlsHash: resolvedControlsHashFor(profile, model),
-  };
+/** The pack columns of a cell's spec — all null on the no-pack baseline. Sliced
+ * off the contract rather than restated, so a pack field added there is a type
+ * error here until this fills it. */
+type TrialSpecPackFields = Pick<
+  ImageIdentityPackTrialCellSpec,
+  | "packId"
+  | "packRevision"
+  | "sourceImageId"
+  | "sourceContentHash"
+  | "cropMethod"
+  | "crop"
+  | "derivationVersion"
+  | "policyVersion"
+>;
 
-  const ensured = await ensurePackOnce(resolution, plan.characterId);
-  const sourceImageId = ensured.status === "ready" ? ensured.pack.source.imageId : null;
-  if (ensured.status !== "ready" || sourceImageId === null) {
-    const code = ensured.status === "ready" ? "source_missing" : ensured.code;
-    return {
-      status: "refused",
-      code: "pack_blocked",
-      message: `identity pack unavailable (${code})`,
-      spec: { ...planFields, ...profileFields },
+/** The measurement columns a strategy evaluation fills in. */
+type TrialSpecEvaluationFields = Pick<
+  ImageIdentityPackTrialCellSpec,
+  "effectiveReferenceSize" | "orderedReferenceRoles"
+>;
+
+/**
+ * What a cell's PACK VARIANT resolves to: the pack identity and the reference
+ * plan it supports, or the refusal that stops the cell.
+ *
+ * A refusal carries whatever pack identity it had already established — `null`
+ * only when the refusal landed before any of it did. A partial spec is honest; a
+ * spec padded out to parse would be a fabricated pack identity on a cell that
+ * never resolved one.
+ */
+type TrialVariantResolution =
+  | { ok: true; pack: TrialSpecPackFields; evaluation: TrialSpecEvaluationFields }
+  | {
+      ok: false;
+      code: ImageIdentityPackTrialRefusalCode;
+      message: string;
+      pack: TrialSpecPackFields | null;
     };
-  }
-  const pack = ensured.pack;
-  const packFields = {
+
+/**
+ * Detector-derived cells are structurally supported but unbuildable until a
+ * reviewed detector ships (the null adapter finds nothing, so this only fires for
+ * injected or future detectors) — refused, never faked. Spelled once because
+ * BOTH pack arms apply it, to whichever revision they resolved: a pinned
+ * revision derived by a detector is exactly as unreproducible as a current one.
+ */
+const DETECTOR_UNAVAILABLE_MESSAGE =
+  "detector-derived cells are not runnable until a reviewed face detector ships";
+
+/** The pack identity a resolved revision contributes to a cell's spec. */
+function trialSpecPackFields(pack: ImageIdentityPackV1, sourceImageId: string): TrialSpecPackFields {
+  return {
     packId: pack.id,
     packRevision: pack.revision,
     sourceImageId,
@@ -533,30 +667,14 @@ async function resolveTrialCell(
     derivationVersion: pack.derivation.derivationVersion,
     policyVersion: pack.derivation.policyVersion,
   };
+}
 
-  // Detector-derived cells are structurally supported but unbuildable until a
-  // reviewed detector ships (the null adapter finds nothing, so this only fires
-  // for injected or future detectors) — refused, never faked.
-  if (pack.derivation.method === "detector") {
-    return {
-      status: "refused",
-      code: "detector_unavailable",
-      message: "detector-derived cells are not runnable until a reviewed face detector ships",
-      spec: { ...planFields, ...profileFields, ...packFields },
-    };
-  }
-
-  const evaluated = await evaluateOnce(resolution, plan.characterId, plan.identityStrategy);
-  if (!evaluated.eligible) {
-    return {
-      status: "refused",
-      code: "profile_ineligible",
-      message: `identity references unavailable for this strategy (${evaluated.messageKey})`,
-      spec: { ...planFields, ...profileFields, ...packFields },
-    };
-  }
+/** The measurement half of a cell's spec, from an eligible evaluation. */
+function trialSpecEvaluationFields(
+  evaluated: Extract<EvaluateIdentityPackResult, { eligible: true }>,
+): TrialSpecEvaluationFields {
   const primary = evaluated.candidates[0];
-  const evaluationFields = {
+  return {
     effectiveReferenceSize: {
       widthPx: primary?.evaluation.effectiveReferenceWidthPx ?? null,
       heightPx: primary?.evaluation.effectiveReferenceHeightPx ?? null,
@@ -565,18 +683,352 @@ async function resolveTrialCell(
     },
     orderedReferenceRoles: evaluated.candidates.map((candidate) => candidate.role),
   };
+}
 
-  const capacity = referenceCapacity(model);
-  if (evaluationFields.orderedReferenceRoles.length > capacity.max) {
+/**
+ * Whether a pinned revision has a finished derivation a comparison arm can
+ * actually render from.
+ *
+ * `superseded` and `stale` PASS, and that is the entire point of the axis: the
+ * old side of a manual-vs-automatic or old-vs-new comparison is by definition no
+ * longer current, and refusing it would leave the variant axis able to express
+ * only the arm it was already able to run. Their crop bytes exist and their own
+ * source row and content hash are recorded on the revision — `stale` says the
+ * CHARACTER's canonical source moved on, not that this revision's bytes did, and
+ * execution re-checks that identity before rendering either way.
+ *
+ * `failed` and `unusable` have no crop to send, and `pending` never finished.
+ * Those are refusals, never a fallback to some other revision.
+ */
+function pinnedRevisionIsRenderable(status: ImageIdentityPackStatus): boolean {
+  switch (status) {
+    case "ready":
+    case "superseded":
+    case "stale":
+      return true;
+    case "pending":
+    case "unusable":
+    case "failed":
+      return false;
+  }
+}
+
+/**
+ * The `current` arm: ensure the character's pack and evaluate the strategy
+ * against it. This is the historical single-variant behavior, unchanged — it
+ * pins whatever revision is current at planning time, and execution re-ensures
+ * and refuses `cell_conflict` if that moved.
+ */
+async function currentPackVariantResolution(
+  resolution: TrialPlanResolution,
+  characterId: string,
+  strategy: IdentityReferenceStrategy,
+): Promise<TrialVariantResolution> {
+  const ensured = await ensurePackOnce(resolution, characterId);
+  const sourceImageId = ensured.status === "ready" ? ensured.pack.source.imageId : null;
+  if (ensured.status !== "ready" || sourceImageId === null) {
+    const code = ensured.status === "ready" ? "source_missing" : ensured.code;
+    return { ok: false, code: "pack_blocked", message: `identity pack unavailable (${code})`, pack: null };
+  }
+  const pack = trialSpecPackFields(ensured.pack, sourceImageId);
+  if (ensured.pack.derivation.method === "detector") {
+    return { ok: false, code: "detector_unavailable", message: DETECTOR_UNAVAILABLE_MESSAGE, pack };
+  }
+  const evaluated = await evaluateCurrentPackOnce(resolution, characterId, strategy);
+  if (!evaluated.eligible) {
+    const message = `identity references unavailable for this strategy (${evaluated.messageKey})`;
+    return { ok: false, code: "profile_ineligible", message, pack };
+  }
+  return { ok: true, pack, evaluation: trialSpecEvaluationFields(evaluated) };
+}
+
+/**
+ * The `rev:…` arm: one NAMED revision, read strictly read-only.
+ *
+ * It never calls `ensureIdentityPack` and never falls back to the current pack.
+ * A pinned arm that quietly resolved against the current revision would render a
+ * different comparison under the name of the one that was planned — which is the
+ * exact corruption this axis exists to MEASURE, and so is the one thing it must
+ * not itself commit. A revision that cannot be read, cannot be rendered from, or
+ * that today's policy refuses is `pack_revision_unavailable`; the cell is
+ * recorded and nothing is spent.
+ */
+async function pinnedRevisionVariantResolution(
+  resolution: TrialPlanResolution,
+  characterId: string,
+  revision: number,
+  strategy: IdentityReferenceStrategy,
+  variantKey: string,
+): Promise<TrialVariantResolution> {
+  const pinned = await pinnedRevisionOnce(resolution, characterId, revision);
+  if (!pinned.ok) {
+    const message = `pinned pack revision ${revision} is unavailable (${pinned.code})`;
+    return { ok: false, code: "pack_revision_unavailable", message, pack: null };
+  }
+  const sourceImageId = pinned.pack.source.imageId;
+  if (!pinnedRevisionIsRenderable(pinned.pack.status) || sourceImageId === null) {
+    const message = `pinned pack revision ${revision} has no usable derivation (${pinned.pack.status})`;
+    return { ok: false, code: "pack_revision_unavailable", message, pack: null };
+  }
+  const pack = trialSpecPackFields(pinned.pack, sourceImageId);
+  if (pinned.pack.derivation.method === "detector") {
+    return { ok: false, code: "detector_unavailable", message: DETECTOR_UNAVAILABLE_MESSAGE, pack };
+  }
+  const evaluated = await evaluatePinnedRevisionOnce(resolution, pinned.pack, strategy, variantKey);
+  if (!evaluated.eligible) {
+    // The same split the current arm makes one step earlier, at its ensure: a
+    // code from the PACK's own failure vocabulary means today's policy refuses
+    // this revision outright, while `profile_ineligible` means the revision is
+    // fine and it is the STRATEGY that cannot be carried from it.
+    const code = evaluated.code === "profile_ineligible" ? "profile_ineligible" : "pack_revision_unavailable";
+    const message = `pinned pack revision ${revision} cannot carry this strategy (${evaluated.messageKey})`;
+    return { ok: false, code, message, pack };
+  }
+  return { ok: true, pack, evaluation: trialSpecEvaluationFields(evaluated) };
+}
+
+/**
+ * The `none` arm: the no-pack baseline, which resolves no pack at all.
+ *
+ * It is expressible only on a GENERATE profile, for two reasons of different
+ * weight. Mechanically, an edit profile with zero references has nothing to
+ * edit. More importantly, a zero-reference generate IS the reproducible
+ * historical behavior this control arm is supposed to represent, whereas an edit
+ * lane's historical behavior always involved reference wiring the trial cannot
+ * reproduce — so a zero-reference edit cell would be a baseline for a render
+ * nobody ever made.
+ */
+function baselineVariantResolution(profile: ImageModelProfile): TrialVariantResolution {
+  if (profile.operation !== "generate") {
     return {
-      status: "refused",
-      code: "capacity_exceeded",
-      message: `${evaluationFields.orderedReferenceRoles.length} reference(s) exceed ${model.slug}'s capacity of ${capacity.max}`,
-      spec: { ...planFields, ...profileFields, ...packFields, ...evaluationFields },
+      ok: false,
+      code: "profile_ineligible",
+      message:
+        `the no-pack baseline needs a generate profile; ${profile.key} is an edit profile, ` +
+        "whose zero-reference behavior this trial cannot reproduce",
+      pack: null,
+    };
+  }
+  return {
+    ok: true,
+    pack: {
+      packId: null,
+      packRevision: null,
+      sourceImageId: null,
+      sourceContentHash: null,
+      cropMethod: null,
+      crop: null,
+      derivationVersion: null,
+      policyVersion: null,
+    },
+    evaluation: {
+      // Nothing was measured because nothing was selected — null is "not
+      // measured", never zero.
+      effectiveReferenceSize: { widthPx: null, heightPx: null, faceWidthPx: null, faceHeightPx: null },
+      orderedReferenceRoles: [],
+    },
+  };
+}
+
+/** Dispatch one cell to the arm its variant names. Three genuinely different
+ * reads — collapsing any two of them would be a correctness bug, not a tidy-up
+ * (the same ruling {@link resolveTrialCellPack} records for execution). */
+async function resolveTrialCellVariant(
+  resolution: TrialPlanResolution,
+  plan: TrialCellPlan,
+  profile: ImageModelProfile,
+): Promise<TrialVariantResolution> {
+  const variant = plan.packVariant;
+  if (variant.source === "none") return baselineVariantResolution(profile);
+
+  // Both pack arms need a strategy to evaluate. The planner pairs a null
+  // strategy with the `none` variant and nothing else, so this is an invariant
+  // guard rather than a reachable product state — spelled out because a `!` here
+  // would turn a planner bug into a cell claiming references it never chose.
+  const strategy = plan.identityStrategy;
+  if (strategy === null) {
+    return {
+      ok: false,
+      code: "profile_ineligible",
+      message: "a pack-source cell was planned with no reference strategy",
+      pack: null,
     };
   }
 
-  const spec: ImageIdentityPackTrialCellSpec = { ...planFields, ...profileFields, ...packFields, ...evaluationFields };
+  switch (variant.source) {
+    case "current":
+      return currentPackVariantResolution(resolution, plan.characterId, strategy);
+    case "revision":
+      // The CELL's character, not the selector's: the planner emits a revision
+      // variant only for its own character, and reading under the selector
+      // instead would let a mismatch resolve a pack for somebody the cell does
+      // not name.
+      return pinnedRevisionVariantResolution(
+        resolution,
+        plan.characterId,
+        variant.revision,
+        strategy,
+        plan.packVariantKey,
+      );
+  }
+}
+
+/**
+ * Resolve one planned cell to a full spec, or to the refusal that stops it
+ * (spec.trial.md §"Trial manifest"). The order is the design's: profile, then
+ * the fixture's task, then production offerability, then the version pin, then
+ * the pack variant and its strategy evaluation, then capacity — each refusal
+ * records everything that DID resolve, so the run report can say how far a cell
+ * got.
+ *
+ * The two eligibility gates before the version pin are what keep the grid from
+ * grading renders production could never make:
+ *
+ * - **Task match.** A profile answers for ONE job. Running a scene profile
+ *   against a variant fixture produces an image, and grading it produces a
+ *   number, but the number describes a combination the render path would never
+ *   resolve — evidence for a render nobody can have.
+ * - **Offerability**, through {@link imageProfileOffered} — the same predicate
+ *   production selection reads, reused rather than restated. That single call
+ *   carries the profile's `enabled` switch, the task's legacy model surface
+ *   during the capabilities migration, operation-vs-model support, `edit_kind`,
+ *   and the identity ratings that keep an img2img or weak-identity model out of
+ *   an identity-critical task. Restating any of them here would let trial
+ *   eligibility drift from production eligibility, which is the one thing this
+ *   harness cannot afford.
+ *
+ * The control COMPILE sits between the evaluation and the capacity check. It is
+ * not a gate — compiling cannot refuse, only record what would be dropped — so
+ * its position changes no refusal ordering; running it before the last gate is
+ * what lets a `capacity_exceeded` cell keep a fully parseable spec, which is the
+ * one refusal that has resolved everything and should read back complete.
+ */
+async function resolveTrialCell(
+  resolution: TrialPlanResolution,
+  cellId: string,
+  plan: TrialCellPlan,
+  fixture: IdentityPackTrialPromptFixture,
+): Promise<ResolvedTrialCell> {
+  const planFields = {
+    id: cellId,
+    characterId: plan.characterId,
+    task: fixture.task,
+    promptFixtureId: plan.promptFixtureId,
+    profileId: plan.profileId,
+    identityStrategy: plan.identityStrategy,
+    packVariantKey: plan.packVariantKey,
+    // Derived from the variant rather than assumed: `none` is the one arm that
+    // sends nothing, and the spec contract's cross-field rules key off exactly
+    // this value.
+    referenceSource: plan.packVariant.source === "none" ? ("none" as const) : ("pack" as const),
+    // No seed transport exists anywhere in the render path yet, so every cell
+    // records the honest null rather than a number nothing would send.
+    requestedSeed: null,
+  };
+
+  const profile = resolution.profilesById.get(plan.profileId);
+  const model = profile ? resolution.modelsById.get(profile.imageModelId) : undefined;
+  if (!profile || !model) {
+    return {
+      status: "refused",
+      code: "profile_ineligible",
+      message: `profile ${plan.profileId} is not a runnable registry profile`,
+      spec: planFields,
+    };
+  }
+  const profileFields = { modelSlug: model.slug, profileKey: profile.key };
+
+  if (profile.task !== fixture.task) {
+    return {
+      status: "refused",
+      code: "profile_ineligible",
+      message: `profile task ${profile.task} cannot run a ${fixture.task} fixture`,
+      spec: { ...planFields, ...profileFields },
+    };
+  }
+
+  const offered = imageProfileOffered(profile, model);
+  if (!offered.ok) {
+    return {
+      status: "refused",
+      code: "profile_ineligible",
+      message: `profile ${profile.key} is not offered on ${model.slug} (${offered.reason})`,
+      spec: { ...planFields, ...profileFields },
+    };
+  }
+
+  // A controlled comparison must know EXACTLY which provider version produced
+  // its evidence. Production is happy to follow a model's floating latest; a
+  // trial that did would be comparing whatever Replicate shipped that hour, and
+  // the execute-time re-check would have nothing real to compare against.
+  const modelVersion = pinnedImageModelVersion(model);
+  if (modelVersion === null) {
+    return {
+      status: "refused",
+      code: "version_unpinned",
+      message: `${model.slug} has no probed or slug-pinned provider version, so a controlled trial cannot pin it`,
+      spec: { ...planFields, ...profileFields },
+    };
+  }
+  const versionFields = { modelVersion };
+
+  const variant = await resolveTrialCellVariant(resolution, plan, profile);
+  if (!variant.ok) {
+    return {
+      status: "refused",
+      code: variant.code,
+      message: variant.message,
+      spec: { ...planFields, ...profileFields, ...versionFields, ...(variant.pack ?? {}) },
+    };
+  }
+  const roles = variant.evaluation.orderedReferenceRoles;
+
+  // Compile what this cell WOULD send, with the roles now known: the exact
+  // prompt text (numbered role bindings and model dialect included), the
+  // negative that survives to a real provider field, and the resolved control
+  // payload with every drop recorded. These are the facts the execute-time
+  // re-check recomputes — the planner and the executor call the same compiler,
+  // so a mismatch means the world moved, never that the two disagreed. The
+  // baseline compiles with an EMPTY role list, which is what leaves its prompt
+  // as the fixture wrote it: the control arm must not differ from the pack arms
+  // by any text the harness itself added.
+  const renderPlan = compileProfileRenderPlan({
+    model,
+    profile,
+    basePrompt: fixture.prompt,
+    baseNegativePrompt: fixture.negativePrompt,
+    referenceRoles: roles,
+  });
+  const controlFields = {
+    ...trialCellCompiledIdentity(renderPlan, profile, roles),
+    resolvedControls: renderPlan.resolvedControls,
+  };
+
+  const capacity = referenceCapacity(model);
+  if (roles.length > capacity.max) {
+    return {
+      status: "refused",
+      code: "capacity_exceeded",
+      message: `${roles.length} reference(s) exceed ${model.slug}'s capacity of ${capacity.max}`,
+      spec: {
+        ...planFields,
+        ...profileFields,
+        ...versionFields,
+        ...variant.pack,
+        ...variant.evaluation,
+        ...controlFields,
+      },
+    };
+  }
+
+  const spec: ImageIdentityPackTrialCellSpec = {
+    ...planFields,
+    ...profileFields,
+    ...versionFields,
+    ...variant.pack,
+    ...variant.evaluation,
+    ...controlFields,
+  };
   return { status: "planned", spec };
 }
 
@@ -584,8 +1036,9 @@ async function resolveTrialCell(
  * Plan a run: expand the grid, resolve every cell, and persist the run with its
  * cells — eligible ones `planned`, blocked ones `refused` with the code that
  * stopped them (spending nothing). Whole-run refusals — an unknown corpus, an
- * unknown fixture, a grid over `TRIAL_MAX_CELLS` — create no rows at all: they
- * are configuration errors, not outcomes worth recording.
+ * unknown fixture, a revision selector naming a character outside the run, a grid
+ * over `TRIAL_MAX_CELLS` — create no rows at all: they are configuration errors,
+ * not outcomes worth recording.
  *
  * An unowned character is NOT a whole-run refusal: its cells resolve exactly
  * like a character that does not exist (`pack_blocked` over `source_missing`,
@@ -624,11 +1077,30 @@ export async function createIdentityPackTrialRun(
     fixturesById.set(fixtureId, fixture);
   }
 
+  // A revision selector is CHARACTER-SCOPED, so one naming a character this run
+  // does not include produces no cells at all — the planner would drop it in
+  // silence and the reviewer would believe an arm ran that never existed. That is
+  // a configuration error like an unknown corpus or fixture, not an outcome worth
+  // recording, so it refuses the whole run and creates no rows.
+  for (const selector of request.packVariants ?? []) {
+    if (selector.source !== "revision" || characterIds.includes(selector.characterId)) continue;
+    return {
+      ok: false,
+      refusal: refusal(
+        "pack_revision_unavailable",
+        "a revision selector names a character this run does not include",
+        sink,
+        { characterId: selector.characterId, revision: selector.revision },
+      ),
+    };
+  }
+
   const planned = buildTrialCellPlans({
     characterIds,
     profileIds: request.profileIds,
     strategies: request.strategies,
     promptFixtureIds: request.promptFixtureIds,
+    packVariants: request.packVariants,
   });
   if (!planned.ok) {
     return {
@@ -648,6 +1120,7 @@ export async function createIdentityPackTrialRun(
     profilesById: new Map(profiles.map((profile) => [profile.id, profile])),
     modelsById: new Map(models.map((model) => [model.id, model])),
     packs: new Map(),
+    revisions: new Map(),
     evaluations: new Map(),
     sink,
   };
@@ -685,17 +1158,24 @@ export async function createIdentityPackTrialRun(
   // draft→review settle only fires on execute), so `draft` would wedge it
   // forever. `review` is the honest position — its refused cells are its whole
   // record — and the vacuous-completion rule keeps it from claiming `complete`.
-  await db()
-    .insert(imageIdentityPackTrialRuns)
-    .values({
-      id: runId,
-      ownerId,
-      label: request.label,
-      status: counts.planned === 0 ? "review" : "draft",
-      configJson: request,
-      verdictsJson: [],
-    });
-  if (cellValues.length > 0) await db().insert(imageIdentityPackTrialCells).values(cellValues);
+  //
+  // Both inserts go in ONE transaction: a run row is a claim about a grid, and a
+  // crash between the two writes left a draft run with zero cells — permanently
+  // wedged (nothing to execute, so nothing ever settles it) and indistinguishable
+  // from a run whose cells were all deleted. Either the whole grid exists or the
+  // run does not.
+  await db().transaction(async (tx) => {
+    await tx
+      .insert(imageIdentityPackTrialRuns)
+      .values({
+        id: runId,
+        ownerId,
+        label: request.label,
+        status: counts.planned === 0 ? "review" : "draft",
+        configJson: request,
+      });
+    if (cellValues.length > 0) await tx.insert(imageIdentityPackTrialCells).values(cellValues);
+  });
 
   return { ok: true, runId, counts };
 }
@@ -784,10 +1264,37 @@ const EXECUTE_MAX_RENDERS_CAP = 20;
  * here so the trim watch in {@link executeOneTrialCell} cannot drift from it. */
 const REFERENCES_TRIMMED_DIAGNOSTIC = "image_model.references_trimmed";
 
+/**
+ * How long a claim may sit before a later pass may take it back.
+ *
+ * It must EXCEED the longest render a cell can legitimately be waiting on, or
+ * recovery would hand a still-running render to a second worker and pay twice
+ * for one cell. A profile's `timeoutMs` is capped at 15 minutes by the contract
+ * (and Replicate's own `Cancel-After` carries the same budget), so 20 minutes is
+ * that ceiling plus enough margin for upload, download and storage around it.
+ */
+const STALE_CLAIM_MS = 20 * 60_000;
+
+/**
+ * Exactly what the profile compiled, handed to the renderer.
+ *
+ * This seam is the PROOF SURFACE for "the trial renders the profile it says it
+ * renders": an integration test captures this object and compares it against the
+ * cell's stored `resolvedControls`. Anything the provider receives that is not
+ * visible here is something the harness cannot prove it sent.
+ */
 export interface TrialCellRenderInput {
+  /** The EFFECTIVE model — post reviewed-quality seam, as the provider sees it. */
   model: ImageModel;
+  /** The final compiled text, role preamble included. Hashed as `positivePromptHash`. */
   prompt: string;
   references: Buffer[];
+  /** Mapped controls plus validated overrides, keyed by real provider fields. */
+  controlInput: Record<string, unknown>;
+  /** The profile's prediction budget; null uses the env/default. */
+  timeoutMs: number | null;
+  /** The pinned provider version this cell must execute. */
+  versionId: string | null;
 }
 
 export type TrialCellRenderer = (
@@ -804,8 +1311,28 @@ export function setTrialRendererForTesting(renderer: TrialCellRenderer | null): 
   injectedRenderer = renderer;
 }
 
+/**
+ * The real renderer maps the compiled plan straight onto `renderWithModel` —
+ * field for field, no interpretation. That is deliberate: the moment this seam
+ * starts deciding anything, the captured input stops being evidence of what the
+ * provider was sent.
+ */
 function trialRenderer(): TrialCellRenderer {
-  return injectedRenderer ?? ((input, sink) => renderWithModel(input, sink));
+  return (
+    injectedRenderer ??
+    ((input, sink) =>
+      renderWithModel(
+        {
+          model: input.model,
+          prompt: input.prompt,
+          references: input.references,
+          controlInput: input.controlInput,
+          timeoutMs: input.timeoutMs,
+          versionId: input.versionId,
+        },
+        sink,
+      ))
+  );
 }
 
 export interface ExecuteIdentityPackTrialCellsInput<TReject> {
@@ -837,15 +1364,28 @@ export type ExecuteIdentityPackTrialCellsResult<TReject> =
   | { ok: false; budgetRejected: TReject };
 
 /**
- * Run up to `maxRenders` planned cells, single-flight per run: a second caller
- * meets `run_locked` instead of queueing, because a second click while a pass
- * is rendering means the operator cannot see the first pass yet, and stacking
- * passes would spend budget nobody asked for. Null when the run is not this
- * owner's.
+ * Run up to `maxRenders` planned cells.
+ *
+ * TWO layers guard against paying twice for one cell's evidence, and they guard
+ * different things:
+ *
+ * - The keyed lock is the SAME-PROCESS double-click guard. A second caller meets
+ *   `run_locked` instead of queueing, because a second click while a pass is
+ *   rendering means the operator cannot see the first pass yet, and stacking
+ *   passes would spend budget nobody asked for. It is in-memory and dies with
+ *   the process, which is exactly why it is not the correctness layer.
+ * - The DURABLE CLAIM inside the pass is the cross-process one. Cells move to
+ *   `running` with a token in the database BEFORE the provider is called, so a
+ *   second machine — or this machine after a restart — sees the claim rather
+ *   than a `planned` cell it is free to re-render.
+ *
+ * Null when the run is not this owner's.
  *
  * Cells settle in `cellKey` order — deterministic, so "run 5 more" walks the
- * grid the same way every time. A `failed` cell stays failed: a rerun is a new
- * run, never a silent retry of a cell whose evidence already exists.
+ * grid the same way every time, and comparison-group-adjacent, because that key
+ * layout puts one comparison's arms next to each other. A `failed` cell stays
+ * failed: a rerun is a new run, never a silent retry of a cell whose evidence
+ * already exists.
  */
 export async function executeIdentityPackTrialCells<TReject>(
   input: ExecuteIdentityPackTrialCellsInput<TReject>,
@@ -854,7 +1394,7 @@ export async function executeIdentityPackTrialCells<TReject>(
   const run = await ownedTrialRun(runId, ownerId);
   if (!run) return null;
 
-  const held = tryKeyedLock(identityPackTrialLockKey(runId), () => executeUnderLock(input), "trial_execute");
+  const held = tryKeyedLock(identityPackTrialLockKey(runId), () => runTrialExecutionPass(input), "trial_execute");
   if (held === null) {
     return {
       ok: false,
@@ -864,7 +1404,21 @@ export async function executeIdentityPackTrialCells<TReject>(
   return held;
 }
 
-async function executeUnderLock<TReject>(
+/**
+ * The post-lock pass, exposed so a test can race TWO of them against one run.
+ *
+ * Production always enters through {@link executeIdentityPackTrialCells}; this
+ * door exists because the in-process lock would serialize the very contention
+ * the durable claim exists to survive, and a concurrency guarantee nothing can
+ * exercise is a guarantee nobody knows is broken.
+ */
+export function runTrialExecutionPassForTesting<TReject>(
+  input: ExecuteIdentityPackTrialCellsInput<TReject>,
+): Promise<ExecuteIdentityPackTrialCellsResult<TReject> | null> {
+  return runTrialExecutionPass(input);
+}
+
+async function runTrialExecutionPass<TReject>(
   input: ExecuteIdentityPackTrialCellsInput<TReject>,
 ): Promise<ExecuteIdentityPackTrialCellsResult<TReject> | null> {
   const { runId, ownerId, sink } = input;
@@ -876,48 +1430,84 @@ async function executeUnderLock<TReject>(
     EXECUTE_MAX_RENDERS_CAP,
   );
 
-  const plannedRows = await db()
-    .select()
+  await recoverStaleTrialClaims(runId, sink);
+
+  // Comparison-group-adjacent by construction: `cellKey` is
+  // `character:profile:fixture:strategy:variant`, so plain ascending order runs
+  // every arm of one comparison back to back. Nothing seeds the provider, so
+  // renders drift with whatever the model was doing between them; adjacency is
+  // the only lever the harness has to keep that drift SHARED by a group rather
+  // than becoming the difference being measured.
+  const picked = await db()
+    .select({ id: imageIdentityPackTrialCells.id })
     .from(imageIdentityPackTrialCells)
     .where(and(eq(imageIdentityPackTrialCells.runId, runId), eq(imageIdentityPackTrialCells.status, "planned")))
-    .orderBy(asc(imageIdentityPackTrialCells.cellKey));
-  const picked = plannedRows.slice(0, maxRenders);
+    .orderBy(asc(imageIdentityPackTrialCells.cellKey))
+    .limit(maxRenders);
 
-  // Charge for exactly the cells this pass will attempt, and only once they are
-  // picked: a pass with nothing to run costs nothing (reviewing a finished grid
-  // must keep working after the daily budget is spent). Charged slots are a
-  // reservation — a cell that then conflicts or fails mid-batch does not refund
-  // its unit, deliberately, because the pass was admitted at this size.
-  if (picked.length > 0) {
-    const rejected = await input.chargeBudget(picked.length);
-    if (rejected !== null) {
-      sink?.push(
-        diag("warn", imageIdentityPackTrialDiagnosticCode("budget_refused"), "the render budget refused this pass", {
-          context: { runId, cells: picked.length },
-        }),
-      );
-      return { ok: false, budgetRejected: rejected };
-    }
-  }
+  const claimToken = newId();
+  const claimed: IdentityPackTrialCellRow[] =
+    picked.length === 0 ? [] : await claimTrialCells(runId, picked.map((row) => row.id), claimToken);
+  // Re-sorted after the claim: `UPDATE … RETURNING` hands rows back in whatever
+  // order it touched them, and the group adjacency the key layout buys is worth
+  // nothing if the execution loop then walks the claims in storage order.
+  claimed.sort((a, b) => compareTrialCellKeys(a.cellKey, b.cellKey));
 
   const [models, profiles] = await Promise.all([loadImageModels(sink), loadImageModelProfiles(sink)]);
   const context: ExecuteCellContext = {
     runId,
     ownerId,
+    claimToken,
     modelsBySlug: new Map(models.map((model) => [model.slug, model])),
     profilesById: new Map(profiles.map((profile) => [profile.id, profile])),
     render: trialRenderer(),
     sink,
   };
 
+  // A row this pass picked but did not claim was taken by another machine
+  // between the select and the update. That is the durable claim working, not an
+  // error: proceed with what this pass actually holds.
   const executed: ExecutedTrialCell[] = [];
-  for (const cell of picked) {
-    const status = await executeTrialCellContained(cell, context);
-    if (status === null) break; // the containment settle itself failed; stop the pass
+  const valid: ClaimedTrialCell[] = [];
+  for (const cell of claimed) {
+    const read = readClaimedTrialSpec(cell);
+    if (read.ok) {
+      valid.push({ cell, spec: read.spec });
+      continue;
+    }
+    const status = await refuseTrialCell(cell, context, read.code, read.message);
     executed.push({ cellId: cell.id, cellKey: cell.cellKey, status });
   }
 
-  const runStatus = await settleTrialRunStatus(runId, run.status, runVerdicts(run, sink), true, sink);
+  // Charge for exactly the cells this pass will attempt, and only once they are
+  // claimed: a pass with nothing to run costs nothing (reviewing a finished grid
+  // must keep working after the daily budget is spent), and a malformed cell —
+  // settled terminally above, never sent anywhere — is never billed. Charged
+  // slots are a reservation: a cell that then conflicts or fails mid-batch does
+  // not refund its unit, deliberately, because the pass was admitted at this size.
+  if (valid.length > 0) {
+    const rejected = await input.chargeBudget(valid.length);
+    if (rejected !== null) {
+      // Hand the claims back immediately. A refused pass that left its cells
+      // `running` would wedge them until the stale window elapsed, turning a
+      // budget refusal into twenty minutes of a frozen grid.
+      await releaseTrialClaims(valid.map((entry) => entry.cell.id), claimToken);
+      sink?.push(
+        diag("warn", imageIdentityPackTrialDiagnosticCode("budget_refused"), "the render budget refused this pass", {
+          context: { runId, cells: valid.length },
+        }),
+      );
+      return { ok: false, budgetRejected: rejected };
+    }
+  }
+
+  for (const entry of valid) {
+    const status = await executeTrialCellContained(entry.cell, entry.spec, context);
+    if (status === null) break; // the containment settle itself failed; stop the pass
+    executed.push({ cellId: entry.cell.id, cellKey: entry.cell.cellKey, status });
+  }
+
+  const runStatus = await settleTrialRunStatus(runId, run.status, true, sink);
   const [remaining] = await db()
     .select({ planned: count() })
     .from(imageIdentityPackTrialCells)
@@ -925,9 +1515,144 @@ async function executeUnderLock<TReject>(
   return { ok: true, executed, remainingPlanned: remaining?.planned ?? 0, runStatus };
 }
 
+/** A cell this pass holds, with its spec already parsed once at the boundary. */
+interface ClaimedTrialCell {
+  cell: IdentityPackTrialCellRow;
+  spec: ImageIdentityPackTrialCellSpec;
+}
+
+/**
+ * Take the picked cells by compare-and-set from `planned` to `running`, stamping
+ * this pass's token and the clock.
+ *
+ * The returned rows are the ones this pass owns — fewer than were picked means
+ * another writer won those, which is the whole point. Nothing is rendered before
+ * this write lands, so a crash between claim and provider call costs a cell's
+ * evidence but never a double charge.
+ */
+async function claimTrialCells(
+  runId: string,
+  cellIds: readonly string[],
+  claimToken: string,
+): Promise<IdentityPackTrialCellRow[]> {
+  return db()
+    .update(imageIdentityPackTrialCells)
+    .set({ status: "running", claimToken, claimedAt: new Date() })
+    .where(
+      and(
+        eq(imageIdentityPackTrialCells.runId, runId),
+        inArray(imageIdentityPackTrialCells.id, [...cellIds]),
+        eq(imageIdentityPackTrialCells.status, "planned"),
+      ),
+    )
+    .returning();
+}
+
+/**
+ * Hand claims back to `planned`, token-guarded so a pass can only release its
+ * OWN. Used for the budget refusal, where nothing was rendered and nothing was
+ * charged — the one case where returning a claim cannot cost a second payment.
+ */
+async function releaseTrialClaims(cellIds: readonly string[], claimToken: string): Promise<void> {
+  if (cellIds.length === 0) return;
+  await db()
+    .update(imageIdentityPackTrialCells)
+    .set({ status: "planned", claimToken: null, claimedAt: null })
+    .where(
+      and(
+        inArray(imageIdentityPackTrialCells.id, [...cellIds]),
+        eq(imageIdentityPackTrialCells.status, "running"),
+        eq(imageIdentityPackTrialCells.claimToken, claimToken),
+      ),
+    );
+}
+
+/**
+ * Return claims abandoned by a dead worker to the grid.
+ *
+ * The trade this makes is real and worth stating: a claim older than
+ * {@link STALE_CLAIM_MS} MIGHT belong to a render that was paid for and whose
+ * result was lost with the process that started it. Recovering it can therefore
+ * pay a second time. The alternative is worse — a cell stuck `running` forever
+ * wedges its run short of `review` and can never be graded or ruled on — so
+ * recovery happens, on a clock long enough that no live render can be inside it,
+ * and loudly enough that an operator sees it happened.
+ *
+ * A `running` row with NO `claimed_at` is deliberately not recovered: it records
+ * a claim nothing can date, and resetting an undateable claim on sight is
+ * exactly the double-pay these columns exist to prevent.
+ */
+async function recoverStaleTrialClaims(runId: string, sink: DiagnosticSink | undefined): Promise<void> {
+  const cutoff = new Date(Date.now() - STALE_CLAIM_MS);
+  const recovered = await db()
+    .update(imageIdentityPackTrialCells)
+    .set({ status: "planned", claimToken: null, claimedAt: null })
+    .where(
+      and(
+        eq(imageIdentityPackTrialCells.runId, runId),
+        eq(imageIdentityPackTrialCells.status, "running"),
+        lt(imageIdentityPackTrialCells.claimedAt, cutoff),
+      ),
+    )
+    .returning({ cellKey: imageIdentityPackTrialCells.cellKey });
+  if (recovered.length === 0) return;
+  sink?.push(
+    diag("warn", "images.identity_pack.trial.claim_recovered", "recovered execution claims left behind by a dead pass", {
+      context: { runId, cells: recovered.length, cellKeys: recovered.map((row) => row.cellKey).slice(0, 10) },
+    }),
+  );
+}
+
+type ClaimedTrialSpecRead =
+  | { ok: true; spec: ImageIdentityPackTrialCellSpec }
+  | { ok: false; code: ImageIdentityPackTrialRefusalCode; message: string };
+
+/**
+ * One claimed cell's spec, or the terminal refusal it earns.
+ *
+ * Two distinct corruptions, two codes, both TERMINAL and both FREE:
+ *
+ * - A spec that does not parse is `spec_invalid`. Nothing can say what this cell
+ *   was supposed to render, and a cell nothing can describe cannot be executed
+ *   honestly.
+ * - A spec that parses but carries `resolvedControls: null` is `cell_conflict`.
+ *   It was planned before anything could compile what it would send, so running
+ *   it now would put an uncompiled cell in a grid of compiled ones — not a
+ *   comparison, a confound.
+ *
+ * Settling rather than skipping is the point, and the reason this read happens
+ * BEFORE the budget charge. A malformed cell left `planned` is re-picked by
+ * every later pass forever, and each of those passes charged for it before ever
+ * discovering it could not run. Now it is charged never and settles exactly once.
+ */
+function readClaimedTrialSpec(cell: IdentityPackTrialCellRow): ClaimedTrialSpecRead {
+  const parsed = imageIdentityPackTrialCellSpecSchema.safeParse(cell.specJson);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "spec"}: ${issue.message}`)
+      .join("; ");
+    return {
+      ok: false,
+      code: "spec_invalid",
+      message: `the cell's stored spec no longer satisfies the manifest contract (${detail})`.slice(0, 500),
+    };
+  }
+  if (parsed.data.resolvedControls === null) {
+    return {
+      ok: false,
+      code: "cell_conflict",
+      message: "the cell was planned before its controls were compiled, so nothing can say what it would send",
+    };
+  }
+  return { ok: true, spec: parsed.data };
+}
+
 interface ExecuteCellContext {
   runId: string;
   ownerId: string;
+  /** This pass's claim; every settle compares against it. */
+  claimToken: string;
   modelsBySlug: Map<string, ImageModel>;
   profilesById: Map<string, ImageModelProfile>;
   render: TrialCellRenderer;
@@ -940,17 +1665,20 @@ interface ExecuteCellContext {
  * AFTER provider spend, and letting it abort the batch would 500 the route and
  * leave the cell `planned`, so the next execute would re-render it: double
  * provider spend for one cell's evidence. Instead the thrown cell settles
- * `failed` through the same planned-only CAS every other settle uses, and the
- * batch continues. Only a failure of that settle itself stops the pass
- * (`null`) — at that point nothing can be recorded, and continuing would
- * repeat the same write failure cell after cell.
+ * `failed` through the same claim CAS every other settle uses, and the batch
+ * continues. Only a failure of that settle itself stops the pass (`null`) — at
+ * that point nothing can be recorded, and continuing would repeat the same write
+ * failure cell after cell. The claims this pass still holds on cells it never
+ * reached stay `running` and return to the grid through stale recovery: writing
+ * more rows to a database that just refused a write is not a recovery plan.
  */
 async function executeTrialCellContained(
   cell: IdentityPackTrialCellRow,
+  spec: ImageIdentityPackTrialCellSpec,
   context: ExecuteCellContext,
 ): Promise<ExecutedTrialCell["status"] | null> {
   try {
-    return await executeOneTrialCell(cell, context);
+    return await executeOneTrialCell(cell, spec, context);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     context.sink?.push(
@@ -978,9 +1706,20 @@ async function executeTrialCellContained(
 }
 
 /**
- * Settle one cell with a compare-and-set against `planned`, so a concurrent
- * writer (a second machine; the in-process lock cannot see it) loses cleanly
- * rather than overwriting an outcome that already exists.
+ * Settle one cell with a compare-and-set against THIS PASS'S CLAIM — the row
+ * must still be `running` under the same token — so a writer that took the cell
+ * over (a stale-claim recovery elsewhere, a second machine) loses cleanly rather
+ * than overwriting an outcome that already exists.
+ *
+ * The claim columns are deliberately LEFT ON the terminal row. They are the
+ * audit trail of which pass settled it and when the render started; clearing
+ * them would erase the only evidence tying a stored output to the pass that paid
+ * for it.
+ *
+ * When the CAS finds nothing, any output this settle was carrying is ORPHANED —
+ * the cell's pointer was never written, so nothing in the app references those
+ * bytes again and the run's delete sweep (which walks cell pointers) would never
+ * find them. It is deleted here, immediately, guarded by owner and kind.
  */
 async function settleTrialCell(
   cell: IdentityPackTrialCellRow,
@@ -992,17 +1731,49 @@ async function settleTrialCell(
   const updated = await db()
     .update(imageIdentityPackTrialCells)
     .set({ status, resultJson: result, outputImageId })
-    .where(and(eq(imageIdentityPackTrialCells.id, cell.id), eq(imageIdentityPackTrialCells.status, "planned")))
+    .where(
+      and(
+        eq(imageIdentityPackTrialCells.id, cell.id),
+        eq(imageIdentityPackTrialCells.status, "running"),
+        eq(imageIdentityPackTrialCells.claimToken, context.claimToken),
+      ),
+    )
     .returning({ id: imageIdentityPackTrialCells.id });
   if (updated.length === 0) {
     context.sink?.push(
-      diag("warn", "images.identity_pack.trial.cell_degraded", "another writer settled this cell first", {
+      diag("warn", "images.identity_pack.trial.cell_degraded", "another writer took this cell's claim first", {
         context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey },
       }),
     );
+    await discardOrphanedTrialOutput(outputImageId, context, cell);
     return "skipped";
   }
   return status;
+}
+
+/**
+ * Remove a stored output whose settle lost the claim race.
+ *
+ * One helper rather than a check at each settle site: the rendered path and the
+ * references-trimmed path both carry an output image, and a cleanup written
+ * twice is a cleanup that eventually exists in only one of them. Best-effort by
+ * design — a failed delete leaves a hidden row the image sweep can still
+ * reconcile, and throwing here would turn a lost race into a failed pass.
+ */
+async function discardOrphanedTrialOutput(
+  outputImageId: string | null,
+  context: ExecuteCellContext,
+  cell: IdentityPackTrialCellRow,
+): Promise<void> {
+  if (outputImageId === null) return;
+  const removed = await deleteOwnedImage(outputImageId, context.ownerId, { kind: "identity_trial_output" }).catch(
+    () => false,
+  );
+  context.sink?.push(
+    diag("warn", "images.identity_pack.trial.output_orphaned", "discarded a trial output whose cell was taken over", {
+      context: { runId: context.runId, cellId: cell.id, cellKey: cell.cellKey, outputImageId, removed },
+    }),
+  );
 }
 
 function refuseTrialCell(
@@ -1037,70 +1808,146 @@ function metaDimension(meta: Record<string, unknown>, key: string): number | nul
   return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
+type ResolvedTrialCellPack = { ok: true; pack: ImageIdentityPackV1 | null } | { ok: false; message: string };
+
+/** Whether a pack IS the one this cell pinned — identity, revision, and the
+ * bytes it was derived from, all three. */
+function packMatchesTrialCell(pack: ImageIdentityPackV1, spec: ImageIdentityPackTrialCellSpec): boolean {
+  return (
+    pack.id === spec.packId &&
+    pack.revision === spec.packRevision &&
+    pack.source.contentHash === spec.sourceContentHash
+  );
+}
+
 /**
- * One cell, end to end: re-verify the pinned world (fixture text, model
- * version, resolved controls hash, pack revision, source bytes hash), read the
- * reference bytes in role order, render through the seam, and store the output
- * through the normal row-before-file pipeline as a hidden
+ * The pack this cell renders from, by the variant its spec names.
+ *
+ * The three arms are genuinely different reads, and collapsing them would be a
+ * correctness bug rather than a tidy-up:
+ *
+ * - `none` — the no-pack baseline. No pack work at all, no references.
+ * - `current` — ensure the character's pack and check it has not moved. This arm
+ *   MAY derive a fresh revision (that is what `ensureIdentityPack` does), which
+ *   is precisely why the check that follows exists.
+ * - `rev:…` — a PINNED historical revision, read strictly read-only. This arm
+ *   must never call `ensureIdentityPack`: a pinned-revision cell that quietly
+ *   re-derived, or silently fell back to the current pack, would render a
+ *   different comparison under the name of the one that was planned — which is
+ *   the exact corruption the pack-variant axis exists to measure and must not
+ *   itself commit. A swept revision is a refusal, not a fallback.
+ */
+async function resolveTrialCellPack(
+  spec: ImageIdentityPackTrialCellSpec,
+  context: ExecuteCellContext,
+): Promise<ResolvedTrialCellPack> {
+  const { ownerId, sink } = context;
+  if (spec.referenceSource === "none") return { ok: true, pack: null };
+
+  if (spec.packVariantKey === "current") {
+    const ensured = await ensureIdentityPack({ ownerId, characterId: spec.characterId, purpose: "admin_trial", sink });
+    if (ensured.status !== "ready" || !packMatchesTrialCell(ensured.pack, spec)) {
+      return { ok: false, message: "the identity pack moved since this cell was planned" };
+    }
+    return { ok: true, pack: ensured.pack };
+  }
+
+  if (spec.packVariantKey.startsWith("rev:")) {
+    if (spec.packRevision === null) return { ok: false, message: "the pinned-revision cell names no revision" };
+    const pinned = await getIdentityPackRevisionForTrial({
+      ownerId,
+      characterId: spec.characterId,
+      revision: spec.packRevision,
+      sink,
+    });
+    if (!pinned.ok) return { ok: false, message: `the pinned pack revision is unavailable (${pinned.code})` };
+    if (!packMatchesTrialCell(pinned.pack, spec)) {
+      return { ok: false, message: "the pinned pack revision no longer matches the identity this cell recorded" };
+    }
+    return { ok: true, pack: pinned.pack };
+  }
+
+  return { ok: false, message: `the cell names a pack variant this build cannot resolve (${spec.packVariantKey})` };
+}
+
+/**
+ * One cell, end to end: re-verify the pinned world (provider version, compiled
+ * prompt, compiled negative, resolved controls, and the pack identity behind its
+ * variant), read the reference bytes in role order, render through the seam, and
+ * store the output through the normal row-before-file pipeline as a hidden
  * `identity_trial_output`.
  *
  * Anything that moved since planning is `cell_conflict`: the cell describes a
  * comparison that can no longer be run AS PLANNED, and running some other
  * comparison under its name would poison the whole grid's evidence.
+ *
+ * The spec arrives already parsed. The pass parsed it once at the claim boundary
+ * — a cell whose spec does not parse never reaches here, it settles terminally
+ * and free — so there is no second interpretation of the same JSON to drift.
  */
 async function executeOneTrialCell(
   cell: IdentityPackTrialCellRow,
+  spec: ImageIdentityPackTrialCellSpec,
   context: ExecuteCellContext,
 ): Promise<ExecutedTrialCell["status"]> {
   const { ownerId, runId, sink } = context;
-  const spec = readJsonColumn(imageIdentityPackTrialCellSpecSchema, cell.specJson, sink, SPEC_JSON_PATH).value;
-  if (!spec) {
-    sink?.push(
-      diag("warn", "images.identity_pack.trial.cell_degraded", "planned cell's stored spec did not parse; skipped", {
-        context: { runId, cellId: cell.id, cellKey: cell.cellKey },
-      }),
-    );
-    return "skipped";
-  }
 
   const fixture = trialPromptFixtureById(spec.promptFixtureId);
   if (!fixture) return refuseTrialCell(cell, context, "fixture_unknown", "the cell's prompt fixture is no longer checked in");
-  if (sha256HexOf(fixture.prompt) !== spec.positivePromptHash) {
-    return refuseTrialCell(cell, context, "cell_conflict", "the fixture's prompt text changed since planning");
-  }
 
   const model = context.modelsBySlug.get(spec.modelSlug);
-  if (!model || trialModelVersion(model) !== spec.modelVersion) {
-    return refuseTrialCell(cell, context, "cell_conflict", "the pinned model or version is no longer registered");
+  const profile = context.profilesById.get(spec.profileId);
+  if (!model || !profile) {
+    return refuseTrialCell(cell, context, "cell_conflict", "the pinned model or profile is no longer registered");
   }
 
-  // The same hash the planner recorded, recomputed from the rows in force NOW:
-  // a registry or profile edit that changes how this cell would render (its
-  // capacity, transport, aspect, controls) is a conflict, even though today's
-  // render path does not consult every hashed field yet — the cell pinned a
-  // configuration, and running a different one under its name poisons the grid.
-  const profile = context.profilesById.get(spec.profileId);
-  if (!profile || resolvedControlsHashFor(profile, model) !== spec.resolvedControlsHash) {
+  // The version is checked BEFORE anything is compiled: a model whose pin moved
+  // or vanished cannot execute this cell at all, and saying "the controls
+  // changed" about a version bump would send an operator looking in the wrong place.
+  const modelVersion = pinnedImageModelVersion(model);
+  if (modelVersion === null || modelVersion !== spec.modelVersion) {
+    return refuseTrialCell(cell, context, "cell_conflict", "the pinned provider version moved or vanished");
+  }
+
+  // Recompile from the rows in force NOW, with the SAME compiler planning used,
+  // and compare all three fingerprints. Between them they cover fixture text
+  // drift, role-wording drift (the preamble is part of the prompt), a changed
+  // negative, and any registry or profile edit that would change what is sent.
+  // A cell pinned a configuration; running a different one under its name
+  // poisons the grid's evidence, so every difference is a conflict.
+  const plan = compileProfileRenderPlan({
+    model,
+    profile,
+    basePrompt: fixture.prompt,
+    baseNegativePrompt: fixture.negativePrompt,
+    referenceRoles: spec.orderedReferenceRoles,
+  });
+  const compiled = trialCellCompiledIdentity(plan, profile, spec.orderedReferenceRoles);
+  if (compiled.positivePromptHash !== spec.positivePromptHash) {
+    return refuseTrialCell(cell, context, "cell_conflict", "the compiled prompt text changed since planning");
+  }
+  if (compiled.negativePromptHash !== spec.negativePromptHash) {
+    return refuseTrialCell(cell, context, "cell_conflict", "the compiled negative prompt changed since planning");
+  }
+  if (compiled.resolvedControlsHash !== spec.resolvedControlsHash) {
     return refuseTrialCell(cell, context, "cell_conflict", "the resolved model/profile controls changed since planning");
   }
 
-  const ensured = await ensureIdentityPack({ ownerId, characterId: spec.characterId, purpose: "admin_trial", sink });
-  if (
-    ensured.status !== "ready" ||
-    ensured.pack.id !== spec.packId ||
-    ensured.pack.revision !== spec.packRevision ||
-    ensured.pack.source.contentHash !== spec.sourceContentHash
-  ) {
-    return refuseTrialCell(cell, context, "cell_conflict", "the identity pack moved since this cell was planned");
-  }
-  const pack = ensured.pack;
+  const resolvedPack = await resolveTrialCellPack(spec, context);
+  if (!resolvedPack.ok) return refuseTrialCell(cell, context, "cell_conflict", resolvedPack.message);
+  const pack = resolvedPack.pack;
 
+  // A null pack is the no-pack baseline, whose contract forbids reference roles
+  // outright — so this loop simply does not run for it, and no reference is
+  // ever read from a pack that is not there.
   const references: Buffer[] = [];
-  for (const role of spec.orderedReferenceRoles) {
-    const imageId = role === "canonical_identity" ? pack.source.imageId : pack.faceDetail.imageId;
-    const buffer = imageId === null ? null : await readOwnedImageBytes(imageId, ownerId);
-    if (!buffer) return refuseTrialCell(cell, context, "cell_conflict", `the ${role} reference bytes are unreadable`);
-    references.push(buffer);
+  if (pack !== null) {
+    for (const role of spec.orderedReferenceRoles) {
+      const imageId = role === "canonical_identity" ? pack.source.imageId : pack.faceDetail.imageId;
+      const buffer = imageId === null ? null : await readOwnedImageBytes(imageId, ownerId);
+      if (!buffer) return refuseTrialCell(cell, context, "cell_conflict", `the ${role} reference bytes are unreadable`);
+      references.push(buffer);
+    }
   }
 
   // Tee the renderer's diagnostics through a local collector: the plan-time
@@ -1112,23 +1959,43 @@ async function executeOneTrialCell(
   const renderDiagnostics = new DiagnosticCollector();
   const startedMs = Date.now();
   const rendered = await context.render(
-    { model, prompt: fixture.prompt, references },
+    {
+      // The EFFECTIVE model and the COMPILED prompt: what crosses this seam is
+      // exactly what the profile compiled and exactly what the hashes cover.
+      model: plan.effectiveModel,
+      prompt: plan.finalPrompt,
+      references,
+      controlInput: plan.controlInput,
+      timeoutMs: plan.timeoutMs,
+      versionId: plan.versionId,
+    },
     sink ? teeSink(sink, renderDiagnostics) : renderDiagnostics,
   );
   const latencyMs = Date.now() - startedMs;
+  // The provider's own handle on this attempt, recorded on every outcome below.
+  // `moderationOutcome` and `postCrop` stay null throughout: the Replicate
+  // adapter exposes neither a moderation verdict nor a post-download crop
+  // rectangle, and a fabricated value in a provenance field is worse than an
+  // honest absence.
+  const providerPredictionId = rendered.predictionId ?? null;
 
   if (!rendered.ok || !rendered.image) {
     const message = rendered.error ?? `${model.slug} returned no image`;
     sink?.push(
       diag("warn", imageIdentityPackTrialDiagnosticCode("provider_failed"), message.slice(0, 300), {
-        context: { runId, cellId: cell.id, cellKey: cell.cellKey },
+        context: { runId, cellId: cell.id, cellKey: cell.cellKey, providerPredictionId },
       }),
     );
     return settleTrialCell(
       cell,
       context,
       "failed",
-      trialResult({ failureCode: classifyImageFailure(message), failureMessage: message.slice(0, 2000), latencyMs }),
+      trialResult({
+        providerPredictionId,
+        failureCode: classifyImageFailure(message),
+        failureMessage: message.slice(0, 2000),
+        latencyMs,
+      }),
       null,
     );
   }
@@ -1138,8 +2005,10 @@ async function executeOneTrialCell(
     kind: "identity_trial_output",
     entityKind: "character",
     entityId: spec.characterId,
-    sourceImageId: spec.sourceImageId,
-    prompt: fixture.prompt,
+    // Null only on the no-pack baseline, which has no source to record; the
+    // provenance column is optional, so absent is the honest value there.
+    sourceImageId: spec.sourceImageId ?? undefined,
+    prompt: plan.finalPrompt,
     meta: { hidden: true, trialRunId: runId, trialCellId: cell.id, cellKey: cell.cellKey },
   });
   const saved = await saveImageBuffer(asset.id, rendered.image, sink);
@@ -1153,13 +2022,19 @@ async function executeOneTrialCell(
       cell,
       context,
       "failed",
-      trialResult({ failureCode: classifyImageFailure(message), failureMessage: message, latencyMs }),
+      trialResult({
+        providerPredictionId,
+        failureCode: classifyImageFailure(message),
+        failureMessage: message,
+        latencyMs,
+      }),
       null,
     );
   }
 
   const meta = imageMeta(saved.meta);
   const measured = {
+    providerPredictionId,
     outputImageId: saved.id,
     latencyMs,
     finalWidthPx: metaDimension(meta, "width"),
@@ -1228,6 +2103,8 @@ function reviewableTrialCells(
       promptFixtureId: spec.promptFixtureId,
       task: spec.task,
       identityStrategy: spec.identityStrategy,
+      packVariantKey: spec.packVariantKey,
+      referenceSource: spec.referenceSource,
     });
   }
   return { pairable, outputImageIdByCellId };
@@ -1372,9 +2249,41 @@ export async function identityPackTrialSummary(
 
   return {
     comparisons: aggregateTrialGrades(pairs, grades),
-    renderedCombos: renderedTrialCombos(rows, sink),
-    verdicts: runVerdicts(run, sink),
+    renderedCombos: withComboPairCounts(
+      renderedTrialCombos(rows, sink),
+      pairs,
+      new Set(grades.map((record) => record.pairId)),
+    ),
+    verdicts: await readTrialVerdicts(runId),
   };
+}
+
+/**
+ * Attach each verdict slot's pairwise evidence: how many pairs it takes part in
+ * on either side, and how many of those are graded.
+ *
+ * A slot showing 0 of 0 is the case worth surfacing — a strategy that rendered
+ * but whose every counterpart cell failed has no comparative evidence at all,
+ * and the reviewer must see that BEFORE promoting it. An empty comparison list
+ * beside a populated verdict list does not say which slot is unsupported.
+ */
+function withComboPairCounts(
+  combos: readonly RenderedComboTally[],
+  pairs: readonly TrialCellPair[],
+  gradedPairIds: ReadonlySet<string>,
+): TrialRenderedCombo[] {
+  return combos.map((combo): TrialRenderedCombo => {
+    const involved = pairs.filter(
+      (pair) =>
+        pair.profileId === combo.profileId &&
+        (pair.strategyA === combo.identityStrategy || pair.strategyB === combo.identityStrategy),
+    );
+    return {
+      ...combo,
+      totalPairs: involved.length,
+      gradedPairs: involved.filter((pair) => gradedPairIds.has(pair.pairId)).length,
+    };
+  });
 }
 
 export interface RecordTrialVerdictInput {
@@ -1384,6 +2293,15 @@ export interface RecordTrialVerdictInput {
   identityStrategy: IdentityReferenceStrategy;
   verdict: TrialVerdictValue;
   reason: string;
+  /**
+   * Rule anyway, with reviewable pairs still ungraded. An EXPLICIT, RECORDED
+   * admin decision, never a silent bypass: without it the ruling is refused
+   * `review_incomplete`, and with it the flag is persisted on the row so a
+   * promotion made on partial evidence stays distinguishable from one made on
+   * all of it. It cannot override the other two gates — a run still executing
+   * has evidence in flight, and an unknown combo is a typo, not a judgment call.
+   */
+  overrideIncompleteReview?: boolean;
   sink?: DiagnosticSink;
 }
 
@@ -1392,41 +2310,94 @@ export type RecordTrialVerdictResult =
   | { ok: false; refusal: IdentityPackTrialRefusal };
 
 /**
- * The two fields a verdict must match against a cell, parsed leniently: a cell
- * refused before full resolution stores an honestly partial spec that fails the
- * full contract, but its plan fields — profile and strategy among them — are
- * always present, and a combo the run refused is still a combo the run named.
+ * Every (profile, strategy) any cell of the run carries, regardless of status.
+ * Null-strategy cells contribute nothing: the no-pack baseline is not a verdict
+ * slot, so a verdict naming it would have no combo to match.
  */
-const cellComboSchema = imageIdentityPackTrialCellSpecSchema.pick({ profileId: true, identityStrategy: true });
-
-/** Every (profile, strategy) any cell of the run carries, regardless of status. */
 function runCellCombos(rows: readonly IdentityPackTrialCellRow[]): Set<string> {
   const combos = new Set<string>();
   for (const row of rows) {
-    const parsed = cellComboSchema.safeParse(row.specJson);
-    if (parsed.success) combos.add(verdictComboKey(parsed.data.profileId, parsed.data.identityStrategy));
+    const parsed = trialCellComboSchema.safeParse(row.specJson);
+    if (!parsed.success || parsed.data.identityStrategy === null) continue;
+    combos.add(verdictComboKey(parsed.data.profileId, parsed.data.identityStrategy));
   }
   return combos;
 }
 
 /**
- * Upsert one (profile, strategy) verdict onto the run — the actor, reason and
- * clock stamped here, the policy version being the one in force — then settle
- * the run's status: when every combination present in the rendered cells is
- * ruled, `review` becomes `complete` with no separate close action. Null when
- * the run is not this owner's.
+ * Why this run is in no position to be ruled on, or null when it is.
  *
- * A combo no cell of the run carries is refused (`verdict_unknown_combo`)
- * rather than stored: a typo'd profile id would otherwise record a verdict
- * nothing can surface, and enough of them would push the summary past its
- * 64-verdict wire cap.
+ * Two separate things are being asserted, and both matter. A cell still
+ * `planned` or `running` means evidence is in flight — a ruling recorded now
+ * would be a judgment on a grid that is still growing, and the `running` half
+ * is the sharper case: those renders may already have been PAID for, so their
+ * outputs are coming. And a run that has not reached `review` has nothing to
+ * rule on at all, whatever its cell counts say.
+ *
+ * `complete` is deliberately allowed: revising a ruling after the fact is the
+ * upsert path, and a trial whose verdict can never be corrected is a trial
+ * whose first mistake is permanent.
+ */
+function trialRunPositionBlocker(status: TrialRunStatus, counts: TrialCellCounts): string | null {
+  const unexecuted = counts.planned + counts.running;
+  if (unexecuted > 0) {
+    return `the run is still executing: ${counts.planned} planned, ${counts.running} running cell(s) remain`;
+  }
+  switch (status) {
+    case "draft":
+      return "the run is in draft: nothing has been rendered to review";
+    case "running":
+      return "the run has not settled out of execution yet";
+    case "review":
+    case "complete":
+      return null;
+  }
+}
+
+/**
+ * Upsert one (profile, strategy) verdict — the actor, reason and clock stamped
+ * here, the policy version being the one in force — then settle the run's
+ * status: when every combination present in the rendered cells is ruled AND
+ * every reviewable pair is graded, `review` becomes `complete` with no separate
+ * close action. Null when the run is not this owner's.
+ *
+ * Three gates, in this order, each refusing rather than storing:
+ *
+ * 1. **Position** ({@link trialRunPositionBlocker}) — `review_incomplete` while
+ *    the run is in draft or has cells still planned or running.
+ * 2. **Combo** — `verdict_unknown_combo` for a (profile, strategy) no cell of
+ *    the run carries. A typo'd profile id would otherwise record a verdict
+ *    nothing can surface, and enough of them would push the summary past its
+ *    64-verdict wire cap.
+ * 3. **Evidence** — `review_incomplete` while reviewable pairs are ungraded,
+ *    unless the caller passes `overrideIncompleteReview`. This is the gate the
+ *    whole blinded procedure exists to enforce: a ruling recorded over unseen
+ *    comparisons is exactly the failure mode the grades were collected to
+ *    prevent. The override is honored, and RECORDED on the row.
+ *
+ * The write itself is a single-row upsert on `(run, profile, strategy)`, not a
+ * rewrite of a verdict array. That is what makes two admins ruling on two
+ * different slots at the same moment safe: each write touches only its own
+ * ruling, so neither can erase the other.
  */
 export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promise<RecordTrialVerdictResult | null> {
   const { runId, ownerId, sink } = input;
   const run = await ownedTrialRun(runId, ownerId);
   if (!run) return null;
 
-  if (!runCellCombos(await trialCellRows(runId)).has(verdictComboKey(input.profileId, input.identityStrategy))) {
+  // Read the cells ONCE and share them across all three gates: re-reading
+  // between gates would let a run change position underneath its own ruling.
+  const rows = await trialCellRows(runId);
+
+  const blocked = trialRunPositionBlocker(run.status, countTrialCells(rows));
+  if (blocked !== null) {
+    return {
+      ok: false,
+      refusal: refusal("review_incomplete", blocked, sink, { runId, runStatus: run.status }),
+    };
+  }
+
+  if (!runCellCombos(rows).has(verdictComboKey(input.profileId, input.identityStrategy))) {
     return {
       ok: false,
       refusal: refusal(
@@ -1438,28 +2409,64 @@ export async function recordTrialVerdict(input: RecordTrialVerdictInput): Promis
     };
   }
 
-  const entry: TrialVerdict = {
-    profileId: input.profileId,
-    identityStrategy: input.identityStrategy,
-    verdict: input.verdict,
-    reason: input.reason,
-    policyVersion: IDENTITY_PACK_POLICY_VERSION,
-    decidedByUserId: ownerId,
-    decidedAt: new Date().toISOString(),
-  };
-  const verdicts = [
-    ...runVerdicts(run, sink).filter(
-      (verdict) => !(verdict.profileId === entry.profileId && verdict.identityStrategy === entry.identityStrategy),
-    ),
-    entry,
-  ];
-  await db()
-    .update(imageIdentityPackTrialRuns)
-    .set({ verdictsJson: verdicts })
-    .where(eq(imageIdentityPackTrialRuns.id, runId));
+  const { pairable } = reviewableTrialCells(rows, sink);
+  const graded = await gradedPairIds(runId);
+  const ungradedPairs = pairTrialCells(pairable).filter((pair) => !graded.has(pair.pairId)).length;
+  const overrideRequested = input.overrideIncompleteReview === true;
+  if (ungradedPairs > 0 && !overrideRequested) {
+    return {
+      ok: false,
+      refusal: refusal(
+        "review_incomplete",
+        `${ungradedPairs} reviewable pair(s) are still ungraded; grade them or rule with an explicit override`,
+        sink,
+        { runId, ungradedPairs },
+      ),
+    };
+  }
 
-  const runStatus = await settleTrialRunStatus(runId, run.status, verdicts, false, sink);
-  return { ok: true, runStatus, verdicts };
+  // True only when the override actually carried the ruling past missing
+  // evidence. Stamping it on a fully graded run would claim the evidence was
+  // incomplete when it was not — a fabricated fact in the one field that exists
+  // to keep partial-evidence promotions honest.
+  const overrodeIncompleteReview = overrideRequested && ungradedPairs > 0;
+  const decidedAt = new Date();
+  await db()
+    .insert(imageIdentityPackTrialVerdicts)
+    .values({
+      id: newId(),
+      runId,
+      profileId: input.profileId,
+      identityStrategy: input.identityStrategy,
+      verdict: input.verdict,
+      reason: input.reason,
+      policyVersion: IDENTITY_PACK_POLICY_VERSION,
+      overrideIncompleteReview: overrodeIncompleteReview,
+      decidedByUserId: ownerId,
+      decidedAt,
+    })
+    .onConflictDoUpdate({
+      target: [
+        imageIdentityPackTrialVerdicts.runId,
+        imageIdentityPackTrialVerdicts.profileId,
+        imageIdentityPackTrialVerdicts.identityStrategy,
+      ],
+      // A revision replaces the whole ruling, `updatedAt` included — drizzle's
+      // `$onUpdate` fires for `.update()`, never for a conflict arm, so a
+      // timestamp left implicit here would freeze at the original insert.
+      set: {
+        verdict: input.verdict,
+        reason: input.reason,
+        policyVersion: IDENTITY_PACK_POLICY_VERSION,
+        overrideIncompleteReview: overrodeIncompleteReview,
+        decidedByUserId: ownerId,
+        decidedAt,
+        updatedAt: new Date(),
+      },
+    });
+
+  const runStatus = await settleTrialRunStatus(runId, run.status, false, sink);
+  return { ok: true, runStatus, verdicts: await readTrialVerdicts(runId) };
 }
 
 /* ------------------------------------------------------------------------ *
@@ -1472,8 +2479,16 @@ export interface DeleteIdentityPackTrialRunResult {
 }
 
 /**
- * Hard-delete a run: every output image row and file it produced, THEN the row
- * (cells and grades cascade with it). The purge goes first because the cell
+ * Hard-delete a run: every output image row and file it produced, THEN the row.
+ *
+ * Cells, grades AND verdicts cascade with it — all three tables FK `run_id`
+ * with `on delete cascade`, so the run row is the single sweep point and no
+ * ledger outlives the trial it belongs to. (The verdicts are the newest of the
+ * three: when they lived in the run row's jsonb they could not survive it by
+ * construction, and a normalized table only keeps that property because its FK
+ * says so.)
+ *
+ * The purge goes first because the cell
  * rows are the only pointers to the hidden outputs — deleting the run first
  * would erase the pointers, and a crash between the two would orphan
  * `identity_trial_output` rows and files nothing can find again. Purge-first

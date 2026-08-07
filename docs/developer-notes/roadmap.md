@@ -195,9 +195,16 @@ _(Currently empty — the two character-chat ideas that were here graduated to p
   [spec](image-identity-packs.spec.md) (active; planned 2026-08-05 and extracted
   from the image-render-quality plan so reference preparation has one owner;
   **slices 1–4 and 5A shipped 2026-08-06**, see
-  [roadmap.shipped.md](roadmap.shipped.md); **slice 6 harness built dark
-  2026-08-06** — admin trial runner, blinded pairwise review, and verdict
-  recording, no paid cell run yet; slice 5B — render-lane consumption — waits
+  [roadmap.shipped.md](roadmap.shipped.md); **slice 6 harness built dark and
+  hardened 2026-08-06** — admin trial runner, blinded pairwise review, and
+  verdict recording, then a pre-spend correctness pass: production profile
+  eligibility at planning, pinned provider versions actually executed,
+  compiled profile controls actually sent, numbered multi-reference role
+  prompts, durable cross-process cell claims (no double spend), terminal
+  settlement for malformed cells, orphan-output cleanup, normalized verdict
+  rows behind review-completeness gates, and a pack-variant axis (pinned
+  revisions + no-pack baseline) completing the required comparison matrix —
+  no paid cell run yet; slice 5B — render-lane consumption — waits
   on the capabilities plan's shared render intent). Compiles the current canonical
   portrait into an owner-scoped, revisioned identity pack: the hidden
   `identity_face_crop` kind (excluded from the gallery, the portrait studio,
