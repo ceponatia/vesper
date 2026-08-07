@@ -1,14 +1,34 @@
 # Spatially controlled scene images — pose, depth, and character identity
 
-Status: **draft — 2026-07-20**. This plan graduates the self-hosted ComfyUI /
-pose-control follow-up in [deferred.plan.md](deferred.plan.md). It extends the
-shipped provider and lineage foundation in
-[finished/scene-images.plan.md](finished/scene-images.plan.md) and the runtime
-documented in [../images.md](../images.md).
+Status: draft (written 2026-07-20; not started — no spatial contract, template,
+solver, renderer, or worker exists in the codebase, and Gate 0 has not been run)
 
 Outcome: A player can see a scene image in which each character is posed and
 positioned the way the story just described and still looks like themselves, so
 that the picture stops contradicting the text it illustrates.
+
+This plan graduates the self-hosted ComfyUI / pose-control follow-up in
+[deferred.plan.md](deferred.plan.md). It extends the shipped provider and lineage
+foundation in [finished/scene-images.plan.md](finished/scene-images.plan.md) and
+the runtime documented in [../images.md](../images.md).
+
+Neighbouring plans, all of which moved under it after this one was written:
+
+- [image model registry](finished/image-model-registry.plan.md) made the model list data
+  and **removed Venice entirely** (owner ruling 2026-08-05) — Replicate is the
+  only provider, and the fallback ladder is now one model using fewer references;
+- [image model capabilities](image-model-capabilities.plan.md) owns profiles,
+  role-aware references, controls, and seeds — the transport any structural
+  control would travel through;
+- [image identity packs](image-identity-packs.plan.md) shipped the single-view
+  identity pack this plan assumed it would have to build;
+- [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) proposes
+  a **competing, cheaper first step**: the hosted Qwen edit models accept pose,
+  depth, and edge maps as numbered input images, so a controlled experiment may
+  be reachable without a GPU worker at all. That plan now runs on the
+  already-seeded Qwen Image Edit 2511 (owner ruling 2026-08-07), making it
+  cheaper still. That plan and Gate 0 below answer the same question and should
+  not both be opened.
 
 The direction in one sentence:
 
@@ -79,33 +99,46 @@ Already shipped:
 
 - immutable `images` assets and `image_references` lineage;
 - detached `scene_image` jobs with dedupe, retry, and diagnostics;
-- a provider capability/fallback layer;
-- Venice/Qwen generation and up-to-three-reference editing;
+- a model-registry capability layer, and a degradation ladder that drops
+  references rather than switching models — a selected model never falls across
+  to a different one, because a wrong-looking character costs more than a missing
+  image (owner ruling 2026-07-29);
+- Replicate-backed generation and up-to-three-reference editing;
 - canonical avatars, current-look and place anchors, wardrobe projection,
-  embodied POV, and mature-route eligibility checks; and
-- a scene composer that creates a structured render plan.
+  embodied POV, and mature-route eligibility checks;
+- a scene composer that creates a structured render plan;
+- **single-view identity packs** — a revisioned, source-hashed face-detail crop
+  with quality measurement, manual correction, and pre-spend eligibility; and
+- a **scene / body-relations owner** in the chat lane (posture, facing,
+  proximity, support roles, coarse surface height, and the reach they imply),
+  which is the committed physical state Gate 5 below was waiting for.
 
 Still required:
 
 - camera, coordinate, joint, support, contact, and occlusion contracts;
 - pose templates plus deterministic IK/validation;
 - procedural OpenPose, depth, segmentation, and masks;
-- a provider that consumes those controls;
-- multi-view character identity packs and regional person binding;
+- a provider or worker that consumes those controls;
+- multi-view identity references and regional person binding — the shipped pack
+  is one view of one character, and this plan needs several angles plus a way to
+  bind a pack to a region of the frame;
 - pose/identity/contact evaluation; and
 - reproducible control and model-attempt lineage.
 
 ## Parallel development and migration
 
-This is a second route through the existing job, asset, lineage, and provider
+This is a second route through the existing job, asset, lineage, and model
 contracts—not a rewrite or a big-bang replacement. Through Gates 0–4:
 
-- Existing Venice/Qwen generation and edit routes remain production-supported
-  and may stay the default for unsupported or unstable scene classes.
+- The existing Replicate generate/edit routes remain production-supported and may
+  stay the default for unsupported or unstable scene classes.
 - A per-job/chat feature flag and capability routing select old, structural, or
   shadow/A-B execution without changing the caller's result contract.
 - Structural-route failures preserve their diagnostics and may fall back to an
-  old route within the detached job's bounded attempt/cost budget.
+  old route within the detached job's bounded attempt/cost budget. That fallback
+  is a route change, not a model change: the no-cross-model rule above still
+  holds, so a structural attempt that fails falls back to the ordinary route on
+  the same model or reports a refusal.
 - New spatial components add adapters and tests around current seams; they do not
   destabilize working image generation while templates and models are debugged.
 - Retiring any old route requires measured quality/reliability parity, production
@@ -181,12 +214,17 @@ corrupt keypoint colors, depth, or region ids.
 
 ### Character identity packs
 
-Add a versioned `CharacterVisualIdentityPack` rooted in the canonical avatar:
+[image-identity-packs.plan.md](image-identity-packs.plan.md) already owns the
+identity pack, its derivation, quality gate, correction path, and provenance. Its
+v1 is deliberately one character, one canonical portrait, one face-detail crop.
+
+This plan needs more than that, and the extra roles are what it must add rather
+than reinvent:
 
 - front, three-quarter, and profile face references;
-- neutral full-body/current-build reference;
-- current-look reference for wardrobe/appearance;
-- optional distinguishing-feature crops and provider-specific LoRA; and
+- a neutral full-body / current-build reference;
+- a current-look reference for wardrobe and appearance;
+- optional distinguishing-feature crops and a provider-specific LoRA; and
 - positive synthetic provenance plus adult/life-stage eligibility.
 
 Only reviewed synthetic assets enter a pack. Never promote generated variants to
@@ -224,14 +262,19 @@ Model names below are Gate 0 candidates, not permanent architecture decisions.
    provenance, policy, quality, and cost gates.
 5. **Finish:** upscale only an accepted candidate at low denoise.
 
-Hosted Venice stays the no-control baseline and fallback. For three or more people,
-test masked sequential composition—assign and protect one character region at a
-time—then a restrained harmonization pass. A global “combine everyone” prompt is
-not expected to preserve identity ownership reliably.
+The app's current registry-model scene route is the no-control baseline. For three
+or more people, test masked sequential composition—assign and protect one
+character region at a time—then a restrained harmonization pass. A global
+“combine everyone” prompt is not expected to preserve identity ownership reliably.
 
-ComfyUI is the initial worker/workflow orchestrator because it makes multi-stage
-experiments inspectable. Production code calls a versioned worker API; it does not
-depend on a graph file or node names.
+ComfyUI is the assumed worker/workflow orchestrator here because it makes
+multi-stage experiments inspectable. That assumption is now contested: the
+[Qwen advanced image subsystem plan](qwen-advanced-image-subsystem.plan.md)
+established on 2026-08-06 that the hosted Qwen edit models take pose, depth, and
+edge maps as ordinary numbered input images on Replicate, with no separate
+control field and no GPU worker. Gate 0 must decide between the two before any
+worker is stood up. Whichever wins, production code calls a versioned worker or
+profile API; it does not depend on a graph file or node names.
 
 ## Validation and evaluation
 
@@ -250,7 +293,7 @@ The fixed corpus should cover one/two people, crossed limbs, opposite orientatio
 bent joints, furniture, embodied POV, wardrobe changes, eligible mature content,
 and at least one non-human feature. Compare:
 
-- current Venice single/multi-edit baseline;
+- the current single/multi-edit baseline on the registry's scene model;
 - structure control without and with identity repair;
 - reference packs versus LoRA identity;
 - full regional-repair pipeline; and
@@ -263,15 +306,24 @@ Set numeric acceptance thresholds only after baseline and human labels exist.
 
 ## Delivery gates
 
+No gate has been started, and Gate 0 is the only one that can begin.
+
 ### Gate 0 — measured workflow spike
 
 - Build the 12–20-scene corpus and render today's baseline.
-- Prototype Qwen pose/depth → Qwen Edit identity on an ephemeral/cloud GPU.
+- Prototype pose/depth structure → identity composition, first on hosted
+  Replicate (Qwen Image Edit 2511 takes the control map as a numbered input
+  image) and only then on an ephemeral/cloud GPU if the hosted route cannot do
+  it.
 - Measure VRAM, latency, cost, content coverage, license, and provider terms.
-- Choose self-hosted/cloud ComfyUI or a hosted control API.
+- Choose the hosted control route or a self-hosted/cloud ComfyUI worker.
 
 Exit: one workflow materially improves pose/contact without a material identity
 regression. Otherwise park the worker and improve reference editing.
+
+This gate is a **paid spend** and duplicates the question the
+[Qwen advanced image subsystem plan](qwen-advanced-image-subsystem.plan.md) asks.
+Running both is buying the same answer twice.
 
 ### Gate 1 — contracts, templates, and renderer
 
@@ -311,7 +363,12 @@ the current provider ladder is safe.
 
 ### Gate 5 — authoritative spatial reads
 
-This waits for the successor engine to own physical actions and positions.
+The prerequisite this gate was written to wait for has arrived: the successor
+engine owns physical actions and positions for successor chats (gates 0–6 closed
+2026-07-21), and the chat lane has its own scene / body-relations owner for
+posture, facing, proximity, support, and reach. Both are coarse — neither holds
+joint-level pose — so this gate still has to build the frame; what it no longer
+has to wait for is somebody to own where the bodies are.
 
 - Committed action resolution emits authoritative frames and `SpatialRead` facts.
 - Narration receives concise contacts/reachability and explicit impossibilities
@@ -368,12 +425,16 @@ operation, and identity/contact repair dominate uncertainty.
 
 ## Open questions
 
-1. Is single-character control valuable alone, or must v1 include two-person contact?
-2. Managed GPU, dedicated worker, or hosted control API for the first deployment?
-3. Are reviewed multi-view packs enough for v1, or are character LoRAs required?
-4. Which body dimensions may authoritatively scale rigs?
-5. Which controls must be retained versus reproduced from frame + renderer revision?
-6. Is a developer inspector enough, or does the player need a pose editor?
+1. Does this plan or the
+   [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) run the
+   controlled-image experiment? They ask the same question and only one should be
+   funded. An owner decision, not a research task.
+2. Is single-character control valuable alone, or must v1 include two-person contact?
+3. Managed GPU, dedicated worker, or hosted control API for the first deployment?
+4. Are reviewed multi-view packs enough for v1, or are character LoRAs required?
+5. Which body dimensions may authoritatively scale rigs?
+6. Which controls must be retained versus reproduced from frame + renderer revision?
+7. Is a developer inspector enough, or does the player need a pose editor?
 
 ## Definition of done
 

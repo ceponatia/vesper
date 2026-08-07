@@ -1,6 +1,7 @@
 # Affectionate-contact MVP — internal trial results
 
-Status: **Passed. Approved on 2026-08-01 and enabled on 2026-08-02.**
+Status: closed — passed 2026-08-01, enabled in production 2026-08-02 and still
+enabled. One monitoring item stays open (see §Remaining follow-up).
 
 ## Decision
 
@@ -100,9 +101,9 @@ The completed build was deployed on 2026-08-02, and both parts of the feature we
 
 ## Remaining follow-up
 
-- Monitor the first natural production case in which a character clearly ends an ongoing touch.
-- Address the separate narration problem that allows newly mentioned furniture or locations to cause implausible scene changes.
-- Continue the next approved contact-plan items in their existing order.
+- Monitor the first natural production case in which a character clearly ends an ongoing touch. Still unobserved.
+- Address the separate narration problem that allows newly mentioned furniture or locations to cause implausible scene changes. That is not this plan's work.
+- Continue the next approved contact-plan items in their existing order. The [plan](romantic-contact-affordances.plan.md) owns that order and the live status of each item.
 
 ## Supporting record
 

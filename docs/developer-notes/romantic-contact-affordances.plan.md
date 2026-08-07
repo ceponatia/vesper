@@ -1,33 +1,30 @@
 # Romantic contact affordances
 
-Status: active.
-
-**Next:** item 4, enable and review the NPC scene-decision shadow measurement
-before any authority increment.
-
-Shipped foundation: slices 0–2 landed 2026-07-30; slices 3A and 3A.1 plus the
-affectionate-contact technical MVP and its repairs landed 2026-07-31; the
-internal trial passed 2026-08-01; and production enablement completed
-2026-08-02 with `CHAT_CONTACT_ACTIONS` and `CHAT_PHYSICAL_CONSTRAINTS` set to
-`on`. The participant-declaration residue was removed 2026-08-04 (item 3).
-Actor-control delivery steps 1–3 landed 2026-08-02, and the three authority
-increments — an NPC moving, starting an affectionate hand touch, and changing
-the gesture of one she is already making — landed 2026-08-04 behind a
-default-off flag. What remains is the shadow measurement window, the owner's
-ruling on the measured cost and latency, and then turning any of it on. The
-item-5 `romantic_touch` permission owner was built 2026-08-04 behind
-`CHAT_ROMANTIC_PERMISSION` (off) — see item 5 below.
+Status: active — the affectionate tier is live for players; everything built
+after it is switched off. **Live:** slices 0–2, 3A and 3A.1, the
+affectionate-contact MVP and its passed trial (items 1–2, turned on in
+production 2026-08-02), and the retired-declaration cleanup (item 3). **Built
+but dark:** item 4's NPC actor control in full — the decision foundation, the
+shadow measurement leg, and all three authority increments — and item 5's
+`romantic_touch` permission owner. **Remaining:** turn on and review the item-4
+shadow measurement, which has never been enabled in production; take the owner's
+ruling on the measured cost and latency; enable authority one kind at a time;
+then run item 6's permission-gated romantic proof. No code has landed on this
+topic since 2026-08-04.
 
 Outcome: A player can touch a character during a chat and have the story keep
 track of that touch — where it lands, what clothing is in the way, and when it
 ends — so that a reply stops describing a bare shoulder that is still under a
 coat.
 
-Detailed shipped evidence lives in the
+The per-item record is the [delivery outline](#delivery-outline). Supporting
+evidence lives in the
 [truth-source audit](romantic-contact-affordances.audit.md),
 [technical companions](#technical-companions),
 [trial report](romantic-contact-affordances.trial.md), and
 [archived follow-up record](finished/romantic-contact-affordances.followups.md).
+The exact production switch settings are owned by the
+[technical index](romantic-contact-affordances.spec.md) §"Feature flags".
 This active plan keeps only the shipped facts and invariants needed to execute
 the remaining work.
 
@@ -88,11 +85,12 @@ those concerns easier to separate.
 
 The first implementation cannot treat narrator prose as physical truth.
 
-- **Legacy romantic chat:** Structured clothing and coverage, retake snapshots,
-  and a turn-level sensory allowance exist. Authoritative fine pose, distance,
-  support, body-surface contact, per-sense exposure, and a permission ledger do
-  not. The intimate-scene signal and touch-welcomeness reaction are not
-  permission grants.
+- **Character chat:** Structured clothing and coverage, retake snapshots, a
+  turn-level sensory allowance, and — since this plan's own work went live —
+  distance, support, and an active body-surface contact record all exist. Fine
+  pose and per-sense exposure still do not. A permission ledger exists but is
+  switched off; the intimate-scene signal and the touch-welcomeness reaction are
+  not permission grants and never become them.
 - **Successor chat:** World location, event cuts, observations, and a fail-closed
   permission ledger exist. Regional pose, articulation, support, active
   body-surface contact, and the structured clothing adapter remain incomplete.
@@ -105,9 +103,11 @@ The first implementation cannot treat narrator prose as physical truth.
 
 Every missing source must be handled in one of three ways: build its minimal
 owner here, depend on a named prerequisite, or omit the affected observation.
-“The narrator said it last turn” is never a truth source. The verified record is
-the [truth-source audit](romantic-contact-affordances.audit.md), published
-2026-07-30.
+“The narrator said it last turn” is never a truth source. The
+[truth-source audit](romantic-contact-affordances.audit.md) is the verified
+record of what was missing when this plan started, on 2026-07-30; the technical
+index's [capability status](romantic-contact-affordances.spec.md) is the current
+picture.
 
 ## What the system would work out
 
@@ -322,27 +322,33 @@ queue.
 
 ### Remaining continuation order
 
-#### 4. Finish actor control through the live lane — built 2026-08-04 (dark); measurement and rollout remain
+#### 4. Finish actor control through the live lane — built in full 2026-08-04, entirely dark
 
 The deterministic NPC contact-ending producer shipped with item 1 and remains
-the frozen ending floor. The pure decision foundation, durable
-assistant-message envelope, guarded atomic save, and one-call-per-reply shadow
-leg shipped 2026-08-02 behind `CHAT_NPC_SCENE_DECISION_SHADOW`, default off.
-The three authority increments — an NPC moving relative to one person,
-starting one affectionate hand touch, and changing the gesture of a touch she
-is already making — were built 2026-08-04, all dark behind the default-off
-authority flag, with a staging control that can enable them one kind at a
-time without further code changes.
+the frozen ending floor — it is the only NPC-side scene authority a live turn
+has today. Everything beyond it is built and switched off:
 
-What remains is operational, not construction. Enable and review the shadow
-measurement. Authority remains blocked until accuracy, fire rate, p50/p95/p99
-added latency, timeout rate, and cost are acceptable. If approved, roll out
-authority in this order: movement, contact starts, then contact updates —
-each step a one-value staging change. The
+- the pure decision foundation, the durable per-reply decision record, and the
+  guarded atomic save shipped 2026-08-02;
+- the one-call-per-reply **shadow measurement** leg shipped 2026-08-02 behind
+  `CHAT_NPC_SCENE_DECISION_SHADOW`. **It has never been enabled in production,
+  so no measurement window has started and no data exists to rule on;**
+- the three **authority increments** — an NPC moving relative to one person,
+  starting one affectionate hand touch, and changing the gesture of a touch she
+  is already making — were built 2026-08-04 behind `CHAT_NPC_SCENE_DECISIONS`,
+  with a staging control that enables them one kind at a time without further
+  code changes.
+
+What remains is operational, not construction, and it is strictly ordered: turn
+the shadow measurement on, let it run, and review it. Authority stays blocked
+until accuracy, fire rate, p50/p95/p99 added latency, timeout rate, and cost are
+acceptable to the owner. If approved, enable authority in this order —
+movement, contact starts, then contact updates — each step a one-value staging
+change. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
 detailed evidence rules, chronology, retries, persistence, and rollout gates.
 
-#### 5. Implement the explicit `romantic_touch` permission owner — built 2026-08-04, awaiting enablement
+#### 5. Implement the explicit `romantic_touch` permission owner — built 2026-08-04, dark
 
 The product rulings were settled 2026-08-04 and are summarized under
 [`romantic_touch` permission-owner rulings](#romantic_touch-permission-owner-rulings).
@@ -353,9 +359,10 @@ grant ledger and standing-grant projection, the resolver's exact-scope read with
 the player-target exception, the conservative NPC-side grant/denial/withdrawal
 decision, the audited developer-menu override, revocation ending dependent
 contact atomically, and the next-reply stop instruction. Everything is behind
-`CHAT_ROMANTIC_PERMISSION` (off; the developer override has its own capability
-flag), so production behavior is unchanged until the owner enables it for the
-item-6 proof. Relationship-based revocation remains reserved, per ruling 2.
+`CHAT_ROMANTIC_PERMISSION` (off, and effective only while the affectionate
+tier's own switch is on; the developer override has its own separate
+capability), so production behavior is unchanged until the owner enables it for
+the item-6 proof. Relationship-based revocation remains reserved, per ruling 2.
 
 The MVP stayed deliberately narrow: one exact, directional `romantic_touch`
 scope for romantic contact aimed at an NPC, implying no kissing, intimate
@@ -449,12 +456,15 @@ implementation agent:
 
 #### Is the NPC decision read’s measured cost and latency acceptable?
 
-**Owner:** Product. **Blocks:** item 4 movement authority.
+**Owner:** Product. **Blocks:** every item-4 authority increment, and item 6
+behind them. **Blocked on:** the shadow measurement, which has not been run.
 
-Review shadow accuracy and fire rate, p50/p95/p99 added latency, timeout rate,
-and cost per 100 replies before enabling any authority increment. The
+There is nothing to rule on yet: the shadow leg is built but has never been
+switched on, so no accuracy, fire rate, p50/p95/p99 added latency, timeout rate,
+or cost-per-100-replies figures exist. Enabling the measurement and letting it
+accumulate a window is the prerequisite, not part of the ruling. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) permits
-the foundation and shadow run but not authority without this ruling.
+the foundation and the shadow run but not authority without this ruling.
 
 #### Which intimate changes are ready to consume?
 
@@ -602,11 +612,12 @@ requirements.
   developer override, and rollback rules
 - [Observations, effects, and presentation](romantic-contact-affordances.spec.effects.md)
 - [Scene and body-relations owner](romantic-contact-affordances.spec.scene.md) —
-  the minimal scene owner added in slice 3A
+  the minimal scene owner added in slice 3A, live in character chat since
+  2026-08-02
 - [NPC actor control through the live lane](romantic-contact-affordances.spec.actor-control.md) —
   item 4's stable actor/contact references, field-by-field evidence proof,
   chronology, post-settle cut, durable envelope/CAS, shadow gate, and three
-  authority increments (revised 2026-08-02 after pre-implementation review)
+  authority increments — all built, all dark
 - [Foot-contact domain](romantic-contact-affordances.spec.foot.md)
 - [Intimate-region domain](romantic-contact-affordances.spec.intimate.md)
 - [Follow-ups record](finished/romantic-contact-affordances.followups.md) —

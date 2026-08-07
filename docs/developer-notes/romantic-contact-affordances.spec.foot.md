@@ -2,7 +2,13 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — the first proving domain, committed slices 0–4)
+(promoted 2026-07-28 — the first proving domain). **Built and fixture-driven,
+production-unregistered:** the domain lives at
+`src/contracts/affordances/domains/foot/` but is deliberately absent from the
+`affordanceDomains` tuple, so no live turn evaluates a foot phenomenon. Its
+registry defaults and existing-body backfill are complete; registration waits
+only for the foot track's place in the wiring order, which the plan currently
+parks.
 
 ## Scope
 

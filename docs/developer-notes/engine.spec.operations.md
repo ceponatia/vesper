@@ -20,12 +20,12 @@ normative-keyword rules (MUST/SHOULD/MAY) are defined in the hub.
 
 The UI must distinguish these operations.
 
-### 29.2 Current-lane bridge
+### 29.2 Legacy chat lane
 
-Until the successor owns chat turns, group regenerate must snapshot and restore every
-member's mutable pre-drift state. Primary-only snapshots violate rollback integrity.
-Reach-back reruns that cannot restore all causal state must be rejected or implemented as
-branches.
+Legacy character chat is a separate live lane, not a transitional state. Its group
+regenerate MUST snapshot and restore every member's mutable pre-drift state — a
+primary-only snapshot violates rollback integrity — and a reach-back rerun that cannot
+restore all causal state MUST be rejected or implemented as a branch.
 
 ### 29.3 Branch fork
 
@@ -63,20 +63,18 @@ meter” without a privileged migration/storyteller capability.
 
 ## 31. Package boundaries
 
-A recommended TypeScript organization:
+The engine occupies three directories of this repository, one per authority layer:
 
-| Package            | Contents                                                  |
-| ------------------ | --------------------------------------------------------- |
-| engine-contracts   | Branded IDs, schemas, commands, events, projection views  |
-| engine-kernel      | Pure validators, resolvers, rates, routes, policies       |
-| engine-runtime     | Transactions, sequencer, scheduler, outbox                |
-| engine-projections | Core and async projectors, replay                         |
-| engine-knowledge   | Observation, assertion, belief, relationship, eligibility |
-| engine-narrative   | NarrativeCut compiler, ArmedEffect, auditor               |
-| engine-adapters    | Current chat, authored schedule, legacy import            |
+| Directory                       | Contents                                              |
+| ------------------------------- | ----------------------------------------------------- |
+| `src/contracts/simulation/`     | Branded IDs, schemas, commands, events, registries    |
+| `src/lib/simulation/`           | Pure kernels — validators, resolvers, rates, policies |
+| `src/server/engine/simulation/` | Stores, transactions, sequencer, scheduler, outbox    |
 
-The pure kernel MUST have no database, network, file, process clock, model, or global
-random dependency.
+The first two MUST have no database, network, file, process clock, model, or global random
+dependency — a boundary the repository's ESLint `no-restricted-imports` rule enforces. The
+server layer holds one store per domain plus the shared `runSimulationCommand` transaction
+shell (§11.1); modules there import each other only through `index.ts` barrels.
 
 ## 32. TypeScript numeric and performance contract
 
@@ -291,16 +289,18 @@ Initial acceptance:
 
 ## 37. Migration and compatibility
 
-### 37.1 Current chat
+### 37.1 Lane separation
 
-Current chat remains the test bed until a successor seam passes its gate. Migrate one
-domain behind an adapter only after the successor contract exists. Avoid dual authority.
+The two lanes stay separate: legacy character chat, and successor chats bound to their own
+simulated world and authoritative per the per-chat `engine_authority` flag. New interaction
+patterns still prove out in the chat lane first. A chat-lane domain moves behind an adapter
+only after the successor contract for it exists, and no fact may have two authorities.
 
 ### 37.2 Authored schedules
 
-New entries require typed kind and stable destination references where applicable.
-Existing free-text entries use shadow inference, corpus review, explicit unknown, and
-telemetry. Inferred text must not cause hard location or body events without validation.
+Rhythm and schedule entries carry a typed kind and stable destination references where
+applicable (§25.5). There is no text inference over authored schedule prose: untyped text
+MUST remain unknown and MUST NOT cause hard location or body events.
 
 ### 37.3 Events
 
@@ -350,8 +350,11 @@ were **resolved on 2026-07-19** (the Gate 5 opening pass); ruling 17 was **resol
 2026-07-22** (the presentation-charter planning pass); rulings 20–21 were **resolved on
 2026-07-23** (the world-UI planning pass); rulings 22–25 were **resolved on 2026-07-23**
 (the drain-hardening promotion — full versions with alternatives-rejected context in
-[drain-hardening.plan.md](drain-hardening.plan.md)'s detail docs). Each resolved decision is
-normative and MUST be stored in a versioned world-type rule or explicit product
+[finished/drain-hardening.plan.md](finished/drain-hardening.plan.md)'s detail docs);
+rulings 26–30 were
+**resolved on 2026-07-24** (the command-integrity passes A1–A4); and rulings 31–33 were
+**resolved on 2026-07-27** (the successor-world-lifecycle work). Each resolved decision
+is normative and MUST be stored in a versioned world-type rule or explicit product
 contract, not only in a prompt. Ruling 12 remains **open** and is deferred to the work
 that needs it.
 

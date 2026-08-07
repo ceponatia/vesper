@@ -1,6 +1,11 @@
 # Image render quality — model-native prompts, reference quality, and faces that survive
 
-Status: active (owner rulings settled 2026-08-05; first hardening slice implemented)
+Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
+exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
+through 2026-08-06; slices 2–3 wait on the capabilities plan's shared render
+intent; reference preparation left this plan for
+[image-identity-packs.plan.md](image-identity-packs.plan.md) on 2026-08-05;
+nothing else in the slice list exists in code)
 
 Outcome: A player can generate a portrait or scene that still shows their own
 character, so that a new image stops coming back as a similar-looking stranger
@@ -10,14 +15,21 @@ Technical companion: [image-render-quality.spec.md](image-render-quality.spec.md
 
 Sibling plans:
 
-- [image model registry](image-model-registry.plan.md) owns which provider models
+- [image model registry](finished/image-model-registry.plan.md) owns which provider models
   exist and the mechanical facts needed to call them;
 - [image model capabilities](image-model-capabilities.plan.md) owns profiles,
   shared controls, role-aware references, version promotion, seeds, and
   multi-output machinery;
+- [image identity packs](image-identity-packs.plan.md) owns the face reference
+  itself — derivation, quality measurement, correction, invalidation, and the
+  reference-strategy trial;
+- [visual state and attention](visual-state.plan.md) owns the appearance
+  projection an image prompt should eventually read;
+- [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) owns the
+  proposed controlled laboratory for pose/depth/LoRA experiments;
 - this plan owns the quality policy that rides on those systems: what each model
-  is told, how references are prepared, which controls are quality defaults, and
-  how a render is judged.
+  is told, which controls are quality defaults, how repair works, and how a
+  render is judged.
 
 ## The problem
 
@@ -33,10 +45,16 @@ The owner reported two visible failures after the registry expanded:
   anatomy, malformed hands, or framing that looks malformed after Vesper crops
   it.
 
-The current pipeline contributes to both. Provider defaults are treated as
-quality defaults, every model receives the same provider-neutral prose, and a
-canonical waist-up portrait is accepted as an identity reference without checking
-whether its face is large or sharp enough to carry identity.
+The pipeline contributed to both. Provider defaults were treated as quality
+defaults, every model received the same provider-neutral prose, and a canonical
+waist-up portrait was accepted as an identity reference without checking whether
+its face was large or sharp enough to carry identity.
+
+Two of those three now have an answer. Slice 1 replaced the provider defaults on
+the reviewed models and gave Qwen Edit its own identity wording, and the identity
+pack system measures a reference before spending on it. What remains is the
+general case: every other model still receives the same provider-neutral prose,
+and nothing composes a prompt from what the scene actually contains.
 
 ## Corrected assumptions
 
@@ -100,28 +118,17 @@ portrait detail than rendering 1024×1024 and discarding a quarter of the width.
 The fixed trial matrix may tune the sampler and numeric values, but the
 Lightning-versus-base question is closed.
 
-### Face crops are derived assets
+### Face crops are derived assets, and they are somebody else's product now
 
-A canonical portrait should compile into an **identity pack** when it is saved,
-not be recropped independently on every render.
+A canonical portrait compiles into an **identity pack** when it is saved, rather
+than being recropped independently on every render.
 
-The pack begins with:
-
-- the canonical portrait;
-- a tight face crop;
-- crop coordinates, source image id and content hash, detector/heuristic version,
-  confidence, and generation timestamp;
-- reference-quality measurements such as face pixel area, blur, occlusion, and
-  detected face count.
-
-Existing portraits are backfilled lazily when first needed, with an admin batch
-available for trial preparation. Render-time cropping is only a degraded fallback
-when the derived asset is missing or stale.
-
-The first implementation may use a deterministic upper-centre portrait crop,
-but it stores `heuristic` as its method rather than pretending it found a face. A
-real detector may replace that crop only when its confidence clears a reviewed
-threshold. Derived assets are invalidated when their source portrait changes.
+That ruling grew into a system of its own on 2026-08-05 and left this plan.
+[image-identity-packs.plan.md](image-identity-packs.plan.md) owns derivation,
+source hashing, quality measurement, manual correction, invalidation, deletion,
+and the reference-strategy trial; its pack-side slices shipped 2026-08-06. This
+plan no longer states how a face crop is produced or judged — it only consumes a
+pack the way any other identity-critical render does.
 
 ### Face repair proves out on the admin/dev surface first
 
@@ -183,13 +190,14 @@ framing terms, and Pony score/source/rating conventions are composed only when
 the profile layer knows the task, style, subject count, visible anatomy, authored
 absences, and intended morphology.
 
-## First hardening slice in this change
+## Slice 1 — the reviewed settings that are live today
 
 The profile rows introduced by the capabilities plan are still dormant, so the
-first code slice is deliberately small and centralized.
+first code slice was deliberately small and centralized. It shipped 2026-08-05
+and is in every render the app makes.
 
-`src/server/images/quality-presets.ts` supplies reviewed, exact-slug overrides at
-`renderWithModel`, the one seam every lane already crosses. It currently:
+A small reviewed policy applies exact-slug overrides at the one seam every image
+lane already crosses. It:
 
 - turns Qwen Image Edit fast mode off;
 - gives Juggernaut the full-step settings above and clears its wrapper negative;
@@ -197,15 +205,17 @@ first code slice is deliberately small and centralized.
   negative boilerplate;
 - rewrites the existing provider-neutral identity lock into compact Qwen
   numbered-image wording that does not expand the already-fitted edit prompt;
-- deliberately leaves Qwen Image 2512, SD 3.5, Pony, and unknown/admin-added
-  models byte-identical.
+- leaves Qwen Image 2512, SD 3.5, Pony, and every unknown or operator-added model
+  byte-identical.
 
 Pinned community slugs are matched without their version suffix.
 
 This is a transitional compatibility layer, not a second configuration system.
-It exists because the profile machinery is not called by the render path yet. As
-shared render intent and control mapping land, each reviewed override moves into
-a profile and the exact-slug policy shrinks to zero.
+It exists because the profile machinery is not called by the production render
+path yet. As shared render intent and control mapping land, each reviewed
+override moves into a profile and the exact-slug policy shrinks to zero. Exact
+settings, matching rules, and the retirement sequence are in
+[the spec](image-render-quality.spec.md).
 
 ## Target quality architecture
 
@@ -279,50 +289,29 @@ wardrobe; preserve the exact face, hair, body, pose, camera, lighting, and
 background.” The compiler states that delta once rather than scattering
 contradictory preserve clauses through the prompt.
 
-## Identity packs and reference quality
+## What this plan expects from its neighbours
 
-A bad identity reference cannot be repaired by more insistent prose. Before an
-identity-critical render, Vesper scores the pack:
+A bad identity reference cannot be repaired by more insistent prose, and a static
+appearance paragraph cannot describe a living scene. Both fixes are real work,
+and both belong to other plans. This plan states only what it needs from them.
 
-- one usable face detected, or a declared heuristic crop;
-- minimum face dimensions after the provider's input resize;
-- blur below threshold;
-- no severe eye/mouth occlusion;
-- crop padding sufficient to preserve jaw, hairline, and ears;
-- source orientation and colour profile normalized;
-- no stale source hash.
+**From identity packs:** a pre-spend verdict on whether the selected character
+has a usable face reference, which reference roles are available, and enough
+provenance to reproduce the choice later. A failed verdict must reach the player
+as an explanation, not a silently substituted reference, and must stop the render
+before provider money is spent. Derivation, thresholds, correction, and the
+reference-strategy trial are [that plan's](image-identity-packs.plan.md).
 
-A failed score does not silently replace the reference. The UI explains the
-problem and offers a new canonical portrait or a reviewed manual crop. Admin
-trials may override with a recorded warning.
+**From visual state:** the appearance facts a render must not drop — identity,
+intended morphology, subject count, authoritative wardrobe — separated from the
+optional current-state detail a prompt budget may or may not fit. Damp hair, a
+rolled sleeve, and smudged makeup are exactly the kind of fact this plan's
+prompts want and cannot currently obtain.
+[visual-state.plan.md](visual-state.plan.md) owns that projection.
 
-Reference selection is deterministic. Required identities are selected before
-optional face-detail, location, style, or object references. A profile may never
-eject a required identity in favour of an optional style image. If all required
-roles do not fit the model's cap, the profile is ineligible for that request.
-
-## Visual state and attention
-
-Static character attributes are not enough to render a living scene. The image
-compiler should consume the same richer visual contract that can later improve
-narration:
-
-- identity: stable morphology and recognisable landmarks;
-- presentation: deliberate hairstyle, makeup, jewellery, and worn objects;
-- current state: damp hair, rolled sleeves, smudged makeup, dirt, fatigue,
-  trembling hands, posture, and body language;
-- garment state: per-part coverage, open/closed/rolled/draped presentation, and
-  condition gradients;
-- visibility: distance, lighting, angle, motion, and occlusion;
-- salience: what is distinctive, newly changed, or relevant to the current
-  action.
-
-A lightweight visual-attention pass selects a few visible, high-salience deltas
-instead of dumping the entire appearance sheet into every scene. Current changes
-such as wet hair or a loosened tie outrank low-salience static facts such as eye
-colour unless the shot is close enough to show them. This same contract can feed
-narration, image generation, future animation, and physical validation without
-making the source portrait the only truth.
+**From capabilities:** ordered semantic prompt segments, resolved controls, seeds,
+and role-aware reference transport. Until its shared render intent exists, this
+plan's slices 2 and 3 have nothing to compile from.
 
 ## Face repair strategy
 
@@ -395,54 +384,70 @@ execute a model.
 
 ## Delivery slices
 
-1. **Immediate hardening — implemented here.** Apply reviewed exact-slug quality
-   overrides at the shared render seam, correct Juggernaut's fast defaults,
-   clear conflicting wrapper negatives on Juggernaut/RealVis, pin RealVis
-   dimensions, and translate Qwen's identity lock into compact numbered-reference
-   instructions. Unit-test the policy and keep every unreviewed model unchanged.
-2. **Shared render intent and profile controls.** Complete capabilities slice 2/4
-   so lanes resolve task profiles, common controls, timeout, seeds, and ordered
-   semantic prompt segments. Move the transitional exact-slug inputs into
-   profiles.
-3. **Dynamic dialects and negatives.** Compile prose/SDXL/Pony prompts from
-   segments, measure effective prompt budgets per pinned version, and compose
-   task/style/subject/morphology/text-aware negative blocks with conflict
-   linting.
-4. **Identity packs.** Generate and persist face crops, crop provenance, quality
-   metrics, source hashes, invalidation, lazy backfill, and manual-review tools.
-5. **Qwen fidelity trials.** A/B canonical portrait alone, portrait plus face
-   crop, numbered role binding, and fast/quality profiles one change at a time.
-6. **Admin face repair.** Ship the single-person, explicit, provenance-preserving
-   trial action; compare regional repair when available against full-frame
-   Pony/RealVis candidates.
-7. **Dimension and framing profiles.** Generalize width/height negotiation,
-   native size tiers, focal-aware cropping, and per-task output shapes instead of
-   relying on model defaults.
-8. **Best-of-N and seeded retry.** Add N=2 player portrait selection, admin trial
-   grids, stored seeds, and “same composition” versus “new variation” semantics.
-9. **Advisory QA and promotion gates.** Record identity/face-count/blur/text/crop
-   signals and make fixed-matrix regression results part of model-version
-   promotion.
-10. **Visual-state compiler.** Feed current appearance, garment presentation,
-    visibility, and salience into image prompt segments from one shared visual
-    contract.
+Slice numbers are stable identities and are never reused, so a slice that leaves
+this plan keeps its number as a pointer.
+
+1. **Immediate hardening — shipped 2026-08-05.** Reviewed exact-slug quality
+   overrides at the shared render seam: Juggernaut's fast defaults corrected,
+   conflicting wrapper negatives cleared on Juggernaut and RealVis, RealVis
+   dimensions pinned, and Qwen's identity lock translated into compact
+   numbered-reference instructions. Unit-tested, with every unreviewed model
+   unchanged. Corrections through 2026-08-06 made the prompt rewrite idempotent
+   so a compiled comparison cell cannot conflict with its own prompt.
+2. **Shared render intent and profile controls — not started, blocked.** Needs
+   the capabilities plan's slice 2 so lanes resolve task profiles, common
+   controls, timeout, seeds, and ordered semantic prompt segments. Then move the
+   transitional exact-slug inputs into profiles.
+3. **Dynamic dialects and negatives — not started, blocked on slice 2.** Compile
+   prose/SDXL/Pony prompts from segments, measure effective prompt budgets per
+   pinned version, and compose task/style/subject/morphology/text-aware negative
+   blocks with conflict linting.
+4. **Identity packs — moved out 2026-08-05.** Now
+   [image-identity-packs.plan.md](image-identity-packs.plan.md), whose pack-side
+   slices shipped 2026-08-06.
+5. **Model-fidelity trials — not started; the harness exists.** The identity-pack
+   plan's trial subsystem runs blinded pairwise comparison cells and is the tool
+   this slice uses. Reference-strategy questions (portrait alone versus portrait
+   plus face crop, detector versus heuristic crop) belong to that plan's trial.
+   What stays here is model tuning with the reference held fixed: fast versus
+   quality mode, sampler and CFG within Juggernaut's full-step band, and dialect
+   choice per pinned version.
+6. **Admin face repair — not started.** Ship the single-person, explicit,
+   provenance-preserving trial action; compare regional repair when available
+   against full-frame Pony/RealVis candidates.
+7. **Dimension and framing profiles — not started.** Generalize width/height
+   negotiation, native size tiers, focal-aware cropping, and per-task output
+   shapes instead of relying on model defaults.
+8. **Best-of-N and seeded retry — not started.** Add N=2 player portrait
+   selection, admin trial grids, stored seeds, and “same composition” versus
+   “new variation” semantics.
+9. **Advisory QA and promotion gates — not started.** Record
+   identity/face-count/blur/text/crop signals and make fixed-matrix regression
+   results part of model-version promotion.
+10. **Visual-state consumption — not started.** Feed the mandatory and optional
+    facts from [visual-state.plan.md](visual-state.plan.md) into image prompt
+    segments. That plan owns the projection; this slice is its image consumer and
+    cannot start before slice 2 gives it somewhere to put the segments.
 
 Each slice must be independently useful. No slice introduces automatic
 cross-model fallback.
 
 ## Success criteria
 
-- Qwen identity-critical renders use compact numbered, delta-first identity
-  instructions and quality mode unless a task profile explicitly says otherwise.
+Met by slice 1:
+
+- Qwen identity-critical renders use compact numbered identity instructions and
+  quality mode unless a task profile explicitly says otherwise.
 - Juggernaut no longer runs its normal checkpoint at 5 steps/CFG 2 or wastes a
   square render before portrait cropping.
 - The context-free seam never invents a negative prompt; reviewed non-empty
   wrapper defaults are neutralized explicitly instead.
+- Unknown and operator-added models remain unchanged until reviewed.
+
+Still to prove:
+
 - Dynamic negatives are task-, text-, style-, subject-, and morphology-aware and
   conflict-checked before they are sent.
-- Unknown/admin-added models remain unchanged until reviewed.
-- Identity references meet measurable quality requirements and can be traced to
-  their canonical source.
 - A fixed-matrix change improves identity or anatomy without unacceptable
   composition drift and carries reproducible settings.
 - Face repair remains explicit, one-character-only at first, and preserves the
@@ -452,7 +457,10 @@ cross-model fallback.
 - Community models clear a recorded license/terms review before production
   defaulting.
 
-## Remaining empirical questions
+Identity-reference quality and traceability are graded by the identity-pack
+plan's own criteria, not restated here.
+
+## Open questions
 
 The owner decisions are settled. These are trial questions, not blockers to
 beginning implementation:
@@ -461,8 +469,8 @@ beginning implementation:
   prompts;
 - which context-aware negative blocks improve quality without erasing intended
   text, style, or morphology;
-- how much Qwen's face crop and fast-mode change improve identity independently;
-- the minimum useful face-pixel and blur thresholds for the identity pack;
+- how much Qwen's fast-versus-quality mode changes identity on its own, with the
+  reference held fixed;
 - whether Pony or RealVis can improve identity without composition drift;
 - which advisory QA metrics correlate well enough with owner judgment to gate a
   version rather than merely annotate it.

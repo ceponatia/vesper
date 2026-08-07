@@ -1,6 +1,10 @@
 # Image model capabilities — profiles, shared controls, and richer workflows
 
-Status: active (started 2026-08-05)
+Status: active. Slice 1 shipped 2026-08-05 (reviewed capability ratings, the
+profile table, 17 built-in profiles, and the resolver — all dormant: no player
+render goes through them). Parts of slices 2 and 4 landed early on 2026-08-06/07
+inside the identity-pack trial harness and are waiting to be adopted rather than
+re-invented. Slices 2–9 remain queued.
 
 Outcome: The owner can pick a named, curated setup for each image model — a quick
 portrait, a 4K location, a scene that keeps the same character — so that one
@@ -9,12 +13,12 @@ model can do several different jobs well without a code change.
 Content/tuning companion:
 [image-render-quality.plan.md](image-render-quality.plan.md) — per-model prompt
 dialects, negative-prompt banks, face-fidelity work, and trial protocol ride on
-this plan's profile/control machinery (its first slices run ahead of it).
+this plan's profile/control machinery (its first slices ran ahead of it).
 
 Technical companion: [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 
 This is a follow-up to the shipped
-[image model registry](image-model-registry.plan.md). The registry solved the
+[image model registry](finished/image-model-registry.plan.md). The registry solved the
 first problem: image models are now data, Replicate is the only provider, and a
 model can describe enough of its API for Vesper to call it safely. This plan
 solves the next problem: the six models do not merely accept different field
@@ -23,37 +27,60 @@ currently ignores.
 
 ## Why this work is needed
 
-The current registry deliberately models the smallest useful common surface. It
-knows whether a model can generate from text, whether it accepts reference
-images, how many references it can take, how those references must travel, and
-how to ask for the right shape. That is a strong foundation and should remain.
+The registry deliberately models the smallest useful common surface. It knows
+whether a model can generate from text, whether it accepts reference images, how
+many references it can take, how those references must travel, and how to ask for
+the right shape. That is a strong foundation and should remain.
 
 It is not yet enough to use the models well.
 
-Today, every reference-capable model is broadly described as able to “edit.” In
+The registry describes every reference-capable model as able to "edit." In
 practice, that word covers several very different operations. Qwen Image Edit
 2511 follows editing instructions and is intended to preserve the subject.
 Seedream can combine many examples into a new composition. Qwen Image 2512 and
 Stable Diffusion 3.5 Large use strength-based image-to-image repainting, which
-can replace the person Vesper was trying to preserve. Those operations should
-not be treated as interchangeable just because all of them accept an image
-input.
+can replace the person Vesper was trying to preserve. Those operations should not
+be treated as interchangeable just because all of them accept an image input.
 
 The same model can also need different settings for different jobs. Wan 2.7 can
 use thinking mode and very high resolutions for text-to-image work, while its
-edit path has different limits and requires inlined references. Seedream 4.5
-may be an everyday 2K scene model in one context and a slower 4K location model
-in another. One bag of permanent `extraInput` values on the model row cannot
-express those differences cleanly.
+edit path has different limits and requires inlined references. Seedream 4.5 may
+be an everyday 2K scene model in one context and a slower 4K location model in
+another. One bag of permanent per-model constants cannot express those
+differences cleanly.
 
 Finally, several useful features are currently left unused: deterministic seeds,
 negative prompts, quality controls, edit strength, multi-image composition,
 coherent image sets, multiple outputs, and Qwen-compatible LoRAs. Adding each
 feature directly to each lane would produce a collection of special-purpose
 harnesses that all upload images, map settings, poll Replicate, download output,
-and normalize files in slightly different ways. This plan instead adds one
-shared rendering vocabulary and keeps the genuinely model-specific behavior
-small.
+and normalize files in slightly different ways. This plan instead adds one shared
+rendering vocabulary and keeps the genuinely model-specific behavior small.
+
+## Where the work stands
+
+**Shipped and in the database (slice 1).** Every registered model now carries a
+reviewed rating no schema can supply: what kind of editing it really does, how
+well a face survives it, and an operator caveat where one is warranted (Wan's
+moderation). Seventeen built-in profiles exist, one per model per job the app
+actually runs today. A resolver decides which profile a job may use and refuses
+the combinations that would quietly swap out a character's face. None of this
+changes a rendered image: no player-facing lane calls the profile layer, and each
+seeded profile describes exactly what its lane already does.
+
+**Landed early, used only by the identity trial.** The identity-pack fixed-trial
+harness needed the part of this plan that turns one profile plus one prompt into
+the exact provider payload, because a comparison that records a profile's
+settings but sends the model's raw defaults grades a configuration nobody ran. So
+the profile compile step, the control mapper, and the plumbing that lets a caller
+hand a compiled payload, prediction budget, and pinned version to the renderer
+all exist. They were written to be adopted by the shared render intent rather
+than duplicated beside it.
+
+**Not started.** The ordinary lanes — portrait, variant, scene, item, location,
+and the two chat anchors — still resolve a model rather than a profile. Role-aware
+references, recorded seeds, safe version promotion, the LoRA library, image sets,
+and any admin or player UI for profiles remain ahead.
 
 ## What stays unchanged
 
@@ -65,22 +92,24 @@ normalization, model pickers, defensive fallbacks, and same-model scene
 degradation ladder remain. A failed Qwen scene should not quietly become a
 Seedream scene with a different-looking person.
 
-The raw `extraInput` object remains available as a low-level escape hatch. It
+The raw per-model constants remain available as a low-level escape hatch. They
 should not become the main product configuration system.
 
 ## The new layer: task-specific model profiles
 
-Vesper will add profiles beneath each registered model. A profile describes how
-that model should be used for one job rather than changing what the provider
-model fundamentally supports.
+A profile sits beneath a registered model and describes how that model should be
+used for one job, rather than changing what the provider model fundamentally
+supports.
 
 A profile can say that it is for portraits, variants, scenes, items, locations,
 text repair, example-based transformations, or coherent image sets. It can say
 whether the run is generation or editing, which prompt style to use, which
-reference roles matter, which quality and resolution settings apply, how long
-the prediction may run, and which optional controls are enabled.
+reference roles matter, which quality and resolution settings apply, how long the
+prediction may run, and which optional controls are enabled.
 
-This lets the app offer choices such as:
+The seeded seventeen are all deliberately plain — "Portrait Standard", "Scene
+Standard", one per model per job — because slice 1 had to change nothing. The
+point of the later slices is choices such as:
 
 - Qwen Image 2512 — Portrait Fast
 - Qwen Image 2512 — Portrait Quality
@@ -102,53 +131,57 @@ Every image-producing lane will describe what it wants in the same terms before
 any Replicate payload is built.
 
 That request will identify the task, prompt, desired aspect and quality, optional
-controls, and reference images with explicit roles. A reference will no longer
-be merely the first, second, or third buffer. It may be the identity anchor, the
+controls, and reference images with explicit roles. A reference will no longer be
+merely the first, second, or third buffer. It may be the identity anchor, the
 location, a style example, an object, a before image, an after example, a pose
 control, or another future visual input.
 
 The selected profile and the registered model will translate that request into
-the provider’s actual fields. Shared utilities will choose the references that
+the provider's actual fields. Shared utilities will choose the references that
 fit, prepare and transport them, map common controls, negotiate dimensions,
 normalize all returned images, and record what actually ran.
 
 This role-aware request is important beyond the immediate model work. It lets a
 future visual-state system provide identity, clothing, location, pose, depth, or
 style references without teaching every image lane a different ordering
-convention.
+convention. It is also what the identity-pack plan's render-lane slice is waiting
+on.
 
 ## Semantic capabilities
 
-Some facts can be read from Replicate’s schema. Others require human judgment
+Some facts can be read from Replicate's schema. Others require human judgment
 and live testing.
 
 The registry probe can discover that an image input exists, but it cannot decide
 whether the model is a strong identity-preserving editor or a destructive
-repaint model. It cannot know that Wan’s moderation is unusually restrictive,
-or that one model is too slow to be a sensible default. Vesper will therefore
-record reviewed semantic facts alongside the probed mechanical capabilities.
+repaint model. It cannot know that Wan's moderation is unusually restrictive, or
+that one model is too slow to be a sensible default. Vesper therefore records
+reviewed semantic facts alongside the probed mechanical ones — this part shipped
+in slice 1, and a re-probe never overwrites them.
 
-At minimum, the app should distinguish instruction editing, multi-reference
-composition, ordinary image-to-image repainting, and no editing. It should also
-record a reviewed identity-preservation rating and any operator warning that
-should appear when a model is selected.
+The app distinguishes instruction editing, multi-reference composition, ordinary
+image-to-image repainting, and no editing, and records a reviewed
+identity-preservation rating plus any operator warning that should appear when a
+model is selected.
 
 These fields guide profile creation and picker eligibility. They do not pretend
-to be immutable truth; a new model version can be re-tested and re-rated.
+to be immutable truth; a new model version can be re-tested and re-rated. What is
+still missing is the admin screen to read or change them — today they are set by
+migration or by an API call.
 
 ## Model-specific opportunities
 
 ### Qwen Image 2512
 
 Qwen Image 2512 remains the general text-to-image portrait model. Vesper should
-add fast, balanced, and quality profiles using the model’s guidance, inference
+add fast, balanced, and quality profiles using the model's guidance, inference
 steps, and fast-mode controls. Generated seeds should be stored so an owner can
 retry the same composition or deliberately request a new variation. Negative
 prompts should be available in the profile and in an advanced admin control.
 
-Its optional reference input is conventional strength-based image-to-image.
-That can support a deliberate remix workflow with an edit-strength setting, but
-it should not be presented as equivalent to Qwen Image Edit for scenes where the
+Its optional reference input is conventional strength-based image-to-image. That
+can support a deliberate remix workflow with an edit-strength setting, but it
+should not be presented as equivalent to Qwen Image Edit for scenes where the
 same character must survive.
 
 ### Qwen Image Edit 2511
@@ -158,16 +191,15 @@ portrait variants. The next improvement is to make its references role-aware:
 identity first, then location, then a style or object example when capacity
 allows.
 
-It should also gain specialized profiles for correcting text in an existing
-image and for applying a curated visual style. Its current tested endpoint
-supports one custom LoRA through `lora_weights` and `lora_scale`, so Vesper can
-offer a house-style or other curated LoRA without building a separate Replicate
-client.
+It should also gain specialized profiles for correcting text in an existing image
+and for applying a curated visual style. Its tested endpoint accepts one custom
+LoRA, so Vesper can offer a house-style or other curated LoRA without building a
+separate Replicate client.
 
 A LoRA must be compatible with the Qwen Image family and reachable by Replicate.
 The practical starting points are a public Hugging Face repository or a stable
-HTTPS URL to a `.safetensors` file. Vesper should not store Hugging Face tokens or
-other hosting secrets in the image-model row.
+HTTPS link to a weights file. Vesper should not store Hugging Face tokens or
+other hosting secrets alongside a model.
 
 The first LoRA experiment should be one curated house style at a few reviewed
 strengths. Per-character LoRAs may eventually improve difficult angles and
@@ -194,17 +226,17 @@ Seedream 5 Lite remains a slower, quality-oriented alternative. It should gain a
 before image and an example of the desired result.
 
 Its coherent-output features can share the same image-set workflow as Seedream
-4.5. A future Seedream-to-Seedance video handoff may use temporary provider URLs,
-but those URLs should never be treated as normal durable Vesper assets. Video
+4.5. A future Seedream-to-Seedance video handoff may use temporary provider
+links, but those should never be treated as normal durable Vesper assets. Video
 handoff is deferred until Vesper has an actual video pipeline.
 
 ### Stable Diffusion 3.5 Large
 
 Stable Diffusion 3.5 Large should remain focused on original and deliberately
-stylized portraits. Profiles may expose curated CFG, negative prompt, and seed
-settings. Its strength-based image-to-image mode is not suitable for the normal
-identity-critical scene path and should remain unavailable there unless future
-trials demonstrate otherwise.
+stylized portraits. Profiles may expose curated guidance, negative prompt, and
+seed settings. Its strength-based image-to-image mode is not suitable for the
+normal identity-critical scene path and should remain unavailable there unless
+future trials demonstrate otherwise.
 
 The existing render-at-4:5 and crop-to-3:4 behavior remains the right shape
 fallback.
@@ -216,7 +248,7 @@ use thinking mode and, where cost and latency are acceptable, higher
 resolutions. The edit profile keeps the proven inlined-reference transport and
 uses dimensions that the edit path supports.
 
-Wan’s multiple-output and coherent-set modes can later feed the shared image-set
+Wan's multiple-output and coherent-set modes can later feed the shared image-set
 workflow. Its upstream moderation cannot be disabled and has rejected benign
 Vesper references, so scene profiles must remain opt-in and display a warning.
 The application should not silently move a refused Wan render to another model.
@@ -238,13 +270,15 @@ The implementation should centralize the following work:
 - fitting prompts to model limits while preserving mandatory identity and scene
   instructions before optional detail;
 - accepting either one output or many and converting every durable asset to the
-  application’s normal image format;
+  application's normal image format;
 - recording the resolved model version, profile, controls, reference roles,
   seed, duration, and warnings for later comparison.
 
-The model adapter should only own behavior that really is specific to that
-model, primarily prompt strategy and provider quirks that cannot be represented
-as data.
+The control mapping and the profile compile step in that list already exist, from
+the trial work. The rest does not.
+
+The model adapter should only own behavior that really is specific to that model,
+primarily prompt strategy and provider quirks that cannot be represented as data.
 
 ## Version upgrades
 
@@ -252,20 +286,24 @@ Bare Replicate model slugs can move to a new provider version with a changed
 schema. Re-probing after the change is useful, but it happens after the model has
 already drifted.
 
-The built-in production models should instead be pinned to tested versions. The
-admin page should be able to probe the latest version as a candidate, show what
-capabilities changed, run an explicit smoke test, and then activate that version
-atomically. A version change must not update the active model’s stored
-capabilities until the version itself is activated.
+The six built-in models are all official Replicate models and still track the
+latest version. They should instead be pinned to tested versions. The admin page
+should be able to probe the latest version as a candidate, show what capabilities
+changed, run an explicit smoke test, and then activate that version atomically. A
+version change must not update the active model's stored capabilities until the
+version itself is activated.
 
 This is especially important for optional features such as LoRAs, where one
-version may expose a field that another does not.
+version may expose a field that another does not. It also has an immediate
+practical cost: a controlled comparison refuses to run against a model whose
+exact version is unknown, so the identity trial cannot use a built-in until an
+admin has re-probed it.
 
 ## Multiple outputs and coherent sets
 
 Existing image lanes continue to ask for one image. The provider layer will be
 able to normalize several outputs, while the existing single-image wrapper takes
-the first result and preserves today’s behavior.
+the first result and preserves today's behavior.
 
 A separate image-set workflow will store ordered siblings with a shared set
 identity. It can later support Seedream sequences, Wan image sets, storyboard
@@ -274,18 +312,22 @@ pipelines to understand batches.
 
 ## Delivery slices
 
-1. **Capability vocabulary and profiles.** Add reviewed edit type and identity
-   preservation metadata, add task-specific profiles, and resolve existing model
-   selections to a default profile without changing current renders.
+1. **Capability vocabulary and profiles** — **shipped 2026-08-05.** Reviewed edit
+   kind and identity-preservation metadata, task-specific profiles, and a
+   resolver that maps an existing model selection to a default profile without
+   changing a single render.
 2. **Shared render intent.** Introduce the normalized request and refactor the
    existing portrait, variant, scene, item, location, chat-look, and chat-place
-   lanes through it while preserving their prompts and outputs.
+   lanes through it while preserving their prompts and outputs. The profile
+   compile step and control mapper this needs already exist; the missing half is
+   the request itself and the lane migration.
 3. **Role-aware references and transport.** Replace positional trimming with
-   priority selection, add bounded concurrent uploads, and preserve Wan’s data
-   URL path.
+   priority selection, add bounded concurrent uploads, and preserve Wan's inline
+   path.
 4. **Common controls and reproducibility.** Store seeds, add quality profiles,
    map guidance, steps, negative prompt, and edit strength only where supported,
-   and use per-profile prediction timeouts.
+   and use per-profile prediction timeouts. Mapping and timeouts are done;
+   seeds have no transport at all yet.
 5. **Version promotion.** Pin the built-ins, add candidate probing and capability
    diffs, and provide an explicit smoke-test-and-activate flow.
 6. **Qwen LoRA library.** Add compatible hosted LoRAs, profile selection, scale
@@ -301,6 +343,10 @@ pipelines to understand batches.
 Each slice should be independently usable. The shared render-intent refactor must
 not wait for image sets or LoRAs, and image sets must not change ordinary scene
 generation.
+
+Slice 2 is also the gate on other work: the identity-pack plan's render-lane
+consumption slice and the visual-state plan both wait for the shared render
+intent to exist.
 
 ## Success criteria
 
@@ -330,21 +376,23 @@ video generation, ControlNet or pose generation, user-uploaded arbitrary LoRAs,
 and automatic fallback between different image models are not part of the first
 slices.
 
-The architecture should leave room for them, but the initial work is about
-making the current six models more capable, predictable, and reusable without
-turning the image path into six separate systems.
+The architecture should leave room for them, but the initial work is about making
+the current six models more capable, predictable, and reusable without turning
+the image path into six separate systems.
 
-## Open decisions
+## Open questions
 
-The implementation can begin with the following recommended defaults unless the
-owner rules otherwise:
+Each carries a recommended default the implementation may proceed on unless the
+owner rules otherwise.
 
-- Keep normal player controls profile-based; keep raw settings admin-only.
-- Pin production models after the version-promotion slice lands.
-- Permit only administrator-curated LoRAs at first.
-- Start with one LoRA per render because that is what the tested Qwen Image Edit
-  binding supports.
-- Preserve a global prediction-timeout fallback, with a bounded override on each
-  profile.
-- Treat measured latency as operational data rather than a manually maintained
-  model label.
+- Should normal player controls stay profile-based, with raw settings admin-only?
+  Recommended: yes.
+- When should production models be pinned? Recommended: as part of the
+  version-promotion slice.
+- Should LoRAs be administrator-curated only at first? Recommended: yes.
+- Should one render be limited to one LoRA? Recommended: yes — that is what the
+  tested Qwen Image Edit binding supports.
+- Should a global prediction-timeout fallback survive alongside a bounded
+  per-profile override? Recommended: yes.
+- Should latency be a maintained model label or derived from measurements?
+  Recommended: derived — treat it as operational data.

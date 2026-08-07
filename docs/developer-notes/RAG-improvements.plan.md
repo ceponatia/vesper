@@ -1,358 +1,182 @@
-# RAG improvements — plan
+# RAG improvements
 
-Status: **draft** — but **items #1, #2, #4, and #6 shipped 2026-07-02** via
-[character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md) slice 7 (spec
-§6.3), implemented in shared `src/server/memory/` so both lanes inherit: **#1** the
-relevance floor (measured via the new harness — `FACT_MIN_SCORE 0.25`,
-`EPISODE_MIN_SCORE 0.3`), **#2** per-query embedding + RRF fusion with per-source
-attribution, **#4** subjectId-preferring supersedence, **#6** the retrieval eval
-harness (`pnpm eval:retrieval`, `scripts/eval/retrieval/`). The remaining ideas keep
-this doc's original framing: initial impressions on the seven RAG ideas in
-[user-guidance/ideas.md](user-guidance/ideas.md) §RAG, **re-grounded against the
-codebase 2026-06-19** (the code moved a lot after the first draft — see the
-"What changed since first draft" callout). Nothing else here is settled; this doc
-captures where each idea touches the code, an assessment of it, rough size,
-dependencies, and the open questions to resolve before any of it becomes a spec.
+Status: draft — remainder only (re-grounded against the code 2026-08-07: of the
+seven ideas, three shipped whole and one in part on 2026-07-02, one is moot,
+and the three remaining are not committed work)
 
 Outcome: A player can rely on a character recalling what is relevant to the scene
 in front of them instead of stray details about people who are not there, so that
 replies stop dragging in facts nobody mentioned.
 
-Source of truth for current behaviour: [memory.md](../memory.md). Code lives in
-`src/server/memory/` (retrieval legs, lore gating, facts),
-`src/server/ai/embeddings.ts` (embedder + demo `pseudo` hash), and
-`src/server/engine/pipeline.ts` (prompt assembly + history window).
+Source of truth for how retrieval behaves **today**:
+[memory.md](../memory.md). This plan owns only the ideas that have not been
+built; it deliberately does not restate thresholds, fusion math, or channel
+rules that the reference doc owns.
 
-## What changed since first draft (2026-06-19 re-grounding)
+## Where this came from
 
-Five things the first draft got wrong or that the code has since overtaken — read
-these before the idea-by-idea section, they reshape three of the seven ideas:
+Seven retrieval ideas the owner wrote down, assessed here one by one. Four were
+built as the chat lane's retrieval-quality slice
+([finished/character-chat-standalone.plan.md](finished/character-chat-standalone.plan.md),
+spec §6.3) and shipped 2026-07-02. The numbering is kept stable because that
+spec and the code comments cite these numbers.
 
-1. **Provenance logging already exists** (reshapes #2). All three legs already
-   write a `"retrieval"` event carrying `query` + a full `candidates[]` list with
-   per-candidate `score` (`episodes.ts:149`, `facts.ts:229`, `lore.ts:265`),
-   consumed by the admin Turn Inspector (`inspect` route + `inspector-tab.tsx`).
-   Idea #2 is no longer "add provenance from scratch" — it's "split the query,
-   fuse, and switch the logged `query` from the concatenated blob to per-source
-   attribution (+ surface `candidates[]` in the Inspector UI)."
-2. **The "no LLM before narration" hard constraint is reversed** (reshapes #7). A
-   pre-narrator intake agent (`intake.ts:runIntake`) shipped 2026-06-18 and runs a
-   real model call in the pre-turn fan-out, *before* narration (`pipeline.ts`
-   ~549-583), degrading to the regex `detectIntent` on timeout/demo/disable. The
-   pass-over was reversed 2026-06-14 (followups.phase2 #15/16; the
-   turn-pipeline memo). So #7 step 3's "if we accept a pre-narration model hop"
-   gate is now **half-open** — a slot exists, latency-hidden.
-3. **`canon` is never written `false`** (corrects #5). No fact-creation path sets
-   `canon` — every fact inserts with the schema default `true` (`addFacts`,
-   `facts.ts:147`). `witnessedBy` *is* written truthfully (the witness set), but
-   `canon` is a dormant always-true column with **no producer of belief/lie facts
-   to gate against** yet. The first draft's "written truthfully every turn" was
-   only ever true of `witnessedBy`.
-4. **The merge channel is three strands, not two** (refines #1). Facts +
-   director `characterNotes` + **recalled episodes** (prefixed `Recalled: `) all
-   dedupe into the ≤8 channel (`pipeline.ts:680-686`, `FACTS_CAP = 8`). A fact
-   floor competes for those 8 slots against episodes too, and there's a second
-   `FACTS_CAP` backstop at `narrative.ts:296`.
-5. **Idea #3's fix is wider but cheaper than written.** The pipeline duplicates
-   not just `isUnlocked`/`sceneChunkMatches` but also inlines the `always`/`scene`
-   selectors — *however*, it already builds the exact `SceneContext` adapter the
-   centralization needs (`pipeline.ts:567-575`), so the work is mostly delete +
-   reuse.
+## Shipped ledger
 
-## Where the system actually is today
+- **#2 — per-query embedding, fusion, and provenance.** Shipped. Each memory
+  query is embedded and searched separately, results fuse by reciprocal rank,
+  and every hit carries which queries surfaced it — visible in the chat
+  inspector and on the retrieval telemetry event. A later pass added a
+  once-per-turn embedding cache so the several legs that search the same texts
+  cost one round-trip instead of three.
+- **#4 — prefer subject identity over subject name in supersedence.** Shipped.
+  When both the incoming fact and the stored candidate are grounded to a
+  library subject, identity equality decides: two people who happen to share a
+  name no longer overwrite each other, and a rename no longer breaks the
+  chain. Name matching remains the fallback when either side is unresolved.
+- **#6 — the retrieval evaluation harness.** Shipped as `pnpm eval:retrieval`
+  (`scripts/eval/retrieval/`, with its own README). It seeds fixture corpora
+  through the real write path, retrieves through the real retrievers, and
+  scores recall and precision against per-fixture expectations. Deliberately
+  never wired into CI: a poor score is a tuning signal, not a build failure.
+- **#1 — a measured relevance floor for facts.** Shipped in part. The floor
+  exists and was *measured* with the harness rather than guessed, and pinned
+  "remember this" facts are exempt from it so a player note is never filtered
+  out. What did **not** ship is the presence-based half of the idea — see the
+  remainder below.
 
-A grounding pass, because several of the seven ideas are framed slightly off from
-the current code:
+## What is moot
 
-- **Retrieval is a single concatenated query.** `preTurnRetrieve`
-  (`retrieval.ts:37`) joins `queries + input` with `\n` into one `queryText`
-  (`retrieval.ts:38-41`), then fans out to three independent legs (episodes /
-  facts / lore) via `Promise.allSettled` (`retrieval.ts:44-48`), each embedding
-  that one string once (`episodes.ts:111`, `facts.ts:198`, `lore.ts:234`). No
-  per-query embedding, no fusion.
-- **Facts have *no* relevance floor.** Episodes gate at `EPISODE_MIN_SCORE = 0.55`
-  (`constants.ts:24`) and lore at `LORE_MIN_SCORE = 0.72` (`constants.ts:18`), but
-  `retrieveFacts` (`facts.ts:187-235`) returns the top `FACT_RETRIEVAL_LIMIT = 5`
-  active facts *unconditionally* — its own docstring says "no minimum score"
-  (`facts.ts:182-185`). The only fact gate is write-side: `FACT_MIN_CONFIDENCE =
-  0.4` (`constants.ts:52`) drops low-confidence drafts before embedding — a
-  *confidence* floor at insert, **not** a retrieval similarity floor. So idea #1's
-  "blunt universal threshold" is, for facts specifically, the opposite problem:
-  there's no floor at all, which is exactly why "random semantic neighbors" leak
-  in. The merger then squeezes facts + director `characterNotes` + recalled
-  episodes into a single deduped ≤8-item channel (`pipeline.ts:680-686`,
-  `FACTS_CAP = 8`).
-- **No presence/witness gating in retrieval.** `witnessedBy` (`schema.ts:499`,
-  written via `computeWitnessSet` in `merge.ts` and per-NPC in `inner-note.ts`)
-  and `canon` (`schema.ts:497`, default `true`, never written `false`) are columns
-  the retrieval `SELECT` never reads (`retrieveFacts` returns only
-  `id/kind/subjectName/text/score`, `facts.ts:21-27`). The knowledge-ledger
-  consumer is phase 6 ([character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md)),
-  which has **not started** and is not on the roadmap.
-- **Lore gating is duplicated.** `lore.ts` owns the canonical helpers
-  (`isChunkUnlocked` `:81`, `selectAlwaysChunks` `:86`, `selectSceneChunks` `:97`,
-  `eligibleRetrievalChunks` `:112`, and the private `matchesScene` `:122`), but
-  `pipeline.ts:825-837` carries its own local `isUnlocked` / `sceneChunkMatches`,
-  and the prompt-assembly site (`pipeline.ts:664-678`) inlines the `always`/`scene`
-  selection logic instead of calling the exports — a real drift risk (idea #3).
-- **History is still a flat last-N window.** `recentTurnHistory(sessionId,
-  NARRATIVE_HISTORY_TURNS)` (`pipeline.ts:579`, def `:851-864`, `NARRATIVE_HISTORY_TURNS
-  = 6`) selects the last 6 ready turns by number with no presence/location scoping,
-  pushed verbatim as alternating user/assistant messages (`pipeline.ts:813-817`).
-  Episode recall (`retrieveEpisodes`) is pure global cosine with a recency-window
-  exclusion (`EPISODE_WINDOW = 4`), not scoped by roster or location — the crux of
-  idea #7.
-- **A pre-narrator model hop now exists.** `runIntake` (`intake.ts:28-61`) makes a
-  real `generateChecked<IntentBrief>` call in the pre-turn `Promise.all`
-  (`pipeline.ts` ~549-583), concurrent with retrieval and before narration. It
-  falls back to regex `detectIntent` on timeout/demo/disable (and in practice
-  regex-falls-back on most turns today). The `IntentBrief` it emits
-  (`src/contracts/turns/intent-brief.ts`) already carries action-type/sense
-  targets — a natural input-side seam for idea #1's presence signal.
+**#3 — centralize lore gating.** Closed as no longer applicable. The drift it
+targeted lived in the session-lane turn pipeline duplicating the lore module's
+gating helpers; the R6 rollout (2026-07-22) deleted the session lane, the lore
+module, and the lore table outright. Nothing retrieves lore today.
 
-## Idea-by-idea impressions
+One piece of litter survives that deletion: `memory/constants.ts` still exports
+two lore thresholds with no reader anywhere in the codebase. Deleting them is a
+one-line hygiene fix that belongs to whoever next opens that file, not to a
+plan.
 
-### 1. Measured fact-relevance policy (floor OR present OR query-named) — agree, reframe
+## The remainder
 
-The right shape: a fact is included if **any** of —
-- similarity ≥ a configurable floor (new — facts have none today), **or**
-- its `subjectId` is in the present roster / addressed this turn, **or**
-- a memory query explicitly names the subject.
+### 1. Presence as an inclusion signal (the unbuilt half of #1)
 
-This is the highest-leverage cheap win: a floor stops the unconditional top-5
-from injecting noise, while the present/named escape hatches stop a floor from
-silently dropping the facts that matter most (the person you're talking to).
-The present-roster signal is already in scope — the pipeline computes `present`
-and even builds a `SceneContext` with `presentCharacterIds` at
-`pipeline.ts:567-575` — and `subjectId` grounding already exists on the fact row
-(`schema.ts:490`, written at `facts.ts:154`), so "is this fact's subject present"
-is a cheap join, no new embedding. **One wiring caveat surfaced by the
-re-grounding:** `subjectId` is currently *write-only* — `retrieveFacts` neither
-selects nor returns it (`FactHit` carries only `id/kind/subjectName/text/score`,
-`facts.ts:21-27`), so surfacing `subjectId` out of retrieval is part of this
-idea's work, not a freebie. Note also the inclusion channel is **three strands**
-(facts + `characterNotes` + recalled episodes), so the floor logic must decide
-how it interacts with the episode strand and the ≤8 cap, not just facts in
-isolation.
+The floor answers "is this fact related to what was just said". It does not
+answer "is this fact about someone who is actually here". In a one-on-one
+conversation those questions collapse into each other — the only other person
+present is the partner — which is exactly why the shipped slice was safe
+without it. In an ensemble conversation they come apart: a fact about a
+character who is currently away can outrank a fact about the person being
+spoken to.
 
-The sub-note attached to this idea in [user-guidance/ideas.md](user-guidance/ideas.md)
-— `isPresent` should drive *many* prompt injections, and non-present NPCs act via a
-**separate async, non-turn-blocking pipeline** —
-belongs with [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)
-and [offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md),
-not the retrieval layer. Keep this idea scoped to "presence as a retrieval/inclusion
-signal"; the offscreen-agent pipeline is its own track.
+The chat lane already tracks the signal this needs. Each participant carries a
+presence state (present or away) and, when away, a free-text sense of where
+they are. Nothing in retrieval reads either one.
 
-- **Size:** small–medium. **Depends on:** #6 (to tune the floor without vibes).
-- **Open question:** does "subject present" override the floor entirely, or just
-  lower it? Hard override risks pulling stale facts about a present NPC.
+The shape to build: a fact about a present participant is admitted even when it
+scores below the floor, and the ranking prefers present subjects over absent
+ones. The wiring cost is that retrieval does not currently return a fact's
+subject identity to its caller, so surfacing it is part of the work rather than
+a freebie.
 
-### 2. Per-query embedding + fusion + provenance logging — strong agree, **re-scoped (plumbing exists)**
+- **Size:** small once the ensemble pipeline is the normal case; low value
+  before then.
+- **Depends on:** multi-character conversations being the common shape. In a
+  one-on-one chat this changes nothing observable.
 
-Embed each query separately, retrieve per query, fuse with RRF (or max-score),
-and **log which source query produced each hit**. This is textbook and directly
-attacks the "one query dominates everything" failure of the concatenated blob.
+### 5. Retrieval that respects who witnessed what
 
-Cost worry is smaller than it looks: `embedTexts` batches the whole array into
-**one** `embedMany` API call regardless of count (`src/server/ai/embeddings.ts:20-31`),
-so per-query embedding is genuinely one API call for N queries — the only added
-cost is N vector searches per leg instead of one, cheap at our k. RRF is the safer
-fusion choice (scale-free across legs; max-score needs comparable distributions).
+The half of this idea that mattered most has already been solved by a different
+route. The **fact channel** fence (see [memory.md](../memory.md)) closes the
+archivist's mind-reading backdoor: knowledge established from the player's
+unspoken thoughts is excluded from narrator-bound retrieval in SQL, before the
+top-k cut, so it can never surface as something the character "knows".
 
-**Re-scope from the re-grounding:** the provenance substrate the first draft
-called net-new is already built. Each leg already writes a `"retrieval"` event with
-`query` + `candidates[{id, …, score}]` (`episodes.ts:149-156`, `facts.ts:229-233`,
-`lore.ts:265-273`); the admin inspect route reads them in the turn window
-(`src/app/api/sessions/[id]/turns/[turnId]/inspect/route.ts:39-69`) and the
-Inspector tab renders a "Retrieval" section (`inspector-tab.tsx:295-315`). What
-this idea actually still needs:
-1. **Split the blob** into per-query embeds and retrieve per query.
-2. **Fuse** with RRF across the per-query hit lists (per-leg — see open question).
-3. **Per-source attribution** — change the logged `query` from the concatenated
-   `slice(0,300)` blob to the individual source query per hit (today's logs can't
-   answer "which query produced this hit").
-4. **Surface `candidates[]` in the Inspector** — the backend already forwards the
-   array, but `retrievalEventSchema` (`inspector-tab.tsx:31-51`) only parses a
-   single scalar `score`, so per-candidate scores are persisted + shipped but not
-   rendered.
+What remains is the per-character version. Facts and episodes record who
+witnessed them, and a witness fence exists in the memory module and is composed
+into every fact and episode query — but no production caller supplies a
+viewpoint, so it is currently a seam exercised only by an integration spike. It
+becomes load-bearing the moment two characters in one conversation should know
+different things.
 
-The "end goal" clause — facts carrying *who created them / who they pertain to* —
-is really idea #5 (witnessedBy + subjectId surfaced to retrieval), tracked there.
+The canon flag is the other half, and it is still dormant: the column exists,
+defaults to true, and **no code path ever writes it false**. Building a filter
+for beliefs and lies before anything produces a belief or a lie would be a gate
+with nothing behind it. The lies-and-beliefs model owns that write side; this
+plan does not.
 
-- **Size:** medium, self-contained (smaller now that logging exists). **Pairs
-  with:** #1, measured by #6.
-- **Open question:** RRF `k` constant, and whether fusion is per-leg or across
-  legs (per-leg is the working preference — episodes/facts/lore stay separate
-  channels downstream).
+- **Size:** small to wire, large to make meaningful.
+- **Gated on:** a real multi-character conversation (for witness) and a
+  producer of non-canon facts (for canon).
 
-### 3. Centralize lore gating — agree, do first (wider surface, cheaper fix)
+### 7. Retrieval as a replacement for flat history
 
-Pure drift-removal, **still real today**. `pipeline.ts:825-837` reimplements
-`isUnlocked` / `sceneChunkMatches`, and the prompt-assembly site
-(`pipeline.ts:664-678`) inlines the `always`/`scene` selection logic too —
-`lore.ts` already exports the canonical versions (`isChunkUnlocked` `:81`,
-`selectAlwaysChunks` `:86`, `selectSceneChunks` `:97`). This is exactly the "don't
-recreate utilities" rule (CLAUDE.md / jscpd) caught after the fact. The drift
-surface is **wider** than the first draft named (the inlined selectors, not just
-the two helpers), but the fix is **cheaper**: the pipeline already constructs the
-exact `SceneContext` (`{ locationTags, presentCharacterIds }`) at
-`pipeline.ts:567-575` to feed `preTurnRetrieve` — so centralizing is "reuse that
-same `sceneCtx` shape at the prompt-assembly site, call
-`selectAlwaysChunks`/`selectSceneChunks`/`isChunkUnlocked` directly, and delete the
-two local helpers." `retrieval.ts` (`retrieveLoreLeg`) already sets the precedent
-by consuming `eligibleRetrievalChunks` with a real `SceneContext`.
+The conversation history sent to the narrator is still a flat window: the last
+forty exchanges verbatim, with everything older folded into a rolling summary.
+Nothing about that selection is scoped to who is present or what is happening —
+it is purely "the most recent N".
 
-- **Size:** small. **Risk:** low. **Do early** — clears the deck for #1/#2 which
-  also touch scene/presence gating. (`matchesScene` is private to `lore.ts`; expose
-  via the selectors, don't export it.)
+The ambition is to compose history procedurally instead: assemble what the
+narrator sees from what is relevant to the people in the room and the situation
+they are in, rather than from a fixed count of recent lines.
 
-### 4. Prefer `subjectId` over `subjectName` in supersedence — agree (unchanged)
+Two things changed since this idea was first written, and both matter:
 
-`supersedes()` (`facts.ts:38-43`, unchanged location) gates on normalized name +
-`score >= SUPERSEDE_MIN_SCORE` (0.86). The insert already stores both `subjectId`
-(`facts.ts:154`) and `subjectName` (`facts.ts:155`); the supersedence candidate SQL
-(`facts.ts:127-143`) selects `id/subjectName/score` and **ignores** `subjectId`.
-Fix: when **both** draft and candidate are grounded, require `subjectId` equality
-and skip the name check; fall back to normalized-name only when a subject is
-unresolved. Correct, and it defuses the alias / rename / duplicate-name fragility
-the idea calls out.
+- **The old blocker came back, stronger.** The original framing hung on "we
+  make no model call before narration". That briefly stopped being true when
+  the session lane grew a pre-narrator intake agent — and then the session lane
+  was deleted, and the surviving chat lane adopted "no model calls before the
+  reply" as a **recorded design ruling** rather than an accident
+  ([finished/chat-agent-improvements.plan.md](finished/chat-agent-improvements.plan.md)
+  §"Looked at and deliberately left alone"), because that intake latency was
+  the lesson. The one exception is the photo-description read, and it only runs
+  when the player attached an image. A synthesized digest would therefore be
+  the *first* routine model call the player waits on — that is the decision
+  this idea now has to win, not a free slot.
+- **The first concrete step is gone too.** That step was "scope episode recall
+  by present roster and location adjacency", which assumed the session lane's
+  proximity graph. That code was deleted with the session lane. Chat has no
+  locations-as-entities and no adjacency — its only location-like state is the
+  present/away flag and a free-text whereabouts phrase.
 
-- **Size:** medium (touches `supersedes()` and ideally the candidate SQL — prefer
-  filtering candidates by `subjectId` when present). **Independent** of the rest.
-- **Open questions:** asymmetry when one side is grounded and the other isn't
-  (treat as name-only?); and does a rename event need to *re-ground* historical
-  facts, or only affect facts going forward? The latter is simpler; the former
-  is a migration.
+So the tractable first step is now the same work as the presence remainder
+above: scope episode recall by who is present. The rest — per-character episode
+windows, a synthesized scene digest — stays a research direction.
 
-### 5. Consume the richer metadata (witness-gating + canon channel) — agree, but it's phase 6 (one correction)
+- **Size:** large, multi-stage. **Treat as direction, not near-term work.**
 
-This is the biggest semantic leap *and* it already has a home:
-[character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md) → phase 6
-(knowledge ledger / `fact_knowers`, per-character episodes). The re-grounding
-confirms phase 6 has **not started** — no `fact_knowers` / `character_episodes`
-tables in `schema.ts` or any migration, and it's not on the roadmap. Two
-retrieval-layer hooks to keep in view so #1/#2 don't paint us into a corner:
-- **Witness-gated retrieval:** an NPC should not retrieve facts it never
-  witnessed — i.e. filter the facts leg by `witnessedBy ∋ perceiver`. `witnessedBy`
-  has live data today (it's written truthfully), so this hook has something to gate
-  on.
-- **Canon channel separation:** `canon = false` (belief/lie) facts must stay out
-  of the narrator's *truth* channel unless the mode asks for them. **Correction
-  from the re-grounding:** no fact-creation path writes `canon = false` yet — it's
-  a dormant always-true column. So this hook has **no producer of belief/lie facts
-  to gate against** until the write-side (told-lie / belief facts) lands, presumably
-  with phase 6. Don't build the canon gate before there's canon-false data.
+## Open questions
 
-The ledger is **not** re-planned here: #2's provenance logging and #1's presence
-signal are the natural on-ramps, and the consumer stays deferred to phase 6.
-
-### 6. Retrieval evaluation harness — strong agree, arguably do first (still greenfield)
-
-Without this, every threshold/fusion change in #1, #2, #4 is "vibes in a trench
-coat" (the idea's own phrase). The re-grounding confirms **no
-retrieval eval harness exists** — no precision@k / recall@k, no score-distribution
-code, no `*.fixture.json` anywhere (the `scripts/eval/`, `data/eval/`,
-`docs/scene-image-eval/` dirs are scene-**image** eval, unrelated). Existing
-memory tests cover *gating correctness* and *degradation* only: `retrieval.test.ts`
-is orchestration with mocked legs (no ranking assertions); `memory.int.test.ts`
-does real-pgvector recall but every "ranking" check is a trivial self-match (query
-== stored text → `score > 0.99`), no multi-candidate ordering, no distractor
-corpus, no recall measurement. So #6 is **additive**, not duplicative. Golden
-scenarios: "episode 3 must rank top-2 for query X", "secret lore absent until
-unlock", "irrelevant fact below floor", "aliased subject supersedes". Track
-precision@k / recall@k / score distributions.
-
-The one real design problem persists: **determinism.** The demo `pseudo` embedder
-is still an FNV-1a hash (`src/server/ai/embeddings.ts:43-54`) — it gives no
-meaningful semantic ranking (`facts.test.ts` only asserts identical→1, unrelated
-`<0.3`, never related>unrelated), so golden tests can't use it. The clean answer
-is to **snapshot real embedding vectors** for a small curated corpus + query set
-as frozen fixtures, then run the ranking math offline (no API call in CI). That
-keeps tests deterministic and fast. Caveat from embedder isolation: fixtures are
-bound to one embedding model and must be re-snapshotted when it changes —
-acceptable, and the snapshot job is small. The harness should also exercise the
-adjacent knobs (`FACT_MIN_CONFIDENCE`, the `*_RETRIEVAL_LIMIT`s), not just the
-score floors.
-
-- **Size:** medium–high (fixture tooling + the math), highest leverage.
-- **Open question:** corpus size and where fixtures live — `*.fixture.json` next
-  to `memory.int.test.ts`, gated like other integration assets.
-
-### 7. RAG as a replacement for flat history/summarization — north star; **the binding constraint dissolved**
-
-The vision: stop sending "last n turns" flat (still exactly what
-`recentTurnHistory` does, `pipeline.ts:579/851-864`, `NARRATIVE_HISTORY_TURNS = 6`);
-procedurally compose history scoped to who's present, the situation, and
-location/adjacent locations. Agree with the direction. **The first draft's binding
-constraint is now stale:**
-
-> ~~No LLM call before narration today~~ — **reversed 2026-06-14.** A pre-narrator
-> intake agent (`intake.ts:runIntake`) shipped 2026-06-18 and runs a real model
-> call in the pre-turn fan-out before narration (followups.phase2 #15/16;
-> [pre-narrator-agents.followups.md](pre-narrator-agents.followups.md), status
-> *implemented — 2026-06-18*).
-
-So a pre-narration model hop **already exists** (latency-hidden, degrading to regex
-on timeout). That doesn't mandate a synthesized digest, but it removes the hard
-blocker the first draft hung step 3 on. Concrete first steps:
-1. **Scope the episode-recall leg by present roster and location adjacency**
-   (cheap, non-LLM). The proximity graph exists and is pure/reusable —
-   `isAdjacent` (`merge.ts:357`), `passableNeighbors` BFS (`movement.ts:46-71`),
-   and the adjacency set in `buildPresenceRoster` (`scene.ts:331-344`) — **but it
-   lives in `engine/` and is not imported into `src/server/memory/`**, so step 1
-   requires threading `location`/`links` into the retrieval call signature (today
-   retrieval only receives `sceneCtx`, consumed by lore eligibility alone). Step 1
-   is the tractable extension of #1's presence work.
-2. **Per-character episode windows** (a phase-6 dependency — overlaps #5).
-3. **A synthesized "scene digest"** — now *possible* via the existing pre-narrator
-   slot rather than blocked, but still a deliberate cost/latency decision, and
-   gated on the intake agent actually landing reliably (it regex-falls-back on most
-   turns today).
-
-- **Size:** large, multi-phase. **Treat as research direction**, not near-term.
-  Step 1 rides on #1's presence work + threading the proximity graph into
-  retrieval; the rest waits on phase 6 and the intake agent stabilizing.
+- **#1** — does "subject is present" admit a below-floor fact outright, or only
+  lower the bar for it? A hard override risks pulling stale facts about a
+  present character ahead of fresh relevant ones.
+- **#5** — should a witness-scoped retrieval be the default once ensembles are
+  normal, or an opt-in per conversation? Defaulting it changes recall for every
+  existing conversation whose rows were written under the unfiltered rule.
+- **#7** — accept the first routine pre-reply model call in exchange for a
+  synthesized scene digest, or keep history assembly strictly non-model
+  (filter, rank, and scope the summaries that already exist)? The standing
+  ruling is non-model; overturning it needs a latency number, not an argument.
 
 ## Suggested sequencing
 
-1. **#3 centralize lore gating** — cheap, removes drift, clears scene/presence code
-   before #1/#2 touch it; the pipeline already builds the `SceneContext`.
-2. **#6 eval harness** — foundation: makes #1/#2/#4 measurable instead of vibes; can
-   build in parallel.
-3. **#2 per-query + RRF + provenance** — high value, self-contained; provenance
-   plumbing already exists, so re-scoped to split + fuse + per-query attribution.
-4. **#1 measured fact relevance (+ presence)** — floor + present/named escape hatches;
-   tuned via #6; surfacing `subjectId` from retrieval is part of the work.
-5. **#4 subjectId supersedence** — independent correctness fix.
-6. **#5 witness-gating + canon channel** — retrieval hooks only; consumer owned by
-   phase 6 (not started); canon gate waits on a canon-false producer.
-7. **#7 RAG-as-history** — north star; step 1 rides on #1 + threading the proximity
-   graph into retrieval; rest gated on phase 6.
+The three remaining items are all gated on the same thing — conversations where
+more than one character is really in play — and none of them is worth building
+before that. When it arrives, the order is: presence as an inclusion signal
+(#1's remainder), then wiring the witness fence to a real viewpoint (#5), then
+history composition (#7). Re-run `pnpm eval:retrieval` before and after any of
+them; that is what it is for.
 
-## Cross-references / where things already live
+## Cross-references
 
-- [memory.md](../memory.md) — current behaviour and all tuning thresholds.
-- [character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md) — knowledge
-  ledger / per-character memory (owns idea #5's consumer, phase 6 — not started).
-- [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) +
-  [pre-narrator-agents.followups.md](pre-narrator-agents.followups.md) — the
-  pre-narrator intake agent that shipped 2026-06-18 (dissolves #7's old
-  constraint), and [offscreen-simulation-spec.phase3.md](finished/offscreen-simulation-spec.phase3.md) —
-  the async non-present-NPC pipeline from idea #1's sub-note.
-- [perception.md](../perception.md) — how `witnessedBy` (attention × salience) is
-  computed; the gate idea #5 would consume.
-- `src/contracts/turns/intent-brief.ts` — the `IntentBrief` the intake agent emits;
-  an input-side seam for #1's presence signal and #7's scoping.
-
-## Open questions (restated for scanning)
-
-- **#1** — does "subject present" hard-override the floor, or just lower it? And
-  how does the floor interact with the episode strand sharing the ≤8 channel?
-- **#2** — RRF `k`; fusion per-leg vs across legs.
-- **#4** — grounded/unresolved asymmetry; do renames re-ground historical facts?
-- **#6** — frozen real-vector fixtures: corpus size and location; re-snapshot on
-  embedding-model change.
-- **#7** — ~~do we revisit the "no pre-narration LLM" decision~~ (answered — it was
-  reversed and an intake agent shipped); the live question is now: do we spend the
-  existing pre-narrator slot on a synthesized scene digest, or keep history
-  assembly strictly non-LLM (filter/rank/scope existing episode summaries)?
+- [memory.md](../memory.md) — how retrieval works today, and every tuning knob.
+- [finished/character-chat-standalone.spec.md](finished/character-chat-standalone.spec.md)
+  §6.3 — the shipped slice, and §6.4 for pinned "remember this" facts.
+- [finished/character-memory-spec.phase3.md](finished/character-memory-spec.phase3.md)
+  — the per-character knowledge ledger that owns idea #5's consumer. Not
+  started, not on the roadmap.
+- [finished/chat-agent-improvements.plan.md](finished/chat-agent-improvements.plan.md)
+  — the recorded ruling that the chat lane makes no model call before the
+  reply, which idea #7 has to argue against.
+- [../character-chat/pipeline.md](../character-chat/pipeline.md) — the exchange
+  lifecycle, including exactly what runs before the reply.

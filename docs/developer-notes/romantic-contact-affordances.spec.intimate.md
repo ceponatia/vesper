@@ -2,7 +2,10 @@
 
 Status: technical companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — later scope: slices 5–6, queued behind the foot proof)
+(promoted 2026-07-28 — later scope: slices 5–6). **Not built.** No code exists
+for this domain. It is blocked twice over: on the permission owner becoming
+authoritative (built, dark) and on the deferred physiology plan supplying live
+reads that this domain may not substitute for.
 
 ## Scope and safety boundary
 

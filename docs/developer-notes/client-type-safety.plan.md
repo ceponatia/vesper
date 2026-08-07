@@ -1,6 +1,8 @@
 # Client type-safety and bundle weight
 
-Status: draft (D10/D11/D12 sequenced after image consolidation; bundle work remains an experiment and D14 is dropped)
+Status: draft (D10/D11/D12 approved; the image consolidation they were sequenced
+behind shipped 2026-08-02, so that dependency is clear. Bundle work remains an
+experiment and D14 is dropped. Findings re-verified unfixed 2026-08-07)
 
 Outcome: A developer can add a location size class by editing one file, and gets
 a compile error the moment a form sends a field the route will not accept, so
@@ -17,9 +19,10 @@ player watches for minutes at a time.
 
 - **The vocabulary rule stops at the server door (D10).** A location's five size
   classes — intimate / room / hall / open / expanse — are written out
-  independently in **five** places: the database column, the server request
-  schema, the client's list parser, the location editor's dropdown, and the
-  library's browse chips. Clothing-layer labels are written out **three** times.
+  independently in **five** places, all five still standing on 2026-08-07: the
+  database column, the server request schema, the client's list parser, the
+  location editor's dropdown, and the library's browse chips. Clothing-layer
+  labels are written out **three** times.
   CLAUDE.md's core promise is that "vocabulary changes are data edits in one
   file"; today adding one size class is a five-file hunt, and missing a site
   doesn't fail loudly — it produces a dropdown short one option, or a browse chip
@@ -140,8 +143,8 @@ Ordered so each stands alone and can ship on its own.
   a 400 in front of a player.
 - A streaming reply parses each settled message once, not once per token chunk;
   verified against a long transcript on the Fly deploy.
-- Full gate green (lint → lint:cycles → typecheck → test → jscpd, one at a
-  time).
+- **The pull request's `verify` check is green.** Validation is CI-only (root
+  `CLAUDE.md`) — never invoke a gate locally.
 
 ## Risks & coordination
 
@@ -163,6 +166,14 @@ Ordered so each stands alone and can ship on its own.
   shape could change what gets saved.
 - **Contracts is a pure module** (no IO, no env) and the request schemas already
   respect that, so the move does not weaken the enforced boundary.
+- **`lib/client/api.ts` is a moving target.** It is the file slice 2 reshapes
+  most, it has 66 importers, and the image-model registry and capabilities work
+  keeps adding endpoints to it. It is also the subject of a separate, unplanned
+  split proposal in
+  [codebase-modularity.audit.md](codebase-modularity.audit.md) (layer the file,
+  keep `api.ts` as a re-export barrel). Whichever change lands first should land
+  in a shape the other can build on — typed request bodies do not conflict with a
+  layered split, but doing both in one diff would be unreviewable.
 
 ## Open questions
 

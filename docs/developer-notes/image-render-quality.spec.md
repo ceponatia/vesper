@@ -5,15 +5,19 @@ Status: companion to [image-render-quality.plan.md](image-render-quality.plan.md
 Machinery this rides on:
 [image-model-capabilities.spec.md](image-model-capabilities.spec.md) (profiles,
 control mapping, role-aware references, prompt fitting, seeds, and multi-output).
-Provider schemas and reviewed notes:
-[docs/image-models/](../image-models/).
+Reference derivation, quality, and provenance:
+[image-identity-packs.spec.md](image-identity-packs.spec.md). The appearance
+projection a prompt compiler should read:
+[visual-state.spec.md](visual-state.spec.md). Provider schemas and reviewed
+notes: [docs/image-models/](../image-models/).
 
 This spec defines the content and quality layer: transitional reviewed settings,
-prompt-dialect behavior, negative composition, identity-pack contracts, repair
-rules, provenance, and the trial protocol. It does not duplicate the capabilities
-spec's provider-neutral request and profile schemas.
+prompt-dialect behavior, negative composition, repair rules, output QA,
+render provenance, and the model-tuning trial protocol. It does not duplicate the
+capabilities spec's provider-neutral request and profile schemas, the
+identity-pack specs' reference contracts, or the visual-state spec's projection.
 
-## Current implementation after the first hardening slice
+## Current implementation (slice 1, shipped 2026-08-05)
 
 Every image lane still builds its existing prompt and resolves an `ImageModel`.
 All lanes then cross:
@@ -27,9 +31,29 @@ renderWithModel
   -> cropToTargetAspect when needed
 ```
 
-The two new functions live in
-`src/server/images/quality-presets.ts`. This is intentionally the narrowest seam
-that improves every current lane without wiring the dormant profile rows halfway.
+Both functions live in `src/server/images/quality-presets.ts`, called from
+`src/server/images/models.ts`. This is intentionally the narrowest seam that
+improves every current lane without wiring the dormant profile rows halfway.
+
+`compileProfileRenderPlan` (`src/server/images/render-profile.ts`) is a **second**
+caller of both. It is the capabilities plan's slice-2 kernel, landed early for the
+identity-pack trial harness, and it compiles a profile row plus a prompt into the
+exact provider payload — hashing what it just produced rather than the raw model
+row, precisely so the reviewed overrides cannot change a pinned comparison
+silently. Production lanes do not call it; `renderImageIntent` does not exist yet.
+
+Two consequences follow from having two callers, and both are load-bearing:
+
+- **`preparePromptForImageModel` must be idempotent.** The trial compiles a
+  prompt, hashes it, and then `renderWithModel` prepares it again on the way out.
+  A second pass that changed the text would make every cell refuse
+  `cell_conflict` against its own compiled prompt. The rewrite therefore replaces
+  **every** occurrence of the legacy lock, not the first: under a
+  first-occurrence replace, a prompt carrying the sentence twice kept its second
+  copy and the next pass rewrote that one — one input, two outputs.
+- **The effective model, not the stored row, is what any hash or diagnostic may
+  describe.** `withReviewedImageQuality` returns a copy; the registry record is
+  never mutated.
 
 ### Why the policy is runtime rather than a data migration
 
@@ -40,7 +64,7 @@ A migration that writes `image_models.extra_input` would be fragile:
 - provider defaults are not necessarily Vesper's reviewed quality defaults;
 - community models may be added through the admin UI after the migration;
 - the profile system that should eventually own these controls is not yet called
-  by the render path.
+  by the production render path.
 
 The runtime policy matches exact reviewed provider slugs, strips a community
 model's `:version` suffix for matching, and overlays its settings after the row's
@@ -96,7 +120,7 @@ field and accidentally restoring it.
 
 **Qwen Image 2512**
 
-- no runtime override in this slice;
+- no runtime override today;
 - provider negative default is already empty;
 - generation speed, steps, and guidance remain unchanged.
 
@@ -110,7 +134,7 @@ task begins using it, task profiles must replace this global override.
 
 **Stable Diffusion 3.5 Large**
 
-- no runtime override in this slice;
+- no runtime override today;
 - no negative content is invented without task/style context.
 
 **Juggernaut XL v9**
@@ -134,7 +158,7 @@ square render's width.
 
 **Pony Realism v2.3**
 
-- no runtime override in this slice;
+- no runtime override today;
 - provider negative default is already empty;
 - score/source/rating tags, identity scales, pose strength, steps, and guidance
   remain trial-controlled.
@@ -191,9 +215,9 @@ inventing a second ordering system.
 A custom Qwen prompt without the legacy lock is not rewritten. A Qwen run with
 zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 
-## Tests for the first slice
+## Tests for slice 1
 
-`quality-presets.test.ts` pins these properties:
+`src/server/images/quality-presets.test.ts` pins these properties:
 
 - pinned community slugs resolve to their base path;
 - unknown models return the same object and inputs;
@@ -202,9 +226,15 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 - Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
 - Juggernaut receives the reviewed full-step settings and an empty negative;
 - RealVis receives native 3:4 dimensions and an empty negative;
-- single- and multi-reference Qwen locks are selected correctly and do not grow
+- both cleared negatives survive `buildRegistryModelInput` as an empty string
+  rather than being dropped and restored to the provider default;
+- single- and multi-reference Qwen locks are selected correctly and never grow
   the fitted prompt;
-- custom/no-reference/non-Qwen prompts are not changed.
+- the rewrite is idempotent across a doubled legacy lock;
+- custom, zero-reference, and non-Qwen prompts are byte-identical.
+
+`render-profile.test.ts` re-asserts the idempotency property from the trial side,
+because that is where a violation would show up as a refused cell.
 
 The existing `models.ts` crop tests continue to own output normalization. Future
 shared-render-intent tests should assert the final provider payload, including
@@ -398,142 +428,34 @@ When text and reference disagree:
 - location reference is authoritative for stable geometry unless the scene plan
   explicitly changes it.
 
-## Identity pack contract
+## Contracts this spec does not own
 
-A canonical portrait compiles to a derived identity pack:
+Three contracts that were drafted here have since been implemented or specified
+elsewhere. The shipped shapes differ from the sketches this file carried, so the
+sketches are gone rather than kept in sync.
 
-```ts
-export interface ImageIdentityPack {
-  version: 1;
-  characterId: string;
-  sourceImageId: string;
-  sourceContentHash: string;
-  faceCropImageId: string;
-  faceCrop: {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    method: "detector" | "heuristic" | "manual";
-    detectorVersion?: string;
-    confidence?: number;
-  };
-  quality: {
-    detectedFaces: number | null;
-    faceWidthPx: number;
-    faceHeightPx: number;
-    blurScore: number | null;
-    occlusionScore: number | null;
-    accepted: boolean;
-    warnings: string[];
-  };
-  createdAt: string;
-}
-```
+**The identity pack itself.** `ImageIdentityPackV1`, its crop and quality
+sub-records, revision/status lifecycle, source hashing, derivation and policy
+versioning, creation triggers, backfill, the heuristic crop and the detector
+promotion rule, and the pre-spend quality gate are owned by
+[image-identity-packs.spec.derivation.md](image-identity-packs.spec.derivation.md)
+and [image-identity-packs.spec.data.md](image-identity-packs.spec.data.md). All of
+it is implemented.
 
-Coordinates are source-pixel coordinates after EXIF orientation is normalized.
-The derived crop is encoded with stripped metadata and a stable colour profile.
-The pack is stale when `sourceContentHash` no longer matches the canonical
-portrait.
+**Reference selection and capacity.** Role ordering, required-identity precedence,
+capacity refusal, and per-profile identity strategies are owned by
+[image-identity-packs.spec.integration.md](image-identity-packs.spec.integration.md)
+§"Reference roles" and §"Required identities and capacity". The rule this spec
+depends on and does not restate: a profile never ejects a required identity to fit
+an optional reference, and a request whose required roles exceed capacity makes
+the profile ineligible.
 
-### Creation and backfill
-
-- generate the pack after a new canonical portrait becomes ready;
-- a pack failure does not fail portrait save; it records a warning and disables
-  the face-detail reference until corrected;
-- existing characters create packs lazily on first identity-critical use;
-- an admin batch prepares the fixed trial corpus;
-- render-time heuristic crop is a temporary degraded fallback and must not be
-  persisted as detector-confirmed.
-
-### Initial heuristic
-
-For a Vesper-authored waist-up 3:4 portrait, crop an upper-centre region with
-padding around hairline, ears, and jaw. The exact box is trial-tuned. Including
-some shoulders is safer than clipping the chin or hairline because identity
-editors use those boundaries.
-
-A detector replaces the heuristic only when:
-
-- exactly one suitable face is found;
-- confidence clears the reviewed threshold;
-- the expanded box remains mostly within the image;
-- the crop clears minimum dimensions after normalization.
-
-### Reference-quality gate
-
-Production defaults require:
-
-- one selected identity;
-- accepted pack or explicit admin override;
-- reviewed minimum face dimensions at the provider's effective input size;
-- blur/occlusion below threshold when those metrics are available;
-- no stale source hash.
-
-The player receives an actionable error such as “the saved portrait is too small
-or obscured to hold the face; choose a clearer canonical portrait.” Vesper does
-not spend a render unit on a reference known to be unusable.
-
-## Reference selection and capacity
-
-Required roles are selected before optional roles. Within a single-character
-identity-critical request, the preferred order is:
-
-1. canonical identity;
-2. face-detail crop for that identity;
-3. required location or pose control;
-4. optional location;
-5. optional style;
-6. optional object.
-
-For multi-character requests, all required canonical identities outrank face
-crops and optional context. If the model cannot fit all required identities, the
-profile is ineligible; it must not silently discard one person's identity.
-
-Qwen Edit's cap of three means a single-character scene may use identity portrait
-+ face crop + location. A two-character scene generally uses the two identities
-plus location and cannot also include both face crops. The trial measures whether
-a face crop is more valuable than the location reference in each case; the role
-policy may vary by profile but remains deterministic.
-
-## Visual-state compiler
-
-The image request should eventually read a shared visual contract rather than a
-flat character description.
-
-```ts
-export interface VisualStateFeature {
-  id: string;
-  phrase: string;
-  layer: "identity" | "presentation" | "current_state";
-  visibility: number;
-  salience: number;
-  changedAtTurn?: number;
-  bodyRegion?: string;
-  occluded?: boolean;
-  sources: string[];
-}
-```
-
-The attention pass scores features from:
-
-- distance and framing;
-- lighting;
-- view angle;
-- motion;
-- garment occlusion;
-- uniqueness/recognition value;
-- change from the familiar baseline;
-- relevance to the current action.
-
-Only visible, high-priority features become prompt segments. Identity landmarks
-remain available to the identity pack and prompt compiler, while transient state
-such as damp hair, a rolled sleeve, smudged makeup, dirt, or trembling hands can
-outrank static low-salience facts in a scene.
-
-Garment state is object/part based: coverage, layer, opacity, fastened/open,
-rolled, displaced, draped, wetness, damage, and dirt. This extends the existing
-clothing-state graph rather than inventing a second wardrobe truth.
+**The visual-state projection.** `VisualStateFeature`, its layers, visibility
+reads, attention scoring, and the image digest are owned by
+[visual-state.spec.md](visual-state.spec.md). Nothing of it exists in code yet.
+What this spec owns is the consumer side: mandatory facts become mandatory prompt
+segments and survive prompt fitting, and intended morphology plus authored
+absences feed the negative-conflict checker below.
 
 ## Face-repair trial contract
 
@@ -627,6 +549,16 @@ their false-positive rate is measured on Vesper's corpus.
 
 ## Render provenance
 
+None of this exists in code. The identity-pack trial harness records its own
+resolved controls and prompt/control hashes per cell, which is the pattern to
+generalize, not a production render record.
+
+The per-reference identity fields are owned by
+[image-identity-packs.spec.integration.md](image-identity-packs.spec.integration.md)
+§"Render provenance" (`IdentityReferenceProvenance`); the entry below carries them
+by reference rather than redefining pack revision, crop method, or effective face
+size.
+
 At minimum record:
 
 ```ts
@@ -662,8 +594,15 @@ selected controls.
 
 ## Fixed trial matrix
 
-Store each report under `docs/developer-notes/images/` as
-`render-quality.<slice>.trial.md`.
+No cell of this matrix has been run. The runner, blinded pairwise grading, and
+verdict recording built for
+[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md) are the
+harness; that trial answers reference-strategy questions with the model held
+fixed, and this one answers model-tuning questions with the reference held fixed.
+Neither may vary both at once.
+
+Reports live under `docs/developer-notes/images/` as `<topic>.trial.md`, beside
+the existing `seedream-5-lite.trial.md`.
 
 Corpus:
 
@@ -715,7 +654,7 @@ licensed. A failed or unclear review keeps the model admin/experimental.
 
 ## Migration off the transitional policy
 
-When profiles reach the render path:
+When profiles reach the production render path:
 
 1. seed task-specific controls that reproduce every current effective override;
 2. add final-payload golden tests comparing old overlay versus profile result;
@@ -724,30 +663,43 @@ When profiles reach the render path:
 5. expose resolved controls in provenance/admin diagnostics;
 6. delete `quality-presets.ts` when no reviewed exact-slug behavior remains.
 
+Step 6 has a second gate that did not exist when this sequence was written:
+`compileProfileRenderPlan` calls the same two functions, so the trial harness must
+be migrated in the same change or it will grade a configuration production no
+longer sends.
+
 Prompt rewriting also moves from exact string replacement to the Qwen
 `instruction_edit` compiler once it consumes structured segments. The temporary
 replacement remains until final Qwen profiles produce the same compact numbered
-and delta-first wording.
+and delta-first wording — and must stay idempotent for as long as the trial hashes
+a prepared prompt.
 
 ## Acceptance criteria
+
+Held by slice 1:
 
 - reviewed settings affect every current lane through one seam;
 - unknown models receive no added provider fields;
 - pinned slug matching is deterministic;
-- current Qwen identity prompts become numbered without growing fitted edit
-  prompts or changing non-Qwen text;
+- Qwen identity prompts are numbered without growing fitted edit prompts or
+  changing non-Qwen text, and the rewrite is idempotent;
 - the context-free seam adds no negative content;
 - reviewed non-empty provider negatives are explicitly cleared rather than
   silently inherited;
+- Juggernaut runs full-step at native portrait dimensions rather than its cog's
+  fast square defaults.
+
+Not yet held:
+
 - dynamic negatives are not sent until text/style/subject/morphology conflicts
   can be evaluated;
-- Juggernaut runs full-step at native portrait dimensions rather than its cog's
-  fast square defaults;
-- effective controls are testable and eventually recorded in provenance;
-- identity packs are source-hashed, quality-gated, and invalidated correctly;
+- effective controls are recorded in production render provenance;
 - repair remains explicit, single-character-first, and non-destructive;
 - cost, latency, and model-license gates are enforced before a quality feature
   becomes a default.
+
+Identity-pack source hashing, quality gating, and invalidation are that plan's
+acceptance criteria and are already met there.
 
 ## Remaining trial questions
 
@@ -756,8 +708,10 @@ No owner ruling is pending. The implementation still needs evidence for:
 - the best Juggernaut sampler/CFG within the full-step band;
 - which contextual negative blocks improve quality without erasing intended
   text, style, or morphology;
-- Qwen quality-mode and face-crop gains measured independently;
-- detector/crop quality thresholds;
+- Qwen's quality-versus-fast gain with the reference held fixed;
 - whether Pony/RealVis improve identity without unacceptable full-frame drift;
 - which advisory QA scores correlate strongly enough with owner review to gate
   promotion rather than merely annotate output.
+
+Face-crop gains and detector/crop thresholds are the identity-pack trial's
+questions, not these.

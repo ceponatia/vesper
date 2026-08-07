@@ -1,8 +1,11 @@
 # Affordance spec draft — domain architecture
 
-Status: companion to
+Status: **implemented** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; built as `src/contracts/affordances/core/` plus the chat
+adapter and the read-only developer preview, and live in production since
+2026-08-02 as the constraint-first guidance layer's read). The
+§"Deferred scene-image consumer" contract below is the one part not built.
 
 ## Purpose
 
@@ -345,9 +348,12 @@ fail: its cue arm increased specificity consistently but did not reduce
 contradictions. Image composition needs its own paired evaluation because
 paintable specificity may help a renderer even when it does not help prose.
 That evaluation is parked as
-[Body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer)
-until the shared scene/body-relations owner exists, unless the owner explicitly
-schedules an earlier wet-hair/wet-garment-only trial.
+[Body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer).
+Its stated precondition — the shared scene/body-relations owner — was met
+2026-07-31, so promotion is now a scheduling decision; the reads that made it
+worth waiting for still have to be wired into this layer before a broad
+consumer sees them. An owner may instead schedule an earlier
+wet-hair/wet-garment-only trial, which needs no new wiring.
 
 When promoted, the consumer contract is:
 
@@ -450,10 +456,25 @@ narrator prompt.
   observations or suppression reason → perception filtering → selected
   cue — computes on demand, and stores nothing.
 
-## Scene/body-relations owner (ruled 2026-07-28)
+## Scene/body-relations owner (ruled 2026-07-28, built 2026-07-31)
 
-The biggest cross-domain gap has one answer: a single small shared owner for
-scene/body relations, supplying
+**Built, elsewhere.** The owner ruled below landed as
+`src/contracts/affordances/scene/` on 2026-07-31 inside the
+[romantic-contact](romantic-contact-affordances.plan.md) build (slice 3A;
+contract in `romantic-contact-affordances.spec.scene.md`), wired into
+`ChatScenario.scene`, and enabled in production on 2026-08-02. It delivers
+posture, facing, support surfaces and their height rungs, pairwise proximity,
+and the active-contact projection; **committed motion and impulse events are
+the one part of the ruling it does not supply**, so impulse-dependent phenomena
+stay silent.
+
+Nothing in the affordance domains reads it yet: `chat-affordances.ts` still
+omits `contacts` from every payload, so the core suppresses
+`hair.strands_adhere_to_skin` and `garment.wet_cling` exactly as before. That
+wiring is the open work, not the owner.
+
+The original ruling, kept because it is the contract the wiring must satisfy: a
+single small shared owner for scene/body relations, supplying
 
 - each participant's coarse posture (standing, seated, kneeling, reclining,
   lying);
@@ -475,8 +496,10 @@ shoulder) but must not authorize a new voluntary or interpersonal contact —
 those require the action/contact resolver. Unknown contact continues to
 mean silence.
 
-This one owner unblocks hair adhesion, garment cling/drape, appendage
-constraints, soft-tissue effects, relative geometry, and romantic contact.
+Every clause above held in the build except the impulse one. Romantic contact
+consumed the owner immediately; hair adhesion, garment cling/drape, appendage
+constraints, soft-tissue effects, and relative geometry are unblocked and
+unwired.
 
 ## Reference-image acceptance (ruled 2026-07-28)
 

@@ -1,8 +1,11 @@
 # Affordance spec draft — hair
 
-Status: companion to
+Status: **implemented** — companion to
 [body-attribute-affordances.plan.md](body-attribute-affordances.plan.md)
-(promoted with the plan 2026-07-28)
+(promoted 2026-07-28; built as `src/contracts/affordances/domains/hair/` in
+slices 2–3 and wired to chat state in slice 4). Two of the four phenomena —
+`hair.strands_adhere_to_skin` and `hair.sheds_droplets` — are built and
+production-silent for want of a contact read and an impulse owner.
 
 ## Purpose
 
@@ -361,6 +364,12 @@ runtime frame.
   and actual contact; character chat ships it first. Hair adhesion consumes
   a simple normalized subset of its contact read. Until that owner ships,
   adhesion stays fixture-only and unknown contact means silence.
+  **That owner shipped 2026-07-31** (`src/contracts/affordances/scene/`), but
+  `chat-affordances.ts` still omits `contacts` from the hair payload, so the
+  core suppresses adhesion with `affordance.input.unavailable` and the
+  phenomenon remains fixture-only. Reading the scene owner's active-contact
+  projection into that payload is the change that lights it up; nothing else
+  in the domain has to move.
 
 ## Resolved (Slices 2–3, 2026-07-28)
 

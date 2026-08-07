@@ -1,14 +1,25 @@
 # Narrator physical guidance — shared contracts
 
 Status: companion to narrator-physical-guidance.plan.md — slice 1 contracts and
-slice 2 (hair constraint/correction proving path) as built, 2026-07-30
+slice 2 (hair constraint/correction proving path) as built, plus the slice 3
+seam as consumed. All four candidate tiers now have producers.
 
 Product rationale, delivery slices, evaluation, and decision rules live in
 [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md). This
 document is the coding-agent view of what has actually shipped: slice 1's type
 shapes, the laws enforced in code, the deterministic ordering scheme, the seams
-slices 3–6 plug into, and — in the last section — slice 2's hair
+later slices plug into, and — in the last section — slice 2's hair
 constraint/correction path as built.
+
+**Which tiers are live, and who fills them.** Constraints and corrections come
+from this lane's own hair path (slice 2). Action outcomes come from the chat
+contact adapter under `CHAT_CONTACT_ACTIONS`
+([romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
+2026-07-31) — the slice 3 seam, consumed. Transitions come from the permission
+owner's revocation stop under `CHAT_ROMANTIC_PERMISSION`
+([spec](romantic-contact-affordances.spec.permission.md), 2026-08-04) — the
+tier's first producer, and **not** slice 4, whose change-gated positive detail
+and `CHAT_PHYSICAL_TRANSITIONS` flag do not exist.
 
 ## Scope of slice 1
 
@@ -127,16 +138,22 @@ interface NarratorPhysicalGuidance {
 }
 ```
 
-Deltas from the plan's §Architecture 2 sketch, all recorded here as the
-authority:
+Deltas from the original proposal, all recorded here as the authority (the plan
+no longer carries a type sketch):
 
-| Change                                                                                       | Why                                                                                                                          |
-| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `subjectIds` is `readonly AffordanceSubjectId[]`, not `string[]`                             | The branded core id already exists; a lane-local chat id and a world id must not be swappable.                               |
-| `PhysicalPremiseCorrection.fingerprint` added                                                | Every kind needs a deterministic identity — corrections are budgeted, so a tie-break and an over-budget report need one too. |
-| `PhysicalActionOutcome.fingerprint` added                                                    | Same, plus retake reproduction of the resolver result.                                                                       |
-| Bundles `GuidanceCandidateInput` (all lists optional) and `GuidanceCandidates` (all present) | One place converts `undefined` → `[]` (`normalizeGuidanceCandidates`), so "absent" is never confused with "emptied".         |
-| `emptyNarratorPhysicalGuidance()`                                                            | The flag-off and degraded value has a name, per the `emptyAffordancePerceptionView` precedent.                               |
+- **`subjectIds` is `readonly AffordanceSubjectId[]`, not `string[]`** — the
+  branded core id already exists, and a lane-local chat id and a world id must
+  not be swappable.
+- **`PhysicalPremiseCorrection.fingerprint` added** — every kind needs a
+  deterministic identity, and corrections are budgeted, so a tie-break and an
+  over-budget report need one too.
+- **`PhysicalActionOutcome.fingerprint` added** — same, plus retake
+  reproduction of the resolver result.
+- **Bundles `GuidanceCandidateInput` (all lists optional) and
+  `GuidanceCandidates` (all present)** — one place converts `undefined` → `[]`
+  (`normalizeGuidanceCandidates`), so "absent" is never confused with "emptied".
+- **`emptyNarratorPhysicalGuidance()`** — the flag-off and degraded value has a
+  name, per the `emptyAffordancePerceptionView` precedent.
 
 ## Disclosure law
 
@@ -249,6 +266,15 @@ array order in `NarratorPhysicalGuidance` **is** the prompt order.
 | 3    | `constraints`    | `mandatory` → `high` → `normal`, then fingerprint   | `GUIDANCE_MAX_CONSTRAINTS = 3` |
 | 4    | `transitions`    | `action` → `attention` → `none`, then fingerprint   | `GUIDANCE_MAX_TRANSITIONS = 4` |
 
+The transition budget is no longer theoretical headroom. The permission owner's
+revocation stops are emitted into this tier and their loss is **permanent** —
+an ending is pending for exactly one reply window, so a trimmed stop is never
+rendered later. That producer therefore bounds its own output to
+`GUIDANCE_MAX_TRANSITIONS` and reports its own trim as a `warn`, because it is
+the only layer that knows the drop is not a deferral. A slice-4 positive detail
+entering the same tier would compete with a mandatory instruction; the plan's
+open questions carry that decision.
+
 - Every tier ends in a **fingerprint tie-break**, so the same candidates produce
   the same guidance in any input order, in any process, on a retake.
 - Generic descriptive opportunities have **no constant**. A budget of `0` would
@@ -352,7 +378,15 @@ byte-identical control by its diagnostics.
 What slice 2 actually built against this seam is recorded in §"Slice 2 as built"
 at the end of this document — that section is the authority where the two differ.
 
-### Slice 3 — romantic-contact action results
+### Slice 3 — contact action results (consumed 2026-07-31)
+
+The consumer is `chat-contact-adapter.ts`'s `chatContactActionOutcome`, and the
+pipeline threads its result into `buildChatPhysicalGuidance` as `actionOutcomes`
+by conditional spread — so a `CHAT_CONTACT_ACTIONS`-off turn compiles the exact
+bytes it compiled before the leg existed. One ordering rule the shared layer
+cannot enforce is enforced there instead: the adapter will not report
+`committed` without an acknowledgment of a durable ledger write, so a caller
+that skips the write gets `unresolved`, which renders as silence.
 
 - **One call per attempted action:** `buildActionOutcome({ actionId, status,
   resultCodes, disclosure, narratorMustResolve?, evidence? })`. The resolver
@@ -370,12 +404,32 @@ at the end of this document — that section is the authority where the two diff
 - Action outcomes are never budgeted away, so a rejected attempt cannot fall out
   of the prompt and be narrated as contact.
 
+### The transition tier — one producer, and it is not slice 4
+
+`loadChatPermissionStopTransitions` (`chat-permission-guidance.ts`, 2026-08-04)
+is the tier's only producer. It folds durable `contact_ended` rows written under
+a permission event ref into `PhysicalStateTransition` candidates: one per
+participant pair, `causeCodes` empty by construction (the withdrawal, the
+standing record, and any developer override are policy internals the narrator
+may never see), and the after-state code `contact.ended`. It emits no new state
+— pendingness is decidable from rows that already exist — so a retake prunes it
+for free.
+
+Two consequences the shared layer has to respect. Its candidates carry a
+**mandatory** instruction whose delivery window is one reply, which is why the
+producer bounds itself to `GUIDANCE_MAX_TRANSITIONS` rather than letting the
+tier's `info` budget drop it. And its gating composes with the contact lane,
+not with `CHAT_PHYSICAL_CONSTRAINTS`: a pending stop takes a transition-only
+arm through the same compiler and renderer with the general experiment off, so
+permission authority never depends on a presentation flag.
+
 ### Slice 4 / slice 6 (not built)
 
-
-- Transitions have their contract and their tier here, but no builder: slice 4
-  owns deriving them from committed before/after state and the retake-safe
-  cooldown (`repeatKey`), and `CHAT_PHYSICAL_TRANSITIONS` gates them.
+- Slice 4's producer does not exist. It owns deriving transitions from committed
+  before/after state with a retake-safe cooldown (`repeatKey`), gated by
+  `CHAT_PHYSICAL_TRANSITIONS` — a flag that appears in no source file. The tier
+  it would enter is already occupied (above), which is a scheduling constraint
+  the plan's open questions carry, not a contract change here.
 - The successor adapter (slice 6) normalizes its own cut, action, and contact
   results into these same contracts. Lane-specific authority and capture stay
   outside this folder — that is the whole reason the compiler is lane-neutral and
@@ -383,11 +437,13 @@ at the end of this document — that section is the authority where the two diff
 
 ## Slice 2 as built — the hair constraint/correction proving path
 
-Behind `CHAT_PHYSICAL_CONSTRAINTS` (default off). No schema change, no migration, no
-persisted state: constraint and correction selection is recomputable from the captured
-cut and the message, so the existing rollback anchors already make a retake reproduce
-it (plan §"State and retakes"). Slice 2 ships **no positive detail, no action outcomes,
-and no transitions** — the compiler's later tiers exist and stay empty.
+Behind `CHAT_PHYSICAL_CONSTRAINTS` — code default off, and **on in production
+since 2026-08-02**. No schema change, no migration, no persisted state:
+constraint and correction selection is recomputable from the captured cut and
+the message, so the existing rollback anchors already make a retake reproduce it
+(plan §"State and retakes"). Slice 2 itself contributes **no positive detail, no
+action outcomes, and no transitions** — those tiers exist here and are filled by
+the contact and permission producers named above, never by this path.
 
 ### The domain half (`src/contracts/affordances/domains/hair/`)
 
@@ -677,13 +733,22 @@ silence over an unsafe prompt — never a throw). It does **not** consult
 `guidance.diagnostics`: a compile-time `guidance.disclosure.invalid` error names a
 candidate the gate already suppressed, and its valid siblings still render — see
 §"Two layers, and they fail closed at different granularities". Otherwise it emits
-corrections then constraints, in the compiler's order:
+every tier in the compiler's order — action outcomes, the unestablished-reach
+premise, corrections, constraints, transitions. Slice 2's own two lines:
 
 ```text
 - Premise check: the player's <area> claim conflicts with committed state. Do not adopt <display> as <area object>. Do not correct the player aloud unless <Name> would naturally do so.
 - Premise check: the player's <area> claim (<display>) is not established in the story. Do not treat it as fact; leave it unconfirmed rather than inventing detail.
 - Binding constraint: do not describe <possessive> hair as <displays>[; <truth clause>].
 ```
+
+Two presentation-only inputs ride beside the compiled guidance rather than
+through it. `reachPremise` words a contact attempt whose reach the scene could
+not establish — the underlying attempt stays `unresolved`, and this line only
+fences the prose from inventing the landing; it exists only under
+`CHAT_PHYSICAL_CONSTRAINTS`. `subjectNames` supplies display names for
+transition participants, and a transition it cannot name renders the generic
+stop line rather than a sentence with a hole in it.
 
 `chatPhysicalGuidanceBlock(lines)` prepends `PHYSICAL_GUIDANCE_BLOCK_HEADING` and
 `PHYSICAL_GUIDANCE_PRECEDENCE` and returns `""` for an empty list.
