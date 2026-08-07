@@ -35,7 +35,8 @@ default at each trust boundary and the diagnostic code emitted, per
 <!--
 Reminders for this tier:
 - Keep the file under ~400 lines. Past that, promote it to docs/<system>/ with a
-  README.md index plus one file per sub-topic (docs/README.md).
+  README.md index plus one file per sub-topic (docs/README.md). This length rule
+  is reference-tier only — working docs in docs/developer-notes/ have no limit.
 - Update this doc in the same change that changes the behavior it describes.
 - Tables are allowed here (unlike docs/developer-notes/) and are used for
   reading-order indexes and field references.
