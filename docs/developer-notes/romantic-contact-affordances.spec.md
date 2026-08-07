@@ -84,17 +84,19 @@ comma-separated scope list, not a boolean.
 | `CHAT_PHYSICAL_CONSTRAINTS`               | **on**      | The only prompt door for contact outcomes             |
 | `CHAT_NPC_SCENE_DECISION_SHADOW`          | off (unset) | One dry classifier call per reply; no authority       |
 | `CHAT_NPC_SCENE_DECISIONS`                | off (unset) | NPC scene authority (compound with the lane flag)     |
-| `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` | unset       | Subset of `movement,start,update`; unset = all three  |
+| `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` | unset       | Subset of `movement,start,update`; unset = movement   |
 | `CHAT_ROMANTIC_PERMISSION`                | off (unset) | `romantic_touch` ledger (compound with the lane flag) |
 
 `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE` is a seventh, deliberately independent
 capability gate for the admin override route; it is unset in production too.
 
 Two consequences worth stating plainly. `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`
-being unset is **not** a safe default on its own — it grants all three kinds the
-moment `CHAT_NPC_SCENE_DECISIONS` goes on, so a staged rollout must set it before
-the authority flag, never after. And authority wins over shadow when both are on,
-so the measurement flag cannot be left on as a safety net during rollout.
+being unset or blank grants **`movement` only** — the first reviewed increment —
+so turning `CHAT_NPC_SCENE_DECISIONS` on without having set the scope cannot skip
+the staged rollout in one step. Each later increment is an explicit widening
+(`movement,start`, then `movement,start,update`). And authority wins over shadow
+when both are on, so the measurement flag cannot be left on as a safety net
+during rollout.
 
 ## Current capability status
 

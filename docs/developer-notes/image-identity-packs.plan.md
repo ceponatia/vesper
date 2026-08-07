@@ -389,10 +389,13 @@ the review and the rulings are.
 
 **What remains is the trial, and it is owner work.** No corpus characters exist
 yet, no paid renders have happened, no thresholds are calibrated, no detector is
-chosen, and no verdict is recorded. One small setup step is also the owner's:
-each image model must be re-probed once on the admin models page so it carries a
-pinned provider version, because a controlled trial refuses to plan cells against
-a model whose exact version it cannot pin.
+chosen, and no verdict is recorded. Trial creation now handles its own bounded
+version setup: before planning cells, it re-probes only the distinct selected
+model rows whose exact Replicate version is still unknown and persists the
+probe-owned capability/version fields. A probe failure stops before the run is
+created, and the planner still refuses any model it cannot pin; the evidence
+contract is unchanged, but an admin no longer has to re-probe all six seeded
+models manually or probe models the trial will not use.
 
 Reference sending stays off throughout: the integration rules deliberately allow
 packs to be trialed while it is off. Mechanics and recorded v1 limitations:
