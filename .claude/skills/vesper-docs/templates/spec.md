@@ -10,6 +10,25 @@ questions live in the plan; this document is how the decisions in it get built.
 One paragraph: which part of the system this spec governs, and which adjacent
 parts it deliberately leaves alone.
 
+## Implementation status
+
+**This spec owns slice-level progress** (the progress ladder). Every slice it
+governs appears here with one of three states, updated in the change that lands
+the code — never as a follow-up:
+
+- **built <date>** — landed and in use.
+- **built <date>, awaiting <what>** — code complete, waiting on a trial verdict,
+  an owner review, or a flag enable. Name the thing being waited on.
+- **not started** — with its blocker if it has one.
+
+State it as a short list, or as a two-column table if there are many slices
+(pipes aligned, one physical line per row). Keep it to the state; the reasoning
+that produced it belongs in the sections below, and the delivery order belongs
+to the plan.
+
+Rulings the build settled go under their own heading here, dated, so a later
+reader can see why an implementation deviates from what this spec describes.
+
 ## Contracts
 
 Type shapes, schemas, and the module that owns each one. State where each type

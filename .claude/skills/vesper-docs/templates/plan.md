@@ -1,6 +1,6 @@
 # <Topic title — plain English, no internal vocabulary>
 
-Status: draft | next | active | shipped — <date> | parked
+Status: draft | next | active | awaiting acceptance — <what> | shipped — <date> | parked
 
 Outcome: <A player | The owner | A developer> can <do something concrete> so
 that <observable consequence>.
@@ -30,10 +30,21 @@ What this plan deliberately does not do, and where that work lives instead
 ## Slices
 
 Delivery order, each slice independently shippable and independently reviewable.
-Name what a slice makes true, not which files it edits.
+Name what a slice makes true, not which files it edits. This is the plan's
+*intent* and it does not change when code lands — whether a slice is built is
+the spec's to say (the progress ladder).
 
 - **Slice 1 — <what becomes true>.** One or two sentences.
 - **Slice 2 — <what becomes true>.** One or two sentences.
+
+## Where the work stands
+
+One line per spec, not per slice — slice-level status lives in the spec itself.
+A plan with no spec keeps its own slice status here until it grows one.
+
+- **[<topic>.spec.md](<topic>.spec.md)** — complete <date> | in progress | not
+  started. When it is waiting on acceptance rather than on code, say what it
+  waits on.
 
 ## Success criteria
 

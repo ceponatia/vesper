@@ -5,13 +5,20 @@ priority lives** — reprioritizing is a one-line move, never a file rename (see
 `CLAUDE.md` → working-docs convention).
 
 Status legend: **draft** (not settled) · **next** (queued) · **active** (in
-progress) · **shipped — <date>** · **parked**.
+progress) · **awaiting acceptance** (built in full, waiting on a trial, review,
+or flag enable) · **shipped — <date>** (the whole plan delivered and accepted) ·
+**parked**.
 
 > **One entry is one item: a bold title, its links, and a hook of at most a
 > sentence.** Slice histories, shipped dates, owner rulings, and the argument
-> behind a dependency belong in the plan — an entry names a blocker, never
-> explains it. Each plan carries its own `Status:` line; this index does not
-> restate it.
+> behind a dependency belong in the plan and its specs — an entry names a
+> blocker, never explains it. Each plan carries its own `Status:` line; this
+> index does not restate it.
+>
+> A plan leaves this file only when the **whole** plan is done, at which point it
+> moves to `finished/` and earns one line in
+> [roadmap.shipped.md](roadmap.shipped.md). Shipping a slice never removes an
+> entry — it may only correct a hook that has stopped being true.
 
 ## Active (building now)
 
