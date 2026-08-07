@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   adapterSupported,
   adapterUnavailable,
@@ -217,6 +217,22 @@ function run(input: RunInput) {
   });
   return { admission, execution };
 }
+
+/**
+ * This file pins the FINISHED feature — what every kind does once the staged
+ * rollout has run its course — so it states the end-state scope explicitly
+ * rather than inheriting it. An unset scope now means `movement` only (the first
+ * reviewed increment), which is the deployment safeguard, not the behavior these
+ * tests are about. The scope-knob block below overrides this per test, which is
+ * where a narrower scope belongs.
+ */
+beforeEach(() => {
+  process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start,update";
+});
+
+afterEach(() => {
+  delete process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS;
+});
 
 // ---------------------------------------------------------------------------
 // Movement authority
@@ -521,10 +537,6 @@ describe("the same-reply wardrobe-change veto", () => {
 // ---------------------------------------------------------------------------
 
 describe("the authority scope knob gates EXECUTION only", () => {
-  afterEach(() => {
-    delete process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS;
-  });
-
   it("excluding `movement` records the admitted candidate dry and leaves the scene alone", () => {
     process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "start,update";
     const { admission, execution } = run({
@@ -560,14 +572,30 @@ describe("the authority scope knob gates EXECUTION only", () => {
     expect(execution.scene.contacts.contacts).toEqual([]);
   });
 
-  it("a blank or unset value is the fully-enabled end state", () => {
-    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "  ";
-    const { execution } = run({
+  it.each([
+    ["blank", "  "],
+    ["unset", undefined],
+  ])("a %s value grants the first increment only — movement runs, a start does not", (_label, value) => {
+    if (value === undefined) delete process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS;
+    else process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = value;
+
+    const movement = run({
       reply: APPROACH_REPLY,
       scene: seededScene(),
       raw: approachRaw("touching", null, APPROACH_REPLY),
     });
-    expect(execution.actions[0]?.resolution).toBe("committed");
+    expect(movement.execution.actions[0]?.resolution).toBe("committed");
+
+    // The safeguard: forgetting the scope secret cannot skip the staged rollout
+    // to contact authority. A start is admitted and recorded, never executed.
+    const start = run({
+      reply: START_REPLY,
+      scene: touchingScene(),
+      raw: startRaw(START_REPLY),
+    });
+    expect(start.execution.actions[0]?.resolution).toBe("unresolved");
+    expect(start.execution.actions[0]?.detail).toBe("authority_scope_excluded");
+    expect(start.execution.scene.contacts.contacts).toEqual([]);
   });
 });
 
