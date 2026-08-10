@@ -144,8 +144,11 @@ trigger identity.
 
 A **routed** chat (successor lane, `engine_authority` past the view threshold, branch +
 actors mapped) reaches the world through two chat-scoped surfaces, both gated by
-`requireSimChat` (legacy/shadow chats are refused; the client treats a refusal as "no
-affordance"):
+`requireSimChat` (legacy/shadow chats are refused with 409 `not_sim_enabled`). The
+conversation UI mirrors the gate client-side: it issues the world read only when the
+transcript bootstrap's `chat.simRouted` is true (the server computes that flag with the
+same `isSimRoutedAuthority` predicate the gate enforces, so a legacy chat never asks)
+and treats any refusal as "no affordance":
 
 - **`GET /api/chats/[chatId]/world`** → `readSimChatWorld` (`server/engine/sim-surfaces.ts`).
   The player-facing envelope: `place {label, privacy}` when the player is `at` a zone OR
