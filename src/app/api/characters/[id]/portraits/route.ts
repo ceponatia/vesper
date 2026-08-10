@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { generateVariant } from "@/server/images";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
+import { hasLiveCharacterJob } from "@/server/db";
 import { findOwnedCharacter } from "../owned";
 import { listOwnedPortraits } from "./owned";
 
@@ -24,20 +25,35 @@ const ownedCharacter = async (user: { id: string }, params: Params) =>
 
 type OwnedCharacter = NonNullable<Awaited<ReturnType<typeof findOwnedCharacter>>>;
 
-/** All images linked to the character (avatar + variants), newest first. */
+/**
+ * All images linked to the character (avatar + variants), newest first — plus
+ * whether an avatar/variant job is live (`rendering`). The pending image row is
+ * reserved INSIDE the job, after the queue route's 202 (the variant lane reads
+ * the reference avatar's bytes before reserving), so a list fetched right after
+ * kickoff shows nothing in flight; the flag is what shows the studio's painting
+ * tile and keeps it polling through that window. Same shape as the chat scene
+ * lane's `rendering` (QA batch 2026-07-09) — the jobs row commits before the
+ * queue 202 returns, so a follow-up GET can never miss it.
+ */
 export const GET = withAuthorizedResource<Params, OwnedCharacter>(
   "character",
   ownedCharacter,
   async (user, _character, _req, ctx) => {
     const { id } = await ctx.params;
-    return jsonOk({ portraits: await listOwnedPortraits(user.id, id) });
+    const [portraits, avatarLive, variantLive] = await Promise.all([
+      listOwnedPortraits(user.id, id),
+      hasLiveCharacterJob("avatar", id),
+      hasLiveCharacterJob("portrait_variant", id),
+    ]);
+    return jsonOk({ portraits, rendering: avatarLive || variantLive });
   },
 );
 
 /**
  * Identity-locked reference edit of the canonical avatar, as a
  * `portrait_variant` job (docs/images.md). Poll the character's portraits for
- * the new row's status. The model comes from the New Variant picker, which
+ * the new row's status (the GET's `rendering` flag covers the stretch before
+ * the row is reserved). The model comes from the New Variant picker, which
  * lists only edit-capable registry models.
  */
 export const POST = withAuthorizedResource<Params, OwnedCharacter>(

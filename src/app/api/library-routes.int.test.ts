@@ -735,6 +735,36 @@ describe.skipIf(!ready)("images: avatar job, portraits, serving", () => {
     );
     expect(detail.portraits.map((p) => p.id)).toContain(avatarImageId);
   });
+
+  it("reports a live portrait job (`rendering`) before its pending row exists", async () => {
+    // The pending image row is reserved inside the job, after the queue 202 — a
+    // hand-inserted running jobs row IS that window, deterministically. The
+    // studio shows its painting tile and polls on this flag.
+    const [jobRow] = await db()
+      .insert(jobs)
+      .values({
+        type: "portrait_variant",
+        status: "running",
+        payload: { characterId },
+        attempts: 1,
+        startedAt: new Date(),
+      })
+      .returning({ id: jobs.id });
+    if (!jobRow) throw new Error("jobs insert returned no row");
+
+    const live = await expectJson<{ rendering: boolean }>(
+      await listPortraitsRoute(apiRequest(`/api/characters/${characterId}/portraits`), routeCtx({ id: characterId })),
+      200,
+    );
+    expect(live.rendering).toBe(true);
+
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, jobRow.id));
+    const settled = await expectJson<{ rendering: boolean }>(
+      await listPortraitsRoute(apiRequest(`/api/characters/${characterId}/portraits`), routeCtx({ id: characterId })),
+      200,
+    );
+    expect(settled.rendering).toBe(false);
+  });
 });
 
 describe.skipIf(!ready)("forge endpoints (demo mode) and rate limiting", () => {
