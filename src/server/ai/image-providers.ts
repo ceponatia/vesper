@@ -99,3 +99,25 @@ export function classifyImageFailure(err: unknown): ImageFailureReason {
 export function isBillingFailure(err: unknown): boolean {
   return BILLING.test(describeProviderError(err).toLowerCase());
 }
+
+/**
+ * What one classified failure says about the PROVIDER's own health, in the
+ * circuit breaker's vocabulary (`recordProviderOutcome`, `@/server/api`):
+ * `false` when the failure is evidence the upstream is failing, `null` when it
+ * is evidence about something else and the breaker should hear nothing at all.
+ *
+ * Only `transient` counts, which is the reading the scene chain already takes:
+ * a render whose every rung failed transiently is logged as
+ * `images.scene_render.service_outage` ("possible image service outage"), while
+ * a `content_rejection` is the provider ANSWERING — about this request, not
+ * about its health — and gets a sanitized retry rather than a fallback, and
+ * `other` covers billing and configuration failures that shedding cannot fix.
+ * Counting either as a lane failure would shed every caller's work over one
+ * prompt, or over an empty Replicate balance no cooldown will refill.
+ *
+ * Deliberately no `true` case: a failure is never evidence of health, so the
+ * caller supplies that reading itself when a call actually succeeded.
+ */
+export function imageFailureHealthOutcome(reason: ImageFailureReason): false | null {
+  return reason === "transient" ? false : null;
+}

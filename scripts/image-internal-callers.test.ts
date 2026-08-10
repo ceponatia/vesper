@@ -32,10 +32,24 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * store-then-maybe-discard arm. The service mints the hidden
  * `identity_trial_output` row with `createImageAsset`, writes that exact id,
  * and every read/write is owner-scoped through the run row.
+ *
+ * Re-reviewed 2026-08-10 (Advanced Image Lab, Stage 0): the lab's experiment
+ * service joins the same "minted the row it writes" class, for the trial's own
+ * reason. A `lab_output`'s fate is decided AFTER storage — the experiment row is
+ * settled `succeeded` only once the bytes landed, and a write that never reached
+ * `ready` DELETES the pending row rather than attaching it, which is a
+ * store-then-maybe-discard arm `runImagePipeline` has no shape for. It mints the
+ * hidden row with `createImageAsset`, writes that exact id, and every read and
+ * write is owner-scoped through the experiment row.
+ *
+ * The lab's FIXTURE module (`image-lab-controls.ts`) is deliberately NOT here:
+ * it is the module a route's upload body reaches, so both of its write paths go
+ * through the owner-scoped `saveOwnedImageBuffer` adapter instead.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
     "src/server/images/identity-pack-trial.ts",
+    "src/server/images/image-lab.ts",
     "src/server/images/identity-packs.ts",
     "src/server/images/internal.ts",
     "src/server/images/route-safe.ts",

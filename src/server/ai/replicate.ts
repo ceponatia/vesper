@@ -337,6 +337,83 @@ export function unwrapReplicateImage(result: ReplicateImageResult, fallback: str
   return result.image;
 }
 
+/**
+ * One image-in, image-out PREPROCESSOR run — a pose skeleton renderer, a depth
+ * estimator (qwen-advanced-image-subsystem.spec.md §"Control extraction").
+ *
+ * It is a separate entry point rather than a registry model with a profile
+ * because a preprocessor is a LAB TOOL, not something a player can be rendered
+ * with: it has no prompt, no aspect, no reference arity, no quality overlay and
+ * no picker, and registering one would put a skeleton renderer in every image
+ * model list in the app. What it shares with a render — the prediction shell,
+ * the poll regime, the output-host allow-list, the file upload and its
+ * best-effort delete — it shares by using the same code, so there is exactly one
+ * place in Vesper that talks to `api.replicate.com`.
+ *
+ * The version pin is REQUIRED and has no floating fallback, unlike a production
+ * render. A control fixture is evidence: a skeleton extracted by whatever the
+ * provider called `latest_version` that hour cannot be compared against one
+ * extracted last week, and the probe verdict it feeds would be about an unknown
+ * extractor as much as about the model under test.
+ *
+ * There is NO retry loop, exactly as the render path has none: a preprocessor
+ * that failed once has spent provider money, and spending it again
+ * automatically is a decision for the admin looking at the failure, not for
+ * this function.
+ */
+export interface ReplicatePreprocessorRequest {
+  /** `owner/name` of the pinned preprocessor — recorded, and shape-checked here. */
+  slug: string;
+  /** The EXACT provider version to execute. Never optional (see above). */
+  versionId: string;
+  /** The single source image, as stored (webp). */
+  image: Buffer;
+  /** The provider's own key for that image — `image` on both Stage 0 pins. */
+  imageField: string;
+  /**
+   * Literal extra inputs this version needs, e.g. the thirteen switches that
+   * turn every preprocessor but one OFF on a multi-preprocessor cog. Written
+   * BEFORE the image field, so a stray key can never displace the source.
+   */
+  input?: Record<string, unknown>;
+  /** Which member of an object output carries the produced map. */
+  outputField?: string;
+  /**
+   * How the bytes travel. `file` (the default, and the house default for every
+   * reference) uploads a private, short-lived Replicate file and deletes it as
+   * soon as the prediction settles; `data_url` inlines them for a cog that
+   * refuses uploaded-file URLs.
+   */
+  transport?: "file" | "data_url";
+  /** This run's prediction budget; absent leaves it to the env/default. */
+  timeoutMs?: number;
+}
+
+export async function runReplicatePreprocessor(request: ReplicatePreprocessorRequest): Promise<ReplicateImageResult> {
+  if (!hasReplicate()) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
+
+  const run = (imageUrl: string): Promise<ReplicateImageResult> =>
+    runReplicateImageModel(
+      request.slug,
+      { ...request.input, [request.imageField]: imageUrl },
+      {
+        versionId: request.versionId,
+        ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
+        ...(request.outputField !== undefined ? { outputField: request.outputField } : {}),
+      },
+    );
+
+  if (request.transport === "data_url") return run(referenceDataUrl(request.image));
+
+  const upload = await uploadReplicateFile(request.image, "vesper-preprocessor-source.webp");
+  if (!upload.ok) return { ok: false, error: upload.error };
+  try {
+    return await run(upload.file.url);
+  } finally {
+    await deleteReplicateFile(upload.file.id).catch(() => undefined);
+  }
+}
+
 const predictionSchema = z.object({
   id: z.string().min(1),
   status: z.string(),
@@ -366,16 +443,41 @@ interface ReplicateFile {
 type UploadResult = { ok: true; file: ReplicateFile } | { ok: false; error: string };
 
 /**
- * The prediction shell. `request` supplies only the two run-shaping fields it
- * owns (`timeoutMs`, `versionId`) — the payload is already built and merged by
- * the caller, so nothing here can change WHAT is sent, only where and for how
- * long.
+ * The run-shaping fields the prediction shell owns — never the payload, which
+ * its callers have already built and merged.
+ *
+ * A structural interface rather than a `Pick<RegistryModelRequest, …>` because
+ * two different callers now share the shell: a registry render, whose request
+ * happens to carry these fields among many others, and
+ * {@link runReplicatePreprocessor}, which has no prompt, no references and no
+ * aspect to speak of. `outputField` exists for the second: a preprocessor may
+ * answer with an OBJECT of several maps (Depth Anything v2 returns
+ * `grey_depth` and `color_depth`), and the caller is the only party that knows
+ * which of them it asked for.
+ */
+interface PredictionRunOptions {
+  timeoutMs?: number;
+  versionId?: string;
+  /** Read the image URL off THIS field when the output is an object. */
+  outputField?: string;
+}
+
+/**
+ * The prediction shell. `request` supplies only the run-shaping fields it owns
+ * — the payload is already built and merged by the caller, so nothing here can
+ * change WHAT is sent, only where, for how long, and which part of the answer
+ * is the image.
  */
 async function runReplicateImageModel(
   model: string,
   input: Record<string, unknown>,
-  request: Pick<RegistryModelRequest, "timeoutMs" | "versionId">,
+  request: PredictionRunOptions,
 ): Promise<ReplicateImageResult> {
+  // One binding of the caller's output shape, used by every read below: the
+  // poll loop, the terminal check and the download must all agree on what
+  // counts as "an image arrived", or a settled prediction whose map sits under
+  // a named field reads as an empty output.
+  const pickOutput = (output: unknown): string | null => outputUrl(output, request.outputField);
   // One resolution for both deadlines: the provider-side `Cancel-After` and this
   // client's poll cutoff must agree, or raising the budget only lengthens the
   // polling while Replicate still kills the prediction at the old bound.
@@ -404,7 +506,7 @@ async function runReplicateImageModel(
   }
 
   const deadline = Date.now() + timeoutMs;
-  while (!isTerminal(prediction.status) && outputUrl(prediction.output) === null) {
+  while (!isTerminal(prediction.status) && pickOutput(prediction.output) === null) {
     if (Date.now() >= deadline) {
       await cancelPrediction(prediction.id);
       return { ok: false, predictionId: prediction.id, error: `replicate prediction ${prediction.id} timed out` };
@@ -431,11 +533,11 @@ async function runReplicateImageModel(
     ...(prediction.version ? { executedVersionId: prediction.version } : {}),
   };
 
-  if (prediction.status !== "succeeded" && outputUrl(prediction.output) === null) {
+  if (prediction.status !== "succeeded" && pickOutput(prediction.output) === null) {
     return { ok: false, ...provenance, error: `replicate ${prediction.status}: ${predictionError(prediction.error)}` };
   }
 
-  const url = outputUrl(prediction.output);
+  const url = pickOutput(prediction.output);
   if (!url) return { ok: false, ...provenance, error: "replicate returned no image" };
   try {
     return { ok: true, ...provenance, image: await downloadReplicateOutput(url) };
@@ -537,7 +639,22 @@ function isTerminal(status: string): boolean {
   return status === "succeeded" || status === "failed" || status === "canceled" || status === "aborted";
 }
 
-function outputUrl(output: unknown): string | null {
+/**
+ * The image URL in a prediction's output.
+ *
+ * `field` names a member of an OBJECT output, which is how the multi-map
+ * preprocessors answer (`{ grey_depth, color_depth }`). It is applied ONLY to
+ * an object: a caller that named a field and got a bare string or an array
+ * still gets that image rather than null, because "the model answered in the
+ * ordinary shape" is a better outcome than refusing an image that is plainly
+ * there. A field naming a member that does not exist reads as no output, which
+ * is the honest answer — the caller asked for a map this version does not
+ * produce.
+ */
+function outputUrl(output: unknown, field?: string): string | null {
+  if (field !== undefined && typeof output === "object" && output !== null && !Array.isArray(output)) {
+    return outputUrl((output as Record<string, unknown>)[field]);
+  }
   if (typeof output === "string" && output.trim()) return output;
   if (Array.isArray(output)) {
     const first = output.find((value): value is string => typeof value === "string" && value.trim().length > 0);

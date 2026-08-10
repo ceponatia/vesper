@@ -146,6 +146,12 @@ export function SettingsPage() {
             </Link>{" "}
             — blinded A/B runs comparing identity-reference strategies before one is promoted.
           </p>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/image-lab" className="underline underline-offset-4">
+              Image lab
+            </Link>{" "}
+            — control fixtures and one-off experiments, for questions a provider schema can&apos;t answer.
+          </p>
         </section>
       ) : null}
     </PageContainer>

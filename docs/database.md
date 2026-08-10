@@ -249,10 +249,11 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 ### Infrastructure
 
 - **`images`** — `owner_id`, `kind`
-  (`avatar`/`portrait_variant`/`scene`/`entity`/`chat_upload`/`chat_look`/`chat_place`/`identity_face_crop`
-  — the chat kinds are chat-private and hard-deleted with the chat; `identity_face_crop` is a
-  hidden identity-pack derivative excluded from every user surface via `HIDDEN_IMAGE_KINDS`,
-  see images/asset-registry.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
+  (`avatar`/`portrait_variant`/`scene`/`entity`/`chat_upload`/`chat_look`/`chat_place`/`identity_face_crop`/`identity_trial_output`/`lab_control`/`lab_output`
+  — the chat kinds are chat-private and hard-deleted with the chat; the last four are hidden
+  derived assets excluded from every user surface via `HIDDEN_IMAGE_KINDS`: identity-pack
+  crops, identity-trial outputs, and the Advanced Image Lab's control fixtures and results,
+  see images/asset-registry.md and images/advanced-image-lab.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
   always `character` for `avatar`/`portrait_variant`; app convention, not a constraint),
   `entity_id?`, `chat_id?` (→ `character_chats`, SET NULL on chat delete — chat-scene keying,
   see images/pipelines.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
@@ -268,6 +269,16 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `images.meta.references` (scene-images.spec.md §4; the Gallery reads it).
   `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery
   projection (contracts/images/scene-reference.ts).
+- **`image_lab_experiments`** — the Advanced Image Lab's durable experiment record
+  (images/advanced-image-lab.md): `owner_id` (→ `users`, **FK-cascade**), `kind`
+  (`control_probe`/`baseline_portrait`/`baseline_scene`, later stages reserved), `character_id?`
+  / `chat_id?` (SET NULL), `model_slug`, `requested_version_id?` / `executed_version_id?`,
+  `profile_id?` (plain snapshot, no FK — a deleted profile must not erase what a finished
+  baseline ran), `instruction` + `final_prompt`, `inputs` JSONB (ordered role-tagged image
+  list), `control_image_id?` / `result_image_id?` (→ `images`, SET NULL), `control_kind?`,
+  `settings` JSONB, `status` (`pending`/`running`/`succeeded`/`failed`), `failure_code?`,
+  `verdict?` + `verdict_note?` (probe kinds), `prediction_id?`, `started_at?`/`finished_at?`,
+  `meta` JSONB; indexed `(owner_id, created_at)` for the lab listing.
 - **`image_models`** — `slug` **unique** (the Replicate model path, optionally
   `owner/name:version`), `label`, `sort`, `builtin` (display provenance only — it does
   **not** gate deletion).
