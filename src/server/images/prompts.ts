@@ -131,7 +131,7 @@ export interface AvatarWardrobeItem {
  * trousers tempts a full-body shot against the "waist-up portrait" instruction.
  * A garment that also covers the torso (dress, coat, abaya) and coverage-less
  * props (jewelry) stay. Scene images never call this, so they keep full-body
- * garments (docs/images.md, followups.phase3.md §1).
+ * garments (docs/images/pipelines.md §Avatar generation, followups.phase3.md §1).
  */
 /**
  * The GARMENT key for one wardrobe row — the instance id when the garment store
@@ -470,7 +470,7 @@ function formatGarment(item: { name: string; description?: string; appearance?: 
 // Portrait variants (reference edit)
 // ---------------------------------------------------------------------------
 
-/** Ported from the old app's portrait-regen prompt builder (docs/images.md). */
+/** Ported from the old app's portrait-regen prompt builder (docs/images/pipelines.md §Portrait variants). */
 export const PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
 
@@ -753,7 +753,7 @@ export function wardrobeOutfitSummary(worn: ReadonlyArray<SceneWornItem>): strin
 
 /**
  * Explicit bare-skin phrasing for the uncovered regions an image model would
- * otherwise paint clothed (docs/images.md §Scene images). Gated on
+ * otherwise paint clothed (docs/images/pipelines.md §Scene images). Gated on
  * `wardrobeTracked`: callers set this only when wardrobe state is authoritative.
  * Region scope is torso + lower body + feet; head/hands are omitted because
  * bare there is the universal default and would fire on every clothed subject.
@@ -1007,7 +1007,7 @@ const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
  * (`buildAvatarPrompt`) and the scene render's intimate phrase
  * (`intimateSceneAppearance`) so the two image paths gate intimate anatomy by
  * the SAME rule — they diverged once (the avatar path skipped this entirely;
- * see docs/images.md §Avatar generation).
+ * see docs/images/pipelines.md §Avatar generation).
  */
 function intimateAttrRendersExposed(def: AttributeDefinition, exposure: RegionExposure): boolean {
   if (def.kind === "sensory") return false; // scent/taste don't render in an image
@@ -1080,7 +1080,7 @@ function revealSurfaces(def: AttributeDefinition, exposure: RegionExposure, inti
 
 /**
  * The identity-locked scene subject's body description, split by sensitivity so
- * the caller can route each half (docs/images.md §Scene images): the reference
+ * the caller can route each half (docs/images/pipelines.md §Scene images): the reference
  * image is a waist-up portrait, so it conveys the face and upper body but
  * underspecifies the figure. This supplements it from `imageReveal`-tagged
  * attributes — `shape` (silhouette: breast size, waist, hips, leg build) always,
@@ -1287,7 +1287,7 @@ export function heuristicFocalName(
 
 /**
  * Clamp the composer's spec to the present roster and force every outfit from
- * wardrobe state (docs/images.md §Scene images): a focal name not in the room
+ * wardrobe state (docs/images/pipelines.md §Scene images): a focal name not in the room
  * is replaced by the heuristic pick (warn diagnostic), absent "others" are
  * dropped (warn diagnostic), and no character the composer invents can ever
  * reach a render prompt. With a non-empty roster the plan always has a focal.
@@ -1883,7 +1883,7 @@ const ITEM_FRAMING: Record<NonNullable<ItemImageInput["kind"]>, string> = {
 };
 
 /**
- * Product-photo prompt for a library item (docs/images.md §Entity images):
+ * Product-photo prompt for a library item (docs/images/pipelines.md §Entity images):
  * a catalog-style shot composed from the item's own fields. Clothing gets a
  * ghost-mannequin framing so its shape reads; objects/containers a clean
  * isolated product shot.
@@ -1910,7 +1910,7 @@ export interface LocationImageInput {
 }
 
 /**
- * Establishing-shot prompt for a library location (docs/images.md §Entity
+ * Establishing-shot prompt for a library location (docs/images/pipelines.md §Entity
  * images). The location's `scale` chooses the photograph type: wide outdoor
  * landscapes for `open`/`expanse`, architectural interiors otherwise. Always
  * an empty establishing shot — no people.

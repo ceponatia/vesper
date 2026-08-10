@@ -15,7 +15,7 @@ const batchBodySchema = z.object({ ids: z.array(z.string()).optional() });
 const MAX_BATCH = 100;
 
 /**
- * Generate images for the owned locations that lack one (docs/images.md §Entity
+ * Generate images for the owned locations that lack one (docs/images/pipelines.md §Entity
  * images) — the library "Generate images" button. With `ids`, scopes to a
  * caller-supplied set; without it, every missing location. Runs in parallel
  * batches of 5 in a background job that survives navigation; returns how many

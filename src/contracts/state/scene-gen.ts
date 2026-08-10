@@ -18,7 +18,7 @@ export type SceneReferenceMode = z.infer<typeof sceneReferenceModeSchema>;
  * Scene-image generation settings/progress. There is no configurable subject:
  * the composer picks the focal character from the NPCs co-located with the
  * player, and the image is always the player's first-person POV
- * (docs/images.md §Scene images). A legacy `subject` key on old rows is
+ * (docs/images/pipelines.md §Scene images). A legacy `subject` key on old rows is
  * stripped by parsing.
  */
 export const sceneGenStateSchema = z.object({

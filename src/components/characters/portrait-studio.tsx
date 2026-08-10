@@ -46,7 +46,7 @@ function portraitKindLabel(image: ImageRecord): string {
 }
 
 /**
- * Avatar + variant studio (docs/images.md): generate the canonical avatar from
+ * Avatar + variant studio (docs/images/pipelines.md): generate the canonical avatar from
  * attributes, accumulate kind+instruction variants, promote any variant to
  * canonical. Pending rows poll until ready/failed — and the list GET also
  * reports a live job (`rendering`), because the pending row is reserved INSIDE

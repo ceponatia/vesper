@@ -12,7 +12,8 @@ interface ServableImage {
 }
 
 /**
- * Serve an image asset from data/ (docs/images.md). Owner-only by default; on
+ * Serve an image asset from data/ (docs/images/asset-registry.md). Owner-only
+ * by default; on
  * the preview/copy path a **public-entity** image is viewable cross-owner
  * (auth.plan.md) — but only when the image and the public entity it names share
  * an owner (`row.ownerId`, security-authz.plan.md slice 3), so unverified

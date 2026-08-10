@@ -733,7 +733,8 @@ export type SocialCardDetail = z.infer<typeof socialCardDetailSchema>;
 export type GalleryTab = "scenes" | "portraits" | "entity";
 
 /**
- * One image in the tabbed Gallery hub (docs/images.md). Scenes carry a
+ * One image in the tabbed Gallery hub (docs/images/pipelines.md §Scene
+ * images). Scenes carry a
  * `characterId` (character-chat, grouped under "Character chats"); portraits
  * carry `characterId`; entity art carries `entityKind`/`entityName`.
  */

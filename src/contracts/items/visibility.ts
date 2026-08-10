@@ -139,7 +139,7 @@ export function intimateRegionsBare(exposure: RegionExposure): boolean {
  * Coverage state of the body regions whose *bareness* is worth stating in an
  * image prompt. Image models default every subject to fully clothed, so a
  * removed top/bottoms/shoes never shows unless the prompt positively asserts
- * the skin is exposed (docs/images.md §Scene images).
+ * the skin is exposed (docs/images/pipelines.md §Scene images).
  */
 export interface RegionExposure {
   /** chest — bare ⇒ topless. */
