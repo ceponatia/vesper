@@ -12,8 +12,9 @@ accurate).
 **A model row carries what the render path needs to call it**, because Replicate
 models disagree with each other in ways no shared mapping can paper over:
 `referenceField` + `referenceArity` (the reference input is `image` on one model,
-`image_input` on another, `images` on a third — and both Qwen models call it
-`image` with *different* arities), `maxReferences`, `aspectMode` +
+`image_input` on another, `images` on a third, `reference_image` on a fourth —
+and both Qwen models call it `image` with *different* arities), `maxReferences`,
+`aspectMode` +
 `supportedAspects`, `outputFormat`, and free-form `extraInput` constants. Two
 capability booleans drive every picker: `canGenerate` (can run from a bare
 prompt) and `canEdit` (has a reference input at all).
@@ -29,6 +30,20 @@ move the failure to render time where it costs a player-visible image instead of
 a form error. The one thing the probe cannot derive is `maxReferences` — no model
 declares `maxItems` on its array input, the caps are stated in prose — so it is
 stored per row and editable on the settings page.
+
+**Which input is the reference is a priority order, not the first URI it finds.**
+A schema can declare several URI-typed inputs, and they are not
+interchangeable: a *control* image (a depth map, a pose skeleton, a mask) looks
+identical to an identity reference in the schema. So the probe checks the
+identity names first (`image`, `image_input`, `images`, `reference_image`,
+`face_image`), then anything else URI-typed, and the control names
+(`depth_image`, `pose_image`, `mask`, `mask_image`, `control_image`) **last**.
+`nsfw-api/sdxl-pulid` is why: it declares `depth_image` before `reference_image`,
+and plain property order resolved its reference field to the depth input — which
+would have fed a character's portrait to a depth converter and rendered a
+silhouette-shaped stranger, with nothing in the payload looking wrong. Control
+names are deprioritized rather than excluded, so a model whose only image input
+is a control image still registers as edit-capable.
 
 **Two kinds of capability live on a row, and only one of them is probed.**
 Everything above is read from the schema. The facts that decide whether a model
@@ -79,7 +94,7 @@ model; it can never claim a capability the model does not expose.
 **Every render resolves a profile.** All seven lanes call
 `resolveImageProfileForTask` for their own task before they reserve an image row,
 then describe the render as an *intent* (below). Model-level resolution no longer
-exists. The 17 built-in profiles are each equivalent to what its lane rendered
+exists. The 22 built-in profiles are each equivalent to what its lane rendered
 before, so the switch changed where the configuration comes from and not what the
 provider receives. The seeded set, by model:
 
@@ -94,6 +109,14 @@ provider receives. The seeded set, by model:
   `scene-standard`. Alternatives; no defaults.
 - `stability-ai/stable-diffusion-3.5-large` — `portrait-standard` only, matching
   the row's portrait-only toggles.
+- `aisha-ai-official/nsfw-flux-dev`, `aisha-ai-official/likereality-pony-v1` and
+  `prunaai/p-image` — `portrait-standard` only. These three publish **no
+  reference input at all**, so `canEdit` is false and the variant and scene
+  surfaces are closed to them by capability, not by a toggle.
+- `nsfw-api/sdxl-pulid` — `variant-standard` and `scene-standard`, and no
+  portrait profile: it is an identity adapter, and bare-prompt it is an ordinary
+  SDXL generator. Single reference only, so a `multi` scene render degrades to
+  the single-reference rung.
 
 The four anchor tasks with no picker of their own (`item`, `location` and
 `chat_place` sit on the general-purpose generator; `chat_look` on the instruction

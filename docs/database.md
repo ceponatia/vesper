@@ -292,7 +292,8 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
     `identity_preservation` (`strong`/`moderate`/`weak`/`unknown`) and `operator_warning?`.
   - `advanced_capabilities` JSONB is reserved for probed control bindings and is `{}` today.
     Which models the app can run is **data, not a code union** — managed at
-    `/settings/image-models`, seeded by migration 0098 (see [images/providers.md](images/providers.md)).
+    `/settings/image-models`, seeded by migrations 0098 and 0104 (see
+    [images/providers.md](images/providers.md)).
 - **`image_model_profiles`** — `image_model_id` (→ `image_models`, **FK-cascade**), `key`
   (**unique per model**), `label`, `task`
   (`portrait`/`variant`/`scene`/`item`/`location`/`chat_look`/`chat_place`/`text_repair`/`example_transform`/`image_set`),
@@ -302,7 +303,8 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   (30s–15min, CHECK-bounded), `enabled`, `is_default`, `builtin`, `sort`. **How** a model
   should be used for one job, as opposed to what it accepts — one Seedream row can be an
   everyday 2K scene and a slow 4K location. At most one enabled default per task, enforced by
-  the partial unique index below. Seeded with 17 built-ins by migration 0100.
+  the partial unique index below. Seeded with 17 built-ins by migration 0100 and 5 more by
+  0104.
 - **`image_identity_packs`** — `character_id` (→ `characters`, **FK-cascade** — operational
   character data, dies with the character), `revision` (**unique per character**), `current`,
   `status` (`pending`/`ready`/`unusable`/`failed`/`stale`/`superseded`), `source_image_id?`
