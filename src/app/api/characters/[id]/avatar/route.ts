@@ -19,8 +19,9 @@ const avatarBodySchema = z.object({
 
 /**
  * Generate the canonical avatar as an `avatar` job (docs/images.md). The
- * pending image row appears immediately; the UI polls it via the character's
- * portraits until it leaves `pending`.
+ * pending image row is reserved inside the job — shortly AFTER this 202 — so
+ * the portraits GET also reports the live job (`rendering`) and the studio
+ * polls on that until the row lands and leaves `pending`.
  *
  * Owner-scoped through `withAuthorizedResource` rather than a bare `withUser` plus an
  * inline lookup: the wrapper resolves the character and collapses "not yours"

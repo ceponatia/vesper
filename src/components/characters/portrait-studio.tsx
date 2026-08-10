@@ -48,7 +48,12 @@ function portraitKindLabel(image: ImageRecord): string {
 /**
  * Avatar + variant studio (docs/images.md): generate the canonical avatar from
  * attributes, accumulate kind+instruction variants, promote any variant to
- * canonical. Pending rows poll until ready/failed.
+ * canonical. Pending rows poll until ready/failed — and the list GET also
+ * reports a live job (`rendering`), because the pending row is reserved INSIDE
+ * the job, after the queue 202: without the flag, a reload fired right after
+ * kickoff sees nothing in flight, so no tile shows and nothing arms the poll
+ * (the frozen-until-tab-reentry bug; same shape as the chat scene lane's fix,
+ * QA batch 2026-07-09).
  *
  * TWO model pickers, reading different slices of the registry
  * (image-model-registry.plan.md). Making an avatar from nothing needs a model
@@ -82,7 +87,13 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     if (avatarImageId) setGeneratingAvatar(false);
   }
 
-  const hasPending = (portraits.data ?? []).some((img) => img.status === "pending") || generatingAvatar;
+  const rows = portraits.data?.portraits ?? [];
+  // A portrait job is live server-side — covers the stretch between the queue
+  // 202 and the job reserving its pending row, where the list alone says
+  // nothing is happening.
+  const rendering = portraits.data?.rendering ?? false;
+  const hasPendingRow = rows.some((img) => img.status === "pending");
+  const hasPending = hasPendingRow || rendering || generatingAvatar;
 
   // Newest avatar-row id when a generation started — lets the effect below tell a
   // FAILED regen (a new avatar row that never became canonical) from an old one.
@@ -105,7 +116,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   // row and release the spinner so the button doesn't stay stuck on "Working…".
   useEffect(() => {
     if (!generatingAvatar) return;
-    const newestAvatar = (portraits.data ?? []).find((img) => img.kind === "avatar");
+    const newestAvatar = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar");
     if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
       setGeneratingAvatar(false);
       const error = generationError(newestAvatar);
@@ -118,7 +129,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   }, [portraits.data, generatingAvatar, toast]);
 
   const generateAvatar = async () => {
-    genBaselineRef.current = (portraits.data ?? []).find((img) => img.kind === "avatar")?.id ?? null;
+    genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
     const result = await charactersApi.generateAvatar(characterId, { modelId: pickedId(avatarModelId, portraitModels.data) });
     if (result.ok) {
@@ -130,19 +141,36 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     portraits.reload({ silent: true });
   };
 
+  // Row count when the variant was queued — releases the button even when a
+  // demo-fast job settles before the first refetch (no pending row, `rendering`
+  // already false again; only the new READY row betrays that anything happened).
+  const variantBaselineRef = useRef(0);
+
+  // Release the variant button once the server acknowledges the job (`rendering`),
+  // its pending row lands, or a new row appears — the painting tile owns progress
+  // from there (the scene strip's release-on-ack shape). Clearing it before the
+  // refetch confirms the job would blink the tile off between the queue 202 and
+  // the reload response.
+  useEffect(() => {
+    if (submittingVariant && (rendering || hasPendingRow || rows.length > variantBaselineRef.current)) {
+      setSubmittingVariant(false);
+    }
+  }, [submittingVariant, rendering, hasPendingRow, rows.length]);
+
   const submitVariant = async () => {
     if (!instruction.trim()) return;
+    variantBaselineRef.current = rows.length;
     setSubmittingVariant(true);
     const result = await charactersApi.createPortrait(characterId, {
       kind,
       instruction: instruction.trim(),
       modelId: pickedId(variantModelId, variantModels.data),
     });
-    setSubmittingVariant(false);
     if (result.ok) {
       setInstruction("");
       portraits.reload({ silent: true });
     } else {
+      setSubmittingVariant(false);
       toast.push({ title: "Variant failed to queue", description: result.error.message, tone: "error" });
     }
   };
@@ -171,8 +199,12 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
 
   // Keep failed rows visible: image failures are diagnostics the user can act on,
   // not transient noise that should disappear after polling.
-  const variants = (portraits.data ?? []).filter((img) => img.id !== avatarImageId);
-  const canonical = avatarImageId ? (portraits.data ?? []).find((img) => img.id === avatarImageId) : undefined;
+  const variants = rows.filter((img) => img.id !== avatarImageId);
+  const canonical = avatarImageId ? rows.find((img) => img.id === avatarImageId) : undefined;
+  // Show a placeholder tile from the instant a generation is kicked off (the
+  // local flags) through the whole server-side job (`rendering`); once the
+  // pending row lands, its own tile takes over seamlessly.
+  const showPainting = (generatingAvatar || submittingVariant || rendering) && !hasPendingRow;
   // The prompt that produced the canonical avatar — null when there's no avatar
   // yet or it's a user-uploaded image (uploads carry no generation prompt).
   const canonicalPrompt =
@@ -301,10 +333,18 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           </div>
         ) : portraits.error ? (
           <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
-        ) : variants.length === 0 ? (
+        ) : variants.length === 0 && !showPainting ? (
           <p className="text-sm text-paper-500">No alternate portraits yet.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {showPainting ? (
+              <figure className="relative overflow-hidden rounded-card border border-ink-600">
+                <Skeleton className="aspect-[3/4] rounded-none" />
+                <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+                  <Tag>generating…</Tag>
+                </figcaption>
+              </figure>
+            ) : null}
             {variants.map((img) => {
               const error = generationError(img);
               const label = portraitKindLabel(img);
