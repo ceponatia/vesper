@@ -23,9 +23,11 @@ import {
   charactersApi,
   chatsApi,
   sendChatMessage,
+  type ApiResult,
   type ChatMessage,
   type ChatStreamOutcome,
   type ChatTranscript,
+  type ChatWorld,
 } from "@/lib/client/api";
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
@@ -152,10 +154,19 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     2500,
   );
   const sceneAnchors = scenesByAnchor(sceneList);
-  // The player-facing world envelope (world-ui.plan.md slice 1): fetched on load,
-  // null for legacy chats (the ChatWorldCard hides itself), re-fetched wherever
-  // refreshState runs so the card tracks play after exchanges / skips / travel.
-  const world = useAsyncData(() => chatsApi.world(chatId), [chatId]);
+  // `simRouted` remains presentation metadata (including delete-chat copy).
+  // Actionable controls consume the server-owned capability manifest instead.
+  const simRouted = bootstrap.data?.chat.simRouted ?? false;
+  // The player-facing world envelope (world-ui.plan.md slice 1): fetched only once
+  // the bootstrap proves the chat sim-routed — a legacy chat never issues the
+  // request (the server would just 409 `not_sim_enabled`, which the browser logs
+  // as console noise) and settles on null, so the ChatWorldCard hides itself.
+  // Re-fetched wherever refreshState runs so the card tracks play after
+  // exchanges / skips / travel.
+  const world = useAsyncData(
+    () => (simRouted ? chatsApi.world(chatId) : Promise.resolve<ApiResult<ChatWorld | null>>({ ok: true, data: null })),
+    [chatId, simRouted],
+  );
   const character = bootstrap.data?.character ?? null;
   const name = character?.name ?? "";
   const who = name.trim() || "this character";
@@ -1141,9 +1152,6 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     />
   );
   const roster = bootstrap.data?.roster ?? [];
-  // `simRouted` remains presentation metadata (including delete-chat copy).
-  // Actionable controls consume the server-owned capability manifest instead.
-  const simRouted = bootstrap.data?.chat.simRouted ?? false;
   const capabilities = bootstrap.data?.chat.capabilities ?? chatCapabilitiesForLane(simRouted);
   // The dialogue-tag vocabulary for rendering replies: every roster member's name (primary
   // first), so a group reply's non-primary `[Name]` tags attribute instead of leaking as
