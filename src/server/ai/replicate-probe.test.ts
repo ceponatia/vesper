@@ -203,9 +203,55 @@ describe("probeReplicateModel", () => {
     const result = await probeReplicateModel("nsfw-api/realvis-hyper-lora");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The reference field is found by the fallback branch, not the priority list.
     expect(result.probe.referenceField).toBe("reference_image");
     expect(result.probe.canGenerate).toBe(false);
+  });
+
+  it("prefers a named identity input over a control image declared before it", async () => {
+    // nsfw-api/sdxl-pulid declares `depth_image` ahead of `reference_image`, so
+    // plain property order picks the ControlNet depth input — and every render
+    // would hand a character's portrait to a depth converter, producing a
+    // silhouette-shaped stranger with nothing in the payload looking wrong.
+    stubFetch(() => ({
+      name: "sdxl-pulid",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: {
+            prompt: { type: "string" },
+            depth_image: { type: "string", format: "uri", description: "converted to a depth map" },
+            reference_image: { type: "string", format: "uri", description: "a face to use as reference" },
+          },
+          required: ["prompt"],
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("nsfw-api/sdxl-pulid");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.referenceField).toBe("reference_image");
+    expect(result.probe.referenceArity).toBe("single");
+    // Only `prompt` is required, so it can still run with no reference at all.
+    expect(result.probe.canGenerate).toBe(true);
+  });
+
+  it("falls back to a control image only when nothing better is declared", async () => {
+    stubFetch(() => ({
+      name: "depth-only",
+      latest_version: {
+        id: "v1",
+        openapi_schema: openapi({
+          properties: { prompt: { type: "string" }, depth_image: { type: "string", format: "uri" } },
+        }),
+      },
+    }));
+
+    const result = await probeReplicateModel("someone/depth-only");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.probe.referenceField).toBe("depth_image");
+    expect(result.probe.canEdit).toBe(true);
   });
 
   it("switches off a watermark the model would otherwise apply", async () => {

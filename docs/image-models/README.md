@@ -18,19 +18,27 @@ Replicate's schemas disagree with each other in ways that cannot be papered
 over with one shared mapping:
 
 - The reference input is called `image` on most models, `image_input` on two,
-  `images` on another, and `reference_image` on one.
+  `images` on another, and `reference_image` on two more.
 - On some models that field is a single URI; on others it is an array.
+- **A URI-typed input is not necessarily a reference.** One model declares a
+  ControlNet `depth_image` *before* its `reference_image`, so "the first image
+  input" is the wrong answer — the probe searches identity names first and
+  control names (`depth_image`, `pose_image`, `mask`, …) last
+  ([../images/providers.md](../images/providers.md)).
 - Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
-  without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Three
-  have no aspect input whatsoever and are sized by `width`/`height` integers the
-  registry does not send yet — those renders are cropped to shape instead.
-- Output is an array of URIs on nine of ten models, and a bare URI string on the
-  remaining one.
+  without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
+  have no aspect input whatsoever and are sized by `width`/`height` integers;
+  five of those six carry reviewed dimensions from the runtime quality policy
+  (`src/server/images/quality-presets.ts`), and every render is cropped to shape
+  after download regardless.
+- Output is an array of URIs on twelve of fourteen models, and a bare URI string
+  on the other two.
 - One model watermarks by default (`apply_watermark`), which the probe pins off.
 - **Community models can only be run by version id.** The bare-slug endpoint is
   official-models-only, so a community model's registry row is auto-pinned to
-  `owner/name:version` when it is added. That is why the three community models
-  below carry a version in their stored slug and the official ones do not.
+  `owner/name:version` when it is added — and a seeded community row is written
+  pinned for the same reason. That is why the community models below carry a
+  version in their stored slug and the official ones do not.
 - **No model declares `maxItems` on its array reference input.** Reference caps
   are stated in prose in the field description, so they are recorded here and
   stored per row — they cannot be read from the schema.
@@ -47,7 +55,7 @@ model can run with no reference image; "edit" means it has a reference input at
 all. Neither promises identity preservation — that is the rating beside it
 (§Reviewed capability).
 
-Only the six seeded models carry reviewed ratings. The four below them are
+Only the ten seeded models carry reviewed ratings. The four below them are
 reference docs for models Vesper *can* run but does not ship a row for: an admin
 adds them from `/settings/image-models`, and they stay unrated until someone has
 looked at their output.
@@ -67,6 +75,20 @@ looked at their output.
 - [Wan 2.7 Image Pro](wan-2-7-image-pro.md) — `wan-video/wan-2.7-image-pro`.
   Generate yes, edit yes, 9 references. `multi_reference_compose` · `unknown`,
   plus an operator warning — its upstream moderation cannot be disabled.
+- [NSFW FLUX Dev](nsfw-flux-dev.md) — `aisha-ai-official/nsfw-flux-dev`. Generate
+  yes, edit **no**, no references. `none` · `unknown`. Portrait studio only.
+- [LikeReality Pony v1](likereality-pony-v1.md) —
+  `aisha-ai-official/likereality-pony-v1`. Generate yes, edit **no**, no
+  references. `none` · `unknown`. Portrait studio only.
+- [SDXL PuLID](sdxl-pulid.md) — `nsfw-api/sdxl-pulid`. Generate yes, edit yes,
+  1 reference. `unknown` · `unknown`, plus an operator warning — an untried
+  identity adapter with 283 lifetime runs. Variant and scene only.
+- [Pruna P-Image](p-image.md) — `prunaai/p-image`. Generate yes, edit **no**, no
+  references. `none` · `unknown`. Portrait studio only; the speed baseline.
+
+Of those last four, only SDXL PuLID takes a reference image, which is why it is
+the only one on the variant and scene surfaces — the other three cannot hold a
+character's face across a render at all.
 
 Documented but not seeded — no row, and therefore no reviewed rating:
 
@@ -89,8 +111,10 @@ from how Replicate runs them:
 
 - **Open weights on Replicate's GPUs** — the NSFW classifier is a component in
   the cog wrapper and `disable_safety_checker` removes it. Both Qwen models,
-  FLUX dev, and Juggernaut XL v9 work this way; the two `nsfw-api` pipelines ship
-  with no checker at all.
+  FLUX dev, Juggernaut XL v9 and Pruna P-Image work this way; the `nsfw-api`
+  pipelines and the two `aisha-ai-official` fine-tunes ship with no checker at
+  all, which is why their rows carry no safety key — the probe only pins inputs
+  a schema actually declares.
 - **Vendor-API proxies** — moderation runs on the vendor's servers before
   Replicate sees a result, so no input can reach it. Wan 2.7 and Seedream 5 Lite
   refuse this way (`ContentModerationError`, and Wan's `Async prediction failed`
@@ -125,22 +149,25 @@ evidence that a face survives ([../images/providers.md](../images/providers.md))
 `for_portrait`/`for_variant`/`for_scene` toggles are what actually gate today's
 pickers.
 
-Two further columns exist but are **not written yet**: `probed_version_id` (the
-version the stored bindings came from — the `Probed:` header in each file is that
-version today, recorded by hand) and `advanced_capabilities` (the optional control
-bindings each file's Inputs section lists in prose). Both are filled by later
-slices of
-[developer-notes/image-model-capabilities.plan.md](../developer-notes/image-model-capabilities.plan.md);
-nothing is pinned to a version yet either.
+`probed_version_id` — the version the stored bindings came from, and the
+`Probed:` header in each file — is written on rows added through the admin page
+and on the four seeded rows whose slugs name it. The six original seeded rows
+carry none: they predate the column. `advanced_capabilities` (the optional
+control bindings each file's Inputs section lists in prose) is `{}` on every row
+and is filled by a later slice of
+[developer-notes/image-model-capabilities.plan.md](../developer-notes/image-model-capabilities.plan.md).
 
 ## Seeded profiles
 
 Beneath each model sit `image_model_profiles` rows — "how to use this model for
 one job" (task, operation, prompt strategy, reference policy, control defaults,
-timeout). Slice 1 seeded 17 built-ins that each reproduce what their lane resolves
-today, and **the layer is dormant**: no lane calls it, so a seeded profile changes
-no render. Each file lists the profiles seeded on its model. Profiles are ordinary
-deletable rows; the database, not these files, is the runtime source of truth.
+timeout). There are 22 built-ins, each reproducing what its lane resolves today,
+and **every render now resolves one** ([../images/providers.md](../images/providers.md)
+§Every render resolves a profile) — a model offered on a surface with no profile
+for that task is passed over for the task default, which is why a seeded model
+gets a seeded profile per surface it is offered on. Each file lists the profiles
+seeded on its model. Profiles are ordinary deletable rows; the database, not these
+files, is the runtime source of truth.
 
 ## Keeping these current
 
