@@ -4,6 +4,13 @@ import { recordAgentFailure, recordAgentRun, type AgentTelemetry } from "./agent
 import type { GenerateCheckedResult } from "./generate-checked";
 
 /**
+ * What the race resolves to: the caller's value plus whatever spend the wrapped
+ * call measured. The timeout and error paths carry none — nothing completed, and
+ * an aborted tail's cost is not a figure this wrapper can honestly report.
+ */
+type GenerateTimeoutResult<T> = Pick<GenerateCheckedResult<T>, "value" | "degraded" | "usage" | "costUsd">;
+
+/**
  * Race a `generateChecked` call against a hard timeout — for any best-effort agent
  * call that must not stall its caller (the chat post-turn fan-out legs, the
  * pre-narrator intake). `generateChecked` never throws (it owns the resilience
@@ -34,12 +41,12 @@ export async function withGenerateTimeout<T>(
   sink?: DiagnosticSink,
   telemetry?: Partial<AgentTelemetry>,
   describe?: (value: T) => AgentRunDescription,
-): Promise<{ value: T | null; degraded: boolean }> {
+): Promise<GenerateTimeoutResult<T>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Whichever of {work resolves, timeout fires} wins the race claims the record; the loser
   // sees `done` already set and stays silent — so a success and a timeout never both fire.
   let done = false;
-  const timeout = new Promise<{ value: T | null; degraded: boolean }>((resolve) => {
+  const timeout = new Promise<GenerateTimeoutResult<T>>((resolve) => {
     timer = setTimeout(() => {
       if (done) return;
       done = true;
@@ -63,7 +70,7 @@ export async function withGenerateTimeout<T>(
     }, timeoutMs);
   });
   const settled = work
-    .then((r) => {
+    .then((r): GenerateTimeoutResult<T> => {
       if (!done) {
         done = true;
         // A clean, un-degraded value → record the successful run (an internally-degraded
@@ -86,9 +93,14 @@ export async function withGenerateTimeout<T>(
           });
         }
       }
-      return { value: r.value, degraded: r.degraded };
+      return {
+        value: r.value,
+        degraded: r.degraded,
+        ...(r.usage === undefined ? {} : { usage: r.usage }),
+        ...(r.costUsd === undefined ? {} : { costUsd: r.costUsd }),
+      };
     })
-    .catch(() => ({ value: null as T | null, degraded: true }));
+    .catch((): GenerateTimeoutResult<T> => ({ value: null, degraded: true }));
   try {
     return await Promise.race([settled, timeout]);
   } finally {

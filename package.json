@@ -37,6 +37,7 @@
     "sim:advance": "tsx scripts/sim/advance-rollout-world.ts",
     "sim:render-turn": "tsx scripts/sim/render-turn.ts",
     "sim:shadow-corpus": "tsx scripts/sim/shadow-corpus.ts",
+    "report:npc-scene-decisions": "tsx scripts/npc-scene-decision-report.ts",
     "eval:schedule-kind": "tsx scripts/eval/schedule-kind/run.ts",
     "eval:affordance-cues": "tsx scripts/eval/affordance-cues/run.ts",
     "eval:retrieval": "tsx scripts/eval/retrieval/run.ts",
