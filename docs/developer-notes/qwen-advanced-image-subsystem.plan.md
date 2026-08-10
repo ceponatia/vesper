@@ -1,13 +1,16 @@
 # Qwen-family advanced image subsystem — controlled portraits and scenes
 
-Status: draft — model choice ruled 2026-08-07 (build on Qwen Image Edit 2511;
-Qwen Image Edit Plus is the fallback). No code exists, the rest of the direction
-still awaits owner review, and no technical spec is written until it settles.
+Status: active (direction settled 2026-08-10; model ruled 2026-08-07 — build on
+Qwen Image Edit 2511, Qwen Image Edit Plus is the fallback)
 
 Outcome: The owner can run a portrait or scene through a controlled experiment —
 supplying a pose or depth guide, a face reference, and an optional style — and
 compare it side by side with the ordinary result, so that an advanced image
 technique reaches players only when the comparison shows it is better.
+
+Technical companion:
+[qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md) —
+the owner of implementation status and technical decisions.
 
 ## What this plan does not own
 
@@ -66,14 +69,21 @@ fails, register and probe Plus as the controlled-composition connector and keep
 
 ## Prerequisites
 
-- **Reference transport is not yet shared.** Role-aware reference selection and
-  the normalized render intent belong to the capabilities plan's early slices,
-  which are unbuilt. Stage 0's lab shell does not need them, but Stage 1 onward
-  does: without them a lab connector would arrange provider inputs itself, which
-  is exactly the duplication this plan's boundary forbids.
-- **Control-map input binding is not built.** The capabilities plan's future
-  visual-controls slice owns the mask/pose/depth input vocabulary this plan
-  consumes.
+The shared render intent shipped (capabilities slice 2, 2026-08-07), so every
+render lane already describes its references by role. Two capabilities-plan
+pieces are still missing. Stage 0's lab shell and control probe need neither;
+Stage 1 onward needs both, because without them a lab connector would arrange
+provider inputs itself — exactly the duplication this plan's boundary forbids.
+
+- **Reference priority selection** (capabilities slice 3 remainder): choosing
+  which references survive when capacity is short, and the wording that lets a
+  profile name each reference's role in the prompt.
+- **Control-image roles** (capabilities slice 9): the input-binding vocabulary
+  for pose, depth, and edge images.
+
+Owner ruling (2026-08-10): build Stage 0 first, then build these two pieces
+under the capabilities plan as part of this same effort, then return here for
+Stage 1. The lab never grows its own reference-arrangement code.
 
 ## Recommendation
 
@@ -318,6 +328,12 @@ extracted from selected images, and later the outputs of the spatial-scene syste
 The Qwen subsystem should consume shared controls rather than invent a competing
 pose representation.
 
+Owner ruling (2026-08-10): the first fixture set is a hybrid. Pose skeletons and
+depth maps are extracted from a few existing Vesper renders with standard
+preprocessors, edge maps are computed directly from those renders, and two or
+three skeletons are hand-authored for poses the gallery lacks (lying, kneeling).
+Every fixture is reviewed before a trial uses it.
+
 ### LoRAs
 
 The prototype supports one administrator-curated LoRA per LoRA-capable finishing
@@ -334,6 +350,13 @@ it against identity-pack references alone.
 A character LoRA is additive evidence, not the canonical source of identity. The
 identity pack remains the source of truth, and a LoRA must not silently stay active
 when its training set no longer represents the current character.
+
+Owner ruling (2026-08-10): the LoRA library itself — hosting, compatibility,
+scale validation, selection, provenance — is built once, as the capabilities
+plan's Qwen LoRA library slice, running on 2511's integrated LoRA input. This
+plan keeps only the comparison trials that judge whether a LoRA earns its cost.
+A dedicated Qwen LoRA endpoint is registered only if 2511's integrated support
+proves insufficient.
 
 ## Connector model
 
@@ -443,7 +466,8 @@ The Qwen-specific layer owns:
 - how limited input slots are allocated among identity, control, location, style,
   clothing, and object roles;
 - Qwen's numbered-image instructions;
-- compatible LoRA selection and reviewed strength ranges;
+- which reviewed LoRA a trial runs and the comparison that judges it (the LoRA
+  library itself belongs to the capabilities plan);
 - version-specific capability checks;
 - optional finishing-pass decisions;
 - Qwen trial presets, warnings, and comparison reports.
@@ -473,6 +497,10 @@ them.
 ### Advanced Image Lab
 
 Add an admin-only Advanced Image Lab or equivalent experimental panel.
+
+Owner ruling (2026-08-10): the lab stays admin-only through the whole prototype.
+Stage 7 decides which proven modes graduate into ordinary Portrait Studio or
+scene controls; the raw lab itself remains admin tooling.
 
 It should allow the owner to choose:
 
@@ -513,6 +541,9 @@ The interface should explain when a workflow cannot run, including:
 It must not silently run a weaker recipe under the same label.
 
 ## Delivery stages
+
+Owner ruling (2026-08-10): the first vertical slice proves both a controlled
+portrait and a controlled scene — Stage 2 does not wait on a Stage 1 verdict.
 
 ### Stage 0 — isolate and lock the baseline
 
@@ -573,8 +604,10 @@ changing structure, clothing, body, camera, lighting, or setting.
 
 ### Stage 4 — curated LoRA support
 
-Add one known compatible style LoRA, reviewed strengths, prompt additions, and
-complete provenance to the selected LoRA-capable connector.
+Run one known compatible style LoRA through the finishing connector, consuming
+the capabilities plan's LoRA library slice for hosting, compatibility, scale
+validation, prompt additions, and provenance rather than building any of that
+here.
 
 Confirm that incompatible or unavailable LoRAs fail before provider spend.
 
@@ -734,24 +767,12 @@ image records.
 - Build an admin-only parallel lab path in the existing dev deployment.
 - Keep all ordinary model selections and buttons unchanged during the trial.
 - Keep identity packs as source truth even when a character LoRA is available.
-- Write a technical specification only after this product direction is reviewed
-  and settled.
 
 ## Open questions
 
-These decisions are unresolved and settle before implementation:
-
-- whether the first vertical slice should include both a controlled portrait and
-  a controlled scene, or prove portraits first;
-- whether the owner's seven-image reference set for one test character is
-  suitable for the first character LoRA pilot (those files live on the owner's
-  disk only — the repository deliberately does not track them);
-- which initial control fixtures should be hand-reviewed pose, depth, and edge
-  maps;
-- whether 2511's integrated LoRA support is sufficient for the LoRA stages, or a
-  separately probed Qwen LoRA endpoint is still wanted;
-- how much of the Advanced Image Lab should later remain available to ordinary
-  character owners;
-- whether the LoRA stages belong here at all, or should be folded into the
-  capabilities plan's Qwen LoRA library slice, which already owns hosted LoRA
-  selection and compatibility.
+- whether seven varied images of one character are enough to train a useful
+  first character LoRA. The owner wants to use the existing seven-image
+  reference set (those files live on the owner's disk only — the repository
+  deliberately does not track them); Stage 5 needs a researched answer on
+  minimum viable set size before committing to it, recorded in the
+  [spec](qwen-advanced-image-subsystem.spec.md).

@@ -35,6 +35,13 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   behind `IMAGE_IDENTITY_PACK_REFERENCES` until the paid trial runs, then
   render-lane consumption, which the shared render intent has now unblocked.
 
+- **Qwen advanced image subsystem — controlled composition experiments** —
+  [plan](qwen-advanced-image-subsystem.plan.md) ·
+  [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
+  control-mapped Qwen edits against ordinary output; Stage 0's control probe
+  runs first, capabilities slices 3 and 9 are built en route, and the LoRA
+  library folds into capabilities slice 6.
+
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is
@@ -118,14 +125,9 @@ affordance layer to the scene owner.
 
 - **Spatially controlled scene images — pose, depth, and character identity** —
   [plan](spatial-scene-images.plan.md) — one validated 3D spatial frame driving
-  pose/depth/segmentation controls; **its paid gate-0 spike asks the same
-  question as the Qwen plan below, so one owner decision precedes either.**
-
-- **Qwen advanced image subsystem — controlled composition experiments** —
-  [plan](qwen-advanced-image-subsystem.plan.md) — an admin-only lab comparing
-  control-mapped Qwen edits blind against ordinary output; blocked on
-  capabilities slices 3 and 9, and its LoRA stage should fold into capabilities
-  slice 6 rather than be built twice.
+  pose/depth/segmentation controls; its gate-0 spike asks the same control
+  question the Qwen lab's Stage 0 probe is now answering, so Gate 0 stays
+  closed while that lab runs.
 
 - **RAG improvements — remainder** — [plan](RAG-improvements.plan.md) — the
   presence half of the relevance floor, witness gating on a real viewpoint, and

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { emptyImageModelAdvancedCapabilities, type ImageModel, type SceneVisualReference } from "@/contracts";
 import { apiError } from "@/server/test-support";
-import { attemptReferenceCount, classifyImageFailure, isBillingFailure, routeSceneAttempts } from "./image-providers";
+import {
+  attemptReferenceCount,
+  classifyImageFailure,
+  imageFailureHealthOutcome,
+  isBillingFailure,
+  routeSceneAttempts,
+} from "./image-providers";
 
 const charRef = (overrides: Partial<SceneVisualReference> = {}): SceneVisualReference => ({
   kind: "character",
@@ -142,5 +148,25 @@ describe("classifyImageFailure", () => {
     expect(classifyImageFailure(insufficient)).toBe("other");
     expect(isBillingFailure(insufficient)).toBe(true);
     expect(isBillingFailure("replicate 503: service unavailable")).toBe(false);
+  });
+});
+
+describe("imageFailureHealthOutcome", () => {
+  it("reports a transient failure to the breaker as a failed lane", () => {
+    expect(imageFailureHealthOutcome("transient")).toBe(false);
+  });
+
+  it("says nothing about health when the provider answered about the request", () => {
+    // A moderation refusal is the upstream WORKING, on a prompt it declined; the
+    // scene chain treats it the same way, retrying sanitized rather than counting
+    // it toward "possible image service outage". Shedding every caller's renders
+    // over one prompt would be the wrong trade.
+    expect(imageFailureHealthOutcome("content_rejection")).toBeNull();
+  });
+
+  it("says nothing about health for billing and configuration failures", () => {
+    // `other` is where an empty Replicate balance and a missing token land. No
+    // cooldown refills either, so a tripped breaker would only hide them.
+    expect(imageFailureHealthOutcome("other")).toBeNull();
   });
 });

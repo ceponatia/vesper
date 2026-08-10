@@ -4,13 +4,14 @@
 
 ## Reading order
 
-| Doc                                    | What it covers                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------ |
-| [providers.md](providers.md)           | Replicate: model rows, probing, task profiles, render intents, transport |
-| [asset-registry.md](asset-registry.md) | `images` rows + files: row-before-file, serving gate, deletes, sweep     |
-| [pipelines.md](pipelines.md)           | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
-| [identity-packs.md](identity-packs.md) | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
-| [vision.md](vision.md)                 | Models reading stored images: portrait→attributes, chat photo reads      |
+| Doc                                              | What it covers                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------ |
+| [providers.md](providers.md)                     | Replicate: model rows, probing, task profiles, render intents, transport |
+| [asset-registry.md](asset-registry.md)           | `images` rows + files: row-before-file, serving gate, deletes, sweep     |
+| [pipelines.md](pipelines.md)                     | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
+| [identity-packs.md](identity-packs.md)           | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
+| [advanced-image-lab.md](advanced-image-lab.md)   | Admin experiment bench: controlled Qwen probes, fixtures, baselines      |
+| [vision.md](vision.md)                           | Models reading stored images: portrait→attributes, chat photo reads      |
 
 ## Demo mode
 
