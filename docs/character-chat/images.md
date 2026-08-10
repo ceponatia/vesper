@@ -2,7 +2,7 @@
 
 Everything visual the lane exchanges: photos the player attaches, selfies the
 character sends back, and the cached reference anchors renders are built from.
-The render pipeline itself lives in [images.md](../images.md).
+The render pipeline itself lives in [images/pipelines.md](../images/pipelines.md).
 
 ## Player photos (image input)
 

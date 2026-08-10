@@ -405,7 +405,7 @@ packs to be trialed while it is off. Mechanics and recorded v1 limitations:
 
 Turn advisory measurements into the reviewed production gate, wire provenance and
 telemetry, verify deletion/copy/publish paths, remove rollout fallbacks, and update
-`docs/images.md` with the shipped operational contract.
+`docs/images/identity-packs.md` with the shipped operational contract.
 
 ## Acceptance criteria
 

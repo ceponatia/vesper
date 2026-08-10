@@ -33,8 +33,9 @@ derivation provenance, quality measurements, and profile-aware eligibility.
   selection, capacity, and transport.
 - [image-render-quality.spec.md](image-render-quality.spec.md) owns prompt dialects,
   profile quality settings, identity fidelity verdicts, repair, and output QA.
-- [docs/images.md](../images.md) owns the existing row-before-file image pipeline,
-  normalized WebP storage, resilient reads, and Gallery behavior.
+- [docs/images/asset-registry.md](../images/asset-registry.md) owns the existing
+  row-before-file image pipeline, normalized WebP storage, and resilient reads;
+  Gallery behavior is [docs/images/pipelines.md](../images/pipelines.md).
 - [data-lifecycle.plan.md](data-lifecycle.plan.md) owns broad image retention. The
   identity-pack lifecycle spec adds the narrower rule that hidden derived crops
   are operational character data rather than permanent Gallery artifacts.

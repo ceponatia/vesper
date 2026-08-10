@@ -53,7 +53,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
   run in demo mode (deterministic narrative, placeholder images).
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
-  ([images.md](images.md) §Providers). Absent outside demo mode ⇒ every render fails the
+  ([images/providers.md](images/providers.md)). Absent outside demo mode ⇒ every render fails the
   row with `REPLICATE_API_TOKEN not configured`.
 - **`REPLICATE_PREDICTION_TIMEOUT_MS`** — prediction deadline; default `300000` (5m),
   clamped to 30s–30m. Sent as Replicate's `Cancel-After` **and** used as this client's poll
