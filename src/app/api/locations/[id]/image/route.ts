@@ -29,8 +29,7 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 
 /**
  * Generate (or regenerate) the location's establishing image as a background
- * `entity_image` job (docs/images/pipelines.md §Entity images). The image
- * type (landscape vs interior)
+ * `entity_image` job (docs/images.md). The image type (landscape vs interior)
  * follows the location's scale. Returns immediately; the studio polls GET.
  */
 export const POST = withUser<Params>(
