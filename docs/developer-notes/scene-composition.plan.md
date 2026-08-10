@@ -138,9 +138,10 @@ Four things cause this, and none of them is the image model misbehaving:
   against today's output on fixed fixtures before enable.
 - **Slice 2 — intimate acts are staged.** The staging catalog with per-entry
   camera setup, implied viewer-body parts, and explicit phrasing emitted only
-  on the uncensored route; evidence, exposure, and route gates in code; a
-  refusal-rate measurement for the cautious composing model, since it now
-  reads explicit narration and answers with a catalog id.
+  on the uncensored route; evidence, exposure, and route gates in code. The
+  shot planner also moves onto a less cautious model here (owner ruling
+  2026-08-10), with the chat's own narrative model approved as the refusal
+  fallback — the catalog still owns every explicit word either way.
 - **Slice 3 — committed facts override inference.** Chat scene facts (posture,
   facing, distance, active contact) reach the planner as authoritative
   context and clamp its camera proposal; absent facts change nothing.
@@ -169,21 +170,12 @@ Four things cause this, and none of them is the image model misbehaving:
 
 ## Open questions
 
-- **When the fiction says only "behind her", is the default a full
-  back-to-camera shot or a glance back over the shoulder?** A glance back
-  keeps the face partly visible (identity stays checkable, the lock keeps
-  something to hold); a full back shot is more literal. Recommendation:
-  glance back whenever she is engaged with the player, fully away only when
-  the narration has her absorbed or unaware
-  ([detail](scene-composition.spec.md)).
-- **If the cautious composing model refuses to pick stagings from explicit
-  narration, which model takes over?** Measure refusal first; the candidate
-  is the chat's own narrative model for intimate scenes only, at one extra
-  call's cost ([detail](scene-composition.spec.md)).
-- **Do background characters need orientation too?** The first release stages
-  the focal subject only; per-subject orientation for others waits for
-  evidence that the focal-only version leaves them wrong often enough to
-  matter ([detail](scene-composition.spec.md)).
+None open. The launch rulings — a character described as behind-facing renders
+fully away unless the story actually describes the glance back; the shot
+planner moves to a less cautious model with the narrative model as refusal
+fallback; orientation is focal-only while one-on-one chats are the test bed —
+are recorded as owner rulings (2026-08-10) in
+[the spec](scene-composition.spec.md).
 
 ## Technical companion
 
