@@ -9,7 +9,8 @@ const bodySchema = z.object({
 
 /**
  * POST /api/gallery/delete — bulk hard-delete the owner's gallery images by id
- * (docs/images.md §Gallery). Sent by "Delete all" (the ids matching the active
+ * (docs/images/pipelines.md §Scene images, the Gallery hub). Sent by "Delete
+ * all" (the ids matching the active
  * filter) and the multi-select delete (the checked ids). Owner-scoped and
  * kind-guarded to the gallery's asset classes, so a crafted body can only ever
  * reach the caller's own gallery art — never another owner's or another asset

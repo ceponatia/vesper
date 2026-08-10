@@ -20,7 +20,7 @@ const uploadBodySchema = z.object({
 
 /**
  * Replace the character's canonical avatar with a user-supplied image
- * (docs/images.md). Synchronous — no model runs, so the new avatar id comes
+ * (docs/images/pipelines.md §Avatar upload). Synchronous — no model runs, so the new avatar id comes
  * back in the response and the studio refetches immediately, no polling.
  */
 export const POST = withUser<Params>(

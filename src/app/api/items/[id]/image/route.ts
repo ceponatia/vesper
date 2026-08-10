@@ -29,7 +29,8 @@ export const GET = withUser<Params>(async (user, _req, ctx) => {
 
 /**
  * Generate (or regenerate) the item's product image as a background
- * `entity_image` job (docs/images.md). Returns immediately; the studio polls
+ * `entity_image` job (docs/images/pipelines.md §Entity images). Returns
+ * immediately; the studio polls
  * GET until the row leaves `pending`, and the job survives client navigation.
  */
 export const POST = withUser<Params>(

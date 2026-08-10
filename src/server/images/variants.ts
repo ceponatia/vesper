@@ -24,7 +24,8 @@ export interface GenerateVariantInput {
 }
 
 /**
- * Portrait-variant pipeline (docs/images.md): single-reference registry edit of
+ * Portrait-variant pipeline (docs/images/pipelines.md §Portrait variants):
+ * single-reference registry edit of
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
  * "preserve apparent age" alone preserves the model's over-read and each
  * generation drifts older). Always re-rolls from the canonical portrait — never

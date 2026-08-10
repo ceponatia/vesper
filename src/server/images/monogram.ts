@@ -4,7 +4,7 @@ const WIDTH = 768;
 const HEIGHT = 1024; // 3:4, matching avatar aspect
 
 /**
- * Demo-mode placeholder (docs/images.md §Demo mode): a deterministic gradient
+ * Demo-mode placeholder (docs/images/README.md §Demo mode): a deterministic gradient
  * SVG derived from the entity name. Saved through the same registry path as
  * real generations — saveImageBuffer's sharp pass rasterizes it to webp.
  */
