@@ -252,13 +252,13 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   (`avatar`/`portrait_variant`/`scene`/`entity`/`chat_upload`/`chat_look`/`chat_place`/`identity_face_crop`
   — the chat kinds are chat-private and hard-deleted with the chat; `identity_face_crop` is a
   hidden identity-pack derivative excluded from every user surface via `HIDDEN_IMAGE_KINDS`,
-  see images.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
+  see images/asset-registry.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
   always `character` for `avatar`/`portrait_variant`; app convention, not a constraint),
   `entity_id?`, `chat_id?` (→ `character_chats`, SET NULL on chat delete — chat-scene keying,
-  see images.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
+  see images/pipelines.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
   text, no FK), `path` (relative to `data/`), `prompt`, `source_image_id?` (reference-edit
   lineage), `status` (`pending`/`ready`/`failed` — row is written **before** the file; see
-  images.md), `meta` JSONB.
+  images/asset-registry.md), `meta` JSONB.
 - **`image_references`** — `scene_image_id` (→ `images`, **FK-cascade**), `kind`
   (`character`/`location`/`style`/`pose`/`layout`), `entity_id?` (library character/location
   id; null for non-entity roles), `role?`, `source?`
@@ -281,7 +281,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
     `identity_preservation` (`strong`/`moderate`/`weak`/`unknown`) and `operator_warning?`.
   - `advanced_capabilities` JSONB is reserved for probed control bindings and is `{}` today.
     Which models the app can run is **data, not a code union** — managed at
-    `/settings/image-models`, seeded by migration 0098 (see [images.md](images.md)).
+    `/settings/image-models`, seeded by migration 0098 (see [images/providers.md](images/providers.md)).
 - **`image_model_profiles`** — `image_model_id` (→ `image_models`, **FK-cascade**), `key`
   (**unique per model**), `label`, `task`
   (`portrait`/`variant`/`scene`/`item`/`location`/`chat_look`/`chat_place`/`text_repair`/`example_transform`/`image_set`),
@@ -304,7 +304,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `failure_code?`/`failure_message?`, `reviewed_by_user_id?` (→ `users`, no cascade — audit
   survives the reviewer), `review_reason?`/`reviewed_at?`. One durable identity reference per
   character: revisions are rows, exactly one may be `current` (partial unique index below).
-  See [images.md](images.md) §Identity packs and image-identity-packs.spec.data.md. Added by
+  See [images/identity-packs.md](images/identity-packs.md) and image-identity-packs.spec.data.md. Added by
   migration 0101.
 - **`jobs`** — `type`
   (`chat_summary`/`chat_scene_sketch`/`chat_meanwhile`/`chat_scene_image`/`avatar`/`portrait_variant`/`entity_image`/`embed_refresh`/`image_sweep`/`identity_pack`/…

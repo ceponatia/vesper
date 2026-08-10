@@ -10,7 +10,7 @@ that the picture stops contradicting the text it illustrates.
 This plan graduates the self-hosted ComfyUI / pose-control follow-up in
 [deferred.plan.md](deferred.plan.md). It extends the shipped provider and lineage
 foundation in [finished/scene-images.plan.md](finished/scene-images.plan.md) and
-the runtime documented in [../images.md](../images.md).
+the runtime documented in [docs/images/](../images/README.md).
 
 Neighbouring plans, all of which moved under it after this one was written:
 

@@ -20,7 +20,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [memory.md](memory.md)                             | Episodes, semantic facts + supersedence, fused retrieval — chat-scoped                                                                        |
 | [streaming-api.md](streaming-api.md)               | HTTP API surface (library, chat, auth, pagination)                                                                                            |
 | [auth.md](auth.md)                                 | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
-| [images.md](images.md)                             | Avatar generation, reference editing, chat scene images, asset storage                                                                        |
+| [images/](images/README.md)                        | Image suite: providers, asset registry, pipelines, identity packs, vision input                                                               |
 | [image-models/](image-models/README.md)            | Per-model Replicate API reference: reference-input field names, arity and caps, aspect handling, output shapes                                |
 | [authoring.md](authoring.md)                       | AI-first character forge and manual-override editors                                                                                          |
 | [ui.md](ui.md)                                     | Pages, components, styling conventions                                                                                                        |

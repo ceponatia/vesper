@@ -117,7 +117,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   [image-model-capabilities.plan.md](image-model-capabilities.plan.md).
 
 - **Replicate Qwen image providers (opt-in, `*`-marked)** —
-  [images.md](../images.md) §Providers — 2026-08-05 — a first-class Replicate
+  [images/providers.md](../images/providers.md) — 2026-08-05 — a first-class Replicate
   client (official-model predictions, private reference uploads, one parsed
   deadline driving both `Cancel-After` and the poll cutoff) behind two starred
   picker entries: `* Qwen Image 2512` for avatars, `* Qwen Image Edit 2511` for
@@ -384,7 +384,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   production-inert until something asserts exposure for uncovered skin.
 
 - **Image apparent-age anchor + eighteen floor** — no plan (owner report +
-  ruling 2026-07-29; behavior in [docs/images.md](../images.md) §Avatar
+  ruling 2026-07-29; behavior in [docs/images/pipelines.md](../images/pipelines.md) §Avatar
   generation ¶Apparent age, vocabulary note in
   [docs/contracts/attributes.md](../contracts/attributes.md)) — 2026-07-29 —
   Qwen edits over-read an age-ambiguous reference and drift older each
@@ -398,7 +398,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   15–17 — never words an image model sees).
 
 - **Scene-image phantom-limb fix** — no plan (owner report + ruling 2026-07-29;
-  behavior in [docs/images.md](../images.md) §Scene images ¶Player POV /
+  behavior in [docs/images/pipelines.md](../images/pipelines.md) §Scene images ¶Player POV /
   ¶Embodied POV) — 2026-07-29 — the character's hands/feet in pose text were
   rendering as the VIEWER's foreground limbs: the POV rule's own "no hands in
   frame" negative and unowned limb nouns were the cause (viewerBody was empty
@@ -413,7 +413,7 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 - **Scene-image reference hardening + strip delete** — no plan (fix bundle off
   the 2026-07-29 Kristin troubleshoot; behavior recorded in
-  [docs/images.md](../images.md) §Scene images / [docs/ui.md](../ui.md) §The
+  [docs/images/pipelines.md](../images/pipelines.md) §Scene images / [docs/ui.md](../ui.md) §The
   conversation page) — 2026-07-29 — the multi-edit rung now shares the
   single-edit model (`qwen-image-2-edit`; `qwen-edit-uncensored` drifted
   identity badly) at pinned 2K/3:4; text-to-image runs only when NO reference

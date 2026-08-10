@@ -124,7 +124,7 @@ payloads for debugging and any future tuning corpus.
 3. **Deletion-path changes** — not started. Drop `deleteEntityImages` from
    character delete (the headline ruling), keeping the two carve-outs above;
    provisioning records now die with the chat via the slice-1 key. Document in
-   `docs/images.md` and `docs/memory.md` that dangling entity and subject
+   `docs/images/asset-registry.md` and `docs/memory.md` that dangling entity and subject
    references are by-design provenance — a fact naming a deleted character
    belongs to the *observing* group's memory and is not scrubbed.
 4. **Retention sweep** — half shipped 2026-08-02, half open. The sweep itself
@@ -137,7 +137,7 @@ payloads for debugging and any future tuning corpus.
    payloads in production to ids and counts, keeping full content only outside
    production, and preserving what the admin chat inspector actually reads.
 
-Each slice updates the relevant system doc (`docs/images.md`,
+Each slice updates the relevant system doc (`docs/images/`,
 `docs/memory.md`, the jobs and events documentation) in the same change, and
 the roadmap on completion.
 

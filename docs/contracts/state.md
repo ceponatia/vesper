@@ -74,8 +74,8 @@ focal character from the conversation's roster.
 type SceneGenState = {                        // no subject field: the composer picks the focal character
   interval: number;                           // every N turns; 0 = off
   lastGeneratedTurn?: number;                 // turn number when an image was last generated
-  status: "idle" | "generating" | "failed";   // (../images.md §Scene images)
-  referenceMode: "single" | "multi";          // single = one identity anchor; multi = up to three references via Venice /image/multi-edit
+  status: "idle" | "generating" | "failed";   // (../images/pipelines.md §Scene images)
+  referenceMode: "single" | "multi";          // single = one identity anchor; multi = multi-reference edit, up to the model's reference cap
 };
 ```
 
