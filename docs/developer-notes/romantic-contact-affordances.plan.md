@@ -1,17 +1,16 @@
 # Romantic contact affordances
 
-Status: active — the affectionate tier is live for players; everything built
-after it is switched off. **Live:** slices 0–2, 3A and 3A.1, the
-affectionate-contact MVP and its passed trial (items 1–2, turned on in
-production 2026-08-02), and the retired-declaration cleanup (item 3). **Built
-but dark:** item 4's NPC actor control in full — the decision foundation, the
-shadow measurement leg, and all three authority increments — and item 5's
-`romantic_touch` permission owner. The measurement's review instrument (the
-report that turns the recorded decisions into the figures the owner rules on)
-was built 2026-08-10. **Remaining:** deploy, turn on, and review the item-4
-shadow measurement, which has never been enabled in production; take the owner's
-ruling on the measured cost and latency; enable authority one kind at a time;
-then run item 6's permission-gated romantic proof.
+Status: active — the affectionate tier is live for players, and every
+construction item through item 5 is shipped. **Live:** slices 0–2, 3A and
+3A.1, the affectionate-contact MVP and its passed trial (items 1–2, turned on
+in production 2026-08-02), the retired-declaration cleanup (item 3), and —
+since 2026-08-10 — item 4's shadow measurement, whose window is accumulating on
+a build that carries the measurement instrument. **Shipped but dark:** item 4's
+three authority increments (behind the staged authority flag) and item 5's
+`romantic_touch` permission owner. **Remaining:** review the measurement
+window and take the owner's ruling on its measured accuracy, cost, and latency;
+enable authority one kind at a time; then run item 6's permission-gated
+romantic proof.
 
 Outcome: A player can touch a character during a chat and have the story keep
 track of that touch — where it lands, what clothing is in the way, and when it
@@ -317,63 +316,62 @@ coding agent can see the next task immediately.
   replacement field or gate. Contacts persisted by older builds still parse,
   pinned by a regression test, and migration 0095 removed stored profile
   residue. Detailed proof lives in the finished follow-up record and migration.
+- **Item 4 — NPC actor control through the live lane — shipped 2026-08-10
+  (authority dark):** The deterministic NPC contact-ending producer from item 1
+  remains the frozen ending floor. Everything beyond it is now built and
+  shipped: the pure decision foundation, the durable per-reply decision record,
+  and the guarded atomic save (2026-08-02); the one-call-per-reply shadow
+  measurement leg; the three authority increments — an NPC moving relative to
+  one person, starting one affectionate hand touch, and changing the gesture of
+  a touch she is already making — behind a staging control that enables them
+  one kind at a time; and the measurement instrument (per-decision spend and
+  waiting-time telemetry plus the aggregate review report, 2026-08-10). The
+  shadow measurement was switched on in production 2026-08-10 on a build
+  carrying that instrument, so its window is accumulating. **The authority
+  increments stay dark** until the owner's ruling on the measured window — that
+  review is the remaining item-4 work below. The
+  [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns
+  the evidence rules, chronology, retries, persistence, rollout gates, and the
+  instrument itself.
+- **Item 5 — the explicit `romantic_touch` permission owner — shipped
+  2026-08-04 (dark until item 6):** The product rulings were settled 2026-08-04
+  and are summarized under
+  [`romantic_touch` permission-owner rulings](#romantic_touch-permission-owner-rulings);
+  the
+  [permission-owner specification](romantic-contact-affordances.spec.permission.md)
+  was implemented the same day (see its §As built): the branch-local
+  directional grant ledger and standing-grant projection, the resolver's
+  exact-scope read with the player-target exception, the conservative NPC-side
+  grant/denial/withdrawal decision, the audited developer-menu override,
+  revocation ending dependent contact atomically, and the next-reply stop
+  instruction. Everything is behind `CHAT_ROMANTIC_PERMISSION` (off, and
+  effective only while the affectionate tier's own switch is on; the developer
+  override has its own separate capability), so production behavior is
+  unchanged until the owner enables it for the item-6 proof. The MVP stayed
+  deliberately narrow: one exact, directional `romantic_touch` scope for
+  romantic contact aimed at an NPC, implying no kissing, intimate touch,
+  undressing, nudity exposure, or sex. Test/development permission changes go
+  through the developer menu's structured, audited path only; chat prompts
+  never act as administrative overrides. Relationship-based revocation remains
+  reserved, per ruling 2.
 
 These entries are historical gates, not work remaining in the continuation
 queue.
 
 ### Remaining continuation order
 
-#### 4. Finish actor control through the live lane — built in full 2026-08-04, entirely dark
+#### 4. Review the shadow measurement window and enable authority
 
-The deterministic NPC contact-ending producer shipped with item 1 and remains
-the frozen ending floor — it is the only NPC-side scene authority a live turn
-has today. Everything beyond it is built and switched off:
-
-- the pure decision foundation, the durable per-reply decision record, and the
-  guarded atomic save shipped 2026-08-02;
-- the one-call-per-reply **shadow measurement** leg shipped 2026-08-02 behind
-  `CHAT_NPC_SCENE_DECISION_SHADOW`. **It has never been enabled in production,
-  so no measurement window has started and no data exists to rule on;**
-- the three **authority increments** — an NPC moving relative to one person,
-  starting one affectionate hand touch, and changing the gesture of a touch she
-  is already making — were built 2026-08-04 behind `CHAT_NPC_SCENE_DECISIONS`,
-  with a staging control that enables them one kind at a time without further
-  code changes.
-
-What remains is operational, not construction, and it is strictly ordered: turn
-the shadow measurement on, let it run, and review it. The review instrument was
-built 2026-08-10 — each recorded decision now carries its own cost and waiting
-time, and a report turns a window of them into the exact figures below — so the
-measurement must be enabled only on a deploy that includes it. Authority stays
-blocked until accuracy, fire rate, p50/p95/p99 added latency, timeout rate, and
-cost are acceptable to the owner. If approved, enable authority in this order —
-movement, contact starts, then contact updates — each step a one-value staging
-change. The
-[actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
-detailed evidence rules, chronology, retries, persistence, rollout gates, and
-the measurement instrument itself.
-
-#### 5. Implement the explicit `romantic_touch` permission owner — built 2026-08-04, dark
-
-The product rulings were settled 2026-08-04 and are summarized under
-[`romantic_touch` permission-owner rulings](#romantic_touch-permission-owner-rulings).
-The
-[permission-owner specification](romantic-contact-affordances.spec.permission.md)
-was implemented the same day (see its §As built): the branch-local directional
-grant ledger and standing-grant projection, the resolver's exact-scope read with
-the player-target exception, the conservative NPC-side grant/denial/withdrawal
-decision, the audited developer-menu override, revocation ending dependent
-contact atomically, and the next-reply stop instruction. Everything is behind
-`CHAT_ROMANTIC_PERMISSION` (off, and effective only while the affectionate
-tier's own switch is on; the developer override has its own separate
-capability), so production behavior is unchanged until the owner enables it for
-the item-6 proof. Relationship-based revocation remains reserved, per ruling 2.
-
-The MVP stayed deliberately narrow: one exact, directional `romantic_touch`
-scope for romantic contact aimed at an NPC, implying no kissing, intimate
-touch, undressing, nudity exposure, or sex. Test/development permission
-changes go through the developer menu's structured, audited path only; chat
-prompts never act as administrative overrides.
+The construction shipped (see the item-4 entry above); what remains is
+operational and strictly ordered. The measurement window opened 2026-08-10.
+Let it accumulate real chat replies, then produce the review figures with the
+measurement report and label its review-corpus export for the accuracy pass —
+the [actor-control spec](romantic-contact-affordances.spec.actor-control.md)
+§"Execution, flags, and cost gate" owns the instrument and the required
+figures. Authority stays blocked until accuracy, fire rate, p50/p95/p99 added
+latency, timeout rate, and cost are acceptable to the owner. If approved,
+enable authority in this order — movement, contact starts, then contact
+updates — each step a one-value staging change.
 
 #### 6. Run the genuinely romantic proof
 
@@ -462,12 +460,14 @@ implementation agent:
 #### Is the NPC decision read’s measured cost and latency acceptable?
 
 **Owner:** Product. **Blocks:** every item-4 authority increment, and item 6
-behind them. **Blocked on:** the shadow measurement, which has not been run.
+behind them. **Blocked on:** the measurement window, open since 2026-08-10 and
+still accumulating.
 
-There is nothing to rule on yet: the shadow leg is built but has never been
-switched on, so no accuracy, fire rate, p50/p95/p99 added latency, timeout rate,
-or cost-per-100-replies figures exist. Enabling the measurement and letting it
-accumulate a window is the prerequisite, not part of the ruling. The
+The window is running on a build that carries the spend telemetry. Once it has
+accumulated enough real replies, the measurement report produces the fire rate,
+p50/p95/p99 added latency, timeout rate, and cost-per-100-replies figures this
+ruling needs, and its review-corpus export is what the accuracy judgment is
+made from. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) permits
 the foundation and the shadow run but not authority without this ruling.
 

@@ -537,7 +537,9 @@ The measurement instrument for that review was built 2026-08-10:
 
 Consequence for the rollout order: enable `CHAT_NPC_SCENE_DECISION_SHADOW` only
 on a deploy that carries this telemetry, or the window's rows cannot answer the
-cost and added-latency questions the ruling needs.
+cost and added-latency questions the ruling needs. Satisfied 2026-08-10: the
+flag is live on a deploy carrying the instrument, and the envelope table was
+verified empty at that point — every window row will carry the spend fields.
 
 ## Diagnostics
 
@@ -572,9 +574,11 @@ was, and every step of it is now complete:
 2. **Durability foundation** (built 2026-08-02): decision-envelope migration and
    parser; guarded CAS transaction; exact conflict/idempotency behavior;
    unconditional retake prune; dev trace reader.
-3. **Shadow** (built 2026-08-02, **never run**): one call per reply across every
-   included reply kind, post-settle presence/wardrobe cut, no authority. Review
-   measured quality, latency, and cost before proceeding.
+3. **Shadow** (built 2026-08-02; window opened 2026-08-10): one call per reply
+   across every included reply kind, post-settle presence/wardrobe cut, no
+   authority. The flag is on in production on a build carrying the measurement
+   instrument; review the measured quality, latency, and cost before
+   proceeding.
 4. **Increment 1—movement** (built 2026-08-04, dark): monotonic approach/depart
    helpers, composite departure ordering, opening/presence integration.
 5. **Increment 2—starts** (built 2026-08-04, dark): arbitrary actor adapter,
