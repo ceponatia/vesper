@@ -118,7 +118,7 @@ export const attributeDefinitionSchema = z.object({
   materializeDefault: z.boolean().optional(),
   /**
    * How this attribute surfaces in a **full-body** image prompt relative to
-   * clothing (docs/images.md §Scene images). A waist-up avatar portrait conveys
+   * clothing (docs/images/pipelines.md §Scene images). A waist-up avatar portrait conveys
    * the face and upper body but nothing of the figure below it, so a scene
    * render supplements the reference with body detail:
    * - `"shape"`: silhouette/proportion that reads *through* clothing (breast
