@@ -10,10 +10,17 @@ import {
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import { classifyImageFailure, runReplicatePreprocessor, type ReplicateImageResult, type ReplicatePreprocessorRequest } from "../ai";
+import {
+  classifyImageFailure,
+  imageFailureHealthOutcome,
+  runReplicatePreprocessor,
+  type ImageFailureReason,
+  type ReplicateImageResult,
+  type ReplicatePreprocessorRequest,
+} from "../ai";
 import { db, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
-import type { ImageLabRefusal } from "./image-lab";
+import type { ImageLabProviderOutcome, ImageLabRefusal, ImageLabRunPayload } from "./image-lab";
 import { saveOwnedImageBuffer } from "./route-safe";
 
 /**
@@ -254,12 +261,14 @@ export interface RunImageLabControlExtractionInput {
  * map should not lose the skeleton to the depth model having a bad afternoon.
  * Nothing here throws through the job runner.
  *
- * The return value becomes the job row's payload, which is why it is a plain
- * record: it is read by a human looking at `jobs`, not by code.
+ * The return value becomes the job row's payload, which is why it is a mostly
+ * plain record: it is read by a human looking at `jobs`, and by the route for
+ * the one field the settled promise cannot carry — `providerOutcome`, since a
+ * runner that records its own failures resolves whatever the provider did.
  */
 export async function runImageLabControlExtraction(
   input: RunImageLabControlExtractionInput,
-): Promise<Record<string, unknown>> {
+): Promise<ImageLabRunPayload> {
   const { ownerId, sourceImageId, sink } = input;
   const source = await ownedImageRow(sourceImageId, ownerId);
   const bytes = source && source.status === "ready" ? await readImageBytes(source) : null;
@@ -270,20 +279,46 @@ export async function runImageLabControlExtraction(
         context: { sourceImageId },
       }),
     );
-    return { sourceImageId, extracted: [], failureCode: code };
+    return { sourceImageId, extracted: [], failureCode: code, providerOutcome: null };
   }
 
   const extracted: Record<string, unknown>[] = [];
+  const outcomes: ImageLabProviderOutcome[] = [];
   for (const controlKind of input.controlKinds) {
-    extracted.push(await extractOneControl({ ...input, bytes, controlKind }));
+    const one = await extractOneControl({ ...input, bytes, controlKind });
+    extracted.push(one.record);
+    outcomes.push(one.providerOutcome);
   }
-  return { sourceImageId, extracted };
+  return { sourceImageId, extracted, providerOutcome: batchProviderOutcome(outcomes) };
+}
+
+/**
+ * One report for a batch that may have called the provider several times.
+ *
+ * A failure WINS over a success, because the breaker exists to hear failures:
+ * it counts consecutive ones, and a batch that reported the success and dropped
+ * the failure would keep resetting a streak the lane is genuinely accumulating.
+ * When no kind failed, one success is enough to say the lane answered, and a
+ * batch that reached no provider at all (edge only) says nothing — a lane nobody
+ * called cannot be shown to be healthy.
+ */
+function batchProviderOutcome(outcomes: readonly ImageLabProviderOutcome[]): ImageLabProviderOutcome {
+  if (outcomes.includes(false)) return false;
+  if (outcomes.includes(true)) return true;
+  return null;
 }
 
 interface ExtractOneControlInput extends RunImageLabControlExtractionInput {
   /** The source image's bytes, read once and reused across every requested kind. */
   bytes: Buffer;
   controlKind: ImageLabControlKind;
+}
+
+/** One fixture's recorded outcome, and what it proved about the provider lane. */
+interface ExtractedControl {
+  /** What the job payload records for this kind — read by a human, never by code. */
+  record: Record<string, unknown>;
+  providerOutcome: ImageLabProviderOutcome;
 }
 
 /**
@@ -300,17 +335,21 @@ interface ExtractOneControlInput extends RunImageLabControlExtractionInput {
  * No asset is written on either. The row is minted only once bytes exist and
  * have decoded, so a failed extraction leaves nothing for the sweep to reconcile.
  */
-async function extractOneControl(input: ExtractOneControlInput): Promise<Record<string, unknown>> {
+async function extractOneControl(input: ExtractOneControlInput): Promise<ExtractedControl> {
   const { ownerId, controlKind, sink } = input;
   const pin = imageLabPreprocessorFor(controlKind);
   const produced = pin === null ? await computeEdgeControl(input.bytes) : await runPreprocessorControl(pin, input.bytes);
   const provenance = produced.predictionId ? { predictionId: produced.predictionId } : {};
+  const providerOutcome = producedProviderOutcome(pin, produced);
 
   if (!produced.ok) {
     return {
-      ...extractionFailure(controlKind, produced.code, produced.message, sink, input.sourceImageId),
-      ...(produced.renderFailure ? { renderFailure: produced.renderFailure } : {}),
-      ...provenance,
+      record: {
+        ...extractionFailure(controlKind, produced.code, produced.message, sink, input.sourceImageId),
+        ...(produced.code === "render_failed" ? { renderFailure: produced.renderFailure } : {}),
+        ...provenance,
+      },
+      providerOutcome,
     };
   }
 
@@ -324,11 +363,40 @@ async function extractOneControl(input: ExtractOneControlInput): Promise<Record<
   const stored = await storeControlFixture({ ownerId, meta, buffer: produced.buffer, sink });
   if (!stored) {
     return {
-      ...extractionFailure(controlKind, "preprocessor_output_invalid", "the fixture could not be written", sink, input.sourceImageId),
-      ...provenance,
+      record: {
+        ...extractionFailure(controlKind, "preprocessor_output_invalid", "the fixture could not be written", sink, input.sourceImageId),
+        ...provenance,
+      },
+      // The preprocessor did its half; the write is ours to answer for.
+      providerOutcome,
     };
   }
-  return { controlKind, imageId: stored.imageId, ...provenance };
+  return { record: { controlKind, imageId: stored.imageId, ...provenance }, providerOutcome };
+}
+
+/**
+ * What one kind's extraction proved about the provider lane.
+ *
+ * The EDGE pass reports nothing whatever it does: it is a sharp convolution in
+ * this process, so a success is not evidence a provider is up and a failure is
+ * not evidence one is down. A pinned kind reports what its prediction did —
+ * bytes back is a lane that answered, even when those bytes turn out to be
+ * undecodable (which is a fact about the extractor, the very reason the two
+ * failures are recorded apart), and a failed prediction reports whatever the
+ * shared classifier reads it as.
+ */
+function producedProviderOutcome(
+  pin: ImageLabPreprocessorPin | null,
+  produced: ProducedControlBytes,
+): ImageLabProviderOutcome {
+  if (pin === null) return null;
+  if (produced.ok) return true;
+  switch (produced.code) {
+    case "render_failed":
+      return imageFailureHealthOutcome(produced.renderFailure);
+    case "preprocessor_output_invalid":
+      return true;
+  }
 }
 
 /** Bytes for one fixture, or the reason there are none. */
@@ -336,12 +404,14 @@ type ProducedControlBytes =
   | { ok: true; buffer: Buffer; predictionId?: string }
   | {
       ok: false;
-      code: "render_failed" | "preprocessor_output_invalid";
+      code: "render_failed";
       message: string;
       predictionId?: string;
-      /** The render classifier's reading — provider failures only. */
-      renderFailure?: string;
-    };
+      /** The render classifier's reading. Always present here: a failed
+       * prediction is exactly what the classifier is for. */
+      renderFailure: ImageFailureReason;
+    }
+  | { ok: false; code: "preprocessor_output_invalid"; message: string; predictionId?: string };
 
 /** The local arm: sharp only, no provider, no spend. */
 async function computeEdgeControl(bytes: Buffer): Promise<ProducedControlBytes> {
@@ -530,7 +600,7 @@ function controlInvalid(message: string): ImageLabRefusal {
  * Null when the image is not this owner's, indistinguishable from never having
  * existed, so the route never confirms a foreign image. An image that IS this
  * owner's and still cannot say what fixture it is refuses with
- * `control_invalid`, exactly as `checkControlFixture` refuses one at run time.
+ * `control_invalid`, exactly as `checkControlBinding` refuses one at run time.
  */
 export async function reviewImageLabControl(
   ownerId: string,

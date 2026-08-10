@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { imageReferenceRoleSchema } from "./image-model-capabilities";
+import { imageReferenceRoleSchema, type ImageReferenceRole } from "./image-model-capabilities";
 import { imageRenderControlsSchema, type ImageRenderControls } from "./image-model-profiles";
 
 /**
@@ -77,6 +77,43 @@ export type ImageLabMode = (typeof imageLabModes)[number];
 export const imageLabControlKinds = ["pose", "depth", "edge"] as const;
 export const imageLabControlKindSchema = z.enum(imageLabControlKinds);
 export type ImageLabControlKind = (typeof imageLabControlKinds)[number];
+
+/**
+ * The reference role a control fixture of each kind is fed under.
+ *
+ * `edge` maps to the generic `control` role deliberately: the fixture vocabulary
+ * (what was extracted) and the reference-role vocabulary (which slot a model is
+ * fed) are different lists, and `imageReferenceRoles` reserves `pose` and
+ * `depth` but nothing edge-shaped.
+ *
+ * It lives here, beside the two vocabularies it bridges, rather than in the UI
+ * helper that first needed it: the experiment form uses it to build the send
+ * order AND the runner uses it to refuse a probe whose declared fixture is not
+ * among the images it sends, and a second spelling would let those two disagree
+ * about which slot a skeleton occupies.
+ */
+export function imageLabControlRole(kind: ImageLabControlKind): ImageReferenceRole {
+  switch (kind) {
+    case "pose":
+      return "pose";
+    case "depth":
+      return "depth";
+    case "edge":
+      return "control";
+  }
+}
+
+/**
+ * Every role a control fixture is ever sent under — the structure a model is
+ * asked to OBEY, as against the identity it is asked to preserve. This is the
+ * image of {@link imageLabControlRole} over the three kinds, and nothing else.
+ */
+export const imageLabControlRoles = ["pose", "depth", "control"] as const satisfies readonly ImageReferenceRole[];
+
+/** Whether an ordered input's role is one a control fixture may be sent under. */
+export function isImageLabControlRole(role: ImageReferenceRole): boolean {
+  return imageLabControlRoles.some((controlRole) => controlRole === role);
+}
 
 /**
  * Where a control fixture came from. Provenance is not decoration here: a
@@ -406,11 +443,19 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   unreadable: an asset with no declared kind cannot be checked against the
  *   fixture it claims to be, and a kind with no asset names a control that was
  *   never sent.
+ * - a declared control image is one of the images actually SENT, exactly once,
+ *   under a role a fixture may occupy. The runner validates the declared
+ *   fixture but renders the ordered inputs, so a request declaring fixture A
+ *   while ordering fixture B would file a verdict against a skeleton the
+ *   provider never saw — the one failure a bench cannot survive.
  *
- * Deliberately NOT enforced here: that a probe carries any particular inputs.
- * Missing inputs are the runner's `input_missing` refusal (spec §Algorithms
- * step 1), recorded on the experiment where the admin can see the reason,
- * instead of a 400 that leaves no trace of the attempt.
+ * Deliberately NOT enforced here: that a probe carries any particular inputs, or
+ * that it declares a control at all. Both are the runner's recorded refusals
+ * (spec §Algorithms steps 1 and 3), settled on the experiment where the admin
+ * can see the reason, instead of a 400 that leaves no trace of the attempt. The
+ * rules above only police a request that is internally inconsistent, which is a
+ * client bug rather than an attempt worth recording; the RUNNER stays
+ * authoritative on all of it, because rows also arrive from earlier deploys.
  */
 export const imageLabCreateExperimentRequestSchema = z
   .object({
@@ -442,6 +487,17 @@ export const imageLabCreateExperimentRequestSchema = z
         path: ["controlKind"],
         message: "a control image and its kind are recorded together",
       });
+    }
+    if (request.controlImageId !== undefined) {
+      const ordered = request.inputs.filter((input) => input.imageId === request.controlImageId);
+      const sent = ordered.length === 1 ? ordered[0] : undefined;
+      if (sent === undefined || !isImageLabControlRole(sent.role)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "the declared control image is sent exactly once, under a pose, depth, or control role",
+        });
+      }
     }
   });
 export type ImageLabCreateExperimentRequest = z.infer<typeof imageLabCreateExperimentRequestSchema>;

@@ -7,6 +7,7 @@ import {
   imageLabInputListSchema,
   imageLabSettingsSchema,
   IMAGE_TARGET_ASPECT,
+  isImageLabControlRole,
   referenceCapacity,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
@@ -23,6 +24,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import {
   classifyImageFailure,
+  imageFailureHealthOutcome,
   mapImageRenderControls,
   REPLICATE_DEFAULT_EDIT_MODEL,
   runRegistryImageModel,
@@ -62,7 +64,10 @@ import { pinnedImageModelVersion } from "./render-profile";
  * The job seam lives at the ROUTE, not here: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from this module would close an import
  * cycle (`pnpm lint:cycles`). Every other image lane is arranged the same way —
- * the route starts the job, the service is the body of it.
+ * the route starts the job, the service is the body of it. Which is also why
+ * every run reports a {@link ImageLabProviderOutcome} in its payload rather than
+ * calling the breaker itself: the breaker lives on the other side of that
+ * boundary, and the route is where the two meet.
  */
 
 export type ImageLabExperimentRow = typeof imageLabExperiments.$inferSelect;
@@ -71,6 +76,29 @@ export type ImageLabExperimentRow = typeof imageLabExperiments.$inferSelect;
 export interface ImageLabRefusal {
   code: string;
   message: string;
+}
+
+/**
+ * What one lab run proved about the image provider lane, in the circuit
+ * breaker's vocabulary (`startJob`'s `reportProviderOutcome` →
+ * `recordProviderOutcome`).
+ *
+ * `null` — say nothing — is the answer for most of this module, and the reason
+ * the channel exists at all. Every stop here is a SETTLED ROW rather than a
+ * throw, so the runner's promise resolves whether Replicate answered, refused,
+ * or was never called; read as an outcome, that resolution would report a
+ * healthy provider for a dead one and would close a tripped breaker on the
+ * strength of a probe that only ever touched this database.
+ */
+export type ImageLabProviderOutcome = boolean | null;
+
+/**
+ * The record one lab run returns: the human-readable payload the `jobs` row
+ * carries, plus what the run told the breaker. The route reports the second and
+ * stores the whole thing, so the job row also says what was reported.
+ */
+export interface ImageLabRunPayload extends Record<string, unknown> {
+  providerOutcome: ImageLabProviderOutcome;
 }
 
 /**
@@ -292,10 +320,13 @@ export type CreateImageLabExperimentResult =
  * owner constraint, so without these an admin could point a baseline at someone
  * else's chat and have the runner read its look anchor.
  *
- * Deliberately NOT checked: that a probe carries any particular inputs, or that
- * its control image is a real fixture. Those are the runner's recorded refusals
- * (spec §Algorithms steps 1 and 3) — a 400 there would leave no trace of the
- * attempt, and the whole point of the bench is that attempts leave traces.
+ * Deliberately NOT checked: that a probe carries any particular inputs, that it
+ * names a control at all, or that the control it names is a real fixture. Those
+ * are the runner's recorded refusals (spec §Algorithms steps 1 and 3) — a 400
+ * there would leave no trace of the attempt, and the whole point of the bench is
+ * that attempts leave traces. (The request SCHEMA does refuse a declaration that
+ * contradicts its own inputs, which is a client bug rather than an attempt, and
+ * the runner re-checks it anyway for rows that predate the rule.)
  */
 export async function createImageLabExperiment(
   input: CreateImageLabExperimentInput,
@@ -456,19 +487,21 @@ export async function deleteImageLabExperiment(
  * outcome a bench exists to prevent.
  *
  * The returned record becomes the job row's payload: it is read by a human
- * looking at `jobs`, never by code.
+ * looking at `jobs`, and by the route for one field — `providerOutcome`, which
+ * the settled promise cannot carry, precisely because settling is what this
+ * runner does instead of throwing.
  */
 export async function runImageLabExperiment(
   experimentId: string,
   ownerId: string,
   sink?: DiagnosticSink,
-): Promise<Record<string, unknown>> {
+): Promise<ImageLabRunPayload> {
   const row = await ownedExperiment(experimentId, ownerId);
-  if (!row) return { experimentId, skipped: "not_found" };
+  if (!row) return { experimentId, skipped: "not_found", providerOutcome: null };
   // A settled experiment is never re-run: its evidence already exists, and a
   // second render under the same id would replace an output the verdict may
   // already be about. A rerun is a new experiment.
-  if (row.status !== "pending") return { experimentId, skipped: row.status };
+  if (row.status !== "pending") return { experimentId, skipped: row.status, providerOutcome: null };
 
   await db()
     .update(imageLabExperiments)
@@ -488,7 +521,7 @@ export async function runImageLabExperiment(
  * seventh kind is a compile error here rather than a silent fall-through to
  * whatever the last arm did.
  */
-function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<Record<string, unknown>> {
+function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
   switch (row.kind) {
     case "control_probe":
       return runControlProbe(row, sink);
@@ -511,6 +544,12 @@ interface SettleExtras {
   columns?: Partial<typeof imageLabExperiments.$inferInsert>;
   /** Joined to the recorded `error`; never replaces it. */
   meta?: Record<string, unknown>;
+  /**
+   * What this failure proved about the provider lane. Absent means `null` —
+   * nothing — which is right for every refusal that stops before the call, and
+   * is why the default is silence rather than a guess.
+   */
+  providerOutcome?: ImageLabProviderOutcome;
 }
 
 /**
@@ -527,7 +566,7 @@ async function settleFailed(
   message: string,
   sink?: DiagnosticSink,
   extras: SettleExtras = {},
-): Promise<Record<string, unknown>> {
+): Promise<ImageLabRunPayload> {
   sink?.push(
     diag("warn", failureCode, message.slice(0, 300), {
       context: { experimentId: row.id, kind: row.kind },
@@ -543,7 +582,7 @@ async function settleFailed(
       meta: { error: message.slice(0, 2000), ...extras.meta },
     })
     .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
-  return { experimentId: row.id, status: "failed", failureCode };
+  return { experimentId: row.id, status: "failed", failureCode, providerOutcome: extras.providerOutcome ?? null };
 }
 
 /** The contract's own codes, spelled through the contract's own helper. */
@@ -564,7 +603,7 @@ function labFailure(code: ImageLabFailureCode): string {
  * still a portrait, whereas evidence rendered against an unknown version is not
  * evidence.
  */
-async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<Record<string, unknown>> {
+async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
   const inputs = storedInputs(row, sink);
   if (inputs.length === 0) {
     return await settleFailed(row, labFailure("input_missing"), "the experiment records no ordered inputs", sink);
@@ -621,7 +660,7 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
     references.push(bytes);
   }
 
-  const controlRefusal = await checkControlFixture(row, sink);
+  const controlRefusal = await checkControlBinding(row, inputs, sink);
   if (controlRefusal) {
     return await settleFailed(row, labFailure(controlRefusal.code), controlRefusal.message, sink, {
       columns: { requestedVersionId: versionId },
@@ -684,14 +723,34 @@ function controlInvalid(message: string): ControlFixtureRefusal {
 }
 
 /**
- * Whether the named control fixture is one, and whether anyone has LOOKED at it
- * — the reason when either answer is no.
+ * Whether this probe SENDS the control it is a ruling on, whether that fixture
+ * is one, and whether anyone has LOOKED at it — the reason when any answer is
+ * no.
  *
- * A control that is not a `lab_control`, or whose meta will not parse, means
- * nothing can say what the fixture IS, and a probe verdict about an unidentified
- * fixture is worthless. The declared kind is checked against the stored one for
- * the same reason: an experiment recording "pose" while pointing at a depth map
- * would produce a verdict filed under the wrong control.
+ * The binding checks come first, and they exist because the runner validates the
+ * DECLARED fixture and renders the ORDERED INPUTS. Nothing else ties the two
+ * together, so without these a probe could declare a reviewed pose skeleton,
+ * send a depth map (or send nothing but an identity portrait), and record a
+ * `honours_control` verdict against an image the provider never received. Three
+ * rules make the record and the render the same thing:
+ *
+ * - a probe DECLARES a control. Its whole question is "did the output obey this
+ *   fixture?", and a probe with no fixture asks nothing — the render would still
+ *   happen, and its verdict would be unfileable.
+ * - the declared fixture appears EXACTLY ONCE among the ordered inputs. Absent
+ *   means it was never sent; twice means the numbered instruction ("the pose
+ *   drawn in Image 2") names one of two slots and nobody can say which.
+ * - it is sent under a role a control may occupy (pose, depth, or the generic
+ *   `control` an edge map rides — `imageLabControlRole`'s own image). A skeleton
+ *   ordered under `identity` is a probe asking the model to copy a face from a
+ *   stick figure, which answers a question nobody asked.
+ *
+ * Then the fixture itself. A control that is not a `lab_control`, or whose meta
+ * will not parse, means nothing can say what the fixture IS, and a probe verdict
+ * about an unidentified fixture is worthless. The declared kind is checked
+ * against the stored one for the same reason: an experiment recording "pose"
+ * while pointing at a depth map would produce a verdict filed under the wrong
+ * control.
  *
  * The REVIEW gate is the same argument one step further, and it is the Stage 0
  * protocol's own rule ("extract a pose skeleton and a depth map … review both in
@@ -703,27 +762,47 @@ function controlInvalid(message: string): ControlFixtureRefusal {
  * ask different things of the admin: one throws the fixture away, the other
  * spends a minute looking at it.
  */
-async function checkControlFixture(
+async function checkControlBinding(
   row: ImageLabExperimentRow,
+  inputs: ImageLabInputList,
   sink?: DiagnosticSink,
 ): Promise<ControlFixtureRefusal | null> {
-  if (row.controlImageId === null) return null;
-  const control = await ownedImageRow(row.controlImageId, row.ownerId);
-  if (!control) return controlInvalid(`control image ${row.controlImageId} is not an image this owner has`);
+  const controlImageId = row.controlImageId;
+  if (controlImageId === null) {
+    return controlInvalid("a control probe is a ruling on one named fixture, and this experiment declares none");
+  }
+
+  const ordered = inputs.filter((input) => input.imageId === controlImageId);
+  const sent = ordered.length === 1 ? ordered[0] : undefined;
+  if (!sent) {
+    return controlInvalid(
+      ordered.length === 0
+        ? `control image ${controlImageId} is not among the ${String(inputs.length)} image(s) this experiment sends, so its verdict would be about a fixture the provider never saw`
+        : `control image ${controlImageId} is ordered ${String(ordered.length)} times; a probe sends its control exactly once, because the instruction names one numbered slot`,
+    );
+  }
+  if (!isImageLabControlRole(sent.role)) {
+    return controlInvalid(
+      `control image ${controlImageId} is sent at position ${String(sent.position)} under the ${sent.role} role; a control fixture is sent as pose, depth, or control`,
+    );
+  }
+
+  const control = await ownedImageRow(controlImageId, row.ownerId);
+  if (!control) return controlInvalid(`control image ${controlImageId} is not an image this owner has`);
   if (control.kind !== "lab_control") {
-    return controlInvalid(`control image ${row.controlImageId} is a ${control.kind}, not a lab control fixture`);
+    return controlInvalid(`control image ${controlImageId} is a ${control.kind}, not a lab control fixture`);
   }
   const meta = parseOrNull(imageLabControlMetaSchema, control.meta, sink, "images.meta.lab_control");
-  if (!meta) return controlInvalid(`control image ${row.controlImageId} has no readable fixture metadata`);
+  if (!meta) return controlInvalid(`control image ${controlImageId} has no readable fixture metadata`);
   if (row.controlKind !== null && meta.controlKind !== row.controlKind) {
     return controlInvalid(
-      `control image ${row.controlImageId} is a ${meta.controlKind} fixture, not the ${row.controlKind} this experiment records`,
+      `control image ${controlImageId} is a ${meta.controlKind} fixture, not the ${row.controlKind} this experiment records`,
     );
   }
   if (meta.reviewedAt === undefined) {
     return {
       code: "control_unreviewed",
-      message: `control image ${row.controlImageId} has not been reviewed; review the fixture in the panel before spending a probe on it`,
+      message: `control image ${controlImageId} has not been reviewed; review the fixture in the panel before spending a probe on it`,
     };
   }
   return null;
@@ -759,7 +838,7 @@ async function runBaseline(
   row: ImageLabExperimentRow,
   task: Extract<ImageProfileTask, "variant" | "scene">,
   sink?: DiagnosticSink,
-): Promise<Record<string, unknown>> {
+): Promise<ImageLabRunPayload> {
   const resolvedSubject = await resolveBaselineSubject(row, task, sink);
   if (!resolvedSubject.ok) return await settleFailed(row, resolvedSubject.code, resolvedSubject.message, sink);
 
@@ -971,7 +1050,7 @@ async function storeLabRender(
   row: ImageLabExperimentRow,
   rendered: RenderWithModelResult,
   input: StoreLabRenderInput,
-): Promise<Record<string, unknown>> {
+): Promise<ImageLabRunPayload> {
   const { sink } = input;
   const provenance = {
     predictionId: rendered.predictionId ?? null,
@@ -980,9 +1059,14 @@ async function storeLabRender(
 
   if (!rendered.ok || !rendered.image) {
     const message = rendered.error ?? `${row.modelSlug} returned no image`;
+    // The ONE place in this module a provider failure is reported as one, and
+    // only for the classifications that are evidence about the upstream: the
+    // renderer was reached, so its answer is the lane's own news.
+    const renderFailure = classifyImageFailure(message);
     return await settleFailed(row, labFailure("render_failed"), message, sink, {
       columns: { ...input.columns, ...provenance },
-      meta: { renderFailure: classifyImageFailure(message) },
+      meta: { renderFailure },
+      providerOutcome: imageFailureHealthOutcome(renderFailure),
     });
   }
 
@@ -1000,6 +1084,9 @@ async function storeLabRender(
     await deleteOwnedImage(asset.id, row.ownerId, { kind: "lab_output" });
     return await settleFailed(row, labFailure("render_failed"), "the lab output could not be written", sink, {
       columns: { ...input.columns, ...provenance },
+      // The provider rendered; OUR disk did not take it. Reporting that as a
+      // lane failure would shed everyone's work over a local write.
+      providerOutcome: true,
     });
   }
 
@@ -1030,9 +1117,17 @@ async function storeLabRender(
         context: { experimentId: row.id, imageId: saved.id, removed },
       }),
     );
-    return { experimentId: row.id, status: "discarded", outputImagesRemoved: removed ? 1 : 0, ...provenance };
+    return {
+      experimentId: row.id,
+      status: "discarded",
+      outputImagesRemoved: removed ? 1 : 0,
+      // The render happened and the provider answered; the row it belonged to
+      // simply stopped existing. That is still a working lane.
+      providerOutcome: true,
+      ...provenance,
+    };
   }
-  return { experimentId: row.id, status: "succeeded", resultImageId: saved.id, ...provenance };
+  return { experimentId: row.id, status: "succeeded", resultImageId: saved.id, providerOutcome: true, ...provenance };
 }
 
 // --- shared reads ----------------------------------------------------------

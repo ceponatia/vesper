@@ -1,4 +1,4 @@
-import type { ImageLabControlKind, ImageReferenceRole } from "@/contracts";
+import type { ImageLabControlKind } from "@/contracts";
 
 /**
  * The Advanced Image Lab's numbered-role instruction template
@@ -23,24 +23,16 @@ import type { ImageLabControlKind, ImageReferenceRole } from "@/contracts";
  */
 
 /**
- * The reference role a control fixture of each kind is fed under.
+ * The kind → reference-role mapping, re-exported from the contract that owns it.
  *
- * `edge` maps to the generic `control` role deliberately: the fixture vocabulary
- * (what was extracted) and the reference-role vocabulary (which slot a model is
- * fed) are different lists, and `imageReferenceRoles` reserves `pose` and
- * `depth` but nothing edge-shaped (contracts `image-lab.ts`
- * §`imageLabControlKinds`).
+ * It used to be defined here, because the experiment form was its only caller.
+ * The runner now validates against the same mapping — a probe must SEND the
+ * fixture it declares, under a role a fixture may occupy — and a server-side
+ * copy of a UI helper is exactly how the form and the runner would come to
+ * disagree about which slot a skeleton occupies. So the definition moved into
+ * `@/contracts` and this stays as its front door for the template's callers.
  */
-export function imageLabControlRole(kind: ImageLabControlKind): ImageReferenceRole {
-  switch (kind) {
-    case "pose":
-      return "pose";
-    case "depth":
-      return "depth";
-    case "edge":
-      return "control";
-  }
-}
+export { imageLabControlRole } from "@/contracts";
 
 /** How the instruction names the person being rendered. */
 function subjectPhrase(identityPosition: number | null): string {

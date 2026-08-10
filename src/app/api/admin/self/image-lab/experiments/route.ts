@@ -42,6 +42,12 @@ export const GET = withOwnerAdmin(async (user) => jsonOk({ experiments: await li
  * close an import cycle. Every image lane is arranged this way. A refused job
  * slot removes the experiment again — an admin who was told "too many jobs"
  * should not be left with a record of a run that never happened.
+ *
+ * The run also reports what it learned about the image provider. The runner
+ * settles every failure into its own row and resolves regardless, so the job
+ * runner's default reading — resolved means the provider answered — would tell
+ * the circuit breaker a dead Replicate was healthy, and would tell it the same
+ * about a probe refused before it ever called one.
  */
 export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const body = await readBody(req, imageLabCreateExperimentRequestSchema);
@@ -58,7 +64,11 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
     type: "lab_image",
     ownerId: user.id,
     payload: { experimentId: experiment.id, kind: experiment.kind },
-    run: () => runImageLabExperiment(experiment.id, user.id),
+    run: async ({ reportProviderOutcome }) => {
+      const result = await runImageLabExperiment(experiment.id, user.id);
+      reportProviderOutcome(result.providerOutcome);
+      return result;
+    },
   });
   if (!job.ok) {
     // Undone through the service's own owner-scoped delete, never a hand-built

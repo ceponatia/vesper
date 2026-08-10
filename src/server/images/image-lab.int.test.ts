@@ -8,6 +8,15 @@ import {
   type ImageLabCreateExperimentRequest,
 } from "@/contracts";
 import {
+  imageRenderRejection,
+  laneHealth,
+  readDailyUsage,
+  recordProviderOutcome,
+  resetProviderHealth,
+  startJob,
+} from "@/server/api";
+import {
+  apiRequest,
   endTestPool,
   probeIntegrationDb,
   purgeOwnerRows,
@@ -17,7 +26,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { db, imageLabExperiments, imageModels, images } from "../db";
+import { db, imageLabExperiments, imageModels, images, jobs } from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import {
   createImageLabExperiment,
@@ -55,6 +64,12 @@ import {
  *
  * Registry rows (`image_models`) are global — outside `purgeOwnerRows` — so this
  * suite plants its own by id, delete-first, exactly like the trial suite does.
+ *
+ * Two things are reached through `@/server/api` rather than mocked, because they
+ * are the whole point of the checks that use them: the real circuit breaker
+ * (a lab run's honesty about the provider is only observable as lane health) and
+ * the real image guard (whether an edge-only batch spends a budget unit is only
+ * observable as a usage counter).
  */
 
 const ready = await probeIntegrationDb("image lab.int.test", "image_lab_experiments");
@@ -133,6 +148,9 @@ beforeEach(() => {
 afterEach(async () => {
   setImageLabRendererForTesting(null);
   setImageLabPreprocessorForTesting(null);
+  // Lane health is process-global and in memory by design, so a test that drove
+  // the breaker must not leave a tripped lane shedding the next one's guard.
+  resetProviderHealth();
   if (!ready) return;
   await db().delete(imageLabExperiments).where(eq(imageLabExperiments.ownerId, ownerId));
   await db().delete(images).where(eq(images.ownerId, ownerId));
@@ -200,8 +218,73 @@ async function createProbe(
   return { id: created.experiment.id, sink };
 }
 
+/**
+ * The shape every runnable probe has: an identity anchor, the reviewed fixture
+ * it is a ruling on, and the declaration binding the two. A probe missing any of
+ * it is refused before the provider, which is what the binding tests below drive
+ * one piece at a time.
+ */
+async function createRunnableProbe(
+  overrides: Partial<ImageLabCreateExperimentRequest> = {},
+): Promise<{ id: string; sink: DiagnosticCollector; identityId: string; controlId: string }> {
+  const identityId = await seedReadyImage("avatar");
+  const controlId = await seedControlFixture("pose");
+  const { id, sink } = await createProbe({
+    inputs: [
+      { position: 1, role: "identity", imageId: identityId },
+      { position: 2, role: "pose", imageId: controlId },
+    ],
+    controlImageId: controlId,
+    controlKind: "pose",
+    ...overrides,
+  });
+  return { id, sink, identityId, controlId };
+}
+
 function codes(sink: DiagnosticCollector): string[] {
   return sink.items.map((item) => item.code);
+}
+
+/** The `jobs` row a fire-and-forget `startJob` writes, once its run has settled. */
+async function settledJob(jobId: string, timeoutMs = 10_000): Promise<typeof jobs.$inferSelect> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const [row] = await db().select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+    if (row && row.status !== "running" && row.status !== "queued") return row;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`job ${jobId} did not settle in ${String(timeoutMs)}ms`);
+}
+
+/**
+ * Run one experiment the way the route runs it — through `startJob`, passing the
+ * run's own reading of the provider along — and wait for the job to settle.
+ *
+ * This is the only path that reaches the real circuit breaker, so it is the only
+ * one that can be observed against it.
+ */
+async function runExperimentAsJob(experimentId: string): Promise<typeof jobs.$inferSelect> {
+  const job = await startJob({
+    type: "lab_image",
+    ownerId,
+    payload: { experimentId },
+    run: async ({ reportProviderOutcome }) => {
+      const result = await runImageLabExperiment(experimentId, ownerId);
+      reportProviderOutcome(result.providerOutcome);
+      return result;
+    },
+  });
+  if (!job.ok) throw new Error(`lab job refused: ${String(job.active)} of ${String(job.limit)} slots in use`);
+  return await settledJob(job.jobId);
+}
+
+/**
+ * Four consecutive failures on the image lane: one short of the trip, so the
+ * lane's health afterwards is a direct readout of what the next run reported.
+ */
+function primeImageLaneOneShortOfTripping(): void {
+  resetProviderHealth();
+  for (let i = 0; i < 4; i++) recordProviderOutcome("image", false);
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +431,67 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
   });
 
+  it("refuses a probe that declares no control fixture at all", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    // Reachable by any direct API call: nothing forces a probe to name a fixture
+    // at create time, so the runner is where "a ruling on nothing" is stopped.
+    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a probe whose declared fixture is not the one it sends", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const declared = await seedControlFixture("pose");
+    const actuallySent = await seedControlFixture("pose");
+    // Declares A, orders B. The runner validates the declaration and renders the
+    // inputs, so this would file a verdict against a skeleton the provider never
+    // received — with both fixtures valid and reviewed, nothing else would catch it.
+    const { id, sink } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: actuallySent },
+      ],
+      controlImageId: declared,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a declared fixture sent under a role no control may occupy", async () => {
+    stubSuccessfulRenderer();
+    const controlId = await seedControlFixture("pose");
+    // The fixture IS sent, and it is a reviewed pose skeleton — but as the
+    // identity anchor, which asks the model to copy a face from a stick figure.
+    const { id, sink } = await createProbe({
+      inputs: [{ position: 1, role: "identity", imageId: controlId }],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
   it("refuses a fixture nobody has reviewed, before any spend", async () => {
     stubSuccessfulRenderer();
     const identityId = await seedReadyImage("avatar");
@@ -426,8 +570,7 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
   });
 
   it("discards the output when the experiment is deleted mid-render", async () => {
-    const identityId = await seedReadyImage("avatar");
-    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+    const { id, sink } = await createRunnableProbe();
     // An admin clearing a row a deploy left `running` while the provider call is
     // still in flight — deleting a live experiment stays allowed on purpose, so
     // the settle is what has to notice it matched nothing.
@@ -465,10 +608,12 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
         executedVersionId: EXECUTED_VERSION,
       });
     });
-    const identityId = await seedReadyImage("avatar");
-    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+    const { id, sink } = await createRunnableProbe();
 
-    await runImageLabExperiment(id, ownerId, sink);
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    // A moderation refusal is the provider ANSWERING, about this prompt rather
+    // than about its own health, so the breaker hears nothing.
+    expect(payload.providerOutcome).toBeNull();
 
     const experiment = await getImageLabExperimentDetail(id, ownerId);
     expect(experiment?.status).toBe("failed");
@@ -495,14 +640,16 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
 
   it("never re-runs a settled experiment", async () => {
     stubSuccessfulRenderer();
-    const identityId = await seedReadyImage("avatar");
-    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+    const { id, sink } = await createRunnableProbe();
 
     await runImageLabExperiment(id, ownerId, sink);
     const second = await runImageLabExperiment(id, ownerId, sink);
 
     expect(second.skipped).toBe("succeeded");
     expect(captured).toHaveLength(1);
+    // A run that did nothing reached no provider, so it reports nothing rather
+    // than the success its resolved promise would otherwise imply.
+    expect(second.providerOutcome).toBeNull();
   });
 
   it("refuses a baseline whose subject has no reference anchor", async () => {
@@ -530,6 +677,111 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     expect(experiment?.status).toBe("failed");
     expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
     expect(captured).toHaveLength(0);
+  });
+});
+
+/**
+ * What the lab tells the image lane's circuit breaker, and what it charges.
+ *
+ * Both matter for the same reason: this runner SETTLES every failure into its
+ * own row and resolves, so the job runner's default reading — a resolved run
+ * means the provider answered — would report a healthy provider for a dead one,
+ * report a success for a refusal that never made a call, and (before the guard's
+ * opt-in) bill a provider unit for a convolution run in this process.
+ */
+describe.skipIf(!ready)("image lab cost and provider health", () => {
+  it("reports a working provider when the render succeeds", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableProbe();
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(payload.providerOutcome).toBe(true);
+  });
+
+  it("reports a failed provider for a failure that is evidence about the upstream", async () => {
+    setImageLabRendererForTesting(() =>
+      Promise.resolve({ ok: false, error: "replicate 503: service unavailable", predictionId: "pred_lab_transient" }),
+    );
+    const { id, sink } = await createRunnableProbe();
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    expect(payload.providerOutcome).toBe(false);
+  });
+
+  it("reports nothing for a refusal that never reached the provider", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const { id, sink } = await createProbe({
+      modelSlug: UNPINNED_SLUG,
+      inputs: [{ position: 1, role: "identity", imageId: identityId }],
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.failureCode).toBe(imageLabDiagnosticCode("version_unpinned"));
+    expect(payload.providerOutcome).toBeNull();
+    expect(captured).toHaveLength(0);
+  });
+
+  it("trips the breaker through the job the route starts", async () => {
+    setImageLabRendererForTesting(() =>
+      Promise.resolve({ ok: false, error: "replicate 503: service unavailable", predictionId: "pred_lab_transient" }),
+    );
+    const { id } = await createRunnableProbe();
+
+    primeImageLaneOneShortOfTripping();
+    const job = await runExperimentAsJob(id);
+
+    // The fifth consecutive failure. Before the outcome channel this same run
+    // recorded a SUCCESS, because settling a dead provider into a row is still a
+    // resolved promise — the lane would have read as healthy mid-outage.
+    expect(laneHealth("image")).toBe("unhealthy");
+    // The job itself succeeded: a settled experiment is not a failed job.
+    expect(job.status).toBe("done");
+  });
+
+  it("leaves the breaker untouched when the run reached no provider", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const { id } = await createProbe({
+      modelSlug: UNPINNED_SLUG,
+      inputs: [{ position: 1, role: "identity", imageId: identityId }],
+    });
+
+    primeImageLaneOneShortOfTripping();
+    await runExperimentAsJob(id);
+
+    // Not tripped, because the refusal added no failure — and not RESET either,
+    // which is what tells "reported nothing" apart from "reported a success": one
+    // more real failure still trips, so the streak was never cleared.
+    expect(laneHealth("image")).toBe("healthy");
+    recordProviderOutcome("image", false);
+    expect(laneHealth("image")).toBe("unhealthy");
+  });
+
+  it("charges no image budget for an edge-only extraction, and keeps the floor for everyone else", async () => {
+    const user = { id: ownerId };
+    const req = apiRequest("/api/admin/self/image-lab/controls/extract", { method: "POST" });
+    const used = async (): Promise<number> => (await readDailyUsage(ownerId, "provider_image_day")).used;
+    const before = await used();
+
+    // What the extract route asks for on an edge-only batch: its paid-kind count
+    // is zero, and an edge map is a sharp convolution in this process.
+    expect(await imageRenderRejection(user, req, { count: 0, allowZeroCount: true })).toBeNull();
+    expect(await used()).toBe(before);
+
+    // The opt-in changes nothing else — a paid batch still charges its whole size.
+    expect(await imageRenderRejection(user, req, { count: 2, allowZeroCount: true })).toBeNull();
+    expect(await used()).toBe(before + 2);
+
+    // And a caller that did not opt in keeps the floor of one, so a batch size
+    // that collapsed to zero by accident still costs what a render costs.
+    expect(await imageRenderRejection(user, req, { count: 0 })).toBeNull();
+    expect(await used()).toBe(before + 3);
   });
 });
 
@@ -574,8 +826,7 @@ describe.skipIf(!ready)("image lab experiment records", () => {
 
   it("lists this owner's experiments and deletes one with its output", async () => {
     stubSuccessfulRenderer();
-    const identityId = await seedReadyImage("avatar");
-    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+    const { id, sink, identityId } = await createRunnableProbe();
     await runImageLabExperiment(id, ownerId, sink);
 
     const listed = await listImageLabExperiments(ownerId);
@@ -612,6 +863,9 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
       sink,
     });
     expect(payload.sourceImageId).toBe(sourceId);
+    // A lane nobody called cannot be shown to be healthy: local work reports
+    // nothing rather than closing a tripped breaker on its own success.
+    expect(payload.providerOutcome).toBeNull();
 
     const controls = await listImageLabControls(ownerId, sink);
     expect(controls).toHaveLength(1);
@@ -632,7 +886,8 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     const sourceId = await seedReadyImage("avatar");
     const sink = new DiagnosticCollector();
 
-    await runImageLabControlExtraction({ ownerId, sourceImageId: sourceId, controlKinds: ["pose"], sink });
+    const payload = await runImageLabControlExtraction({ ownerId, sourceImageId: sourceId, controlKinds: ["pose"], sink });
+    expect(payload.providerOutcome).toBe(true);
 
     const controls = await listImageLabControls(ownerId, sink);
     expect(controls).toHaveLength(1);
@@ -663,6 +918,10 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
       failureCode: imageLabDiagnosticCode("preprocessor_output_invalid"),
     });
     expect(codes(sink)).toContain(imageLabDiagnosticCode("preprocessor_output_invalid"));
+    // The provider ANSWERED — with something that was not an image. That is a
+    // fact about the extractor, which is exactly why it is recorded apart from a
+    // failed prediction, and why the lane still reads as working.
+    expect(payload.providerOutcome).toBe(true);
     expect(await listImageLabControls(ownerId, sink)).toHaveLength(0);
     const rows = await db()
       .select({ id: images.id })
@@ -673,7 +932,7 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
 
   it("records a failed prediction as a render failure, not as invalid output", async () => {
     setImageLabPreprocessorForTesting(() =>
-      Promise.resolve({ ok: false, error: "replicate failed: upstream is unavailable" }),
+      Promise.resolve({ ok: false, error: "replicate 503: upstream is unavailable" }),
     );
     const sourceId = await seedReadyImage("avatar");
     const sink = new DiagnosticCollector();
@@ -689,6 +948,31 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     const first = Array.isArray(extracted) ? extracted[0] : undefined;
     expect(first).toMatchObject({ failureCode: imageLabDiagnosticCode("render_failed") });
     expect(IMAGE_LAB_DEPTH_PREPROCESSOR.outputField).toBe("grey_depth");
+    // Paid work that failed transiently: the breaker hears it, exactly as it
+    // would from the render lane this preprocessor shares an upstream with.
+    expect(payload.providerOutcome).toBe(false);
+  });
+
+  it("reports the failure from a batch that mixed local and paid work", async () => {
+    setImageLabPreprocessorForTesting(() =>
+      Promise.resolve({ ok: false, error: "replicate 503: service unavailable" }),
+    );
+    const sourceId = await seedReadyImage("avatar");
+    const sink = new DiagnosticCollector();
+
+    const payload = await runImageLabControlExtraction({
+      ownerId,
+      sourceImageId: sourceId,
+      controlKinds: ["edge", "depth"],
+      sink,
+    });
+
+    // The edge map succeeded in process and the depth prediction failed. One
+    // report per job, and the failure is the half the breaker exists to hear:
+    // it counts CONSECUTIVE failures, so reporting the local success instead
+    // would keep clearing a streak the lane is genuinely accumulating.
+    expect(payload.providerOutcome).toBe(false);
+    expect(await listImageLabControls(ownerId, sink)).toHaveLength(1);
   });
 
   it("refuses a source image this owner cannot read", async () => {

@@ -100,6 +100,32 @@ Rulings the build settled (2026-08-10):
   sources × pose/depth kinds, not sources. Edge is computed locally and pays
   nothing, and which kinds are paid is read from `imageLabPreprocessorFor`
   rather than restated at the route.
+- **A lab run tells the circuit breaker what actually happened**: `startJob`'s
+  `run` takes a `JobRunContext` whose `reportProviderOutcome(true | false |
+  null)` overrides the default "resolved means the provider answered" reading,
+  and both lab runners return that reading in their payload for the route to
+  report. Needed because the lab settles provider failures into rows and
+  resolves anyway, so the default recorded a healthy lane for a dead Replicate
+  and a successful call for work no provider saw. `false` is reserved for
+  `transient` classifications (`imageFailureHealthOutcome`, beside
+  `classifyImageFailure`) — the reading the scene chain already calls a possible
+  service outage; `content_rejection` and `other` (billing, missing token)
+  report nothing, because the provider answered and shedding fixes neither.
+  Local edge extraction and every precondition refusal report nothing too.
+- **Zero-cost image work opts out of the budget floor**: `imageRenderRejection`
+  keeps `Math.max(1, count)` for every caller, and takes `allowZeroCount` for
+  one that means it. The extract route passes it, so an edge-only batch charges
+  no `provider_image_day` unit while still clearing backpressure and the storage
+  reservation (which keeps its own floor of one — local work writes an image).
+- **A probe must SEND the control it declares**: the runner refuses
+  `image_lab.control_invalid` unless `controlImageId` is non-null and appears
+  exactly once among the ordered inputs under a control-class role (`pose`,
+  `depth`, `control` — `imageLabControlRole`'s image, which moved into the
+  contracts file so the form and the runner cannot disagree). Without it a
+  direct API call could declare fixture A, render fixture B, and record a
+  verdict against a skeleton the provider never saw. The create schema refuses
+  the same contradiction as a 400; the runner stays authoritative for rows that
+  predate the rule.
 
 ## Contracts
 

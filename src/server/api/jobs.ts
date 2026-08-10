@@ -15,6 +15,10 @@ import type { ApiJobType } from "./job-types";
  * Jobs that touch no provider map to null and report nothing — their failures say
  * something about this app, not about an upstream. That is `image_sweep` (file
  * reconciliation) and `identity_pack` (local decode/crop/measure/write).
+ *
+ * A lane here only says which breaker a job COULD be evidence about. Whether one
+ * particular run was is a second question, and a runner that settles its own
+ * failures answers it through {@link JobRunContext}.
  */
 function providerLaneFor(type: ApiJobType): ProviderLane | null {
   switch (type) {
@@ -27,7 +31,10 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     case "chat_place_image":
     // The Advanced Image Lab's two jobs. `lab_control_extract` computes an edge
     // map in-process, but pose and depth go to a Replicate preprocessor, so its
-    // failures are evidence about the same upstream the render lane rides.
+    // failures are evidence about the same upstream the render lane rides. Both
+    // lab runners settle their own failures, so both report through
+    // `reportProviderOutcome` — including "nothing happened here" for the runs
+    // that never left this process.
     case "lab_image":
     case "lab_control_extract":
       return "image";
@@ -47,6 +54,33 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
   }
 }
 
+/**
+ * What a job's body can tell the circuit breaker that the runner cannot work out
+ * for itself.
+ *
+ * The default rule — resolved means the provider answered, threw means it did
+ * not — is right for a lane whose work IS the provider call, and wrong twice for
+ * a runner that records its own outcomes. The Advanced Image Lab settles a dead
+ * Replicate call into an experiment row and resolves, which the default reads as
+ * a healthy provider; it also resolves for work no provider ever saw (a
+ * precondition refusal, an edge map computed in process), which the default
+ * reads as a successful call that would close a tripped breaker. Such a runner
+ * says what actually happened here instead.
+ */
+export interface JobRunContext {
+  /**
+   * `true` records one successful provider call, `false` one failed call, and
+   * `null` records NOTHING — the honest report for a run that reached no
+   * provider, or one whose failure says something about the request rather than
+   * about the upstream.
+   *
+   * A run that never calls this keeps the default rule, which is why every
+   * existing lane could stay a zero-argument closure. Last call wins; a run is
+   * expected to report once.
+   */
+  readonly reportProviderOutcome: (outcome: boolean | null) => void;
+}
+
 export interface StartJobOptions {
   type: ApiJobType;
   /**
@@ -56,8 +90,12 @@ export interface StartJobOptions {
    */
   ownerId?: string;
   payload: Record<string, unknown>;
-  /** Background work; its resolved value is merged into the job payload. */
-  run: () => Promise<Record<string, unknown>>;
+  /**
+   * Background work; its resolved value is merged into the job payload. The
+   * context is optional to take — a closure ignoring it reports nothing and
+   * keeps the default provider-outcome rule.
+   */
+  run: (job: JobRunContext) => Promise<Record<string, unknown>>;
 }
 
 export type StartJobResult =
@@ -100,24 +138,43 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
  * (rate-limits.plan.md slice 5) and may be refused. The background work is
  * **not** started in that case, so callers must branch on the result rather
  * than assume a job exists.
+ *
+ * The settled promise is what feeds this type's provider lane by default —
+ * resolved reports a working provider, thrown a failing one. A run that knows
+ * better overrides it through {@link JobRunContext}, including with "say
+ * nothing", which is the only way a job that reached no provider can avoid
+ * reporting health nobody probed.
  */
 export async function startJob(opts: StartJobOptions): Promise<StartJobResult> {
   const jobId = await insertJobRow(opts);
   if (typeof jobId !== "string") return jobId;
 
   const lane = providerLaneFor(opts.type);
+  // `undefined` while the run has said nothing, which is what keeps every lane
+  // that never took the channel on the settled-promise rule below.
+  let reported: boolean | null | undefined;
+  const context: JobRunContext = {
+    reportProviderOutcome: (outcome) => {
+      reported = outcome;
+    },
+  };
+  const laneOutcome = (settled: boolean): boolean | null => (reported === undefined ? settled : reported);
 
   void opts
-    .run()
+    .run(context)
     .then(async (result) => {
-      if (lane) recordProviderOutcome(lane, true);
+      const outcome = laneOutcome(true);
+      if (lane && outcome !== null) recordProviderOutcome(lane, outcome);
       await db()
         .update(jobs)
         .set({ status: "done", payload: { ...opts.payload, ...result }, finishedAt: new Date() })
         .where(eq(jobs.id, jobId));
     })
     .catch(async (err: unknown) => {
-      if (lane) recordProviderOutcome(lane, false);
+      // A run that reported a success and then threw is telling the truth twice:
+      // the provider answered, and something after it did not.
+      const outcome = laneOutcome(false);
+      if (lane && outcome !== null) recordProviderOutcome(lane, outcome);
       const message = errorText(err).slice(0, 500);
       log.warn("api.jobs", `${opts.type} job failed`, { jobId, error: message });
       try {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   emptyImageLabSettings,
   imageLabControlMetaSchema,
+  imageLabControlRole,
   imageLabCreateExperimentRequestSchema,
   imageLabDiagnosticCode,
   imageLabExperimentListSchema,
@@ -257,6 +258,46 @@ describe("imageLabCreateExperimentRequestSchema", () => {
       inputs: [{ position: 2, role: "identity", imageId: "img_face" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("refuses a declared control that is not among the images sent", () => {
+    // The runner validates the DECLARED fixture and renders the ORDERED inputs,
+    // so this request would file a verdict against a skeleton nothing sent.
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "control_probe",
+      inputs: probeInputs,
+      controlImageId: "img_other_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses a declared control sent under a role no fixture may occupy", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "control_probe",
+      inputs: [
+        { position: 1, role: "identity", imageId: "img_face" },
+        { position: 2, role: "style", imageId: "img_skeleton" },
+      ],
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an edge fixture sent under the generic control role", () => {
+    // `imageLabControlRole("edge")` is `control`: the fixture vocabulary and the
+    // reference-role vocabulary are different lists, and this is the seam.
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "control_probe",
+      inputs: [
+        { position: 1, role: "identity", imageId: "img_face" },
+        { position: 2, role: imageLabControlRole("edge"), imageId: "img_edges" },
+      ],
+      controlImageId: "img_edges",
+      controlKind: "edge",
+    });
+    expect(result.success).toBe(true);
   });
 
   it("refuses an unregistered experiment kind", () => {

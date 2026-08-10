@@ -18,11 +18,14 @@ import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/
  *
  * Edge pays NOTHING: it is a sharp convolution in this process, and billing a
  * daily provider budget for local work would make the number stop meaning what
- * it says. An edge-only batch therefore charges no provider units and still
- * passes the guard, whose own floor of one keeps the storage reservation and the
- * backpressure check honest. Which kinds are paid is not restated here —
- * `imageLabPreprocessorFor` already answers it, and a kind with no pin is by
- * definition the one nobody is billed for.
+ * it says. An edge-only batch therefore charges a count of zero, which is why
+ * the guard is asked to `allowZeroCount` — its default floor of one exists to
+ * catch a caller that forgot to size its batch, and would otherwise bill a unit
+ * of `provider_image_day` for work no provider runs. The other two legs still
+ * run at that count: local work writes an image and rides the same queue, so it
+ * is still refused on a full disk or a dead lane. Which kinds are paid is not
+ * restated here — `imageLabPreprocessorFor` already answers it, and a kind with
+ * no pin is by definition the one nobody is billed for.
  *
  * The jobs are started by the ROUTE rather than the service: `@/server/api`
  * imports `@/server/images`, so a `startJob` call from the extraction service
@@ -31,6 +34,11 @@ import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/
  * reports the house 429, with the already-started jobs left to finish, because
  * cancelling live provider work to make a count tidy would waste the very spend
  * the cap exists to bound.
+ *
+ * Each job reports what its own batch learned about the image provider, for the
+ * reason the experiment route does: the extraction runner records every failure
+ * and resolves either way, and an edge-only run must not be read as a successful
+ * provider call that closes a tripped breaker.
  */
 export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const body = await readBody(req, imageLabExtractControlsRequestSchema);
@@ -38,7 +46,10 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
 
   const { sourceImageIds, controlKinds, note } = body.value;
   const paidKinds = controlKinds.filter((kind) => imageLabPreprocessorFor(kind) !== null);
-  const blocked = await imageRenderRejection(user, req, { count: sourceImageIds.length * paidKinds.length });
+  const blocked = await imageRenderRejection(user, req, {
+    count: sourceImageIds.length * paidKinds.length,
+    allowZeroCount: true,
+  });
   if (blocked) return blocked;
 
   let queued = 0;
@@ -47,13 +58,16 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
       type: "lab_control_extract",
       ownerId: user.id,
       payload: { sourceImageId, controlKinds },
-      run: () =>
-        runImageLabControlExtraction({
+      run: async ({ reportProviderOutcome }) => {
+        const result = await runImageLabControlExtraction({
           ownerId: user.id,
           sourceImageId,
           controlKinds,
           ...(note ? { note } : {}),
-        }),
+        });
+        reportProviderOutcome(result.providerOutcome);
+        return result;
+      },
     });
     if (!job.ok) return jobCapRejection(job, user, req);
     queued += 1;

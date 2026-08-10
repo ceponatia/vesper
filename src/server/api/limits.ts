@@ -145,6 +145,22 @@ export interface ImageRenderGuardOptions {
   count?: number;
   /** Override the per-render storage reservation. */
   reserveBytes?: number;
+  /**
+   * Let a `count` of 0 charge nothing.
+   *
+   * Off by default, and deliberately opt-in rather than inferred: for every
+   * ordinary caller a count of 0 is a caller that forgot to say how much work it
+   * was queueing, and silently charging it nothing would turn an arithmetic slip
+   * into free provider spend. It is ON for work that genuinely bills no
+   * provider — the lab's edge-only extraction, which is a sharp convolution in
+   * this process — where charging the floor's one unit of `provider_image_day`
+   * makes that number stop meaning what it says.
+   *
+   * The other two legs still run, and the storage reservation keeps its floor of
+   * one: local work writes an image too, and it must not be admitted onto a full
+   * disk or into a dead lane.
+   */
+  allowZeroCount?: boolean;
 }
 
 /**
@@ -155,14 +171,21 @@ export interface ImageRenderGuardOptions {
  * The budget is charged **last** on purpose: it is the only guard here that
  * *consumes* something, so a render refused for a dead provider or a full disk
  * must not also cost the caller a unit of their daily allowance.
+ *
+ * A charge of zero skips that leg entirely rather than consuming 0, so a caller
+ * whose provider bill really is nothing cannot be refused by a budget it is not
+ * spending — and leaves no counter row claiming it did.
  */
 export async function imageRenderRejection(
   user: Pick<CurrentUser, "id">,
   req: NextRequest,
   options: ImageRenderGuardOptions = {},
 ): Promise<Response | null> {
-  const count = Math.max(1, options.count ?? 1);
-  const reserveBytes = (options.reserveBytes ?? ESTIMATED_RENDER_BYTES) * count;
+  const requested = options.count ?? 1;
+  const charged = options.allowZeroCount === true ? Math.max(0, requested) : Math.max(1, requested);
+  // Storage keeps the floor whatever the bill is: zero-cost work still writes an
+  // image, so the reservation is about bytes rather than about spend.
+  const reserveBytes = (options.reserveBytes ?? ESTIMATED_RENDER_BYTES) * Math.max(1, charged);
 
   const shed = await backpressureRejection("image", user, req);
   if (shed) return shed;
@@ -170,7 +193,8 @@ export async function imageRenderRejection(
   const overQuota = await storageQuotaRejection(user, req, reserveBytes);
   if (overQuota) return overQuota;
 
-  return dailyBudgetRejection("provider_image_day", user, req, count);
+  if (charged === 0) return null;
+  return dailyBudgetRejection("provider_image_day", user, req, charged);
 }
 
 /** Base64 carries 3 bytes per 4 characters; close enough to charge a quota with. */
