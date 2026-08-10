@@ -91,6 +91,23 @@ describe("withReviewedImageQuality", () => {
     });
     expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
   });
+
+  it("clears the Pony wrapper's `nsfw, naked` negative default", () => {
+    // The provider default would suppress exactly the output this app renders,
+    // and it is invisible in the payload because it is never sent.
+    const prepared = withReviewedImageQuality(
+      model("aisha-ai-official/likereality-pony-v1:version", { negative_prompt: "nsfw, naked" }),
+    );
+    expect(prepared.extraInput).toMatchObject({ width: 832, height: 1216, negative_prompt: "" });
+    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
+  });
+
+  it("pins PuLID to fidelity and off its 512-square default", () => {
+    const prepared = withReviewedImageQuality(
+      model("nsfw-api/sdxl-pulid:version", { width: 512, height: 512, method: "style" }),
+    );
+    expect(prepared.extraInput).toMatchObject({ width: 832, height: 1216, method: "fidelity" });
+  });
 });
 
 describe("preparePromptForImageModel", () => {
