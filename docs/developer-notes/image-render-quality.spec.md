@@ -171,6 +171,51 @@ square render's width.
   boilerplate;
 - HyperLoRA/InstantID strengths remain at provider defaults until trialed.
 
+**NSFW FLUX Dev** (registered 2026-08-11)
+
+- `width: 832`;
+- `height: 1216`;
+- no negative-prompt input exists;
+- steps and guidance remain at the wrapper's defaults until trialed.
+
+Its own default is a 1024×1024 square, so every render would lose a quarter of
+the frame to the 3:4 crop. Same mechanism as Juggernaut above.
+
+**LikeReality Pony v1** (registered 2026-08-11)
+
+- `width: 832`;
+- `height: 1216`;
+- `negative_prompt: ""`.
+
+The negative clearing is the consequential one here and differs in kind from
+Juggernaut's and RealVis's: this wrapper's provider default is literally
+`"nsfw, naked"`, which suppresses the output an adult-content app exists to
+render and contradicts the authored wardrobe and exposure state — invisibly,
+because an unsent field never appears in the payload. `prepend_preprompt` stays
+at its default `true`: the Pony score-tag preamble is standard for the checkpoint
+family and is not the same thing as the `"nsfw, naked"` default. ADetailer
+passes, upscaling, refiner, and CFG remain trial-controlled.
+
+**SDXL PuLID** (registered 2026-08-11)
+
+- `width: 832`;
+- `height: 1216`;
+- `method: "fidelity"`;
+- `face_weight` and the sampler settings remain at provider defaults until
+  trialed.
+
+The provider's 512×512 default is both off-shape and far below the 768×1024
+canonical portrait. `method` is pinned because Vesper runs this model for
+identity preservation and never for style transfer, so a changed provider default
+must not be able to move it.
+
+**Pruna P-Image** (registered 2026-08-11)
+
+- no runtime override today;
+- it is the one model in that batch with a native `aspect_ratio` enum including
+  `3:4`, so it needs no dimension pin and no crop;
+- provider negative default is already empty — it has no negative-prompt input.
+
 ## Qwen numbered-reference prompt preparation
 
 The existing builders use this provider-neutral sentence:

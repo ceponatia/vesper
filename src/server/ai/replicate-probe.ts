@@ -22,8 +22,30 @@ import { parseAspectValue, type ImageAspectMode, type ImageReferenceArity } from
 const REPLICATE_BASE = "https://api.replicate.com/v1";
 const PROBE_TIMEOUT_MS = 20_000;
 
-/** Field names checked first, in order, so a model with several image-ish inputs resolves deterministically. */
-const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images"] as const;
+/**
+ * Field names checked first, in order, so a model with several image-ish inputs
+ * resolves deterministically. The last two are identity inputs on adapter
+ * pipelines (InstantID, PuLID), which name their face input rather than calling
+ * it `image`.
+ */
+const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images", "reference_image", "face_image"] as const;
+
+/**
+ * Names checked LAST, after the ordinary fallback scan.
+ *
+ * These are CONTROL inputs — a depth map, a pose skeleton, a mask — and they are
+ * URI-typed exactly like an identity reference, so the fallback cannot tell them
+ * apart. `nsfw-api/sdxl-pulid` is why this exists: it declares `depth_image`
+ * before `reference_image`, so plain property order resolved its reference field
+ * to the ControlNet depth input, and every render would have handed a
+ * character's portrait to a depth converter — a silhouette-shaped stranger
+ * rather than that person, with nothing in the payload looking wrong.
+ *
+ * Deprioritized rather than excluded: a model whose ONLY image input is a
+ * control image is still better described as editing from that input than as
+ * unable to edit at all, and the admin page can correct the stored field.
+ */
+const DEPRIORITIZED_REFERENCE_FIELDS = ["depth_image", "pose_image", "mask", "mask_image", "control_image"] as const;
 
 // Every string here is `nullish` for the same reason as the model record below:
 // a null is Replicate saying "no value", and a rejected property parse would
@@ -247,9 +269,12 @@ function referenceArityOf(value: unknown): { arity: ImageReferenceArity; descrip
 }
 
 function findReferenceField(properties: Record<string, unknown>): ReferenceField | null {
+  const preferred: readonly string[] = PREFERRED_REFERENCE_FIELDS;
+  const deprioritized: readonly string[] = DEPRIORITIZED_REFERENCE_FIELDS;
   const names = [
     ...PREFERRED_REFERENCE_FIELDS.filter((name) => name in properties),
-    ...Object.keys(properties).filter((name) => !(PREFERRED_REFERENCE_FIELDS as readonly string[]).includes(name)),
+    ...Object.keys(properties).filter((name) => !preferred.includes(name) && !deprioritized.includes(name)),
+    ...DEPRIORITIZED_REFERENCE_FIELDS.filter((name) => name in properties),
   ];
   for (const field of names) {
     const match = referenceArityOf(properties[field]);

@@ -54,6 +54,32 @@ const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, u
     // profile may add conflict-checked terms using the actual visual intent.
     negative_prompt: "",
   },
+  "aisha-ai-official/nsfw-flux-dev": {
+    // The wrapper defaults to a 1024×1024 square, so every render would be
+    // cropped to 3:4 and lose a quarter of the frame. 832×1216 is the portrait
+    // bucket this architecture is trained on; `cropToTargetAspect` trims the
+    // remainder, exactly as for Juggernaut above.
+    width: 832,
+    height: 1216,
+  },
+  "aisha-ai-official/likereality-pony-v1": {
+    width: 832,
+    height: 1216,
+    // The wrapper's provider default is literally `"nsfw, naked"` — a hidden
+    // negative that suppresses the output this app exists to produce and
+    // silently contradicts the authored wardrobe and exposure state. The Pony
+    // score-tag preamble is separate and stays on (`prepend_preprompt`).
+    negative_prompt: "",
+  },
+  "nsfw-api/sdxl-pulid": {
+    // 512×512 is the wrapper's default: both off-shape and far below the
+    // 768×1024 canonical portrait.
+    width: 832,
+    height: 1216,
+    // Vesper runs this model for identity preservation, never style transfer.
+    // Pinned so a changed provider default cannot move it off `fidelity`.
+    method: "fidelity",
+  },
 };
 
 /** Strip a pinned `owner/name:version` suffix without touching ordinary slugs. */
