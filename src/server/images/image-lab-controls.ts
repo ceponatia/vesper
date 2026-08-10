@@ -12,7 +12,8 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import { classifyImageFailure, runReplicatePreprocessor, type ReplicateImageResult, type ReplicatePreprocessorRequest } from "../ai";
 import { db, images } from "../db";
-import { createImageAsset, deleteOwnedImage, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
+import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
+import type { ImageLabRefusal } from "./image-lab";
 import { saveOwnedImageBuffer } from "./route-safe";
 
 /**
@@ -492,4 +493,87 @@ export async function uploadImageLabControl(input: UploadImageLabControlInput): 
   const stored = await storeControlFixture({ ownerId: input.ownerId, meta, buffer: input.buffer, sink: input.sink });
   if (!stored) return { ok: false, error: "could not store that control fixture" };
   return { ok: true, control: stored };
+}
+
+// ---------------------------------------------------------------------------
+// Review, deletion
+// ---------------------------------------------------------------------------
+
+export type ReviewImageLabControlResult =
+  | { ok: true; control: ImageLabControl }
+  | { ok: false; refusal: ImageLabRefusal };
+
+/** The reading the probe's own fixture check produces, spelled the same way. */
+function controlInvalid(message: string): ImageLabRefusal {
+  return { code: imageLabDiagnosticCode("control_invalid"), message };
+}
+
+/**
+ * Record the admin's review of one fixture — the gate the Stage 0 protocol puts
+ * in front of every trial ("extract a pose skeleton and a depth map … review
+ * both in the fixtures panel").
+ *
+ * The check is worth a stored fact rather than a habit because of what it lets a
+ * later reading rule out: a probe that comes back `ignores_control` has to be
+ * able to eliminate "the fixture was wrong" before it says anything about the
+ * model, and an unreviewed skeleton makes that elimination impossible.
+ *
+ * `reviewedAt` is stamped from THIS clock, never from the request, for the
+ * reason the generator is not taken from an upload body: a caller that could
+ * name its own review time could file today's glance as last week's review.
+ *
+ * The stored bag is MERGED, not replaced. `images.meta` is shared — a ready row
+ * also carries the encode metadata the save path wrote — so assigning the
+ * fixture's own fields over it would make a review a lossy write wearing an
+ * annotation's clothes.
+ *
+ * Null when the image is not this owner's, indistinguishable from never having
+ * existed, so the route never confirms a foreign image. An image that IS this
+ * owner's and still cannot say what fixture it is refuses with
+ * `control_invalid`, exactly as `checkControlFixture` refuses one at run time.
+ */
+export async function reviewImageLabControl(
+  ownerId: string,
+  controlId: string,
+  reviewNote: string,
+  sink?: DiagnosticSink,
+): Promise<ReviewImageLabControlResult | null> {
+  const row = await ownedImageRow(controlId, ownerId);
+  if (!row) return null;
+  if (row.kind !== "lab_control") {
+    return { ok: false, refusal: controlInvalid(`image ${controlId} is a ${row.kind}, not a lab control fixture`) };
+  }
+  const stored = parseOrNull(imageLabControlMetaSchema, row.meta, sink, "images.meta.lab_control");
+  if (!stored) {
+    return { ok: false, refusal: controlInvalid(`control image ${controlId} has no readable fixture metadata`) };
+  }
+
+  const meta: ImageLabControlMeta = { ...stored, reviewedAt: new Date().toISOString(), reviewNote };
+  const [updated] = await db()
+    .update(images)
+    .set({ meta: { ...imageMeta(row.meta), ...meta } })
+    .where(and(eq(images.id, controlId), eq(images.ownerId, ownerId)))
+    .returning();
+  if (!updated) return null;
+  return { ok: true, control: { imageId: updated.id, meta, createdAt: updated.createdAt.toISOString() } };
+}
+
+/**
+ * Retire one fixture — the owner-scoped delete every lab asset goes through,
+ * with the kind guard the experiment's own output delete carries, so an id typo
+ * on a fixtures endpoint can never take an avatar with it.
+ *
+ * An experiment that CITED this fixture is deliberately left standing. Its
+ * `control_image_id` is `on delete set null`, so the row keeps its kind, its
+ * ordered inputs, its settings, the prompt that was sent and the verdict that
+ * was ruled — which is the point: an experiment is the record of a render that
+ * happened, and retiring the skeleton afterwards does not un-happen it.
+ * Refusing to delete a referenced fixture would instead make bench equipment
+ * permanently unretireable the moment it was used once.
+ *
+ * False when the fixture is not this owner's, absent, or not a `lab_control` —
+ * one answer for all three, so the route never confirms a foreign image.
+ */
+export async function deleteImageLabControl(ownerId: string, controlId: string): Promise<boolean> {
+  return await deleteOwnedImage(controlId, ownerId, { kind: "lab_control" });
 }

@@ -466,6 +466,28 @@ export const imageLabUploadControlRequestSchema = z.object({
 export type ImageLabUploadControlRequest = z.infer<typeof imageLabUploadControlRequestSchema>;
 
 /**
+ * The review-fixture request — the human check the Stage 0 protocol demands
+ * before a trial uses a fixture ("extract a pose skeleton and a depth map …
+ * review both in the fixtures panel").
+ *
+ * The note is REQUIRED for the same reason a verdict's is: an unreviewed fixture
+ * and one reviewed with nothing written beside it read identically six months
+ * later, and "the fixture was wrong" is the first thing an `ignores_control`
+ * verdict has to be able to rule out. The cap matches
+ * {@link imageLabControlMetaSchema}'s own `reviewNote`, so nothing a client may
+ * send is silently truncated on the way into `images.meta`.
+ *
+ * `reviewedAt` is deliberately ABSENT: the server stamps it from its own clock,
+ * because a request that could name its own review time could file today's
+ * glance as last week's review, and a fixture's review date is exactly what a
+ * disputed verdict is re-examined against.
+ */
+export const imageLabReviewControlRequestSchema = z.object({
+  reviewNote: z.string().trim().min(1).max(2000),
+});
+export type ImageLabReviewControlRequest = z.infer<typeof imageLabReviewControlRequestSchema>;
+
+/**
  * The record-verdict request. The note is REQUIRED for the reason a trial
  * verdict's reason is: a ruling with nothing written beside it is
  * indistinguishable from a misclick six months later, and this ruling decides

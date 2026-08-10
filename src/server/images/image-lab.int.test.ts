@@ -1,7 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { imageLabDiagnosticCode, type ImageLabControlKind, type ImageLabCreateExperimentRequest } from "@/contracts";
+import {
+  imageLabControlSchema,
+  imageLabDiagnosticCode,
+  type ImageLabControlKind,
+  type ImageLabCreateExperimentRequest,
+} from "@/contracts";
 import {
   endTestPool,
   probeIntegrationDb,
@@ -25,9 +30,11 @@ import {
   type ImageLabRenderRequest,
 } from "./image-lab";
 import {
+  deleteImageLabControl,
   IMAGE_LAB_DEPTH_PREPROCESSOR,
   IMAGE_LAB_POSE_PREPROCESSOR,
   listImageLabControls,
+  reviewImageLabControl,
   runImageLabControlExtraction,
   setImageLabPreprocessorForTesting,
   uploadImageLabControl,
@@ -585,5 +592,73 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
       .where(and(eq(images.ownerId, ownerId), eq(images.kind, "lab_control")))
       .limit(1);
     expect(row?.status).toBe("ready");
+  });
+
+  it("records a review that persists and still parses as a wire fixture", async () => {
+    const controlId = await seedControlFixture("pose");
+    const sink = new DiagnosticCollector();
+
+    const reviewed = await reviewImageLabControl(ownerId, controlId, "skeleton reads cleanly; both wrists resolved", sink);
+    expect(reviewed?.ok).toBe(true);
+    if (reviewed?.ok) {
+      expect(reviewed.control.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
+      expect(reviewed.control.meta.reviewedAt).toBeTruthy();
+      // The panel re-parses what the route hands it, so a review that produced
+      // a shape the wire schema rejects would empty the fixtures list rather
+      // than showing an unreviewed tile.
+      expect(imageLabControlSchema.safeParse(reviewed.control).success).toBe(true);
+    }
+
+    // Stored, not merely returned — and MERGED onto the shared meta bag, so the
+    // row's own `hidden` flag is still there beside the review.
+    const [listed] = await listImageLabControls(ownerId, sink);
+    expect(listed?.meta.reviewedAt).toBeTruthy();
+    expect(listed?.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
+    expect(listed?.meta.generator).toBe("hand_authored");
+    const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, controlId)).limit(1);
+    expect(imageMeta(row?.meta).hidden).toBe(true);
+  });
+
+  it("refuses to review an image that is not a lab control fixture", async () => {
+    // Owned and ready, and entirely unable to say what fixture it is.
+    const notAFixture = await seedReadyImage("portrait_variant");
+    const refused = await reviewImageLabControl(ownerId, notAFixture, "looks fine to me");
+    expect(refused?.ok).toBe(false);
+    if (refused && !refused.ok) expect(refused.refusal.code).toBe(imageLabDiagnosticCode("control_invalid"));
+    // An absent or foreign id is a MISS, never a refusal: the route answers 404
+    // and never confirms a foreign image exists.
+    expect(await reviewImageLabControl(ownerId, "imgnotarealimageaaaaaaaa", "n/a")).toBeNull();
+  });
+
+  it("deletes a fixture and leaves the experiment that cited it standing", async () => {
+    const controlId = await seedControlFixture("depth");
+    const identityId = await seedReadyImage("avatar");
+    const settings = { controls: { guidance: 4.5, steps: 28 }, controlInput: { control_scale: 0.8 } };
+    const { id } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "depth", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "depth",
+      settings,
+    });
+
+    expect(await deleteImageLabControl(ownerId, controlId)).toBe(true);
+    expect(await listImageLabControls(ownerId)).toHaveLength(0);
+    const rows = await db().select({ id: images.id }).from(images).where(eq(images.id, controlId));
+    expect(rows).toHaveLength(0);
+
+    // `control_image_id` is `on delete set null`: the experiment keeps its
+    // recorded kind, order and settings — it is the record of a render that
+    // happened, and retiring the skeleton afterwards does not un-happen it.
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.controlImageId).toBeNull();
+    expect(experiment?.controlKind).toBe("depth");
+    expect(experiment?.settings).toEqual(settings);
+    expect(experiment?.inputs).toHaveLength(2);
+
+    // A second delete is a miss, not a second removal — the route's 404.
+    expect(await deleteImageLabControl(ownerId, controlId)).toBe(false);
   });
 });
