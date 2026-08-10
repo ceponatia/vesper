@@ -120,10 +120,12 @@ invocation behind the same `pnpm jscpd` if per-folder budgets won't express clea
   [narrator-physical-guidance.plan.md](narrator-physical-guidance.plan.md) and
   [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md) are both
   still editing, so coordinate or migrate it last.
-- **The output move is not mechanical.** `docs/scene-image-eval/index.md` is a tracked
-  review page embedding the generated images by relative path, so moving the output
-  breaks the page it exists to serve — and the images are already gitignored, making this
-  a convention violation rather than git pollution (lower urgency, real decision: OQ2).
+- **The output move is mechanical now — closed 2026-08-10.** The tracked review page
+  that embedded the generated images (`docs/scene-image-eval/index.md`) is deleted: it
+  described the removed Venice provider and its dead model ids, its prompts predate the
+  phantom-limb POV rewrite, and its images were already gitignored — nothing on it was
+  still true. C11's output move therefore breaks no page, and OQ2 is resolved by the
+  same deletion: eval output simply moves off `docs/`, no documented exception retained.
 - **Import normalization** touches the module graph the cycles check scans, so this
   plan's pull request must reach a green `verify` before merging.
 
@@ -131,5 +133,3 @@ invocation behind the same `pnpm jscpd` if per-folder budgets won't express clea
 
 - **OQ1.** What targeted duplication-gate grain remains silent on the current tree
   while catching the known replay, editor, and script clones?
-- **OQ2.** Does scene-image eval output move with its review index, or keep a
-  documented `docs/` exception?

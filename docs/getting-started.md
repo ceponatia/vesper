@@ -29,11 +29,13 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ## Environment
 
-> **Text models are not env-configurable.** The chat narrator model is chosen in
+> **Models are not env-configurable.** The chat narrator model is chosen in
 > code (`lib/narrative-models.ts`) or per-character in the UI; the post-turn agent
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
-> model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
-> Only the **image** models below — Venice and Replicate — remain env-overridable.
+> model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`). Image
+> models are rows in the `image_models` registry, managed from the admin-only
+> `/settings/image-models` page ([images/providers.md](images/providers.md)) — the
+> `REPLICATE_*` variables below configure the one image backend, never model choice.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
 > (`lib/narrative-models.ts`) as **Aion 3.0**, it is notable beyond its narrator
