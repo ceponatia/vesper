@@ -20,9 +20,11 @@ framing, and every narrator surface.
 
 ## Implementation status
 
-- **Slice 1 — camera vocabulary, composer read, prompt emission**: not started.
-- **Slice 2 — staging registry and gates**: not started; builds on slice 1's
-  camera vocabulary.
+- **Slice 1 — camera vocabulary, composer read, prompt emission**: not
+  started. Includes the composer-model seam (`sceneComposerModelId()`, default
+  unchanged).
+- **Slice 2 — staging registry, gates, composer-model move**: not started;
+  builds on slice 1's camera vocabulary.
 - **Slice 3 — committed-state override**: not started; consumes
   `character_chats.scene` (live dark since 2026-08-02) — sparse facing
   coverage is expected while `CHAT_CONTACT_ACTIONS` gathers data, and absence
@@ -31,6 +33,28 @@ framing, and every narrator surface.
 Each slice's **enable follows its probe**: land the code with behavior
 unchanged where evidence is absent, run the paid A/B probe (owner-gated
 spend), and record the verdict here before treating the slice as accepted.
+
+## Owner rulings (2026-08-10)
+
+- **Away means fully away; the glance back is itself evidence-gated.** A
+  character established as facing away renders full back-to-camera by
+  default. `away_glance_back` is proposed only when the chat history actually
+  describes the glance — her looking back over her shoulder, peeking back —
+  and its evidence quote must contain that glance language (the `GLANCE_WORDS`
+  backstop below). A behind-position quote alone grounds `away`, never the
+  glance. This supersedes any engaged-versus-absorbed heuristic: engagement is
+  not glance evidence.
+- **The composer should be less cautious.** Falling back to the chat's
+  narrative model on refusal is approved, and the standing direction is
+  stronger: the scene composer itself moves onto a less moderation-prone
+  model (slice 2, verdict recorded by its probe). The propose-then-verify
+  architecture is unchanged by the model choice — the registries own every
+  explicit word for grounding reasons, not only moderation, and intimate
+  anatomy stays injected deterministically because exposure gating is code's
+  job regardless of how bold the composer is.
+- **Orientation is focal-only in v1.** One-on-one chats are the current test
+  bed; `others[]` entries carry no orientation, and per-subject orientation
+  waits for multi-character chats to matter.
 
 ## Contracts
 
@@ -73,6 +97,12 @@ Orientation phrases must contain **no limb nouns** (the phantom-limb scar:
 a limb noun summons a limb). "Seen from behind", "in profile", "over her
 shoulder" are shoulder/back-region words and rendered safe by possessive
 binding in the assembled line, which always names the subject.
+
+`away_glance_back` carries one extra requirement beyond `evidenceRequired`
+(owner ruling 2026-08-10): its evidence quote must itself contain glance
+language — `GLANCE_WORDS = /\b(glanc\w*|look\w*\s+(back|over)|over\s+(her|his|their)\s+shoulder|peek\w*)\b/i`,
+a lexical backstop in the `BLUSH_WORDS`/`BARE_LIMB` family. A quote that
+grounds only the behind-position resolves to `away`.
 
 ### Composer schema additions — `sceneSpecSchema`
 
@@ -133,9 +163,12 @@ export interface SceneStaging {
 Initial catalog (~a dozen entries; each is a data edit): `held_from_behind`
 (clothed-capable, `requiresBare: []`), `held_from_behind_bare`,
 `kneeling_before_viewer`, `astride_viewer_facing`, `astride_viewer_away`,
-`bent_over_surface`, `on_all_fours_glance_back`, `lying_beneath_viewer`,
+`bent_over_surface`, `on_all_fours`, `lying_beneath_viewer`,
 `lying_face_down`, `spooned_from_behind`, `pressed_to_wall_facing`,
-`pressed_to_wall_away`. Template style follows the viewer-body registry:
+`pressed_to_wall_away`. Away-facing entries carry camera orientation `away`
+per the glance ruling; glance-back variants are separate entries added as
+data edits, and a `_glance_back` staging's evidence quote must pass
+`GLANCE_WORDS` like the bare orientation does. Template style follows the viewer-body registry:
 possessively bound, geometry-first, positive phrasing — e.g.
 `kneeling_before_viewer` ⇒ camera `{toward_viewer, close, high}`, template
 "Seen from above at the viewer's standing height: {name} kneels facing the
@@ -183,7 +216,10 @@ substituted (no bare "a hand"/"one leg" survives into a template).
   height MUST carry `camera.evidence` — a short phrase copied exactly from the
   recent narration or the player's own words that establishes where the viewer
   is relative to the subject or which way she faces. If nothing establishes
-  it, keep the defaults.
+  it, keep the defaults. Behind-position evidence proposes `away`;
+  `away_glance_back` is proposed only when the history describes her actually
+  glancing or looking back, and the quote must be that glance (owner ruling
+  2026-08-10).
 - The gaze-translation rule becomes orientation-aware: with `away` /
   `away_glance_back` proposed, player-directed gaze translates to "glancing
   back over her shoulder toward the viewer", not "toward the viewer".
@@ -197,6 +233,21 @@ substituted (no bare "a hand"/"one leg" survives into a template).
   ground against narration **plus** player messages — states its corpus
   explicitly.
 
+### Composer model (slices 1–2)
+
+`composeSceneSpec` stops hardcoding `toolModelId()`: slice 1 introduces
+`sceneComposerModelId()` as its own `MODEL_DEFAULTS` key (initial value = the
+tool default, so slice 1 changes no call). Slice 2 flips that default to a
+less moderation-prone model per the owner ruling — candidates are the chat's
+narrative default or a designated uncensored tool-class model; the slice-2
+probe records which. Refusal handling stays layered: a refusal or schema miss
+on the primary model retries once on `narrativeModelId()` (the approved
+fallback) before `generateChecked`'s existing heuristic fallback takes over —
+so the terminal degrade remains today's deterministic spec, never a failed
+render. `characterAppearanceSummary` keeps `allowIntimate: false` for the
+composer either way: the composer picks ids, and explicit content enters at
+render assembly only.
+
 ### Resolution and clamps (`resolveScenePlan`)
 
 1. Look up orientation/distance/height ids; unknown id ⇒ default +
@@ -204,7 +255,11 @@ substituted (no bare "a hand"/"one leg" survives into a template).
 2. Evidence gate: a non-default orientation or height whose `camera.evidence`
    fails the verbatim-substring check (reuse `normalizeEvidence` +
    `VIEWER_EVIDENCE_MIN_CHARS` against narration + player messages) degrades
-   to the default + `images.scene_composer.camera_ungrounded` (info).
+   to the default + `images.scene_composer.camera_ungrounded` (info). Two-step
+   for the glance: an `away_glance_back` whose quote matches the transcript
+   but fails `GLANCE_WORDS` degrades to `away` — the behind-position stands,
+   the glance does not — with `images.scene_composer.glance_ungrounded`
+   (info); a quote matching nothing degrades all the way to the default.
 3. Posture derivation for height (needs no evidence): focal posture
    kneeling/crouching/sitting/lying with no committed viewer posture ⇒ `high`
    is permitted without a quote (the geometry is entailed by the pose text the
@@ -261,8 +316,10 @@ and the player's participant ids the way the lane adapter does
 module's own accessors:
 
 - facing (focal → player, ordered): `toward` ⇒ `toward_viewer` · `side_on` ⇒
-  `profile` · `away` ⇒ `away_glance_back` or `away` per the plan's open
-  question 1 rule (engaged ⇒ glance back).
+  `profile` · `away` ⇒ `away`. A committed facing fact never produces
+  `away_glance_back` on its own — the glance needs narration evidence
+  passing `GLANCE_WORDS`, which may then upgrade the state-mapped `away`
+  (owner ruling 2026-08-10).
 - postures: viewer standing + focal kneeling/sitting/crouching/lying ⇒ `high`;
   the inverse ⇒ `low`; equal ⇒ leave to the composer.
 - proximity: `touching`/`close` ⇒ `close` · `near` ⇒ `medium` · `distant` ⇒
@@ -291,6 +348,7 @@ existing `images.prompt` and the `images.meta.camera`/`staging` ids above.
 | --------------------------------------------- | -------- | ------------------------------------------------------------- |
 | `images.scene_composer.camera_invalid`        | warn     | Camera id outside the registry — degraded to default.         |
 | `images.scene_composer.camera_ungrounded`     | info     | Non-default camera without a matching quote — degraded.       |
+| `images.scene_composer.glance_ungrounded`     | info     | Glance-back quote lacks glance language — degraded to away.   |
 | `images.scene_composer.staging_invalid`       | warn     | Staging id outside the registry — dropped.                    |
 | `images.scene_composer.staging_ungrounded`    | info     | Staging without a matching quote or contact fact — dropped.   |
 | `images.scene_composer.staging_blocked`       | info     | Subject exposure fails the staging's bare requirement.        |
@@ -322,7 +380,9 @@ Pure suites (`pnpm test` tier — CI-run, never local):
   orientation phrases, `BARE_LIMB`-clean staging templates, every staging
   camera id resolving.
 - Evidence gating: ungrounded orientation/height/staging degrade with their
-  codes; grounded ones survive; player-message text counts as corpus.
+  codes; grounded ones survive; player-message text counts as corpus; a
+  glance-back quote without `GLANCE_WORDS` lands on `away`, not the default,
+  and a behind-position quote alone never yields the glance.
 - Exposure gating: `requiresBare` stagings blocked on covered subjects;
   clothed stagings unaffected; staging `viewerParts` still pass
   `resolveViewerParts` (a covered player pelvis keeps intimate parts out).
