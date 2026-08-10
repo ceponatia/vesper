@@ -156,7 +156,12 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   const sceneAnchors = scenesByAnchor(sceneList);
   // `simRouted` remains presentation metadata (including delete-chat copy).
   // Actionable controls consume the server-owned capability manifest instead.
-  const simRouted = bootstrap.data?.chat.simRouted ?? false;
+  // Trusted only when the bootstrap payload is FOR this chat: on an in-place
+  // chat switch the previous chat's payload lingers until the new one settles,
+  // and a stale true would issue /world for a legacy chat — the exact 409 the
+  // gate below exists to prevent.
+  const bootstrapChat = bootstrap.data?.chat ?? null;
+  const simRouted = bootstrapChat !== null && bootstrapChat.id === chatId && bootstrapChat.simRouted;
   // The player-facing world envelope (world-ui.plan.md slice 1): fetched only once
   // the bootstrap proves the chat sim-routed — a legacy chat never issues the
   // request (the server would just 409 `not_sim_enabled`, which the browser logs
