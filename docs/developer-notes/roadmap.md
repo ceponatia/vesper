@@ -38,8 +38,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is
-  live for players; the shadow measurement's review instrument is built, so
-  next is deploying and enabling the measurement every later item waits on.
+  live for players and the shadow measurement window is open; next is reviewing
+  the window and taking the cost ruling every later item waits on.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·

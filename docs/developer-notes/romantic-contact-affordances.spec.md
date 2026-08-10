@@ -2,12 +2,13 @@
 
 Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28; verified against the working tree 2026-08-10). Affectionate
-contact is live in character chat. Item 4's actor control and item 5's permission
-owner are both fully built and both entirely dark; the item-4 shadow gate has
-never been enabled, so its measurement window has not started. The window's
-review instrument — usage/cost/settle-wait telemetry plus the aggregate report —
-was built 2026-08-10.
+(promoted 2026-07-28; verified against the working tree and the deployed
+machine 2026-08-10). Affectionate contact is live in character chat. Item 4's
+actor control and item 5's permission owner are both fully built; the item-4
+**shadow measurement is live** — enabled 2026-08-10 on a deploy carrying its
+review instrument (usage/cost/settle-wait telemetry plus the aggregate report),
+so the measurement window is accumulating. The authority increments and the
+permission owner remain dark.
 
 This is the coding-agent entry point. The plan owns the product intent,
 reader-facing rollout, success criteria, and all open questions. These specs
@@ -76,15 +77,15 @@ them.
 
 Every switch this topic owns, with the value a production turn actually sees.
 Read from `src/server/engine/prompts/constants.ts` and from the deployed Fly
-secret set on **2026-08-07**. The five boolean flags treat anything other than
-the literal `on` as off, so an unset variable is off everywhere; the sixth is a
-comma-separated scope list, not a boolean.
+secret set verified in-machine on **2026-08-10**. The five boolean flags treat
+anything other than the literal `on` as off, so an unset variable is off
+everywhere; the sixth is a comma-separated scope list, not a boolean.
 
 | Flag                                      | Production  | Effect when on                                        |
 | ----------------------------------------- | ----------- | ----------------------------------------------------- |
 | `CHAT_CONTACT_ACTIONS`                    | **on**      | The contact lane: detect, resolve, commit, persist    |
 | `CHAT_PHYSICAL_CONSTRAINTS`               | **on**      | The only prompt door for contact outcomes             |
-| `CHAT_NPC_SCENE_DECISION_SHADOW`          | off (unset) | One dry classifier call per reply; no authority       |
+| `CHAT_NPC_SCENE_DECISION_SHADOW`          | **on**      | One dry classifier call per reply; no authority       |
 | `CHAT_NPC_SCENE_DECISIONS`                | off (unset) | NPC scene authority (compound with the lane flag)     |
 | `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS` | unset       | Subset of `movement,start,update`; unset = movement   |
 | `CHAT_ROMANTIC_PERMISSION`                | off (unset) | `romantic_touch` ledger (compound with the lane flag) |
@@ -128,8 +129,8 @@ Where each piece actually stands as of **2026-08-07**. These labels are exclusiv
   - **Status:** **registered in production**
   - **Note:** Frozen reply-side withdrawal/departure floor; durable under `contact-reply:<assistantMessageId>`
 - **Capability: NPC reply-scene shadow measurement**
-  - **Status:** **lane-wired but dark**
-  - **Note:** Built 2026-08-02 (migration 0094 + `chat-npc-scene-decision.ts`); `CHAT_NPC_SCENE_DECISION_SHADOW` has never been switched on, so no measurement exists. The review instrument (envelope usage/cost/settle-wait telemetry + `pnpm report:npc-scene-decisions`) was built 2026-08-10 — enable the flag only on a deploy that carries it (detail: [actor-control spec](romantic-contact-affordances.spec.actor-control.md) §"Execution, flags, and cost gate")
+  - **Status:** **registered in production**
+  - **Note:** Built 2026-08-02 (migration 0094 + `chat-npc-scene-decision.ts`); enabled 2026-08-10 on a deploy carrying the review instrument (envelope usage/cost/settle-wait telemetry + `pnpm report:npc-scene-decisions`), so every qualifying reply now records a dry decision envelope. The window has not yet been reviewed (detail: [actor-control spec](romantic-contact-affordances.spec.actor-control.md) §"Execution, flags, and cost gate")
 - **Capability: Broader NPC movement, starts, and updates**
   - **Status:** **lane-wired but dark**
   - **Note:** All three increments built 2026-08-04 in `chat-npc-scene-execute.ts` behind `CHAT_NPC_SCENE_DECISIONS`; blocked on the shadow measurement and the owner's cost ruling, not on code
@@ -427,10 +428,11 @@ has flipped.
 2. ~~Durable assistant-message decision envelope, guarded scene CAS, and
    unconditional retake pruning.~~ Built 2026-08-02 (migration 0094).
 3. **Run one classifier per qualifying reply in shadow** and review accuracy,
-   latency, timeout rate, and cost. Nothing has run: the flag is unset in
-   production. The review instrument shipped 2026-08-10 (telemetry fields +
-   aggregate report + review-corpus export), so this step is now purely a
-   deploy-then-flag operation. This is the only gate between here and step 4.
+   latency, timeout rate, and cost. The run half is live: the flag was enabled
+   2026-08-10 on a deploy carrying the review instrument (telemetry fields +
+   aggregate report + review-corpus export), and the window is accumulating.
+   The review half — the report figures and the labeled accuracy pass — has
+   not happened. It is the only gate between here and step 4.
 4. Enable monotonic NPC movement authority. Code built 2026-08-04; enabling means
    setting the authority-kinds scope to `movement`, then the authority flag.
 5. NPC starts with two-sided material and wardrobe chronology protection. Code
