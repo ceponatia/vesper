@@ -157,15 +157,21 @@ export interface SceneStaging {
   intimate: boolean;
   /** The explicit staging sentence; `{name}` is the subject. Written once, here, never by a model. */
   template: string;
+  /**
+   * Overrides the camera orientation's derived faceVisibility for the lock
+   * adaptation: a face can hide by head angle alone (a crown-of-the-head shot
+   * on a subject who faces the viewer). Absent ⇒ the orientation's value.
+   */
+  faceVisibility?: "full" | "partial" | "hidden";
 }
 ```
 
 Initial catalog (~a dozen entries; each is a data edit): `held_from_behind`
 (clothed-capable, `requiresBare: []`), `held_from_behind_bare`,
-`kneeling_before_viewer`, `astride_viewer_facing`, `astride_viewer_away`,
-`bent_over_surface`, `on_all_fours`, `lying_beneath_viewer`,
-`lying_face_down`, `spooned_from_behind`, `pressed_to_wall_facing`,
-`pressed_to_wall_away`. Away-facing entries carry camera orientation `away`
+`kneeling_before_viewer`, `kneeling_before_viewer_guided`,
+`astride_viewer_facing`, `astride_viewer_away`, `bent_over_surface`,
+`on_all_fours`, `lying_beneath_viewer`, `lying_face_down`,
+`spooned_from_behind`, `pressed_to_wall_facing`, `pressed_to_wall_away`. Away-facing entries carry camera orientation `away`
 per the glance ruling; glance-back variants are separate entries added as
 data edits, and a `_glance_back` staging's evidence quote must pass
 `GLANCE_WORDS` like the bare orientation does. Template style follows the viewer-body registry:
@@ -175,6 +181,16 @@ possessively bound, geometry-first, positive phrasing — e.g.
 camera, looking up at the viewer". Templates for `intimate: true` entries may
 name the act explicitly; they ride only the uncensored route, so the
 moderation exposure is the same as `intimateSceneAppearance`'s today.
+
+**A staging template owns the viewer-limb phrasing for the parts it names** —
+"the viewer's own hands resting on {name}'s hips" — because the generic
+viewer-body framing lines ("entering frame from the lower edge, close to the
+lens…") describe foreground limbs near the camera, not hands placed on a
+subject. `viewerParts` is therefore the **gate list**: every id still passes
+`resolveViewerParts` (registry membership, route, coverage), while the staged
+sentence supplies the geometry. Unlike the composer, a staging may list
+intimate parts directly — it is registry data, not model output — and the
+route/coverage gates still decide whether they render.
 
 Every template's limb nouns must be possessive-bound — enforced by a registry
 test running the existing `BARE_LIMB` pattern over each template with `{name}`
@@ -292,8 +308,17 @@ render assembly only.
   <staging template with {name} bound>; <composer pose/activity text>.` On
   moderated rungs the staging is absent and the composer's (cautious) pose
   stands alone, as today.
-- **Identity-lock adaptation** when the reference subject's orientation has
-  `faceVisibility` `partial`/`hidden`: append one sentence after the lock —
+- A surviving staging also reshapes the framing clause: `framingFor` still
+  gates the parts and emits the embodied POV opening, the person-count
+  assertion, and the viewer's own body facts — but the generic "Also in frame,
+  in the viewer's immediate foreground: …" geometry line omits every part the
+  staging names, so the same limb is never described twice with conflicting
+  geometry. Parts the staging does not name (a composer-proposed extra) keep
+  their registry framing lines.
+- **Identity-lock adaptation** when the reference subject's effective face
+  visibility is `partial`/`hidden` — the orientation entry's value, or the
+  surviving staging's `faceVisibility` override where one is set: append one
+  sentence after the lock —
   partial: "Her face is turned away and seen in profile/over her shoulder;
   preserve the visible features, hair color and style, build and skin tone
   exactly from the reference — do not rotate her to face the camera."
@@ -399,6 +424,43 @@ Pure suites (`pnpm test` tier — CI-run, never local):
 
 Fixture scenarios (extend `scripts/eval/scene-images/fixtures.ts`):
 behind-clothed, behind-nude, glance-back, kneeling-before-viewer (high angle),
-lying-face-down, spooned, astride-facing, astride-away, wall-press-away, plus
-the existing frontal rows as the identity-regression control. Probe runs are
-paid and owner-gated; CI asserts nothing about rendered pixels.
+on-all-fours, lying-face-down, spooned, astride-facing, astride-away,
+wall-press-away, plus the existing frontal rows as the identity-regression
+control. Probe runs are paid and owner-gated; CI asserts nothing about
+rendered pixels.
+
+### Acceptance scenes (owner-specified, 2026-08-10)
+
+Three staged acts graded **pass/fail per visible element** inside slice 2's
+probe — not preference-ranked like the general A/B rows. All three run the
+uncensored reference-edit route; each fixture's narration must contain the
+evidence lines its gates need, and the player persona's wardrobe must leave
+the pelvis bare wherever the viewer's anatomy is a required element (the
+coverage gate is real in the probe, not bypassed).
+
+- **Doggy style** → staging `on_all_fours`, camera `{away, close, high}`,
+  `viewerParts: [hands]` (template: the viewer's own hands resting on her
+  waist/hips). Pass: she is on all fours with her back to the camera, face
+  not toward the lens, and the viewer's hands are on her waist or hips.
+- **Oral** → staging `kneeling_before_viewer`, camera
+  `{toward_viewer, close, high}`, `viewerParts: [genitals]` — or the
+  `kneeling_before_viewer_guided` variant, same camera but
+  `faceVisibility: "hidden"` and `viewerParts: [hands, genitals]` (the
+  viewer's hand resting on the top of her head; she faces the viewer with
+  her head bowed, so the face hides by angle and the lock adaptation's
+  `hidden` branch fires). Pass: either composition — her face visible
+  looking up mid-act, or the top of her head under the viewer's hand.
+- **Missionary** → staging `lying_beneath_viewer`, camera
+  `{toward_viewer, close, high}`, `viewerParts: [hands, genitals]`
+  (template: she lies on her back looking up; the viewer's genitals enter
+  frame at the bottom edge, penetration explicit; the viewer's hands holding
+  her legs or her waist). Pass: on her back facing up at the camera,
+  penetration visible at the bottom frame edge, and the viewer's hands on
+  her legs or waist — either hand position passes.
+
+A scene fails on any missing required element, any extra person, or an
+unbound limb readable as a third party — the person-count assertion and
+possessive binding are part of what is being graded. These three catalog
+entries (`on_all_fours`, `kneeling_before_viewer` + its `_guided` variant,
+`lying_beneath_viewer`) may not ship with templates that cannot express the
+elements above.

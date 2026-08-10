@@ -59,7 +59,7 @@ Four things cause this, and none of them is the image model misbehaving:
 - **The composing model is deliberately cautious.** The small model that plans
   each shot runs in a safe configuration; during explicit moments it writes
   vague poses ("close to the viewer, intimate"). The character's explicit
-  anatomy is already injected separately, in code — but the *act* never is, so
+  anatomy is already injected separately, in code — but the _act_ never is, so
   the render gets anatomy with no staging.
 
 ## What the owner gets
@@ -167,6 +167,21 @@ Four things cause this, and none of them is the image model misbehaving:
   front-facing default is the fallback, not a casualty.
 - No slice's behavior turns on without its owner-reviewed probe; probes are
   the only new spend.
+- **Three staged acts are graded pass/fail on visible elements** in slice 2's
+  probe, on the uncensored route (owner-specified acceptance scenes,
+  2026-08-10). Each element below must be checkable in the rendered image:
+  - **Doggy style** — she is on all fours facing away from the camera, and
+    the viewer's own hands rest on her waist or hips.
+  - **Oral** — either her face is visible looking up as she goes down on the
+    viewer, or the shot looks down on the top of her head with the viewer's
+    hand resting on it. Either composition passes.
+  - **Missionary** — she lies on her back beneath the camera looking up at
+    the viewer, the viewer's genitals enter frame at the bottom edge with
+    penetration shown, and the viewer's hands hold her legs or her waist.
+    Either hand position passes.
+  - In all three, the viewer's hands and anatomy appear only where the
+    existing coverage and route gates allow, and nobody but her and the
+    viewer's own body parts is in frame.
 
 ## Open questions
 
