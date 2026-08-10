@@ -444,8 +444,13 @@ The existing `contact-reply:<assistantMessageId>` event ref remains the contact
 event identity. Its row sequence follows chronological **contact-commit** order;
 movement positions and no-row continuations live in the envelope's full ordered
 action list. The envelope stores the actual committed scene intents, not only
-the model candidates, so movement provenance can be replayed. Story minute is
-read from the post-settle scenario and truncated once for the whole envelope.
+the model candidates, so movement provenance can be replayed. A dropped
+candidate records the verbatim evidence quote it was judged on (length-capped
+at the classifier contract's own evidence bound; empty only when no candidate
+survived the slot parse), because a drop reason alone is not reviewable —
+judging a gate right or over-strict needs the exact sentence the model
+grounded the candidate on. Story minute is read from the post-settle scenario
+and truncated once for the whole envelope.
 
 One new transaction owns the envelope, contact rows, and scene projection. Its
 required predicate is explicit:
@@ -534,6 +539,13 @@ The measurement instrument for that review was built 2026-08-10:
   text, plus slots/actions/drops) — the review corpus a human labels for the
   false-positive/negative accuracy pass. The script computes no accuracy
   numbers itself.
+- The drop record's verbatim evidence excerpt (§"Durable decision envelope and
+  transaction") was added mid-window 2026-08-10, after the window's first
+  labelling pass could not judge an `evidence_misattributed` drop from the
+  reason alone — the reply held both a player-movement sentence and a
+  pronoun-subject NPC movement sentence, and nothing recorded which one the
+  gate had read. Payload version stays 1; window rows recorded before the
+  extension simply carry an empty excerpt.
 
 Consequence for the rollout order: enable `CHAT_NPC_SCENE_DECISION_SHADOW` only
 on a deploy that carries this telemetry, or the window's rows cannot answer the

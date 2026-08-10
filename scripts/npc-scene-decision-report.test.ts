@@ -66,8 +66,12 @@ function action(kind: NpcSceneDecisionActionKind, resolution: NpcSceneDecisionRe
   return { kind, span: { start: 0, end: 1 }, quoteHash: "", summary: "", resolution, detail, contactRows: [] };
 }
 
-function drop(reason: NpcSceneDecisionDropReason, candidate: "movement" | "contact" = "contact"): Drop {
-  return { candidate, reason, field: "", detail: "" };
+function drop(
+  reason: NpcSceneDecisionDropReason,
+  candidate: "movement" | "contact" = "contact",
+  evidence = "",
+): Drop {
+  return { candidate, reason, field: "", detail: "", evidence };
 }
 
 function groupFor(report: NpcSceneDecisionReport, mode: NpcSceneDecisionMode): NpcSceneDecisionModeReport {
@@ -333,19 +337,24 @@ describe("aggregateNpcSceneDecisionReport", () => {
 
 describe("reviewCorpusLine", () => {
   it("carries the reply beside the decision and drops replay-only material", () => {
+    const reply = "She reaches over and takes your hand.";
     const source = row({
       actions: [{ ...action("contact", "committed", "start"), quoteHash: "b".repeat(64), committed: { any: "blob" } }],
-      drops: [drop("evidence_unasserted")],
+      drops: [drop("evidence_unasserted", "contact", reply)],
       usage: { settleWaitMs: 120, costUsd: 0.01 },
     });
-    const line = reviewCorpusLine(source, "She reaches over and takes your hand.");
+    const line = reviewCorpusLine(source, reply);
 
-    expect(line.reply).toBe("She reaches over and takes your hand.");
+    expect(line.reply).toBe(reply);
     expect(line.replyHash).toBe(source.replyHash);
     expect(line.actions).toEqual([
       { kind: "contact", span: { start: 0, end: 1 }, summary: "", resolution: "committed", detail: "start" },
     ]);
-    expect(line.drops).toHaveLength(1);
+    // The action's quote HASH is replay material and goes; the drop's quote is
+    // the reviewer's whole basis for judging the gate, so it survives verbatim.
+    expect(line.drops).toEqual([
+      { candidate: "contact", reason: "evidence_unasserted", field: "", detail: "", evidence: reply },
+    ]);
     expect(line.telemetry).toEqual({ model: "test/model", latencyMs: 0, timedOut: false, settleWaitMs: 120, costUsd: 0.01 });
   });
 
