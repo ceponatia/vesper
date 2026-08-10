@@ -149,7 +149,7 @@ export function ImageLabPage() {
             setExtractPolls(0);
             controls.reload({ silent: true });
           }}
-          onUploaded={() => controls.reload({ silent: true })}
+          onControlsChanged={() => controls.reload({ silent: true })}
         />
 
         <ImageLabExperimentForm

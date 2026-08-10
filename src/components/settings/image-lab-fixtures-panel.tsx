@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { imageLabControlKinds, type ImageLabControl, type ImageLabControlKind } from "@/contracts";
 import { imageLabApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -24,10 +25,19 @@ import { LabCharacterSelect, LabRenderPicker, useLabCharacters, useLabPortraits 
  * Fixtures are shown whole (`contain`), never cropped, and every tile states its
  * provenance and whether anyone has reviewed it, because those are the two facts
  * a disputed `ignores_control` verdict is re-examined against.
+ *
+ * The tile is also where the looking is RECORDED — marking a fixture reviewed
+ * (with the required note) and throwing away one that came out wrong both happen
+ * on the thing being judged, so the ruling and the pixels are never a screen
+ * apart.
  */
 
 /** A hand-drawn skeleton is a small PNG; anything this size is a mistake. */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Matches `imageLabControlMetaSchema.reviewNote` — a longer note is truncated by
+ * the field rather than refused by the route. */
+const MAX_REVIEW_NOTE = 2000;
 
 export interface ImageLabFixturesPanelProps {
   controls: ImageLabControl[];
@@ -38,7 +48,12 @@ export interface ImageLabFixturesPanelProps {
   onReload: () => void;
   /** How many NEW fixtures the accepted extraction promised (jobs × kinds). */
   onExtractQueued: (expectedFixtures: number) => void;
-  onUploaded: () => void;
+  /**
+   * The stored fixture list changed under us — an upload landed, a fixture was
+   * reviewed, or one was deleted. One callback for all three because the panel
+   * owns none of the list: every change is settled by refetching it.
+   */
+  onControlsChanged: () => void;
 }
 
 function toggledKind(current: readonly ImageLabControlKind[], kind: ImageLabControlKind): ImageLabControlKind[] {
@@ -52,7 +67,7 @@ export function ImageLabFixturesPanel({
   extracting,
   onReload,
   onExtractQueued,
-  onUploaded,
+  onControlsChanged,
 }: ImageLabFixturesPanelProps) {
   const toast = useToast();
   const characters = useLabCharacters();
@@ -162,7 +177,7 @@ export function ImageLabFixturesPanel({
     setDataUrl(null);
     setFileName("");
     setUploadNote("");
-    onUploaded();
+    onControlsChanged();
   };
 
   return (
@@ -195,36 +210,12 @@ export function ImageLabFixturesPanel({
             </figure>
           ) : null}
           {controls.map((control) => (
-            <figure key={control.imageId} className="overflow-hidden rounded-card border border-ink-600">
-              <button
-                type="button"
-                onClick={() => setEnlarged(control.imageId)}
-                aria-label={`Enlarge ${imageLabControlKindLabel(control.meta.controlKind)}`}
-                className="block w-full cursor-pointer"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; a fixture must be shown whole, uncropped */}
-                <img
-                  src={imageUrl(control.imageId)}
-                  alt={imageLabControlKindLabel(control.meta.controlKind)}
-                  className="aspect-square w-full bg-ink-950 object-contain"
-                />
-              </button>
-              <figcaption className="flex flex-col gap-1 px-2 py-1.5 text-[11px] text-paper-400">
-                <span className="flex flex-wrap items-center gap-1">
-                  <Tag tone="accent">{imageLabControlKindLabel(control.meta.controlKind)}</Tag>
-                  <Tag>{imageLabControlGeneratorLabel(control.meta.generator)}</Tag>
-                </span>
-                <span className="flex flex-wrap items-center gap-1">
-                  {control.meta.reviewedAt ? <Tag tone="ok">reviewed</Tag> : <Tag>unreviewed</Tag>}
-                  <span className="text-paper-600">{new Date(control.createdAt).toLocaleDateString()}</span>
-                </span>
-                {control.meta.reviewNote ? (
-                  <span className="truncate text-paper-500" title={control.meta.reviewNote}>
-                    {control.meta.reviewNote}
-                  </span>
-                ) : null}
-              </figcaption>
-            </figure>
+            <FixtureCard
+              key={control.imageId}
+              control={control}
+              onEnlarge={setEnlarged}
+              onChanged={onControlsChanged}
+            />
           ))}
           {controls.length === 0 && !extracting ? (
             <p className="col-span-full text-sm text-paper-500">
@@ -356,5 +347,193 @@ export function ImageLabFixturesPanel({
 
       <ImageLightbox imageId={enlarged} alt="Control fixture" onClose={() => setEnlarged(null)} />
     </section>
+  );
+}
+
+const tileActionTones = {
+  quiet: "text-paper-400 hover:text-paper-100",
+  accent: "text-accent-300 hover:text-accent-200",
+  danger: "text-danger-300 hover:text-danger-200",
+} as const;
+
+/**
+ * A tile-footer action — the dense text button the chat inspector's rows use,
+ * deliberately not `Button size="sm"`: three 28px controls do not fit a fixture
+ * tile at the six-column breakpoint, and a wrapped row of them would push the
+ * provenance chips off the card that exists to show them.
+ */
+function TileAction({
+  tone = "quiet",
+  disabled,
+  onClick,
+  className,
+  children,
+}: {
+  tone?: keyof typeof tileActionTones;
+  disabled?: boolean;
+  onClick: () => void;
+  /** Layout only — a colour or size here would lose to the base classes, whose
+   * position in the generated stylesheet decides the winner, not attribute order. */
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cx(
+        "cursor-pointer rounded px-1.5 py-0.5 text-[11px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:text-paper-600 disabled:hover:bg-transparent",
+        tileActionTones[tone],
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * One fixture: the pixels shown whole, what it is, where it came from, and the
+ * two rulings an admin makes on it.
+ *
+ * Both rulings are two-step and neither is a modal. Marking reviewed opens the
+ * note field the record requires — `reviewed` with nothing written beside it is
+ * indistinguishable from a misclick six months later, which is the same reason
+ * the probe verdict's note is required. Deleting asks "really?" in the tile
+ * (the chat-inspector idiom) rather than in a dialog, because the thing being
+ * confirmed is the image right above the button and a modal would cover it.
+ *
+ * The draft note lives HERE rather than in the panel because the page silently
+ * refetches this list every three seconds while an extraction is pending: tiles
+ * are keyed by image id, so a card outlives its list being replaced and a
+ * half-written note survives the poll.
+ */
+function FixtureCard({
+  control,
+  onEnlarge,
+  onChanged,
+}: {
+  control: ImageLabControl;
+  onEnlarge: (imageId: string) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewNote, setReviewNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const kindLabel = imageLabControlKindLabel(control.meta.controlKind);
+  const reviewed = Boolean(control.meta.reviewedAt);
+  const busy = saving || deleting;
+
+  const review = async () => {
+    const note = reviewNote.trim();
+    if (note === "" || busy) return;
+    setSaving(true);
+    const result = await imageLabApi.controls.review(control.imageId, note);
+    setSaving(false);
+    if (!result.ok) {
+      toast.push({ title: "Couldn't record that review", description: result.error.message, tone: "error" });
+      return;
+    }
+    setReviewing(false);
+    setReviewNote("");
+    toast.push({ title: "Fixture reviewed", description: kindLabel, tone: "success" });
+    onChanged();
+  };
+
+  const remove = async () => {
+    if (busy) return;
+    setDeleting(true);
+    const result = await imageLabApi.controls.remove(control.imageId);
+    setDeleting(false);
+    setConfirmingDelete(false);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    toast.push({ title: "Fixture deleted", description: kindLabel, tone: "success" });
+    onChanged();
+  };
+
+  return (
+    <figure className="flex flex-col overflow-hidden rounded-card border border-ink-600">
+      <button
+        type="button"
+        onClick={() => onEnlarge(control.imageId)}
+        aria-label={`Enlarge ${kindLabel}`}
+        className="block w-full cursor-pointer"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; a fixture must be shown whole, uncropped */}
+        <img
+          src={imageUrl(control.imageId)}
+          alt={kindLabel}
+          className="aspect-square w-full bg-ink-950 object-contain"
+        />
+      </button>
+      <figcaption className="flex flex-1 flex-col gap-1 px-2 py-1.5 text-[11px] text-paper-400">
+        <span className="flex flex-wrap items-center gap-1">
+          <Tag tone="accent">{kindLabel}</Tag>
+          <Tag>{imageLabControlGeneratorLabel(control.meta.generator)}</Tag>
+        </span>
+        <span className="flex flex-wrap items-center gap-1">
+          {reviewed ? <Tag tone="ok">reviewed</Tag> : <Tag>unreviewed</Tag>}
+          <span className="text-paper-600">{new Date(control.createdAt).toLocaleDateString()}</span>
+        </span>
+        {control.meta.reviewNote ? (
+          <span className="truncate text-paper-500" title={control.meta.reviewNote}>
+            {control.meta.reviewNote}
+          </span>
+        ) : null}
+
+        {confirmingDelete ? (
+          <span className="mt-auto flex flex-wrap items-center gap-0.5 pt-1">
+            <TileAction tone="danger" disabled={busy} onClick={() => void remove()}>
+              {deleting ? "Deleting…" : "Really delete?"}
+            </TileAction>
+            <TileAction disabled={busy} onClick={() => setConfirmingDelete(false)}>
+              Keep
+            </TileAction>
+          </span>
+        ) : reviewing ? (
+          <span className="mt-auto flex flex-col gap-1 pt-1">
+            <Input
+              value={reviewNote}
+              onChange={(e) => setReviewNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void review();
+                if (e.key === "Escape") setReviewing(false);
+              }}
+              maxLength={MAX_REVIEW_NOTE}
+              placeholder="What you saw"
+              aria-label={`Review note for this ${kindLabel}`}
+              autoFocus
+            />
+            <span className="flex flex-wrap items-center gap-0.5">
+              <TileAction tone="accent" disabled={busy || reviewNote.trim() === ""} onClick={() => void review()}>
+                {saving ? "Saving…" : "Save review"}
+              </TileAction>
+              <TileAction disabled={busy} onClick={() => setReviewing(false)}>
+                Cancel
+              </TileAction>
+            </span>
+          </span>
+        ) : (
+          <span className="mt-auto flex flex-wrap items-center gap-0.5 pt-1">
+            {reviewed ? null : (
+              <TileAction tone="accent" onClick={() => setReviewing(true)}>
+                Mark reviewed
+              </TileAction>
+            )}
+            <TileAction tone="danger" className="ml-auto" onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </TileAction>
+          </span>
+        )}
+      </figcaption>
+    </figure>
   );
 }

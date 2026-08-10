@@ -1175,6 +1175,25 @@ export const imageLabApi = {
         `${IMAGE_LAB_API_ROOT}/controls/extract`,
         body,
       ),
+    /**
+     * Record that a human LOOKED at this fixture. The note is required for the
+     * reason a probe verdict's note is: `reviewed` with nothing written beside it
+     * is indistinguishable from a misclick, and the review is exactly what a
+     * disputed `ignores_control` verdict is re-examined against.
+     *
+     * Answers with the updated fixture so the caller can settle on the stored
+     * record rather than on what it hoped it sent.
+     */
+    review: (controlId: string, reviewNote: string) =>
+      apiPatch(z.object({ control: imageLabControlSchema }), `${IMAGE_LAB_API_ROOT}/controls/${controlId}`, {
+        reviewNote,
+      }),
+    /**
+     * Throw away a fixture that came out wrong. Experiments already rendered
+     * against it keep their recorded `controlImageId` — a run's evidence says what
+     * it sent, whether or not the asset still exists.
+     */
+    remove: (controlId: string) => apiDelete(`${IMAGE_LAB_API_ROOT}/controls/${controlId}`),
   },
 };
 
