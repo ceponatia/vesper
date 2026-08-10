@@ -73,7 +73,13 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const [variantModelId, setVariantModelId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  // POST in flight — the button stays busy for the WHOLE request, releasing only
+  // when it settles: an unrelated live job (a running avatar regen) must not
+  // re-enable the form mid-request and invite duplicate billable submissions.
   const [submittingVariant, setSubmittingVariant] = useState(false);
+  // Queued (202 received) but not yet visible in data — keeps the painting tile
+  // up and the poll armed until the refetch shows the job or its row.
+  const [variantQueued, setVariantQueued] = useState(false);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -93,7 +99,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   // nothing is happening.
   const rendering = portraits.data?.rendering ?? false;
   const hasPendingRow = rows.some((img) => img.status === "pending");
-  const hasPending = hasPendingRow || rendering || generatingAvatar;
+  const hasPending = hasPendingRow || rendering || generatingAvatar || variantQueued;
 
   // Newest avatar-row id when a generation started — lets the effect below tell a
   // FAILED regen (a new avatar row that never became canonical) from an old one.
@@ -141,21 +147,20 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     portraits.reload({ silent: true });
   };
 
-  // Row count when the variant was queued — releases the button even when a
+  // Row count when the variant was queued — clears the queued flag even when a
   // demo-fast job settles before the first refetch (no pending row, `rendering`
   // already false again; only the new READY row betrays that anything happened).
   const variantBaselineRef = useRef(0);
 
-  // Release the variant button once the server acknowledges the job (`rendering`),
-  // its pending row lands, or a new row appears — the painting tile owns progress
-  // from there (the scene strip's release-on-ack shape). Clearing it before the
-  // refetch confirms the job would blink the tile off between the queue 202 and
-  // the reload response.
+  // Clear the queued flag once the refetched data shows the job (`rendering`),
+  // its pending row, or any new row — the data-driven signals own the tile from
+  // there. A concurrent job satisfying this early is harmless: whichever signal
+  // cleared it is itself keeping the tile up.
   useEffect(() => {
-    if (submittingVariant && (rendering || hasPendingRow || rows.length > variantBaselineRef.current)) {
-      setSubmittingVariant(false);
+    if (variantQueued && (rendering || hasPendingRow || rows.length > variantBaselineRef.current)) {
+      setVariantQueued(false);
     }
-  }, [submittingVariant, rendering, hasPendingRow, rows.length]);
+  }, [variantQueued, rendering, hasPendingRow, rows.length]);
 
   const submitVariant = async () => {
     if (!instruction.trim()) return;
@@ -166,11 +171,12 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
       instruction: instruction.trim(),
       modelId: pickedId(variantModelId, variantModels.data),
     });
+    setSubmittingVariant(false);
     if (result.ok) {
       setInstruction("");
+      setVariantQueued(true);
       portraits.reload({ silent: true });
     } else {
-      setSubmittingVariant(false);
       toast.push({ title: "Variant failed to queue", description: result.error.message, tone: "error" });
     }
   };
@@ -204,7 +210,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   // Show a placeholder tile from the instant a generation is kicked off (the
   // local flags) through the whole server-side job (`rendering`); once the
   // pending row lands, its own tile takes over seamlessly.
-  const showPainting = (generatingAvatar || submittingVariant || rendering) && !hasPendingRow;
+  const showPainting = (generatingAvatar || submittingVariant || variantQueued || rendering) && !hasPendingRow;
   // The prompt that produced the canonical avatar — null when there's no avatar
   // yet or it's a user-uploaded image (uploads carry no generation prompt).
   const canonicalPrompt =
