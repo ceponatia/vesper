@@ -62,7 +62,15 @@ function fullPayload(): NpcSceneDecisionPayload {
       },
     ],
     contactRows: [{ eventRef: "contact-reply:msg_probe", sequence: 0 }],
-    telemetry: { model: "probe/model", latencyMs: 812, timedOut: false },
+    telemetry: {
+      model: "probe/model",
+      latencyMs: 812,
+      timedOut: false,
+      inputTokens: 1_240,
+      outputTokens: 38,
+      costUsd: 0.00031,
+      settleWaitMs: 120,
+    },
   };
 }
 
@@ -92,6 +100,34 @@ describe("parseNpcSceneDecisionPayload (the payload's trust boundary)", () => {
       slots: { movement: "absent", contact: "absent" },
     });
     expect(parsed).toEqual(emptyNpcSceneDecisionPayload());
+  });
+
+  it("reads a row written before the spend fields existed — they stay ABSENT, not zero", () => {
+    // The version literal did not move for them, so the old blob is still a
+    // current blob; "unmeasured" and "measured at zero" must stay distinguishable.
+    const stored = { ...fullPayload(), telemetry: { model: "probe/model", latencyMs: 812, timedOut: false } };
+    const parsed = parseNpcSceneDecisionPayload(stored);
+    expect(parsed.version).toBe(NPC_SCENE_DECISION_PAYLOAD_VERSION);
+    expect(parsed.telemetry).toEqual({ model: "probe/model", latencyMs: 812, timedOut: false });
+    expect(parsed.telemetry.inputTokens).toBeUndefined();
+    expect(parsed.telemetry.outputTokens).toBeUndefined();
+    expect(parsed.telemetry.costUsd).toBeUndefined();
+    expect(parsed.telemetry.settleWaitMs).toBeUndefined();
+  });
+
+  it("refuses a spend figure outside its bounds — which is why the WRITER checks before inserting", () => {
+    for (const telemetry of [
+      { model: "probe/model", latencyMs: 1, timedOut: false, inputTokens: 12.5 },
+      { model: "probe/model", latencyMs: 1, timedOut: false, outputTokens: -3 },
+      { model: "probe/model", latencyMs: 1, timedOut: false, costUsd: -0.01 },
+      { model: "probe/model", latencyMs: 1, timedOut: false, settleWaitMs: -1 },
+    ]) {
+      const sink = new DiagnosticCollector();
+      expect(parseNpcSceneDecisionPayload({ ...fullPayload(), telemetry }, sink)).toEqual(
+        emptyNpcSceneDecisionPayload(),
+      );
+      expectDiagnostic(sink, "parse.boundary_failed");
+    }
   });
 
   it("degrades a malformed blob to the empty payload AND says so — never a throw", () => {

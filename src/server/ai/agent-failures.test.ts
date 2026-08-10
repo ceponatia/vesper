@@ -105,4 +105,40 @@ describe("withGenerateTimeout — a trip is recorded, not just logged", () => {
     expect(result).toEqual({ value: { ok: true }, degraded: false });
     expect(logged.rows).toHaveLength(0);
   });
+
+  it("passes the completed call's measured spend through — the wrapper measures nothing itself", async () => {
+    logged.rows = [];
+    const controller = new AbortController();
+    const result = await withGenerateTimeout(
+      Promise.resolve({
+        value: { ok: true },
+        degraded: false,
+        usage: { inputTokens: 1_240, outputTokens: 38 },
+        costUsd: 0.00031,
+      }),
+      controller,
+      1000,
+      "npc_scene_decision.classify.timeout",
+    );
+    expect(result).toEqual({
+      value: { ok: true },
+      degraded: false,
+      usage: { inputTokens: 1_240, outputTokens: 38 },
+      costUsd: 0.00031,
+    });
+  });
+
+  it("carries no spend on a trip — nothing completed, and an aborted tail's cost is not ours to claim", async () => {
+    logged.rows = [];
+    const controller = new AbortController();
+    const result = await withGenerateTimeout(
+      new Promise<never>(() => {}) as never,
+      controller,
+      10,
+      "npc_scene_decision.classify.timeout",
+    );
+    expect(result).toEqual({ value: null, degraded: true });
+    expect(result.usage).toBeUndefined();
+    expect(result.costUsd).toBeUndefined();
+  });
 });

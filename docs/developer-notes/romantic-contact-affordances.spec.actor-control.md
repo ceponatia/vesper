@@ -514,6 +514,31 @@ the review corpus, p50/p95/p99 added settle latency, timeout rate, and cost per
 100 replies. The owner cost ruling is made from those measurements, not from the
 incorrect claim that pulse already runs once per roster member.
 
+The measurement instrument for that review was built 2026-08-10:
+
+- The envelope telemetry carries four additive optional fields beside
+  `model`/`latencyMs`/`timedOut` — `inputTokens`, `outputTokens`, `costUsd`
+  (OpenRouter usage accounting, summed across the repair round-trip), and
+  `settleWaitMs` (how long the finish half actually blocked on the classifier
+  after the rest of settlement, which is the honest "added settle latency";
+  the raw call latency overlaps settlement and overstates it). Payload version
+  stays 1; rows written by earlier builds simply lack the fields, and the
+  report states their coverage instead of treating absence as zero.
+- `pnpm report:npc-scene-decisions` aggregates the envelope rows into exactly
+  the figures above, split by mode, with `--since`/`--until`/`--chat`/`--mode`
+  filters, nearest-rank percentiles, drop-reason and resolution GROUP BYs, and
+  per-100-reply scaling. Cost totals always print the covered-row count;
+  `--price-in`/`--price-out` (USD per million tokens) price token-only rows.
+- `--review-out <path>` exports one JSON line per envelope (reply text joined
+  from the message row, `replyHash` to prove the reviewed text is the decided
+  text, plus slots/actions/drops) — the review corpus a human labels for the
+  false-positive/negative accuracy pass. The script computes no accuracy
+  numbers itself.
+
+Consequence for the rollout order: enable `CHAT_NPC_SCENE_DECISION_SHADOW` only
+on a deploy that carries this telemetry, or the window's rows cannot answer the
+cost and added-latency questions the ruling needs.
+
 ## Diagnostics
 
 Use one namespace with bounded reason fields rather than a code per sentence:
@@ -619,10 +644,12 @@ requirement set.
   actor-control check is `refused` with its reason, and an unreadable scene is
   `unresolved`. A committed start carries ledger references plus a compact
   handle instead of the whole contact, since the provenance already exists.
-- **The authority-kinds scope must be set before the authority flag.** Unset or
-  blank means all three kinds, so turning `CHAT_NPC_SCENE_DECISIONS` on without
-  first narrowing the scope grants movement, starts, and updates in one step —
-  the opposite of the staged rollout this spec requires.
+- **The authority-kinds scope defaults fail-safe (revised 2026-08-07).** As
+  first built, unset meant all three kinds, so forgetting the scope skipped the
+  staged rollout in one step. The default is now `movement` only — the first
+  reviewed increment — matching §"Execution, flags, and cost gate": turning
+  `CHAT_NPC_SCENE_DECISIONS` on without a scope grants nothing beyond movement,
+  and starts and updates each require an explicit widening.
 
 ## Remaining product questions
 
