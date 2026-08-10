@@ -25,6 +25,11 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     case "chat_scene_image":
     case "chat_look_image":
     case "chat_place_image":
+    // The Advanced Image Lab's two jobs. `lab_control_extract` computes an edge
+    // map in-process, but pose and depth go to a Replicate preprocessor, so its
+    // failures are evidence about the same upstream the render lane rides.
+    case "lab_image":
+    case "lab_control_extract":
       return "image";
     case "embed_refresh":
       return "embedding";

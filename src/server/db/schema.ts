@@ -37,6 +37,11 @@ import {
   imageIdentityCropMethods,
   imageIdentityPackStatuses,
   imageIdentityPreservationRatings,
+  imageLabControlKinds,
+  imageLabExperimentKinds,
+  imageLabExperimentStatuses,
+  imageLabModes,
+  imageLabProbeVerdicts,
   imageProfileOperations,
   imageProfileTasks,
   imagePromptStrategies,
@@ -1310,7 +1315,11 @@ export const images = pgTable(
     // Swept when its trial run is deleted, AND with its character —
     // `deleteCharacterIdentityAssets` purges every hidden kind by entity on character
     // delete, this one included.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output"] }).notNull(),
+    // `lab_control` / `lab_output` (qwen-advanced-image-subsystem.spec.md §Persistence):
+    // the Advanced Image Lab's control fixtures (pose skeleton, depth map, edge map) and
+    // its experiment renders. Admin-only operational evidence, never Gallery items —
+    // hidden exactly like `identity_trial_output`, and owned solely by the lab module.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -1890,12 +1899,104 @@ export const imageIdentityPackTrialVerdicts = pgTable(
   ],
 );
 
+/**
+ * One Advanced Image Lab experiment — a single deliberate admin render with every
+ * input, setting, and outcome written down
+ * (qwen-advanced-image-subsystem.spec.md §Persistence).
+ *
+ * The row exists because the questions the lab asks cannot be answered by any
+ * provider schema — "does this model honour a pose skeleton?" is settled by
+ * looking at one image — and an answer is worthless unless what produced it is
+ * recoverable months later. So the requested AND executed version, the final
+ * prompt as sent, the ordered inputs, and the settings overlay are all stored
+ * verbatim rather than re-derived from a profile that will have moved on.
+ *
+ * Nothing here touches an ordinary lane. A baseline re-runs a lane's own
+ * configuration but saves its render as a hidden `lab_output`, so lab activity
+ * can never put a player-visible variant or scene in the Gallery.
+ *
+ * FK choices follow the trial tables: the owner CASCADES (an account's lab
+ * evidence goes with the account), while character, chat, and both image
+ * pointers are SET NULL — a deleted subject makes an experiment incomplete, not
+ * invalid, and losing the record of a paid render because its source portrait
+ * was tidied up would destroy the only evidence a verdict rests on. `profileId`
+ * is a plain id SNAPSHOT with no FK, for the same reason the trial cell spec
+ * stores one: deleting a profile must not erase what a finished baseline says it
+ * ran.
+ *
+ * The enum-typed columns reuse the contract vocabularies
+ * (`contracts/images/image-lab.ts`) so the column and the parser cannot drift.
+ * `failure_code` is deliberately NOT enum-typed: it carries codes from two
+ * vocabularies (`imageLabFailureCodes` and the render-failure classifier), and
+ * freezing their union in the column would make adding a classifier code a
+ * migration.
+ */
+export const imageLabExperiments = pgTable(
+  "image_lab_experiments",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: imageLabExperimentKinds }).notNull(),
+    /** Null on Stage 0: a probe declares no identity/composition bias. */
+    mode: text("mode", { enum: imageLabModes }),
+    characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
+    chatId: text("chat_id").references(() => characterChats.id, { onDelete: "set null" }),
+
+    modelSlug: text("model_slug").notNull(),
+    /** The pinned version the run ASKED for; null until the run starts. */
+    requestedVersionId: text("requested_version_id"),
+    /** The version the provider echoed back. A disagreement with the requested one
+     * is how an unannounced provider-side bump becomes visible instead of silent. */
+    executedVersionId: text("executed_version_id"),
+    /** Resolved profile id — baselines only. Snapshot, no FK (see above). */
+    profileId: text("profile_id"),
+
+    /** What the admin typed. */
+    instruction: text("instruction").notNull().default(""),
+    /** What was actually sent, recorded by the runner. */
+    finalPrompt: text("final_prompt"),
+
+    /** Ordered `imageLabInputSchema` list (contracts/images/image-lab.ts). */
+    inputs: jsonb("inputs").notNull().default([]),
+    controlImageId: text("control_image_id").references(() => images.id, { onDelete: "set null" }),
+    controlKind: text("control_kind", { enum: imageLabControlKinds }),
+
+    /** `imageLabSettingsSchema`: the normalized control overlay plus the raw
+     * provider-shaped bag merged last. */
+    settings: jsonb("settings").notNull().default({}),
+    resultImageId: text("result_image_id").references(() => images.id, { onDelete: "set null" }),
+
+    status: text("status", { enum: imageLabExperimentStatuses }).notNull().default("pending"),
+    failureCode: text("failure_code"),
+    /** The reviewing admin's ruling — probe kinds only. */
+    verdict: text("verdict", { enum: imageLabProbeVerdicts }),
+    verdictNote: text("verdict_note"),
+
+    predictionId: text("prediction_id"),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    meta: jsonb("meta").notNull().default({}),
+  },
+  (t) => [
+    // The lab page's only listing query: this owner's experiments, newest first.
+    // Its LEADING column doubles as the per-owner lookup index (the house ruling
+    // recorded on `personas`).
+    index("image_lab_experiments_owner_created_idx").on(t.ownerId, t.createdAt),
+  ],
+);
+
 export const jobs = pgTable(
   "jobs",
   {
     id: id(),
     type: text("type", {
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack"],
+      // `lab_image` / `lab_control_extract`: the Advanced Image Lab's experiment render
+      // and its control-fixture extraction. Both reach an image provider, so both map to
+      // the image lane in `providerLaneFor` (qwen-advanced-image-subsystem.spec.md).
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract"],
     }).notNull(),
     /**
      * Who the work is being done for (rate-limits.plan.md slice 5) — the key the
