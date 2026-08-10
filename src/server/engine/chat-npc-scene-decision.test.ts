@@ -11,9 +11,12 @@ import { codes, expectDiagnostic } from "@/test/diagnostics";
 import {
   chatNpcSceneDecisionMode,
   evaluateNpcSceneDecision,
+  npcSceneDecisionTelemetry,
   npcSceneDecisionTriggered,
+  type NpcSceneClassifierResult,
   type NpcSceneFloorInput,
 } from "./chat-npc-scene-decision";
+import { emptyNpcSceneDecisionPayload, parseNpcSceneDecisionPayload } from "./chat-npc-scene-envelope";
 
 /**
  * The pure halves of the reply-scene decision leg (actor-control delivery
@@ -398,5 +401,65 @@ describe("evaluateNpcSceneDecision — the shadow dry run", () => {
     if (!floorAction) throw new Error("no floor action");
     expect(floorAction.detail).toContain("span_unlocated");
     expect(floorAction.span).toEqual({ start: 0, end: reply.length });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The envelope's spend telemetry
+// ---------------------------------------------------------------------------
+
+describe("npcSceneDecisionTelemetry — the figures the cost gate is stated in", () => {
+  const RESULT: NpcSceneClassifierResult = {
+    raw: null,
+    degraded: false,
+    timedOut: false,
+    latencyMs: 940,
+    model: "probe/model",
+  };
+
+  it("records what the call spent beside what the settle actually waited for it", () => {
+    const telemetry = npcSceneDecisionTelemetry(
+      { ...RESULT, inputTokens: 1_240, outputTokens: 38, costUsd: 0.00031 },
+      120,
+    );
+    expect(telemetry).toEqual({
+      model: "probe/model",
+      latencyMs: 940,
+      timedOut: false,
+      inputTokens: 1_240,
+      outputTokens: 38,
+      costUsd: 0.00031,
+      settleWaitMs: 120,
+    });
+  });
+
+  it("separates the call's latency from the wait it cost — a call that landed during settlement added nothing", () => {
+    expect(npcSceneDecisionTelemetry(RESULT, 0).settleWaitMs).toBe(0);
+    expect(npcSceneDecisionTelemetry(RESULT, 0).latencyMs).toBe(940);
+  });
+
+  it("omits an unreported figure rather than calling it zero — a blind call is not a free one", () => {
+    const telemetry = npcSceneDecisionTelemetry(RESULT, 4);
+    expect(telemetry).toEqual({ model: "probe/model", latencyMs: 940, timedOut: false, settleWaitMs: 4 });
+    expect(telemetry.inputTokens).toBeUndefined();
+    expect(telemetry.outputTokens).toBeUndefined();
+    expect(telemetry.costUsd).toBeUndefined();
+  });
+
+  it("drops a figure the payload's bounds would refuse — one bad number costs the WHOLE envelope on read", () => {
+    const telemetry = npcSceneDecisionTelemetry(
+      { ...RESULT, inputTokens: 12.5, outputTokens: -3, costUsd: Number.NaN },
+      5,
+    );
+    expect(telemetry).toEqual({ model: "probe/model", latencyMs: 940, timedOut: false, settleWaitMs: 5 });
+  });
+
+  it("produces telemetry the durable payload takes verbatim — the envelope is inserted without a parse", () => {
+    const telemetry = npcSceneDecisionTelemetry(
+      { ...RESULT, inputTokens: 1_240, outputTokens: 38, costUsd: 0.00031 },
+      3_000,
+    );
+    const parsed = parseNpcSceneDecisionPayload({ ...emptyNpcSceneDecisionPayload(), telemetry });
+    expect(parsed.telemetry).toEqual(telemetry);
   });
 });

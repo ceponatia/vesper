@@ -1,4 +1,4 @@
-import { APICallError, generateText, RetryError, type JSONValue } from "ai";
+import { APICallError, generateText, RetryError, type JSONValue, type ProviderMetadata } from "ai";
 import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
@@ -79,6 +79,15 @@ export interface GenerateCheckedOptions<T> {
    */
   providerOptions?: { openrouter?: Record<string, JSONValue> };
   /**
+   * Send OpenRouter `usage:{include:true}` — usage accounting, which returns the
+   * call's COST alongside its token counts in `providerMetadata`. For the legs
+   * whose gate is a measured spend rather than an estimate (the reply-scene
+   * classifier's shadow measurement). Token counts come back either way; the
+   * dollar figure only with this on. Default false, and additive: absent ⇒
+   * byte-identical behaviour for every existing caller.
+   */
+  usageAccounting?: boolean;
+  /**
    * Where this call lives (chat / session, which conversation, which exchange), so a
    * failure can be RECORDED and tallied rather than only logged
    * (`./agent-failures.ts`). Optional: without it the failure is still recorded, just
@@ -99,6 +108,19 @@ export interface GenerateCheckedResult<T> {
   provider?: string | null;
   /** Wall-clock latency of the last completed model call, ms (undefined if none completed). */
   latencyMs?: number;
+  /**
+   * Tokens spent, SUMMED over every call that completed — the repair round-trip
+   * included, and a call that completed and then failed the schema parse
+   * included, because both were paid for. Undefined when nothing completed or
+   * the provider reported nothing: unknown is not zero, and a cost tally told
+   * "zero" would read a blind call as a free one.
+   */
+  usage?: { inputTokens: number; outputTokens: number };
+  /**
+   * Dollars the completed call(s) cost, summed, as OpenRouter's usage accounting
+   * reported them — so only ever present when the caller set `usageAccounting`.
+   */
+  costUsd?: number;
 }
 
 /**
@@ -123,6 +145,7 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // DeepInfra for GLM 5.2), so it runs regardless of lowLatencyRouting.
   const orOptions: Record<string, JSONValue> = { ...(opts.providerOptions?.openrouter ?? {}) };
   if (opts.disableReasoning) orOptions.reasoning = { enabled: false };
+  if (opts.usageAccounting) orOptions.usage = { include: true };
   const routing = providerRouting(opts.modelId ?? stateModelId(), { sortLatency: opts.lowLatencyRouting });
   if (routing) orOptions.provider = routing;
   const providerOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
@@ -130,6 +153,19 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // then fails to parse): the Inspector reports them so a slow endpoint shows up.
   let provider: string | null = null;
   let latencyMs: number | undefined;
+  // Spend ACCUMULATES over both attempts, where provider/latency describe only
+  // the last one: two calls cost twice, and the repair is not free just because
+  // the first response was unusable. Undefined until something reports.
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let costUsd: number | undefined;
+  /** The measured tail every post-call return path carries; absent ⇒ unmeasured, never zero. */
+  const spend = (): Pick<GenerateCheckedResult<T>, "usage" | "costUsd"> => ({
+    ...(inputTokens === undefined && outputTokens === undefined
+      ? {}
+      : { usage: { inputTokens: inputTokens ?? 0, outputTokens: outputTokens ?? 0 } }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+  });
   const attempt = async (prompt: string): Promise<T> => {
     const start = Date.now();
     const base = {
@@ -163,6 +199,14 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
         : await generateText({ ...base, prompt });
     latencyMs = Date.now() - start;
     provider = routedProvider(result.providerMetadata);
+    // Read BEFORE the parse below: a response that then fails validation still
+    // consumed everything it consumed. `LanguageModelUsage` counts are
+    // `number | undefined` — only a reported number is added, so "the provider
+    // said nothing" stays distinguishable from "the call was free".
+    if (typeof result.usage.inputTokens === "number") inputTokens = (inputTokens ?? 0) + result.usage.inputTokens;
+    if (typeof result.usage.outputTokens === "number") outputTokens = (outputTokens ?? 0) + result.usage.outputTokens;
+    const cost = openrouterCostUsd(result.providerMetadata);
+    if (cost !== undefined) costUsd = (costUsd ?? 0) + cost;
     return opts.schema.parse(JSON.parse(extractJsonObject(result.text)));
   };
 
@@ -175,9 +219,9 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   let firstError = "";
   let lastErr: unknown = null;
   try {
-    return { value: await attempt(opts.prompt), degraded: false, provider, latencyMs };
+    return { value: await attempt(opts.prompt), degraded: false, provider, latencyMs, ...spend() };
   } catch (err) {
-    if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
+    if (abandoned()) return { value: null, degraded: true, provider, latencyMs, ...spend() };
     firstError = errorText(err);
     lastErr = err;
   }
@@ -196,9 +240,9 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
       );
       // info, not warn: the repair *succeeded* — the user has nothing to act on.
       opts.sink?.push(diag("info", `${opts.code}.repaired`, "structured output needed one repair round-trip"));
-      return { value, degraded: false, provider, latencyMs };
+      return { value, degraded: false, provider, latencyMs, ...spend() };
     } catch (err) {
-      if (abandoned()) return { value: null, degraded: true, provider, latencyMs };
+      if (abandoned()) return { value: null, degraded: true, provider, latencyMs, ...spend() };
       firstError = errorText(err);
       lastErr = err;
     }
@@ -239,7 +283,12 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     reasoningEnabled: opts.telemetry?.reasoningEnabled,
     detail: providerClassification?.detail ?? firstError,
   });
-  return { ...degrade(opts, repair ? "validation failed twice" : "validation failed"), provider, latencyMs };
+  return {
+    ...degrade(opts, repair ? "validation failed twice" : "validation failed"),
+    provider,
+    latencyMs,
+    ...spend(),
+  };
 }
 
 function degrade<T>(opts: GenerateCheckedOptions<T>, reason: string): GenerateCheckedResult<T> {
@@ -265,6 +314,22 @@ export function extractJsonObject(text: string): string {
   const end = text.lastIndexOf("}");
   if (start === -1 || end === -1 || end < start) throw new Error("response contained no JSON object");
   return text.slice(start, end + 1);
+}
+
+/**
+ * The call's dollar cost from OpenRouter's usage accounting block
+ * (`providerMetadata.openrouter.usage.cost`, present only under
+ * `usageAccounting`). `providerMetadata` is untyped provider JSON, so this
+ * narrows every step: a provider that omits, reshapes, or stringifies the block
+ * yields undefined — the same "unknown, not zero" answer a missing block gives —
+ * and never a throw into the ladder. A non-finite or negative figure is refused
+ * too: it would poison a sum rather than report one.
+ */
+function openrouterCostUsd(meta: ProviderMetadata | undefined): number | undefined {
+  const usage = meta?.openrouter?.usage;
+  if (typeof usage !== "object" || usage === null || Array.isArray(usage)) return undefined;
+  const cost = usage.cost;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
 /** JSON Schema rendering of the zod schema for the prompt; "" when the schema can't be serialized (worked examples carry the shape then). */

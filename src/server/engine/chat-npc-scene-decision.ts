@@ -315,13 +315,21 @@ export function npcSceneDecisionTriggered(reply: string, digest: NpcSceneDigest)
 // The classifier call
 // ---------------------------------------------------------------------------
 
-interface NpcSceneClassifierResult {
+export interface NpcSceneClassifierResult {
   /** The raw model value — judged ONLY by `parseNpcSceneDecisionOutput`. */
   readonly raw: unknown;
   readonly degraded: boolean;
   readonly timedOut: boolean;
   readonly latencyMs: number;
   readonly model: string;
+  /**
+   * What the call actually spent, when the provider reported it — the figures
+   * the shadow measurement's cost gate is stated in. Absent means unmeasured
+   * (a timeout, a provider that reported nothing), never free.
+   */
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly costUsd?: number;
 }
 
 /**
@@ -390,6 +398,10 @@ function launchNpcSceneClassifier(input: {
     lowLatencyRouting: true,
     repair: false,
     degradeSeverity: "warn",
+    // The cost gate this leg is measured against is stated in tokens and
+    // dollars, so the call asks OpenRouter to price itself rather than leaving
+    // the envelope to estimate from a model id.
+    usageAccounting: true,
     telemetry,
   });
   return withGenerateTimeout(
@@ -406,7 +418,49 @@ function launchNpcSceneClassifier(input: {
     timedOut: controller.signal.aborted,
     latencyMs: Math.max(0, Date.now() - startedAt),
     model: modelId,
+    ...(result.usage === undefined
+      ? {}
+      : { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }),
+    ...(result.costUsd === undefined ? {} : { costUsd: result.costUsd }),
   }));
+}
+
+/**
+ * The envelope's telemetry for one classifier outcome, with the spend figures
+ * the cost gate reads (spec §"Execution, flags, and cost gate").
+ *
+ * Every spend field is OMITTED when unknown rather than defaulted to zero: the
+ * gate treats them as measurements, and a zero would report an unmeasured call
+ * as a free one. Each is also checked against the payload schema's own bounds
+ * (non-negative; whole-number counts) before it is recorded, because the payload
+ * is inserted WITHOUT a runtime parse — a figure the schema would refuse sails
+ * into the column and then degrades the WHOLE payload on every later read.
+ *
+ * `settleWaitMs` is what the finish half actually blocked on the classifier
+ * promise, which is the added-settle-latency figure; `latencyMs` measures the
+ * call, and a call that finished during settlement cost the exchange nothing.
+ */
+export function npcSceneDecisionTelemetry(
+  result: NpcSceneClassifierResult,
+  settleWaitMs: number,
+): NpcSceneDecisionPayload["telemetry"] {
+  const count = (value: number | undefined): number | undefined =>
+    value !== undefined && Number.isInteger(value) && value >= 0 ? value : undefined;
+  const inputTokens = count(result.inputTokens);
+  const outputTokens = count(result.outputTokens);
+  const costUsd =
+    result.costUsd !== undefined && Number.isFinite(result.costUsd) && result.costUsd >= 0
+      ? result.costUsd
+      : undefined;
+  return {
+    model: result.model,
+    latencyMs: result.latencyMs,
+    timedOut: result.timedOut,
+    ...(inputTokens === undefined ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    settleWaitMs: Math.max(0, settleWaitMs),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1190,8 +1244,13 @@ async function finishLive(
   if (!handle.triggered || handle.classifier === null) {
     status = "trigger_miss";
   } else {
+    // The wait, measured around the await itself: the call was launched before
+    // settlement, so what the exchange PAID in latency is the remainder the
+    // finish half still had to block for — usually near zero, and the honest
+    // answer to "what did the leg add?" that the call's own latency cannot give.
+    const waitedFrom = Date.now();
     const result = await handle.classifier;
-    telemetry = { model: result.model, latencyMs: result.latencyMs, timedOut: result.timedOut };
+    telemetry = npcSceneDecisionTelemetry(result, Date.now() - waitedFrom);
     if (result.degraded) {
       status = "degraded";
       sink?.push(

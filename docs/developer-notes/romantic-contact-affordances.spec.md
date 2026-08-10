@@ -2,10 +2,12 @@
 
 Status: companion to
 [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28; verified against the working tree 2026-08-07). Affectionate
+(promoted 2026-07-28; verified against the working tree 2026-08-10). Affectionate
 contact is live in character chat. Item 4's actor control and item 5's permission
 owner are both fully built and both entirely dark; the item-4 shadow gate has
-never been enabled, so its measurement window has not started.
+never been enabled, so its measurement window has not started. The window's
+review instrument — usage/cost/settle-wait telemetry plus the aggregate report —
+was built 2026-08-10.
 
 This is the coding-agent entry point. The plan owns the product intent,
 reader-facing rollout, success criteria, and all open questions. These specs
@@ -127,7 +129,7 @@ Where each piece actually stands as of **2026-08-07**. These labels are exclusiv
   - **Note:** Frozen reply-side withdrawal/departure floor; durable under `contact-reply:<assistantMessageId>`
 - **Capability: NPC reply-scene shadow measurement**
   - **Status:** **lane-wired but dark**
-  - **Note:** Built 2026-08-02 (migration 0094 + `chat-npc-scene-decision.ts`); `CHAT_NPC_SCENE_DECISION_SHADOW` has never been switched on, so no measurement exists
+  - **Note:** Built 2026-08-02 (migration 0094 + `chat-npc-scene-decision.ts`); `CHAT_NPC_SCENE_DECISION_SHADOW` has never been switched on, so no measurement exists. The review instrument (envelope usage/cost/settle-wait telemetry + `pnpm report:npc-scene-decisions`) was built 2026-08-10 — enable the flag only on a deploy that carries it (detail: [actor-control spec](romantic-contact-affordances.spec.actor-control.md) §"Execution, flags, and cost gate")
 - **Capability: Broader NPC movement, starts, and updates**
   - **Status:** **lane-wired but dark**
   - **Note:** All three increments built 2026-08-04 in `chat-npc-scene-execute.ts` behind `CHAT_NPC_SCENE_DECISIONS`; blocked on the shadow measurement and the owner's cost ruling, not on code
@@ -426,7 +428,9 @@ has flipped.
    unconditional retake pruning.~~ Built 2026-08-02 (migration 0094).
 3. **Run one classifier per qualifying reply in shadow** and review accuracy,
    latency, timeout rate, and cost. Nothing has run: the flag is unset in
-   production. This is the only gate between here and step 4.
+   production. The review instrument shipped 2026-08-10 (telemetry fields +
+   aggregate report + review-corpus export), so this step is now purely a
+   deploy-then-flag operation. This is the only gate between here and step 4.
 4. Enable monotonic NPC movement authority. Code built 2026-08-04; enabling means
    setting the authority-kinds scope to `movement`, then the authority flag.
 5. NPC starts with two-sided material and wardrobe chronology protection. Code

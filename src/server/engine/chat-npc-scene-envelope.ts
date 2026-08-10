@@ -99,6 +99,9 @@ export const NPC_SCENE_DECISION_PERSISTENCE_CONFLICT = "npc_scene_decision.persi
  * `schema_version` speaks for the classifier output schema the decision was
  * made under; this literal speaks for the payload serialization itself, so the
  * two can move independently.
+ *
+ * Adding an OPTIONAL field does not move it: every stored payload still parses,
+ * and a reader on an older deployment simply strips the key it does not know.
  */
 export const NPC_SCENE_DECISION_PAYLOAD_VERSION = 1;
 
@@ -262,11 +265,25 @@ const droppedCandidateSchema = z.object({
   detail: z.string().max(SUMMARY_MAX).default(""),
 });
 
-/** Model/latency telemetry, following the other structured legs' fields. */
+/**
+ * Model/latency telemetry, following the other structured legs' fields, plus the
+ * SPEND the cost gate is stated in (spec §"Execution, flags, and cost gate").
+ *
+ * The spend fields are optional and absent-when-unknown rather than defaulted to
+ * zero, because the gate reads them as measurements: a timed-out call and a free
+ * one are different facts, and only absence tells them apart. `settleWaitMs` is
+ * how long settlement actually blocked on the classifier — the added latency —
+ * where `latencyMs` measures the call, which was launched before settlement and
+ * may have finished inside it.
+ */
 const decisionTelemetrySchema = z.object({
   model: z.string().max(MODEL_MAX).default(""),
   latencyMs: z.number().min(0).default(0),
   timedOut: z.boolean().default(false),
+  inputTokens: z.number().int().min(0).optional(),
+  outputTokens: z.number().int().min(0).optional(),
+  costUsd: z.number().min(0).optional(),
+  settleWaitMs: z.number().min(0).optional(),
 });
 
 /**

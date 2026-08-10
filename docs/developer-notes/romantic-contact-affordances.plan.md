@@ -6,11 +6,12 @@ affectionate-contact MVP and its passed trial (items 1–2, turned on in
 production 2026-08-02), and the retired-declaration cleanup (item 3). **Built
 but dark:** item 4's NPC actor control in full — the decision foundation, the
 shadow measurement leg, and all three authority increments — and item 5's
-`romantic_touch` permission owner. **Remaining:** turn on and review the item-4
+`romantic_touch` permission owner. The measurement's review instrument (the
+report that turns the recorded decisions into the figures the owner rules on)
+was built 2026-08-10. **Remaining:** deploy, turn on, and review the item-4
 shadow measurement, which has never been enabled in production; take the owner's
 ruling on the measured cost and latency; enable authority one kind at a time;
-then run item 6's permission-gated romantic proof. No code has landed on this
-topic since 2026-08-04.
+then run item 6's permission-gated romantic proof.
 
 Outcome: A player can touch a character during a chat and have the story keep
 track of that touch — where it lands, what clothing is in the way, and when it
@@ -340,13 +341,17 @@ has today. Everything beyond it is built and switched off:
   code changes.
 
 What remains is operational, not construction, and it is strictly ordered: turn
-the shadow measurement on, let it run, and review it. Authority stays blocked
-until accuracy, fire rate, p50/p95/p99 added latency, timeout rate, and cost are
-acceptable to the owner. If approved, enable authority in this order —
+the shadow measurement on, let it run, and review it. The review instrument was
+built 2026-08-10 — each recorded decision now carries its own cost and waiting
+time, and a report turns a window of them into the exact figures below — so the
+measurement must be enabled only on a deploy that includes it. Authority stays
+blocked until accuracy, fire rate, p50/p95/p99 added latency, timeout rate, and
+cost are acceptable to the owner. If approved, enable authority in this order —
 movement, contact starts, then contact updates — each step a one-value staging
 change. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) owns the
-detailed evidence rules, chronology, retries, persistence, and rollout gates.
+detailed evidence rules, chronology, retries, persistence, rollout gates, and
+the measurement instrument itself.
 
 #### 5. Implement the explicit `romantic_touch` permission owner — built 2026-08-04, dark
 
