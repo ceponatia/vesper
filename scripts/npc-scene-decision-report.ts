@@ -594,7 +594,10 @@ export interface NpcSceneDecisionReviewLine {
  * The action's provenance blob, quote hash, and ledger references are left out
  * deliberately: this file is read by a person judging whether the decision
  * matches the prose, and replay material is noise in that job (the envelope row
- * itself keeps all of it).
+ * itself keeps all of it). Each DROP row is the exception that proves the rule —
+ * it carries the bounded verbatim evidence excerpt the candidate was grounded
+ * on, because judging a drop is judging whether the gate read the right
+ * sentence, which nothing but the quote itself can answer.
  */
 export function reviewCorpusLine(row: NpcSceneDecisionReportRow, reply: string | null): NpcSceneDecisionReviewLine {
   return {

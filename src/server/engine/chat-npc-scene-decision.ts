@@ -74,6 +74,7 @@ import {
   executeNpcSceneDecision,
   npcSceneCandidateSlot,
   npcSceneCandidateSummary,
+  npcSceneDropEvidence,
   npcSceneFloorDetail,
   npcSceneQuoteHash,
   recordNpcSceneDrop,
@@ -599,6 +600,8 @@ export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): Np
             reason: "slot_malformed",
             field: "",
             detail: (slot.issues[0] ?? "").slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+            // No candidate survived the parse, so there is nothing to quote.
+            evidence: "",
           },
           "warn",
         );
@@ -613,6 +616,7 @@ export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): Np
               reason: admission.drop.reason,
               field: admission.drop.field ?? "",
               detail: npcSceneCandidateSummary(candidate).slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+              evidence: npcSceneDropEvidence(candidate),
             },
             "info",
           );
@@ -629,6 +633,7 @@ export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): Np
               reason: "presence_conflict",
               field: "",
               detail: away.join(",").slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+              evidence: npcSceneDropEvidence(candidate),
             },
             "warn",
           );
@@ -658,6 +663,7 @@ export function admitNpcSceneDecision(input: NpcSceneDecisionAdmissionInput): Np
         reason: "chronology_ambiguous",
         field: "",
         detail: npcSceneCandidateSummary(dropped.entry.candidate).slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+        evidence: npcSceneDropEvidence(dropped.entry.candidate),
       },
       "info",
     );

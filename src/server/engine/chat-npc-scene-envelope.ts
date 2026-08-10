@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   diag,
+  NPC_SCENE_EVIDENCE_MAX_CHARS,
   type ContactEventRef,
   type ContactLifecycleCommit,
   type DiagnosticSink,
@@ -195,6 +196,21 @@ const MAX_ROWS_PER_ACTION = NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION;
  */
 export const NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES = 4_096;
 
+/**
+ * Character cap on a drop record's verbatim evidence excerpt.
+ *
+ * It IS the classifier contract's own evidence cap, deliberately: a candidate
+ * that parsed carries a quote already bounded by that number, so storing it
+ * whole is always in bounds and a reviewer never reads a truncated sentence and
+ * mistakes the truncation for what the model claimed.
+ *
+ * Exported because the WRITER must respect it, exactly as the sibling caps are:
+ * the payload is inserted without a runtime parse, so an over-cap excerpt would
+ * sail into the column and then fail `parseNpcSceneDecisionPayload` on every
+ * later read — degrading the WHOLE payload to empty.
+ */
+export const NPC_SCENE_DECISION_DROP_EVIDENCE_MAX = NPC_SCENE_EVIDENCE_MAX_CHARS;
+
 /** sha256 hex, or "" when the field genuinely has nothing to fingerprint. */
 const hashOrEmptySchema = z.string().regex(/^(?:[0-9a-f]{64})?$/);
 
@@ -263,6 +279,17 @@ const droppedCandidateSchema = z.object({
   /** For `evidence_incongruent`: which proposed field the evidence failed to prove. */
   field: z.string().max(FIELD_MAX).default(""),
   detail: z.string().max(SUMMARY_MAX).default(""),
+  /**
+   * The candidate's verbatim evidence quote, length-capped; `""` when the drop
+   * has no candidate to quote at all (`slot_malformed`).
+   *
+   * A drop is only reviewable BESIDE the quote the model grounded it on: an
+   * `evidence_misattributed` over a reply holding both a player-movement
+   * sentence and a pronoun-subject NPC sentence is a correct gate if it read
+   * the first and an over-strict one if it read the second, and the reason code
+   * alone cannot tell those apart.
+   */
+  evidence: z.string().max(NPC_SCENE_DECISION_DROP_EVIDENCE_MAX).default(""),
 });
 
 /**
