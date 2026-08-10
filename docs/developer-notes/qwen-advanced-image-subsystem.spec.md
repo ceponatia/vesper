@@ -32,7 +32,7 @@ those systems through their existing exports and adds no second copy.
 | Admin routes (`/api/admin/self/image-lab`)      | built 2026-08-10 |
 | Fixture review + delete route                   | built 2026-08-10 |
 | Settings page (`/settings/image-lab`)           | built 2026-08-10 |
-| Reference doc update (`docs/images.md`)         | built 2026-08-10 |
+| Reference doc (`docs/images/` lab page)         | built 2026-08-10 |
 | Stage 0 control probe run + recorded verdict    | not run          |
 
 Stage 1+ work (controlled recipes on the render-intent path, finishing passes,

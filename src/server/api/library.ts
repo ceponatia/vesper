@@ -390,7 +390,7 @@ export function composeItemDefinition(row: {
 }
 
 /**
- * Entity deletion image cleanup (docs/images.md): drop the rows, then remove
+ * Entity deletion image cleanup (docs/images/asset-registry.md): drop the rows, then remove
  * files best-effort — sweepOrphans reconciles anything missed.
  */
 export async function deleteEntityImages(entityKind: ImageEntityKind, entityId: string, ownerId: string): Promise<void> {

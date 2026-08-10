@@ -25,7 +25,11 @@ Related work:
 - [image model capabilities](image-model-capabilities.plan.md) owns the shared
   render intent that will consume visual state;
 - [image render quality](image-render-quality.plan.md) owns model-specific
-  prompting, reference quality, render QA, and image trials.
+  prompting, reference quality, render QA, and image trials;
+- [scene composition](scene-composition.plan.md) owns the scene image's camera,
+  subject orientation, and intimate staging; its interim read of the scene /
+  body-relations owner migrates onto this plan's image digest when slice 8
+  ships.
 
 ## What this plan waits for
 

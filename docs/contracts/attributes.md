@@ -92,7 +92,7 @@ type AttributeDefinition = {
 
 ### Image reveal tiers
 
-`imageReveal` controls whether an attribute appears in a full-body image (`docs/images.md` §Scene images):
+`imageReveal` controls whether an attribute appears in a full-body image (`docs/images/pipelines.md` §Scene images):
 
 | Value    | When it's described                                                                             |
 | -------- | ----------------------------------------------------------------------------------------------- |

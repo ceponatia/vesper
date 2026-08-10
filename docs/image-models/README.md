@@ -121,7 +121,7 @@ working as it does today. Each file records its model's ratings and the reasonin
 The rule they feed is already written, though nothing runs it yet (§Seeded
 profiles): the identity-critical tasks (`variant`, `scene`, `chat_look`) refuse a
 `weak` rating or an `img2img` edit kind outright, because `canEdit` alone was never
-evidence that a face survives ([../images.md](../images.md) §Providers). The legacy
+evidence that a face survives ([../images/providers.md](../images/providers.md)). The legacy
 `for_portrait`/`for_variant`/`for_scene` toggles are what actually gate today's
 pickers.
 

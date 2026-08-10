@@ -137,7 +137,7 @@ The chat lane *enacts* the tracked `character_chat_state` (character-chat-state-
 - **Soft social-card framing (§6).** `buildSocialFramingSection` surfaces active cards as a fenced "what you care about / won't stand for" block — theme only, **never** the mechanical `severity` (the post-turn pulse owns the reaction).
 - **One-turn sensory allowance (§7).** A regex-first `detectChatCue` reads the player input for proximity/touch/intimacy — plus appearance-directed **attention** — and the route derives the binding per-turn **sensory allowance** from it (§Character-chat sensory cues).
 
-The matching scene-image enrichment is in [images.md](images.md) (§state-aware chat scene).
+The matching scene-image enrichment is in [images/pipelines.md](../images/pipelines.md) (§state-aware chat scene).
 
 ## Character-chat reply discipline & scene memory
 

@@ -71,7 +71,7 @@ there is **one implementation** — the chat lane must never re-fork it.
 - **Life stage & minor fence** ([prompts.md](prompts.md) §Life stage & the minor fence) — `contracts/world/life-stage.ts` (pure registry) + the identity hint / `buildLifeStageSection` / scoped `CONTENT_FRAMING` in `prompts/character-chat.ts`
 - **Relationship block / band profiles** — `contracts/relationships/law.ts` (`composeRelationshipLaw`, band profiles, corners) + `contracts/relationships/bands.ts` (axes) + `contracts/relationships/history.ts` (samples/milestones)
 - **RRF fusion (pure)** — `server/memory/fusion.ts` ([memory.md](../memory.md))
-- **Scene image** — `server/images/character-scene.ts` ([images.md](../images.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`)
+- **Scene image** — `server/images/character-scene.ts` ([images/pipelines.md](../images/pipelines.md) §state-aware chat scene); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`)
 - **Admin agent-reasoning experiment** — `lib/agent-reasoning.ts` + `server/ai/agent-reasoning.ts`; owner-admin API in `app/api/admin/agent-reasoning/[chatId]/route.ts`; selector in `components/chat/agent-reasoning-select.tsx`; attribution in `components/chat/chat-inspector-agent-health.tsx` ([agent-reasoning.md](agent-reasoning.md))
 - **Admin inspector** — `app/api/admin/chat-inspector/*` (role-gated routes) + `components/chat/chat-inspector-{page,facts,episodes}.tsx` behind `/chat/[chatId]/inspector` (admin-gated)
 - **Retrieval eval harness** — `scripts/eval/retrieval/` (`pnpm eval:retrieval` — never in `verify`; see its README)

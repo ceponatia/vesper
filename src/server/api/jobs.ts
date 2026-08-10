@@ -131,7 +131,7 @@ async function insertJobRow(opts: StartJobOptions): Promise<string | Extract<Sta
  * Fire-and-forget job runner for library-side work (avatar, portrait_variant,
  * embed_refresh): inserts a running `jobs` row, kicks off the work, records
  * done/failed when it settles. The route returns the job id immediately; the
- * UI polls the affected rows (e.g. the image row status, docs/images.md).
+ * UI polls the affected rows (e.g. the image row status, docs/images/asset-registry.md).
  * Failures never propagate to the caller.
  *
  * When `ownerId` is set the insert goes through the per-user concurrency cap

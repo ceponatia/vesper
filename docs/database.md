@@ -253,13 +253,13 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   — the chat kinds are chat-private and hard-deleted with the chat; the last four are hidden
   derived assets excluded from every user surface via `HIDDEN_IMAGE_KINDS`: identity-pack
   crops, identity-trial outputs, and the Advanced Image Lab's control fixtures and results,
-  see images.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
+  see images/asset-registry.md and images/advanced-image-lab.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
   always `character` for `avatar`/`portrait_variant`; app convention, not a constraint),
   `entity_id?`, `chat_id?` (→ `character_chats`, SET NULL on chat delete — chat-scene keying,
-  see images.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
+  see images/pipelines.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
   text, no FK), `path` (relative to `data/`), `prompt`, `source_image_id?` (reference-edit
   lineage), `status` (`pending`/`ready`/`failed` — row is written **before** the file; see
-  images.md), `meta` JSONB.
+  images/asset-registry.md), `meta` JSONB.
 - **`image_references`** — `scene_image_id` (→ `images`, **FK-cascade**), `kind`
   (`character`/`location`/`style`/`pose`/`layout`), `entity_id?` (library character/location
   id; null for non-entity roles), `role?`, `source?`
@@ -270,7 +270,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery
   projection (contracts/images/scene-reference.ts).
 - **`image_lab_experiments`** — the Advanced Image Lab's durable experiment record
-  (images.md §Advanced Image Lab): `owner_id` (→ `users`, **FK-cascade**), `kind`
+  (images/advanced-image-lab.md): `owner_id` (→ `users`, **FK-cascade**), `kind`
   (`control_probe`/`baseline_portrait`/`baseline_scene`, later stages reserved), `character_id?`
   / `chat_id?` (SET NULL), `model_slug`, `requested_version_id?` / `executed_version_id?`,
   `profile_id?` (plain snapshot, no FK — a deleted profile must not erase what a finished
@@ -292,7 +292,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
     `identity_preservation` (`strong`/`moderate`/`weak`/`unknown`) and `operator_warning?`.
   - `advanced_capabilities` JSONB is reserved for probed control bindings and is `{}` today.
     Which models the app can run is **data, not a code union** — managed at
-    `/settings/image-models`, seeded by migration 0098 (see [images.md](images.md)).
+    `/settings/image-models`, seeded by migration 0098 (see [images/providers.md](images/providers.md)).
 - **`image_model_profiles`** — `image_model_id` (→ `image_models`, **FK-cascade**), `key`
   (**unique per model**), `label`, `task`
   (`portrait`/`variant`/`scene`/`item`/`location`/`chat_look`/`chat_place`/`text_repair`/`example_transform`/`image_set`),
@@ -315,8 +315,37 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `failure_code?`/`failure_message?`, `reviewed_by_user_id?` (→ `users`, no cascade — audit
   survives the reviewer), `review_reason?`/`reviewed_at?`. One durable identity reference per
   character: revisions are rows, exactly one may be `current` (partial unique index below).
-  See [images.md](images.md) §Identity packs and image-identity-packs.spec.data.md. Added by
+  See [images/identity-packs.md](images/identity-packs.md) and image-identity-packs.spec.data.md. Added by
   migration 0101.
+- **`image_identity_pack_trial_runs`** — `owner_id` (→ `users`, cascade), `label`, `status`
+  (`draft`/`running`/`review`/`complete`), `config_json` JSONB — the validated create-request
+  snapshot, so a later registry or profile edit can never change what a finished run claims
+  it tested. One bounded admin comparison of identity-reference strategies over a character ×
+  profile × strategy × fixture grid; the three tables below FK-cascade with their run. See
+  [images/identity-packs.md](images/identity-packs.md) §The fixed-trial harness and
+  image-identity-packs.spec.trial.md. Added by migration 0102.
+- **`image_identity_pack_trial_cells`** — `run_id` (→ runs, **FK-cascade**), `cell_key`
+  (**unique per run** — the deterministic `character:profile:fixture:strategy:variant` plan
+  key; plain ascending order is the execution order), `status`
+  (`planned`/`running`/`rendered`/`failed`/`refused`), `spec_json`/`result_json?` JSONB,
+  `output_image_id?` (→ `images`, SET NULL — a deleted output makes the cell unreviewable,
+  not invalid), `claim_token?`/`claimed_at?` — the durable execution claim (compare-and-set
+  `planned`→`running`→terminal), so a restart mid-pass can't pay the provider twice for one
+  cell's evidence.
+- **`image_identity_pack_trial_grades`** — `run_id`/`cell_a_id`/`cell_b_id` (all
+  **FK-cascade**), `pair_id` (**unique per run** — insert-once, so a double submission fails
+  loudly instead of averaging), `left_is_a` (the persisted blind left/right↔A/B mapping;
+  unblinded only in aggregation), `grades_json` JSONB, `reviewed_by_user_id?` (→ `users`, no
+  cascade — audit survives the reviewer).
+- **`image_identity_pack_trial_verdicts`** — `run_id` (**FK-cascade**), `profile_id` +
+  `identity_strategy` (**unique per run** — one ruling per slot, upserted; replaced the run
+  row's jsonb verdict array, whose read-modify-write let two admins ruling on different slots
+  silently lose one), `verdict`
+  (`promoted`/`retained_current`/`experimental_admin_only`/`rejected`), `reason` (required),
+  `policy_version`, `override_incomplete_review` (the admin ruled before every reviewable
+  pair was graded — unrecoverable once more grades arrive, so stored on the ruling),
+  `decided_by_user_id` (→ `users`, no cascade, **not null** — a ruling with no actor is not
+  an audit record), `decided_at`. Added by migration 0103.
 - **`jobs`** — `type`
   (`chat_summary`/`chat_scene_sketch`/`chat_meanwhile`/`chat_scene_image`/`avatar`/`portrait_variant`/`entity_image`/`embed_refresh`/`image_sweep`/`identity_pack`/…
   — see the schema enum for the full list), `status` (`queued`/`running`/`done`/`failed`),
@@ -341,6 +370,10 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `image_identity_packs(character_id, revision)` unique doubles as the per-character lookup;
   `image_identity_packs(character_id, source_content_hash, schema_version, derivation_version, revision)`
   is the derivation-key coalescing/diagnostic lookup.
+- `image_identity_pack_trial_cells(run_id, status)` — the execute path's "which cells of this
+  run are still planned" hot filter. The per-run composite uniques — cells `(run_id, cell_key)`,
+  grades `(run_id, pair_id)`, verdicts `(run_id, profile_id, identity_strategy)` — double as
+  the per-run lookups, so no separate ones exist.
 - Successor authority: `sim_events(branch_id, sequence)` unique,
   `sim_commands(branch_id, idempotency_key)` primary, command-ID audit lookup, and the
   `sim_item_holdings` locus lookups (`branch_id` × `container_item_id` for §26.2

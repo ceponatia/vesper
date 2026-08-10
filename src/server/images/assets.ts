@@ -33,7 +33,7 @@ export interface ImageFileRef {
 
 /**
  * A stored row's file bytes, or null when the file is lost. Every image read is
- * degradable by design (docs/images.md): the row is written before the file, and
+ * degradable by design (docs/images/asset-registry.md): the row is written before the file, and
  * image_sweep reconciles a row whose file vanished — so a reader falls back to
  * another reference or skips the read rather than failing the turn.
  */
@@ -59,7 +59,7 @@ export interface CreateImageAssetOptions {
   meta?: Record<string, unknown>;
 }
 
-/** Row-before-file: every asset starts as a pending row (docs/images.md). */
+/** Row-before-file: every asset starts as a pending row (docs/images/asset-registry.md). */
 export async function createImageAsset(opts: CreateImageAssetOptions): Promise<ImageRow> {
   const id = newId();
   const [row] = await db()
@@ -239,7 +239,7 @@ export interface ImagePipelineResult {
  * (audit C1, image-pipeline-consolidation.plan.md slice 4). Six copies of it had
  * already drifted in ways nobody decided — one lane recorded a failure
  * diagnostic and its neighbour didn't — so the ordering, and with it the
- * row-before-file invariant (docs/images.md), lives here and nowhere else:
+ * row-before-file invariant (docs/images/asset-registry.md), lives here and nowhere else:
  *
  *   reserve → afterReserve → precondition → produce → save-or-fail → onReady → log
  *
@@ -719,7 +719,7 @@ export interface SweepOptions {
 const SWEEP_GRACE_MS = 10 * 60_000;
 
 /**
- * Idempotent rows↔files reconciliation (docs/images.md). Both directions:
+ * Idempotent rows↔files reconciliation (docs/images/asset-registry.md). Both directions:
  * ready rows whose file vanished are marked failed; files without a row (and
  * crash-leftover `.pending.webp` temps) older than the grace period are
  * removed. Never throws, and every scanned or row-derived path passes through

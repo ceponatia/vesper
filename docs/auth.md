@@ -268,7 +268,7 @@ because the edit surfaces need every column; everyone else gets the projection.
   OQ2 ruling).
 - Portrait rows beside a public character project to
   `{ id, kind, entityKind, entityId, createdAt }` — no `path`, no `prompt`, no
-  provider internals ([images.md](images.md)).
+  provider internals ([images/asset-registry.md](images/asset-registry.md)).
 - The default is **closed**: a column added to one of these tables is private
   until someone adds it to the projection. `public-dto.int.test.ts` asserts the
   **exact key set** per kind, so widening the public surface is always a

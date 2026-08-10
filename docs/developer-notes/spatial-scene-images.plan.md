@@ -10,7 +10,7 @@ that the picture stops contradicting the text it illustrates.
 This plan graduates the self-hosted ComfyUI / pose-control follow-up in
 [deferred.plan.md](deferred.plan.md). It extends the shipped provider and lineage
 foundation in [finished/scene-images.plan.md](finished/scene-images.plan.md) and
-the runtime documented in [../images.md](../images.md).
+the runtime documented in [docs/images/](../images/README.md).
 
 Neighbouring plans, all of which moved under it after this one was written:
 
@@ -29,6 +29,10 @@ Neighbouring plans, all of which moved under it after this one was written:
   already-seeded Qwen Image Edit 2511 (owner ruling 2026-08-07), making it
   cheaper still. That plan and Gate 0 below answer the same question and should
   not both be opened.
+- [scene composition](scene-composition.plan.md) is the **prompt-only near-term
+  treatment** of camera vantage, subject facing, and intimate staging — no
+  structural control, reachable without paid gates. Its camera and staging
+  vocabularies are candidate inputs to this plan's pose-template intents.
 
 The direction in one sentence:
 

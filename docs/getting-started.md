@@ -29,11 +29,13 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ## Environment
 
-> **Text models are not env-configurable.** The chat narrator model is chosen in
+> **Models are not env-configurable.** The chat narrator model is chosen in
 > code (`lib/narrative-models.ts`) or per-character in the UI; the post-turn agent
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
-> model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`).
-> Only the **image** models below — Venice and Replicate — remain env-overridable.
+> model default purely in code (`server/ai/provider.ts` `MODEL_DEFAULTS`). Image
+> models are rows in the `image_models` registry, managed from the admin-only
+> `/settings/image-models` page ([images/providers.md](images/providers.md)) — the
+> `REPLICATE_*` variables below configure the one image backend, never model choice.
 
 > **Tool-model candidate — `aion-labs/aion-3.0`.** Added to the narrator list
 > (`lib/narrative-models.ts`) as **Aion 3.0**, it is notable beyond its narrator
@@ -53,7 +55,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
   run in demo mode (deterministic narrative, placeholder images).
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
-  ([images.md](images.md) §Providers). Absent outside demo mode ⇒ every render fails the
+  ([images/providers.md](images/providers.md)). Absent outside demo mode ⇒ every render fails the
   row with `REPLICATE_API_TOKEN not configured`.
 - **`REPLICATE_PREDICTION_TIMEOUT_MS`** — prediction deadline; default `300000` (5m),
   clamped to 30s–30m. Sent as Replicate's `Cancel-After` **and** used as this client's poll

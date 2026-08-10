@@ -21,8 +21,9 @@ export const humanoidBodyLocations: readonly BodyLocation[] = [
 export const bodyLocationRegistry = buildBodyLocationRegistry(humanoidBodyLocations);
 
 /**
- * Roots below the waistline. A "waist-up" avatar portrait (docs/images.md)
- * omits garments whose coverage is entirely here, so shoes/pants/skirts don't
+ * Roots below the waistline. A "waist-up" avatar portrait
+ * (docs/images/pipelines.md §Avatar generation) omits garments whose coverage
+ * is entirely here, so shoes/pants/skirts don't
  * coax the image model into a full-body shot; in-session scene images keep
  * them. The waist itself is a child of `torso`, so belts and waistbands — and
  * any garment that also covers the torso (dress, coat, abaya) — stay.

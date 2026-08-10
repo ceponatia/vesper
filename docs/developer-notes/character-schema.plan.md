@@ -182,7 +182,7 @@ glamour" as a negative fights the beauty prior from the other side for every ban
 5. The from-portrait vision reader offers the new attribute automatically; confirm its
    closed-vocabulary list includes it.
 6. Forge — anchor-conditioned plausible ranges.
-7. Docs — `docs/images.md` (document the suffix change **and** the previously undocumented
+7. Docs — `docs/images/pipelines.md` (document the suffix change **and** the previously undocumented
    beauty bias it replaces) and `docs/contracts/attributes.md` (the new field plus a
    vocabulary row).
 8. Eval — a small portrait sweep across the vocabulary on the current model set. The exit

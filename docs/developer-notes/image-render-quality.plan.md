@@ -27,6 +27,10 @@ Sibling plans:
   projection an image prompt should eventually read;
 - [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) owns the
   proposed controlled laboratory for pose/depth/LoRA experiments;
+- [scene composition](scene-composition.plan.md) owns what a scene shot
+  contains — camera vantage, subject facing, intimate staging — which this
+  plan's dialects then translate per model (the two meet at the identity-lock
+  wording);
 - this plan owns the quality policy that rides on those systems: what each model
   is told, which controls are quality defaults, how repair works, and how a
   render is judged.

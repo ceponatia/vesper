@@ -5,7 +5,7 @@
  * produce the output canvas, so what the user frames is exactly what is saved.
  */
 
-/** Canonical profile-portrait pixels — 3:4, the avatar aspect (docs/images.md). */
+/** Canonical profile-portrait pixels — 3:4, the avatar aspect (docs/images/pipelines.md §Avatar upload). */
 export const AVATAR_WIDTH = 768;
 export const AVATAR_HEIGHT = 1024;
 export const AVATAR_ASPECT_RATIO = AVATAR_WIDTH / AVATAR_HEIGHT; // 0.75

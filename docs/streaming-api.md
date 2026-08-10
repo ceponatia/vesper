@@ -10,11 +10,13 @@ GET/POST           /api/characters            list (search ?q, ?tag) / create (2
 GET/PATCH/DELETE   /api/characters/:id        GET returns { character, portraits, mine }
 POST               /api/characters/forge      prose prompt → AI draft (not saved); { prompt, section?, draft? }
                                               regenerates one section against the supplied draft
-POST               /api/characters/:id/avatar          { style: "realistic"|"stylized" } ⇒ 202 { jobId, characterId }
+POST               /api/characters/:id/avatar          { style: "realistic"|"stylized", modelId? } ⇒ 202 { jobId, characterId }
 GET/POST           /api/characters/:id/portraits       GET lists all images for the character (avatar +
-                                                       variants, newest first) as { portraits }; POST queues a
-                                                       Venice variant { kind: pose|outfit|expression|setting,
-                                                       instruction } ⇒ 202 { jobId, characterId }
+                                                       variants, newest first) as { portraits, rendering };
+                                                       POST queues a portrait variant — a reference edit via
+                                                       the image-model registry (images/pipelines.md §Portrait
+                                                       variants) — { kind: pose|outfit|expression|setting,
+                                                       instruction, modelId? } ⇒ 202 { jobId, characterId }
 GET/DELETE         /api/characters/:id/portraits/:imageId   (+ POST /promote → set as avatar; 409 not_ready
                                                             until the variant leaves pending)
 GET/POST, GET/PATCH/DELETE        /api/locations, /api/locations/:id

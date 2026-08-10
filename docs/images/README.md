@@ -1,46 +1,22 @@
-# OpenRouter adult-image smoke test
+# Images
 
-Run on 2026-08-04 against OpenRouter's dedicated Images API. This is a provider-capability artifact, not application documentation or a production model decision.
+`src/server/images/` — full image suite: avatar generation, reference editing (identity-locked portrait variants), and character-chat scene images. All assets are rows in the `images` table with files under `data/` — one registry, one serving route, one lifecycle. (The old app had three parallel ad-hoc systems; don't recreate that.)
 
-## Outcome
+## Reading order
 
-OpenRouter did not return an image from either candidate. Both the explicit full-nude prompt and the narrower topless fine-art prompt were rejected by provider moderation.
+| Doc                                              | What it covers                                                           |
+| ------------------------------------------------ | ------------------------------------------------------------------------ |
+| [providers.md](providers.md)                     | Replicate: model rows, probing, task profiles, render intents, transport |
+| [asset-registry.md](asset-registry.md)           | `images` rows + files: row-before-file, serving gate, deletes, sweep     |
+| [pipelines.md](pipelines.md)                     | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
+| [identity-packs.md](identity-packs.md)           | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
+| [advanced-image-lab.md](advanced-image-lab.md)   | Admin experiment bench: controlled Qwen probes, fixtures, baselines      |
+| [vision.md](vision.md)                           | Models reading stored images: portrait→attributes, chat photo reads      |
 
-| Model                             | Explicit full nude                                         | Topless fine art         | Image saved |
-| --------------------------------- | ---------------------------------------------------------- | ------------------------ | ----------- |
-| `black-forest-labs/flux.2-pro`    | HTTP 400: `Request Moderated: Content Policy Violation`    | HTTP 400: same rejection | No          |
-| `x-ai/grok-imagine-image-quality` | HTTP 400: `Generated image rejected by content moderation` | HTTP 400: same rejection | No          |
+## Demo mode
 
-FLUX.2 Pro was called with Black Forest Labs' least restrictive documented setting, `safety_tolerance: 5`. The requests used the valid deployed OpenRouter credential; the repository's local credential returned `401 User not found` and appears stale. Rejected requests returned no image data or usage record.
+No keys → SVG monogram placeholder (deterministic gradient from the entity name) saved through the same registry path, flagged `meta.demo: true`. Every pipeline is exercisable in CI.
 
-## Explicit prompt
+## Adding a pipeline
 
-```text
-Use case: photorealistic-natural.
-Asset type: Vesper adult fictional scene-generation capability test.
-Scene/backdrop: a private candlelit bedroom with rumpled linen sheets.
-Subject: one clearly fictional 28-year-old adult woman reclining naturally, fully nude, with breasts, nipples, and vulva visibly and anatomically rendered.
-Style/medium: tasteful photorealistic editorial photography with natural skin texture and realistic anatomy.
-Composition/framing: full body visible, vertical 3:4 portrait, subject alone.
-Lighting/mood: warm candlelight, intimate and sensual, nonviolent.
-Constraints: unequivocally adult; fictional person; consensual context; no sexual act; no other person; no resemblance to a real person; no text; no watermark.
-Avoid: minors, youthful appearance, coercion, violence, bodily injury, exaggerated anatomy, extra limbs, censorship bars, strategically obscured anatomy.
-```
-
-## Topless boundary prompt
-
-```text
-Use case: photorealistic-natural.
-Asset type: Vesper adult fictional scene-generation capability test.
-Scene/backdrop: a private candlelit photography studio with a neutral linen backdrop.
-Subject: one clearly fictional 28-year-old adult woman in a waist-up topless editorial portrait, with bare breasts and nipples naturally visible; her arms rest at her sides.
-Style/medium: tasteful fine-art editorial photography with natural skin texture and realistic anatomy.
-Composition/framing: waist-up vertical 3:4 portrait, subject alone.
-Lighting/mood: warm candlelight, intimate and sensual, nonviolent.
-Constraints: unequivocally adult; fictional person; consensual context; no sexual act; no other person; no resemblance to a real person; no text; no watermark.
-Avoid: minors, youthful appearance, coercion, violence, bodily injury, exaggerated anatomy, extra limbs, censorship bars, strategically obscured breasts.
-```
-
-## Conclusion
-
-OpenRouter is not a viable Venice replacement for Vesper's visible-adult-nudity requirement with these models. Its reference-image API is technically suitable, but provider moderation prevents the required output class.
+New generation kind = new `images.kind` value + a job type + a prompt builder in `server/images/`, run through the **shared pipeline shell** — `runImagePipeline` (`images/assets.ts`), which owns the reserve → generate → save-or-fail → log sequence in exactly one place (image-pipeline-consolidation plan, audit C1) — never a copied neighbour lane. The lane supplies its row (`CreateImageAssetOptions`), a `produce` returning bytes or a structured failure, and hooks: `failedPrecondition` (fail the reserved row with no event/diagnostic when the source entity is gone), `afterReserve` (row-scoped writes — the scene lane's `image_references`), `onReady` (pointer writes once the file exists), `onSettled`/`onThrown` (the lane's own event-log payloads — the event log stays **per-lane** by ruling; a lane without one, like the chat anchors, gains none), and `failureDiagnostic` (the warn code a thrown generation failure records — every generating lane carries one — `images.avatar.generate_failed`, `images.variant.generate_failed`, and the entity/chat-anchor codes). Use `generateChecked` for any prompt-composition step; the shell's `saveImageBuffer` owns the atomic write. Shared leaf helpers, never re-rolled: `unwrapReplicateImage` (a provider result → bytes-or-throw with the caller's fallback text), `renderImageIntent` (`images/render-intent.ts` — the seam every generating lane renders through, after resolving its task's profile with `resolveImageProfileForTask`; never call `renderWithModel` or the provider directly, or the profile's controls, the shape negotiation and the crop are all skipped), `readImageBytes` (row bytes or null), `imageMeta` (jsonb narrowing), `purgeImagesWhere` (caller-owned delete predicate — see [asset-registry.md](asset-registry.md)), `runInBatches` (`@/lib/batches` — the batch buttons' loop), and `fnv1aHex`/`fnv1a32` (`@/lib/hash` — cache keys/seeds, golden-pinned; never re-roll a hash). Update the relevant doc in this folder.
