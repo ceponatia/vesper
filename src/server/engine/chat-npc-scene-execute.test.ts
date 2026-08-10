@@ -500,7 +500,13 @@ describe("the same-reply wardrobe-change veto", () => {
       sink,
     });
     expect(execution.drops).toEqual([
-      expect.objectContaining({ candidate: "contact", reason: "wardrobe_chronology_ambiguous" }),
+      // The sentence the start was grounded on rides the drop: a veto is only
+      // reviewable beside the touch it refused to date.
+      expect.objectContaining({
+        candidate: "contact",
+        reason: "wardrobe_chronology_ambiguous",
+        evidence: START_REPLY,
+      }),
     ]);
     expect(codes(sink)).toContain("npc_scene_decision.wardrobe_chronology_ambiguous");
     // A DROP, not a recorded resolution: no resolver ran, so no action entry.
@@ -517,6 +523,7 @@ describe("the same-reply wardrobe-change veto", () => {
       wardrobeChanged: new Set([WREN]),
     });
     expect(execution.drops[0]?.reason).toBe("wardrobe_chronology_ambiguous");
+    expect(execution.drops[0]?.evidence).toBe(START_REPLY);
     expect(execution.actions).toEqual([]);
   });
 
@@ -870,7 +877,12 @@ describe("contact updates — the post-settle re-check is the authority, never t
     expect(execution.actions.map((action) => action.kind)).toEqual(["floor_ending"]);
     expect(execution.actions[0]?.resolution).toBe("committed");
     expect(execution.drops).toEqual([
-      expect.objectContaining({ candidate: "contact", reason: "contact_conflict", field: "contactRef" }),
+      expect.objectContaining({
+        candidate: "contact",
+        reason: "contact_conflict",
+        field: "contactRef",
+        evidence: SQUEEZE_REPLY,
+      }),
     ]);
     expect(codes(sink)).toContain("npc_scene_decision.contact_conflict");
     // Never promoted to a start: the projection is empty, not holding a new touch.
@@ -889,7 +901,7 @@ describe("contact updates — the post-settle re-check is the authority, never t
       raw: updateRaw("squeeze", SQUEEZE_REPLY),
     });
     expect(execution.drops).toEqual([
-      expect.objectContaining({ reason: "contact_conflict", field: "actorId" }),
+      expect.objectContaining({ reason: "contact_conflict", field: "actorId", evidence: SQUEEZE_REPLY }),
     ]);
     expect(execution.actions).toEqual([]);
     expect(execution.commits).toEqual([]);
@@ -901,14 +913,16 @@ describe("contact updates — the post-settle re-check is the authority, never t
       ...contact,
       source: { ...contact.source, locationId: "arms" },
     }));
-    expect(execution.drops).toEqual([expect.objectContaining({ reason: "contact_conflict", field: "source" })]);
+    expect(execution.drops).toEqual([
+      expect.objectContaining({ reason: "contact_conflict", field: "source", evidence: SQUEEZE_REPLY }),
+    ]);
     expect(execution.commits).toEqual([]);
   });
 
   it("refuses a contact whose action kind is not affectionate", () => {
     const { execution } = conflictOn((contact) => ({ ...contact, actionKind: "romantic" }));
     expect(execution.drops).toEqual([
-      expect.objectContaining({ reason: "contact_conflict", field: "actionKind" }),
+      expect.objectContaining({ reason: "contact_conflict", field: "actionKind", evidence: SQUEEZE_REPLY }),
     ]);
     expect(execution.commits).toEqual([]);
   });
@@ -1065,7 +1079,11 @@ describe("an unordered floor drops every tier-2 candidate", () => {
       sink,
     });
     expect(execution.drops).toEqual([
-      expect.objectContaining({ candidate: "movement", reason: "chronology_ambiguous" }),
+      expect.objectContaining({
+        candidate: "movement",
+        reason: "chronology_ambiguous",
+        evidence: APPROACH_REPLY,
+      }),
     ]);
     expect(codes(sink)).toContain("npc_scene_decision.chronology_ambiguous");
     expect(execution.actions.map((action) => action.kind)).toEqual(["floor_ending"]);

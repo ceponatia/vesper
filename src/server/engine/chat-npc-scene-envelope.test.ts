@@ -59,6 +59,7 @@ function fullPayload(): NpcSceneDecisionPayload {
         reason: "evidence_incongruent",
         field: "gesture",
         detail: "quote supports a squeeze, not a stroke",
+        evidence: "She squeezes your hand once, gently.",
       },
     ],
     contactRows: [{ eventRef: "contact-reply:msg_probe", sequence: 0 }],
@@ -113,6 +114,20 @@ describe("parseNpcSceneDecisionPayload (the payload's trust boundary)", () => {
     expect(parsed.telemetry.outputTokens).toBeUndefined();
     expect(parsed.telemetry.costUsd).toBeUndefined();
     expect(parsed.telemetry.settleWaitMs).toBeUndefined();
+  });
+
+  it("reads a drop row written before the evidence excerpt existed — it stays EMPTY, not missing", () => {
+    // Optional-with-a-default, so the version literal did not move for it either:
+    // an old drop simply carries no quote, and every stored payload still parses.
+    const stored = {
+      ...fullPayload(),
+      drops: [{ candidate: "contact", reason: "evidence_misattributed", field: "", detail: "" }],
+    };
+    const parsed = parseNpcSceneDecisionPayload(stored);
+    expect(parsed.version).toBe(NPC_SCENE_DECISION_PAYLOAD_VERSION);
+    expect(parsed.drops).toEqual([
+      { candidate: "contact", reason: "evidence_misattributed", field: "", detail: "", evidence: "" },
+    ]);
   });
 
   it("refuses a spend figure outside its bounds — which is why the WRITER checks before inserting", () => {
@@ -172,6 +187,16 @@ describe("parseNpcSceneDecisionPayload (the payload's trust boundary)", () => {
       actions: [{ ...minimalAction(), summary: "x".repeat(201) }],
     };
     expect(parseNpcSceneDecisionPayload(wordy, sink)).toEqual(emptyNpcSceneDecisionPayload());
+    expectDiagnostic(sink, "parse.boundary_failed");
+  });
+
+  it("enforces the drop excerpt's bound — a quote past the classifier's own cap is not a quote it produced", () => {
+    const sink = new DiagnosticCollector();
+    const overlong = {
+      ...fullPayload(),
+      drops: [{ candidate: "movement", reason: "evidence_misattributed", evidence: "x".repeat(481) }],
+    };
+    expect(parseNpcSceneDecisionPayload(overlong, sink)).toEqual(emptyNpcSceneDecisionPayload());
     expectDiagnostic(sink, "parse.boundary_failed");
   });
 

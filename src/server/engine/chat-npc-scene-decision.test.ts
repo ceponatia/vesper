@@ -229,7 +229,8 @@ describe("evaluateNpcSceneDecision — the shadow dry run", () => {
     });
     expect(evaluation.slots).toEqual({ movement: "malformed", contact: "parsed" });
     expect(evaluation.drops).toEqual([
-      expect.objectContaining({ candidate: "movement", reason: "slot_malformed" }),
+      // Nothing survived the slot's parse, so the drop has no quote to carry.
+      expect.objectContaining({ candidate: "movement", reason: "slot_malformed", evidence: "" }),
     ]);
     expect(evaluation.actions.map((action) => action.kind)).toEqual(["contact"]);
     expectDiagnostic(sink, "npc_scene_decision.slot_malformed");
@@ -250,7 +251,7 @@ describe("evaluateNpcSceneDecision — the shadow dry run", () => {
     });
     expect(evaluation.actions).toEqual([]);
     expect(evaluation.drops).toEqual([
-      expect.objectContaining({ candidate: "movement", reason: "presence_conflict" }),
+      expect.objectContaining({ candidate: "movement", reason: "presence_conflict", evidence: APPROACH_REPLY }),
     ]);
     expectDiagnostic(sink, "npc_scene_decision.presence_conflict");
   });
@@ -280,7 +281,14 @@ describe("evaluateNpcSceneDecision — the shadow dry run", () => {
       sink,
     });
     expect(evaluation.drops).toEqual([
-      expect.objectContaining({ candidate: "movement", reason: "evidence_incongruent", field: "band" }),
+      // The quote the gate judged, verbatim — without it a reviewer cannot tell
+      // an over-strict band verdict from a correct one.
+      expect.objectContaining({
+        candidate: "movement",
+        reason: "evidence_incongruent",
+        field: "band",
+        evidence: reply,
+      }),
     ]);
     expect(evaluation.actions).toEqual([]);
     expectDiagnostic(sink, "npc_scene_decision.evidence_incongruent");
@@ -354,7 +362,11 @@ describe("evaluateNpcSceneDecision — the shadow dry run", () => {
     });
     // An approach cannot composite with an ending; an equal span is unorderable.
     expect(evaluation.drops).toEqual([
-      expect.objectContaining({ candidate: "movement", reason: "chronology_ambiguous" }),
+      expect.objectContaining({
+        candidate: "movement",
+        reason: "chronology_ambiguous",
+        evidence: APPROACH_REPLY,
+      }),
     ]);
     expect(evaluation.actions.map((action) => action.kind)).toEqual(["floor_ending"]);
     expect(codes(sink)).toContain("npc_scene_decision.chronology_ambiguous");

@@ -53,6 +53,7 @@ import {
 import { applyChatNpcContactEnding, type ChatNpcContactEnding } from "./chat-contact-reply";
 import {
   NPC_SCENE_DECISION_COMMITTED_BLOB_MAX_BYTES,
+  NPC_SCENE_DECISION_DROP_EVIDENCE_MAX,
   NPC_SCENE_DECISION_MAX_ROWS_PER_ACTION,
   type NpcSceneDecisionAction,
   type NpcSceneDecisionDrop,
@@ -200,6 +201,18 @@ export function npcSceneCandidateSummary(candidate: NpcSceneCandidate): string {
   }
 }
 
+/**
+ * The drop record's bounded verbatim excerpt: the RAW model bytes, not the
+ * normalized form the grounding gate matched on. The gate normalizes in order to
+ * MATCH; this record's job is to show a reviewer exactly what the model claimed,
+ * typography included, so a drop can be judged against the sentence it was made
+ * about. Sliced defensively even though the contract already caps parsed
+ * evidence at the same bound — the payload is written without a runtime parse.
+ */
+export function npcSceneDropEvidence(candidate: NpcSceneCandidate): string {
+  return candidate.evidence.slice(0, NPC_SCENE_DECISION_DROP_EVIDENCE_MAX);
+}
+
 /** Movement or contact, as the payload's action/drop vocabulary names a candidate. */
 export function npcSceneCandidateSlot(candidate: NpcSceneCandidate): "movement" | "contact" {
   return candidate.kind === "approach" || candidate.kind === "depart" ? "movement" : "contact";
@@ -242,6 +255,7 @@ export function recordNpcSceneDrop(
         candidate: drop.candidate,
         ...(drop.field ? { field: drop.field } : {}),
         ...(drop.detail ? { detail: drop.detail } : {}),
+        ...(drop.evidence ? { evidence: drop.evidence } : {}),
       },
     }),
   );
@@ -644,6 +658,7 @@ export function executeNpcSceneDecision(input: NpcSceneExecutionInput): NpcScene
         reason,
         field,
         detail: npcSceneCandidateSummary(candidate).slice(0, NPC_SCENE_DECISION_DETAIL_MAX),
+        evidence: npcSceneDropEvidence(candidate),
       },
       "info",
       sink,
