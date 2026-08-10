@@ -22,17 +22,18 @@ those systems through their existing exports and adds no second copy.
 
 ## Implementation status
 
-| Piece                                           | Status      |
-| ----------------------------------------------- | ----------- |
-| Contracts (`image-lab.ts`)                      | not started |
-| `image_lab_experiments` table + image/job kinds | not started |
-| Lab service + shared-transport use              | not started |
-| Preprocessor runner (pose, depth)               | not started |
-| Edge-map computation                            | not started |
-| Admin routes (`/api/admin/self/image-lab`)      | not started |
-| Settings page (`/settings/image-lab`)           | not started |
-| Reference doc update (`docs/images/`)           | not started |
-| Stage 0 control probe run + recorded verdict    | not started |
+| Piece                                           | Status           |
+| ----------------------------------------------- | ---------------- |
+| Contracts (`image-lab.ts`)                      | built 2026-08-10 |
+| `image_lab_experiments` table + image/job kinds | built 2026-08-10 |
+| Lab service + shared-transport use              | built 2026-08-10 |
+| Preprocessor runner (pose, depth)               | built 2026-08-10 |
+| Edge-map computation                            | built 2026-08-10 |
+| Admin routes (`/api/admin/self/image-lab`)      | built 2026-08-10 |
+| Fixture review + delete route                   | built 2026-08-10 |
+| Settings page (`/settings/image-lab`)           | built 2026-08-10 |
+| Reference doc update (`docs/images.md`)         | built 2026-08-10 |
+| Stage 0 control probe run + recorded verdict    | not run          |
 
 Stage 1+ work (controlled recipes on the render-intent path, finishing passes,
 LoRA trials) is deliberately absent from this table until the capabilities
@@ -56,6 +57,36 @@ those are built next, under that plan.
   the ordinary lane resolves and renders with identical settings, but saves its
   output as `lab_output` so no player-visible variant or scene appears from lab
   activity.
+
+Rulings the build settled (2026-08-10):
+
+- **Routes fire `startJob`, not the lab service** — `@/server/api` imports
+  `@/server/images`, so a service-side `startJob` would close an import cycle.
+  Every image lane is arranged this way; a refused job slot deletes the
+  experiment row again.
+- **Baseline parity is by construction**: baselines call the same
+  `resolveImageProfileForTask` + reference ladder + `renderImageIntent` entry
+  the lanes call, with `planImageRender` run first purely to capture the
+  compiled prompt as `finalPrompt`. `requestedVersionId` stays null on
+  baselines because `renderImageIntent` deliberately pins nothing.
+- **`failureCode` is a bounded string, not a closed enum**: three codes beyond
+  the contract's five exist (`image_lab.kind_unsupported`,
+  `image_lab.profile_unavailable`, `image_lab.run_threw`), and provider
+  classifications ride `meta.renderFailure`. A failed extraction *prediction*
+  records `render_failed`; `preprocessor_output_invalid` is reserved for bytes
+  sharp cannot decode.
+- **Fixture review is explicit**: `PATCH /controls/[controlId]` (body
+  `imageLabReviewControlRequestSchema`) stamps `reviewedAt` server-side and
+  merges onto the raw image meta so the `hidden` flag and encode metadata
+  survive; `DELETE /controls/[controlId]` removes a fixture, and a citing
+  experiment keeps its recorded settings with `controlImageId` nulled by the
+  FK.
+- **Client lists drop bad elements, not whole lists**: the UI parses list
+  responses element-wise (`listOf`) rather than with the contracts'
+  `.catch([])` wholesale fallback, so one corrupt row degrades to one missing
+  tile.
+- **Stage 1+ experiment kinds are refused at create time** (400), not accepted
+  and failed later.
 
 ## Contracts
 
@@ -84,8 +115,9 @@ redeclares — `imageReferenceRoles` from `image-model-capabilities.ts`.
   "inconclusive"]` — recorded on `control_probe` experiments by the reviewing
   admin.
 - `imageLabExperimentSchema` + list schema, and the route request schemas
-  (create experiment, extract controls, upload control, record verdict). Every
-  DB read and route body goes through `parseOr` per `docs/resilience.md`.
+  (create experiment, extract controls, upload control, review control, record
+  verdict). Every DB read and route body goes through `parseOr` per
+  `docs/resilience.md`.
 
 ## Ownership rules
 
@@ -164,16 +196,18 @@ with kind `lab_control`, generator `hand_authored`).
 
 ### Preprocessor pins
 
-| Kind  | Model (Replicate)               | Version pin                    |
-| ----- | ------------------------------- | ------------------------------ |
-| pose  | resolved at build time          | recorded here when resolved    |
-| depth | resolved at build time          | recorded here when resolved    |
+| Kind  | Model (Replicate)               | Version pin (2026-08-10) |
+| ----- | ------------------------------- | ------------------------ |
+| pose  | `fofr/controlnet-preprocessors` | `f6584ef7…625988e`       |
+| depth | `chenxwh/depth-anything-v2`     | `b239ea33…ed88ebd4`      |
 
-The implementing change resolves live candidates (a DWpose/OpenPose skeleton
-renderer and a Depth Anything v2 estimator), pins exact version ids as
-constants in the lab module, and fills this table in the same change. Pins are
-constants, not registry rows — preprocessors are lab tools, not player-facing
-image models, and must not appear in any picker.
+Full version ids live as constants in `image-lab-controls.ts` with provenance
+comments. The pose cog defaults all fourteen of its preprocessor switches ON,
+so the pin declares every switch and enables only `open_pose`; its output is an
+array of URIs (first taken). The depth model answers an object — the runner
+reads `grey_depth` via the transport's `outputField`. Pins are constants, not
+registry rows — preprocessors are lab tools, not player-facing image models,
+and must not appear in any picker.
 
 ## Persistence
 
@@ -240,8 +274,13 @@ asserting fallback **and** code:
 - `src/app/api/admin/self/image-lab/experiments/route.ts` (GET list, POST
   create+run), `experiments/[experimentId]/route.ts` (GET detail, DELETE,
   PATCH verdict), `controls/route.ts` (GET list, POST upload),
+  `controls/[controlId]/route.ts` (PATCH review, DELETE),
   `controls/extract/route.ts` (POST) — all `withOwnerAdmin`, all passing
   `pnpm lint:authz`'s census.
+- `src/lib/images/image-lab-instruction.ts` — the pure numbered-role
+  instruction-template builder the form pre-fills (identity sentence + per-kind
+  control sentence + structure-only closing), and `imageLabControlRole`
+  (pose→`pose`, depth→`depth`, edge→`control`).
 - `src/app/settings/image-lab/page.tsx` →
   `src/components/settings/image-lab-page.tsx` (+ small subcomponents beside
   the identity-trial ones): fixtures panel (extract form with portrait picker,
