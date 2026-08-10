@@ -939,8 +939,18 @@ export const charactersApi = {
     apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
   uploadAvatar: (id: string, image: string) =>
     apiPost(z.object({ avatarImageId: idSchema }), `/api/characters/${id}/avatar/upload`, { image }),
+  /**
+   * The studio list (avatar + variants, newest first) plus whether a portrait
+   * job is live server-side (`rendering` — true through the pre-reserve reads
+   * BEFORE the pending row exists, so the studio doesn't go blind there).
+   */
   portraits: (id: string) =>
-    apiGet(listOf(imageRecordSchema, "portraits", "images"), `/api/characters/${id}/portraits`),
+    apiGet(
+      z
+        .object({ portraits: arrayOf(imageRecordSchema), rendering: z.boolean().catch(false) })
+        .catch({ portraits: [], rendering: false }),
+      `/api/characters/${id}/portraits`,
+    ),
   createPortrait: (id: string, body: { kind: PortraitVariantKind; instruction: string; modelId?: string }) =>
     apiPost(z.unknown(), `/api/characters/${id}/portraits`, body),
   promotePortrait: (id: string, imageId: string) =>

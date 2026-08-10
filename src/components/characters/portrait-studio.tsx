@@ -48,7 +48,12 @@ function portraitKindLabel(image: ImageRecord): string {
 /**
  * Avatar + variant studio (docs/images.md): generate the canonical avatar from
  * attributes, accumulate kind+instruction variants, promote any variant to
- * canonical. Pending rows poll until ready/failed.
+ * canonical. Pending rows poll until ready/failed — and the list GET also
+ * reports a live job (`rendering`), because the pending row is reserved INSIDE
+ * the job, after the queue 202: without the flag, a reload fired right after
+ * kickoff sees nothing in flight, so no tile shows and nothing arms the poll
+ * (the frozen-until-tab-reentry bug; same shape as the chat scene lane's fix,
+ * QA batch 2026-07-09).
  *
  * TWO model pickers, reading different slices of the registry
  * (image-model-registry.plan.md). Making an avatar from nothing needs a model
@@ -68,7 +73,13 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const [variantModelId, setVariantModelId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  // POST in flight — the button stays busy for the WHOLE request, releasing only
+  // when it settles: an unrelated live job (a running avatar regen) must not
+  // re-enable the form mid-request and invite duplicate billable submissions.
   const [submittingVariant, setSubmittingVariant] = useState(false);
+  // Queued (202 received) but not yet visible in data — keeps the painting tile
+  // up and the poll armed until the refetch shows the job or its row.
+  const [variantQueued, setVariantQueued] = useState(false);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -82,7 +93,13 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     if (avatarImageId) setGeneratingAvatar(false);
   }
 
-  const hasPending = (portraits.data ?? []).some((img) => img.status === "pending") || generatingAvatar;
+  const rows = portraits.data?.portraits ?? [];
+  // A portrait job is live server-side — covers the stretch between the queue
+  // 202 and the job reserving its pending row, where the list alone says
+  // nothing is happening.
+  const rendering = portraits.data?.rendering ?? false;
+  const hasPendingRow = rows.some((img) => img.status === "pending");
+  const hasPending = hasPendingRow || rendering || generatingAvatar || variantQueued;
 
   // Newest avatar-row id when a generation started — lets the effect below tell a
   // FAILED regen (a new avatar row that never became canonical) from an old one.
@@ -105,7 +122,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   // row and release the spinner so the button doesn't stay stuck on "Working…".
   useEffect(() => {
     if (!generatingAvatar) return;
-    const newestAvatar = (portraits.data ?? []).find((img) => img.kind === "avatar");
+    const newestAvatar = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar");
     if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
       setGeneratingAvatar(false);
       const error = generationError(newestAvatar);
@@ -118,7 +135,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   }, [portraits.data, generatingAvatar, toast]);
 
   const generateAvatar = async () => {
-    genBaselineRef.current = (portraits.data ?? []).find((img) => img.kind === "avatar")?.id ?? null;
+    genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
     const result = await charactersApi.generateAvatar(characterId, { modelId: pickedId(avatarModelId, portraitModels.data) });
     if (result.ok) {
@@ -130,8 +147,24 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     portraits.reload({ silent: true });
   };
 
+  // Row count when the variant was queued — clears the queued flag even when a
+  // demo-fast job settles before the first refetch (no pending row, `rendering`
+  // already false again; only the new READY row betrays that anything happened).
+  const variantBaselineRef = useRef(0);
+
+  // Clear the queued flag once the refetched data shows the job (`rendering`),
+  // its pending row, or any new row — the data-driven signals own the tile from
+  // there. A concurrent job satisfying this early is harmless: whichever signal
+  // cleared it is itself keeping the tile up.
+  useEffect(() => {
+    if (variantQueued && (rendering || hasPendingRow || rows.length > variantBaselineRef.current)) {
+      setVariantQueued(false);
+    }
+  }, [variantQueued, rendering, hasPendingRow, rows.length]);
+
   const submitVariant = async () => {
     if (!instruction.trim()) return;
+    variantBaselineRef.current = rows.length;
     setSubmittingVariant(true);
     const result = await charactersApi.createPortrait(characterId, {
       kind,
@@ -141,6 +174,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     setSubmittingVariant(false);
     if (result.ok) {
       setInstruction("");
+      setVariantQueued(true);
       portraits.reload({ silent: true });
     } else {
       toast.push({ title: "Variant failed to queue", description: result.error.message, tone: "error" });
@@ -171,8 +205,12 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
 
   // Keep failed rows visible: image failures are diagnostics the user can act on,
   // not transient noise that should disappear after polling.
-  const variants = (portraits.data ?? []).filter((img) => img.id !== avatarImageId);
-  const canonical = avatarImageId ? (portraits.data ?? []).find((img) => img.id === avatarImageId) : undefined;
+  const variants = rows.filter((img) => img.id !== avatarImageId);
+  const canonical = avatarImageId ? rows.find((img) => img.id === avatarImageId) : undefined;
+  // Show a placeholder tile from the instant a generation is kicked off (the
+  // local flags) through the whole server-side job (`rendering`); once the
+  // pending row lands, its own tile takes over seamlessly.
+  const showPainting = (generatingAvatar || submittingVariant || variantQueued || rendering) && !hasPendingRow;
   // The prompt that produced the canonical avatar — null when there's no avatar
   // yet or it's a user-uploaded image (uploads carry no generation prompt).
   const canonicalPrompt =
@@ -301,10 +339,18 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           </div>
         ) : portraits.error ? (
           <ErrorState error={portraits.error} onRetry={() => portraits.reload()} />
-        ) : variants.length === 0 ? (
+        ) : variants.length === 0 && !showPainting ? (
           <p className="text-sm text-paper-500">No alternate portraits yet.</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {showPainting ? (
+              <figure className="relative overflow-hidden rounded-card border border-ink-600">
+                <Skeleton className="aspect-[3/4] rounded-none" />
+                <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-ink-950/80 px-2 py-1.5 text-[11px] text-paper-300">
+                  <Tag>generating…</Tag>
+                </figcaption>
+              </figure>
+            ) : null}
             {variants.map((img) => {
               const error = generationError(img);
               const label = portraitKindLabel(img);
