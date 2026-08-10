@@ -306,6 +306,35 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   character: revisions are rows, exactly one may be `current` (partial unique index below).
   See [images/identity-packs.md](images/identity-packs.md) and image-identity-packs.spec.data.md. Added by
   migration 0101.
+- **`image_identity_pack_trial_runs`** — `owner_id` (→ `users`, cascade), `label`, `status`
+  (`draft`/`running`/`review`/`complete`), `config_json` JSONB — the validated create-request
+  snapshot, so a later registry or profile edit can never change what a finished run claims
+  it tested. One bounded admin comparison of identity-reference strategies over a character ×
+  profile × strategy × fixture grid; the three tables below FK-cascade with their run. See
+  [images/identity-packs.md](images/identity-packs.md) §The fixed-trial harness and
+  image-identity-packs.spec.trial.md. Added by migration 0102.
+- **`image_identity_pack_trial_cells`** — `run_id` (→ runs, **FK-cascade**), `cell_key`
+  (**unique per run** — the deterministic `character:profile:fixture:strategy:variant` plan
+  key; plain ascending order is the execution order), `status`
+  (`planned`/`running`/`rendered`/`failed`/`refused`), `spec_json`/`result_json?` JSONB,
+  `output_image_id?` (→ `images`, SET NULL — a deleted output makes the cell unreviewable,
+  not invalid), `claim_token?`/`claimed_at?` — the durable execution claim (compare-and-set
+  `planned`→`running`→terminal), so a restart mid-pass can't pay the provider twice for one
+  cell's evidence.
+- **`image_identity_pack_trial_grades`** — `run_id`/`cell_a_id`/`cell_b_id` (all
+  **FK-cascade**), `pair_id` (**unique per run** — insert-once, so a double submission fails
+  loudly instead of averaging), `left_is_a` (the persisted blind left/right↔A/B mapping;
+  unblinded only in aggregation), `grades_json` JSONB, `reviewed_by_user_id?` (→ `users`, no
+  cascade — audit survives the reviewer).
+- **`image_identity_pack_trial_verdicts`** — `run_id` (**FK-cascade**), `profile_id` +
+  `identity_strategy` (**unique per run** — one ruling per slot, upserted; replaced the run
+  row's jsonb verdict array, whose read-modify-write let two admins ruling on different slots
+  silently lose one), `verdict`
+  (`promoted`/`retained_current`/`experimental_admin_only`/`rejected`), `reason` (required),
+  `policy_version`, `override_incomplete_review` (the admin ruled before every reviewable
+  pair was graded — unrecoverable once more grades arrive, so stored on the ruling),
+  `decided_by_user_id` (→ `users`, no cascade, **not null** — a ruling with no actor is not
+  an audit record), `decided_at`. Added by migration 0103.
 - **`jobs`** — `type`
   (`chat_summary`/`chat_scene_sketch`/`chat_meanwhile`/`chat_scene_image`/`avatar`/`portrait_variant`/`entity_image`/`embed_refresh`/`image_sweep`/`identity_pack`/…
   — see the schema enum for the full list), `status` (`queued`/`running`/`done`/`failed`),
@@ -330,6 +359,10 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `image_identity_packs(character_id, revision)` unique doubles as the per-character lookup;
   `image_identity_packs(character_id, source_content_hash, schema_version, derivation_version, revision)`
   is the derivation-key coalescing/diagnostic lookup.
+- `image_identity_pack_trial_cells(run_id, status)` — the execute path's "which cells of this
+  run are still planned" hot filter. The per-run composite uniques — cells `(run_id, cell_key)`,
+  grades `(run_id, pair_id)`, verdicts `(run_id, profile_id, identity_strategy)` — double as
+  the per-run lookups, so no separate ones exist.
 - Successor authority: `sim_events(branch_id, sequence)` unique,
   `sim_commands(branch_id, idempotency_key)` primary, command-ID audit lookup, and the
   `sim_item_holdings` locus lookups (`branch_id` × `container_item_id` for §26.2
