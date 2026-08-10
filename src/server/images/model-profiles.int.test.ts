@@ -20,7 +20,7 @@ import { loadImageModelProfiles, loadImageModelProfilesForTask, resolveImageProf
  *
  * `purgeOwnerRows` does NOT reach these tables — `image_models` and
  * `image_model_profiles` have no owner column, they are global registry data — so
- * every fixture row here is deleted by id, and nothing may touch the 17 seeded rows.
+ * every fixture row here is deleted by id, and nothing may touch the seeded rows.
  */
 
 const ready = await probeIntegrationDb("images model-profiles.int.test", "image_model_profiles");
@@ -36,8 +36,12 @@ const FIXTURE_OK_PROFILE_ID = "imgprffixtureokaaaaaaaaa";
 const FIXTURE_BAD_PROFILE_ID = "imgprffixturebadaaaaaaaa";
 const FIXTURE_PROFILE_IDS = [FIXTURE_OK_PROFILE_ID, FIXTURE_BAD_PROFILE_ID];
 
-/** The seeded rows, as the migration wrote them. Any drift here is a render change. */
-const SEEDED_PROFILE_COUNT = 17;
+/**
+ * The seeded rows, as the migrations wrote them. Any drift here is a render change.
+ * 17 from migration 0100, plus 5 from 0104 (three portrait-only text-to-image
+ * models and the two SDXL PuLID edit profiles).
+ */
+const SEEDED_PROFILE_COUNT = 22;
 const QWEN_GENERATE = "qwen/qwen-image-2512";
 const QWEN_EDIT = "qwen/qwen-image-edit-2511";
 
@@ -86,7 +90,7 @@ async function insertFixtureProfile(id: string, label: string): Promise<void> {
 }
 
 describe.skipIf(!ready)("seeded image model profiles", () => {
-  it("the migration seeded 17 built-in profiles, in sort order, all parseable", async () => {
+  it("the migrations seeded 22 built-in profiles, in sort order, all parseable", async () => {
     const sink = new DiagnosticCollector();
     const profiles = await loadImageModelProfiles(sink);
     const builtin = profiles.filter((profile) => profile.builtin);
@@ -152,21 +156,28 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
         .filter((candidate) => candidate.profile.builtin)
         .map((candidate) => candidate.model.slug);
 
-    // Portrait is generate-only, so all five `for_portrait` models qualify.
+    // Portrait is generate-only, so every `for_portrait` model qualifies — including
+    // the three 0104 text-to-image models, which have no reference input at all.
     expect(await offeredSlugs("portrait")).toEqual([
       QWEN_GENERATE,
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
       "stability-ai/stable-diffusion-3.5-large",
       "wan-video/wan-2.7-image-pro",
+      "aisha-ai-official/nsfw-flux-dev:fb4f086702d6a301ca32c170d926239324a7b7b2f0afc3d232a9c4be382dc3fa",
+      "aisha-ai-official/likereality-pony-v1:f777e1c330555044053ad5089fbcee89804e3df2419c1e09d9bbc80a399b01a2",
+      "prunaai/p-image",
     ]);
     // Scene is identity-critical: the two `img2img`/`weak` models are absent because
-    // they are portrait-only AND `profileEligibility` would refuse them anyway.
+    // they are portrait-only AND `profileEligibility` would refuse them anyway. The
+    // three 0104 generators are absent for a blunter reason — no reference input, so
+    // `can_edit` is false. SDXL PuLID is the one of that batch that qualifies.
     expect(await offeredSlugs("scene")).toEqual([
       QWEN_EDIT,
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
       "wan-video/wan-2.7-image-pro",
+      "nsfw-api/sdxl-pulid:83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5",
     ]);
     // The anchor lanes are seeded on one model each — nothing new became eligible.
     expect(await offeredSlugs("chat_look")).toEqual([QWEN_EDIT]);
