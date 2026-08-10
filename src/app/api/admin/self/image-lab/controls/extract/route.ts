@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { imageLabExtractControlsRequestSchema } from "@/contracts";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withOwnerAdmin } from "@/server/api";
-import { runImageLabControlExtraction } from "@/server/images";
+import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/images";
 
 /**
  * Extract control fixtures from existing renders — one `lab_control_extract` job
@@ -9,11 +9,20 @@ import { runImageLabControlExtraction } from "@/server/images";
  * extraction").
  *
  * The cost guard is charged for the whole batch BEFORE any job starts, sized to
- * the number of source images, because pose and depth are paid provider calls.
- * Edge is computed in process and pays nothing, but it never travels alone in a
- * way worth splitting the guard over: a request naming only `edge` is charged
- * one unit per source image and that is a rounding error against a bench that
- * spends its budget on renders.
+ * the number of PAID PROVIDER CALLS the batch will make: every source image runs
+ * one preprocessor per requested pose/depth kind, so the charge is sources ×
+ * paid kinds, not sources. Charging per source under-charged the daily image
+ * budget by a factor of the kind count — a four-source, two-kind request is
+ * eight preprocessor runs, and a budget that counted four would let the next
+ * request through on spend that was already gone.
+ *
+ * Edge pays NOTHING: it is a sharp convolution in this process, and billing a
+ * daily provider budget for local work would make the number stop meaning what
+ * it says. An edge-only batch therefore charges no provider units and still
+ * passes the guard, whose own floor of one keeps the storage reservation and the
+ * backpressure check honest. Which kinds are paid is not restated here —
+ * `imageLabPreprocessorFor` already answers it, and a kind with no pin is by
+ * definition the one nobody is billed for.
  *
  * The jobs are started by the ROUTE rather than the service: `@/server/api`
  * imports `@/server/images`, so a `startJob` call from the extraction service
@@ -28,7 +37,8 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   if (!body.ok) return body.response;
 
   const { sourceImageIds, controlKinds, note } = body.value;
-  const blocked = await imageRenderRejection(user, req, { count: sourceImageIds.length });
+  const paidKinds = controlKinds.filter((kind) => imageLabPreprocessorFor(kind) !== null);
+  const blocked = await imageRenderRejection(user, req, { count: sourceImageIds.length * paidKinds.length });
   if (blocked) return blocked;
 
   let queued = 0;

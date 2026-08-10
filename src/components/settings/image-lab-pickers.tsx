@@ -72,6 +72,13 @@ export interface ImageChoice {
   label: string;
   /** A second, quieter line (provenance, prompt, timestamp). */
   detail?: string | null;
+  /**
+   * Shown, dimmed, and not selectable — for an image that exists but may not be
+   * used yet. Deliberately not the same as omitting it: an admin looking for a
+   * fixture they know they made needs to see it and read why it is greyed out,
+   * where a vanished tile would read as a bug in the panel that lists it.
+   */
+  disabled?: boolean;
 }
 
 const FIT_CLASS = { cover: "object-cover", contain: "object-contain" } as const;
@@ -109,12 +116,14 @@ export function ImageChoiceGrid({
           <button
             key={choice.imageId}
             type="button"
+            disabled={choice.disabled}
             onClick={() => onChange(choice.imageId)}
             aria-pressed={selected}
             title={choice.detail ?? choice.label}
             className={cx(
               "group overflow-hidden rounded-card border text-left transition-colors",
               selected ? "border-accent-500" : "border-ink-600 hover:border-ink-500",
+              choice.disabled ? "cursor-not-allowed opacity-40 hover:border-ink-600" : null,
             )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- local asset route at natural size; next/image adds nothing here */}

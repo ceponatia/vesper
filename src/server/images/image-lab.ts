@@ -7,6 +7,7 @@ import {
   imageLabInputListSchema,
   imageLabSettingsSchema,
   IMAGE_TARGET_ASPECT,
+  referenceCapacity,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
   type ImageLabExperimentKind,
@@ -87,13 +88,14 @@ function isStage0Kind(kind: ImageLabExperimentKind): boolean {
 }
 
 /**
- * The codes Stage 0's runner needs beyond {@link ImageLabFailureCode}'s five.
+ * The codes Stage 0's runner needs beyond {@link ImageLabFailureCode}'s own.
  *
  * The contract deliberately types `failureCode` as a bounded string rather than
  * that enum, "because it also carries codes from the render-failure classifier"
- * — the same reason applies here. Each of these names a state the five cannot:
+ * — the same reason applies here. Each of these names a state the contract's
+ * codes cannot:
  * a kind with no recipe, a task the profile registry offers nothing for, and a
- * runner that died on something other than a provider call. Inventing a sixth
+ * runner that died on something other than a provider call. Inventing another
  * enum member for each would freeze them into the wire contract, where a UI
  * would have to know about a state it can only display verbatim anyway.
  */
@@ -419,6 +421,12 @@ export interface DeleteImageLabExperimentResult {
  * Control FIXTURES are deliberately untouched. A fixture is shared bench
  * equipment: several experiments cite one skeleton, and deleting the experiment
  * that happened to be deleted last would take the skeleton with it.
+ *
+ * A `pending` or `running` experiment is deletable, and that is deliberate: a
+ * deploy that killed its job leaves a row stuck `running` forever, and refusing
+ * to delete one would make that row permanent. The render still in flight
+ * settles against nothing and discards its own output (see `storeLabRender`), so
+ * the race costs one wasted render rather than one invisible image.
  */
 export async function deleteImageLabExperiment(
   experimentId: string,
@@ -538,7 +546,7 @@ async function settleFailed(
   return { experimentId: row.id, status: "failed", failureCode };
 }
 
-/** The five contract codes, spelled through the contract's own helper. */
+/** The contract's own codes, spelled through the contract's own helper. */
 function labFailure(code: ImageLabFailureCode): string {
   return imageLabDiagnosticCode(code);
 }
@@ -576,6 +584,28 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
     );
   }
 
+  // The quality overlay is applied HERE, before the capacity check, because it
+  // is the model the provider is actually handed and the check has to be about
+  // that one. (It only merges `extraInput`, so capacity is unchanged — reading
+  // capacity off the effective model is what keeps that true if it ever stops
+  // being.)
+  const effectiveModel = withReviewedImageQuality(model);
+  // Capacity is refused, never TRIMMED. `runRegistryImageModel` fits an overlong
+  // reference list to the model's arity, so an experiment ordering more images
+  // than the version accepts would render happily while its record claimed a
+  // control was sent that the provider never received — the one failure mode a
+  // bench cannot survive, since the verdict would be about an image nobody saw.
+  const capacity = referenceCapacity(effectiveModel);
+  if (inputs.length > capacity.max) {
+    return await settleFailed(
+      row,
+      labFailure("capacity_exceeded"),
+      `${effectiveModel.slug} accepts ${String(capacity.max)} reference image(s); this experiment orders ${String(inputs.length)}`,
+      sink,
+      { columns: { requestedVersionId: versionId } },
+    );
+  }
+
   const references: Buffer[] = [];
   for (const input of inputs) {
     const bytes = await readOwnedImageBytes(input.imageId, row.ownerId);
@@ -593,7 +623,7 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
 
   const controlRefusal = await checkControlFixture(row, sink);
   if (controlRefusal) {
-    return await settleFailed(row, labFailure("control_invalid"), controlRefusal, sink, {
+    return await settleFailed(row, labFailure(controlRefusal.code), controlRefusal.message, sink, {
       columns: { requestedVersionId: versionId },
     });
   }
@@ -604,7 +634,6 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
   // runner.
   const finalPrompt = row.instruction;
   const settings = storedSettings(row, sink);
-  const effectiveModel = withReviewedImageQuality(model);
   const mapped = mapImageRenderControls({ controls: settings.controls, capabilities: effectiveModel.advancedCapabilities });
   if (mapped.dropped.length > 0) {
     sink?.push(
@@ -644,24 +673,58 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
   });
 }
 
+/** Why a named control fixture cannot be run against — the code and its reason. */
+interface ControlFixtureRefusal {
+  code: ImageLabFailureCode;
+  message: string;
+}
+
+function controlInvalid(message: string): ControlFixtureRefusal {
+  return { code: "control_invalid", message };
+}
+
 /**
- * Whether the named control fixture is one — the message when it is not.
+ * Whether the named control fixture is one, and whether anyone has LOOKED at it
+ * — the reason when either answer is no.
  *
  * A control that is not a `lab_control`, or whose meta will not parse, means
  * nothing can say what the fixture IS, and a probe verdict about an unidentified
  * fixture is worthless. The declared kind is checked against the stored one for
  * the same reason: an experiment recording "pose" while pointing at a depth map
  * would produce a verdict filed under the wrong control.
+ *
+ * The REVIEW gate is the same argument one step further, and it is the Stage 0
+ * protocol's own rule ("extract a pose skeleton and a depth map … review both in
+ * the fixtures panel"). A probe that comes back `ignores_control` has to be able
+ * to eliminate "the fixture was wrong" before it says anything about the model,
+ * and an unreviewed skeleton makes that elimination impossible — so the run is
+ * refused before any spend rather than producing evidence nobody can read.
+ * `control_unreviewed` is kept SEPARATE from `control_invalid` because the two
+ * ask different things of the admin: one throws the fixture away, the other
+ * spends a minute looking at it.
  */
-async function checkControlFixture(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<string | null> {
+async function checkControlFixture(
+  row: ImageLabExperimentRow,
+  sink?: DiagnosticSink,
+): Promise<ControlFixtureRefusal | null> {
   if (row.controlImageId === null) return null;
   const control = await ownedImageRow(row.controlImageId, row.ownerId);
-  if (!control) return `control image ${row.controlImageId} is not an image this owner has`;
-  if (control.kind !== "lab_control") return `control image ${row.controlImageId} is a ${control.kind}, not a lab control fixture`;
+  if (!control) return controlInvalid(`control image ${row.controlImageId} is not an image this owner has`);
+  if (control.kind !== "lab_control") {
+    return controlInvalid(`control image ${row.controlImageId} is a ${control.kind}, not a lab control fixture`);
+  }
   const meta = parseOrNull(imageLabControlMetaSchema, control.meta, sink, "images.meta.lab_control");
-  if (!meta) return `control image ${row.controlImageId} has no readable fixture metadata`;
+  if (!meta) return controlInvalid(`control image ${row.controlImageId} has no readable fixture metadata`);
   if (row.controlKind !== null && meta.controlKind !== row.controlKind) {
-    return `control image ${row.controlImageId} is a ${meta.controlKind} fixture, not the ${row.controlKind} this experiment records`;
+    return controlInvalid(
+      `control image ${row.controlImageId} is a ${meta.controlKind} fixture, not the ${row.controlKind} this experiment records`,
+    );
+  }
+  if (meta.reviewedAt === undefined) {
+    return {
+      code: "control_unreviewed",
+      message: `control image ${row.controlImageId} has not been reviewed; review the fixture in the panel before spending a probe on it`,
+    };
   }
   return null;
 }
@@ -898,6 +961,11 @@ interface StoreLabRenderInput {
  * leaving it `failed`: the experiment's pointer is only ever written on success,
  * so a straggler would be a hidden row nothing points at, outliving even the
  * experiment's own delete.
+ *
+ * The same reasoning covers the settle itself MATCHING NOTHING — the experiment
+ * was deleted while its render was in flight. The output is discarded, because
+ * the alternative is a hidden asset no row points at and no sweep of the lab's
+ * own tables can reach.
  */
 async function storeLabRender(
   row: ImageLabExperimentRow,
@@ -935,7 +1003,7 @@ async function storeLabRender(
     });
   }
 
-  await db()
+  const [settled] = await db()
     .update(imageLabExperiments)
     .set({
       ...input.columns,
@@ -945,7 +1013,25 @@ async function storeLabRender(
       failureCode: null,
       finishedAt: new Date(),
     })
-    .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
+    .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)))
+    .returning({ id: imageLabExperiments.id });
+
+  // The experiment was deleted while its render was in flight — an admin
+  // clearing a row a deploy left `running`, which stays allowed on purpose. The
+  // settle matched nothing, so the pointer that would have made this output
+  // findable was never written, and the image is already an orphan: it survives
+  // its own experiment's delete sweep, rides storage forever, and appears in no
+  // panel. Delete it here, through the same owned deleter the experiment's own
+  // delete uses, so the row and its bytes go together.
+  if (!settled) {
+    const removed = await deleteOwnedImage(saved.id, row.ownerId, { kind: "lab_output" });
+    sink?.push(
+      diag("info", "image_lab.output_orphaned", "the experiment was deleted mid-render; its output was discarded", {
+        context: { experimentId: row.id, imageId: saved.id, removed },
+      }),
+    );
+    return { experimentId: row.id, status: "discarded", outputImagesRemoved: removed ? 1 : 0, ...provenance };
+  }
   return { experimentId: row.id, status: "succeeded", resultImageId: saved.id, ...provenance };
 }
 

@@ -130,6 +130,14 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   answers no question.
  * - `control_invalid` — the named control asset is not a `lab_control`, or its
  *   meta does not parse, so nothing can say what the fixture is.
+ * - `control_unreviewed` — the fixture is readable but nobody has looked at it.
+ *   The Stage 0 protocol reviews every fixture before a trial uses it, because a
+ *   probe reading `ignores_control` has to be able to rule out "the fixture was
+ *   wrong" first, and an unreviewed skeleton makes that elimination impossible.
+ * - `capacity_exceeded` — the experiment orders more references than the
+ *   resolved model accepts. The render path TRIMS an overlong list, so the run
+ *   is refused before it instead: a probe whose record claimed a control was
+ *   sent that the provider never received is evidence about nothing.
  * - `preprocessor_output_invalid` — the extractor answered with bytes sharp
  *   could not decode; no asset is written.
  * - `render_failed` — the provider call failed; the render classifier's own code
@@ -139,6 +147,8 @@ export const imageLabFailureCodes = [
   "input_missing",
   "version_unpinned",
   "control_invalid",
+  "control_unreviewed",
+  "capacity_exceeded",
   "preprocessor_output_invalid",
   "render_failed",
 ] as const;
@@ -156,6 +166,19 @@ export function imageLabDiagnosticCode(code: ImageLabFailureCode): string {
  * run asking for more than it exposes is refused at render time with the reason.
  */
 export const IMAGE_LAB_MAX_INPUTS = 8;
+
+/**
+ * How long a hand-drawn fixture's data URL may be, in CHARACTERS — the transport
+ * rail the upload route's body schema enforces, matching the avatar upload's.
+ *
+ * It lives here rather than in the route because the file picker has to refuse
+ * an oversized drawing BEFORE reading it, and the two limits are the same limit:
+ * a panel carrying its own byte number drifts from the route the first time
+ * either moves, and the drift shows up as a 400 on a file the UI said was fine.
+ * Base64 carries 3 bytes per 4 characters, so the byte budget a client derives
+ * from this is `floor(cap / 4) * 3` less the `data:image/…;base64,` prefix.
+ */
+export const IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS = 3_000_000;
 
 /**
  * One ordered reference an experiment sends.

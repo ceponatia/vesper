@@ -53,6 +53,20 @@ const STAGE_0_KINDS = ["control_probe", "baseline_portrait", "baseline_scene"] a
 /** What the runner uses when the form names no model. Shown, never sent. */
 const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
 
+/**
+ * Whether a fixture may be sent at all.
+ *
+ * The runner refuses an unreviewed one outright
+ * (`image_lab.control_unreviewed`), because a probe reading "ignores the
+ * control" has to be able to eliminate "the fixture was wrong" first. Offering
+ * one here would sell an admin a queued experiment that can only fail, so the
+ * picker shows it greyed instead — visible, because a fixture that vanished from
+ * a list the panel above still shows reads as a broken form.
+ */
+function isReviewedFixture(control: ImageLabControl): boolean {
+  return control.meta.reviewedAt !== undefined;
+}
+
 export interface ImageLabExperimentFormProps {
   controls: ImageLabControl[];
   /** The created experiment's id — the caller arms its pending tile with it. */
@@ -87,6 +101,7 @@ export function ImageLabExperimentForm({ controls, onCreated }: ImageLabExperime
 
   const control = controls.find((entry) => entry.imageId === controlImageId) ?? null;
   const isProbe = kind === "control_probe";
+  const unreviewedCount = controls.filter((entry) => !isReviewedFixture(entry)).length;
 
   // The ordered send list. Positions are assigned HERE, in array order, because
   // the contract requires the two to agree and the numbered instruction below is
@@ -120,7 +135,7 @@ export function ImageLabExperimentForm({ controls, onCreated }: ImageLabExperime
 
   const ready =
     kind === "control_probe"
-      ? control !== null
+      ? control !== null && isReviewedFixture(control)
       : kind === "baseline_portrait"
         ? characterId !== ""
         : chatId !== "";
@@ -241,19 +256,32 @@ export function ImageLabExperimentForm({ controls, onCreated }: ImageLabExperime
         )}
 
         {isProbe ? (
-          <Field label="Control fixture" hint="The structure the output must obey. Required for a probe.">
-            <ImageChoiceGrid
-              choices={controls.map((entry) => ({
-                imageId: entry.imageId,
-                label: imageLabControlKindLabel(entry.meta.controlKind),
-                detail: entry.meta.reviewedAt ? "reviewed" : "unreviewed",
-              }))}
-              value={controlImageId}
-              onChange={setControlImageId}
-              fit="contain"
-              emptyHint="No fixtures yet — extract or upload one above."
-            />
-          </Field>
+          <>
+            <Field
+              label="Control fixture"
+              hint="The structure the output must obey. Required for a probe, and only a reviewed fixture may be sent."
+            >
+              <ImageChoiceGrid
+                choices={controls.map((entry) => ({
+                  imageId: entry.imageId,
+                  label: imageLabControlKindLabel(entry.meta.controlKind),
+                  detail: isReviewedFixture(entry) ? "reviewed" : "unreviewed — review it first",
+                  disabled: !isReviewedFixture(entry),
+                }))}
+                value={controlImageId}
+                onChange={setControlImageId}
+                fit="contain"
+                emptyHint="No fixtures yet — extract or upload one above."
+              />
+            </Field>
+            {unreviewedCount > 0 ? (
+              <p className="text-xs text-paper-500">
+                {unreviewedCount} fixture(s) above are greyed out because nobody has reviewed them. Look at each one in
+                the fixtures panel and mark it reviewed — a probe that comes back &ldquo;ignores the control&rdquo; has
+                to rule out a bad fixture before it rules on the model.
+              </p>
+            ) : null}
+          </>
         ) : null}
 
         <div className="rounded-card border border-ink-700 bg-ink-950/40 px-3 py-2">

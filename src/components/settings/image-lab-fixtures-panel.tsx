@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { imageLabControlKinds, type ImageLabControl, type ImageLabControlKind } from "@/contracts";
+import {
+  IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS,
+  imageLabControlKinds,
+  type ImageLabControl,
+  type ImageLabControlKind,
+} from "@/contracts";
 import { imageLabApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -32,8 +37,20 @@ import { LabCharacterSelect, LabRenderPicker, useLabCharacters, useLabPortraits 
  * apart.
  */
 
-/** A hand-drawn skeleton is a small PNG; anything this size is a mistake. */
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+/**
+ * The real ceiling, DERIVED from the route's own cap rather than chosen here.
+ *
+ * The upload travels as a base64 data URL, and the route refuses a string longer
+ * than {@link IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS}; base64 carries 3 bytes per 4
+ * characters, and the `data:image/…;base64,` prefix rides the same budget. A
+ * number typed independently here was the bug this replaces — the picker
+ * accepted 10 MB, said so, and the route rejected everything past ~2 MB, so the
+ * only file that reached the failure was one the UI had already approved.
+ */
+const DATA_URL_HEADER_CHARS = 64;
+const MAX_UPLOAD_BYTES = Math.floor((IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS - DATA_URL_HEADER_CHARS) / 4) * 3;
+/** The same number in the words the admin reads, so copy cannot drift from the check. */
+const MAX_UPLOAD_LABEL = `${(MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1)} MB`;
 
 /** Matches `imageLabControlMetaSchema.reviewNote` — a longer note is truncated by
  * the field rather than refused by the route. */
@@ -110,7 +127,7 @@ export function ImageLabFixturesPanel({
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setFileError("That file is too large (max 10 MB).");
+      setFileError(`That file is too large (max ${MAX_UPLOAD_LABEL}).`);
       return;
     }
     const reader = new FileReader();
@@ -287,7 +304,10 @@ export function ImageLabFixturesPanel({
 
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Upload a skeleton</h3>
-          <Field label="File" hint="A skeleton, depth map, or edge map you drew. Filed as hand-drawn — the route never takes your word for provenance.">
+          <Field
+            label="File"
+            hint={`A skeleton, depth map, or edge map you drew, up to ${MAX_UPLOAD_LABEL}. Filed as hand-drawn — the route never takes your word for provenance.`}
+          >
             {(id) => (
               <input
                 id={id}

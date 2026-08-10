@@ -61,10 +61,12 @@ const ready = await probeIntegrationDb("image lab.int.test", "image_lab_experime
 
 const PINNED_MODEL_ID = "imgmdlimagelabpinnedaaaa";
 const UNPINNED_MODEL_ID = "imgmdlimagelabfloataaaaa";
-const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID];
+const CAPPED_MODEL_ID = "imgmdlimagelabcappedaaaa";
+const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID];
 
 const PINNED_SLUG = "vesper-test/image-lab-pinned";
 const UNPINNED_SLUG = "vesper-test/image-lab-floating";
+const CAPPED_SLUG = "vesper-test/image-lab-one-reference";
 const PINNED_VERSION = "imagelabversionaaaaaaaaa";
 /** What the provider "echoes back" — deliberately the pinned one, so a test that
  * asserts both columns proves the runner recorded each from its own source. */
@@ -103,6 +105,17 @@ beforeAll(async () => {
         canEdit: true,
         maxReferences: 4,
       },
+      {
+        // Pinned, and takes exactly ONE reference — the shape that makes an
+        // over-ordered experiment a refusal instead of a silently trimmed send.
+        id: CAPPED_MODEL_ID,
+        slug: CAPPED_SLUG,
+        label: "Image Lab One-Reference Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 1,
+        probedVersionId: PINNED_VERSION,
+      },
     ]);
 });
 
@@ -137,9 +150,25 @@ async function seedReadyImage(kind: ImageKind, meta: Record<string, unknown> = {
   return asset.id;
 }
 
-/** A `lab_control` fixture with parseable meta — what a valid probe points at. */
-async function seedControlFixture(controlKind: ImageLabControlKind = "pose"): Promise<string> {
-  return await seedReadyImage("lab_control", { hidden: true, controlKind, generator: "hand_authored" });
+/**
+ * A `lab_control` fixture with parseable meta — what a valid probe points at.
+ *
+ * REVIEWED by default, through the review service rather than by stamping
+ * `reviewedAt` into the seeded meta: the runner's review gate reads what the
+ * review path writes, and a test that wrote that field itself would keep passing
+ * after the two stopped agreeing. `reviewed: false` is the unreviewed fixture the
+ * gate exists to refuse.
+ */
+async function seedControlFixture(
+  controlKind: ImageLabControlKind = "pose",
+  opts: { reviewed?: boolean } = {},
+): Promise<string> {
+  const imageId = await seedReadyImage("lab_control", { hidden: true, controlKind, generator: "hand_authored" });
+  if (opts.reviewed !== false) {
+    const reviewed = await reviewImageLabControl(ownerId, imageId, "seeded fixture, looked at before use");
+    expect(reviewed?.ok).toBe(true);
+  }
+  return imageId;
 }
 
 /** A renderer that always succeeds, recording what it was handed. */
@@ -317,6 +346,113 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
 
     const experiment = await getImageLabExperimentDetail(id, ownerId);
     expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+  });
+
+  it("refuses a fixture nobody has reviewed, before any spend", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const unreviewed = await seedControlFixture("pose", { reviewed: false });
+    const { id, sink } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: unreviewed },
+      ],
+      controlImageId: unreviewed,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_unreviewed"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("control_unreviewed"));
+    // Separate from `control_invalid` on purpose: the fixture is readable, it
+    // just has not been looked at, and the two ask different things of the admin.
+    expect(experiment?.failureCode).not.toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("runs the same probe once its fixture is reviewed", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose", { reviewed: false });
+    const { id, sink } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    const reviewed = await reviewImageLabControl(ownerId, controlId, "skeleton reads cleanly; both wrists resolved");
+    expect(reviewed?.ok).toBe(true);
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(captured).toHaveLength(1);
+  });
+
+  it("refuses an experiment ordering more references than the model accepts", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose");
+    // Two ordered images against a one-reference model. The render path would
+    // TRIM the second, leaving a record that claims a control the provider never
+    // saw — so the run is refused before any spend instead.
+    const { id, sink } = await createProbe({
+      modelSlug: CAPPED_SLUG,
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("capacity_exceeded"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("capacity_exceeded"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    // The pin was resolved before the capacity read, so it is on the record.
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+  });
+
+  it("discards the output when the experiment is deleted mid-render", async () => {
+    const identityId = await seedReadyImage("avatar");
+    const { id, sink } = await createProbe({ inputs: [{ position: 1, role: "identity", imageId: identityId }] });
+    // An admin clearing a row a deploy left `running` while the provider call is
+    // still in flight — deleting a live experiment stays allowed on purpose, so
+    // the settle is what has to notice it matched nothing.
+    setImageLabRendererForTesting(async (request) => {
+      captured.push(request);
+      await deleteImageLabExperiment(id, ownerId);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_image_lab_orphan",
+        executedVersionId: EXECUTED_VERSION,
+      };
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.status).toBe("discarded");
+    expect(await getImageLabExperimentDetail(id, ownerId)).toBeNull();
+    expect(codes(sink)).toContain("image_lab.output_orphaned");
+    // The whole point: no hidden asset outlives the row that was its only pointer.
+    const outputs = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(and(eq(images.ownerId, ownerId), eq(images.kind, "lab_output")));
+    expect(outputs).toHaveLength(0);
   });
 
   it("records a classified provider failure without writing an output", async () => {
@@ -595,7 +731,7 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
   });
 
   it("records a review that persists and still parses as a wire fixture", async () => {
-    const controlId = await seedControlFixture("pose");
+    const controlId = await seedControlFixture("pose", { reviewed: false });
     const sink = new DiagnosticCollector();
 
     const reviewed = await reviewImageLabControl(ownerId, controlId, "skeleton reads cleanly; both wrists resolved", sink);

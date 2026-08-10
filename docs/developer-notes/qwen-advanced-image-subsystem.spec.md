@@ -70,7 +70,7 @@ Rulings the build settled (2026-08-10):
   compiled prompt as `finalPrompt`. `requestedVersionId` stays null on
   baselines because `renderImageIntent` deliberately pins nothing.
 - **`failureCode` is a bounded string, not a closed enum**: three codes beyond
-  the contract's five exist (`image_lab.kind_unsupported`,
+  the contract's list exist (`image_lab.kind_unsupported`,
   `image_lab.profile_unavailable`, `image_lab.run_threw`), and provider
   classifications ride `meta.renderFailure`. A failed extraction *prediction*
   records `render_failed`; `preprocessor_output_invalid` is reserved for bytes
@@ -87,6 +87,19 @@ Rulings the build settled (2026-08-10):
   tile.
 - **Stage 1+ experiment kinds are refused at create time** (400), not accepted
   and failed later.
+- **Only a reviewed fixture may be probed**: the runner refuses an unreviewed
+  control with `image_lab.control_unreviewed` before any spend, and the
+  experiment form greys the tile out with a "review it first" line rather than
+  hiding it.
+- **A settle that matches no row discards its output**: an experiment deleted
+  mid-render leaves a `lab_output` nothing points at, so `storeLabRender`
+  deletes it through the owned-image deleter and reports
+  `image_lab.output_orphaned`. Deleting a live (`pending` / `running`)
+  experiment stays allowed — a deploy-killed row must not become permanent.
+- **Extraction is charged per PAID preprocessor call**: the budget count is
+  sources × pose/depth kinds, not sources. Edge is computed locally and pays
+  nothing, and which kinds are paid is read from `imageLabPreprocessorFor`
+  rather than restated at the route.
 
 ## Contracts
 
@@ -251,6 +264,13 @@ asserting fallback **and** code:
   `image_lab.control_invalid`; the runner never throws through `startJob`.
 - Version pin absent → `image_lab.version_unpinned`, experiment refused before
   any provider spend.
+- Control fixture readable but unreviewed → `image_lab.control_unreviewed`,
+  experiment refused before any provider spend. Kept separate from
+  `control_invalid`: one fixture is thrown away, the other is looked at.
+- Ordered inputs beyond the resolved model's reference capacity →
+  `image_lab.capacity_exceeded`, refused rather than trimmed — the render path
+  fits an overlong list to the model's arity, so a trimmed run would leave a
+  record claiming a control the provider never received.
 - Preprocessor output → sharp decode validation →
   `image_lab.preprocessor_output_invalid`, no asset written.
 - Render failure → `classifyImageFailure` recorded, `image_lab.render_failed`;

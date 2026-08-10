@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { imageLabUploadControlRequestSchema } from "@/contracts";
+import { IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS, imageLabUploadControlRequestSchema } from "@/contracts";
 import { jsonError, jsonOk, readBody, uploadRejection, withOwnerAdmin } from "@/server/api";
 import { decodeDataUrl, listImageLabControls, uploadImageLabControl } from "@/server/images";
 
@@ -11,16 +11,18 @@ import { decodeDataUrl, listImageLabControls, uploadImageLabControl } from "@/se
  * The upload body is the contract's own request schema plus the transport field
  * it deliberately does not carry: bytes are not contract material, so
  * `imageLabUploadControlRequestSchema` describes the metadata beside a drawing
- * and this route adds the drawing. The 3 MB string cap matches the avatar
- * upload's — the decoded byte cap is enforced independently inside
- * `decodeDataUrl`, which also refuses any mime off the raster allow-list so no
- * vector renderer is ever reached.
+ * and this route adds the drawing. The string cap is the contract's
+ * {@link IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS} (the avatar upload's number),
+ * named there rather than written here so the fixtures panel refuses an
+ * oversized file against the SAME limit instead of its own guess — the decoded
+ * byte cap is enforced independently inside `decodeDataUrl`, which also refuses
+ * any mime off the raster allow-list so no vector renderer is ever reached.
  */
 const uploadBodySchema = imageLabUploadControlRequestSchema.extend({
   dataUrl: z
     .string()
     .min(1)
-    .max(3_000_000)
+    .max(IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS)
     .refine((value) => value.startsWith("data:image/"), "dataUrl must be an image data URL"),
 });
 
