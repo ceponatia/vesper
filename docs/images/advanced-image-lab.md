@@ -34,6 +34,12 @@ contract: its spec.
   a fixture the provider never saw. Input lists that exceed the model's
   reference capacity are refused (`image_lab.capacity_exceeded`) instead of
   silently trimmed.
+- A probe may not be fed its own answer: when the fixture's meta names the
+  render it was extracted from (`sourceImageId`), an experiment whose ordered
+  inputs include that render is refused (`image_lab.control_source_sent`)
+  before any spend — the output could match the control by copying that
+  reference, so a pass would prove copying, not obedience. The experiment form
+  greys that render out in the identity picker with the reason.
 
 ## Control fixtures
 

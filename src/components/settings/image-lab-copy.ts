@@ -158,6 +158,8 @@ function labFailureCopy(code: ImageLabFailureCode): string {
       return "The control image is not a lab fixture, or its metadata could not be read, so nothing could say what structure was sent.";
     case "control_unreviewed":
       return "Nobody has looked at that fixture yet. The run was refused before any spend — a probe that comes back “ignores the control” has to rule out a bad fixture first. Review it in the fixtures panel, then run this again.";
+    case "control_source_sent":
+      return "The experiment also sends the render that fixture was extracted from. Refused before any spend: the output could match the control by copying that reference instead of obeying it. Send a different identity render, or a fixture from another source.";
     case "capacity_exceeded":
       return "The experiment orders more reference images than this model accepts. Refused rather than trimmed: a record claiming a control was sent that the provider never received is evidence about nothing.";
     case "preprocessor_output_invalid":
