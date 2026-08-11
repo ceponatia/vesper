@@ -67,14 +67,16 @@ export function ImageLabExperimentList({
 }: ImageLabExperimentListProps) {
   const createdRef = useRef<HTMLButtonElement>(null);
   // A create's row lands a refetch later, below a form the admin is still
-  // looking at. Bring it on screen the moment it arrives — once: the effect
-  // fires on the landing, not on the silent polls that follow it while the run
-  // paints, so the page is never yanked out from under someone reading it.
-  const createdLanded = createdId !== null && experiments.some((experiment) => experiment.id === createdId);
+  // looking at. Bring it on screen the moment it arrives — once per created id:
+  // keyed on the landed id (not a boolean) so a second create scrolls even when
+  // a racing status poll fetched its row before the mark moved, while the silent
+  // polls that follow a landing never re-yank the page out from under someone.
+  const landedCreatedId =
+    createdId !== null && experiments.some((experiment) => experiment.id === createdId) ? createdId : null;
   useEffect(() => {
-    if (!createdLanded) return;
+    if (landedCreatedId === null) return;
     createdRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [createdLanded]);
+  }, [landedCreatedId]);
 
   return (
     <section className="flex flex-col gap-3">
