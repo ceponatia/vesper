@@ -142,6 +142,8 @@ export function imageLabRoleLabel(role: ImageReferenceRole): string {
       return "pose control";
     case "depth":
       return "depth control";
+    case "edge":
+      return "edge control";
     case "control":
       return "structural control";
   }

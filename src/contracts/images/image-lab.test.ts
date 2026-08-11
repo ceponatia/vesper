@@ -310,14 +310,31 @@ describe("imageLabCreateExperimentRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts an edge fixture sent under the generic control role", () => {
-    // `imageLabControlRole("edge")` is `control`: the fixture vocabulary and the
-    // reference-role vocabulary are different lists, and this is the seam.
+  it("sends an edge fixture under its own role now that one exists", () => {
+    // `imageLabControlRole` is one-to-one since `edge` joined the reference
+    // roles. Before that it collapsed onto the generic `control`, which meant a
+    // profile could not require an edge map specifically.
+    expect(imageLabControlRole("edge")).toBe("edge");
     const result = imageLabCreateExperimentRequestSchema.safeParse({
       kind: "control_probe",
       inputs: [
         { position: 1, role: "identity", imageId: "img_face" },
         { position: 2, role: imageLabControlRole("edge"), imageId: "img_edges" },
+      ],
+      controlImageId: "img_edges",
+      controlKind: "edge",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("still accepts the generic control role that pre-edge experiments recorded", () => {
+    // Archived probes stored their edge fixtures under `control`. A validator that
+    // stopped accepting it would refuse to re-read its own history.
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "control_probe",
+      inputs: [
+        { position: 1, role: "identity", imageId: "img_face" },
+        { position: 2, role: "control", imageId: "img_edges" },
       ],
       controlImageId: "img_edges",
       controlKind: "edge",

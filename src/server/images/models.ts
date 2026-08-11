@@ -4,7 +4,7 @@ import type { output as ZodOutput, ZodType } from "zod";
 import { chooseAspect, imageModelSchema, IMAGE_TARGET_ASPECT, type ImageModel } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
-import { runRegistryImageModel } from "../ai";
+import { runRegistryImageModel, type RenderControlReference } from "../ai";
 import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-presets";
 
 /**
@@ -90,6 +90,17 @@ export interface RenderWithModelInput {
   prompt: string;
   references?: Buffer[];
   /**
+   * Structural controls bound to their own provider inputs, already resolved
+   * against this version's `additionalImageInputs` (`planImageRender`).
+   *
+   * Separate from `references` because they are separate provider fields, and
+   * because they do not cross the reference-capacity trim: a `pose_image` input
+   * is not competing for a slot in the `image` array. Passed through untouched,
+   * like `controlInput` and for the same reason — the binding decision belongs to
+   * the one place that reads the capability record.
+   */
+  controlReferences?: RenderControlReference[];
+  /**
    * The shape this lane wants, as a width/height ratio. Defaults to Vesper's
    * 3:4; the entity lanes ask for 1 (items) and 1.5 (locations).
    */
@@ -170,6 +181,7 @@ export async function renderWithModel(
     {
       prompt,
       ...(input.references ? { references: input.references } : {}),
+      ...(input.controlReferences?.length ? { controlReferences: input.controlReferences } : {}),
       aspect: aspect.value,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
