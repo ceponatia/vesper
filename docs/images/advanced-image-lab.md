@@ -42,6 +42,11 @@ contract: its spec.
   the intent path's own `image_profile.*` code on the row. The raw
   provider-shaped `controlInput` settings bag is a probe tool only: a
   controlled run carrying one refuses with `image_lab.settings_unsupported`.
+- The experiment screen shows **every ordered input as an image**, not only the
+  identity reference and the control fixture: alongside the three large panels
+  (identity, fixture, result) the ordered-input list renders a role-labeled
+  thumbnail per slot, captioned with its position and role and enlargeable into
+  the same lightbox. A reference the run sent is never judged from its id alone.
 - **Verdicts** are recordable on every kind that declares a control —
   `control_probe`, `controlled_portrait`, `controlled_scene` — with an explicit
   ruling and a required note; baselines have no control to rule on and refuse.

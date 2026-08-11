@@ -480,7 +480,10 @@ asserting fallback **and** code:
   instruction template pre-fill, painting-tile pending state per the PR #70
   pattern, list with side-by-side result/source/control, detail drawer showing
   the full recorded settings). Settings nav gains an admin-only "Image Lab"
-  link.
+  link. On the detail view every image renders through one `EnlargeableImage`
+  (whole, never cropped, opening the shared lightbox): the three large panels
+  and a role-labeled thumbnail per ordered input, so a reference the run sent
+  is always viewable rather than only cited by id.
 - `src/lib/client/api.ts` — `imageLabApi` client wrappers.
 
 ## Fixtures and tests
