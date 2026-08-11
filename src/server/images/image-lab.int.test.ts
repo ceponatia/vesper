@@ -1061,6 +1061,36 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     expect(imageMeta(row?.meta).hidden).toBe(true);
   });
 
+  it("adopts a pre-split fixture's stranded note as its origin note when it is reviewed", async () => {
+    // The shape rows carried before the two notes split: the CREATION annotation
+    // sitting in `reviewNote`, with no `reviewedAt` beside it and no `originNote`
+    // of its own. Nothing migrates these in bulk, so the review is both the last
+    // thing that can rescue the string and the only thing that could destroy it.
+    const controlId = await seedReadyImage("lab_control", {
+      hidden: true,
+      controlKind: "pose",
+      generator: "hand_authored",
+      reviewNote: "drawn over the sofa shot",
+    });
+    const sink = new DiagnosticCollector();
+
+    const reviewed = await reviewImageLabControl(ownerId, controlId, "skeleton reads cleanly; both wrists resolved", sink);
+    expect(reviewed?.ok).toBe(true);
+    if (reviewed?.ok) {
+      expect(reviewed.control.meta.originNote).toBe("drawn over the sofa shot");
+      expect(reviewed.control.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
+      expect(reviewed.control.meta.reviewedAt).toBeTruthy();
+    }
+
+    // Rescued in the STORE, not just in the answer: the tile hides an unreviewed
+    // row's `reviewNote`, so a string this write dropped would have vanished
+    // without an admin ever having seen it.
+    const [listed] = await listImageLabControls(ownerId, sink);
+    expect(listed?.meta.originNote).toBe("drawn over the sofa shot");
+    expect(listed?.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
+    expect(listed?.meta.reviewedAt).toBeTruthy();
+  });
+
   it("refuses to review an image that is not a lab control fixture", async () => {
     // Owned and ready, and entirely unable to say what fixture it is.
     const notAFixture = await seedReadyImage("portrait_variant");

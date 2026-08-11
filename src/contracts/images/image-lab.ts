@@ -303,11 +303,15 @@ export const imageLabStoredInputListSchema = imageLabInputListSchema.catch((): I
  * hides.
  *
  * Rows written before the split are left exactly as they are — `images.meta` is
- * a bag, so there is nothing to migrate and no date to invent — and they are
- * read by that same absent `reviewedAt`: a row carrying `reviewNote` with no
- * `reviewedAt` predates the split, and that string is what would be written as
- * `originNote` today. It is genuinely unreviewed, so the panel says so and
- * shows no review line rather than filing a creation note as a ruling.
+ * a bag, so there is nothing to migrate in bulk and no review date to invent —
+ * and they are read by that same absent `reviewedAt`: a row carrying
+ * `reviewNote` with no `reviewedAt` predates the split, and that string is what
+ * would be written as `originNote` today. It is genuinely unreviewed, so the
+ * panel says so and shows no review line rather than filing a creation note as
+ * a ruling. Reviewing such a row ADOPTS the stranded string as its `originNote`
+ * in the same write that stamps the ruling, because that write is the only
+ * thing left that could destroy it: the migration these rows need, done once
+ * each, by the hand that would otherwise do the damage.
  *
  * `originNote` is capped like `reviewNote` rather than like the 500 its two
  * create requests enforce: a stored cap is a ceiling over every rail that

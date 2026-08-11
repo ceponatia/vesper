@@ -602,7 +602,11 @@ function controlInvalid(message: string): ImageLabRefusal {
  * `originNote` through untouched, which is the point of the two notes being two
  * fields: ruling on a fixture must not erase the record of what it was made
  * for, because "the fixture was wrong" and "the fixture was for something else"
- * are different readings of the same `ignores_control` verdict.
+ * are different readings of the same `ignores_control` verdict. On a row that
+ * predates the split — creation note stranded in `reviewNote`, no `reviewedAt`
+ * — the same write ADOPTS that string as the `originNote` before stamping the
+ * ruling over it, which is the whole migration those rows need and the last
+ * moment anything can perform it.
  *
  * Null when the image is not this owner's, indistinguishable from never having
  * existed, so the route never confirms a foreign image. An image that IS this
@@ -625,7 +629,21 @@ export async function reviewImageLabControl(
     return { ok: false, refusal: controlInvalid(`control image ${controlId} has no readable fixture metadata`) };
   }
 
-  const meta: ImageLabControlMeta = { ...stored, reviewedAt: new Date().toISOString(), reviewNote };
+  // The pre-split shape: a creation note stranded in `reviewNote`, with no
+  // `reviewedAt` beside it and no `originNote` of its own. This write is the one
+  // path left that could overwrite that string, so it adopts it instead. A row
+  // written since the split cannot match — an unreviewed one carries no
+  // `reviewNote`, a reviewed one carries `reviewedAt`, and a fixture that named
+  // its own origin keeps what it named.
+  const stranded =
+    stored.reviewedAt === undefined && stored.originNote === undefined ? stored.reviewNote : undefined;
+
+  const meta: ImageLabControlMeta = {
+    ...stored,
+    ...(stranded ? { originNote: stranded } : {}),
+    reviewedAt: new Date().toISOString(),
+    reviewNote,
+  };
   const [updated] = await db()
     .update(images)
     .set({ meta: { ...imageMeta(row.meta), ...meta } })

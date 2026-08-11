@@ -80,7 +80,10 @@ Rulings the build settled (2026-08-10):
   merges onto the raw image meta so the `hidden` flag, encode metadata, and the
   fixture's `originNote` survive; `DELETE /controls/[controlId]` removes a
   fixture, and a citing experiment keeps its recorded settings with
-  `controlImageId` nulled by the FK.
+  `controlImageId` nulled by the FK. A row carrying `reviewNote` with no
+  `reviewedAt` predates the note split, so that same write adopts the stranded
+  string as `originNote` — an existing `originNote` always wins — rather than
+  discarding it.
 - **Client lists drop bad elements, not whole lists**: the UI parses list
   responses element-wise (`listOf`) rather than with the contracts'
   `.catch([])` wholesale fallback, so one corrupt row degrades to one missing

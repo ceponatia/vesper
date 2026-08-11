@@ -42,7 +42,9 @@ contract: its spec.
   server-side and merged over the stored meta, so `originNote` survives) before
   an experiment may use them — the runner refuses an unreviewed control before
   any provider spend — and can be deleted; a citing experiment keeps its
-  recorded settings with the fixture pointer nulled.
+  recorded settings with the fixture pointer nulled. A note stored without a
+  review date is an origin note, so recording the review keeps it as
+  `originNote`; an already-present `originNote` wins.
 
 ## Cost and health accounting
 
