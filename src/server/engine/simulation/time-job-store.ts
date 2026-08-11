@@ -12,7 +12,8 @@ import { advanceBranchStoryTime } from "./scheduler-store";
  * Concurrency is the whole point (the 2026-07-23 review's load-bearing requirement):
  * - **One active job per branch** — the `sim_time_jobs_one_active_per_branch` partial unique
  *   index makes a second active job a constraint violation, so a race to escalate cannot create
- *   two. `enqueueTimeJob` catches that and returns the existing job.
+ *   two. `enqueueTimeJob` defers to that index (`on conflict … do nothing`) and adopts the
+ *   winner's job instead of erroring.
  * - **Leased + fenced** — a job is claimed with `FOR UPDATE SKIP LOCKED` + a lease; every
  *   progress/terminal write is fenced on `lease_owner = this worker AND state = 'processing'`, so
  *   a stale claimant (its lease expired, another worker took over) can never overwrite live work.
@@ -59,6 +60,18 @@ function rowToJob(row: typeof simTimeJobs.$inferSelect): TimeJob {
   };
 }
 
+/**
+ * "Active" is the partial unique index's own predicate (`state in ('pending','processing')`) —
+ * one definition, used by every read that asks whether a branch already has a job in flight, so
+ * the code and `sim_time_jobs_one_active_per_branch` can never drift apart.
+ */
+function activeForBranch(branchId: string) {
+  return and(
+    eq(simTimeJobs.branchId, branchId),
+    or(eq(simTimeJobs.state, "pending"), eq(simTimeJobs.state, "processing")),
+  );
+}
+
 export interface EnqueueTimeJobInput {
   worldId: string;
   branchId: string;
@@ -72,7 +85,28 @@ export interface EnqueueTimeJobInput {
  * Ensure a durable job exists for this branch's remaining drain. Idempotent per branch: if an
  * active (pending/processing) job already exists it is kept — its target bumped forward when the
  * new request reaches further — and returned; otherwise a fresh pending job is inserted. The
- * partial unique index is the race backstop (a concurrent insert violates it → we re-read).
+ * partial unique index is the race backstop: a concurrent insert loses to it and adopts the
+ * winner's job.
+ *
+ * The opening `for update` locks an EXISTING active row (so a claim can't terminate the job
+ * between our read and our target bump), but a row lock cannot stop a phantom — two enqueues that
+ * both find nothing will both try to insert, and the index has to settle it.
+ *
+ * That settlement is `on conflict … do nothing`, NOT a try/catch around a bare insert, and the
+ * distinction is load-bearing: a raised unique violation poisons the WHOLE transaction, so every
+ * later statement in it fails with 25P02 ("current transaction is aborted"). A catch block that
+ * re-reads the winner's row from inside that transaction is therefore a recovery path that can
+ * only ever fail — it threw instead of adopting, intermittently, exactly when the race it exists
+ * to handle actually fired. `do nothing` keeps the transaction healthy so the re-read can run.
+ *
+ * Two Postgres details the code can't show:
+ * - The conflict target must repeat the partial index's predicate verbatim, because inference
+ *   only picks an arbiter index whose own predicate is implied by the one given here. Drop the
+ *   `where` and this becomes a plain `(branch_id)` inference that matches no index and errors.
+ * - The follow-up select sees the winner. `do nothing` waits out the peer's in-flight insert
+ *   before yielding, and under READ COMMITTED (the pool's default — nothing here raises it) each
+ *   statement takes a fresh snapshot, so by the time we read, the winning row is committed and
+ *   visible even though our own transaction started before it existed.
  */
 export async function enqueueTimeJob(
   input: EnqueueTimeJobInput,
@@ -83,12 +117,7 @@ export async function enqueueTimeJob(
     const [active] = await tx
       .select()
       .from(simTimeJobs)
-      .where(
-        and(
-          eq(simTimeJobs.branchId, input.branchId),
-          or(eq(simTimeJobs.state, "pending"), eq(simTimeJobs.state, "processing")),
-        ),
-      )
+      .where(activeForBranch(input.branchId))
       .limit(1)
       .for("update");
     if (active) {
@@ -101,30 +130,34 @@ export async function enqueueTimeJob(
       return { id: active.id, created: false };
     }
     const id = newId();
-    try {
-      await tx.insert(simTimeJobs).values({
+    const [inserted] = await tx
+      .insert(simTimeJobs)
+      .values({
         id,
         worldId: input.worldId,
         branchId: input.branchId,
         chatId: input.chatId,
         targetStorySecond: input.targetStorySecond,
         reachedStorySecond: input.reachedStorySecond,
-      });
-      return { id, created: true };
-    } catch {
-      // A peer inserted between our select and insert; the partial unique index caught it.
-      const [raced] = await tx
-        .select()
-        .from(simTimeJobs)
-        .where(
-          and(
-            eq(simTimeJobs.branchId, input.branchId),
-            or(eq(simTimeJobs.state, "pending"), eq(simTimeJobs.state, "processing")),
-          ),
-        )
-        .limit(1);
-      return { id: raced?.id ?? id, created: false };
-    }
+      })
+      .onConflictDoNothing({
+        target: simTimeJobs.branchId,
+        where: sql`state in ('pending', 'processing')`,
+      })
+      .returning({ id: simTimeJobs.id });
+    if (inserted) return { id: inserted.id, created: true };
+
+    // Nothing landed ⇒ a peer inserted between our select and our insert, and owns the branch now.
+    const [raced] = await tx
+      .select({ id: simTimeJobs.id })
+      .from(simTimeJobs)
+      .where(activeForBranch(input.branchId))
+      .limit(1);
+    // `?? id` is the degraded default (docs/resilience.md) for a window barely worth naming: the
+    // winner's job would have to be claimed AND drained to completion in the microseconds between
+    // the two statements above. The caller only ever learns "someone else owns this drain", which
+    // stays true, and escalation is idempotent — the next skip re-enqueues.
+    return { id: raced?.id ?? id, created: false };
   });
 }
 
@@ -134,12 +167,7 @@ export async function hasActiveTimeJob(branchId: string, options: { database?: D
   const [row] = await database
     .select({ id: simTimeJobs.id })
     .from(simTimeJobs)
-    .where(
-      and(
-        eq(simTimeJobs.branchId, branchId),
-        or(eq(simTimeJobs.state, "pending"), eq(simTimeJobs.state, "processing")),
-      ),
-    )
+    .where(activeForBranch(branchId))
     .limit(1);
   return row !== undefined;
 }

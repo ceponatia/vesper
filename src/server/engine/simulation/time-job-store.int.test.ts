@@ -138,6 +138,12 @@ function enqueueFor(ids: CaseIds, targetStorySecond: number, reachedStorySecond 
   return enqueueTimeJob({ worldId: ids.worldId, branchId: ids.branchId, chatId: ids.chatId, targetStorySecond, reachedStorySecond });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function activeJobCount(branchId: string): Promise<number> {
   const rows = await db()
     .select({ id: simTimeJobs.id })
@@ -174,7 +180,46 @@ describe.skipIf(!ready)("durable time jobs", () => {
       enqueueFor(ids, SEED_STORY_SECOND + 600),
       enqueueFor(ids, SEED_STORY_SECOND + 600),
     ]);
-    expect(results.filter((r) => r.created)).toHaveLength(1);
+    const created = results.filter((r) => r.created);
+    expect(created).toHaveLength(1);
+    expect(await activeJobCount(ids.branchId)).toBe(1);
+    // The losers ADOPT the winner's job rather than inventing one: every caller walks away
+    // pointing at the same durable drain.
+    expect([...new Set(results.map((r) => r.id))]).toEqual([created[0]!.id]);
+  });
+
+  it("adopts a peer's job when its own insert loses the race, without poisoning the transaction", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+
+    // The test above only hits the losing branch when the scheduler happens to interleave the
+    // three enqueues just so; this one FORCES it. An uncommitted peer insert is held open, so the
+    // enqueue's opening select sees nothing (the row isn't visible yet) and its own insert
+    // collides with the held row and blocks until the peer commits.
+    //
+    // That is the path that used to raise a unique violation, which aborts the enqueue's whole
+    // transaction — its recovery re-read then died with 25P02 instead of adopting the peer's job.
+    // Intermittent in CI, a real lost enqueue in production.
+    const peerId = newId();
+    const peer = db().transaction(async (tx) => {
+      await tx.insert(simTimeJobs).values({
+        id: peerId,
+        worldId: ids.worldId,
+        branchId: ids.branchId,
+        chatId: ids.chatId,
+        targetStorySecond: SEED_STORY_SECOND + 600,
+        reachedStorySecond: SEED_STORY_SECOND,
+      });
+      await sleep(250);
+    });
+    // Let the peer's insert land (still uncommitted) before the racer reads.
+    await sleep(50);
+
+    const raced = await enqueueFor(ids, SEED_STORY_SECOND + 600);
+    await peer;
+
+    expect(raced.created).toBe(false);
+    expect(raced.id).toBe(peerId);
     expect(await activeJobCount(ids.branchId)).toBe(1);
   });
 
