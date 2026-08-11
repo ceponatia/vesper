@@ -30,13 +30,18 @@ import type { ImageReferenceDropReason } from "./render-intent";
 /**
  * What one experiment is FOR.
  *
- * Stage 0 uses the first three: `control_probe` answers the plan's opening
- * question (send a pose or depth map as a numbered image and see whether the
- * output obeys it), and the two baselines re-run an ordinary lane's own
- * configuration so a later comparison has a same-settings control to sit beside.
- * The remaining three are declared NOW, unused, because the record shape has to
- * survive Stages 1–3 without a migration — an experiment kind arriving later
- * would otherwise mean altering a column every stored row uses.
+ * `control_probe` answers the plan's opening question (send a pose or depth map
+ * as a numbered image and see whether the output obeys it); the two baselines
+ * re-run an ordinary lane's own configuration so a later comparison has a
+ * same-settings control to sit beside; the two controlled kinds ask whether the
+ * control still holds when the request is production-shaped; and
+ * `finishing_pass` re-edits one of those results against the subject's identity
+ * pack, changing nothing but the face.
+ *
+ * All six were declared at once, three of them unused for two stages, because
+ * the record shape had to survive Stages 1–3 without a migration — an
+ * experiment kind arriving later would otherwise mean altering a column every
+ * stored row uses. All six run as of Stage 3.
  *
  * `schema.ts` imports this tuple for its `text(..., { enum })` column (the
  * `trialRunStatuses` precedent), so the column and the parser cannot drift.
@@ -149,28 +154,123 @@ export type ImageLabControlGenerator = (typeof imageLabControlGenerators)[number
  * ambiguous or whose identity collapsed for unrelated reasons says so, rather
  * than being recorded as evidence it is not.
  */
-export const imageLabProbeVerdicts = ["honours_control", "ignores_control", "inconclusive"] as const;
+export const imageLabProbeVerdicts = ["honours_control", "ignores_control", "inconclusive"] as const satisfies
+  readonly ImageLabVerdict[];
 export const imageLabProbeVerdictSchema = z.enum(imageLabProbeVerdicts);
 export type ImageLabProbeVerdict = (typeof imageLabProbeVerdicts)[number];
 
 /**
- * The experiment kinds a verdict may be recorded on: every kind that DECLARES a
- * control the output can be judged against. The probe was the only one while it
- * was the only kind that sent a fixture; the controlled recipes declare one too,
- * and their whole point is that the same limb-for-limb judgment applies to a
- * production-shaped render. Baselines still have none — a ruling recorded
- * against an experiment with no control would be a fact about nothing.
+ * The reviewing admin's ruling on a `finishing_pass`, and the reason the verdict
+ * vocabulary is not one list.
+ *
+ * "Honours the control" cannot be asked of a finishing pass: it declares no
+ * control, and the question it exists to settle is a different one entirely —
+ * the plan's promotion rule, which says a finishing pass is promoted only when
+ * it "improves identity without materially changing structure, clothing, body,
+ * camera, lighting, or setting". That rule has two independent halves, and the
+ * three rulings are exactly the outcomes they produce:
+ *
+ * - `improves_identity` — the face matches the identity references better than
+ *   the base did, and nothing else moved. The only promotable outcome.
+ * - `identity_unchanged` — nothing meaningful changed either way. Recorded as a
+ *   real result rather than as a failure: the plan warns that a second pass of
+ *   the SAME model is a weak prior, so a pass that earns nothing is precisely
+ *   the evidence the stage was told to look for.
+ * - `changes_beyond_identity` — it moved the pose, clothing, body, camera,
+ *   lighting, or setting. Not promotable whatever it did to the face, which is
+ *   why it is one ruling rather than a note on the two above.
+ *
+ * `inconclusive` is shared with the probe vocabulary and means there what it
+ * means here: this run settles nothing.
+ */
+export const imageLabFinishingVerdicts = [
+  "improves_identity",
+  "identity_unchanged",
+  "changes_beyond_identity",
+  "inconclusive",
+] as const satisfies readonly ImageLabVerdict[];
+export const imageLabFinishingVerdictSchema = z.enum(imageLabFinishingVerdicts);
+export type ImageLabFinishingVerdict = (typeof imageLabFinishingVerdicts)[number];
+
+/**
+ * Every ruling any experiment kind may record — the union the row's `verdict`
+ * column and the record-verdict request both speak.
+ *
+ * ONE column, a widened vocabulary, and a per-kind gate ({@link
+ * imageLabVerdictOptions}) rather than a second verdict field. An experiment
+ * carries exactly one ruling whatever kind it is, so a second column would be
+ * null on every row that used the first, and a reader assembling "the verdict"
+ * would have to know which column its kind used before it could read it. The
+ * `satisfies` on each sub-vocabulary above is the tie that keeps this list a
+ * superset of both.
+ *
+ * The database column is plain `text` (drizzle's `{ enum }` is a TypeScript
+ * refinement, not a check constraint), so widening this tuple is a code change
+ * and never a migration — the same property the registries lean on.
+ */
+export const imageLabVerdicts = [
+  "honours_control",
+  "ignores_control",
+  "improves_identity",
+  "identity_unchanged",
+  "changes_beyond_identity",
+  "inconclusive",
+] as const;
+export const imageLabVerdictSchema = z.enum(imageLabVerdicts);
+export type ImageLabVerdict = (typeof imageLabVerdicts)[number];
+
+/**
+ * The experiment kinds a verdict may be recorded on: every kind whose output
+ * asks a question a reviewer can answer by looking at it. The probe was the only
+ * one while it was the only kind that sent a fixture; the controlled recipes
+ * declare one too, and their whole point is that the same limb-for-limb judgment
+ * applies to a production-shaped render. A `finishing_pass` declares no control
+ * and is judged against its own base image instead, which is why it rules in a
+ * vocabulary of its own. Baselines still have none — a ruling recorded against a
+ * run that neither declares a control nor refines one would be a fact about
+ * nothing.
  */
 export const imageLabVerdictKinds = [
   "control_probe",
   "controlled_portrait",
   "controlled_scene",
+  "finishing_pass",
 ] as const satisfies readonly ImageLabExperimentKind[];
 export type ImageLabVerdictKind = (typeof imageLabVerdictKinds)[number];
 
-/** Whether a kind declares a control an admin can rule on. */
+/** Whether a kind asks a question an admin can rule on. */
 export function isImageLabVerdictKind(kind: ImageLabExperimentKind): kind is ImageLabVerdictKind {
   return imageLabVerdictKinds.some((verdictKind) => verdictKind === kind);
+}
+
+/**
+ * The rulings THIS kind may record, or `null` for a kind that records none.
+ *
+ * The gate lives here rather than at the route or in the form because both need
+ * it and they must not disagree: a select offering "honours the control" on a
+ * finishing pass would collect a ruling the service then refused, and a service
+ * accepting one would file a control judgment against a run that sent no
+ * control. Exhaustive over the kinds, so a seventh kind is a compile error here
+ * rather than a silently unrulable experiment.
+ */
+export function imageLabVerdictOptions(kind: ImageLabExperimentKind): readonly ImageLabVerdict[] | null {
+  switch (kind) {
+    case "control_probe":
+    case "controlled_portrait":
+    case "controlled_scene":
+      return imageLabProbeVerdicts;
+    case "finishing_pass":
+      return imageLabFinishingVerdicts;
+    case "baseline_portrait":
+    case "baseline_scene":
+      return null;
+  }
+}
+
+/** Whether this ruling is one the kind's own vocabulary offers. */
+export function isImageLabVerdictForKind(kind: ImageLabExperimentKind, verdict: ImageLabVerdict): boolean {
+  const options = imageLabVerdictOptions(kind);
+  return options !== null && options.some((option) => option === verdict);
 }
 
 /**
@@ -208,6 +308,14 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   resolved model accepts. The render path TRIMS an overlong list, so the run
  *   is refused before it instead: a probe whose record claimed a control was
  *   sent that the provider never received is evidence about nothing.
+ * - `source_invalid` — a `finishing_pass` names a source experiment that is not
+ *   an owned, succeeded run holding a result image of a finishable kind. The
+ *   pass edits that render, so without it there is nothing to finish; refused
+ *   before any provider spend.
+ * - `identity_unavailable` — no identity reference could be drawn for the
+ *   subject: the finishing pass has nothing to improve the face TOWARD, and a
+ *   run without one would be an unconstrained re-edit wearing the name of an
+ *   identity pass. The pack's own blocking code is recorded in the message.
  * - `settings_unsupported` — a CONTROLLED experiment carries a raw
  *   provider-shaped `controlInput` bag. That bag is a probe tool; a controlled
  *   recipe exists to prove a production-shaped run and production has no raw
@@ -225,6 +333,8 @@ export const imageLabFailureCodes = [
   "control_unreviewed",
   "control_source_sent",
   "capacity_exceeded",
+  "source_invalid",
+  "identity_unavailable",
   "settings_unsupported",
   "preprocessor_output_invalid",
   "render_failed",
@@ -553,9 +663,22 @@ export const imageLabExperimentSchema = z.object({
    * bag costs the field, never the row. */
   outcome: imageLabOutcomeSchema.nullable().catch(null).default(null),
 
+  /**
+   * The experiment a `finishing_pass` refines — null on every other kind.
+   *
+   * It rides the row's meta bag rather than a column of its own, so Stage 3
+   * needed no migration, and it is addressed by EXPERIMENT id rather than by the
+   * base image's: a finishing pass is a second arm of one comparison, and the
+   * arm it is compared against is a record — its instruction, its recipe, its
+   * pinned version and its own verdict — of which the image is only the visible
+   * part. `.catch` for the reason the outcome has one: a bag that no longer
+   * parses costs the field, never the row.
+   */
+  sourceExperimentId: z.string().min(1).nullable().catch(null).default(null),
+
   status: imageLabExperimentStatusSchema,
   failureCode: z.string().min(1).max(120).nullable().default(null),
-  verdict: imageLabProbeVerdictSchema.nullable().default(null),
+  verdict: imageLabVerdictSchema.nullable().default(null),
   verdictNote: z.string().max(2000).nullable().default(null),
 
   predictionId: z.string().min(1).nullable().default(null),
@@ -596,6 +719,17 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   fixture but renders the ordered inputs, so a request declaring fixture A
  *   while ordering fixture B would file a verdict against a skeleton the
  *   provider never saw — the one failure a bench cannot survive.
+ * - a `finishing_pass` names its source experiment and nothing else: no
+ *   subject, no ordered inputs, no control. Every one of those is INHERITED or
+ *   RESOLVED — the subject from the source (so the two arms of a comparison can
+ *   never be filed against two different characters), the ordered inputs by the
+ *   runner (the base render plus the subject's identity-pack references, which
+ *   no client can select), and a control it never sends. A request carrying one
+ *   anyway is describing a run that cannot happen, so it is refused rather than
+ *   quietly ignored, which would leave a record of an input that had no effect.
+ * - no other kind carries a source experiment. A pointer on a kind that never
+ *   reads one is a client bug, and storing it would leave a row claiming a
+ *   lineage its render did not have.
  *
  * Deliberately NOT enforced here: that a probe carries any particular inputs, or
  * that it declares a control at all. Both are the runner's recorded refusals
@@ -616,9 +750,47 @@ export const imageLabCreateExperimentRequestSchema = z
     inputs: imageLabInputListSchema.default((): ImageLabInputList => []),
     controlImageId: z.string().min(1).optional(),
     controlKind: imageLabControlKindSchema.optional(),
+    /** The succeeded experiment a `finishing_pass` refines. Required there, refused everywhere else. */
+    sourceExperimentId: z.string().min(1).optional(),
     settings: imageLabSettingsSchema.optional(),
   })
   .superRefine((request, ctx) => {
+    if (request.kind === "finishing_pass") {
+      if (request.sourceExperimentId === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceExperimentId"],
+          message: "a finishing pass names the experiment whose result it refines",
+        });
+      }
+      if (request.inputs.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "a finishing pass orders no inputs; the runner sends the source render and the pack's references",
+        });
+      }
+      if (request.controlImageId !== undefined || request.controlKind !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["controlImageId"],
+          message: "a finishing pass sends no control fixture; it refines identity and changes nothing else",
+        });
+      }
+      if (request.characterId !== undefined || request.chatId !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["characterId"],
+          message: "a finishing pass inherits its subject from the source experiment",
+        });
+      }
+    } else if (request.sourceExperimentId !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sourceExperimentId"],
+        message: "only a finishing pass refines another experiment's result",
+      });
+    }
     if (request.kind === "baseline_portrait" && request.characterId === undefined) {
       ctx.addIssue({
         code: "custom",
@@ -733,9 +905,15 @@ export type ImageLabReviewControlRequest = z.infer<typeof imageLabReviewControlR
  * verdict's reason is: a ruling with nothing written beside it is
  * indistinguishable from a misclick six months later, and this ruling decides
  * whether the whole plan runs on 2511 or on a second registered connector.
+ *
+ * The verdict is the WHOLE union, not the kind's own slice, because the request
+ * does not know the kind — the experiment does. Whether this ruling belongs to
+ * this experiment's vocabulary is settled by the service against the stored row
+ * ({@link isImageLabVerdictForKind}), which is the only place both facts are in
+ * hand at once.
  */
 export const imageLabRecordVerdictRequestSchema = z.object({
-  verdict: imageLabProbeVerdictSchema,
+  verdict: imageLabVerdictSchema,
   note: z.string().trim().min(1).max(2000),
 });
 export type ImageLabRecordVerdictRequest = z.infer<typeof imageLabRecordVerdictRequestSchema>;

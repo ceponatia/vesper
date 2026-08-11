@@ -15,9 +15,8 @@ contract: its spec.
   version pin; an unpinnable model is refused with `image_lab.version_unpinned`
   before any spend), `baseline_portrait` / `baseline_scene` (re-run the
   ordinary lane's own resolved profile + render-intent configuration, so the
-  recorded settings prove parity), and `controlled_portrait` /
-  `controlled_scene` (below). `finishing_pass` is declared but refused at
-  create until its stage exists. Every experiment records model slug, requested
+  recorded settings prove parity), `controlled_portrait` / `controlled_scene`
+  (below), and `finishing_pass` (below). Every experiment records model slug, requested
   and executed version, final prompt, ordered input roles, settings, and
   prediction id — enough to compare or retry. Outputs save as hidden
   `lab_output` assets, so lab activity never mints a player-visible variant or
@@ -42,6 +41,21 @@ contract: its spec.
   the intent path's own `image_profile.*` code on the row. The raw
   provider-shaped `controlInput` settings bag is a probe tool only: a
   controlled run carrying one refuses with `image_lab.settings_unsupported`.
+- A **finishing pass** re-edits another experiment's result to correct identity
+  and nothing else. It names its source experiment by id — a succeeded baseline
+  or controlled run holding a result image; a probe and another finishing pass
+  are both refused as sources — and inherits that run's character or
+  conversation, so both arms of a comparison file against one subject. It picks
+  no images at all: the runner sends the source's render under the `before` role
+  plus the subject's identity-pack reference, writes that ordered list onto the
+  record, and refuses before any spend when the source is gone
+  (`image_lab.source_invalid`) or the pack offers no reference
+  (`image_lab.identity_unavailable`). Its recipe is `finishing_pass/identity`,
+  screened as an identity (`variant`) task whatever the source rendered, pinned
+  like every recipe run. Its prompt is fixed text — correct the face toward the
+  reference, keep pose, body, clothing, camera, framing, lighting and setting
+  exactly as they are — previewed whole on the create form and not editable; an
+  instruction the admin writes is appended to narrow it.
 - The experiment screen shows **every ordered input as an image**, not only the
   identity reference and the control fixture: alongside the three large panels
   (identity, fixture, result) the ordered-input list renders a role-labeled
@@ -50,12 +64,22 @@ contract: its spec.
   An experiment outlives the assets it cites — deleting a control fixture drops
   its image row and leaves the ordered inputs intact — so a slot whose asset is
   gone says so in place of the image rather than rendering broken.
-- **Verdicts** are recordable on every kind that declares a control —
-  `control_probe`, `controlled_portrait`, `controlled_scene` — with an explicit
-  ruling and a required note; baselines have no control to rule on and refuse.
-  A succeeded controlled experiment offers a paired direct-edit baseline
-  action that pre-fills a `baseline_portrait` / `baseline_scene` with the same
-  subject and instruction, so a comparison pair shares its text.
+- A finishing pass is read as a pair: the detail screen puts the render it
+  refined ("before"), the identity reference it was refined toward, and its own
+  result side by side, and cites the source experiment as a record with an
+  action that opens it.
+- **Verdicts** are recordable on every kind that asks a question, with an
+  explicit ruling and a required note; baselines have nothing to rule on and
+  refuse. Two vocabularies share the one recorded field, and each kind may only
+  use its own: `control_probe` / `controlled_portrait` / `controlled_scene` rule
+  `honours_control` / `ignores_control` / `inconclusive`, while a
+  `finishing_pass` rules `improves_identity` (the face is closer and nothing
+  else moved — the only promotable outcome), `identity_unchanged`,
+  `changes_beyond_identity`, or `inconclusive`. A ruling from the other kind's
+  vocabulary is refused. A succeeded controlled experiment offers a paired
+  direct-edit baseline action that pre-fills a `baseline_portrait` /
+  `baseline_scene` with the same subject and instruction, so a comparison pair
+  shares its text.
 - The executed version is stored **verbatim**, and the two version ids sit side
   by side on the experiment screen. A requested pin and an executed version
   that genuinely differ raise a warning that the run's conclusions are suspect.

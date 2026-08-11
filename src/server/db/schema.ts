@@ -41,7 +41,7 @@ import {
   imageLabExperimentKinds,
   imageLabExperimentStatuses,
   imageLabModes,
-  imageLabProbeVerdicts,
+  imageLabVerdicts,
   imageProfileOperations,
   imageProfileTasks,
   imagePromptStrategies,
@@ -1970,8 +1970,15 @@ export const imageLabExperiments = pgTable(
 
     status: text("status", { enum: imageLabExperimentStatuses }).notNull().default("pending"),
     failureCode: text("failure_code"),
-    /** The reviewing admin's ruling — probe kinds only. */
-    verdict: text("verdict", { enum: imageLabProbeVerdicts }),
+    /**
+     * The reviewing admin's ruling — the kinds that ask a question, in the
+     * vocabulary their kind offers (`imageLabVerdictOptions`). One column across
+     * both vocabularies: an experiment records exactly one ruling whatever kind
+     * it is. The column is plain `text` (drizzle's `{ enum }` is a TypeScript
+     * refinement, not a check constraint), so a widened vocabulary is a code
+     * change and never a migration.
+     */
+    verdict: text("verdict", { enum: imageLabVerdicts }),
     verdictNote: text("verdict_note"),
 
     predictionId: text("prediction_id"),

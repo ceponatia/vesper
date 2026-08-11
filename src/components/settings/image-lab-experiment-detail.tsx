@@ -2,13 +2,12 @@
 
 import { useState, type ReactNode } from "react";
 import {
-  imageLabProbeVerdicts,
+  imageLabVerdictOptions,
   isImageLabControlledKind,
-  isImageLabVerdictKind,
   isUndisclosedProviderVersion,
   providerVersionsDisagree,
   type ImageLabExperiment,
-  type ImageLabProbeVerdict,
+  type ImageLabVerdict,
 } from "@/contracts";
 import { imageLabApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -55,6 +54,12 @@ import type { ImageLabExperimentPrefill } from "./image-lab-experiment-form";
  * A controlled run additionally shows the recorded `outcome` — what the
  * reference plan decided — because the intent path TRIMS instead of refusing,
  * so the ordered inputs alone no longer say what the provider received.
+ *
+ * A FINISHING PASS is laid out as the pair it is: the render it refined, the
+ * identity reference it was refined toward, and its own result, left to right in
+ * the order they are read. It cites its source experiment as a record rather
+ * than as an image, because the comparison the plan asks for is between three
+ * runs and their settings, not three pictures.
  */
 
 const POLL_MS = 3000;
@@ -68,6 +73,8 @@ export interface ImageLabExperimentDetailProps {
    * caller (which owns both views). Pre-fill only — nothing is submitted here.
    */
   onRunBaseline: (prefill: ImageLabExperimentPrefill) => void;
+  /** Open another experiment — the finishing pass's citation of the run it refines. */
+  onOpenExperiment: (experimentId: string) => void;
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -167,6 +174,7 @@ export function ImageLabExperimentDetail({
   onBack,
   onDeleted,
   onRunBaseline,
+  onOpenExperiment,
 }: ImageLabExperimentDetailProps) {
   const toast = useToast();
   const detail = useAsyncData(() => imageLabApi.experiments.detail(experimentId), [experimentId]);
@@ -175,7 +183,7 @@ export function ImageLabExperimentDetail({
   // rulings, the most favourable ruling must never be the one a distracted click
   // records by default — an unchosen verdict has to be indistinguishable from
   // no verdict, which a pre-selected option cannot be.
-  const [verdict, setVerdict] = useState<ImageLabProbeVerdict | "">("");
+  const [verdict, setVerdict] = useState<ImageLabVerdict | "">("");
   const [note, setNote] = useState("");
   const [recording, setRecording] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -241,6 +249,12 @@ export function ImageLabExperimentDetail({
   const chip = imageLabStatusChip(experiment.status);
   const verdictChip = experiment.verdict === null ? null : imageLabVerdictChip(experiment.verdict);
   const identityInput = experiment.inputs.find((input) => input.role === "identity") ?? null;
+  // The rulings THIS kind may record — the contract's gate, never a local guess.
+  const verdictOptions = imageLabVerdictOptions(experiment.kind);
+  const isFinishing = experiment.kind === "finishing_pass";
+  // A finishing pass is read as a before/after pair, so the panel that holds a
+  // control fixture on every other kind holds the render being refined here.
+  const beforeInput = experiment.inputs.find((input) => input.role === "before") ?? null;
   const versionsDisagree = providerVersionsDisagree(experiment.requestedVersionId, experiment.executedVersionId);
   const versionUndisclosed =
     experiment.requestedVersionId !== null && isUndisclosedProviderVersion(experiment.executedVersionId);
@@ -315,28 +329,61 @@ export function ImageLabExperimentDetail({
       </header>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        {isFinishing ? (
+          <LabImage
+            label="Before (the source's result)"
+            imageId={beforeInput?.imageId ?? null}
+            pending={live}
+            emptyHint="the base render is resolved when the pass runs"
+            onEnlarge={setEnlarged}
+          />
+        ) : null}
         <LabImage
           label="Identity reference"
           imageId={identityInput?.imageId ?? null}
-          pending={false}
-          emptyHint="no identity reference was sent"
+          pending={isFinishing && live}
+          emptyHint={isFinishing ? "the pack's reference is resolved when the pass runs" : "no identity reference was sent"}
           onEnlarge={setEnlarged}
         />
+        {isFinishing ? null : (
+          <LabImage
+            label="Control fixture"
+            imageId={experiment.controlImageId}
+            pending={false}
+            emptyHint="no control fixture was sent"
+            onEnlarge={setEnlarged}
+          />
+        )}
         <LabImage
-          label="Control fixture"
-          imageId={experiment.controlImageId}
-          pending={false}
-          emptyHint="no control fixture was sent"
-          onEnlarge={setEnlarged}
-        />
-        <LabImage
-          label="Result"
+          label={isFinishing ? "After (this pass)" : "Result"}
           imageId={experiment.resultImageId}
           pending={live}
           emptyHint={experiment.status === "failed" ? "the run failed before an image existed" : "no result yet"}
           onEnlarge={setEnlarged}
         />
       </div>
+
+      {experiment.sourceExperimentId !== null ? (
+        <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Source experiment</h2>
+          <p className="mt-1 text-sm text-paper-400">
+            This pass re-edits that run&apos;s result. The plan&apos;s comparison is read across three images — the
+            direct-edit baseline, the controlled result, and this — so the run behind the &ldquo;before&rdquo; panel is
+            part of the evidence, not just its provenance.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <code className="text-[11px] break-all text-paper-500">{experiment.sourceExperimentId}</code>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (experiment.sourceExperimentId !== null) onOpenExperiment(experiment.sourceExperimentId);
+              }}
+            >
+              Open source experiment
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
       {experiment.failureCode !== null ? (
         <section className="mb-6 rounded-card border border-danger-500/40 bg-ink-850 p-4">
@@ -513,14 +560,20 @@ export function ImageLabExperimentDetail({
         </div>
       </section>
 
-      {isImageLabVerdictKind(experiment.kind) && experiment.status === "succeeded" ? (
+      {verdictOptions !== null && experiment.status === "succeeded" ? (
         <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
-          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Control verdict</h2>
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
+            {isFinishing ? "Finishing verdict" : "Control verdict"}
+          </h2>
           <p className="mt-1 mb-3 text-sm text-paper-400">
-            Judge the output against the fixture: limb for limb, and identity preserved.{" "}
+            {isFinishing
+              ? "Read the after against the before, in that order: did the face get closer to the identity reference, and did anything else move? A pass is only promotable when the first is yes and the second is no."
+              : "Judge the output against the fixture: limb for limb, and identity preserved."}{" "}
             {experiment.kind === "control_probe"
               ? "This ruling decides whether the plan runs on this model or on a second connector."
-              : "This ruling says whether the control still held in a production-shaped run."}
+              : isFinishing
+                ? "This ruling decides whether a finishing pass earns its render at all."
+                : "This ruling says whether the control still held in a production-shaped run."}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
@@ -532,13 +585,9 @@ export function ImageLabExperimentDetail({
               }
             >
               {(id) => (
-                <Select
-                  id={id}
-                  value={verdict}
-                  onChange={(e) => setVerdict(e.target.value as ImageLabProbeVerdict | "")}
-                >
+                <Select id={id} value={verdict} onChange={(e) => setVerdict(e.target.value as ImageLabVerdict | "")}>
                   <option value="">— Choose a ruling —</option>
-                  {imageLabProbeVerdicts.map((entry) => (
+                  {verdictOptions.map((entry) => (
                     <option key={entry} value={entry}>
                       {imageLabVerdictLabel(entry)}
                     </option>

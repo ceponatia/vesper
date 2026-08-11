@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { imageLabDiagnosticCode, imageLabFailureCodes, imageLabOutcomeDropReasons } from "@/contracts";
-import { imageLabDropReasonExplanation, imageLabFailureExplanation } from "./image-lab-copy";
+import {
+  imageLabDiagnosticCode,
+  imageLabExperimentKinds,
+  imageLabFailureCodes,
+  imageLabOutcomeDropReasons,
+  imageLabVerdictOptions,
+  imageLabVerdicts,
+} from "@/contracts";
+import {
+  imageLabDropReasonExplanation,
+  imageLabFailureExplanation,
+  imageLabVerdictChip,
+  imageLabVerdictHint,
+  imageLabVerdictLabel,
+} from "./image-lab-copy";
 
 /**
  * A settled experiment's `failureCode` reaches this function in the dotted form
@@ -46,5 +59,40 @@ describe("imageLabDropReasonExplanation", () => {
 
   it("names the capacity trim as recorded, not hidden", () => {
     expect(imageLabDropReasonExplanation("model_capacity")).toContain("recorded");
+  });
+});
+
+/**
+ * The verdict copy spans two vocabularies now, and the reviewer is choosing
+ * between them from these words alone — a ruling offered as a bare identifier,
+ * or offered with the wrong hint, is a misfiled ruling.
+ */
+describe("verdict copy", () => {
+  it("names every ruling in both vocabularies, and hints at each", () => {
+    for (const verdict of imageLabVerdicts) {
+      expect(imageLabVerdictLabel(verdict)).not.toBe(verdict);
+      expect(imageLabVerdictHint(verdict).length).toBeGreaterThan(20);
+      // The chip is a space-constrained badge, so "inconclusive" is legitimately
+      // its own best label; what it must never be is empty.
+      expect(imageLabVerdictChip(verdict).label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("gives every ruling a distinct label, so two options never read alike", () => {
+    const labels = imageLabVerdicts.map(imageLabVerdictLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("covers whatever each kind may actually offer", () => {
+    for (const kind of imageLabExperimentKinds) {
+      for (const verdict of imageLabVerdictOptions(kind) ?? []) {
+        expect(imageLabVerdictLabel(verdict).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("marks the one promotable finishing ruling as good news and the over-reach as bad", () => {
+    expect(imageLabVerdictChip("improves_identity").tone).toBe("ok");
+    expect(imageLabVerdictChip("changes_beyond_identity").tone).toBe("danger");
   });
 });

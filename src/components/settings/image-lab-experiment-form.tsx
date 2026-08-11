@@ -3,18 +3,25 @@
 import { useState } from "react";
 import {
   IMAGE_LAB_MAX_INPUTS,
+  imageLabExperimentKinds,
   imageLabModes,
   isImageLabControlledKind,
+  isImageLabFinishableKind,
   type ImageLabControl,
   type ImageLabControlledKind,
   type ImageLabCreateExperimentRequest,
+  type ImageLabExperiment,
   type ImageLabExperimentKind,
   type ImageLabInput,
   type ImageLabMode,
   type ImageReferenceRole,
 } from "@/contracts";
 import { chatsApi, imageLabApi } from "@/lib/client/api";
-import { imageLabControlRole, imageLabProbeInstruction } from "@/lib/images/image-lab-instruction";
+import {
+  imageLabControlRole,
+  imageLabFinishingInstruction,
+  imageLabProbeInstruction,
+} from "@/lib/images/image-lab-instruction";
 import { compileReferenceRolePrompt } from "@/lib/images/reference-role-prompt";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -43,13 +50,10 @@ import {
  * The create-experiment form (qwen-advanced-image-subsystem.spec.md §Stage 0
  * control-probe protocol step 2, plus the Stage 1–2 controlled recipes).
  *
- * Every kind the runner accepts is offered — the three Stage 0 kinds and the
- * two controlled recipes. `finishing_pass` exists in the contract so the stored
- * record survives Stage 3 without a migration, but nothing can run it yet, and
- * a picker offering a kind the runner would refuse would be an admin's minute
- * spent on a form that could not work.
+ * Every declared kind is offered, because as of Stage 3 the runner accepts every
+ * one of them.
  *
- * The instruction field means two different things by kind, and the form is
+ * The instruction field means three different things by kind, and the form is
  * explicit about which. A PROBE's instruction is the WHOLE prompt: pre-filled
  * from the numbered-role template and then owned by the admin (the template
  * tracks the fixture until the text is edited, with an explicit way back), sent
@@ -58,7 +62,16 @@ import {
  * prompt only: the runner's compose strategy prefixes the numbered role
  * bindings itself, so pre-filling the probe template here would send the
  * bindings twice. The form shows a live read-only preview of that prefix
- * instead, compiled by the same pure function the server compiles it with.
+ * instead, compiled by the same pure function the server compiles it with. A
+ * FINISHING PASS's instruction is optional and additive: the rule it is judged
+ * by is fixed text the runner always sends, previewed here in full, and what
+ * the admin writes narrows it rather than replacing it.
+ *
+ * A finishing pass also picks no images. Its base render is whatever its source
+ * experiment produced and its identity references come from the character's
+ * identity pack, both resolved by the runner — so the form picks the SOURCE and
+ * nothing else, and the ordered list below says so instead of showing an empty
+ * send order.
  *
  * `mode` is sent by the controlled kinds alone (default
  * `controlled_composition` — the bias their recipes exist to exercise). A probe
@@ -71,21 +84,20 @@ import {
  * because a production-shaped run has no raw bag to carry.
  */
 
-/**
- * Every kind the runner will accept — the server's own RUNNABLE_KINDS, offered
- * in the same order the plan grew them.
- */
-const RUNNABLE_KINDS = [
-  "control_probe",
-  "baseline_portrait",
-  "baseline_scene",
-  "controlled_portrait",
-  "controlled_scene",
-] as const satisfies readonly ImageLabExperimentKind[];
-type RunnableLabKind = (typeof RUNNABLE_KINDS)[number];
-
 /** What the runner uses when the form names no model. Shown, never sent. */
 const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
+
+/**
+ * The send order a finishing pass compiles its numbered bindings over: the base
+ * render, then one identity reference.
+ *
+ * One identity, because the recipe draws pack references under
+ * `IMAGE_LAB_FINISHING_IDENTITY_STRATEGY` and that strategy is `canonical_only`.
+ * The count is restated here rather than derived because deriving it needs the
+ * pack machinery, which is server-side by construction — so a strategy change is
+ * a two-line change, and this comment is the second line's address.
+ */
+const FINISHING_PREVIEW_ROLES: readonly ImageReferenceRole[] = ["before", "identity"];
 
 /**
  * The optional third reference each controlled recipe is offered, and the one
@@ -153,6 +165,19 @@ function isReviewedFixture(control: ImageLabControl): boolean {
 }
 
 /**
+ * One eligible source in the picker: what it was, when it ran, and its id.
+ *
+ * The id is included rather than hidden behind a prettier label because a lab
+ * record is cited by id everywhere else — the detail header, the written-up
+ * ruling — and an admin holding an id from a note has to be able to find the
+ * same row here without opening each one.
+ */
+function sourceOptionLabel(experiment: ImageLabExperiment): string {
+  const when = new Date(experiment.createdAt).toLocaleDateString();
+  return `${imageLabExperimentKindLabel(experiment.kind)} · ${when} · ${experiment.id}`;
+}
+
+/**
  * A client-side pre-fill of this form — the paired-baseline action on a
  * succeeded controlled experiment's detail. Values only; nothing submits until
  * the admin does. `fromExperimentId` is display-only provenance and is never
@@ -170,6 +195,13 @@ export interface ImageLabExperimentPrefill {
 export interface ImageLabExperimentFormProps {
   controls: ImageLabControl[];
   /**
+   * The experiment list the page already holds — the source picker's options. A
+   * finishing pass refines one of these, so the form reads the same rows the
+   * list below shows rather than fetching a second copy that could disagree
+   * with it about which runs succeeded.
+   */
+  experiments: ImageLabExperiment[];
+  /**
    * Seed values for a paired baseline. Read once, at mount: the page remounts
    * the form (key) when a new pre-fill arrives — the detail view's own idiom —
    * so a half-edited form is never rewritten under the admin's hands.
@@ -179,16 +211,22 @@ export interface ImageLabExperimentFormProps {
   onCreated: (experimentId: string) => void;
 }
 
-export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: ImageLabExperimentFormProps) {
+export function ImageLabExperimentForm({
+  controls,
+  experiments,
+  prefill = null,
+  onCreated,
+}: ImageLabExperimentFormProps) {
   const toast = useToast();
   const characters = useLabCharacters();
   const chats = useAsyncData(() => chatsApi.list(), []);
 
-  const [kind, setKind] = useState<RunnableLabKind>(prefill?.kind ?? "control_probe");
+  const [kind, setKind] = useState<ImageLabExperimentKind>(prefill?.kind ?? "control_probe");
   const [characterId, setCharacterId] = useState(prefill?.characterId ?? "");
   const [sourceImageId, setSourceImageId] = useState<string | null>(null);
   const [chatId, setChatId] = useState(prefill?.chatId ?? "");
   const [controlImageId, setControlImageId] = useState<string | null>(null);
+  const [sourceExperimentId, setSourceExperimentId] = useState("");
   const [mode, setMode] = useState<ImageLabMode>("controlled_composition");
   const [extraRole, setExtraRole] = useState<ExtraReferenceRole | "">("");
   const [extraImageId, setExtraImageId] = useState<string | null>(null);
@@ -199,9 +237,26 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
 
   const controlledKind: ImageLabControlledKind | null = isImageLabControlledKind(kind) ? kind : null;
   const isProbe = kind === "control_probe";
+  const isFinishing = kind === "finishing_pass";
   /** Kinds that declare a control fixture and send an ordered input list. */
   const sendsFixture = isProbe || controlledKind !== null;
   const needsChat = kind === "baseline_scene" || kind === "controlled_scene";
+
+  // What a finishing pass may refine: a succeeded run of a finishable kind that
+  // still holds its render. The server refuses anything else outright, so a
+  // fuller list would be a menu of choices that cannot be taken.
+  const finishableSources = experiments.filter(
+    (experiment) =>
+      isImageLabFinishableKind(experiment.kind) &&
+      experiment.status === "succeeded" &&
+      experiment.resultImageId !== null,
+  );
+  // A source that left the list (deleted, or refetched away) must not ride into
+  // a request as an id nothing matches — render-adjust, no latch, because
+  // clearing the pick extinguishes the condition.
+  if (sourceExperimentId !== "" && !finishableSources.some((entry) => entry.id === sourceExperimentId)) {
+    setSourceExperimentId("");
+  }
 
   // Whose portraits the identity picker (and the wardrobe extra) draw from: the
   // picked character — or, for a controlled scene, the conversation's own
@@ -312,6 +367,15 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
       ? compileReferenceRolePrompt({ basePrompt: "", roles: inputs.map((input) => input.role) }).trimEnd()
       : "";
 
+  // A finishing pass previews the WHOLE fixed text, bindings and rule together,
+  // because unlike the controlled kinds none of it is the admin's: they can only
+  // add to it. Compiled by the same two pure functions the runner calls, so what
+  // is read here is what is sent — the images filling the two slots are the only
+  // thing this preview cannot show, and the note below says so.
+  const finishingPreview = isFinishing
+    ? compileReferenceRolePrompt({ basePrompt: imageLabFinishingInstruction(""), roles: FINISHING_PREVIEW_ROLES })
+    : "";
+
   const controlReady = control !== null && isReviewedFixture(control);
   // A role picked with no image is an unfinished thought, not a request with a
   // hole in it — the submit waits for the pair or for none.
@@ -328,6 +392,8 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
         return characterId !== "" && sourceImageId !== null && controlReady && extraComplete;
       case "controlled_scene":
         return chatId !== "" && sourceImageId !== null && controlReady && extraComplete;
+      case "finishing_pass":
+        return sourceExperimentId !== "";
     }
   })();
 
@@ -344,24 +410,36 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
   const submit = async () => {
     if (!ready) return;
     const sendsCharacter = kind === "control_probe" || kind === "baseline_portrait" || kind === "controlled_portrait";
-    const body: ImageLabCreateExperimentRequest = {
-      kind,
-      instruction: instruction.trim(),
-      inputs,
-      modelSlug: modelSlug.trim() === "" ? undefined : modelSlug.trim(),
-      // Each kind names only its own subject: a scene run carrying a leftover
-      // character id would record a subject it never rendered, and vice versa.
-      characterId: sendsCharacter && characterId !== "" ? characterId : undefined,
-      chatId: needsChat && chatId !== "" ? chatId : undefined,
-      // A control image and its kind are recorded together or not at all — half a
-      // pointer names a fixture nothing can check.
-      controlImageId: sendsFixture && control !== null ? control.imageId : undefined,
-      controlKind: sendsFixture && control !== null ? control.meta.controlKind : undefined,
-      // The bias knob belongs to the controlled recipes alone: a probe or
-      // baseline declaring one would claim a recipe existed to be biased, and
-      // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
-      mode: controlledKind !== null ? mode : undefined,
-    };
+    const namedModel = modelSlug.trim() === "" ? undefined : modelSlug.trim();
+    // A finishing pass sends its source and nothing else: the subject is
+    // inherited from that run and the references are resolved by the runner, so
+    // every other field here would be a value the server refuses.
+    const body: ImageLabCreateExperimentRequest = isFinishing
+      ? {
+          kind: "finishing_pass",
+          instruction: instruction.trim(),
+          inputs: [],
+          modelSlug: namedModel,
+          sourceExperimentId,
+        }
+      : {
+          kind,
+          instruction: instruction.trim(),
+          inputs,
+          modelSlug: namedModel,
+          // Each kind names only its own subject: a scene run carrying a leftover
+          // character id would record a subject it never rendered, and vice versa.
+          characterId: sendsCharacter && characterId !== "" ? characterId : undefined,
+          chatId: needsChat && chatId !== "" ? chatId : undefined,
+          // A control image and its kind are recorded together or not at all — half
+          // a pointer names a fixture nothing can check.
+          controlImageId: sendsFixture && control !== null ? control.imageId : undefined,
+          controlKind: sendsFixture && control !== null ? control.meta.controlKind : undefined,
+          // The bias knob belongs to the controlled recipes alone: a probe or
+          // baseline declaring one would claim a recipe existed to be biased, and
+          // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
+          mode: controlledKind !== null ? mode : undefined,
+        };
     setSubmitting(true);
     const result = await imageLabApi.experiments.create(body);
     setSubmitting(false);
@@ -443,11 +521,11 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Kind"
-            hint="A probe asks whether the model obeys a control at all; a controlled run asks whether that holds production-shaped; a baseline re-runs a lane's own settings beside it."
+            hint="A probe asks whether the model obeys a control at all; a controlled run asks whether that holds production-shaped; a baseline re-runs a lane's own settings beside it; a finishing pass re-edits one of those results to fix the face."
           >
             {(id) => (
-              <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as RunnableLabKind)}>
-                {RUNNABLE_KINDS.map((entry) => (
+              <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as ImageLabExperimentKind)}>
+                {imageLabExperimentKinds.map((entry) => (
                   <option key={entry} value={entry}>
                     {imageLabExperimentKindLabel(entry)}
                   </option>
@@ -485,7 +563,30 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
           ) : null}
         </div>
 
-        {needsChat ? (
+        {isFinishing ? (
+          <div className="flex flex-col gap-2">
+            <Field
+              label="Source experiment"
+              hint="The succeeded run whose result this pass re-edits. Its character or conversation is inherited, so both arms of the comparison file against the same subject."
+            >
+              {(id) => (
+                <Select id={id} value={sourceExperimentId} onChange={(e) => setSourceExperimentId(e.target.value)}>
+                  <option value="">— Choose an experiment to refine —</option>
+                  {finishableSources.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {sourceOptionLabel(entry)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <p className="text-xs text-paper-500">
+              {finishableSources.length === 0
+                ? "No finished baseline or controlled run to refine yet — a probe cannot be finished, and neither can another finishing pass."
+                : "The runner sends that run's result as the base image and the character's identity-pack reference beside it. Nothing else is picked here: the pack decides which image its identity is."}
+            </p>
+          </div>
+        ) : needsChat ? (
           <div className="grid gap-4 sm:grid-cols-[16rem_1fr]">
             <Field
               label="Chat"
@@ -618,7 +719,9 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
                 ? "Nothing ordered yet — a probe with no inputs is refused as input_missing."
                 : controlledKind !== null
                   ? "Nothing ordered yet — a controlled run sends its identity, its control fixture, and at most one extra."
-                  : "None — a baseline resolves the lane's own references itself."}
+                  : isFinishing
+                    ? "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
+                    : "None — a baseline resolves the lane's own references itself."}
             </p>
           ) : (
             <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
@@ -645,6 +748,18 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
           </div>
         ) : null}
 
+        {isFinishing ? (
+          <div className="rounded-card border border-ink-700 bg-ink-950/40 px-3 py-2">
+            <p className="text-[11px] tracking-wide text-paper-500 uppercase">Prompt (compiled by the runner)</p>
+            <p className="mt-1 text-xs whitespace-pre-wrap text-paper-300">{finishingPreview}</p>
+            <p className="mt-2 text-xs text-paper-500">
+              Sent on every finishing pass, before anything you write below. It is the rule the result is judged by —
+              improve the face, change nothing else — so it is not editable; an instruction that could delete it would
+              let a run claim a comparison it never ran.
+            </p>
+          </div>
+        ) : null}
+
         <Field
           label="Instruction"
           hint={
@@ -652,7 +767,9 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
               ? "Pre-filled from the numbered-role template; the numbers match the list above. Sent exactly as written."
               : controlledKind !== null
                 ? "The base prompt only. The runner prefixes the numbered bindings shown above and records the full text as the final prompt."
-                : "Optional — a baseline renders the lane's own compiled prompt."
+                : isFinishing
+                  ? "Optional — appended after the rule above to narrow it (“the left eye is wrong”), never to replace it."
+                  : "Optional — a baseline renders the lane's own compiled prompt."
           }
         >
           {(id) => (
@@ -670,7 +787,9 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
                   ? "Pick a control fixture to fill the template."
                   : controlledKind !== null
                     ? "What the render should be, past the bindings — sent after the prefix."
-                    : ""
+                    : isFinishing
+                      ? "Leave blank to send the rule alone."
+                      : ""
               }
               maxLength={8000}
             />
