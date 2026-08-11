@@ -39,7 +39,7 @@ those systems through their existing exports and adds no second copy.
 | Stage 1/2 trial runs + recorded verdicts        | run 2026-08-11   |
 | Stage 3 finishing recipe + runner (intent)      | built 2026-08-11 |
 | Finishing create/verdict/comparison UI          | built 2026-08-11 |
-| Stage 3 finishing trial runs + verdicts         | not run          |
+| Stage 3 finishing trial runs + verdicts         | run 2026-08-11   |
 
 Stage 4+ work (LoRA trials, two-character recipes) is deliberately absent from
 this table: Stage 4 waits on the capabilities plan's Qwen LoRA library slice.
@@ -812,8 +812,8 @@ independently agreed with every owner verdict:
 
 ## Stage 3 finishing trial protocol
 
-Owner work, on the Fly deploy with the uxtest fixtures. Not run — the code is
-built and waiting on these runs.
+Owner work, on the Fly deploy with the uxtest fixtures. Run 2026-08-11; the
+verdicts it produced are recorded below the steps.
 
 1. Pick controlled results whose identity drifted while their structure held —
    the Stage 1/2 corpus names two directly (depth portrait
@@ -837,6 +837,71 @@ built and waiting on these runs.
    `identity_unchanged` is a real Stage 3 answer, not a failed trial.
 6. Write the verdicts into this spec and flip the plan's Stage 3 status line when
    the owner accepts them.
+
+**Stage 3 finishing verdicts (run 2026-08-11 on the Fly deploy):**
+
+Constant across every run: model `qwen/qwen-image-edit-2511`, requested pin
+`a0670a7f47d5…dee03ca6c729`, recipe `finishing_pass/identity`, and two resolved
+inputs — `before` = the source experiment's own render, `identity` =
+`qqtzfaz9ii1v2k4q7xfnxif6` drawn through the pack. Every run sent both roles
+with zero drops. The three sources are the ones steps 1 and 3 name: the depth
+portrait `ilv0sd7v3sncf3xohl4rk2uu`, the edge portrait
+`xtyuelauhebdns9rz7piasa5`, and the direct-edit baseline
+`ssuucjcm6h5xew3z8c39gaw6`.
+
+**Round 1 — instruction blank, the fixed preamble alone.**
+
+- Depth source → `f7h1ndu16bigdmx4ghpkdfvu` — **identity_unchanged**: hair
+  rendered the wrong colour, the face no closer to the reference, and the whole
+  image lightened.
+- Edge source → `ymf03qdw8qutfzuoaf0a2zll` — **identity_unchanged**: hair
+  rendered blonde against the reference's dark brown, and the face further from
+  the reference than the before.
+- Baseline source → `gyyzgx1pmkvsz11dqgwt04d5` — **identity_unchanged**: hair
+  the wrong colour again, and the frame recropped from full-body to mid-thigh.
+- Tally 0/3. With no appearance signal the pass invents hair colour and can
+  break framing: the preamble tells the model to correct the face toward the
+  reference but carries no description of what that face is.
+
+**Round 2 — the same three sources with an appearance instruction.** The
+protocol's second-run narrowing, shaped by owner direction as the text a
+character's authored appearance attributes would supply in production. Written
+in the portrait studio's Appearance format:
+
+> Appearance: dark brown hair, center-parted, loose waves falling below the
+> shoulders; brown almond eyes; thick, fairly straight brows; soft oval face
+> with a broad rounded jaw, squared chin, and full cheeks.
+
+- Depth source → `ycby0m8zea0of3bv4muatimg` — **changes_beyond_identity**: hair
+  corrected and the face the closest of the round, but the composition
+  collapsed — the head scaled to roughly half the frame, the torso deleted, the
+  forearms disconnected.
+- Edge source → `b4d7lskb7oihziqsn4vmzp48` — **improves_identity**: hair
+  corrected to dark brown and the face moved toward the reference, with pose,
+  clothing, framing, lighting and setting all held. Hair slightly longer than
+  the before, in the reference's direction.
+- Baseline source → `rk124aw3hupulcv2ixmyardo` — **improves_identity**, the
+  round's cleanest result (owner note: perfect): the face refined toward the
+  reference and the frame not recropped.
+- Tally 2/3 improves, 1/3 structural collapse.
+
+**Owner ruling (2026-08-11): the finishing pass is conditionally viable.** It
+improves identity only when its instruction carries appearance-attribute text;
+without that text it is useless and actively harmful. It is neither promoted nor
+dropped now — it stays available to Stage 7's promotion decision under two
+recorded conditions:
+
+- **Appearance text is mandatory.** A blank instruction scored 0/3 across both
+  controlled sources and the baseline.
+- **A structural-collapse risk of roughly one run in three must be screened
+  for.** The depth arm's collapse was not predictable from its before image, so
+  any promoted path needs a check on the result rather than on the input.
+
+Production wiring depends on characters carrying authored appearance
+attributes. The trial character carries none — its only authored set is the feet
+one — so the round-2 text was hand-derived from the canonical reference. Where
+that text comes from in production is carried as an open question on the
+[plan](qwen-advanced-image-subsystem.plan.md).
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 

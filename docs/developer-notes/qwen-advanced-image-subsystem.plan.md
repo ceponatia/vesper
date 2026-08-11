@@ -608,7 +608,8 @@ an unacceptable identity regression.
 
 ### Stage 3 — optional identity finishing
 
-Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+Status: complete — 2026-08-11; conditionally viable — verdicts and the
+conditions are recorded in the spec.
 
 Pass selected controlled results through Qwen Image Edit 2511 using the identity
 pack. Compare:
@@ -808,6 +809,18 @@ image records.
   room. Owner ruling (2026-08-11): Stage 1 and Stage 2 are accepted as they
   stand, identity plus one control is the proven configuration, and the wardrobe
   pipeline is future work outside that acceptance.
+- where the identity-finishing pass gets its appearance text in production.
+  Stage 3 proved the pass only helps when its instruction describes the
+  character's hair, eyes, brows and face shape: with the instruction blank it
+  invented hair colour and recropped the frame in every run, and with that text
+  supplied it improved two of three (the verdicts are in the
+  [spec](qwen-advanced-image-subsystem.spec.md)). The trial text was
+  hand-derived from the canonical reference because the trial character carries
+  no authored appearance attributes at all. A promoted finishing pass therefore
+  depends on characters carrying authored facial and hair attributes, which is
+  [character-schema.plan.md](character-schema.plan.md)'s ground — the question
+  for Stage 7 is whether that plan supplies the text, whether the lab derives it
+  another way, or whether the pass stays admin-only until one of those exists.
 - whether seven varied images of one character are enough to train a useful
   first character LoRA. The owner wants to use the existing seven-image
   reference set (those files live on the owner's disk only — the repository
