@@ -432,8 +432,10 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
       {prefill?.fromExperimentId !== undefined ? (
         <p className="mb-4 rounded-card border border-accent-500/40 bg-ink-950/40 px-3 py-2 text-xs text-paper-400">
           Pre-filled as the direct-edit baseline of experiment{" "}
-          <code className="break-all">{prefill.fromExperimentId}</code> — same instruction, the lane&apos;s own
-          configuration. Review it; nothing runs until you submit.
+          <code className="break-all">{prefill.fromExperimentId}</code>
+          {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
+              containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
+          {" — same instruction, the lane's own configuration. Review it; nothing runs until you submit."}
         </p>
       ) : null}
 
@@ -552,9 +554,10 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
             </Field>
             {unreviewedCount > 0 ? (
               <p className="text-xs text-paper-500">
-                {unreviewedCount} fixture(s) above are greyed out because nobody has reviewed them. Look at each one in
-                the fixtures panel and mark it reviewed — a run that comes back &ldquo;ignores the control&rdquo; has
-                to rule out a bad fixture before it rules on the model.
+                {unreviewedCount}
+                {" fixture(s) above are greyed out because nobody has reviewed them. Look at each one in "}
+                {"the fixtures panel and mark it reviewed — a run that comes back “ignores the control” has "}
+                {"to rule out a bad fixture before it rules on the model."}
               </p>
             ) : null}
           </>
@@ -598,9 +601,9 @@ export function ImageLabExperimentForm({ controls, prefill = null, onCreated }: 
               ) : null}
             </div>
             <p className="text-xs text-paper-500">
-              {DEFAULT_MODEL_SLUG} accepts at most 3 reference images, so identity, the control, and one extra fill it
-              exactly. References past a model&apos;s capacity are not refused on a controlled run — the plan drops
-              them and records the drop on the result.
+              {`${DEFAULT_MODEL_SLUG} accepts at most 3 reference images, so identity, the control, and one `}
+              {"extra fill it exactly. References past a model's capacity are not refused on a controlled "}
+              {"run — the plan drops them and records the drop on the result."}
             </p>
           </>
         ) : null}

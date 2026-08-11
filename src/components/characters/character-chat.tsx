@@ -79,8 +79,11 @@ export function CharacterChat({
         <div>
           <p className="mb-2 text-xs font-medium tracking-wide text-paper-400 uppercase">Starting relationship</p>
           <p className="mb-3 text-xs text-paper-500">
-            How things stand between {who} and the player when a chat begins — saved with the character (use the
-            page&apos;s Save). New conversations seed from this; the state tools can diverge any one chat later.
+            How things stand between {who}
+            {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
+                containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
+            {" and the player when a chat begins — saved with the character (use the page's Save). New "}
+            {"conversations seed from this; the state tools can diverge any one chat later."}
           </p>
           <RelationshipRecordEditor
             value={starting}
