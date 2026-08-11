@@ -85,28 +85,37 @@ export interface EnqueueTimeJobInput {
  * Ensure a durable job exists for this branch's remaining drain. Idempotent per branch: if an
  * active (pending/processing) job already exists it is kept — its target bumped forward when the
  * new request reaches further — and returned; otherwise a fresh pending job is inserted. The
- * partial unique index is the race backstop: a concurrent insert loses to it and adopts the
+ * partial unique index is the race backstop: a concurrent insert loses to it and merges into the
  * winner's job.
  *
  * The opening `for update` locks an EXISTING active row (so a claim can't terminate the job
  * between our read and our target bump), but a row lock cannot stop a phantom — two enqueues that
  * both find nothing will both try to insert, and the index has to settle it.
  *
- * That settlement is `on conflict … do nothing`, NOT a try/catch around a bare insert, and the
+ * That settlement is `on conflict … do update`, NOT a try/catch around a bare insert, and the
  * distinction is load-bearing: a raised unique violation poisons the WHOLE transaction, so every
  * later statement in it fails with 25P02 ("current transaction is aborted"). A catch block that
  * re-reads the winner's row from inside that transaction is therefore a recovery path that can
  * only ever fail — it threw instead of adopting, intermittently, exactly when the race it exists
- * to handle actually fired. `do nothing` keeps the transaction healthy so the re-read can run.
+ * to handle actually fired.
+ *
+ * `do update` rather than `do nothing`, because the two enqueues racing here are NOT duplicates of
+ * one intent: an arrival settlement escalating a few minutes can collide with a player's 30-day
+ * skip. A loser that merely adopted the winner's row would silently truncate its own drain to the
+ * winner's nearer target, so the merge takes `greatest(…)` of the two — the same bump-only-forward
+ * rule the `for update` path applies, now applied on the race path too. Whoever loses, the
+ * surviving job targets the furthest second anyone asked for.
  *
  * Two Postgres details the code can't show:
- * - The conflict target must repeat the partial index's predicate verbatim, because inference
- *   only picks an arbiter index whose own predicate is implied by the one given here. Drop the
- *   `where` and this becomes a plain `(branch_id)` inference that matches no index and errors.
- * - The follow-up select sees the winner. `do nothing` waits out the peer's in-flight insert
- *   before yielding, and under READ COMMITTED (the pool's default — nothing here raises it) each
- *   statement takes a fresh snapshot, so by the time we read, the winning row is committed and
- *   visible even though our own transaction started before it existed.
+ * - The conflict target must repeat the partial index's predicate verbatim (`targetWhere`),
+ *   because inference only picks an arbiter index whose own predicate is implied by the one given
+ *   here. Drop it and this becomes a plain `(branch_id)` inference that matches no index, and the
+ *   statement errors outright.
+ * - `do update` waits out the peer's in-flight insert, then merges against the row it committed
+ *   (`excluded` is our attempted row), taking that row's lock for the merge — the same lock
+ *   discipline as the `for update` bump above, just arrived at from the losing side. So it always
+ *   yields exactly one row: ours when we inserted, the winner's when we merged, which is the whole
+ *   of how `created` is decided. No post-conflict read, and no state where the answer is unknown.
  */
 export async function enqueueTimeJob(
   input: EnqueueTimeJobInput,
@@ -130,7 +139,7 @@ export async function enqueueTimeJob(
       return { id: active.id, created: false };
     }
     const id = newId();
-    const [inserted] = await tx
+    const [upserted] = await tx
       .insert(simTimeJobs)
       .values({
         id,
@@ -140,24 +149,27 @@ export async function enqueueTimeJob(
         targetStorySecond: input.targetStorySecond,
         reachedStorySecond: input.reachedStorySecond,
       })
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: simTimeJobs.branchId,
-        where: sql`state in ('pending', 'processing')`,
+        targetWhere: sql`state in ('pending', 'processing')`,
+        // Only the target moves, and only forward. Everything else on a live job — its progress,
+        // state, lease, attempts — belongs to whoever is draining it, and a late enqueue must not
+        // reach into any of it.
+        set: {
+          targetStorySecond: sql`greatest(${simTimeJobs.targetStorySecond}, excluded.target_story_second)`,
+        },
       })
       .returning({ id: simTimeJobs.id });
-    if (inserted) return { id: inserted.id, created: true };
-
-    // Nothing landed ⇒ a peer inserted between our select and our insert, and owns the branch now.
-    const [raced] = await tx
-      .select({ id: simTimeJobs.id })
-      .from(simTimeJobs)
-      .where(activeForBranch(input.branchId))
-      .limit(1);
-    // `?? id` is the degraded default (docs/resilience.md) for a window barely worth naming: the
-    // winner's job would have to be claimed AND drained to completion in the microseconds between
-    // the two statements above. The caller only ever learns "someone else owns this drain", which
-    // stays true, and escalation is idempotent — the next skip re-enqueues.
-    return { id: raced?.id ?? id, created: false };
+    if (!upserted) {
+      // Unreachable, and typed only because `noUncheckedIndexedAccess` can't see the guarantee:
+      // `on conflict … do update … returning` always yields a row (it either inserted ours or
+      // updated the winner's, and there is no `setWhere` that could filter the update away). Not a
+      // race path — the race is fully settled above. Answer "someone else owns this drain", the
+      // one reply that can't mislead a caller into thinking this request created one.
+      return { id, created: false };
+    }
+    // Our own fresh id came back ⇒ the insert landed; anything else is the winner we merged into.
+    return { id: upserted.id, created: upserted.id === id };
   });
 }
 

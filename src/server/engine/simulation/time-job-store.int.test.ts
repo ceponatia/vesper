@@ -183,12 +183,12 @@ describe.skipIf(!ready)("durable time jobs", () => {
     const created = results.filter((r) => r.created);
     expect(created).toHaveLength(1);
     expect(await activeJobCount(ids.branchId)).toBe(1);
-    // The losers ADOPT the winner's job rather than inventing one: every caller walks away
+    // The losers merge into the winner's job rather than inventing one: every caller walks away
     // pointing at the same durable drain.
     expect([...new Set(results.map((r) => r.id))]).toEqual([created[0]!.id]);
   });
 
-  it("adopts a peer's job when its own insert loses the race, without poisoning the transaction", async () => {
+  it("merges its farther target into a peer's job when its own insert loses the race", async () => {
     const ids = makeIds();
     await seedCase(ids);
 
@@ -200,27 +200,49 @@ describe.skipIf(!ready)("durable time jobs", () => {
     // That is the path that used to raise a unique violation, which aborts the enqueue's whole
     // transaction — its recovery re-read then died with 25P02 instead of adopting the peer's job.
     // Intermittent in CI, a real lost enqueue in production.
+    //
+    // The racer asks for a FARTHER target than the peer's, which is the case that actually costs a
+    // player something: a long skip can lose this race to a short arrival-settlement escalation,
+    // and a loser that merely adopted the winner's row would truncate the drain to the near target.
+    const peerTarget = SEED_STORY_SECOND + 600;
+    const racerTarget = SEED_STORY_SECOND + 1800;
     const peerId = newId();
+
+    // A barrier, not a timed guess: the racer may only start once the peer's insert has actually
+    // landed. A `sleep` here would let a slow runner reverse the two, and then it is the PEER's
+    // plain insert that fails — a flake manufactured by the test rather than found by it.
+    let peerHasInserted!: () => void;
+    const peerInserted = new Promise<void>((resolve) => {
+      peerHasInserted = resolve;
+    });
     const peer = db().transaction(async (tx) => {
       await tx.insert(simTimeJobs).values({
         id: peerId,
         worldId: ids.worldId,
         branchId: ids.branchId,
         chatId: ids.chatId,
-        targetStorySecond: SEED_STORY_SECOND + 600,
+        targetStorySecond: peerTarget,
         reachedStorySecond: SEED_STORY_SECOND,
       });
+      peerHasInserted();
+      // Hold the row uncommitted long enough for the racer to reach its own insert and block on it.
       await sleep(250);
     });
-    // Let the peer's insert land (still uncommitted) before the racer reads.
-    await sleep(50);
+    await peerInserted;
 
-    const raced = await enqueueFor(ids, SEED_STORY_SECOND + 600);
-    await peer;
+    // `Promise.all` rather than a bare await: it settles only once the peer's transaction is done
+    // (so the row reads below see the committed state) and it attaches a handler to the peer even
+    // when the enqueue throws, so a failure here can never surface as an unhandled rejection
+    // blamed on whichever test runs next.
+    const [raced] = await Promise.all([enqueueFor(ids, racerTarget), peer]);
 
     expect(raced.created).toBe(false);
     expect(raced.id).toBe(peerId);
     expect(await activeJobCount(ids.branchId)).toBe(1);
+    // The merge holds on either interleaving: `greatest` when the race fired, the `for update`
+    // bump when the peer committed first. Both must land on the farther target.
+    const [row] = await db().select().from(simTimeJobs).where(eq(simTimeJobs.id, peerId));
+    expect(row?.targetStorySecond).toBe(racerTarget);
   });
 
   it("claims a due job with a lease and drains it to completion, stamping progress", async () => {
