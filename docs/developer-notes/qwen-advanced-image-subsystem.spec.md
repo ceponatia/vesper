@@ -164,6 +164,22 @@ non-disclosure, not a disagreeing version**:
   unrunnable against every official model. A genuinely different echoed sha
   still refuses.
 
+Ruling settled 2026-08-11 — **a probe may not be fed its own answer**:
+
+- When the declared fixture's meta names a `sourceImageId`, the runner refuses
+  `image_lab.control_source_sent` if that render appears anywhere among the
+  ordered inputs — any role, not just `identity`, because the answer rides the
+  pixels, not the label. Sending the render a control was extracted from lets
+  the output match the control by copying that reference, so a
+  `honours_control` verdict would record a pass the probe never earned.
+  Refused before any provider spend, beside `control_unreviewed`. The
+  exemption is the meta's, not the generator's: a fixture recording no
+  `sourceImageId` has no render holding the answer to copy, and a
+  hand-authored upload may record one (a skeleton traced over a render),
+  which puts it under the same rule. The experiment form greys the source
+  render out in the identity picker and clears a conflicting pick, so the
+  refusal is reachable only through direct API calls.
+
 ## Contracts
 
 New file `src/contracts/images/image-lab.ts` (pure; exported via
@@ -333,6 +349,10 @@ asserting fallback **and** code:
 - Control fixture readable but unreviewed → `image_lab.control_unreviewed`,
   experiment refused before any provider spend. Kept separate from
   `control_invalid`: one fixture is thrown away, the other is looked at.
+- Fixture's source render among the ordered inputs →
+  `image_lab.control_source_sent`, refused before any provider spend — the
+  output could match the control by copying that reference, so the verdict
+  would record copying, not obedience.
 - Ordered inputs beyond the resolved model's reference capacity →
   `image_lab.capacity_exceeded`, refused rather than trimmed — the render path
   fits an overlong list to the model's arity, so a trimmed run would leave a

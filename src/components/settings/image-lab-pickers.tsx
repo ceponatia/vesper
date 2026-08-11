@@ -157,6 +157,12 @@ export function labRenderLabel(image: ImageRecord): string {
  * legitimate "none" (a skeleton drawn over nothing; a probe testing structure
  * with no identity to preserve) and a picker with no way back to empty would
  * hide it.
+ *
+ * `excluded` names the one render THIS caller's question rules out, and the
+ * reason to caption it with. The render is still one of the character's, so it
+ * is shown greyed rather than dropped: an admin who cannot find a render they
+ * know exists reads the list as broken, where one who reads the reason learns
+ * the rule. Callers with no such rule pass nothing.
  */
 export function LabRenderPicker({
   label,
@@ -165,6 +171,7 @@ export function LabRenderPicker({
   portraits,
   value,
   onChange,
+  excluded = null,
 }: {
   label: string;
   hint: string;
@@ -172,6 +179,7 @@ export function LabRenderPicker({
   portraits: AsyncState<ImageRecord[]>;
   value: string | null;
   onChange: (imageId: string | null) => void;
+  excluded?: { imageId: string; reason: string } | null;
 }) {
   return (
     <Field label={label} hint={hint}>
@@ -179,11 +187,17 @@ export function LabRenderPicker({
         <Skeleton className="h-20 w-full" />
       ) : (
         <ImageChoiceGrid
-          choices={(portraits.data ?? []).map((image) => ({
-            imageId: image.id,
-            label: labRenderLabel(image),
-            detail: image.prompt || null,
-          }))}
+          choices={(portraits.data ?? []).map((image) => {
+            const exclusionReason = excluded !== null && image.id === excluded.imageId ? excluded.reason : null;
+            return {
+              imageId: image.id,
+              label: labRenderLabel(image),
+              // The reason takes the detail line's place: a tile that cannot be
+              // picked has one thing worth saying about it.
+              detail: exclusionReason ?? (image.prompt || null),
+              disabled: exclusionReason !== null,
+            };
+          })}
           value={value}
           onChange={(imageId) => onChange(imageId === value ? null : imageId)}
           emptyHint={characterId === "" ? "Choose a character first." : "This character has no finished renders yet."}

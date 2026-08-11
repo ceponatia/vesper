@@ -171,6 +171,10 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   The Stage 0 protocol reviews every fixture before a trial uses it, because a
  *   probe reading `ignores_control` has to be able to rule out "the fixture was
  *   wrong" first, and an unreviewed skeleton makes that elimination impossible.
+ * - `control_source_sent` — the ordered inputs include the render the fixture was
+ *   extracted from. The output could match the control by copying that reference,
+ *   so the run is refused BEFORE any provider spend rather than recording a pass
+ *   it could not have earned.
  * - `capacity_exceeded` — the experiment orders more references than the
  *   resolved model accepts. The render path TRIMS an overlong list, so the run
  *   is refused before it instead: a probe whose record claimed a control was
@@ -185,6 +189,7 @@ export const imageLabFailureCodes = [
   "version_unpinned",
   "control_invalid",
   "control_unreviewed",
+  "control_source_sent",
   "capacity_exceeded",
   "preprocessor_output_invalid",
   "render_failed",
