@@ -277,6 +277,47 @@ export function chooseAspect(model: ImageModel, targetRatio: number = IMAGE_TARG
   return { value: closest.value, needsCrop: true };
 }
 
+/**
+ * What Replicate puts in a prediction's `version` field for an OFFICIAL model:
+ * the literal string `"hidden"`, never a sha.
+ *
+ * It is a NON-DISCLOSURE, not a version. Official models expose no versions
+ * list at all — `GET /v1/models/{owner}/{name}/versions` answers 404 "This
+ * model does not expose a list of versions" — so there is no sha for the
+ * prediction to echo, and the response carries the model slug instead.
+ * (Verified against the live API 2026-08-11.)
+ */
+export const REPLICATE_VERSION_UNDISCLOSED = "hidden";
+
+/**
+ * Whether an executed-version string is the provider declining to say which
+ * version ran, rather than naming one.
+ */
+export function isUndisclosedProviderVersion(versionId: string | null | undefined): boolean {
+  return versionId === REPLICATE_VERSION_UNDISCLOSED;
+}
+
+/**
+ * Whether the provider demonstrably ran something OTHER than what was pinned —
+ * the one definition every consumer of a version echo shares.
+ *
+ * False when either side is absent: silence is silence, never a disagreement.
+ *
+ * False, too, when the executed side is UNDISCLOSED. `"hidden"` says the
+ * provider does not publish versions for this model, not that a different one
+ * ran, and the evidence identity of such a run is the REQUESTED pin — which
+ * Replicate validates at create time. A version that does not resolve is
+ * refused `HTTP 422 "The specified version does not exist"` before any spend,
+ * so an ACCEPTED create is itself proof the pin resolved (verified
+ * 2026-08-11). Reading `"hidden"` as a mismatch would refuse every run against
+ * every official model on the strength of a string that was never a version.
+ */
+export function providerVersionsDisagree(requested: string | null, executed: string | null): boolean {
+  if (requested === null || executed === null) return false;
+  if (isUndisclosedProviderVersion(executed)) return false;
+  return requested !== executed;
+}
+
 /*
  * Model-level resolution used to live here, with the two seeded default slugs it
  * fell back to. Both are gone: every render lane now resolves a PROFILE

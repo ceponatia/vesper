@@ -20,6 +20,14 @@ contract: its spec.
   and prediction id — enough to compare or retry. Outputs save as hidden
   `lab_output` assets, so lab activity never mints a player-visible variant or
   scene.
+- The executed version is stored **verbatim**, and the two version ids sit side
+  by side on the experiment screen. A requested pin and an executed version
+  that genuinely differ raise a warning that the run's conclusions are suspect.
+  Replicate's literal `"hidden"` — its answer for an official model, which
+  publishes no versions list — is not such a difference: it is the provider
+  declining to say, and the screen says so plainly, because the run's identity
+  is the pin Replicate validated when it accepted the prediction. The single
+  judgment is `providerVersionsDisagree` in `contracts/images/image-models.ts`.
 - A `control_probe` must bind its declared fixture: `controlImageId` is
   required, must appear exactly once among the ordered inputs, and must carry a
   control-class role — otherwise the run is refused rather than judged against

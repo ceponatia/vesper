@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { imageLabProbeVerdicts, type ImageLabExperiment, type ImageLabProbeVerdict } from "@/contracts";
+import {
+  imageLabProbeVerdicts,
+  isUndisclosedProviderVersion,
+  providerVersionsDisagree,
+  type ImageLabExperiment,
+  type ImageLabProbeVerdict,
+} from "@/contracts";
 import { imageLabApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
@@ -34,6 +40,12 @@ import {
  * requested version and an executed version that disagree is how an unannounced
  * provider-side bump becomes visible instead of silently invalidating every
  * comparison made against it, and that is only useful if someone can see both.
+ *
+ * An executed version of `"hidden"` is NOT such a disagreement — it is what
+ * Replicate answers for an official model, which publishes no versions at all.
+ * That case gets a plain informational line rather than the suspect banner: the
+ * run's evidence identity is the requested pin, which Replicate validated when
+ * it accepted the prediction (`providerVersionsDisagree`, contracts).
  */
 
 const POLL_MS = 3000;
@@ -164,10 +176,9 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
   const chip = imageLabStatusChip(experiment.status);
   const verdictChip = experiment.verdict === null ? null : imageLabVerdictChip(experiment.verdict);
   const identityInput = experiment.inputs.find((input) => input.role === "identity") ?? null;
-  const versionsDisagree =
-    experiment.requestedVersionId !== null &&
-    experiment.executedVersionId !== null &&
-    experiment.requestedVersionId !== experiment.executedVersionId;
+  const versionsDisagree = providerVersionsDisagree(experiment.requestedVersionId, experiment.executedVersionId);
+  const versionUndisclosed =
+    experiment.requestedVersionId !== null && isUndisclosedProviderVersion(experiment.executedVersionId);
   const hasOverlay =
     Object.keys(experiment.settings.controls).length > 0 || Object.keys(experiment.settings.controlInput).length > 0;
 
@@ -262,6 +273,11 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
           <p className="mt-3 text-xs text-danger-300">
             The provider ran a different version than this run pinned. Treat anything concluded from it as suspect until
             the pin is re-resolved.
+          </p>
+        ) : versionUndisclosed ? (
+          <p className="mt-3 text-xs text-paper-500">
+            The provider does not disclose which version ran; the requested pin was validated when the prediction was
+            created.
           </p>
         ) : null}
         <div className="mt-4">

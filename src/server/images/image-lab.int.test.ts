@@ -4,6 +4,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   imageLabControlSchema,
   imageLabDiagnosticCode,
+  REPLICATE_VERSION_UNDISCLOSED,
   type ImageLabControlKind,
   type ImageLabCreateExperimentRequest,
 } from "@/contracts";
@@ -332,6 +333,44 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     expect(imageMeta(output?.meta).imageLabExperimentId).toBe(id);
     // Hidden by construction: the lab never produces a gallery item.
     expect(HIDDEN_IMAGE_KINDS).toContain("lab_output");
+  });
+
+  it("records an UNDISCLOSED executed version verbatim and still succeeds", async () => {
+    // What Replicate answers for an OFFICIAL model, which publishes no versions
+    // list at all: the literal `"hidden"`. The lab stores what the provider
+    // said and interprets nothing — the experiment succeeds, both version
+    // columns keep their own truth, and the detail screen decides how to read
+    // them (`providerVersionsDisagree`, contracts). Nothing here may treat the
+    // string as a version that disagrees with the pin.
+    setImageLabRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_image_lab_hidden",
+        executedVersionId: REPLICATE_VERSION_UNDISCLOSED,
+      };
+    });
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose");
+    const { id, sink } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    expect(experiment?.executedVersionId).toBe("hidden");
+    expect(experiment?.resultImageId).not.toBeNull();
   });
 
   it("refuses a model whose exact provider version cannot be identified", async () => {

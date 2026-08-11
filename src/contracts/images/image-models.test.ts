@@ -6,8 +6,11 @@ import {
   imageModelOffersSurface,
   imageModelSchema,
   imageModelsForSurface,
+  isUndisclosedProviderVersion,
   parseAspectValue,
+  providerVersionsDisagree,
   referenceCapacity,
+  REPLICATE_VERSION_UNDISCLOSED,
   type ImageModel,
 } from "./image-models";
 
@@ -172,5 +175,49 @@ describe("surface filtering", () => {
   it("lists a surface in stored sort order", () => {
     const models = [model({ id: "b", sort: 20 }), model({ id: "a", sort: 10 })];
     expect(imageModelsForSurface(models, "portrait").map((m) => m.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("provider version disclosure", () => {
+  const PIN = "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729";
+
+  it("reads Replicate's official-model answer as a non-disclosure", () => {
+    expect(isUndisclosedProviderVersion(REPLICATE_VERSION_UNDISCLOSED)).toBe(true);
+    expect(isUndisclosedProviderVersion("hidden")).toBe(true);
+    // A real sha, an absence, and the empty string all NAME something (or
+    // nothing) — none of them is the provider declining to say.
+    expect(isUndisclosedProviderVersion(PIN)).toBe(false);
+    expect(isUndisclosedProviderVersion(null)).toBe(false);
+    expect(isUndisclosedProviderVersion(undefined)).toBe(false);
+    expect(isUndisclosedProviderVersion("Hidden")).toBe(false);
+  });
+
+  it("calls a genuinely different echo a disagreement", () => {
+    expect(providerVersionsDisagree(PIN, "b1780b8f58e6086458d216c7df82567d5488e622aa4a86a99238efd14db7d830")).toBe(
+      true,
+    );
+  });
+
+  it("never disagrees when a side is absent", () => {
+    // Silence is silence. Most model-endpoint responses carry no version at
+    // all, and a baseline pins none — refusing on either would fail everything.
+    expect(providerVersionsDisagree(null, PIN)).toBe(false);
+    expect(providerVersionsDisagree(PIN, null)).toBe(false);
+    expect(providerVersionsDisagree(null, null)).toBe(false);
+  });
+
+  it("never disagrees when the provider does not disclose", () => {
+    // The owner ruling of 2026-08-11: `"hidden"` is non-disclosure, not a
+    // disagreeing version. The run's identity is the requested pin, which
+    // Replicate validated at create time (an unresolvable version is refused
+    // 422 before any spend).
+    expect(providerVersionsDisagree(PIN, REPLICATE_VERSION_UNDISCLOSED)).toBe(false);
+    expect(providerVersionsDisagree(PIN, "hidden")).toBe(false);
+  });
+
+  it("still agrees with itself", () => {
+    expect(providerVersionsDisagree(PIN, PIN)).toBe(false);
+    // Undisclosed on BOTH sides is the degenerate equal case, not a mismatch.
+    expect(providerVersionsDisagree("hidden", "hidden")).toBe(false);
   });
 });

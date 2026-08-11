@@ -303,6 +303,9 @@ export const imageIdentityPackTrialResultSchema = z.object({
    * "it matched": a cell whose echo disagrees with its pin settles `failed` with
    * `version_mismatch` rather than joining the grid, because Replicate having
    * run something else makes the image evidence for a comparison nobody planned.
+   * Recorded verbatim, so the literal `"hidden"` an official model answers is
+   * stored as such — that string is a non-disclosure, not a disagreeing version,
+   * and `providerVersionsDisagree` is what decides which is which.
    *
    * Defaulted so results stored before the echo existed parse as what they are —
    * outcomes recorded when nothing was asking the provider to confirm itself.

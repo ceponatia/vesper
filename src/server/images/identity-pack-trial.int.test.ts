@@ -6,6 +6,7 @@ import { diag, DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   imageIdentityPackTrialResultSchema,
   perTrialGradeDimension,
+  REPLICATE_VERSION_UNDISCLOSED,
   type IdentityReferenceStrategy,
   type ImageIdentityPackTrialCellSpec,
   type ImageIdentityPackTrialCreateRequest,
@@ -1592,6 +1593,33 @@ describe.skipIf(!ready)("trial execution", () => {
     // investigating a re-pinned model needs to see it.
     expect(mismatchedCell?.outputImageId).not.toBeNull();
     expect((await nextUnreviewedTrialPair(mismatchedRunId, ownerId))?.pair).toBeNull();
+  });
+
+  it("treats an UNDISCLOSED echo as non-disclosure, not a mismatch", async () => {
+    // Owner ruling 2026-08-11: Replicate answers `"hidden"` for an OFFICIAL
+    // model, which publishes no versions list at all — that string names no
+    // version to disagree with. The cell's evidence identity is the pin, which
+    // Replicate validated when it accepted the prediction (an unresolvable
+    // version is refused 422 before any spend). Without this the whole trial
+    // is unrunnable against official models: every cell would fail.
+    const runId = await createdRunId({ label: "version undisclosed run", strategies: ["canonical_only"] });
+    setTrialRendererForTesting(async () => ({
+      ok: true,
+      image: await testPngBuffer(96, 128),
+      predictionId: "pred-hidden",
+      executedVersionId: REPLICATE_VERSION_UNDISCLOSED,
+    }));
+    const result = await executeIdentityPackTrialCells({ runId, ownerId, chargeBudget: admitCharge });
+    expect(result?.ok).toBe(true);
+    if (!result?.ok) return;
+    expect(result.executed.map((cell) => cell.status)).toEqual(["rendered"]);
+
+    const [cell] = await cellRows(runId);
+    expect(cell?.status).toBe("rendered");
+    // Recorded verbatim — the row keeps what the provider actually said — and
+    // the cell joins the grid like any other.
+    expect(cell?.resultJson).toMatchObject({ providerVersionId: "hidden", failureCode: null });
+    expect(cell?.outputImageId).not.toBeNull();
   });
 
   it("treats a SILENT provider as no evidence of a mismatch", async () => {

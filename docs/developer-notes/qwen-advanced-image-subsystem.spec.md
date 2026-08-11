@@ -127,6 +127,40 @@ Rulings the build settled (2026-08-10):
   the same contradiction as a 400; the runner stays authoritative for rows that
   predate the rule.
 
+Owner ruling (2026-08-11) — **an undisclosed executed version is
+non-disclosure, not a disagreeing version**:
+
+- Replicate answers the literal string `"hidden"` in a prediction's `version`
+  field for an **official** model. Vesper reads that as "the provider does not
+  disclose which version ran". The **evidence identity of such a run is the
+  requested pin**, which Replicate validates at create time.
+- Three empirical facts, verified against the live API on 2026-08-11, back the
+  ruling. Official models expose **no versions list at all**: `GET
+  /v1/models/{owner}/{name}/versions` answers `404 "This model does not expose
+  a list of versions"`. A version that does not resolve is refused on
+  `POST /v1/predictions` with `422 "The specified version does not exist"`,
+  **before any spend** — so an accepted pinned create is itself proof the pin
+  resolved. The settled prediction then reports `version: "hidden"` while
+  `model` carries the slug. (Observed on prediction
+  `kj2yrktvnnrmy0czy2h810cvt8`, requested pin
+  `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`,
+  experiment `g8lr8ogf0t4xbdhhaoruyhhs`.)
+- **The record stays verbatim.** `executedVersionId` still stores exactly what
+  the provider said, `"hidden"` included; the interpreting happens at one
+  shared seam, `providerVersionsDisagree` in
+  `src/contracts/images/image-models.ts`, which both the lab detail screen and
+  the identity-pack trial's post-render audit call. It reports a disagreement
+  only when both sides are present, differ, and the executed side is not
+  undisclosed.
+- **The lab screen shows a plain line, not the suspect banner**, when the echo
+  is undisclosed and a pin was requested: the provider does not disclose which
+  version ran, and the requested pin was validated when the prediction was
+  created. A genuine disagreement keeps the red banner.
+- Consequence for the trial harness: an undisclosed echo no longer settles a
+  cell `failed`/`version_mismatch`, which had made the identity-pack trial
+  unrunnable against every official model. A genuinely different echoed sha
+  still refuses.
+
 ## Contracts
 
 New file `src/contracts/images/image-lab.ts` (pure; exported via
@@ -360,7 +394,11 @@ Run on the Fly deploy with the uxtest admin account, after the lab ships:
    is clearly different from the target; review both in the fixtures panel.
 2. `control_probe` experiment: inputs `[1: identity = canonical portrait,
    2: pose = skeleton fixture]`, instruction from the template, model 2511,
-   pinned version recorded.
+   pinned version recorded. The **executed** version is whatever the provider
+   echoes and need not equal the pin: an official model answers `"hidden"`,
+   which is non-disclosure, and the run's identity is the pin Replicate
+   validated at create time (owner ruling 2026-08-11, above). Only a real,
+   different sha invalidates the probe.
 3. Judge the output against the skeleton: limb-for-limb pose match, identity
    preserved. Record `honours_control` / `ignores_control` / `inconclusive`
    with a note on the experiment.
