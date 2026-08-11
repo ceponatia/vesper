@@ -147,6 +147,10 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
             selectExperiment(null);
             experiments.reload({ silent: true });
           }}
+          // A finishing pass cites the run it refines, and that citation is only
+          // useful if it opens. Through the same one door as every other
+          // selection, so the address bar keeps up.
+          onOpenExperiment={selectExperiment}
         />
       </PageContainer>
     );
@@ -181,6 +185,7 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
         <ImageLabExperimentForm
           key={prefill?.id ?? 0}
           controls={controlRows}
+          experiments={experimentRows}
           prefill={prefill?.values ?? null}
           onCreated={(experimentId) => {
             setQueuedExperimentId(experimentId);

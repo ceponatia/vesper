@@ -18,7 +18,12 @@ import {
   imageLabStoredInputListSchema,
   imageLabStoredSettingsSchema,
   imageLabUploadControlRequestSchema,
+  imageLabFinishingVerdicts,
+  imageLabProbeVerdicts,
   imageLabVerdictKinds,
+  imageLabVerdictOptions,
+  imageLabVerdicts,
+  isImageLabVerdictForKind,
   isImageLabVerdictKind,
   type ImageLabExperiment,
   type ImageLabOutcome,
@@ -187,6 +192,7 @@ describe("imageLabExperimentSchema", () => {
       settings: emptyImageLabSettings(),
       resultImageId: "img_result",
       outcome: null,
+      sourceExperimentId: null,
       status: "succeeded",
       failureCode: null,
       verdict: "honours_control",
@@ -215,6 +221,36 @@ describe("imageLabExperimentSchema", () => {
     expect(parsed.settings).toEqual(emptyImageLabSettings());
     // Every Stage 0 row predates the recorded outcome, so absent parses to null.
     expect(parsed.outcome).toBeNull();
+    // Only a finishing pass refines another run; every other kind reports none.
+    expect(parsed.sourceExperimentId).toBeNull();
+  });
+
+  it("carries a finishing pass's source and its own vocabulary's ruling", () => {
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_finish",
+      kind: "finishing_pass",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      sourceExperimentId: "exp_controlled",
+      verdict: "improves_identity",
+      verdictNote: "jaw matches the reference; pose, jacket and lighting unchanged",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+    expect(parsed.sourceExperimentId).toBe("exp_controlled");
+    expect(parsed.verdict).toBe("improves_identity");
+  });
+
+  it("costs a bad source pointer the field, never the row", () => {
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_finish_bad",
+      kind: "finishing_pass",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      sourceExperimentId: 17,
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+    expect(parsed.sourceExperimentId).toBeNull();
+    expect(parsed.id).toBe("exp_finish_bad");
   });
 
   it("keeps a classifier code that is not one of the lab's own", () => {
@@ -293,12 +329,66 @@ describe("imageLabOutcomeSchema", () => {
 });
 
 describe("imageLabVerdictKinds", () => {
-  it("covers every kind that declares a control, and only those", () => {
-    expect(imageLabVerdictKinds).toEqual(["control_probe", "controlled_portrait", "controlled_scene"]);
+  it("covers every kind that asks a question, and only those", () => {
+    expect(imageLabVerdictKinds).toEqual([
+      "control_probe",
+      "controlled_portrait",
+      "controlled_scene",
+      "finishing_pass",
+    ]);
     for (const kind of imageLabExperimentKinds) {
-      const declaresControl = kind === "control_probe" || kind === "controlled_portrait" || kind === "controlled_scene";
-      expect(isImageLabVerdictKind(kind)).toBe(declaresControl);
+      const isBaseline = kind === "baseline_portrait" || kind === "baseline_scene";
+      expect(isImageLabVerdictKind(kind)).toBe(!isBaseline);
     }
+  });
+
+  it("agrees with the per-kind options: a kind rules if and only if it offers rulings", () => {
+    for (const kind of imageLabExperimentKinds) {
+      expect(imageLabVerdictOptions(kind) !== null).toBe(isImageLabVerdictKind(kind));
+    }
+  });
+});
+
+describe("imageLabVerdictOptions", () => {
+  it("offers the control vocabulary to the kinds that declare a control", () => {
+    expect(imageLabVerdictOptions("control_probe")).toEqual(imageLabProbeVerdicts);
+    expect(imageLabVerdictOptions("controlled_portrait")).toEqual(imageLabProbeVerdicts);
+    expect(imageLabVerdictOptions("controlled_scene")).toEqual(imageLabProbeVerdicts);
+  });
+
+  it("offers the finishing vocabulary — the plan's promotion rule — to a finishing pass", () => {
+    expect(imageLabVerdictOptions("finishing_pass")).toEqual([
+      "improves_identity",
+      "identity_unchanged",
+      "changes_beyond_identity",
+      "inconclusive",
+    ]);
+  });
+
+  it("offers a baseline nothing to rule on", () => {
+    expect(imageLabVerdictOptions("baseline_portrait")).toBeNull();
+    expect(imageLabVerdictOptions("baseline_scene")).toBeNull();
+  });
+
+  it("keeps the union a superset of both vocabularies, with inconclusive shared once", () => {
+    for (const verdict of [...imageLabProbeVerdicts, ...imageLabFinishingVerdicts]) {
+      expect(imageLabVerdicts).toContain(verdict);
+    }
+    expect(new Set(imageLabVerdicts).size).toBe(imageLabVerdicts.length);
+  });
+
+  it("refuses a ruling from the other kind's vocabulary", () => {
+    // The one failure the split exists to prevent: a control judgment filed
+    // against a run that sent no control reads, six months later, exactly like
+    // one that did.
+    expect(isImageLabVerdictForKind("finishing_pass", "honours_control")).toBe(false);
+    expect(isImageLabVerdictForKind("controlled_portrait", "improves_identity")).toBe(false);
+    expect(isImageLabVerdictForKind("finishing_pass", "improves_identity")).toBe(true);
+    expect(isImageLabVerdictForKind("control_probe", "honours_control")).toBe(true);
+    // Shared by both, refused by neither — and still refused on a baseline.
+    expect(isImageLabVerdictForKind("finishing_pass", "inconclusive")).toBe(true);
+    expect(isImageLabVerdictForKind("control_probe", "inconclusive")).toBe(true);
+    expect(isImageLabVerdictForKind("baseline_portrait", "inconclusive")).toBe(false);
   });
 });
 
@@ -517,8 +607,71 @@ describe("imageLabRecordVerdictRequestSchema", () => {
     expect(imageLabRecordVerdictRequestSchema.safeParse({ verdict: "honours_control" }).success).toBe(false);
   });
 
-  it("refuses a verdict outside the probe vocabulary", () => {
+  it("refuses a verdict outside the vocabulary", () => {
     expect(imageLabRecordVerdictRequestSchema.safeParse({ verdict: "mostly", note: "hm" }).success).toBe(false);
+  });
+
+  it("takes a finishing ruling too — the kind gate is the service's, not the wire's", () => {
+    const parsed = imageLabRecordVerdictRequestSchema.parse({
+      verdict: "changes_beyond_identity",
+      note: "the camera pulled back and the jacket changed colour",
+    });
+    expect(parsed.verdict).toBe("changes_beyond_identity");
+  });
+});
+
+describe("imageLabCreateExperimentRequestSchema — finishing passes", () => {
+  it("accepts a finishing pass that names only the run it refines", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      instruction: "the left eye is drifting",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.inputs).toEqual([]);
+  });
+
+  it("refuses a finishing pass with nothing to refine", () => {
+    expect(imageLabCreateExperimentRequestSchema.safeParse({ kind: "finishing_pass" }).success).toBe(false);
+  });
+
+  it("refuses ordered inputs on a finishing pass, which the runner resolves itself", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      inputs: probeInputs,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses a subject on a finishing pass, which inherits one", () => {
+    for (const subject of [{ characterId: "chr_1" }, { chatId: "cht_1" }]) {
+      const result = imageLabCreateExperimentRequestSchema.safeParse({
+        kind: "finishing_pass",
+        sourceExperimentId: "exp_controlled",
+        ...subject,
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("refuses a control fixture on a finishing pass, which sends none", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses a source experiment on a kind that never reads one", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "baseline_portrait",
+      characterId: "chr_1",
+      sourceExperimentId: "exp_controlled",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

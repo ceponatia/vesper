@@ -4,6 +4,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   imageLabControlSchema,
   imageLabDiagnosticCode,
+  IMAGE_LAB_FINISHING_RECIPE_KEY,
   REPLICATE_VERSION_UNDISCLOSED,
   type ImageLabControlKind,
   type ImageLabCreateExperimentRequest,
@@ -315,6 +316,76 @@ async function createRunnableControlled(
     ...overrides,
   });
   return { id, sink, identityId, controlId };
+}
+
+/**
+ * A character whose canonical portrait is portrait-shaped, so `ensureIdentityPack`
+ * derives a usable pack from it under the shipped heuristic — the trial suite's
+ * own fixture shape, and the precondition every finishing pass has.
+ */
+async function seedCharacterWithPortrait(): Promise<string> {
+  const characterId = await seedOwnedCharacter();
+  const asset = await createImageAsset({
+    ownerId,
+    kind: "avatar",
+    entityKind: "character",
+    entityId: characterId,
+    prompt: "lab canonical portrait",
+  });
+  const saved = await saveImageBuffer(asset.id, await testPngBuffer(384, 512));
+  if (saved?.status !== "ready") throw new Error("failed to store the lab canonical portrait");
+  await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, characterId));
+  return characterId;
+}
+
+/**
+ * A settled, finishable run — inserted rather than rendered.
+ *
+ * What a finishing pass reads from its source is exactly three fields (kind,
+ * status, result image), so driving a whole controlled render first would test
+ * the controlled runner a second time and make this suite's finishing cases
+ * depend on it.
+ */
+async function seedFinishedSource(characterId: string): Promise<{ id: string; resultImageId: string }> {
+  const resultImageId = await seedReadyImage("lab_output", { hidden: true });
+  const [row] = await db()
+    .insert(imageLabExperiments)
+    .values({
+      ownerId,
+      kind: "controlled_portrait",
+      modelSlug: PINNED_SLUG,
+      characterId,
+      instruction: CONTROLLED_INSTRUCTION,
+      inputs: [],
+      settings: {},
+      status: "succeeded",
+      resultImageId,
+    })
+    .returning({ id: imageLabExperiments.id });
+  if (!row) throw new Error("failed to seed a finishable source experiment");
+  return { id: row.id, resultImageId };
+}
+
+/** A finishing pass over that source, created the way the route creates one. */
+async function createFinishingPass(
+  sourceExperimentId: string,
+  overrides: Partial<ImageLabCreateExperimentRequest> = {},
+): Promise<{ id: string; sink: DiagnosticCollector }> {
+  const sink = new DiagnosticCollector();
+  const created = await createImageLabExperiment({
+    ownerId,
+    request: {
+      kind: "finishing_pass",
+      modelSlug: PINNED_SLUG,
+      instruction: "",
+      inputs: [],
+      sourceExperimentId,
+      ...overrides,
+    },
+    sink,
+  });
+  if (!created.ok) throw new Error(`unexpected create refusal: ${created.refusal.code}`);
+  return { id: created.experiment.id, sink };
 }
 
 function codes(sink: DiagnosticCollector): string[] {
@@ -1084,16 +1155,157 @@ describe.skipIf(!ready)("image lab cost and provider health", () => {
   });
 });
 
+describe.skipIf(!ready)("image lab finishing passes", () => {
+  it("re-edits the source's result against the pack and records both references", async () => {
+    stubSuccessfulRenderer();
+    const characterId = await seedCharacterWithPortrait();
+    const source = await seedFinishedSource(characterId);
+    const { id, sink } = await createFinishingPass(source.id, { instruction: "the jaw is too narrow" });
+
+    // The subject is INHERITED, never sent: both arms of the comparison file
+    // against one character.
+    const created = await getImageLabExperimentDetail(id, ownerId);
+    expect(created?.characterId).toBe(characterId);
+    expect(created?.sourceExperimentId).toBe(source.id);
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    // The create-time pointer survived the settle — the whole reason meta writes
+    // merge rather than assign.
+    expect(experiment?.sourceExperimentId).toBe(source.id);
+    // The runner resolved the ordered inputs and WROTE THEM DOWN: the source's
+    // render first, the pack's reference second.
+    expect(experiment?.inputs.map((input) => input.role)).toEqual(["before", "identity"]);
+    expect(experiment?.inputs[0]?.imageId).toBe(source.resultImageId);
+    expect(experiment?.inputs[1]?.imageId).not.toBe(source.resultImageId);
+    expect(experiment?.outcome?.recipeKey).toBe(IMAGE_LAB_FINISHING_RECIPE_KEY);
+    expect(experiment?.outcome?.sentRoles).toEqual(["before", "identity"]);
+    expect(experiment?.outcome?.dropped).toEqual([]);
+    // Pinned like every recipe run: evidence against an unidentifiable version
+    // answers nothing.
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    // The rule is in the prompt, and so is the admin's narrowing after it.
+    expect(experiment?.finalPrompt).toContain("Refine only the identity in the before image");
+    expect(experiment?.finalPrompt).toContain("the jaw is too narrow");
+    expect(experiment?.resultImageId).not.toBeNull();
+
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.versionId).toBe(PINNED_VERSION);
+      expect(request.intent.references.map((reference) => reference.role)).toEqual(["before", "identity"]);
+    }
+  });
+
+  it("refuses a pass whose subject has no identity pack to draw from, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // A character with no canonical portrait: the pack machinery has nothing to
+    // derive from, so there is nothing to improve the face toward.
+    const source = await seedFinishedSource(await seedOwnedCharacter());
+    const { id, sink } = await createFinishingPass(source.id);
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("identity_unavailable"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("identity_unavailable"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    // Still readable afterwards: the pointer is what an admin re-runs from.
+    expect(experiment?.sourceExperimentId).toBe(source.id);
+  });
+
+  it("refuses a pass whose source was deleted after it was queued", async () => {
+    stubSuccessfulRenderer();
+    const source = await seedFinishedSource(await seedCharacterWithPortrait());
+    const { id, sink } = await createFinishingPass(source.id);
+    await deleteImageLabExperiment(source.id, ownerId);
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("source_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("source_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses the probe's raw provider bag on a finishing pass too", async () => {
+    stubSuccessfulRenderer();
+    const source = await seedFinishedSource(await seedCharacterWithPortrait());
+    const { id, sink } = await createFinishingPass(source.id, {
+      settings: { controls: {}, controlInput: { go_faster: true } },
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("settings_unsupported"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("records a finishing ruling and refuses one from the control vocabulary", async () => {
+    stubSuccessfulRenderer();
+    const source = await seedFinishedSource(await seedCharacterWithPortrait());
+    const { id } = await createFinishingPass(source.id);
+    await runImageLabExperiment(id, ownerId);
+
+    const recorded = await recordImageLabVerdict(id, ownerId, {
+      verdict: "improves_identity",
+      note: "the jaw matches the reference; pose, jacket and lighting are unchanged",
+    });
+    expect(recorded?.ok).toBe(true);
+    if (recorded?.ok) expect(recorded.experiment.verdict).toBe("improves_identity");
+
+    // A control judgment against a run that sent no control would read, six
+    // months later, exactly like one that did.
+    const refused = await recordImageLabVerdict(id, ownerId, {
+      verdict: "honours_control",
+      note: "wrong vocabulary",
+    });
+    expect(refused?.ok).toBe(false);
+    if (refused && !refused.ok) expect(refused.refusal.code).toBe("verdict_not_in_vocabulary");
+  });
+});
+
 describe.skipIf(!ready)("image lab experiment records", () => {
-  it("refuses the finishing pass, the one kind still without a recipe", async () => {
+  it("refuses a finishing pass whose source is not an experiment this owner has", async () => {
     const created = await createImageLabExperiment({
       ownerId,
-      request: { kind: "finishing_pass", instruction: "", inputs: [] },
+      request: { kind: "finishing_pass", instruction: "", inputs: [], sourceExperimentId: "expnotyoursaaaaaaaaaaaaa" },
     });
     expect(created.ok).toBe(false);
     // BARE on the wire, as every refusal envelope is: the dotted `image_lab.`
     // spelling is the diagnostic sink's, and a settled row's.
-    if (!created.ok) expect(created.refusal.code).toBe("kind_unsupported");
+    if (!created.ok) expect(created.refusal.code).toBe("source_not_found");
+  });
+
+  it("refuses a finishing pass over a probe — the one succeeded kind that cannot be finished", async () => {
+    stubSuccessfulRenderer();
+    const { id } = await createRunnableProbe();
+    await runImageLabExperiment(id, ownerId);
+
+    const created = await createImageLabExperiment({
+      ownerId,
+      request: { kind: "finishing_pass", instruction: "", inputs: [], sourceExperimentId: id },
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) expect(created.refusal.code).toBe("source_kind_unsupported");
+  });
+
+  it("refuses a finishing pass over a run that has not produced an image", async () => {
+    const { id } = await createControlledExperiment();
+    const created = await createImageLabExperiment({
+      ownerId,
+      request: { kind: "finishing_pass", instruction: "", inputs: [], sourceExperimentId: id },
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) expect(created.refusal.code).toBe("source_not_rendered");
   });
 
   it("refuses a baseline naming another owner's character", async () => {

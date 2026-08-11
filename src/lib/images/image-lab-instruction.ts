@@ -104,3 +104,57 @@ export function imageLabProbeInstruction(input: ImageLabProbeInstructionInput): 
   );
   return sentences.join(" ");
 }
+
+/**
+ * The Stage 3 finishing pass's fixed preamble — the whole product rule, written
+ * as the instruction the model is given.
+ *
+ * The plan's promotion rule is that a finishing pass may be adopted only when it
+ * "improves identity without materially changing structure, clothing, body,
+ * camera, lighting, or setting". That sentence is not just how the result is
+ * judged; it is what the run is asked to do, so the preamble names both halves
+ * explicitly — what to correct, and the list of everything that must survive
+ * untouched. Wording the second half as a list rather than as "change nothing
+ * else" is deliberate: a model told only to preserve "everything else" reliably
+ * re-renders the scene it thinks it is improving, and a re-rendered scene fails
+ * the rule no matter what it did to the face.
+ *
+ * Hair sits on the IDENTITY side, not the untouched side, because hair colour
+ * and hairline are identity signal and a pass forbidden to touch them could not
+ * fix the drift the Stage 1/2 trial recorded. Hair LENGTH is left unmentioned:
+ * naming it on either side would either license a restyle or forbid a
+ * correction, and neither is what this pass is for.
+ *
+ * Positions go unnamed on purpose. The compose strategy prefixes a numbered
+ * binding per reference and the runner's send order decides those numbers, so a
+ * preamble that also numbered them would be a second, independently-maintained
+ * numbering — the exact drift {@link imageLabProbeInstruction}'s 1-basing exists
+ * to prevent. This text says "the before image" and "the identity reference",
+ * which are the words those bindings use.
+ */
+const FINISHING_PREAMBLE = [
+  "Refine only the identity in the before image: correct the face so it matches the identity reference — bone " +
+    "structure, jaw and chin shape, brow, eyes, nose, mouth, skin tone, hairline and hair colour, and apparent age.",
+  "Change nothing else. Keep the pose, body proportions, hands, clothing, camera angle, framing, crop, lighting, " +
+    "colour grade, and setting exactly as they are in the before image.",
+  "Do not re-render the scene, do not restyle it, and do not move or reframe the subject. The before image is the " +
+    "output except for the face.",
+].join(" ");
+
+/**
+ * The finishing pass's full base prompt: the preamble, then the admin's own
+ * instruction when they wrote one.
+ *
+ * The admin's text comes AFTER the rule rather than before it, and is optional
+ * for the same reason the rule is fixed: the run's whole claim is that it
+ * changed one thing, so the sentence making that claim cannot be something a
+ * hurried admin can delete. What they add is a narrowing ("the left eye is
+ * wrong"), never a replacement.
+ *
+ * A blank line separates the two, so an instruction written as a fragment reads
+ * as its own remark rather than running into the last sentence of the rule.
+ */
+export function imageLabFinishingInstruction(ownerInstruction: string): string {
+  const extra = ownerInstruction.trim();
+  return extra === "" ? FINISHING_PREAMBLE : `${FINISHING_PREAMBLE}\n\n${extra}`;
+}

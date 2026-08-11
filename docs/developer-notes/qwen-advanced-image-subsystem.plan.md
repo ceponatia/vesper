@@ -608,7 +608,7 @@ an unacceptable identity regression.
 
 ### Stage 3 — optional identity finishing
 
-Status: next — unblocked 2026-08-11 by the recorded Stage 1 and 2 verdicts.
+Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
 
 Pass selected controlled results through Qwen Image Edit 2511 using the identity
 pack. Compare:

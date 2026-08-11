@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { imageLabControlKinds } from "./image-lab";
+import { imageLabControlKinds, imageLabExperimentKinds } from "./image-lab";
 import {
+  IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
+  IMAGE_LAB_FINISHING_RECIPE_KEY,
   IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX,
   imageLabControlledKinds,
+  imageLabFinishableKinds,
+  imageLabFinishingRecipeProfile,
   imageLabRecipeKey,
   imageLabRecipeProfile,
   imageLabRecipeTask,
   isImageLabControlledKind,
+  isImageLabFinishableKind,
 } from "./image-lab-recipes";
 import { imageModelProfileSchema, profileEligibility } from "./image-model-profiles";
 import { imageModelSchema, type ImageModel } from "./image-models";
@@ -134,5 +139,72 @@ describe("imageLabRecipeProfile", () => {
       ok: false,
       reason: "identity_too_weak",
     });
+  });
+});
+
+describe("imageLabFinishingRecipeProfile", () => {
+  it("names itself under the recipe id prefix, keyed by its one stable key", () => {
+    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    expect(profile.key).toBe(IMAGE_LAB_FINISHING_RECIPE_KEY);
+    expect(profile.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}${IMAGE_LAB_FINISHING_RECIPE_KEY}`);
+    expect(profile.imageModelId).toBe("mdl_x");
+  });
+
+  it("requires the base render and the identity reference, in that order", () => {
+    const policy = imageLabFinishingRecipeProfile("mdl_x").referencePolicy;
+    expect(policy.requiredRoles).toEqual(["before", "identity"]);
+    expect(policy.allowedRoles).toEqual(["before", "identity"]);
+    expect(policy.roleOrder).toEqual(["before", "identity"]);
+  });
+
+  it("sends no control map at all — the pass changes nothing structural", () => {
+    const policy = imageLabFinishingRecipeProfile("mdl_x").referencePolicy;
+    for (const role of ["pose", "depth", "edge", "control"] as const) {
+      expect(policy.allowedRoles).not.toContain(role);
+    }
+  });
+
+  it("leaves room for the pack's face crop while today's strategy sends one reference", () => {
+    // The gap is deliberate headroom, not an oversight: the Stage 1/2 trial
+    // watched every three-reference send collapse identity, so the third slot
+    // stays unspent until an arm says otherwise.
+    expect(IMAGE_LAB_FINISHING_IDENTITY_STRATEGY).toBe("canonical_only");
+    expect(imageLabFinishingRecipeProfile("mdl_x").referencePolicy.maxPerRole).toEqual({ before: 1, identity: 2 });
+  });
+
+  it("screens as an identity task whatever the source rendered", () => {
+    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    expect(profile.task).toBe("variant");
+    expect(profile.operation).toBe("edit");
+    expect(profile.promptStrategy).toBe("multi_reference_compose");
+  });
+
+  it("is a valid profile row in every way but storage", () => {
+    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    expect(imageModelProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  it("passes eligibility on the plan's model and refuses one that would render a stranger", () => {
+    const model = qwen2511();
+    expect(profileEligibility(imageLabFinishingRecipeProfile(model.id), model)).toEqual({ ok: true });
+    expect(profileEligibility(imageLabFinishingRecipeProfile("mdl_x"), qwen2511({ identityPreservation: "weak" }))).toEqual({
+      ok: false,
+      reason: "identity_too_weak",
+    });
+  });
+});
+
+describe("imageLabFinishableKinds", () => {
+  it("finishes the runs that produced a production-shaped render, and nothing else", () => {
+    expect(imageLabFinishableKinds).toEqual([
+      "baseline_portrait",
+      "baseline_scene",
+      "controlled_portrait",
+      "controlled_scene",
+    ]);
+    for (const kind of imageLabExperimentKinds) {
+      const refused = kind === "control_probe" || kind === "finishing_pass";
+      expect(isImageLabFinishableKind(kind)).toBe(!refused);
+    }
   });
 });

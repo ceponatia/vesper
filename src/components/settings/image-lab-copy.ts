@@ -7,7 +7,7 @@ import {
   type ImageLabFailureCode,
   type ImageLabMode,
   type ImageLabOutcomeDrop,
-  type ImageLabProbeVerdict,
+  type ImageLabVerdict,
   type ImageReferenceRole,
 } from "@/contracts";
 import type { TagTone } from "@/components/ui/tag";
@@ -23,7 +23,7 @@ import type { TagTone } from "@/components/ui/tag";
  * person being asked to rule on it.
  */
 
-/** What one experiment is for. Everything but `finishing_pass` is creatable now. */
+/** What one experiment is for. Every kind is creatable as of Stage 3. */
 export function imageLabExperimentKindLabel(kind: ImageLabExperimentKind): string {
   switch (kind) {
     case "control_probe":
@@ -103,36 +103,60 @@ export function imageLabControlGeneratorLabel(generator: ImageLabControlGenerato
   }
 }
 
-/** The reviewing admin's ruling, as the verdict control offers it. */
-export function imageLabVerdictLabel(verdict: ImageLabProbeVerdict): string {
+/**
+ * The reviewing admin's ruling, as the verdict control offers it — both
+ * vocabularies, because the union is what a stored row carries and the copy
+ * layer must be able to name whatever it finds there. Which rulings a given
+ * experiment may CHOOSE from is the contract's own per-kind gate
+ * (`imageLabVerdictOptions`), never a guess made here.
+ */
+export function imageLabVerdictLabel(verdict: ImageLabVerdict): string {
   switch (verdict) {
     case "honours_control":
       return "Honours the control";
     case "ignores_control":
       return "Ignores the control";
+    case "improves_identity":
+      return "Improves identity, changes nothing else";
+    case "identity_unchanged":
+      return "No meaningful improvement";
+    case "changes_beyond_identity":
+      return "Changed more than the face";
     case "inconclusive":
       return "Inconclusive";
   }
 }
 
 /** Why an admin would pick each ruling — the hint beside the verdict control. */
-export function imageLabVerdictHint(verdict: ImageLabProbeVerdict): string {
+export function imageLabVerdictHint(verdict: ImageLabVerdict): string {
   switch (verdict) {
     case "honours_control":
       return "The output matches the fixture limb for limb, and identity survived.";
     case "ignores_control":
       return "The output ignores the fixture's structure, or copies it as a picture instead of obeying it.";
+    case "improves_identity":
+      return "The face matches the references better than the base did, and pose, clothing, body, camera, lighting, and setting are unchanged. The only ruling that would promote a finishing pass.";
+    case "identity_unchanged":
+      return "The face is no closer than the base image's. The pass cost a render and earned nothing.";
+    case "changes_beyond_identity":
+      return "Something other than the face moved — pose, clothing, body, camera, lighting, or setting. Not promotable whatever it did to identity.";
     case "inconclusive":
       return "The fixture was ambiguous, or something unrelated broke — this run settles nothing.";
   }
 }
 
-export function imageLabVerdictChip(verdict: ImageLabProbeVerdict): { label: string; tone: TagTone } {
+export function imageLabVerdictChip(verdict: ImageLabVerdict): { label: string; tone: TagTone } {
   switch (verdict) {
     case "honours_control":
       return { label: "honours control", tone: "ok" };
     case "ignores_control":
       return { label: "ignores control", tone: "danger" };
+    case "improves_identity":
+      return { label: "improves identity", tone: "ok" };
+    case "identity_unchanged":
+      return { label: "no improvement", tone: "default" };
+    case "changes_beyond_identity":
+      return { label: "changed too much", tone: "danger" };
     case "inconclusive":
       return { label: "inconclusive", tone: "accent" };
   }
@@ -203,6 +227,10 @@ function labFailureCopy(code: ImageLabFailureCode): string {
       return "The experiment also sends the render that fixture was extracted from. Refused before any spend: the output could match the control by copying that reference instead of obeying it. Send a different identity render, or a fixture from another source.";
     case "capacity_exceeded":
       return "The experiment orders more reference images than this model accepts. Refused rather than trimmed: a record claiming a control was sent that the provider never received is evidence about nothing.";
+    case "source_invalid":
+      return "The experiment this pass would refine is gone, is not a kind that can be finished, or never produced a result image. A finishing pass edits that render, so there was nothing to edit. Pick another source and run it again.";
+    case "identity_unavailable":
+      return "No identity reference could be drawn from this character's identity pack, so there was nothing to improve the face toward. Refused before any spend — the pack's own reason is recorded on this row. Give the character a clear canonical portrait, then run it again.";
     case "settings_unsupported":
       return "The experiment carries a raw provider-shaped controlInput bag, which is a probe tool. A controlled recipe proves a production-shaped run and production has no raw bag, so the run was refused before any spend rather than silently stripped. Clear the raw settings, or run a control probe instead.";
     case "preprocessor_output_invalid":
