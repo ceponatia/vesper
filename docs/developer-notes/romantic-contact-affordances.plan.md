@@ -471,6 +471,8 @@ made from. The
 [actor-control spec](romantic-contact-affordances.spec.actor-control.md) permits
 the foundation and the shadow run but not authority without this ruling.
 
+- Yes, this was measured to be negligible.
+
 #### Which intimate changes are ready to consume?
 
 **Owner:** Physiology plan. **Blocks:** slice 6.
