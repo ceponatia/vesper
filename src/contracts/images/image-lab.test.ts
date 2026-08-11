@@ -8,6 +8,8 @@ import {
   imageLabExperimentListSchema,
   imageLabExperimentSchema,
   imageLabExtractControlsRequestSchema,
+  imageLabFailureCodeFromDiagnostic,
+  imageLabFailureCodes,
   imageLabInputListSchema,
   imageLabRecordVerdictRequestSchema,
   imageLabSettingsSchema,
@@ -378,5 +380,26 @@ describe("imageLabDiagnosticCode", () => {
   it("reports lab failures on the image_lab namespace", () => {
     expect(imageLabDiagnosticCode("version_unpinned")).toBe("image_lab.version_unpinned");
     expect(imageLabDiagnosticCode("preprocessor_output_invalid")).toBe("image_lab.preprocessor_output_invalid");
+  });
+});
+
+describe("imageLabFailureCodeFromDiagnostic", () => {
+  // The pairing is the invariant: rows store what the writer minted, so a reader
+  // that stops matching it leaves every failure on screen as a bare identifier.
+  it("reads back every code the writer mints", () => {
+    for (const code of imageLabFailureCodes) {
+      expect(imageLabFailureCodeFromDiagnostic(imageLabDiagnosticCode(code))).toBe(code);
+    }
+  });
+
+  it("accepts a code that was never namespaced", () => {
+    expect(imageLabFailureCodeFromDiagnostic("version_unpinned")).toBe("version_unpinned");
+  });
+
+  // The render classifier's vocabulary is not this one, and a wrong lab reason
+  // would be worse than the raw code the caller falls back to.
+  it("disowns a code from outside the lab's vocabulary", () => {
+    expect(imageLabFailureCodeFromDiagnostic("provider_timeout")).toBeNull();
+    expect(imageLabFailureCodeFromDiagnostic("image_lab.not_a_code")).toBeNull();
   });
 });

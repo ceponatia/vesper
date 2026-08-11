@@ -198,6 +198,28 @@ export function imageLabDiagnosticCode(code: ImageLabFailureCode): string {
 }
 
 /**
+ * The lab failure code behind a recorded diagnostic, or `null` for a code this
+ * vocabulary does not own. It lives beside `imageLabDiagnosticCode` because the
+ * `image_lab.` prefix is this file's fact, and a reader that re-spells it
+ * elsewhere drifts apart from the writer the first time either end moves.
+ *
+ * Experiment rows record the DOTTED form — the runner settles every failure
+ * through `imageLabDiagnosticCode` — so a reader parsing the bare enum against a
+ * stored code matches nothing. The bare form parses too, for callers holding a
+ * code that was never namespaced.
+ *
+ * A `render_failed` row carries the render classifier's own code alongside, and
+ * that vocabulary is not this one: a code from outside this enum answers `null`
+ * so the caller can surface it verbatim, since a reason translated into the
+ * wrong one is worse than a reason left untranslated.
+ */
+export function imageLabFailureCodeFromDiagnostic(code: string): ImageLabFailureCode | null {
+  const bare = code.startsWith("image_lab.") ? code.slice("image_lab.".length) : code;
+  const parsed = imageLabFailureCodeSchema.safeParse(bare);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
  * A wire sanity rail on how many images one experiment may order, not a model
  * capability: the pinned version's own reference arity is the real ceiling, and a
  * run asking for more than it exposes is refused at render time with the reason.
