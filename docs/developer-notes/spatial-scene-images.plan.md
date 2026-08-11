@@ -28,7 +28,11 @@ Neighbouring plans, all of which moved under it after this one was written:
   be reachable without a GPU worker at all. That plan now runs on the
   already-seeded Qwen Image Edit 2511 (owner ruling 2026-08-07), making it
   cheaper still. That plan and Gate 0 below answer the same question and should
-  not both be opened.
+  not both be opened. **Answered (2026-08-11):** that lab's Stage 0 probe
+  confirmed hosted 2511 honours pose and depth maps supplied as numbered
+  images, so Gate 0's spike does not run separately; this plan's remaining
+  distinct value is producing consistent controls from a validated spatial
+  frame.
 - [scene composition](scene-composition.plan.md) is the **prompt-only near-term
   treatment** of camera vantage, subject facing, and intimate staging — no
   structural control, reachable without paid gates. Its camera and staging

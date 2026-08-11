@@ -33,7 +33,7 @@ those systems through their existing exports and adds no second copy.
 | Fixture review + delete route                   | built 2026-08-10 |
 | Settings page (`/settings/image-lab`)           | built 2026-08-10 |
 | Reference doc (`docs/images/` lab page)         | built 2026-08-10 |
-| Stage 0 control probe run + recorded verdict    | not run          |
+| Stage 0 control probe run + recorded verdict    | run 2026-08-11   |
 
 Stage 1+ work (controlled recipes on the render-intent path, finishing passes,
 LoRA trials) is deliberately absent from this table until the capabilities
@@ -417,7 +417,22 @@ Run on the Fly deploy with the uxtest admin account, after the lab ships:
 6. Write the verdict into this spec (below) and reflect the connector split in
    the plan if the fallback path was taken.
 
-**Probe verdict: not yet run.**
+**Probe verdicts (run 2026-08-11 on the Fly deploy):**
+
+- **Pose — honours the control.** Experiment `g8lr8ogf0t4xbdhhaoruyhhs`,
+  prediction `kj2yrktvnnrmy0czy2h810cvt8`, pin `a0670a7f47d5…`. Full-body
+  render in the skeleton's wide-V arms and A-stance with the skeleton's
+  left/right asymmetry reproduced, from a waist-up identity reference carrying
+  no arm or leg signal. Identity preserved; hair length the one drift.
+- **Depth — honours the control.** Experiment `zn5o0qb1153ame54ok1nsfzj`,
+  prediction `qpeb89h9vdrmr0czy2ns2gy28w`, same pin. Silhouette tracks the map
+  within ~1% of image width at matched figure height (worst ~3% at an ankle),
+  asymmetry reproduced, no tonal bleed from the grayscale map; identity drift
+  smaller than the pose probe's.
+- **Consequence:** every later stage runs on 2511 and Qwen Image Edit Plus is
+  not registered — the protocol's fallback step is void. Full verdict notes
+  live on the experiments themselves; screenshots from the run are in the
+  untracked `screenshots/` folder.
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 

@@ -42,13 +42,19 @@ owner and this one is a consumer.
 **Owner ruling (2026-08-07): build on Qwen Image Edit 2511. Register Qwen Image
 Edit Plus only if 2511 turns out not to honour control maps.**
 
+**Probe result (2026-08-11): 2511 honours control maps.** The Stage 0 pose and
+depth generations each rendered the identity subject full-body in the control
+fixture's arms-raised stance from a waist-up reference that carried no pose
+signal, with identity preserved. Every stage below runs on 2511, and Qwen Image
+Edit Plus is not registered.
+
 2511 is already seeded, already probed, and already the default for scenes and
 variants, so building on it costs no new registry work and keeps the experiment
 on the better identity model. Plus is the older 2509-generation checkpoint under
 a marketing name; 2511 is its successor.
 
-The one open fact is whether 2511 honours control maps, and the documentation
-cannot settle it in either direction:
+The one fact the ruling left open was whether 2511 honours control maps —
+documentation could not settle it in either direction:
 
 - 2509 (shipped on Replicate as "Qwen Image Edit Plus") explicitly advertises
   native ControlNet support for depth, edge, and keypoint maps.
