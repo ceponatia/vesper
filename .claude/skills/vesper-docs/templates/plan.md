@@ -31,11 +31,14 @@ What this plan deliberately does not do, and where that work lives instead
 
 Delivery order, each slice independently shippable and independently reviewable.
 Name what a slice makes true, not which files it edits. This is the plan's
-*intent* and it does not change when code lands — whether a slice is built is
-the spec's to say (the progress ladder).
+*intent* and it does not change when code lands — build detail is the spec's to
+say (the progress ladder). Each slice opens with its one-line stage-status
+marker (`complete — <date>` | `built <date> — awaiting <what>` | `in progress` |
+`next` | `queued` | `blocked on <what>` | `void — <why>`) so delivery state is
+readable without the spec.
 
-- **Slice 1 — <what becomes true>.** One or two sentences.
-- **Slice 2 — <what becomes true>.** One or two sentences.
+- **Slice 1 — <what becomes true>.** Status: <marker>. One or two sentences.
+- **Slice 2 — <what becomes true>.** Status: <marker>. One or two sentences.
 
 ## Where the work stands
 

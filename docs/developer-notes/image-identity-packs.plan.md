@@ -265,6 +265,8 @@ degraded result. Unexpected exceptions are contained at the image boundary.
 
 ### Slice 1 — contracts, persistence, and hidden asset kind
 
+Status: complete — 2026-08-06.
+
 Add the pure pack contracts, the pack status and warning vocabulary, the dedicated
 identity-pack table, and the internal face-crop image kind. Add read APIs and
 admin inspection without yet changing render behavior.
@@ -279,6 +281,8 @@ the portrait studio, character copies, and public file serving.
 
 ### Slice 2 — deterministic derivation
 
+Status: complete — 2026-08-06.
+
 Implement normalized source hashing, crop geometry, image creation, intrinsic
 quality measurements, and the replaceable local detector adapter. Add the
 conservative heuristic fallback and multi-face refusal.
@@ -292,6 +296,8 @@ seam is real but the adapter shipped with it finds nothing, so automatic
 preparation is the conservative heuristic only — see the derivation ruling above.
 
 ### Slice 3 — lifecycle and lazy backfill
+
+Status: complete — 2026-08-06, with same-day repairs below.
 
 Add `ensureIdentityPack` for existing characters, source-change invalidation,
 concurrency coalescing, supersession, bounded cleanup, deletion behavior, and
@@ -317,6 +323,8 @@ reference to a picture that no longer exists.
 
 ### Slice 4 — manual review and correction
 
+Status: complete — 2026-08-06.
+
 Add the character-owner crop editor, admin inspection, manual revision history,
 explicit overrides, and a bounded admin preparation batch.
 
@@ -326,6 +334,9 @@ routes behind them, and an admin-only inspector with revision history, a recorde
 override, and a bounded batch over the admin's own characters.
 
 ### Slice 5 — reference-role integration
+
+Status: in progress — 5A complete 2026-08-06; 5B queued, unblocked since the
+shared render intent shipped 2026-08-07.
 
 Expose `canonical_identity` and `face_detail` candidates to shared render intent.
 The capabilities/profile layer remains responsible for ordering, capacity, and
@@ -341,16 +352,19 @@ for a model profile and answers with the candidate reference roles that profile
 may use, profile-aware eligibility, and the provenance record behind that
 answer.
 
-**Slice 5B — render-lane consumption. Pending on the capabilities work.** The
-shared render-intent transport that carries identity references to providers,
-capacity enforcement across all references, provider ordering, lane migration,
-and the removal of lane-local recropping all wait on
-[image-model-capabilities.plan.md](image-model-capabilities.plan.md)'s shared
-render intent, which is still being built. Until it lands, no production lane
-consumes the pack — the flag that would allow sending references stays off — and
-slice 5 as originally scoped is not end-to-end complete.
+**Slice 5B — render-lane consumption. Queued; its blockers have landed.** The
+[image-model-capabilities.plan.md](image-model-capabilities.plan.md) work this
+half waited on now exists: the shared render intent shipped 2026-08-07, and
+policy-driven reference selection with capacity enforcement shipped 2026-08-11.
+What remains is this plan's own work — lanes evaluating the pack for their
+profile, sending its candidate roles, and dropping lane-local recropping. Until
+that is built, no production lane consumes the pack — the flag that would allow
+sending references stays off — and slice 5 as originally scoped is not
+end-to-end complete.
 
 ### Slice 6 — fixed identity-reference trial
+
+Status: built 2026-08-06 — awaiting the paid trial run, which is owner work.
 
 Run the fixed corpus against canonical-only, canonical-plus-face-detail, and any
 profile-specific reference strategies. Measure identity preference, edit fidelity,
@@ -402,6 +416,8 @@ packs to be trialed while it is off. Mechanics and recorded v1 limitations:
 [image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md).
 
 ### Slice 7 — production close-out
+
+Status: queued — after the slice 6 verdict.
 
 Turn advisory measurements into the reviewed production gate, wire provenance and
 telemetry, verify deletion/copy/publish paths, remove rollout fallbacks, and update

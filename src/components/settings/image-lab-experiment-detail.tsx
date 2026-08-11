@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import {
   imageLabProbeVerdicts,
+  isImageLabControlledKind,
+  isImageLabVerdictKind,
   isUndisclosedProviderVersion,
   providerVersionsDisagree,
   type ImageLabExperiment,
@@ -23,18 +25,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import {
   imageLabControlKindLabel,
+  imageLabDropReasonExplanation,
   imageLabExperimentKindLabel,
   imageLabFailureExplanation,
+  imageLabModeLabel,
   imageLabRoleLabel,
   imageLabStatusChip,
   imageLabVerdictChip,
   imageLabVerdictHint,
   imageLabVerdictLabel,
 } from "./image-lab-copy";
+import type { ImageLabExperimentPrefill } from "./image-lab-experiment-form";
 
 /**
- * One experiment, whole: what was sent, what came back, and — for a control
- * probe — the ruling the whole Stage 0 protocol exists to produce.
+ * One experiment, whole: what was sent, what came back, and — for the kinds
+ * that declare a control — the ruling the whole protocol exists to produce.
  *
  * Everything recorded is shown, including the two version ids side by side. A
  * requested version and an executed version that disagree is how an unannounced
@@ -46,6 +51,10 @@ import {
  * That case gets a plain informational line rather than the suspect banner: the
  * run's evidence identity is the requested pin, which Replicate validated when
  * it accepted the prediction (`providerVersionsDisagree`, contracts).
+ *
+ * A controlled run additionally shows the recorded `outcome` — what the
+ * reference plan decided — because the intent path TRIMS instead of refusing,
+ * so the ordered inputs alone no longer say what the provider received.
  */
 
 const POLL_MS = 3000;
@@ -54,6 +63,11 @@ export interface ImageLabExperimentDetailProps {
   experimentId: string;
   onBack: () => void;
   onDeleted: () => void;
+  /**
+   * The paired-baseline hand-off: values for the create form, applied by the
+   * caller (which owns both views). Pre-fill only — nothing is submitted here.
+   */
+  onRunBaseline: (prefill: ImageLabExperimentPrefill) => void;
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -106,7 +120,12 @@ function LabImage({
   );
 }
 
-export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: ImageLabExperimentDetailProps) {
+export function ImageLabExperimentDetail({
+  experimentId,
+  onBack,
+  onDeleted,
+  onRunBaseline,
+}: ImageLabExperimentDetailProps) {
   const toast = useToast();
   const detail = useAsyncData(() => imageLabApi.experiments.detail(experimentId), [experimentId]);
 
@@ -185,6 +204,27 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
     experiment.requestedVersionId !== null && isUndisclosedProviderVersion(experiment.executedVersionId);
   const hasOverlay =
     Object.keys(experiment.settings.controls).length > 0 || Object.keys(experiment.settings.controlInput).length > 0;
+
+  // The paired direct-edit arm: pre-fill only, submitted by the admin. The
+  // instruction travels VERBATIM because the shared text is what makes the two
+  // runs a comparison (the baseline runner's own rule); the subject id rides
+  // along so the evidence files against the same character or conversation.
+  // Only reachable from the succeeded-controlled section below, so the kind
+  // mapping never sees a probe or baseline.
+  const runBaseline = () => {
+    toast.push({
+      title: "Baseline form pre-filled",
+      description: "Review the pre-filled experiment form and run it yourself — nothing was submitted.",
+      tone: "success",
+    });
+    onRunBaseline({
+      kind: experiment.kind === "controlled_portrait" ? "baseline_portrait" : "baseline_scene",
+      characterId: experiment.characterId ?? undefined,
+      chatId: experiment.chatId ?? undefined,
+      instruction: experiment.instruction,
+      fromExperimentId: experiment.id,
+    });
+  };
 
   // The id is what a written-up ruling cites, so it has to leave the page exactly
   // as stored — bare, with no surrounding label to hand-trim out of the paste.
@@ -279,12 +319,16 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
             <code className="break-all">{experiment.executedVersionId ?? "—"}</code>
           </Fact>
           <Fact label="Profile">
-            <code className="break-all">{experiment.profileId ?? "— (a probe resolves none)"}</code>
+            <code className="break-all">
+              {experiment.profileId ?? "— (probes resolve none; a controlled run cites its recipe below)"}
+            </code>
           </Fact>
           <Fact label="Prediction">
             <code className="break-all">{experiment.predictionId ?? "—"}</code>
           </Fact>
-          <Fact label="Mode">{experiment.mode ?? "— (Stage 0 declares none)"}</Fact>
+          <Fact label="Mode">
+            {experiment.mode === null ? "— (none declared; probes and baselines never do)" : imageLabModeLabel(experiment.mode)}
+          </Fact>
           <Fact label="Character">
             <code className="break-all">{experiment.characterId ?? "—"}</code>
           </Fact>
@@ -336,6 +380,68 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
         </div>
       </section>
 
+      {experiment.outcome !== null ? (
+        <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Reference plan</h2>
+          <p className="mt-1 text-sm text-paper-400">
+            What the plan actually decided on the intent path — recorded by the runner so a verdict judges what the
+            provider received, not what the form ordered.
+          </p>
+          <dl className="mt-3">
+            <Fact label="Recipe">
+              {experiment.outcome.recipeKey !== undefined ? (
+                <code className="break-all">{experiment.outcome.recipeKey}</code>
+              ) : (
+                "— (the lane's own resolved profile, not a recipe)"
+              )}
+            </Fact>
+          </dl>
+          <div className="mt-3">
+            <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">
+              Sent roles ({experiment.outcome.sentRoles.length})
+            </h3>
+            {experiment.outcome.sentRoles.length === 0 ? (
+              <p className="mt-1 text-xs text-paper-500">None recorded.</p>
+            ) : (
+              <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
+                {experiment.outcome.sentRoles.map((role, index) => (
+                  <li key={`${String(index)}-${role}`}>
+                    <span className="text-paper-500">Image {index + 1} —</span> {imageLabRoleLabel(role)}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+          {experiment.outcome.dropped.length > 0 ? (
+            <div className="mt-3">
+              <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">
+                Dropped references ({experiment.outcome.dropped.length})
+              </h3>
+              <ul className="mt-1 flex flex-col gap-1 text-xs text-paper-300">
+                {experiment.outcome.dropped.map((drop, index) => (
+                  <li key={`${String(index)}-${drop.role}`}>
+                    {imageLabRoleLabel(drop.role)} — {imageLabDropReasonExplanation(drop.reason)}
+                    {drop.sourceImageId !== undefined ? (
+                      <>
+                        {" "}
+                        · <code className="break-all text-paper-500">{drop.sourceImageId}</code>
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {experiment.outcome.renumbered ? (
+            <p className="mt-3 text-xs text-danger-300">
+              A drop or reorder moved later references up: the provider&apos;s numbered slots no longer match the
+              ordered inputs above. The compiled prompt numbers what was SENT, so judge slots by the sent roles here,
+              not the input list.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mb-6 flex flex-col gap-3">
         <div>
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Instruction (as approved)</h2>
@@ -351,12 +457,14 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
         </div>
       </section>
 
-      {experiment.kind === "control_probe" && experiment.status === "succeeded" ? (
+      {isImageLabVerdictKind(experiment.kind) && experiment.status === "succeeded" ? (
         <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
-          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Probe verdict</h2>
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Control verdict</h2>
           <p className="mt-1 mb-3 text-sm text-paper-400">
-            Judge the output against the fixture: limb for limb, and identity preserved. This ruling decides whether the
-            plan runs on this model or on a second connector.
+            Judge the output against the fixture: limb for limb, and identity preserved.{" "}
+            {experiment.kind === "control_probe"
+              ? "This ruling decides whether the plan runs on this model or on a second connector."
+              : "This ruling says whether the control still held in a production-shaped run."}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
@@ -404,6 +512,18 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
               </p>
             ) : null}
           </div>
+        </section>
+      ) : null}
+
+      {isImageLabControlledKind(experiment.kind) && experiment.status === "succeeded" ? (
+        <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
+          <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Paired baseline</h2>
+          <p className="mt-1 mb-3 text-sm text-paper-400">
+            A controlled render is read beside a direct-edit arm that shares its instruction — the lane&apos;s own
+            configuration, no recipe, no control. This pre-fills the create form with the matching baseline kind and
+            this experiment&apos;s instruction, verbatim; nothing runs until you review and submit it there.
+          </p>
+          <Button onClick={runBaseline}>Run direct-edit baseline</Button>
         </section>
       ) : null}
 

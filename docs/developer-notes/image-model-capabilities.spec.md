@@ -332,12 +332,14 @@ export const imageReferenceRoles = [
   "location",
   "style",
   "object",
+  "outfit",
   "product",
   "before",
   "after_example",
   "mask",
   "pose",
   "depth",
+  "edge",
   "control",
 ] as const;
 
@@ -352,6 +354,14 @@ export interface ImageReferencePolicy {
 The default scene policy is identity, then location, then style or object. The
 default variant and chat-look policy requires identity and allows style. An
 example transformation requires before and after-example references.
+
+Two roles joined the tuple after slice 3 shipped, both additive (roles live in
+jsonb policies, so neither needed a migration): `edge` with slice 9, so a
+profile can require an edge map rather than a generic control, and `outfit`
+(2026-08-11, for the Qwen lab's controlled-portrait recipes) as a content role
+for wardrobe references — `style`'s wording forbids taking the subject's
+clothing and `object` places an item in the scene, so neither could honestly
+say "dress the person in this".
 
 A reference supplied by a caller carries:
 

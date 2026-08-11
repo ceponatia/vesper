@@ -314,9 +314,13 @@ Set numeric acceptance thresholds only after baseline and human labels exist.
 
 ## Delivery gates
 
-No gate has been started, and Gate 0 is the only one that can begin.
+No gate has been started. Gate 0's spike question was answered externally
+(2026-08-11, below), so Gate 1 is the first to open when this plan activates.
 
 ### Gate 0 — measured workflow spike
+
+Status: void — answered externally 2026-08-11; the Qwen lab's Stage 0 probe
+settled the hosted-control question this spike existed to buy.
 
 - Build the 12–20-scene corpus and render today's baseline.
 - Prototype pose/depth structure → identity composition, first on hosted
@@ -335,6 +339,8 @@ Running both is buying the same answer twice.
 
 ### Gate 1 — contracts, templates, and renderer
 
+Status: not started — first to open when this plan activates.
+
 - Add schemas, 5–8 initial templates, camera presets, solver, and controls.
 - Add golden artifacts, property tests, visual snapshots, and a developer inspector.
 
@@ -342,6 +348,8 @@ Exit: the same request is byte-stable, all controls align, and invalid contacts
 return typed failure.
 
 ### Gate 2 — single-character chat
+
+Status: not started — after Gate 1.
 
 - Let the detached composer propose a bounded pose.
 - Resolve only a `render_inferred` frame; do not mutate chat/world state.
@@ -352,6 +360,8 @@ latency and clean provider fallback.
 
 ### Gate 3 — two-character contact and binding
 
+Status: not started — after Gate 2.
+
 - Add two-role templates, IK contact, support, collision, and person regions.
 - Add sequential/masked composition plus swap/duplicate detection.
 - Model viewer limbs as a special rig/region, not an unbound extra person.
@@ -360,6 +370,8 @@ Exit: no systematic swapping; pose, orientation, and required contact pass the
 fixed corpus, including mature-content and non-human-feature rows.
 
 ### Gate 4 — production operation
+
+Status: not started — after Gate 3.
 
 - Version the worker API and workflow bundle.
 - Add queue limits, idempotency, cancellation, timeouts, health, cost budgets,
@@ -370,6 +382,8 @@ Exit: attempts are observable and reproducible, spend is bounded, and rollback t
 the current provider ladder is safe.
 
 ### Gate 5 — authoritative spatial reads
+
+Status: not started — after Gate 4; its engine prerequisite landed 2026-07-21.
 
 The prerequisite this gate was written to wait for has arrived: the successor
 engine owns physical actions and positions for successor chats (gates 0–6 closed

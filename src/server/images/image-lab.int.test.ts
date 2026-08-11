@@ -27,7 +27,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { db, imageLabExperiments, imageModels, images, jobs } from "../db";
+import { characters, db, imageLabExperiments, imageModels, images, jobs } from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import {
   createImageLabExperiment,
@@ -78,11 +78,13 @@ const ready = await probeIntegrationDb("image lab.int.test", "image_lab_experime
 const PINNED_MODEL_ID = "imgmdlimagelabpinnedaaaa";
 const UNPINNED_MODEL_ID = "imgmdlimagelabfloataaaaa";
 const CAPPED_MODEL_ID = "imgmdlimagelabcappedaaaa";
-const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID];
+const THREE_REF_MODEL_ID = "imgmdlimagelabthreerefaa";
+const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID, THREE_REF_MODEL_ID];
 
 const PINNED_SLUG = "vesper-test/image-lab-pinned";
 const UNPINNED_SLUG = "vesper-test/image-lab-floating";
 const CAPPED_SLUG = "vesper-test/image-lab-one-reference";
+const THREE_REF_SLUG = "vesper-test/image-lab-three-reference";
 const PINNED_VERSION = "imagelabversionaaaaaaaaa";
 /** What the provider "echoes back" — deliberately the pinned one, so a test that
  * asserts both columns proves the runner recorded each from its own source. */
@@ -130,6 +132,18 @@ beforeAll(async () => {
         canGenerate: true,
         canEdit: true,
         maxReferences: 1,
+        probedVersionId: PINNED_VERSION,
+      },
+      {
+        // Pinned with THREE reference slots: one short of a controlled run's
+        // four offered roles, so the intent path's trim-and-record behavior is
+        // observable as a recorded drop rather than a refusal.
+        id: THREE_REF_MODEL_ID,
+        slug: THREE_REF_SLUG,
+        label: "Image Lab Three-Reference Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 3,
         probedVersionId: PINNED_VERSION,
       },
     ]);
@@ -239,6 +253,59 @@ async function createRunnableProbe(
   const identityId = await seedReadyImage("avatar");
   const controlId = await seedControlFixture("pose");
   const { id, sink } = await createProbe({
+    inputs: [
+      { position: 1, role: "identity", imageId: identityId },
+      { position: 2, role: "pose", imageId: controlId },
+    ],
+    controlImageId: controlId,
+    controlKind: "pose",
+    ...overrides,
+  });
+  return { id, sink, identityId, controlId };
+}
+
+/** A character the controlled kinds can be about — the create schema demands one. */
+async function seedOwnedCharacter(): Promise<string> {
+  const [row] = await db().insert(characters).values({ ownerId, name: "Lab Subject" }).returning({ id: characters.id });
+  if (!row) throw new Error("failed to seed a character for the lab suite");
+  return row.id;
+}
+
+const CONTROLLED_INSTRUCTION = "Seated on the balcony rail at dusk, wind in the hair.";
+
+async function createControlledExperiment(
+  overrides: Partial<ImageLabCreateExperimentRequest> = {},
+): Promise<{ id: string; sink: DiagnosticCollector }> {
+  const sink = new DiagnosticCollector();
+  const request: ImageLabCreateExperimentRequest = {
+    kind: "controlled_portrait",
+    modelSlug: PINNED_SLUG,
+    characterId: await seedOwnedCharacter(),
+    instruction: CONTROLLED_INSTRUCTION,
+    inputs: [],
+    ...overrides,
+  };
+  const created = await createImageLabExperiment({ ownerId, request, sink });
+  if (!created.ok) throw new Error(`unexpected create refusal: ${created.refusal.code}`);
+  return { id: created.experiment.id, sink };
+}
+
+/**
+ * The runnable controlled shape: an identity anchor, the reviewed pose fixture
+ * it is judged against, and the declaration binding the two — the same triangle
+ * a probe carries, on the intent path. `reviewed` and `sourceIsIdentity` drive
+ * the two Stage 0 fixture gates the controlled runner must keep.
+ */
+async function createRunnableControlled(
+  fixture: { reviewed?: boolean; sourceIsIdentity?: boolean } = {},
+  overrides: Partial<ImageLabCreateExperimentRequest> = {},
+): Promise<{ id: string; sink: DiagnosticCollector; identityId: string; controlId: string }> {
+  const identityId = await seedReadyImage("avatar");
+  const controlId = await seedControlFixture("pose", {
+    ...(fixture.reviewed === false ? { reviewed: false } : {}),
+    ...(fixture.sourceIsIdentity ? { sourceImageId: identityId } : {}),
+  });
+  const { id, sink } = await createControlledExperiment({
     inputs: [
       { position: 1, role: "identity", imageId: identityId },
       { position: 2, role: "pose", imageId: controlId },
@@ -759,6 +826,160 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
 });
 
 /**
+ * The controlled kinds end to end: the render-intent path with a pinned
+ * version and a code-defined recipe, the recorded reference-plan outcome that
+ * keeps trim-and-record honest, and the Stage 0 gates the intent path must not
+ * lose on the way over.
+ */
+describe.skipIf(!ready)("image lab controlled runs", () => {
+  it("runs a controlled portrait through the intent path with the pinned version and the recipe profile", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableControlled();
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.modelSlug).toBe(PINNED_SLUG);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    expect(experiment?.executedVersionId).toBe(EXECUTED_VERSION);
+    expect(experiment?.resultImageId).not.toBeNull();
+
+    // The recorded prompt is the COMPILED compose text — numbered role
+    // bindings, the closing control clause, the admin's instruction last —
+    // not the raw instruction, because what was sent is what the record says.
+    expect(experiment?.finalPrompt?.startsWith("Image 1: the identity reference")).toBe(true);
+    expect(experiment?.finalPrompt).toContain("Image 2: a pose skeleton");
+    expect(experiment?.finalPrompt).toContain("never render the control images themselves");
+    expect(experiment?.finalPrompt?.endsWith(CONTROLLED_INSTRUCTION)).toBe(true);
+
+    // The intent path, not the probe's direct call — and the pin rides INSIDE
+    // the intent, so the seam shape needed no lab-specific arm.
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.versionId).toBe(PINNED_VERSION);
+      expect(request.intent.profile.profile.key).toBe("controlled_portrait/pose");
+      expect(request.intent.profile.profile.id).toBe("image-lab/controlled_portrait/pose");
+      expect(request.intent.references).toHaveLength(2);
+    }
+
+    expect(experiment?.outcome).toEqual({
+      recipeKey: "controlled_portrait/pose",
+      sentRoles: ["identity", "pose"],
+      dropped: [],
+      renumbered: false,
+    });
+  });
+
+  it("records what capacity trimmed instead of refusing the run", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose");
+    const outfitId = await seedReadyImage("avatar");
+    const styleId = await seedReadyImage("avatar");
+    const { id, sink } = await createControlledExperiment({
+      modelSlug: THREE_REF_SLUG,
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+        { position: 3, role: "outfit", imageId: outfitId },
+        { position: 4, role: "style", imageId: styleId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.outcome?.sentRoles).toEqual(["identity", "pose", "outfit"]);
+    // Four distinct roles capped at one each against three slots: nothing hits
+    // a role cap, so the last role in the recipe's order overflows the MODEL.
+    expect(experiment?.outcome?.dropped).toEqual([{ role: "style", reason: "model_capacity", sourceImageId: styleId }]);
+    // The trim came off the tail, so the prompt's numbering still matches.
+    expect(experiment?.outcome?.renumbered).toBe(false);
+  });
+
+  it("refuses a controlled run whose plan lacks the required identity anchor", async () => {
+    stubSuccessfulRenderer();
+    const controlId = await seedControlFixture("pose");
+    const { id, sink } = await createControlledExperiment({
+      inputs: [{ position: 1, role: "pose", imageId: controlId }],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    // The intent path's own refusal code, recorded verbatim: the recipe
+    // REQUIRES identity, so a render that would depict a stranger never runs.
+    expect(experiment?.failureCode).toBe("image_profile.required_reference_missing");
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("refuses the probe's raw provider bag before any spend", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableControlled(
+      {},
+      { settings: { controls: {}, controlInput: { true_cfg_scale: 4 } } },
+    );
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("settings_unsupported"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("settings_unsupported"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("keeps the Stage 0 review gate on the intent path", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableControlled({ reviewed: false });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_unreviewed"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("keeps the Stage 0 source gate on the intent path", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableControlled({ sourceIsIdentity: true });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_source_sent"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("records a verdict on a succeeded controlled run", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRunnableControlled();
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const recorded = await recordImageLabVerdict(id, ownerId, {
+      verdict: "honours_control",
+      note: "limb-for-limb match under the production-shaped request",
+    });
+    expect(recorded?.ok).toBe(true);
+    if (recorded?.ok) expect(recorded.experiment.verdict).toBe("honours_control");
+  });
+});
+
+/**
  * What the lab tells the image lane's circuit breaker, and what it charges.
  *
  * Both matter for the same reason: this runner SETTLES every failure into its
@@ -864,7 +1085,7 @@ describe.skipIf(!ready)("image lab cost and provider health", () => {
 });
 
 describe.skipIf(!ready)("image lab experiment records", () => {
-  it("refuses a kind Stage 0 has no recipe for", async () => {
+  it("refuses the finishing pass, the one kind still without a recipe", async () => {
     const created = await createImageLabExperiment({
       ownerId,
       request: { kind: "finishing_pass", instruction: "", inputs: [] },

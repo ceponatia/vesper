@@ -65,10 +65,12 @@ Working tier — `docs/developer-notes/`:
 
 - **`<topic>.plan.md`** — owns the Outcome line, why the work matters, what the
   owner gets, product boundaries and non-goals, the delivery slices and their
-  order, success criteria, **which of its specs are complete**, and **all** open
-  questions. Written in plain English for a non-technical product reader. Must
-  not own type shapes, algorithms, schema sketches, file trees, implementation
-  pseudocode, or a slice-by-slice build narrative.
+  order, **a one-line delivery status per slice or stage** (see
+  [Stage-status lines](#stage-status-lines)), success criteria, **which of its
+  specs are complete**, and **all** open questions. Written in plain English for
+  a non-technical product reader. Must not own type shapes, algorithms, schema
+  sketches, file trees, implementation pseudocode, or a slice-by-slice build
+  narrative.
 - **`<topic>.spec.md` / `<topic>.spec.<area>.md`** — owns contracts, type
   shapes, ownership rules, algorithms, persistence decisions, diagnostics, code
   organization, migrations, fixtures, and **the implementation status of every
@@ -125,7 +127,29 @@ slice-by-slice build history has taken over its spec's job, and the two will
 disagree within a month.
 
 A plan with no spec owns its own slice status until it grows one. The moment it
-does, that status moves and the plan keeps only the per-spec line.
+does, that status moves and the plan keeps only the per-spec line and the
+stage-status lines below.
+
+### Stage-status lines
+
+Owner ruling (2026-08-11): every delivery stage or slice listed in a plan
+carries a **one-line status marker** directly under its heading (or at the head
+of its bullet), so switching between slices never requires re-reading the whole
+topic family to learn what is already done.
+
+```markdown
+### Stage 1 — controlled portraits
+
+Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+```
+
+The vocabulary: `complete — <date>`, `built <date> — awaiting <what>`,
+`in progress`, `next`, `queued`, `blocked on <what>`, `void — <why>`. One line,
+no build narrative, no slice history — the spec remains the owner of build
+detail and of any ruling the build settled, and when the two disagree the spec
+is authoritative and the plan's line is the summary to correct. This is
+stage-level **delivery** state (the same ladder rung as "which of its specs are
+complete"), not a duplicate of the spec's implementation table.
 
 ### Built is not accepted
 
@@ -359,7 +383,9 @@ do not need CI (root `CLAUDE.md`). Validate by hand before finishing:
   pointing at files you moved.
 - `roadmap.md` links resolve and its entries do not contradict each plan's
   `Status:` line.
-- Every live plan has a Status line and an Outcome line.
+- Every live plan has a Status line and an Outcome line, and every delivery
+  stage or slice you touched carries its one-line status marker
+  ([Stage-status lines](#stage-status-lines)).
 - **Every piece of dev work in this change is recorded one rung up** — the slice
   in its spec, the completed spec in its plan, the completed plan in
   `roadmap.shipped.md`. Anything built but not yet accepted says so, and names

@@ -34,11 +34,13 @@ those systems through their existing exports and adds no second copy.
 | Settings page (`/settings/image-lab`)           | built 2026-08-10 |
 | Reference doc (`docs/images/` lab page)         | built 2026-08-10 |
 | Stage 0 control probe run + recorded verdict    | run 2026-08-11   |
+| Stage 1/2 recipes + controlled runner (intent)  | built 2026-08-11 |
+| Controlled-kind create/verdict/comparison UI    | built 2026-08-11 |
+| Stage 1/2 trial runs + recorded verdicts        | not run          |
 
-Stage 1+ work (controlled recipes on the render-intent path, finishing passes,
-LoRA trials) is deliberately absent from this table until the capabilities
-plan's slice 3 remainder and slice 9 exist; per the plan's sequencing ruling
-those are built next, under that plan.
+Stage 3+ work (finishing passes, LoRA trials, two-character recipes) is
+deliberately absent from this table: Stage 3 waits on the Stage 1/2 verdicts,
+and Stage 4 on the capabilities plan's Qwen LoRA library slice.
 
 ## Rulings this build settles
 
@@ -48,7 +50,11 @@ those are built next, under that plan.
   pinned `versionId`, and records everything itself. Rationale: capabilities
   slices 3/9 are unbuilt, and half-consuming an unfinished vocabulary from the
   lab would smear the boundary the plan draws. When those slices land, lab
-  renders move onto the intent path and this ruling expires.
+  renders move onto the intent path and this ruling expires. **Expired for
+  controlled kinds 2026-08-11:** the slices landed, and `controlled_portrait` /
+  `controlled_scene` run through `renderImageIntent` (see the Stage 1/2 rulings
+  below). `control_probe` deliberately keeps the direct call — hand-ordered
+  inputs and the raw `controlInput` escape hatch are probe tools, not a recipe.
 - **Lab outputs are hidden image assets, not gallery items.** New `images.kind`
   values `lab_control` and `lab_output` join `HIDDEN_IMAGE_KINDS`, exactly like
   `identity_trial_output`.
@@ -180,6 +186,70 @@ Ruling settled 2026-08-11 — **a probe may not be fed its own answer**:
   render out in the identity picker and clears a conflicting pick, so the
   refusal is reachable only through direct API calls.
 
+## Stage 1/2 build rulings (2026-08-11)
+
+The controlled kinds ride the shared machinery end to end; the lab's own code
+declares intent and records outcomes, nothing more.
+
+- **Recipes are code, not profile rows.** `src/contracts/images/image-lab-recipes.ts`
+  defines one recipe per (controlled kind × control kind): a fully-shaped
+  `ImageModelProfile` — operation `edit`, strategy `multi_reference_compose`,
+  reference policy requiring `identity` + the control role and ordering
+  identity → control → optionals (`outfit`/`style`/`object` for portraits,
+  `location`/`outfit`/`style` for scenes, one of each) — materialized onto the
+  registry's resolved model at run time under the id prefix `image-lab/`. A
+  seeded row under task `variant`/`scene` would surface in the ordinary lane
+  pickers and leak the experiment into the normal site; a code recipe is
+  versioned by the repo the way prompt strategies are. The recipe key is
+  recorded on every run.
+- **The recipe's task drives eligibility.** `controlled_portrait` compiles as a
+  `variant` profile and `controlled_scene` as a `scene` profile, so
+  `profileEligibility`'s identity-critical screening applies: a weak-identity or
+  img2img model refuses (`image_lab.profile_unavailable`) instead of rendering a
+  stranger.
+- **Controlled runs pin through the intent path.** `ImageRenderIntent` gained an
+  optional `versionId` that `renderImageIntent` threads to the transport;
+  production lanes never set it, and the lab sets it to
+  `pinnedImageModelVersion`'s answer (refusing `version_unpinned` without one,
+  exactly as the probe does).
+- **Capacity trims and records instead of refusing.** The probe's
+  `capacity_exceeded` refusal exists because the direct path's record could not
+  say what was sent. On the intent path the plan itself is the record: required
+  roles refuse before spend (`image_profile.required_reference_missing` and its
+  siblings settle onto the row verbatim), optional references beyond the
+  model's arity are dropped by `planIntentReferences`, and every drop is
+  written down. The probe keeps its refusal.
+- **The outcome is part of the record.** The runner writes
+  `meta.outcome` — recipe key, sent roles in send order, each dropped reference
+  with its reason, and the renumbered flag — on success and on `render_failed`
+  alike, and the wire experiment exposes it as a nullable `outcome` field
+  (absent on rows that predate it). Baselines record the same shape, recipe key
+  absent, so both arms of a comparison carry the same evidence.
+- **The raw `controlInput` bag is a probe tool.** A controlled experiment
+  carrying a non-empty raw provider bag refuses before spend with
+  `image_lab.settings_unsupported`: the recipe exists to prove a
+  production-shaped run, and production has no raw bag. Normalized
+  `settings.controls` still apply per render.
+- **Verdicts extend to controlled kinds.** `imageLabVerdictKinds` = the probe
+  plus both controlled kinds — each declares a control the output can be judged
+  against — and the reviewer's explicit-ruling flow is unchanged. Baselines
+  still refuse a verdict.
+- **Stage 0's integrity gates carry over unchanged.** `checkControlBinding`
+  guards controlled runs too: reviewed fixtures only, the declared fixture sent
+  exactly once under a control role, and the fixture's source render barred
+  from the ordered inputs.
+- **`outfit` joined the reference-role vocabulary** for the wardrobe arm of
+  Stage 1 — recorded in
+  [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
+  §"Reference policy", which owns the tuple.
+- **The form offers a subset of each recipe's optional roles.** Portraits offer
+  `outfit` and `style` (both sourced from the character's renders); scenes
+  offer `location` and `style` (the chat's scene renders) and `outfit` (the
+  chat's primary character's portraits). `object` stays API-reachable only:
+  no item-image source is reachable from the form, and offering the role with
+  nothing to pick would be an empty select. The recipes allow it, so the form
+  re-adds it the day a source exists.
+
 ## Contracts
 
 New file `src/contracts/images/image-lab.ts` (pure; exported via
@@ -213,6 +283,13 @@ redeclares — `imageReferenceRoles` from `image-model-capabilities.ts`.
   (create experiment, extract controls, upload control, review control, record
   verdict). Every DB read and route body goes through `parseOr` per
   `docs/resilience.md`.
+
+Stage 1/2 additions (2026-08-11): `imageLabVerdictKinds` /
+`isImageLabVerdictKind` (which kinds accept a verdict), `imageLabOutcomeSchema`
+(+ the nullable `outcome` field on the wire experiment), the
+`settings_unsupported` failure code, create-request rules requiring a character
+on `controlled_portrait` and a chat on `controlled_scene`, and the sibling file
+`image-lab-recipes.ts` carrying the recipe profiles (Stage 1/2 rulings above).
 
 ## Ownership rules
 
@@ -356,7 +433,14 @@ asserting fallback **and** code:
 - Ordered inputs beyond the resolved model's reference capacity →
   `image_lab.capacity_exceeded`, refused rather than trimmed — the render path
   fits an overlong list to the model's arity, so a trimmed run would leave a
-  record claiming a control the provider never received.
+  record claiming a control the provider never received. **Probe only:** a
+  controlled run's plan records what was sent, so it trims optionals and writes
+  every drop into the outcome instead (Stage 1/2 rulings).
+- Controlled run carrying a raw `controlInput` bag →
+  `image_lab.settings_unsupported`, refused before any provider spend.
+- Controlled run whose plan refuses (required role missing, required control
+  input unfilled, strategy uncompilable) → the intent path's own
+  `image_profile.*` code settles onto the row verbatim, never a thrown 500.
 - Preprocessor output → sharp decode validation →
   `image_lab.preprocessor_output_invalid`, no asset written.
 - Render failure → `classifyImageFailure` recorded, `image_lab.render_failed`;
@@ -369,6 +453,8 @@ asserting fallback **and** code:
 
 - `src/contracts/images/image-lab.ts` — contracts above; exported from
   `src/contracts/index.ts`.
+- `src/contracts/images/image-lab-recipes.ts` — the controlled-kind recipe
+  profiles (pure; exported from `src/contracts/index.ts`).
 - `src/server/images/image-lab.ts` — experiment service (create, list, detail,
   delete, run, record verdict); exported via `src/server/images/index.ts`.
 - `src/server/images/image-lab-controls.ts` — extraction service + edge-map
@@ -453,6 +539,29 @@ Run on the Fly deploy with the uxtest admin account, after the lab ships:
   not registered — the protocol's fallback step is void. Full verdict notes
   live on the experiments themselves; screenshots from the run are in the
   untracked `screenshots/` folder.
+
+## Stage 1/2 trial protocol
+
+Owner work, on the Fly deploy with the uxtest fixtures (or any admin account
+with a reviewed fixture set). Not run as of 2026-08-11.
+
+1. For each control kind with a reviewed fixture (pose, depth, edge): create a
+   `controlled_portrait` — identity = a portrait that is NOT the fixture's
+   source render, control = the fixture, instruction = the change being tested
+   (the numbered role bindings are compiled by the strategy; the instruction is
+   the base prompt).
+2. Pair each with a `baseline_portrait` for the same character carrying the
+   SAME instruction — the direct-edit arm the plan's Stage 1 exit names. The
+   detail view's paired-baseline action pre-fills it.
+3. Run the wardrobe arm once: identity + outfit reference + pose fixture.
+4. For Stage 2, repeat with `controlled_scene` on a chat (identity anchor +
+   fixture + optional location reference) paired with `baseline_scene`.
+5. Judge each pair side by side — structure obedience, identity survival,
+   unrelated drift — and record a verdict with a note on every controlled
+   experiment. The recorded outcome (sent roles, drops) plus the pinned version
+   is the settings evidence the comparison cites.
+6. Write the verdicts into this spec and flip the plan's Stage 1/2 status lines
+   when the owner accepts them.
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 

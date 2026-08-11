@@ -38,7 +38,10 @@ import { compileProfileRenderPlan } from "./render-profile";
  *   can carry a `probedVersionId` that would silently start pinning every
  *   player render to whatever version the trial happened to probe. Pinning
  *   production is the version-promotion slice's job, with the smoke test and
- *   activation flow that make it safe.
+ *   activation flow that make it safe. The intent may CARRY an explicit pin
+ *   from a controlled caller (`versionId` — today only the image lab's
+ *   controlled experiments set it); the path itself still pins nothing for
+ *   production lanes.
  * - **No forced prediction budget.** A plan always carries a numeric `timeoutMs`
  *   so a trial cell can hash its own deadline. All 17 seeded profiles store
  *   null, so honoring the plan's number here would replace
@@ -66,6 +69,14 @@ export interface ImageRenderIntent extends ImageRenderIntentCore {
    */
   profile: ResolvedImageProfile;
   references: ImageRenderReference[];
+  /**
+   * Execute exactly this provider version. Set ONLY by controlled callers —
+   * today the image lab's controlled experiments, whose evidence identity is
+   * the pin — never by a production lane, which follows the slug's floating
+   * latest (see the module note). Threaded to the transport untouched;
+   * reference planning ignores it.
+   */
+  versionId?: string;
 }
 
 /** Exactly what the provider will be handed, and what capacity left behind. */
@@ -297,6 +308,7 @@ export async function renderImageIntent(
       targetRatio: plan.targetRatio,
       controlInput: plan.controlInput,
       timeoutMs: plan.timeoutMs,
+      ...(intent.versionId ? { versionId: intent.versionId } : {}),
     },
     sink,
   );

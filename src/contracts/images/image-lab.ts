@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { imageReferenceRoleSchema, type ImageReferenceRole } from "./image-model-capabilities";
 import { imageRenderControlsSchema, type ImageRenderControls } from "./image-model-profiles";
+import type { ImageReferenceDropReason } from "./render-intent";
 
 /**
  * The Advanced Image Lab's vocabulary and record shapes
@@ -153,6 +154,26 @@ export const imageLabProbeVerdictSchema = z.enum(imageLabProbeVerdicts);
 export type ImageLabProbeVerdict = (typeof imageLabProbeVerdicts)[number];
 
 /**
+ * The experiment kinds a verdict may be recorded on: every kind that DECLARES a
+ * control the output can be judged against. The probe was the only one while it
+ * was the only kind that sent a fixture; the controlled recipes declare one too,
+ * and their whole point is that the same limb-for-limb judgment applies to a
+ * production-shaped render. Baselines still have none — a ruling recorded
+ * against an experiment with no control would be a fact about nothing.
+ */
+export const imageLabVerdictKinds = [
+  "control_probe",
+  "controlled_portrait",
+  "controlled_scene",
+] as const satisfies readonly ImageLabExperimentKind[];
+export type ImageLabVerdictKind = (typeof imageLabVerdictKinds)[number];
+
+/** Whether a kind declares a control an admin can rule on. */
+export function isImageLabVerdictKind(kind: ImageLabExperimentKind): kind is ImageLabVerdictKind {
+  return imageLabVerdictKinds.some((verdictKind) => verdictKind === kind);
+}
+
+/**
  * An experiment's lifecycle position. `pending` has spent nothing, `running` has
  * begun charging the image budget, and the two terminal states are settled by
  * the runner — never by the reviewer, whose verdict is a separate field
@@ -187,6 +208,11 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   resolved model accepts. The render path TRIMS an overlong list, so the run
  *   is refused before it instead: a probe whose record claimed a control was
  *   sent that the provider never received is evidence about nothing.
+ * - `settings_unsupported` — a CONTROLLED experiment carries a raw
+ *   provider-shaped `controlInput` bag. That bag is a probe tool; a controlled
+ *   recipe exists to prove a production-shaped run and production has no raw
+ *   bag, so a controlled experiment carrying one is refused before any spend
+ *   rather than silently stripped.
  * - `preprocessor_output_invalid` — the extractor answered with bytes sharp
  *   could not decode; no asset is written.
  * - `render_failed` — the provider call failed; the render classifier's own code
@@ -199,6 +225,7 @@ export const imageLabFailureCodes = [
   "control_unreviewed",
   "control_source_sent",
   "capacity_exceeded",
+  "settings_unsupported",
   "preprocessor_output_invalid",
   "render_failed",
 ] as const;
@@ -427,6 +454,53 @@ export function emptyImageLabSettings(): ImageLabSettings {
 export const imageLabStoredSettingsSchema = imageLabSettingsSchema.catch(emptyImageLabSettings);
 
 /**
+ * Why a reference the plan considered was not sent — the render-intent path's
+ * own three answers, restated as a tuple so this file's schema can enumerate
+ * them. The `satisfies` is the tie: a member here that stopped being one of
+ * `planIntentReferences`' reasons would fail to compile, so the recorded
+ * outcome cannot drift from the vocabulary of the planner that produced it.
+ */
+export const imageLabOutcomeDropReasons = [
+  "role_not_allowed",
+  "role_cap",
+  "model_capacity",
+] as const satisfies readonly ImageReferenceDropReason[];
+
+/** One reference the plan left out, with the reason and (when it came from a
+ * stored asset) which image it was. */
+export const imageLabOutcomeDropSchema = z.object({
+  role: imageReferenceRoleSchema,
+  reason: z.enum(imageLabOutcomeDropReasons),
+  sourceImageId: z.string().min(1).optional(),
+});
+export type ImageLabOutcomeDrop = z.infer<typeof imageLabOutcomeDropSchema>;
+
+/**
+ * What the reference plan actually DECIDED for one intent-path run, recorded by
+ * the runner in the row's meta.
+ *
+ * It exists because the controlled kinds trim instead of refusing: the intent
+ * path fits an overlong reference list to the model the way every production
+ * lane does, and the record is what keeps that honest — a verdict written weeks
+ * later can see that the style reference never went, rather than trusting the
+ * ordered inputs as if all of them had. `sentRoles` is the send order the
+ * compiled prompt numbers; `dropped` names what stayed behind and why;
+ * `renumbered` flags the one state where the prompt's numbering and the payload
+ * could disagree. `recipeKey` is the code-defined recipe that shaped the run —
+ * absent on a baseline, which runs the lane's own profile instead.
+ *
+ * Array defaults are THUNKS for the reason every default in this file is: zod
+ * hands a default through without cloning.
+ */
+export const imageLabOutcomeSchema = z.object({
+  recipeKey: z.string().min(1).optional(),
+  sentRoles: z.array(imageReferenceRoleSchema).default((): ImageReferenceRole[] => []),
+  dropped: z.array(imageLabOutcomeDropSchema).default((): ImageLabOutcomeDrop[] => []),
+  renumbered: z.boolean().default(false),
+});
+export type ImageLabOutcome = z.infer<typeof imageLabOutcomeSchema>;
+
+/**
  * One experiment as the lab's routes report it.
  *
  * Timestamps are ISO strings and `ownerId` is absent, matching
@@ -474,6 +548,11 @@ export const imageLabExperimentSchema = z.object({
   settings: imageLabStoredSettingsSchema.default(emptyImageLabSettings),
   resultImageId: z.string().min(1).nullable().default(null),
 
+  /** What the reference plan decided, for intent-path runs. Nullable because
+   * Stage 0 rows predate it; `.catch` because it rides the meta bag, so one bad
+   * bag costs the field, never the row. */
+  outcome: imageLabOutcomeSchema.nullable().catch(null).default(null),
+
   status: imageLabExperimentStatusSchema,
   failureCode: z.string().min(1).max(120).nullable().default(null),
   verdict: imageLabProbeVerdictSchema.nullable().default(null),
@@ -496,13 +575,18 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  * about (`qwen/qwen-image-edit-2511`); naming one is how the fallback connector
  * gets probed if the first verdict is `ignores_control`.
  *
- * Two cross-field rules, both grounded in what the runner must be able to do:
+ * The cross-field rules, each grounded in what the runner must be able to do:
  *
  * - a `baseline_portrait` needs a character (it renders that character's variant
  *   configuration from the canonical avatar) and a `baseline_scene` needs a chat
  *   (it renders through the scene profile from that chat's reference anchor). A
  *   baseline missing its subject is not a baseline, it is a run with nothing to
  *   compare against.
+ * - the controlled kinds carry the same subject rule: a `controlled_portrait`
+ *   names its character and a `controlled_scene` names its chat. The runner
+ *   reads no anchor from either — the ordered inputs are the references — but
+ *   the experiment is evidence ABOUT that subject, and its output is filed
+ *   against it.
  * - a control image and a control kind travel TOGETHER. Half a pointer is
  *   unreadable: an asset with no declared kind cannot be checked against the
  *   fixture it claims to be, and a kind with no asset names a control that was
@@ -544,6 +628,16 @@ export const imageLabCreateExperimentRequestSchema = z
     }
     if (request.kind === "baseline_scene" && request.chatId === undefined) {
       ctx.addIssue({ code: "custom", path: ["chatId"], message: "a scene baseline names the chat it re-runs" });
+    }
+    if (request.kind === "controlled_portrait" && request.characterId === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["characterId"],
+        message: "a controlled portrait names the character it is about",
+      });
+    }
+    if (request.kind === "controlled_scene" && request.chatId === undefined) {
+      ctx.addIssue({ code: "custom", path: ["chatId"], message: "a controlled scene names the chat it is about" });
     }
     if ((request.controlImageId === undefined) !== (request.controlKind === undefined)) {
       ctx.addIssue({

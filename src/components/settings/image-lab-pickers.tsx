@@ -1,6 +1,6 @@
 "use client";
 
-import { charactersApi, imageUrl, type ApiResult, type CharacterSummary, type ImageRecord } from "@/lib/client/api";
+import { charactersApi, chatsApi, imageUrl, type ApiResult, type CharacterSummary, type ImageRecord } from "@/lib/client/api";
 import { useAsyncData, type AsyncState } from "@/components/hooks/use-async";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
@@ -23,7 +23,7 @@ export function useLabCharacters(): AsyncState<CharacterSummary[]> {
   return useAsyncData(() => charactersApi.list({ sort: "name" }), []);
 }
 
-const NO_PORTRAITS: ApiResult<ImageRecord[]> = { ok: true, data: [] };
+const NO_IMAGES: ApiResult<ImageRecord[]> = { ok: true, data: [] };
 
 /**
  * One character's usable source renders — READY rows only.
@@ -35,11 +35,28 @@ const NO_PORTRAITS: ApiResult<ImageRecord[]> = { ok: true, data: [] };
  */
 export function useLabPortraits(characterId: string): AsyncState<ImageRecord[]> {
   return useAsyncData<ImageRecord[]>(async () => {
-    if (characterId === "") return NO_PORTRAITS;
+    if (characterId === "") return NO_IMAGES;
     const result = await charactersApi.portraits(characterId);
     if (!result.ok) return result;
     return { ok: true, data: result.data.portraits.filter((image) => image.status === "ready") };
   }, [characterId]);
+}
+
+/**
+ * One conversation's usable scene renders — READY rows only, the scene-lane
+ * mirror of {@link useLabPortraits} for the same reason a pending or failed row
+ * is filtered there. The controlled-scene experiment form reads these as its
+ * location and style sources: a previous scene render IS a picture of the
+ * place, and of the scene lane's own look, and no other client-reachable list
+ * holds either. An empty `chatId` resolves to an empty list without a request.
+ */
+export function useLabChatScenes(chatId: string): AsyncState<ImageRecord[]> {
+  return useAsyncData<ImageRecord[]>(async () => {
+    if (chatId === "") return NO_IMAGES;
+    const result = await chatsApi.scenes(chatId);
+    if (!result.ok) return result;
+    return { ok: true, data: result.data.scenes.filter((image) => image.status === "ready") };
+  }, [chatId]);
 }
 
 export function LabCharacterSelect({
@@ -149,45 +166,54 @@ export function labRenderLabel(image: ImageRecord): string {
 }
 
 /**
- * "Which of this character's renders?" — the fixtures panel's extraction source
- * and the experiment form's identity reference are the same question, asked in
- * two places, and they must offer the same answers.
+ * "Which of this list's renders?" — the fixtures panel's extraction source, the
+ * experiment form's identity reference, and the controlled kinds' extra
+ * reference are the same question asked over different scoped lists (a
+ * character's portraits, a conversation's scenes), and they must behave the
+ * same way.
  *
- * Clicking the chosen tile again clears it, because both callers have a
+ * `scopeId` is whatever choice gates the list — a character for portrait
+ * sources, a conversation for scene sources. Empty means "not chosen yet", and
+ * `emptyHints` lets a caller name that noun correctly (the defaults speak the
+ * original character-scoped callers' language, so they pass nothing).
+ *
+ * Clicking the chosen tile again clears it, because every caller has a
  * legitimate "none" (a skeleton drawn over nothing; a probe testing structure
- * with no identity to preserve) and a picker with no way back to empty would
- * hide it.
+ * with no identity to preserve; an extra slot left empty) and a picker with no
+ * way back to empty would hide it.
  *
  * `excluded` names the one render THIS caller's question rules out, and the
- * reason to caption it with. The render is still one of the character's, so it
- * is shown greyed rather than dropped: an admin who cannot find a render they
+ * reason to caption it with. The render is still one of the list's, so it is
+ * shown greyed rather than dropped: an admin who cannot find a render they
  * know exists reads the list as broken, where one who reads the reason learns
  * the rule. Callers with no such rule pass nothing.
  */
 export function LabRenderPicker({
   label,
   hint,
-  characterId,
-  portraits,
+  scopeId,
+  images,
   value,
   onChange,
   excluded = null,
+  emptyHints,
 }: {
   label: string;
   hint: string;
-  characterId: string;
-  portraits: AsyncState<ImageRecord[]>;
+  scopeId: string;
+  images: AsyncState<ImageRecord[]>;
   value: string | null;
   onChange: (imageId: string | null) => void;
   excluded?: { imageId: string; reason: string } | null;
+  emptyHints?: { unscoped: string; none: string };
 }) {
   return (
     <Field label={label} hint={hint}>
-      {portraits.loading && characterId !== "" ? (
+      {images.loading && scopeId !== "" ? (
         <Skeleton className="h-20 w-full" />
       ) : (
         <ImageChoiceGrid
-          choices={(portraits.data ?? []).map((image) => {
+          choices={(images.data ?? []).map((image) => {
             const exclusionReason = excluded !== null && image.id === excluded.imageId ? excluded.reason : null;
             return {
               imageId: image.id,
@@ -200,7 +226,11 @@ export function LabRenderPicker({
           })}
           value={value}
           onChange={(imageId) => onChange(imageId === value ? null : imageId)}
-          emptyHint={characterId === "" ? "Choose a character first." : "This character has no finished renders yet."}
+          emptyHint={
+            scopeId === ""
+              ? (emptyHints?.unscoped ?? "Choose a character first.")
+              : (emptyHints?.none ?? "This character has no finished renders yet.")
+          }
         />
       )}
     </Field>
