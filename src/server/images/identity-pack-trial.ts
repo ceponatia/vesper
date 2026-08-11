@@ -5,6 +5,7 @@ import {
   imageIdentityPackTrialDiagnosticCode,
   imageIdentityPackTrialResultSchema,
   imageProfileOffered,
+  providerVersionsDisagree,
   referenceCapacity,
   trialCellComboSchema,
   trialPairGradeSchema,
@@ -2414,10 +2415,15 @@ async function executeOneTrialCell(
   // The provider's own handles on this attempt, recorded on every outcome below.
   // `providerVersionId` is what Replicate says it RAN, as against `modelVersion`,
   // which is what the cell asked for; null means it echoed nothing, never "it
-  // matched". `moderationOutcome` and `postCrop` stay null throughout: the
-  // Replicate adapter exposes neither a moderation verdict nor a post-download
-  // crop rectangle, and a fabricated value in a provenance field is worse than
-  // an honest absence.
+  // matched". Whatever it says is recorded VERBATIM — including the literal
+  // `"hidden"` an official model answers — because the record's job is to
+  // preserve what the provider said, not to interpret it. The interpreting
+  // happens once, in `postRenderAuditFailure`.
+  //
+  // `moderationOutcome` and `postCrop` stay null throughout: the Replicate
+  // adapter exposes neither a moderation verdict nor a post-download crop
+  // rectangle, and a fabricated value in a provenance field is worse than an
+  // honest absence.
   const provenance = {
     providerPredictionId: rendered.predictionId ?? null,
     providerVersionId: rendered.executedVersionId ?? null,
@@ -2530,7 +2536,13 @@ async function executeOneTrialCell(
  *   not a controlled comparison; an echo that disagrees says plainly that
  *   something else ran. A MISSING echo is not a mismatch — the provider simply
  *   did not say, and refusing on silence would fail every cell against a model
- *   endpoint that omits the field.
+ *   endpoint that omits the field. Neither is an UNDISCLOSED echo (`"hidden"`,
+ *   what Replicate answers for an official model, which publishes no versions
+ *   list at all): that names no version to disagree with, and the cell's
+ *   evidence identity is the requested pin, which Replicate validated at create
+ *   time — an unresolvable version is refused `422` before any spend, so the
+ *   accepted prediction is itself proof the pin resolved. Both readings live in
+ *   `providerVersionsDisagree` so the lab screen and this audit cannot drift.
  */
 function postRenderAuditFailure(
   spec: ImageIdentityPackTrialCellSpec,
@@ -2553,10 +2565,10 @@ function postRenderAuditFailure(
       message: `a compiled control field was refused in transport (${narrowed.code}): ${narrowed.message}`,
     };
   }
-  if (providerVersionId !== null && providerVersionId !== spec.modelVersion) {
+  if (providerVersionsDisagree(spec.modelVersion, providerVersionId)) {
     return {
       code: "version_mismatch",
-      message: `the provider ran version ${providerVersionId}, not the pinned ${spec.modelVersion}`,
+      message: `the provider ran version ${providerVersionId ?? "?"}, not the pinned ${spec.modelVersion}`,
     };
   }
   return null;
