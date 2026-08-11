@@ -207,7 +207,12 @@ export interface ImageLabExperimentFormProps {
    * so a half-edited form is never rewritten under the admin's hands.
    */
   prefill?: ImageLabExperimentPrefill | null;
-  /** The created experiment's id — the caller arms its pending tile with it. */
+  /**
+   * The created experiment's id — the caller arms its pending tile with it, and
+   * remounts this form blank (the same key idiom the pre-fill uses). A create
+   * ends this form's life on purpose: a submitted experiment left sitting in the
+   * fields is one stray click from being rendered, and paid for, twice.
+   */
   onCreated: (experimentId: string) => void;
 }
 
@@ -540,6 +545,12 @@ export function ImageLabExperimentForm({
                 value={modelSlug}
                 onChange={(e) => setModelSlug(e.target.value)}
                 placeholder={DEFAULT_MODEL_SLUG}
+                // Italic on top of the shared muted placeholder colour: this
+                // placeholder is a model slug, and a slug sitting in the box
+                // reads exactly like one somebody typed. Blank means the plan's
+                // default, and that has to be legible at a glance — a run
+                // recorded against the wrong model is a wasted render.
+                className="placeholder:italic"
                 spellCheck={false}
                 maxLength={200}
               />

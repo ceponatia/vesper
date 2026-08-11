@@ -27,6 +27,12 @@ import { ImageLabFixturesPanel } from "./image-lab-fixtures-panel";
  * experiment ends when its row appears and settles. Neither is a timer someone
  * remembered to cancel.
  *
+ * An accepted create remounts the form at its defaults (the pre-fill key idiom,
+ * reused) and marks the row it produced. Every click here spends real render
+ * budget, so a form that kept its selections would leave the same experiment one
+ * bare click from being paid for twice — and its result, arriving below the
+ * fold, would be invisible to the admin who just paid for it.
+ *
  * `initialExperimentId` (the `?experiment=` param, read by the server page) opens
  * that record's detail on mount.
  */
@@ -48,6 +54,13 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
 
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(initialExperimentId ?? null);
   const [queuedExperimentId, setQueuedExperimentId] = useState<string | null>(null);
+  // The experiment the last create produced — the list rings that row and brings
+  // it on screen. Kept apart from `queuedExperimentId` (which arms the painting
+  // tile and the poll, and has to survive until the row lands) because this one
+  // is spent the moment the admin opens any record.
+  const [createdExperimentId, setCreatedExperimentId] = useState<string | null>(null);
+  // Bumped by every accepted create so the form remounts blank.
+  const [formGeneration, setFormGeneration] = useState(0);
   // A paired-baseline pre-fill, versioned so each request mounts a FRESH form
   // seeded from it (the detail's own key idiom): the form owns its state after
   // mount, so a reused instance would ignore a second pre-fill.
@@ -65,6 +78,10 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
   // view stayed where it was. Other params are left alone.
   const selectExperiment = (experimentId: string | null) => {
     setSelectedExperimentId(experimentId);
+    // The just-created mark exists to lead the admin to that row once; acting on
+    // any record spends it, so returning to the list is never a page that scrolls
+    // itself somewhere the admin didn't ask to go.
+    setCreatedExperimentId(null);
     const url = new URL(window.location.href);
     if (experimentId === null) url.searchParams.delete("experiment");
     else url.searchParams.set("experiment", experimentId);
@@ -183,12 +200,18 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
         />
 
         <ImageLabExperimentForm
-          key={prefill?.id ?? 0}
+          key={`${String(prefill?.id ?? 0)}-${String(formGeneration)}`}
           controls={controlRows}
           experiments={experimentRows}
           prefill={prefill?.values ?? null}
           onCreated={(experimentId) => {
             setQueuedExperimentId(experimentId);
+            setCreatedExperimentId(experimentId);
+            // Everything the form was holding is spent the moment the request is
+            // accepted — the pre-fill included, whose banner would otherwise
+            // describe a blank form. Both cleared, so the remount is a new form.
+            setPrefill(null);
+            setFormGeneration((generation) => generation + 1);
             experiments.reload({ silent: true });
           }}
         />
@@ -198,6 +221,7 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
           loading={experiments.loading}
           error={experiments.error}
           queued={experimentQueued}
+          createdId={createdExperimentId}
           onReload={() => experiments.reload()}
           onSelect={selectExperiment}
         />
