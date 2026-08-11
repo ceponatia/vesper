@@ -19,6 +19,10 @@ import { advanceBranchStoryTime } from "./scheduler-store";
  *   a stale claimant (its lease expired, another worker took over) can never overwrite live work.
  * - **Re-claimable** — a claim reclaims a job whose lease has expired, so a crashed worker's job
  *   is picked up by the boot/next-request sweep, never stranded.
+ * - **Retargeting** — between steps the runner re-reads the row's `target_story_second` (fenced
+ *   like every other job read), and the completed write re-verifies the target it reached, so a
+ *   mid-drain bump — an `enqueueTimeJob` on a processing row: a delayed arrival, an escalation —
+ *   EXTENDS the running drain instead of stranding on a completed row (ruling 24).
  *
  * The beat write on completion and the C15 poison recording are the CALLER's job (engine level):
  * this store is pure durable state + the deterministic drain, with no engine/IO dependencies
@@ -270,6 +274,12 @@ export interface RunJobResult {
  * - **stalled** — the step backstop tripped (a logic bug); recorded, not silently spun.
  *
  * Every progress and terminal write is fenced on `lease_owner = workerId AND state = 'processing'`.
+ * The TARGET is live, not frozen at claim time: each step re-reads the row's `target_story_second`
+ * (same fence) and drains to that, and the completed write additionally re-verifies the target it
+ * reached. So a mid-drain bump — an `enqueueTimeJob` on this processing row: a delayed arrival, an
+ * escalation reaching further — extends this run instead of stranding on a completed row (ruling
+ * 24). The backoff and progress writes never touch `target_story_second` and leave the row active,
+ * so a bump landing beside them simply survives on the row and is picked up on resume.
  */
 export async function runClaimedTimeJob(
   job: TimeJob,
@@ -283,11 +293,27 @@ export async function runClaimedTimeJob(
   let reached = job.reachedStorySecond;
   let lastReached = reached;
   let noProgress = 0;
+  /** The live target — re-read from the row each step, so a bump extends this run. */
+  let target = job.targetStorySecond;
 
-  const base = { jobId: job.id, branchId: job.branchId, chatId: job.chatId, targetStorySecond: job.targetStorySecond };
+  const ids = { jobId: job.id, branchId: job.branchId, chatId: job.chatId };
+  /** Every return path reports the target as of NOW, never the one captured at claim time. */
+  const result = (outcome: RunJobResult["outcome"]): RunJobResult => ({
+    ...ids,
+    outcome,
+    reachedStorySecond: reached,
+    targetStorySecond: target,
+    terminalFailures,
+  });
 
   for (let step = 0; step < MAX_STEPS; step += 1) {
-    const outcome = await advanceBranchStoryTime(job.branchId, job.targetStorySecond, {
+    // Adopt whatever the row says now (`enqueueTimeJob` only ever bumps it forward); a row that is
+    // no longer ours means another worker owns the drain, so stop.
+    const live = await readOwnedTarget(database, job.id, workerId);
+    if (live === null) return result("lease_lost");
+    target = live;
+
+    const outcome = await advanceBranchStoryTime(job.branchId, target, {
       workerId,
       budgetMs: STEP_BUDGET_MS,
       maxTriggers: STEP_MAX_TRIGGERS,
@@ -297,16 +323,28 @@ export async function runClaimedTimeJob(
     terminalFailures += outcome.terminalFailures ?? 0;
 
     if (outcome.status === "advanced") {
-      const fenced = await fencedSet(database, job.id, workerId, {
-        state: "completed",
-        reachedStorySecond: reached,
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        completedAt: clock(),
-        updatedAt: clock(),
-      });
-      if (!fenced) return { ...base, outcome: "lease_lost", reachedStorySecond: reached, terminalFailures };
-      return { ...base, outcome: "completed", reachedStorySecond: reached, terminalFailures };
+      // Fenced on the target too: completing is only correct for the target we actually drained to.
+      const fenced = await fencedSet(
+        database,
+        job.id,
+        workerId,
+        {
+          state: "completed",
+          reachedStorySecond: reached,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          completedAt: clock(),
+          updatedAt: clock(),
+        },
+        { expectTargetStorySecond: target },
+      );
+      if (fenced) return result("completed");
+      // 0 rows — either a bump committed while this step drained (still ours: keep going, to the
+      // further target) or the lease is gone. The MAX_STEPS backstop bounds a pathological bumper.
+      const bumped = await readOwnedTarget(database, job.id, workerId);
+      if (bumped === null) return result("lease_lost");
+      target = bumped;
+      continue;
     }
 
     // catch_up_required — a backed-off trigger parks the clock; wait it out and resume later.
@@ -320,8 +358,8 @@ export async function runClaimedTimeJob(
         leaseExpiresAt: null,
         updatedAt: clock(),
       });
-      if (!fenced) return { ...base, outcome: "lease_lost", reachedStorySecond: reached, terminalFailures };
-      return { ...base, outcome: "backoff", reachedStorySecond: reached, terminalFailures };
+      if (!fenced) return result("lease_lost");
+      return result("backoff");
     }
 
     // A budget reason (trigger_budget / time_budget) — persist progress, extend the lease, loop.
@@ -330,7 +368,7 @@ export async function runClaimedTimeJob(
       leaseExpiresAt: new Date(clock().getTime() + leaseSeconds * 1000),
       updatedAt: clock(),
     });
-    if (!fenced) return { ...base, outcome: "lease_lost", reachedStorySecond: reached, terminalFailures };
+    if (!fenced) return result("lease_lost");
 
     // Defensive stuck-guard: a budget catch-up that makes NO clock progress repeatedly means the
     // drain cannot advance (should never happen — poison triggers are skipped, backoff is handled
@@ -341,12 +379,12 @@ export async function runClaimedTimeJob(
         await fencedSet(database, job.id, workerId, {
           state: "blocked",
           reachedStorySecond: reached,
-          lastError: `time job made no progress past ${reached}/${job.targetStorySecond}`,
+          lastError: `time job made no progress past ${reached}/${target}`,
           leaseOwner: null,
           leaseExpiresAt: null,
           updatedAt: clock(),
         });
-        return { ...base, outcome: "blocked", reachedStorySecond: reached, terminalFailures };
+        return result("blocked");
       }
     } else {
       noProgress = 0;
@@ -357,27 +395,54 @@ export async function runClaimedTimeJob(
   await fencedSet(database, job.id, workerId, {
     state: "blocked",
     reachedStorySecond: reached,
-    lastError: `time job hit the ${MAX_STEPS}-step backstop at ${reached}/${job.targetStorySecond}`,
+    lastError: `time job hit the ${MAX_STEPS}-step backstop at ${reached}/${target}`,
     leaseOwner: null,
     leaseExpiresAt: null,
     updatedAt: clock(),
   });
-  return { ...base, outcome: "stalled", reachedStorySecond: reached, terminalFailures };
+  return result("stalled");
 }
 
-/** A fenced write: only lands while this worker still holds the processing lease. Returns applied?. */
+/**
+ * A fenced write: only lands while this worker still holds the processing lease. Returns applied?.
+ * `expectTargetStorySecond` adds the target to the fence — the terminal completion uses it so a
+ * target bumped mid-step cannot be sealed away on a completed row.
+ */
 async function fencedSet(
   database: Db,
   jobId: string,
   workerId: string,
   set: Partial<typeof simTimeJobs.$inferInsert>,
+  options: { expectTargetStorySecond?: number } = {},
 ): Promise<boolean> {
   const [updated] = await database
     .update(simTimeJobs)
     .set(set)
-    .where(and(eq(simTimeJobs.id, jobId), eq(simTimeJobs.leaseOwner, workerId), eq(simTimeJobs.state, "processing")))
+    .where(
+      and(
+        eq(simTimeJobs.id, jobId),
+        eq(simTimeJobs.leaseOwner, workerId),
+        eq(simTimeJobs.state, "processing"),
+        options.expectTargetStorySecond === undefined
+          ? undefined
+          : eq(simTimeJobs.targetStorySecond, options.expectTargetStorySecond),
+      ),
+    )
     .returning({ id: simTimeJobs.id });
   return updated !== undefined;
+}
+
+/**
+ * A fenced read of the job's live target — the same `id + lease_owner + processing` fence every
+ * write uses. `null` means the row is no longer ours to drive (lease taken over, or terminal).
+ */
+async function readOwnedTarget(database: Db, jobId: string, workerId: string): Promise<number | null> {
+  const [row] = await database
+    .select({ targetStorySecond: simTimeJobs.targetStorySecond })
+    .from(simTimeJobs)
+    .where(and(eq(simTimeJobs.id, jobId), eq(simTimeJobs.leaseOwner, workerId), eq(simTimeJobs.state, "processing")))
+    .limit(1);
+  return row?.targetStorySecond ?? null;
 }
 
 /** The catch-up UI / status read for one chat — its most recent job, if any. */
