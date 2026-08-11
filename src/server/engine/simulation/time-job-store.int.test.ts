@@ -138,6 +138,12 @@ function enqueueFor(ids: CaseIds, targetStorySecond: number, reachedStorySecond 
   return enqueueTimeJob({ worldId: ids.worldId, branchId: ids.branchId, chatId: ids.chatId, targetStorySecond, reachedStorySecond });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function activeJobCount(branchId: string): Promise<number> {
   const rows = await db()
     .select({ id: simTimeJobs.id })
@@ -174,8 +180,69 @@ describe.skipIf(!ready)("durable time jobs", () => {
       enqueueFor(ids, SEED_STORY_SECOND + 600),
       enqueueFor(ids, SEED_STORY_SECOND + 600),
     ]);
-    expect(results.filter((r) => r.created)).toHaveLength(1);
+    const created = results.filter((r) => r.created);
+    expect(created).toHaveLength(1);
     expect(await activeJobCount(ids.branchId)).toBe(1);
+    // The losers merge into the winner's job rather than inventing one: every caller walks away
+    // pointing at the same durable drain.
+    expect([...new Set(results.map((r) => r.id))]).toEqual([created[0]!.id]);
+  });
+
+  it("merges its farther target into a peer's job when its own insert loses the race", async () => {
+    const ids = makeIds();
+    await seedCase(ids);
+
+    // The test above only hits the losing branch when the scheduler happens to interleave the
+    // three enqueues just so; this one FORCES it. An uncommitted peer insert is held open, so the
+    // enqueue's opening select sees nothing (the row isn't visible yet) and its own insert
+    // collides with the held row and blocks until the peer commits.
+    //
+    // That is the path that used to raise a unique violation, which aborts the enqueue's whole
+    // transaction — its recovery re-read then died with 25P02 instead of adopting the peer's job.
+    // Intermittent in CI, a real lost enqueue in production.
+    //
+    // The racer asks for a FARTHER target than the peer's, which is the case that actually costs a
+    // player something: a long skip can lose this race to a short arrival-settlement escalation,
+    // and a loser that merely adopted the winner's row would truncate the drain to the near target.
+    const peerTarget = SEED_STORY_SECOND + 600;
+    const racerTarget = SEED_STORY_SECOND + 1800;
+    const peerId = newId();
+
+    // A barrier, not a timed guess: the racer may only start once the peer's insert has actually
+    // landed. A `sleep` here would let a slow runner reverse the two, and then it is the PEER's
+    // plain insert that fails — a flake manufactured by the test rather than found by it.
+    let peerHasInserted!: () => void;
+    const peerInserted = new Promise<void>((resolve) => {
+      peerHasInserted = resolve;
+    });
+    const peer = db().transaction(async (tx) => {
+      await tx.insert(simTimeJobs).values({
+        id: peerId,
+        worldId: ids.worldId,
+        branchId: ids.branchId,
+        chatId: ids.chatId,
+        targetStorySecond: peerTarget,
+        reachedStorySecond: SEED_STORY_SECOND,
+      });
+      peerHasInserted();
+      // Hold the row uncommitted long enough for the racer to reach its own insert and block on it.
+      await sleep(250);
+    });
+    await peerInserted;
+
+    // `Promise.all` rather than a bare await: it settles only once the peer's transaction is done
+    // (so the row reads below see the committed state) and it attaches a handler to the peer even
+    // when the enqueue throws, so a failure here can never surface as an unhandled rejection
+    // blamed on whichever test runs next.
+    const [raced] = await Promise.all([enqueueFor(ids, racerTarget), peer]);
+
+    expect(raced.created).toBe(false);
+    expect(raced.id).toBe(peerId);
+    expect(await activeJobCount(ids.branchId)).toBe(1);
+    // The merge holds on either interleaving: `greatest` when the race fired, the `for update`
+    // bump when the peer committed first. Both must land on the farther target.
+    const [row] = await db().select().from(simTimeJobs).where(eq(simTimeJobs.id, peerId));
+    expect(row?.targetStorySecond).toBe(racerTarget);
   });
 
   it("claims a due job with a lease and drains it to completion, stamping progress", async () => {
