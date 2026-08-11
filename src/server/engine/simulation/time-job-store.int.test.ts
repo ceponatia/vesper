@@ -202,6 +202,41 @@ describe.skipIf(!ready)("durable time jobs", () => {
     expect(await hasActiveTimeJob(ids.branchId)).toBe(false);
   });
 
+  // Ruling 24 — the drain target IS the arrival trigger's due second, so a delay that lands
+  // mid-drain (a bump onto the still-processing row) must EXTEND the running drain; stranding the
+  // further target on a completed row would leave the traveller short and nothing to re-claim it.
+  it("a mid-drain target bump extends the running job — the drain lands on the new target", async () => {
+    const ids = makeIds(2);
+    await seedCase(ids);
+    await scheduleAt(ids, SEED_STORY_SECOND + 100, "t100", ids.itemIds[0]!);
+    // Inside the EXTENDED window only — the original target would never reach it.
+    await scheduleAt(ids, SEED_STORY_SECOND + 450, "t450", ids.itemIds[1]!);
+    await enqueueFor(ids, SEED_STORY_SECOND + 300);
+
+    const job = await claimDueTimeJob("worker_a");
+    expect(job).not.toBeNull();
+    expect(job?.state).toBe("processing");
+    expect(job?.targetStorySecond).toBe(SEED_STORY_SECOND + 300);
+
+    // The delay arrives while the job is processing: the enqueue bumps the claimed row's target.
+    const bump = await enqueueFor(ids, SEED_STORY_SECOND + 600);
+    expect(bump.created).toBe(false);
+    expect(bump.id).toBe(job!.id);
+
+    const result = await runClaimedTimeJob(job!, "worker_a");
+    expect(result.outcome).toBe("completed");
+    expect(result.reachedStorySecond).toBe(SEED_STORY_SECOND + 600);
+    expect(result.targetStorySecond).toBe(SEED_STORY_SECOND + 600);
+    expect(result.terminalFailures).toBe(0);
+
+    const [row] = await db().select().from(simTimeJobs).where(eq(simTimeJobs.id, job!.id));
+    expect(row?.state).toBe("completed");
+    expect(row?.reachedStorySecond).toBe(SEED_STORY_SECOND + 600);
+    expect(row?.targetStorySecond).toBe(SEED_STORY_SECOND + 600);
+    expect(row?.leaseOwner).toBeNull();
+    expect(await hasActiveTimeJob(ids.branchId)).toBe(false);
+  });
+
   it("a fenced write cannot land after another worker takes the job over (lease_lost)", async () => {
     const ids = makeIds(1);
     await seedCase(ids);
