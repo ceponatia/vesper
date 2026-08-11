@@ -1,9 +1,9 @@
 # Drain hardening — follow-ups
 
-Status: **complete — 2026-08-11.** One post-ship item: the mid-drain retarget
-that the [plan](drain-hardening.plan.md)'s slice-4 note left as a small
-follow-up on the then-new runner. It is now built and int-tested; nothing here
-is outstanding.
+Status: **closed — mid-drain retarget built 2026-08-11.** One post-ship item:
+the retarget that the [plan](drain-hardening.plan.md)'s slice-4 note left as a
+small follow-up on the then-new runner. It is built and int-tested; nothing
+here is outstanding.
 
 ## Mid-drain retarget (A5 follow-up) — built 2026-08-11
 
