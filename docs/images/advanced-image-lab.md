@@ -42,10 +42,17 @@ contract: its spec.
   pinned Replicate preprocessors (`lab_control_extract` jobs; constants in
   `server/images/image-lab-controls.ts`), edge maps computed in-process (sharp
   Sobel threshold, no provider call), or hand-authored uploads.
-- Fixtures must be explicitly reviewed (`reviewedAt` + note, stamped
-  server-side) before an experiment may use them — the runner refuses an
-  unreviewed control before any provider spend — and can be deleted; a citing
-  experiment keeps its recorded settings with the fixture pointer nulled.
+- The path that creates a fixture — an extraction request or a hand-authored
+  upload — may record an optional `originNote` saying what the fixture was made
+  for; a fixture tile labels the origin and review notes separately, showing
+  each only when present.
+- Fixtures must be explicitly reviewed (`reviewedAt` + `reviewNote`, stamped
+  server-side and merged over the stored meta, so `originNote` survives) before
+  an experiment may use them — the runner refuses an unreviewed control before
+  any provider spend — and can be deleted; a citing experiment keeps its
+  recorded settings with the fixture pointer nulled. A note stored without a
+  review date is an origin note, so recording the review keeps it as
+  `originNote`; an already-present `originNote` wins.
 
 ## Cost and health accounting
 
