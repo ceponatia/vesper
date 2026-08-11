@@ -35,6 +35,16 @@ import {
   type ImageLabExtractControlsRequest,
   type ImageLabRecordVerdictRequest,
   type ImageLabUploadControlRequest,
+  IMAGE_LORA_MAX_SCALE,
+  IMAGE_LORA_MAX_TRIGGER_WORDS,
+  IMAGE_LORA_MIN_SCALE,
+  imageLoraLocatorTypes,
+  imageLoraSchema,
+  redactImageLoraLocator,
+  type ImageLora,
+  type ImageLoraCreateRequest,
+  type ImageLoraLocatorType,
+  type ImageLoraUpdateRequest,
   imageModelSchema,
   imageModelsForSurface,
   imageReferenceTransports,
@@ -834,6 +844,43 @@ export const adminImageModelsApi = {
     },
   ) => apiPatch(z.object({ model: imageModelSchema }), `/api/admin/self/image-models/${modelId}`, body),
   remove: (modelId: string) => apiDelete(`/api/admin/self/image-models/${modelId}`),
+};
+
+// The curated LoRA library is data too, and its rules — the locator shapes, the
+// scale band, the redaction — are decided in `src/contracts/images/image-loras.ts`.
+// Re-exported here so the settings section reads the SAME rules the routes save
+// under, rather than a second, looser spelling of them in the UI.
+export {
+  IMAGE_LORA_MAX_SCALE,
+  IMAGE_LORA_MAX_TRIGGER_WORDS,
+  IMAGE_LORA_MIN_SCALE,
+  imageLoraLocatorTypes,
+  imageLoraSchema,
+  redactImageLoraLocator,
+  type ImageLora,
+  type ImageLoraCreateRequest,
+  type ImageLoraLocatorType,
+  type ImageLoraUpdateRequest,
+};
+
+const IMAGE_LORAS_API_ROOT = "/api/admin/self/image-loras";
+
+/**
+ * The curated LoRA library's admin CRUD (`/api/admin/self` — 404s for non-admins).
+ *
+ * `listOf` rather than the contract's own `.catch([])` list schema, for the reason
+ * every list in this file uses it: one row whose locator or scale triple no longer
+ * parses must cost itself, not the whole library — a section that emptied on one
+ * bad row would read as "the LoRAs are gone" at exactly the moment an operator
+ * needs to find the broken one.
+ */
+export const imageLorasApi = {
+  list: () => apiGet(listOf(imageLoraSchema, "loras"), IMAGE_LORAS_API_ROOT),
+  create: (body: ImageLoraCreateRequest) => apiPost(z.object({ lora: imageLoraSchema }), IMAGE_LORAS_API_ROOT, body),
+  /** Any subset of the fields; the server re-checks the cross-field rules against the merged row. */
+  update: (loraId: string, body: ImageLoraUpdateRequest) =>
+    apiPatch(z.object({ lora: imageLoraSchema }), `${IMAGE_LORAS_API_ROOT}/${loraId}`, body),
+  remove: (loraId: string) => apiDelete(`${IMAGE_LORAS_API_ROOT}/${loraId}`),
 };
 
 // ---------------------------------------------------------------------------
