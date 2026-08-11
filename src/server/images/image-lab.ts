@@ -776,6 +776,17 @@ function controlInvalid(message: string): ControlFixtureRefusal {
  * while pointing at a depth map would produce a verdict filed under the wrong
  * control.
  *
+ * The SOURCE gate is a different failure wearing the same shape. A fixture
+ * EXTRACTED from a render is that render's own structure, so the render carries
+ * the control's answer in its own pixels: order it alongside the fixture and an
+ * output matching the skeleton shows only that the model copied a reference it
+ * was handed — `honours_control` would be a pass the probe never earned, and
+ * nothing afterwards could tell it apart from one that was. ALL ordered inputs
+ * are scanned rather than the identity slot alone, because it is the pixels that
+ * carry the answer and they carry it under whatever role they arrive as. A
+ * fixture drawn from nothing records no source and is exempt by construction:
+ * there is no render holding the answer to copy.
+ *
  * The REVIEW gate is the same argument one step further, and it is the Stage 0
  * protocol's own rule ("extract a pose skeleton and a depth map … review both in
  * the fixtures panel"). A probe that comes back `ignores_control` has to be able
@@ -822,6 +833,12 @@ async function checkControlBinding(
     return controlInvalid(
       `control image ${controlImageId} is a ${meta.controlKind} fixture, not the ${row.controlKind} this experiment records`,
     );
+  }
+  if (meta.sourceImageId !== undefined && inputs.some((input) => input.imageId === meta.sourceImageId)) {
+    return {
+      code: "control_source_sent",
+      message: `control image ${controlImageId} was extracted from image ${meta.sourceImageId}, which this experiment also sends; the output could match the fixture by copying that reference instead of obeying it`,
+    };
   }
   if (meta.reviewedAt === undefined) {
     return {

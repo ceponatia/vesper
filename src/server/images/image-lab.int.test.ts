@@ -177,12 +177,20 @@ async function seedReadyImage(kind: ImageKind, meta: Record<string, unknown> = {
  * review path writes, and a test that wrote that field itself would keep passing
  * after the two stopped agreeing. `reviewed: false` is the unreviewed fixture the
  * gate exists to refuse.
+ *
+ * `sourceImageId` is the render the fixture came from — absent by default, the
+ * way a skeleton drawn from nothing records none.
  */
 async function seedControlFixture(
   controlKind: ImageLabControlKind = "pose",
-  opts: { reviewed?: boolean } = {},
+  opts: { reviewed?: boolean; sourceImageId?: string } = {},
 ): Promise<string> {
-  const imageId = await seedReadyImage("lab_control", { hidden: true, controlKind, generator: "hand_authored" });
+  const imageId = await seedReadyImage("lab_control", {
+    hidden: true,
+    controlKind,
+    generator: "hand_authored",
+    ...(opts.sourceImageId ? { sourceImageId: opts.sourceImageId } : {}),
+  });
   if (opts.reviewed !== false) {
     const reviewed = await reviewImageLabControl(ownerId, imageId, "seeded fixture, looked at before use");
     expect(reviewed?.ok).toBe(true);
@@ -577,6 +585,37 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     const experiment = await getImageLabExperimentDetail(id, ownerId);
     expect(experiment?.status).toBe("succeeded");
     expect(captured).toHaveLength(1);
+  });
+
+  it("refuses a probe that also sends the render its fixture came from, before any spend", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    // The fixture records the render it was extracted from, and that render is
+    // ordered as the identity anchor: the output could match the skeleton by
+    // copying that reference, so `honours_control` would be a pass nothing
+    // earned. The UI greys the render out; only this refusal stops a direct API
+    // call from running it anyway.
+    const controlId = await seedControlFixture("pose", { sourceImageId: identityId });
+    const { id, sink } = await createProbe({
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_source_sent"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("control_source_sent"));
+    // The fixture is readable and REVIEWED, so nothing else here would have
+    // stopped it — this is the rule's own refusal, not another gate's.
+    expect(experiment?.failureCode).not.toBe(imageLabDiagnosticCode("control_unreviewed"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
   });
 
   it("refuses an experiment ordering more references than the model accepts", async () => {
