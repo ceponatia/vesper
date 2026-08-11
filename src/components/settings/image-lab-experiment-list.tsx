@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { ImageLabExperiment } from "@/contracts";
 import { imageUrl, type ApiError } from "@/lib/client/api";
+import { cx } from "@/components/ui/cx";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
@@ -18,6 +20,10 @@ import {
  * Failed rows stay visible on purpose: a refused run is a recorded outcome with
  * a reason on it, which is exactly the kind of thing the bench exists to
  * accumulate. Nothing here disappears when it stops being interesting.
+ *
+ * Every row carries its id, because a lab record is cited by id everywhere the
+ * bench's output is written down — a ruling, a note — and matching a row to the
+ * id in a note should not require opening each one.
  */
 
 export interface ImageLabExperimentListProps {
@@ -26,6 +32,8 @@ export interface ImageLabExperimentListProps {
   error: ApiError | null;
   /** A create was accepted and its row has not surfaced in a refetch yet. */
   queued: boolean;
+  /** The experiment the last create produced: ringed, and scrolled to when it lands. */
+  createdId: string | null;
   onReload: () => void;
   onSelect: (experimentId: string) => void;
 }
@@ -53,9 +61,23 @@ export function ImageLabExperimentList({
   loading,
   error,
   queued,
+  createdId,
   onReload,
   onSelect,
 }: ImageLabExperimentListProps) {
+  const createdRef = useRef<HTMLButtonElement>(null);
+  // A create's row lands a refetch later, below a form the admin is still
+  // looking at. Bring it on screen the moment it arrives — once per created id:
+  // keyed on the landed id (not a boolean) so a second create scrolls even when
+  // a racing status poll fetched its row before the mark moved, while the silent
+  // polls that follow a landing never re-yank the page out from under someone.
+  const landedCreatedId =
+    createdId !== null && experiments.some((experiment) => experiment.id === createdId) ? createdId : null;
+  useEffect(() => {
+    if (landedCreatedId === null) return;
+    createdRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [landedCreatedId]);
+
   return (
     <section className="flex flex-col gap-3">
       <h2 className="prose-display text-lg">Experiments</h2>
@@ -79,12 +101,17 @@ export function ImageLabExperimentList({
       {experiments.map((experiment) => {
         const chip = imageLabStatusChip(experiment.status);
         const verdict = experiment.verdict === null ? null : imageLabVerdictChip(experiment.verdict);
+        const justCreated = experiment.id === createdId;
         return (
           <button
             key={experiment.id}
+            ref={justCreated ? createdRef : undefined}
             type="button"
             onClick={() => onSelect(experiment.id)}
-            className="flex items-start gap-3 rounded-card border border-ink-600 bg-ink-850 p-4 text-left transition-colors hover:border-ink-500"
+            className={cx(
+              "flex items-start gap-3 rounded-card border bg-ink-850 p-4 text-left transition-colors",
+              justCreated ? "border-accent-500 ring-1 ring-accent-500/40" : "border-ink-600 hover:border-ink-500",
+            )}
           >
             <ExperimentThumb experiment={experiment} />
             <div className="min-w-0 flex-1">
@@ -97,9 +124,18 @@ export function ImageLabExperimentList({
                   <Tag tone="accent">{imageLabControlKindLabel(experiment.controlKind)}</Tag>
                 ) : null}
                 {verdict ? <Tag tone={verdict.tone}>{verdict.label}</Tag> : null}
+                {/* Said in words as well as in the ring: the mark that leads an
+                    admin to the run they just paid for cannot rest on colour
+                    alone, and this row's other chips are all words too. */}
+                {justCreated ? <Tag tone="accent">just created</Tag> : null}
               </div>
               <p className="mt-1 truncate text-[11px] text-paper-500">
                 <code>{experiment.modelSlug}</code> · created {new Date(experiment.createdAt).toLocaleString()}
+              </p>
+              {/* Same shape the detail header cites it in: the id whole, never
+                  shortened — a trimmed id is not the id a note was written with. */}
+              <p className="mt-1 text-[11px] text-paper-500">
+                id <code className="break-all">{experiment.id}</code>
               </p>
               {experiment.instruction.trim() !== "" ? (
                 <p className="mt-1 truncate text-xs text-paper-400" title={experiment.instruction}>
