@@ -40,11 +40,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Qwen advanced image subsystem — controlled composition experiments** —
   [plan](qwen-advanced-image-subsystem.plan.md) ·
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
-  control-mapped Qwen edits against ordinary output; Stage 0 is done — 2511
-  honours pose and depth controls, Plus stays unregistered — and Stage 1
-  controlled portraits and Stage 2 controlled scenes are built on the shared
-  intent path, awaiting the owner's trial runs; the LoRA library stays folded
-  into capabilities slice 6.
+  control-mapped Qwen edits against ordinary output; Stages 0–2 are complete —
+  depth and edge controls proved reliable in both lanes, pose is stochastic,
+  Plus stays unregistered — and Stage 3 identity finishing is next; the LoRA
+  library stays folded into capabilities slice 6.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
