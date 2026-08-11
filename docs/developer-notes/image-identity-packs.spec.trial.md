@@ -314,7 +314,13 @@ limitations.
   Replicate (`POST /predictions {version, input}`), re-checks the pin first,
   and compares the prediction's own version echo after the render (a mismatch
   settles `failed`/`version_mismatch`); planning-time drift is
-  `cell_conflict`. **Operator note:** the seeded built-in models carry no
+  `cell_conflict`. Two echoes are **not** mismatches: silence, and the literal
+  `"hidden"` an official model answers, which is non-disclosure rather than a
+  disagreeing version — such a run's identity is the requested pin, which
+  Replicate validated at create time (owner ruling 2026-08-11,
+  [qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md)).
+  Both readings live in `providerVersionsDisagree`
+  (`src/contracts/images/image-models.ts`). **Operator note:** the seeded built-in models carry no
   probed version, so a fresh registry plans nothing until each model is
   re-probed once (the admin model page's reprobe action) — that is a
   deliberate refusal, not a bug.
