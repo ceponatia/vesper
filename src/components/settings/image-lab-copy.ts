@@ -5,6 +5,8 @@ import {
   type ImageLabExperimentKind,
   type ImageLabExperimentStatus,
   type ImageLabFailureCode,
+  type ImageLabMode,
+  type ImageLabOutcomeDrop,
   type ImageLabProbeVerdict,
   type ImageReferenceRole,
 } from "@/contracts";
@@ -21,7 +23,7 @@ import type { TagTone } from "@/components/ui/tag";
  * person being asked to rule on it.
  */
 
-/** What one experiment is for. Stage 0 only creates the first three. */
+/** What one experiment is for. Everything but `finishing_pass` is creatable now. */
 export function imageLabExperimentKindLabel(kind: ImageLabExperimentKind): string {
   switch (kind) {
     case "control_probe":
@@ -50,6 +52,23 @@ export function imageLabStatusChip(status: ImageLabExperimentStatus): { label: s
       return { label: "rendered", tone: "ok" };
     case "failed":
       return { label: "failed", tone: "danger" };
+  }
+}
+
+/**
+ * Which pull an experiment is biased toward when identity and composition
+ * compete — the controlled kinds' mode select, and the detail's mode line.
+ */
+export function imageLabModeLabel(mode: ImageLabMode): string {
+  switch (mode) {
+    case "identity_priority":
+      return "identity priority";
+    case "controlled_composition":
+      return "controlled composition";
+    case "balanced":
+      return "balanced";
+    case "style_priority":
+      return "style priority";
   }
 }
 
@@ -130,6 +149,8 @@ export function imageLabRoleLabel(role: ImageReferenceRole): string {
       return "style reference";
     case "object":
       return "object reference";
+    case "outfit":
+      return "wardrobe reference";
     case "product":
       return "product reference";
     case "before":
@@ -149,6 +170,24 @@ export function imageLabRoleLabel(role: ImageReferenceRole): string {
   }
 }
 
+/**
+ * Why the reference plan left one reference behind — the recorded outcome's
+ * three drop reasons in English. Kept apart from the failure copy below
+ * because a drop is not a failure: the run rendered, and this line explains
+ * what it rendered WITHOUT — which is exactly what a verdict written weeks
+ * later has to know before it trusts the ordered inputs.
+ */
+export function imageLabDropReasonExplanation(reason: ImageLabOutcomeDrop["reason"]): string {
+  switch (reason) {
+    case "role_not_allowed":
+      return "The recipe does not accept this role, so the reference never entered the plan.";
+    case "role_cap":
+      return "The recipe already had its one reference of this role; a second would make an unhonoured control unattributable.";
+    case "model_capacity":
+      return "The model had no reference slot left — trimmed the way every production lane trims, and recorded here instead of hidden.";
+  }
+}
+
 /** Plain copy for one lab failure code. */
 function labFailureCopy(code: ImageLabFailureCode): string {
   switch (code) {
@@ -164,6 +203,8 @@ function labFailureCopy(code: ImageLabFailureCode): string {
       return "The experiment also sends the render that fixture was extracted from. Refused before any spend: the output could match the control by copying that reference instead of obeying it. Send a different identity render, or a fixture from another source.";
     case "capacity_exceeded":
       return "The experiment orders more reference images than this model accepts. Refused rather than trimmed: a record claiming a control was sent that the provider never received is evidence about nothing.";
+    case "settings_unsupported":
+      return "The experiment carries a raw provider-shaped controlInput bag, which is a probe tool. A controlled recipe proves a production-shaped run and production has no raw bag, so the run was refused before any spend rather than silently stripped. Clear the raw settings, or run a control probe instead.";
     case "preprocessor_output_invalid":
       return "The preprocessor answered with an image that could not be decoded. No fixture was saved.";
     case "render_failed":

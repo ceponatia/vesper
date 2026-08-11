@@ -338,38 +338,41 @@ pipelines to understand batches.
 
 ## Delivery slices
 
-1. **Capability vocabulary and profiles** — **shipped 2026-08-05.** Reviewed edit
-   kind and identity-preservation metadata, task-specific profiles, and a
-   resolver that maps an existing model selection to a default profile without
-   changing a single render.
-2. **Shared render intent** — **shipped 2026-08-07.** The normalized request,
-   with the portrait, variant, scene, item, location, chat-look and chat-place
-   lanes refactored through it, prompts and outputs preserved. Two things it
-   deliberately left alone, both of which would have changed live renders:
-   production still follows each model's floating latest version rather than the
-   compile step's pin, and still takes its prediction budget from the environment
-   unless a profile declares one.
-3. **Role-aware references and transport.** — **priority selection and prompt
-   wording shipped 2026-08-11.** A profile's policy now chooses which references
-   survive when capacity is short, in what order, and reports why each omission
-   happened; the composing strategy has general-vocabulary wording that names
-   every reference's job. What remains is the transport half: a preparation step
-   and bounded concurrent uploads, preserving Wan's inline path.
-4. **Common controls and reproducibility.** Store seeds, add quality profiles,
-   map guidance, steps, negative prompt, and edit strength only where supported,
-   and use per-profile prediction timeouts. Mapping and timeouts are done;
-   seeds have no transport at all yet.
-5. **Version promotion.** Pin the built-ins, add candidate probing and capability
-   diffs, and provide an explicit smoke-test-and-activate flow.
-6. **Qwen LoRA library.** Add compatible hosted LoRAs, profile selection, scale
-   validation, trigger or prompt additions, and one initial house-style trial.
-7. **Model-specific profiles.** Add Seedream high-resolution and example-based
-   profiles, Wan generation/edit profiles, Qwen text repair, and curated Stable
-   Diffusion portrait profiles.
-8. **Image sets.** Normalize multiple outputs and add the separate coherent-set
-   storage and UI workflow.
-9. **Future visual controls.** — **shipped 2026-08-11.** Masks, pose, depth and
-   edge images are routed by what the active model declares: to a dedicated
+1. **Capability vocabulary and profiles.** Status: complete — 2026-08-05.
+   Reviewed edit kind and identity-preservation metadata, task-specific
+   profiles, and a resolver that maps an existing model selection to a default
+   profile without changing a single render.
+2. **Shared render intent.** Status: complete — 2026-08-07. The normalized
+   request, with the portrait, variant, scene, item, location, chat-look and
+   chat-place lanes refactored through it, prompts and outputs preserved. Two
+   things it deliberately left alone, both of which would have changed live
+   renders: production still follows each model's floating latest version rather
+   than the compile step's pin, and still takes its prediction budget from the
+   environment unless a profile declares one.
+3. **Role-aware references and transport.** Status: in progress — selection and
+   prompt wording complete 2026-08-11; the transport half remains. A profile's
+   policy now chooses which references survive when capacity is short, in what
+   order, and reports why each omission happened; the composing strategy has
+   general-vocabulary wording that names every reference's job. What remains is
+   the transport half: a preparation step and bounded concurrent uploads,
+   preserving Wan's inline path.
+4. **Common controls and reproducibility.** Status: in progress — control
+   mapping and per-profile timeouts landed; seed recording remains. Store
+   seeds, add quality profiles, map guidance, steps, negative prompt, and edit
+   strength only where supported, and use per-profile prediction timeouts.
+5. **Version promotion.** Status: queued. Pin the built-ins, add candidate
+   probing and capability diffs, and provide an explicit smoke-test-and-activate
+   flow.
+6. **Qwen LoRA library.** Status: queued. Add compatible hosted LoRAs, profile
+   selection, scale validation, trigger or prompt additions, and one initial
+   house-style trial.
+7. **Model-specific profiles.** Status: queued. Add Seedream high-resolution and
+   example-based profiles, Wan generation/edit profiles, Qwen text repair, and
+   curated Stable Diffusion portrait profiles.
+8. **Image sets.** Status: queued. Normalize multiple outputs and add the
+   separate coherent-set storage and UI workflow.
+9. **Future visual controls.** Status: complete — 2026-08-11. Masks, pose, depth
+   and edge images are routed by what the active model declares: to a dedicated
    provider input where the version has one, and otherwise as numbered images in
    the ordinary reference list. `edge` became a reference role of its own, so a
    profile can require an edge map rather than a generic control.

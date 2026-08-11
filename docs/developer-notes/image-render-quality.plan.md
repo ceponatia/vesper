@@ -391,47 +391,50 @@ execute a model.
 Slice numbers are stable identities and are never reused, so a slice that leaves
 this plan keeps its number as a pointer.
 
-1. **Immediate hardening — shipped 2026-08-05.** Reviewed exact-slug quality
-   overrides at the shared render seam: Juggernaut's fast defaults corrected,
-   conflicting wrapper negatives cleared on Juggernaut and RealVis, RealVis
-   dimensions pinned, and Qwen's identity lock translated into compact
-   numbered-reference instructions. Unit-tested, with every unreviewed model
-   unchanged. Corrections through 2026-08-06 made the prompt rewrite idempotent
-   so a compiled comparison cell cannot conflict with its own prompt.
-2. **Shared render intent and profile controls — not started, blocked.** Needs
-   the capabilities plan's slice 2 so lanes resolve task profiles, common
-   controls, timeout, seeds, and ordered semantic prompt segments. Then move the
-   transitional exact-slug inputs into profiles.
-3. **Dynamic dialects and negatives — not started, blocked on slice 2.** Compile
+1. **Immediate hardening.** Status: complete — 2026-08-05, corrections through
+   2026-08-06. Reviewed exact-slug quality overrides at the shared render seam:
+   Juggernaut's fast defaults corrected, conflicting wrapper negatives cleared
+   on Juggernaut and RealVis, RealVis dimensions pinned, and Qwen's identity
+   lock translated into compact numbered-reference instructions. Unit-tested,
+   with every unreviewed model unchanged. The corrections made the prompt
+   rewrite idempotent so a compiled comparison cell cannot conflict with its own
+   prompt.
+2. **Shared render intent and profile controls.** Status: queued — unblocked;
+   the capabilities slice 2 it waited on shipped 2026-08-07. Lanes now resolve
+   task profiles and common controls; what remains here is moving the
+   transitional exact-slug inputs into profiles and the ordered semantic prompt
+   segments.
+3. **Dynamic dialects and negatives.** Status: blocked on slice 2. Compile
    prose/SDXL/Pony prompts from segments, measure effective prompt budgets per
    pinned version, and compose task/style/subject/morphology/text-aware negative
    blocks with conflict linting.
-4. **Identity packs — moved out 2026-08-05.** Now
+4. **Identity packs.** Status: void — moved out 2026-08-05. Now
    [image-identity-packs.plan.md](image-identity-packs.plan.md), whose pack-side
    slices shipped 2026-08-06.
-5. **Model-fidelity trials — not started; the harness exists.** The identity-pack
-   plan's trial subsystem runs blinded pairwise comparison cells and is the tool
-   this slice uses. Reference-strategy questions (portrait alone versus portrait
-   plus face crop, detector versus heuristic crop) belong to that plan's trial.
-   What stays here is model tuning with the reference held fixed: fast versus
-   quality mode, sampler and CFG within Juggernaut's full-step band, and dialect
-   choice per pinned version.
-6. **Admin face repair — not started.** Ship the single-person, explicit,
+5. **Model-fidelity trials.** Status: queued — the harness it uses shipped
+   2026-08-06. The identity-pack plan's trial subsystem runs blinded pairwise
+   comparison cells and is the tool this slice uses. Reference-strategy
+   questions (portrait alone versus portrait plus face crop, detector versus
+   heuristic crop) belong to that plan's trial. What stays here is model tuning
+   with the reference held fixed: fast versus quality mode, sampler and CFG
+   within Juggernaut's full-step band, and dialect choice per pinned version.
+6. **Admin face repair.** Status: queued. Ship the single-person, explicit,
    provenance-preserving trial action; compare regional repair when available
    against full-frame Pony/RealVis candidates.
-7. **Dimension and framing profiles — not started.** Generalize width/height
+7. **Dimension and framing profiles.** Status: queued. Generalize width/height
    negotiation, native size tiers, focal-aware cropping, and per-task output
    shapes instead of relying on model defaults.
-8. **Best-of-N and seeded retry — not started.** Add N=2 player portrait
+8. **Best-of-N and seeded retry.** Status: queued. Add N=2 player portrait
    selection, admin trial grids, stored seeds, and “same composition” versus
    “new variation” semantics.
-9. **Advisory QA and promotion gates — not started.** Record
+9. **Advisory QA and promotion gates.** Status: queued. Record
    identity/face-count/blur/text/crop signals and make fixed-matrix regression
    results part of model-version promotion.
-10. **Visual-state consumption — not started.** Feed the mandatory and optional
-    facts from [visual-state.plan.md](visual-state.plan.md) into image prompt
-    segments. That plan owns the projection; this slice is its image consumer and
-    cannot start before slice 2 gives it somewhere to put the segments.
+10. **Visual-state consumption.** Status: blocked on slice 2. Feed the mandatory
+    and optional facts from [visual-state.plan.md](visual-state.plan.md) into
+    image prompt segments. That plan owns the projection; this slice is its
+    image consumer and cannot start before slice 2 gives it somewhere to put
+    the segments.
 
 Each slice must be independently useful. No slice introduces automatic
 cross-model fallback.

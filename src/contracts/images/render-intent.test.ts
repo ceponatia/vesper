@@ -56,6 +56,9 @@ describe("control reference roles", () => {
     expect(imageControlReferenceRoles).not.toContain("identity");
     expect(isImageControlReferenceRole("identity")).toBe(false);
     expect(isImageControlReferenceRole("style")).toBe(false);
+    // Wardrobe is drawn FROM, never obeyed — an outfit routed to a control
+    // field would stop competing for the reference slot it belongs in.
+    expect(isImageControlReferenceRole("outfit")).toBe(false);
   });
 });
 

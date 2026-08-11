@@ -5,15 +5,22 @@ import {
   imageLabControlMetaSchema,
   imageLabDiagnosticCode,
   imageLabInputListSchema,
+  imageLabOutcomeSchema,
+  imageLabRecipeProfile,
   imageLabSettingsSchema,
   IMAGE_TARGET_ASPECT,
   isImageLabControlRole,
+  isImageLabVerdictKind,
+  profileEligibility,
   referenceCapacity,
+  type ImageLabControlledKind,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
   type ImageLabExperimentKind,
   type ImageLabFailureCode,
+  type ImageLabInput,
   type ImageLabInputList,
+  type ImageLabOutcome,
   type ImageLabRecordVerdictRequest,
   type ImageLabSettings,
   type ImageModel,
@@ -30,11 +37,17 @@ import {
   runRegistryImageModel,
 } from "../ai";
 import { characterChats, characters, chatParticipants, db, imageLabExperiments, images } from "../db";
-import { createImageAsset, deleteOwnedImage, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
+import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { baseImageModelSlug, withReviewedImageQuality } from "./quality-presets";
-import { planImageRender, renderImageIntent, type ImageRenderIntent, type ImageRenderReference } from "./render-intent";
+import {
+  planImageRender,
+  renderImageIntent,
+  type ImageRenderIntent,
+  type ImageRenderReference,
+  type PlannedImageRender,
+} from "./render-intent";
 import { pinnedImageModelVersion } from "./render-profile";
 
 /**
@@ -55,11 +68,15 @@ import { pinnedImageModelVersion } from "./render-profile";
  * Stage 0 renders bypass the render-intent path for `control_probe` (spec
  * §"Rulings this build settles"): the runner calls `runRegistryImageModel`
  * directly with an explicit ordered reference list and a pinned `versionId`,
- * because the capabilities plan's role-aware selection does not exist yet and
- * half-consuming an unfinished vocabulary would smear the boundary. The two
- * BASELINE kinds do the opposite on purpose — they go through the very path
- * their lane goes through, since a baseline that compiled its settings some
- * other way would not be a baseline.
+ * a ruling made while the capabilities plan's role-aware selection did not
+ * exist and kept for the probe because an exact ordered list is what a probe
+ * IS. The two BASELINE kinds do the opposite on purpose — they go through the
+ * very path their lane goes through, since a baseline that compiled its
+ * settings some other way would not be a baseline. The two CONTROLLED kinds
+ * ride that same intent path but pin the exact version and run a code-defined
+ * recipe profile (`imageLabRecipeProfile`), because their question is whether
+ * the control still holds when the request is production-shaped — and a
+ * controlled comparison must be able to name what it executed.
  *
  * The job seam lives at the ROUTE, not here: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from this module would close an import
@@ -118,17 +135,24 @@ export interface ImageLabRunPayload extends Record<string, unknown> {
 }
 
 /**
- * The three kinds Stage 0 can actually run.
+ * The kinds an experiment can actually RUN: the three Stage 0 kinds plus the
+ * two controlled recipes the capabilities plan's role selection and compose
+ * wording unlocked.
  *
- * The other three (`controlled_portrait`, `controlled_scene`, `finishing_pass`)
- * are declared in the contract NOW so the record shape survives Stages 1–3
- * without a migration — but they name recipes that do not exist yet, and
+ * `finishing_pass` alone still refuses at create. It names a recipe that does
+ * not exist yet (Stage 3's img2img polish over a controlled render), and
  * accepting one would store an experiment nothing can ever settle.
  */
-const STAGE_0_KINDS = ["control_probe", "baseline_portrait", "baseline_scene"] as const satisfies readonly ImageLabExperimentKind[];
+const RUNNABLE_KINDS = [
+  "control_probe",
+  "baseline_portrait",
+  "baseline_scene",
+  "controlled_portrait",
+  "controlled_scene",
+] as const satisfies readonly ImageLabExperimentKind[];
 
-function isStage0Kind(kind: ImageLabExperimentKind): boolean {
-  return STAGE_0_KINDS.some((stage0) => stage0 === kind);
+function isRunnableKind(kind: ImageLabExperimentKind): boolean {
+  return RUNNABLE_KINDS.some((runnable) => runnable === kind);
 }
 
 /**
@@ -254,6 +278,7 @@ function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSink): Im
     controlKind: row.controlKind,
     settings: storedSettings(row, sink),
     resultImageId: row.resultImageId,
+    outcome: storedOutcome(row, sink),
     status: row.status,
     failureCode: row.failureCode,
     verdict: row.verdict,
@@ -279,6 +304,20 @@ function storedInputs(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageL
 
 function storedSettings(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabSettings {
   return parseOr(imageLabSettingsSchema, row.settings, emptyImageLabSettings(), sink, "image_lab_experiments.settings");
+}
+
+/**
+ * The recorded reference-plan outcome, read out of the row's meta bag — where
+ * the runner writes it, beside `error` and `renderFailure`, rather than in a
+ * column of its own: it is a per-run record like those, not a queryable fact.
+ * Absent means the row predates the field (every Stage 0 row) and stays a quiet
+ * null; a bag that no longer parses costs the field with a diagnostic, never
+ * the row.
+ */
+function storedOutcome(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabOutcome | null {
+  const raw = imageMeta(row.meta)["outcome"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(imageLabOutcomeSchema, raw, sink, "image_lab_experiments.meta.outcome");
 }
 
 /** One experiment, matched on `(id, owner)` — the authorization root. */
@@ -351,12 +390,12 @@ export async function createImageLabExperiment(
   input: CreateImageLabExperimentInput,
 ): Promise<CreateImageLabExperimentResult> {
   const { ownerId, request, sink } = input;
-  if (!isStage0Kind(request.kind)) {
+  if (!isRunnableKind(request.kind)) {
     return {
       ok: false,
       refusal: labRefusal(
         "kind_unsupported",
-        `${request.kind} experiments arrive with a later stage; Stage 0 runs ${STAGE_0_KINDS.join(", ")}`,
+        `${request.kind} experiments arrive with Stage 3; the lab runs ${RUNNABLE_KINDS.join(", ")}`,
         sink,
         { kind: request.kind },
       ),
@@ -424,10 +463,11 @@ export type RecordImageLabVerdictResult =
 /**
  * Record the reviewing admin's ruling.
  *
- * `control_probe` only, and that restriction is the point of the whole
- * protocol: the verdict answers "did the output obey the skeleton?", which is a
- * judgment made by looking at an image, and a baseline has no control to obey.
- * A ruling recorded against one would be a fact about nothing.
+ * Verdict kinds only (`isImageLabVerdictKind`) — the kinds that DECLARE a
+ * control — and that restriction is the point of the whole protocol: the
+ * verdict answers "did the output obey the skeleton?", which is a judgment made
+ * by looking at an image, and a baseline has no control to obey. A ruling
+ * recorded against one would be a fact about nothing.
  *
  * The verdict is INDEPENDENT of `status`: a `succeeded` render can still be
  * ruled `ignores_control`, which is the most informative outcome the bench can
@@ -441,7 +481,7 @@ export async function recordImageLabVerdict(
 ): Promise<RecordImageLabVerdictResult | null> {
   const row = await ownedExperiment(experimentId, ownerId);
   if (!row) return null;
-  if (row.kind !== "control_probe") {
+  if (!isImageLabVerdictKind(row.kind)) {
     return {
       ok: false,
       refusal: labRefusal("verdict_not_applicable", `a ${row.kind} experiment has no control to rule on`, sink, {
@@ -555,11 +595,12 @@ function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink):
       return runBaseline(row, "scene", sink);
     case "controlled_portrait":
     case "controlled_scene":
+      return runControlled(row, row.kind, sink);
     case "finishing_pass":
-      // Unreachable through `createImageLabExperiment`, which refuses these
-      // kinds outright. Kept as a settled refusal rather than a throw so a row
-      // that reached here some other way still records a reason.
-      return settleFailed(row, LAB_KIND_UNSUPPORTED, `${row.kind} has no Stage 0 recipe`, sink);
+      // Unreachable through `createImageLabExperiment`, which refuses the kind
+      // outright. Kept as a settled refusal rather than a throw so a row that
+      // reached here some other way still records a reason.
+      return settleFailed(row, LAB_KIND_UNSUPPORTED, `${row.kind} has no recipe until Stage 3`, sink);
   }
 }
 
@@ -633,19 +674,11 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
     return await settleFailed(row, labFailure("input_missing"), "the experiment records no ordered inputs", sink);
   }
 
-  const model = await resolveLabModel(row.modelSlug, sink);
-  if (!model) {
-    return await settleFailed(row, labFailure("version_unpinned"), `no registered image model matches ${row.modelSlug}`, sink);
+  const resolved = await resolvePinnedLabModel(row.modelSlug, "a probe", sink);
+  if (!resolved.ok) {
+    return await settleFailed(row, labFailure("version_unpinned"), resolved.message, sink);
   }
-  const versionId = pinnedImageModelVersion(model);
-  if (!versionId) {
-    return await settleFailed(
-      row,
-      labFailure("version_unpinned"),
-      `${model.slug} has no exact provider version to pin; a probe cannot run against a floating latest`,
-      sink,
-    );
-  }
+  const { model, versionId } = resolved;
 
   // The quality overlay is applied HERE, before the capacity check, because it
   // is the model the provider is actually handed and the check has to be about
@@ -669,20 +702,13 @@ async function runControlProbe(row: ImageLabExperimentRow, sink?: DiagnosticSink
     );
   }
 
-  const references: Buffer[] = [];
-  for (const input of inputs) {
-    const bytes = await readOwnedImageBytes(input.imageId, row.ownerId);
-    if (!bytes) {
-      return await settleFailed(
-        row,
-        labFailure("input_missing"),
-        `image ${input.imageId} at position ${String(input.position)} could not be read`,
-        sink,
-        { columns: { requestedVersionId: versionId } },
-      );
-    }
-    references.push(bytes);
+  const read = await readOrderedInputBytes(inputs, row.ownerId);
+  if (!read.ok) {
+    return await settleFailed(row, labFailure("input_missing"), read.message, sink, {
+      columns: { requestedVersionId: versionId },
+    });
   }
+  const references = read.ordered.map((entry) => entry.buffer);
 
   const controlRefusal = await checkControlBinding(row, inputs, sink);
   if (controlRefusal) {
@@ -850,6 +876,144 @@ async function checkControlBinding(
   return null;
 }
 
+// --- controlled recipes ----------------------------------------------------
+
+/**
+ * A controlled run: the render-intent path, wearing a pinned version and a
+ * code-defined recipe profile (`imageLabRecipeProfile`).
+ *
+ * The probe above deliberately BYPASSES `renderImageIntent`; this runner
+ * deliberately goes through it, because its question is different. A probe asks
+ * "does the model obey a control at all?", answered best by handing the
+ * provider an exact ordered list. A controlled experiment asks "does the
+ * control still hold when the request is production-shaped?" — policy-driven
+ * selection, compose-strategy wording, capacity handled the way a lane handles
+ * it. Running that any other way would prove something production never does.
+ *
+ * Two consequences of that choice are deliberate:
+ *
+ * - Capacity TRIMS here instead of refusing; `capacity_exceeded` stays a probe
+ *   code. The intent path fits an overlong list exactly as every lane does,
+ *   and the run stays honest because what went and what did not is recorded on
+ *   the row as its `outcome` — the record keeps the render honest, where the
+ *   probe needed a refusal.
+ * - The raw `controlInput` bag is REFUSED (`settings_unsupported`), never
+ *   merged and never silently stripped. It is a probe tool; production has no
+ *   raw bag, so a run carrying one would not be the production-shaped evidence
+ *   this kind exists to produce — and stripping it would render something
+ *   other than what the admin recorded.
+ *
+ * The Stage 0 fixture gates are reused unchanged (`checkControlBinding`): a
+ * controlled run still declares its control, sends it exactly once under a
+ * control role, and refuses an unreviewed fixture or the fixture's own source
+ * render — all before any spend.
+ */
+async function runControlled(
+  row: ImageLabExperimentRow,
+  kind: ImageLabControlledKind,
+  sink?: DiagnosticSink,
+): Promise<ImageLabRunPayload> {
+  const inputs = storedInputs(row, sink);
+  if (inputs.length === 0) {
+    return await settleFailed(row, labFailure("input_missing"), "the experiment records no ordered inputs", sink);
+  }
+  const controlKind = row.controlKind;
+  if (controlKind === null) {
+    return await settleFailed(
+      row,
+      labFailure("control_invalid"),
+      "a controlled experiment records the control kind it runs",
+      sink,
+    );
+  }
+
+  const resolved = await resolvePinnedLabModel(row.modelSlug, "a controlled experiment", sink);
+  if (!resolved.ok) {
+    return await settleFailed(row, labFailure("version_unpinned"), resolved.message, sink);
+  }
+  const { model, versionId } = resolved;
+  // Recorded on every settle from here on: the pin and the model are resolved
+  // facts about this run whether or not it reaches the provider.
+  const columns = { requestedVersionId: versionId, modelSlug: model.slug };
+
+  const controlRefusal = await checkControlBinding(row, inputs, sink);
+  if (controlRefusal) {
+    return await settleFailed(row, labFailure(controlRefusal.code), controlRefusal.message, sink, { columns });
+  }
+
+  const settings = storedSettings(row, sink);
+  if (Object.keys(settings.controlInput).length > 0) {
+    return await settleFailed(
+      row,
+      labFailure("settings_unsupported"),
+      "a controlled experiment runs the production shape, which has no raw provider bag; clear controlInput or run a control probe",
+      sink,
+      { columns },
+    );
+  }
+
+  const read = await readOrderedInputBytes(inputs, row.ownerId);
+  if (!read.ok) {
+    return await settleFailed(row, labFailure("input_missing"), read.message, sink, { columns });
+  }
+  // Identity and the declared control are REQUIRED so the plan refuses rather
+  // than renders when either is pushed out; everything else may be trimmed and
+  // recorded. No priority — the recipe's roleOrder and the admin's own order
+  // decide, and a second ranking would let the two disagree.
+  const references: ImageRenderReference[] = read.ordered.map(({ input, buffer }) => ({
+    role: input.role,
+    buffer,
+    sourceImageId: input.imageId,
+    required: input.role === "identity" || input.imageId === row.controlImageId,
+  }));
+
+  const recipeProfile = imageLabRecipeProfile(kind, controlKind, model.id);
+  const eligibility = profileEligibility(recipeProfile, model);
+  if (!eligibility.ok) {
+    return await settleFailed(
+      row,
+      LAB_PROFILE_UNAVAILABLE,
+      `${model.slug} cannot run the ${recipeProfile.key} recipe: ${eligibility.reason}`,
+      sink,
+      { columns },
+    );
+  }
+
+  // The aspect matches the baselines' so the two arms of a comparison stay
+  // same-shaped; the versionId rides INSIDE the intent, so the renderer seam
+  // keeps its shape and the real renderer needs no lab-specific arm.
+  const intent: ImageRenderIntent = {
+    profile: { profile: recipeProfile, model },
+    prompt: row.instruction,
+    references,
+    target: { aspectRatio: IMAGE_TARGET_ASPECT },
+    controls: settings.controls,
+    versionId,
+  };
+  const planned = planImageRender(intent);
+  if (!planned.ok) {
+    return await settleFailed(row, planned.refusal.code, planned.refusal.message, sink, { columns });
+  }
+
+  const outcome = planOutcome(planned.plan, recipeProfile.key);
+  const finalPrompt = planned.plan.prompt;
+  const columnsWithPrompt = { ...columns, finalPrompt };
+  await db()
+    .update(imageLabExperiments)
+    .set(columnsWithPrompt)
+    .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
+
+  const rendered = await labRenderer()({ mode: "intent", intent }, sink);
+  const identity = planned.plan.sentReferences.find((reference) => reference.role === "identity");
+  return await storeLabRender(row, rendered, {
+    finalPrompt,
+    sourceImageId: identity?.sourceImageId ?? inputs[0]?.imageId,
+    columns: columnsWithPrompt,
+    sink,
+    outcome,
+  });
+}
+
 // --- baselines -------------------------------------------------------------
 
 /**
@@ -923,6 +1087,9 @@ async function runBaseline(
     sourceImageId: subject.references[0]?.sourceImageId,
     columns,
     sink,
+    // Recorded for baselines too — no recipe key, but the same "what was sent,
+    // what was dropped" honesty, so the two arms of a comparison read alike.
+    outcome: planOutcome(planned.plan),
   });
 }
 
@@ -1062,6 +1229,28 @@ async function newestChatAsset(
 
 // --- shared render settlement ---------------------------------------------
 
+/**
+ * The recorded outcome of one reference plan, in the contract's shape.
+ *
+ * One builder for the controlled runner and the baselines because the mapping
+ * is the honesty-critical part: a second copy that read `dropped` differently
+ * would let two experiment kinds record two versions of the same decision.
+ * `recipeKey` is the controlled runner's alone — a baseline runs the lane's
+ * resolved profile, not a recipe.
+ */
+function planOutcome(plan: PlannedImageRender, recipeKey?: string): ImageLabOutcome {
+  return {
+    ...(recipeKey === undefined ? {} : { recipeKey }),
+    sentRoles: plan.sentReferences.map((reference) => reference.role),
+    dropped: plan.dropped.map((entry) => ({
+      role: entry.reference.role,
+      reason: entry.reason,
+      ...(entry.reference.sourceImageId ? { sourceImageId: entry.reference.sourceImageId } : {}),
+    })),
+    renumbered: plan.referencesRenumbered,
+  };
+}
+
 interface StoreLabRenderInput {
   finalPrompt: string;
   /** Provenance for the output row — the first reference this render was built from. */
@@ -1069,6 +1258,10 @@ interface StoreLabRenderInput {
   /** Columns already written pre-render, re-applied so a settle cannot drop them. */
   columns: Partial<typeof imageLabExperiments.$inferInsert>;
   sink?: DiagnosticSink;
+  /** The reference plan's recorded decisions — intent-path runs only. Written
+   * into the row's meta on success AND on a render failure, because what was
+   * sent is a fact about the attempt, not about how it ended. */
+  outcome?: ImageLabOutcome;
 }
 
 /**
@@ -1107,7 +1300,7 @@ async function storeLabRender(
     const renderFailure = classifyImageFailure(message);
     return await settleFailed(row, labFailure("render_failed"), message, sink, {
       columns: { ...input.columns, ...provenance },
-      meta: { renderFailure },
+      meta: { renderFailure, ...(input.outcome ? { outcome: input.outcome } : {}) },
       providerOutcome: imageFailureHealthOutcome(renderFailure),
     });
   }
@@ -1126,6 +1319,7 @@ async function storeLabRender(
     await deleteOwnedImage(asset.id, row.ownerId, { kind: "lab_output" });
     return await settleFailed(row, labFailure("render_failed"), "the lab output could not be written", sink, {
       columns: { ...input.columns, ...provenance },
+      ...(input.outcome ? { meta: { outcome: input.outcome } } : {}),
       // The provider rendered; OUR disk did not take it. Reporting that as a
       // lane failure would shed everyone's work over a local write.
       providerOutcome: true,
@@ -1137,6 +1331,9 @@ async function storeLabRender(
     .set({
       ...input.columns,
       ...provenance,
+      // Written only when a plan produced one, so probe rows — whose meta this
+      // update never touched before — keep exactly the meta they had.
+      ...(input.outcome ? { meta: { outcome: input.outcome } } : {}),
       resultImageId: saved.id,
       status: "succeeded",
       failureCode: null,
@@ -1188,6 +1385,55 @@ async function resolveLabModel(slug: string, sink?: DiagnosticSink): Promise<Ima
     models.find((model) => baseImageModelSlug(model.slug) === base) ??
     null
   );
+}
+
+type PinnedLabModelResult = { ok: true; model: ImageModel; versionId: string } | { ok: false; message: string };
+
+/**
+ * The model a lab run executes and the exact version it pins, or the reason it
+ * cannot. One helper for the probe and the controlled runner because the rule
+ * is one rule — evidence rendered against an unidentifiable version answers no
+ * question, so the run is refused before any spend — and the refusal message
+ * differs only in `subject`, the run's own name for itself.
+ */
+async function resolvePinnedLabModel(slug: string, subject: string, sink?: DiagnosticSink): Promise<PinnedLabModelResult> {
+  const model = await resolveLabModel(slug, sink);
+  if (!model) return { ok: false, message: `no registered image model matches ${slug}` };
+  const versionId = pinnedImageModelVersion(model);
+  if (!versionId) {
+    return {
+      ok: false,
+      message: `${model.slug} has no exact provider version to pin; ${subject} cannot run against a floating latest`,
+    };
+  }
+  return { ok: true, model, versionId };
+}
+
+/** One ordered input beside its bytes, so a caller never re-pairs parallel arrays. */
+interface OrderedLabInput {
+  input: ImageLabInput;
+  buffer: Buffer;
+}
+
+type ReadOrderedInputsResult = { ok: true; ordered: OrderedLabInput[] } | { ok: false; message: string };
+
+/**
+ * Every ordered input's bytes, in recorded order, or the message naming the
+ * first one that could not be read. Shared by the probe and the controlled
+ * runner: both refuse `input_missing` on the same message shape, and both must
+ * read owner-scoped — a foreign or unready image is indistinguishable from a
+ * missing one on purpose.
+ */
+async function readOrderedInputBytes(inputs: ImageLabInputList, ownerId: string): Promise<ReadOrderedInputsResult> {
+  const ordered: OrderedLabInput[] = [];
+  for (const input of inputs) {
+    const bytes = await readOwnedImageBytes(input.imageId, ownerId);
+    if (!bytes) {
+      return { ok: false, message: `image ${input.imageId} at position ${String(input.position)} could not be read` };
+    }
+    ordered.push({ input, buffer: bytes });
+  }
+  return { ok: true, ordered };
 }
 
 async function ownedImageRow(imageId: string, ownerId: string): Promise<ImageRow | null> {

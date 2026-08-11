@@ -261,8 +261,8 @@ export function ImageLabFixturesPanel({
           <LabRenderPicker
             label="Render"
             hint="The image a control map is extracted from — pick a pose clearly unlike the target."
-            characterId={characterId}
-            portraits={portraits}
+            scopeId={characterId}
+            images={portraits}
             value={sourceImageId}
             onChange={setSourceImageId}
           />

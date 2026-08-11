@@ -7,7 +7,7 @@ import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ImageLabExperimentDetail } from "./image-lab-experiment-detail";
-import { ImageLabExperimentForm } from "./image-lab-experiment-form";
+import { ImageLabExperimentForm, type ImageLabExperimentPrefill } from "./image-lab-experiment-form";
 import { ImageLabExperimentList } from "./image-lab-experiment-list";
 import { ImageLabFixturesPanel } from "./image-lab-fixtures-panel";
 
@@ -48,6 +48,10 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
 
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(initialExperimentId ?? null);
   const [queuedExperimentId, setQueuedExperimentId] = useState<string | null>(null);
+  // A paired-baseline pre-fill, versioned so each request mounts a FRESH form
+  // seeded from it (the detail's own key idiom): the form owns its state after
+  // mount, so a reused instance would ignore a second pre-fill.
+  const [prefill, setPrefill] = useState<{ id: number; values: ImageLabExperimentPrefill } | null>(null);
   // The fixture count when an extraction was accepted, and how many new fixtures
   // it promised; null when nothing is being waited on.
   const [extractWatch, setExtractWatch] = useState<{ baseline: number; expected: number } | null>(null);
@@ -138,6 +142,11 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
             selectExperiment(null);
             experiments.reload({ silent: true });
           }}
+          onRunBaseline={(values) => {
+            setPrefill((previous) => ({ id: (previous?.id ?? 0) + 1, values }));
+            selectExperiment(null);
+            experiments.reload({ silent: true });
+          }}
         />
       </PageContainer>
     );
@@ -170,7 +179,9 @@ export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: st
         />
 
         <ImageLabExperimentForm
+          key={prefill?.id ?? 0}
           controls={controlRows}
+          prefill={prefill?.values ?? null}
           onCreated={(experimentId) => {
             setQueuedExperimentId(experimentId);
             experiments.reload({ silent: true });

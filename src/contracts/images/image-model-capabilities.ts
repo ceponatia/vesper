@@ -80,12 +80,20 @@ export type ImageIdentityPreservation = (typeof imageIdentityPreservationRatings
  * disagree about a kind they both name. `control` stays as the genuine catch-all
  * for a structural map that is none of the three — a segmentation mask, a normal
  * map — rather than as `edge`'s alias.
+ *
+ * `outfit` joined with the lab's controlled recipes, because wardrobe had no
+ * honest role: a `style` reference promises to contribute "no subject or
+ * object", an `object` reference is an item that appears IN the scene beside
+ * the subject, while a wardrobe reference is clothing the subject WEARS. A
+ * CONTENT role, not a structural one — the model draws the garment from it
+ * rather than obeying it as layout.
  */
 export const imageReferenceRoles = [
   "identity",
   "location",
   "style",
   "object",
+  "outfit",
   "product",
   "before",
   "after_example",

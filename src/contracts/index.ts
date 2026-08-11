@@ -56,6 +56,7 @@ export * from "./images/render-intent";
 export * from "./images/identity-pack";
 export * from "./images/identity-pack-trial";
 export * from "./images/image-lab";
+export * from "./images/image-lab-recipes";
 export * from "./images/viewer-body";
 export * from "./players/persona-profile";
 export * from "./players/chat-player-state";

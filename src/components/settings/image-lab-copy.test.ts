@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { imageLabDiagnosticCode, imageLabFailureCodes } from "@/contracts";
-import { imageLabFailureExplanation } from "./image-lab-copy";
+import { imageLabDiagnosticCode, imageLabFailureCodes, imageLabOutcomeDropReasons } from "@/contracts";
+import { imageLabDropReasonExplanation, imageLabFailureExplanation } from "./image-lab-copy";
 
 /**
  * A settled experiment's `failureCode` reaches this function in the dotted form
@@ -27,5 +27,24 @@ describe("imageLabFailureExplanation", () => {
   // translated into a lab reason that did not happen.
   it("passes a code outside the lab's vocabulary through verbatim", () => {
     expect(imageLabFailureExplanation("provider_timeout")).toBe("provider_timeout");
+  });
+});
+
+/**
+ * A recorded outcome's dropped references reach the detail with the planner's
+ * own reason codes on them; each must land as a sentence, not an identifier,
+ * because the reader is deciding whether to trust the ordered inputs.
+ */
+describe("imageLabDropReasonExplanation", () => {
+  it("explains every recorded drop reason without leaking its identifier", () => {
+    for (const reason of imageLabOutcomeDropReasons) {
+      const copy = imageLabDropReasonExplanation(reason);
+      expect(copy).not.toBe(reason);
+      expect(copy.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("names the capacity trim as recorded, not hidden", () => {
+    expect(imageLabDropReasonExplanation("model_capacity")).toContain("recorded");
   });
 });

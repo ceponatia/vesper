@@ -557,6 +557,8 @@ portrait and a controlled scene — Stage 2 does not wait on a Stage 1 verdict.
 
 ### Stage 0 — isolate and lock the baseline
 
+Status: complete — 2026-08-11; both probe verdicts are recorded in the spec.
+
 Create the parallel, admin-only subsystem path. Reuse the same
 `REPLICATE_API_TOKEN`, provider client, and shared image infrastructure while
 leaving every ordinary picker and default untouched.
@@ -578,6 +580,8 @@ an experimental job without changing normal image behavior.
 
 ### Stage 1 — controlled portraits
 
+Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+
 Prove numbered roles on the controlled-composition connector for:
 
 - identity plus pose;
@@ -593,6 +597,8 @@ edit baseline with complete saved settings.
 
 ### Stage 2 — controlled single-character scenes
 
+Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+
 Run simple single-character scenes through pose, depth, and edge recipes. Preserve
 the detached scene-job behavior and compare each result against the ordinary scene
 path.
@@ -601,6 +607,8 @@ Exit: at least one control type shows a repeatable structural improvement withou
 an unacceptable identity regression.
 
 ### Stage 3 — optional identity finishing
+
+Status: queued — after the Stage 1 and 2 trial verdicts.
 
 Pass selected controlled results through Qwen Image Edit 2511 using the identity
 pack. Compare:
@@ -614,6 +622,8 @@ changing structure, clothing, body, camera, lighting, or setting.
 
 ### Stage 4 — curated LoRA support
 
+Status: blocked on the capabilities plan's Qwen LoRA library slice.
+
 Run one known compatible style LoRA through the finishing connector, consuming
 the capabilities plan's LoRA library slice for hosting, compatibility, scale
 validation, prompt additions, and provenance rather than building any of that
@@ -622,6 +632,8 @@ here.
 Confirm that incompatible or unavailable LoRAs fail before provider spend.
 
 ### Stage 5 — one character LoRA pilot
+
+Status: queued — after Stage 4; the dataset-size question below stays open.
 
 Train or obtain one character LoRA from a reviewed, varied image set. Compare:
 
@@ -635,11 +647,15 @@ obedience, structural control, latency, failure rate, and overall preference.
 
 ### Stage 6 — two-character controlled trials
 
+Status: queued — only after the single-character path passes its trials.
+
 Add carefully bounded two-character tests only after the single-character path
 passes. Measure identity swapping, duplicated people, missing characters, pose
 ownership, and whether one structural control can guide both people reliably.
 
 ### Stage 7 — promotion decision
+
+Status: queued — the plan's closing decision.
 
 Decide which parts, if any, should graduate into ordinary Portrait Studio or scene
 controls.
