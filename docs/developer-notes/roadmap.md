@@ -38,9 +38,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Qwen advanced image subsystem — controlled composition experiments** —
   [plan](qwen-advanced-image-subsystem.plan.md) ·
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
-  control-mapped Qwen edits against ordinary output; Stage 0's control probe
-  runs first, capabilities slices 3 and 9 are built en route, and the LoRA
-  library folds into capabilities slice 6.
+  control-mapped Qwen edits against ordinary output; Stage 0 is done — 2511
+  honours pose and depth controls, Plus stays unregistered — and next are
+  capabilities slices 3 and 9 en route to Stage 1, with the LoRA library
+  folded into capabilities slice 6.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
@@ -125,9 +126,10 @@ affordance layer to the scene owner.
 
 - **Spatially controlled scene images — pose, depth, and character identity** —
   [plan](spatial-scene-images.plan.md) — one validated 3D spatial frame driving
-  pose/depth/segmentation controls; its gate-0 spike asks the same control
-  question the Qwen lab's Stage 0 probe is now answering, so Gate 0 stays
-  closed while that lab runs.
+  pose/depth/segmentation controls; the Qwen lab's Stage 0 probe answered its
+  gate-0 spike's central question in the affirmative, so the spike folds into
+  that evidence and this plan's distinct value is producing controls from a
+  validated spatial frame.
 
 - **RAG improvements — remainder** — [plan](RAG-improvements.plan.md) — the
   presence half of the relevance floor, witness gating on a real viewpoint, and
