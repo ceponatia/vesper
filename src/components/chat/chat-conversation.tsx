@@ -1882,8 +1882,10 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         <div className="flex flex-col gap-3 text-sm text-paper-400">
           <p>
             This deletes the conversation and its memory: the transcript, the running summary, {who}&rsquo;s
-            disposition (regard, mood, scenario), and everything {who} remembers about you from it. Archiving
-            keeps all of that — this can&rsquo;t be undone.
+            disposition (regard, mood, scenario), and everything {who}
+            {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
+                containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
+            {" remembers about you from it. Archiving keeps all of that — this can’t be undone."}
           </p>
           {/* E20-1 (successor-world-lifecycle.plan.md): a world-bound chat owns its
               world 1:1, and the world is hard-deleted with it — say so here too. */}
