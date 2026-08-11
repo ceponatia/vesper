@@ -45,8 +45,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   depth and edge controls proved reliable in both lanes, pose is stochastic,
   Plus stays unregistered, and identity finishing is conditionally viable, only
   earning its cost when its instruction carries appearance text — Stage 4's LoRA
-  library and lab wiring are built with the connector registration and
-  style-LoRA trial next, and Stages 5–7 wait on their gates.
+  library, connector, refusal checks and style-LoRA smoke arms are all run with
+  owner verdicts pending, and Stages 5–7 wait on their gates.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

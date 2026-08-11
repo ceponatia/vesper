@@ -630,9 +630,9 @@ changing structure, clothing, body, camera, lighting, or setting.
 
 ### Stage 4 — curated LoRA support
 
-Status: in progress — the LoRA library (capabilities slice 6) and the lab's
-LoRA wiring are built 2026-08-11; registering the LoRA connector and running
-the style-LoRA trial remain.
+Status: built + trial run 2026-08-11 — the library, the lab wiring, the
+registered connector, all five pre-spend refusal checks, and both style-LoRA
+smoke arms are done; awaiting owner rulings on the two arms.
 
 Run one known compatible style LoRA through the finishing connector, consuming
 the capabilities plan's LoRA library slice for hosting, compatibility, scale

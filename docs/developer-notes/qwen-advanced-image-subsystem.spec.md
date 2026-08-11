@@ -41,8 +41,9 @@ those systems through their existing exports and adds no second copy.
 | Finishing create/verdict/comparison UI          | built 2026-08-11 |
 | Stage 3 finishing trial runs + verdicts         | run 2026-08-11   |
 | Stage 4 lab LoRA wiring (library consumption)   | built 2026-08-11 |
-| Stage 4 connector registration + refusal checks | pending          |
-| Stage 4 style-LoRA trial runs + verdicts        | pending          |
+| Stage 4 connector registration + refusal checks | run 2026-08-11   |
+| Stage 4 style-LoRA smoke arms (no-LoRA / LoRA)  | run 2026-08-11   |
+| Stage 4 owner verdicts                          | pending          |
 
 Stage 5+ work (the character-LoRA pilot, two-character recipes) is deliberately
 absent from this table: Stage 5 waits on Stage 4's verdict, and Stage 6 on the
@@ -464,6 +465,59 @@ nothing.
 Exit: pinning, hosting, selection, strength limits, prompt additions and
 diagnostics are each proven by a live run or a recorded refusal — the plan's
 "prove the plumbing" bar — and the refusal list above all fired pre-spend.
+
+**Stage 4 registration, refusal checks, and smoke arms (run 2026-08-11 on the
+Fly deploy, v187) — awaiting owner rulings:**
+
+Registration: model `ld63cvczi7x6fyqebwn2nwxy`, slug
+`qwen/qwen-image-edit-plus-lora`, probed pin
+`b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200`, both LoRA
+bindings derived by the probe on first registration (`lora_weights` string;
+`lora_scale` number 0–4), rated `instruction_edit` / `moderate`,
+`maxReferences` 3, every player surface off. Reference page:
+`docs/image-models/qwen-image-edit-plus-lora.md`. Library row
+`h6z6cg2ateq0489ikqe4682i` — `Photo-to-Anime (2509)`, Hugging Face repo
+`autoweeb/Qwen-Image-Edit-2509-Photo-to-Anime` (MIT), curated band 0.5–1.5
+default 1, task `variant`, `promptSuffix` "transform into anime".
+
+Refusal checks — all five settled their code onto the row with `predictionId`
+null (zero provider spend), on scratch rows deleted after verification:
+
+- bindings absent (2511-compatible scratch row run on 2511) →
+  `image_lora.unreachable_configuration`;
+- slug incompatible (the real row run on 2511) → `image_lora.incompatible`;
+- scale 3 outside the curated 0.5–1.5 (inside the provider's 0–4) →
+  `image_lora.incompatible`;
+- row disabled → `image_lora.unreachable_configuration`;
+- nonexistent LoRA id → `image_lora.unreachable_configuration`.
+
+Smoke arms — finishing passes over the Stage 1/2 direct-edit baseline
+`ssuucjcm6h5xew3z8c39gaw6` (result `nbvj0pqs…`), both on the connector at the
+pin above, both carrying the Stage 3 round-2 appearance instruction:
+
+- **No-LoRA arm** `c1fiaht1pg018zeq3f30yx2c` (prediction `bxd126x3…`, result
+  `f317yd8fc44tfbt046o1trwp`) — succeeded; photographic; the face tracks the
+  appearance text, but the frame recropped full-body → chest-up, the violation
+  Stage 3 saw once on 2511. Its final prompt carries no LoRA addition.
+- **LoRA arm @ 1.0** `nb2e7xfyoo59az0bl3ocn5hn` (prediction `mm0b9p9v…`,
+  result `i2y1kt0eavjnifjhrfu88bh2`) — succeeded; the output is fully
+  anime-styled while keeping the before's outfit, center-parted dark-brown
+  waves, backdrop light shapes, and a less aggressive waist-up crop. The
+  recorded `finalPrompt` ends with the woven suffix ("…full cheeks.\n\ntransform
+  into anime") — the prompt-addition weave proven in the record and honoured in
+  the output. Executed version echoed `"hidden"` (official-model
+  non-disclosure, per the standing ruling).
+
+Findings worth carrying: the plumbing bar is met end to end (selection,
+pinning, hosting by HF slug, curated and provider strength limits, prompt
+additions, diagnostics, reproducibility from the row). Two operational facts:
+the connector runs `go_fast: true` (no reviewed quality overlay exists for its
+row — 2511's overlay does not apply), so cross-generation comparisons against
+Stage 3's 2511 runs carry that variable; and a low-credit Replicate account is
+throttled to a burst of ONE prediction create per ~10s window, so concurrent
+lab arms 429 as `transient` at create — fire arms sequentially. Evidence
+images: `screenshots/stage4-*.webp`. Owner verdicts on the two arms are the
+remaining Stage 4 step.
 
 ## Contracts
 

@@ -378,10 +378,11 @@ pipelines to understand batches.
 5. **Version promotion.** Status: queued. Pin the built-ins, add candidate
    probing and capability diffs, and provide an explicit smoke-test-and-activate
    flow.
-6. **Qwen LoRA library.** Status: built 2026-08-11 — awaiting the initial
-   style trial, which runs as the Qwen lab's Stage 4 protocol. Add compatible
-   hosted LoRAs, profile selection, scale validation, trigger or prompt
-   additions, and one initial style trial.
+6. **Qwen LoRA library.** Status: built 2026-08-11, and the initial style
+   trial ran the same day through the Qwen lab's Stage 4 protocol — its
+   verdicts are the owner's, pending there. Add compatible hosted LoRAs,
+   profile selection, scale validation, trigger or prompt additions, and one
+   initial style trial.
 7. **Model-specific profiles.** Status: queued. Add Seedream high-resolution and
    example-based profiles, Wan generation/edit profiles, Qwen text repair, and
    curated Stable Diffusion portrait profiles.

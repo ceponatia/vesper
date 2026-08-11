@@ -90,6 +90,14 @@ Of those last four, only SDXL PuLID takes a reference image, which is why it is
 the only one on the variant and scene surfaces — the other three cannot hold a
 character's face across a render at all.
 
+Registered by admin, rated, and deliberately on **no** player surface:
+
+- [Qwen Image Edit Plus LoRA](qwen-image-edit-plus-lora.md) —
+  `qwen/qwen-image-edit-plus-lora`. Generate **no**, edit yes, 3 references,
+  plus the `lora_weights`/`lora_scale` pair no other Qwen edit endpoint has.
+  `instruction_edit` · `moderate`. The Advanced Image Lab's LoRA finishing
+  connector; unreachable from every picker.
+
 Documented but not seeded — no row, and therefore no reviewed rating:
 
 - [FLUX.1 dev](flux-dev.md) — `black-forest-labs/flux-dev`. Generate yes, edit yes
