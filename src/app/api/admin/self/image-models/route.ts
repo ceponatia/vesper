@@ -5,7 +5,7 @@ import { imageModelSurfaces } from "@/contracts";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { probeReplicateModel } from "@/server/ai";
-import { loadImageModels } from "@/server/images";
+import { imageModelProbeFields, loadImageModels } from "@/server/images";
 import { newId } from "@/lib/ids";
 
 /**
@@ -81,22 +81,17 @@ export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {
     id: newId(),
     slug: storedSlug,
     label: body.value.label?.trim() || probe.label,
-    canGenerate: probe.canGenerate,
-    canEdit: probe.canEdit,
-    referenceField: probe.referenceField,
-    referenceArity: probe.referenceArity,
+    // Everything the probe owns, in ONE spelling shared with the re-probe route —
+    // including `probedVersionId`, the version those capability fields were read
+    // from. Stored with them, not merely returned: a row whose capabilities have no
+    // known version cannot later be diffed against a candidate version, which is the
+    // whole basis of safe promotion.
+    ...imageModelProbeFields(probe),
     // Uploaded file URLs are what all but one model wants; a wrapper that
     // cannot resolve them is found by running it, and switched on the row.
     referenceTransport: "file" as const,
+    // The operator's own starting cap wins over the probe's prose-derived guess.
     maxReferences: body.value.maxReferences ?? probe.maxReferences,
-    aspectMode: probe.aspectMode,
-    supportedAspects: probe.supportedAspects,
-    outputFormat: probe.outputFormat,
-    extraInput: probe.extraInput,
-    // The version the capability fields above were read from. Stored with them, not
-    // merely returned: a row whose capabilities have no known version cannot later be
-    // diffed against a candidate version, which is the whole basis of safe promotion.
-    probedVersionId: probe.versionId,
     forPortrait: surfaces.includes("portrait"),
     forVariant: surfaces.includes("variant"),
     forScene: surfaces.includes("scene"),

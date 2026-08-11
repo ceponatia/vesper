@@ -68,6 +68,16 @@ contract: its spec.
   refined ("before"), the identity reference it was refined toward, and its own
   result side by side, and cites the source experiment as a record with an
   action that opens it.
+- A recipe experiment may carry **one curated LoRA** through its normalized
+  settings (`settings.controls.lora = { id, scale? }` — the raw provider bag
+  stays refused). The runner resolves the selection against the LoRA library
+  ([providers.md](providers.md)) before any spend; a refusal settles the
+  library's own `image_lora.*` code onto the row exactly as `image_profile.*`
+  codes settle. The finishing-pass create form offers the picker — enabled
+  library rows, scale bounded to the row's curated range — while the controlled
+  kinds accept a LoRA by API only. The experiment records the id and scale
+  (never the locator), and the final prompt records any trigger or prompt
+  additions the LoRA wove in, so a LoRA run is reproducible from its row.
 - **Verdicts** are recordable on every kind that asks a question, with an
   explicit ruling and a required note; baselines have nothing to rule on and
   refuse. Two vocabularies share the one recorded field, and each kind may only

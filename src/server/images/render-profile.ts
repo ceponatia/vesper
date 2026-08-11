@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import {
+  applyImageLoraPromptAdditions,
   chooseAspect,
   type IdentityReferenceRole,
+  type ImageLoraRenderBinding,
   type ImageModel,
   type ImageModelProfile,
   type ImagePromptStrategy,
@@ -185,6 +187,18 @@ export interface CompileProfileRenderPlanInput {
   controlOverrides?: ImageRenderControls;
   /** The references this render sends, in order, and which vocabulary names them. */
   references: PromptReferenceBinding;
+  /**
+   * A library LoRA already resolved against this model, version and task
+   * (`resolveImageLoraForRender`) — never the raw `controls.lora` selection,
+   * which this step has no library to check.
+   *
+   * It contributes to BOTH halves of the compile: the locator and scale become
+   * provider fields through the mapper, and the row's prompt additions are woven
+   * into the text below. That is why it is one input rather than two — a plan
+   * whose payload carried the weights while its prompt lacked the trigger words
+   * would render at a strength nobody could explain from the recorded text.
+   */
+  resolvedLora?: ImageLoraRenderBinding;
 }
 
 /**
@@ -383,7 +397,14 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     return { ok: false, reason: "unsupported_prompt_strategy", promptStrategy: profile.promptStrategy };
   }
   const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model));
-  const finalPrompt = preparePromptForImageModel(effectiveModel, strategyPrompt.prompt, references.roles.length);
+  // The LoRA's prompt additions are woven HERE — after the strategy has produced
+  // its text, before the model-dialect rewrite and before anything is hashed — so
+  // `finalPrompt` is the whole truth about what the provider will read. Doing it
+  // at the transport instead would leave a prompt in the record that nobody sent,
+  // and doing it before the strategy would let a numbered-reference preamble be
+  // pushed below the LoRA's own prefix.
+  const loraPrompt = applyImageLoraPromptAdditions(strategyPrompt.prompt, input.resolvedLora);
+  const finalPrompt = preparePromptForImageModel(effectiveModel, loraPrompt, references.roles.length);
 
   const defaults = profile.controlDefaults;
   const requested = input.controlOverrides;
@@ -423,7 +444,23 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   };
 
   const reservedFields = reservedImageInputFields(effectiveModel);
-  const mapped = mapImageRenderControls({ controls, capabilities: effectiveModel.advancedCapabilities });
+  const mapped = mapImageRenderControls({
+    controls,
+    capabilities: effectiveModel.advancedCapabilities,
+    // Only the three facts a payload needs. The label and the prompt additions
+    // stay out: they have already done their work above, and a locator in the
+    // mapper's `applied` record is the one thing a stored control set must not
+    // carry.
+    ...(input.resolvedLora
+      ? {
+          resolvedLora: {
+            id: input.resolvedLora.id,
+            locator: input.resolvedLora.locator,
+            scale: input.resolvedLora.scale,
+          },
+        }
+      : {}),
+  });
   // A mapped control can land on a reserved field — `resolutionTier` is commonly
   // probed as `size`, which IS the shape key on a size-mode model — and the
   // transport would then discard it on the way out. Filtering here rather than

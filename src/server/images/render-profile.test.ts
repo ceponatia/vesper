@@ -389,6 +389,65 @@ describe("compileProfileRenderPlan", () => {
   });
 });
 
+describe("a resolved LoRA", () => {
+  const LORA_CAPABILITIES = {
+    controls: {
+      loraWeights: { field: "lora_weights", type: "string" },
+      loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+    },
+    knownInputFields: ["lora_weights", "lora_scale"],
+  };
+
+  const binding = {
+    id: "lora-1",
+    label: "Ink Wash",
+    locator: "owner/ink-wash-lora",
+    scale: 0.8,
+    promptPrefix: "Ink wash painting.",
+    promptSuffix: null,
+    triggerWords: ["sumi-e"],
+  };
+
+  function loraPlan(over: Partial<CompileProfileRenderPlanInput> = {}): ProfileRenderPlan {
+    return compiledPlan({
+      model: model({ advancedCapabilities: LORA_CAPABILITIES }),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+      ...over,
+    });
+  }
+
+  it("sends the locator and the scale on the fields this version declared", () => {
+    const compiled = loraPlan({ resolvedLora: binding });
+    expect(compiled.controlInput).toEqual({ lora_weights: "owner/ink-wash-lora", lora_scale: 0.8 });
+  });
+
+  it("weaves the prompt additions into the text that is hashed and sent", () => {
+    // The weave happens after the strategy compiles and before the dialect rewrite,
+    // so `finalPrompt` is the whole truth about what the provider will read —
+    // additions applied at the transport would leave a prompt in the record that
+    // nobody sent.
+    const compiled = loraPlan({ resolvedLora: binding });
+    expect(compiled.finalPrompt.startsWith("Ink wash painting.")).toBe(true);
+    expect(compiled.finalPrompt.endsWith("sumi-e")).toBe(true);
+    expect(compiled.finalPrompt).toContain("change the outfit");
+  });
+
+  it("fingerprints differently from the same compile without it", () => {
+    // A field that reaches the provider without reaching the hash is a change a
+    // pinned comparison cannot detect.
+    expect(hashOf(loraPlan({ resolvedLora: binding }))).not.toBe(hashOf(loraPlan()));
+  });
+
+  it("changes nothing when no LoRA was resolved", () => {
+    const compiled = loraPlan();
+    expect(compiled.controlInput).toEqual({});
+    expect(compiled.finalPrompt).toBe("change the outfit");
+  });
+});
+
 describe("preparePromptForImageModel idempotency", () => {
   it("leaves an already-prepared prompt byte-identical", () => {
     // `compileProfileRenderPlan` hashes the prepared prompt and `renderWithModel`

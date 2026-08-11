@@ -20,6 +20,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
+import { ImageLoraLibrary } from "./image-lora-library";
 
 /**
  * The image-model registry's management page (image-model-registry.plan.md).
@@ -30,6 +31,11 @@ import { useToast } from "@/components/ui/toast";
  *
  * Seeded models are ordinary rows: editable and deletable like any other (owner
  * ruling 4). The `builtin` tag is a note about where a row came from, not a lock.
+ *
+ * The curated LoRA library sits beneath the registry, in its own component: a
+ * LoRA's rules are written per model slug, so the two lists are read together —
+ * but they are edited independently, which is why the section is a file of its
+ * own rather than another block in this one.
  */
 
 const SURFACES: { key: ImageModelSurface; label: string; hint: string }[] = [
@@ -182,6 +188,10 @@ export function ImageModelsPage() {
           </p>
         ) : null}
       </div>
+
+      {/* The registry the page already holds feeds the library's compatibility
+          list — one fetch, so the two can never disagree about which models exist. */}
+      <ImageLoraLibrary models={models.data ?? []} />
 
       <Dialog
         open={pendingDelete !== null}

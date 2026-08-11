@@ -61,14 +61,18 @@ survived. `unknown` is the column default and is deliberately **permissive**: an
 operator-added experimental row keeps behaving exactly as it does today instead
 of being locked out by a rating nobody has written. Per-model ratings are written
 up in [image-models/](../image-models/README.md); the row is the runtime truth. Two
-further columns are probe-owned and **nothing writes them**:
+further columns are **probe-owned** — the admin PATCH cannot set either:
 `probedVersionId` (the exact version the stored bindings were read from — for a
 pinned `owner/name:version` slug it must equal the pin) and
 `advancedCapabilities` (optional control bindings — seed, guidance, steps, edit
 strength, output count, thinking mode, LoRA … — plus extra image inputs, output
 arity, and the `knownInputFields` allowlist a profile's raw overrides are
-validated against). `advancedCapabilities` is `{}` on every row, and empty means
-"send no optional control", which is exactly what every lane does today.
+validated against). The probe derives exactly two of those bindings — a string
+`lora_weights` input becomes `controls.loraWeights` and a numeric `lora_scale`
+becomes `controls.loraScale`, range included, written atomically beside
+`probedVersionId` at create and re-probe — and derives nothing else, so a row
+probed before that existed holds `{}`, and empty means "send no optional
+control", which is exactly what every lane sends for everything but a LoRA.
 `updated_at` is a **column with no contract field**: the record crosses to the
 client as JSON, so adding a timestamp forces a date-serialization decision no
 consumer needs until the admin version card shows "capabilities changed at".
@@ -90,6 +94,27 @@ seed is a pin, not a default), `providerOverrides`, `timeoutMs` (null, or
 unique, at most **one enabled default per task globally** (a partial unique
 index), and profiles cascade-delete with their model. A profile may *narrow* a
 model; it can never claim a capability the model does not expose.
+
+**A LoRA is a curated library row, never a raw locator on a request.**
+`image_loras` (contract `contracts/images/image-loras.ts`, admin CRUD under
+`/api/admin/self/image-loras`, managed from a section of
+`/settings/image-models`) carries a label, a locator — a Hugging Face
+`owner/repo` slug or a direct HTTPS weights URL, never a credential —
+compatible model slugs and optional exact version ids, a curated scale range
+(`minimumScale ≤ defaultScale ≤ maximumScale`), allowed tasks, optional trigger
+words and prompt prefix/suffix, and an enabled flag. A render names a LoRA
+only as `controls.lora = { id, scale? }`; resolution loads the row and refuses
+before any provider work when the LoRA's own curation says no
+(`image_lora.incompatible` — wrong model, wrong version, wrong task, scale
+outside the curated range) or the configuration cannot reach the provider
+(`image_lora.unreachable_configuration` — row missing or disabled, the active
+version declaring no LoRA bindings, scale outside the provider's declared
+range). A scale is refused, never clamped. The resolved locator and scale land
+on the version's two declared fields; prompt additions and any trigger word not
+already present are woven into the compiled prompt so the recorded final prompt
+is the sent prompt; the record keeps `{ id, scale }` while the locator goes to
+the provider payload and nowhere else, with URL query strings redacted from
+diagnostics. One LoRA per render — that is what the tested binding supports.
 
 **Every render resolves a profile.** All seven lanes call
 `resolveImageProfileForTask` for their own task before they reserve an image row,

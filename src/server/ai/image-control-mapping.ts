@@ -1,4 +1,9 @@
-import type { ImageInputBinding, ImageModelAdvancedCapabilities, ImageRenderControls } from "@/contracts";
+import type {
+  ImageInputBinding,
+  ImageModelAdvancedCapabilities,
+  ImageModelControlBindings,
+  ImageRenderControls,
+} from "@/contracts";
 
 /**
  * The normalized-control mapper (image-model-capabilities.spec.md §"Control
@@ -69,6 +74,26 @@ export interface MapImageRenderControlsInput {
   controls: ImageRenderControls;
   /** The ACTIVE version's probed bindings — the only source of field names. */
   capabilities: ImageModelAdvancedCapabilities;
+  /**
+   * A library LoRA that has ALREADY been resolved against this model, version and
+   * task (`resolveImageLoraForRender`).
+   *
+   * The locator arrives here and nowhere else, because this module cannot make the
+   * judgment that produces one: compatibility is a fact about the weights, held in
+   * the library, and a mapper that accepted `controls.lora` directly would send a
+   * pointer nobody checked. When it is absent and `controls.lora` is set, the
+   * selection is unresolved and drops as `unsupported` — see
+   * {@link UNSUPPORTED_CONTROLS}.
+   */
+  resolvedLora?: ResolvedImageLoraControl;
+}
+
+/** The three facts a resolved LoRA contributes to a payload. */
+export interface ResolvedImageLoraControl {
+  id: string;
+  /** Sent to the version's `loraWeights` field; NEVER echoed into `applied`. */
+  locator: string;
+  scale: number;
 }
 
 export interface MappedImageRenderControls {
@@ -83,14 +108,19 @@ export interface MappedImageRenderControls {
  * The controls this mapper does not carry, with the reason each is out of scope.
  *
  * `seed` has no transport at all yet (the trial records `requestedSeed: null`
- * for exactly this reason), and `coherentSet`/`lora` belong to the image-set and
- * LoRA slices, which own validation this module cannot do — a curated LoRA has
- * to be resolved against the library and its compatible versions before a
- * locator may be sent. Listing them explicitly, rather than letting them fall
- * through as `no_binding`, keeps "this version has no field" distinct from
- * "Vesper does not send this yet".
+ * for exactly this reason), and `coherentSet` belongs to the image-set slice.
+ * Listing them explicitly, rather than letting them fall through as
+ * `no_binding`, keeps "this version has no field" distinct from "Vesper does not
+ * send this yet".
+ *
+ * `lora` left this list when the library shipped, but only halfway: what this
+ * mapper carries is a RESOLVED LoRA ({@link MapImageRenderControlsInput.resolvedLora}),
+ * never a raw `controls.lora` selection. An unresolved selection still drops as
+ * `unsupported`, because a selection is a request for a library row and this
+ * module has no library to check it against — sending its id, or guessing a
+ * locator from it, is exactly the fabrication the drop is there to prevent.
  */
-const UNSUPPORTED_CONTROLS = ["seed", "coherentSet", "lora"] as const;
+const UNSUPPORTED_CONTROLS = ["seed", "coherentSet"] as const;
 
 /**
  * Map normalized controls onto one version's declared input fields.
@@ -108,6 +138,11 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
   for (const control of UNSUPPORTED_CONTROLS) {
     if (controls[control] !== undefined) result.dropped.push({ control, reason: "unsupported" });
   }
+
+  // After the list above so the drop order stays seed, coherentSet, lora — the
+  // order a reader of a stored `droppedControls` array has always seen.
+  if (input.resolvedLora) mapResolvedLora(result, input.resolvedLora, bindings);
+  else if (controls.lora !== undefined) result.dropped.push({ control: "lora", reason: "unsupported" });
 
   const requested: { control: string; value: unknown; binding: ImageInputBinding | undefined }[] = [
     { control: "negativePrompt", value: controls.negativePrompt, binding: bindings.negativePrompt },
@@ -136,6 +171,40 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
   }
 
   return result;
+}
+
+/**
+ * Write a resolved LoRA's two provider fields, or record ONE drop explaining why
+ * neither went.
+ *
+ * The pair is all-or-nothing. A locator with no scale beside it runs at whatever
+ * strength the model defaults to, which is a different render from the one the
+ * library authorized and the record claims — so a version missing either binding
+ * takes the whole LoRA out, once, under the control name the caller asked in
+ * (`lora`) rather than twice under two field names.
+ *
+ * `applied` gets the id and the scale and NEVER the locator: `applied` is what a
+ * caller stores and reports, and a signed URL's query string has no business in a
+ * saved record (spec §`image_loras`).
+ */
+function mapResolvedLora(
+  result: MappedImageRenderControls,
+  lora: ResolvedImageLoraControl,
+  bindings: ImageModelControlBindings,
+): void {
+  const weights = bindings.loraWeights;
+  const scale = bindings.loraScale;
+  if (!weights || !scale) {
+    result.dropped.push({ control: "lora", reason: "no_binding" });
+    return;
+  }
+  if (!bindingAccepts(weights, lora.locator) || !bindingAccepts(scale, lora.scale)) {
+    result.dropped.push({ control: "lora", reason: "invalid" });
+    return;
+  }
+  result.input[weights.field] = lora.locator;
+  result.input[scale.field] = lora.scale;
+  result.applied.lora = { id: lora.id, scale: lora.scale };
 }
 
 /**

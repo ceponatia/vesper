@@ -16,7 +16,7 @@ import {
   type ImageLabMode,
   type ImageReferenceRole,
 } from "@/contracts";
-import { chatsApi, imageLabApi } from "@/lib/client/api";
+import { chatsApi, imageLabApi, imageLorasApi } from "@/lib/client/api";
 import {
   imageLabControlRole,
   imageLabFinishingInstruction,
@@ -82,6 +82,14 @@ import {
  * the controlled kinds is load-bearing, not an omission: the server REFUSES a
  * controlled experiment carrying a `controlInput` bag (`settings_unsupported`),
  * because a production-shaped run has no raw bag to carry.
+ *
+ * A finishing pass may additionally name one LoRA from the curated library, at a
+ * scale inside that row's own band. It is offered on this kind alone because a
+ * finishing pass is where the question is asked — does blending these weights in
+ * improve the face without moving anything else? — and the picker sends a library
+ * ID, never a locator: which weights that id points at is the library's ruling,
+ * re-made at render time, so a record can never claim an address the run did not
+ * use.
  */
 
 /** What the runner uses when the form names no model. Shown, never sent. */
@@ -225,6 +233,7 @@ export function ImageLabExperimentForm({
   const toast = useToast();
   const characters = useLabCharacters();
   const chats = useAsyncData(() => chatsApi.list(), []);
+  const loras = useAsyncData(() => imageLorasApi.list(), []);
 
   const [kind, setKind] = useState<ImageLabExperimentKind>(prefill?.kind ?? "control_probe");
   const [characterId, setCharacterId] = useState(prefill?.characterId ?? "");
@@ -236,6 +245,8 @@ export function ImageLabExperimentForm({
   const [extraRole, setExtraRole] = useState<ExtraReferenceRole | "">("");
   const [extraImageId, setExtraImageId] = useState<string | null>(null);
   const [modelSlug, setModelSlug] = useState("");
+  const [loraId, setLoraId] = useState("");
+  const [loraScale, setLoraScale] = useState("");
   const [instructionText, setInstructionText] = useState(prefill?.instruction ?? "");
   const [instructionEdited, setInstructionEdited] = useState(prefill !== null && prefill.instruction !== "");
   const [submitting, setSubmitting] = useState(false);
@@ -262,6 +273,41 @@ export function ImageLabExperimentForm({
   if (sourceExperimentId !== "" && !finishableSources.some((entry) => entry.id === sourceExperimentId)) {
     setSourceExperimentId("");
   }
+
+  // Only ENABLED library rows are offerable: a switched-off row is refused at
+  // resolution time (`image_lora.unreachable_configuration`), so listing one
+  // would sell an admin a queued experiment that can only fail.
+  const enabledLoras = (loras.data ?? []).filter((lora) => lora.enabled);
+  const selectedLora = enabledLoras.find((lora) => lora.id === loraId) ?? null;
+  // A LoRA that left the library — deleted, or switched off since the list
+  // loaded — must not ride into a request as an id nothing matches. Guarded on
+  // the fetch having ANSWERED, so the first render's empty list cannot clear a
+  // pick; no latch, because clearing the pick extinguishes the condition.
+  if (loras.data !== null && loraId !== "" && selectedLora === null) {
+    setLoraId("");
+  }
+  // A different LoRA is a different curated band, so the scale returns to that
+  // row's own default rather than carrying the previous row's number across
+  // (render-adjust with a latch, never a setState inside an effect).
+  const [prevLoraId, setPrevLoraId] = useState(loraId);
+  if (loraId !== prevLoraId) {
+    setPrevLoraId(loraId);
+    setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
+  }
+  // An emptied box means the row's own default, which is the same fallback the
+  // evaluator applies server-side — spelled here so the disabled-submit check
+  // below judges the number that will actually be sent.
+  const requestedScale = Number.parseFloat(loraScale);
+  const effectiveLoraScale =
+    selectedLora === null ? null : Number.isFinite(requestedScale) ? requestedScale : selectedLora.defaultScale;
+  // The curated band is the row's own, and a scale outside it is refused rather
+  // than clamped — checked here so that refusal is a disabled button instead of
+  // a queued experiment whose only possible outcome is `image_lora.incompatible`.
+  const loraReady =
+    selectedLora === null ||
+    (effectiveLoraScale !== null &&
+      effectiveLoraScale >= selectedLora.minimumScale &&
+      effectiveLoraScale <= selectedLora.maximumScale);
 
   // Whose portraits the identity picker (and the wardrobe extra) draw from: the
   // picked character — or, for a controlled scene, the conversation's own
@@ -398,7 +444,7 @@ export function ImageLabExperimentForm({
       case "controlled_scene":
         return chatId !== "" && sourceImageId !== null && controlReady && extraComplete;
       case "finishing_pass":
-        return sourceExperimentId !== "";
+        return sourceExperimentId !== "" && loraReady;
     }
   })();
 
@@ -426,6 +472,18 @@ export function ImageLabExperimentForm({
           inputs: [],
           modelSlug: namedModel,
           sourceExperimentId,
+          // Only when a LoRA is picked. A pass without one sends no `settings`
+          // key at all — an overlay nobody chose is an overlay the record would
+          // then claim was configured, and the raw provider bag stays empty
+          // either way (a recipe run that carries one is refused outright).
+          ...(selectedLora === null || effectiveLoraScale === null
+            ? {}
+            : {
+                settings: {
+                  controls: { lora: { id: selectedLora.id, scale: effectiveLoraScale } },
+                  controlInput: {},
+                },
+              }),
         }
       : {
           kind,
@@ -596,6 +654,52 @@ export function ImageLabExperimentForm({
                 ? "No finished baseline or controlled run to refine yet — a probe cannot be finished, and neither can another finishing pass."
                 : "The runner sends that run's result as the base image and the character's identity-pack reference beside it. Nothing else is picked here: the pack decides which image its identity is."}
             </p>
+
+            <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+              <Field
+                label="LoRA"
+                hint={
+                  enabledLoras.length === 0
+                    ? "None in the library yet. Curate one under Settings → Image models → LoRA library; only enabled rows are offered here."
+                    : "Optional. Blends a curated weights file into this pass — the library row decides which models, versions, and strengths it may run at."
+                }
+              >
+                {(id) => (
+                  <Select id={id} value={loraId} onChange={(e) => setLoraId(e.target.value)}>
+                    <option value="">— None —</option>
+                    {enabledLoras.map((lora) => (
+                      <option key={lora.id} value={lora.id}>
+                        {lora.label}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              {selectedLora !== null ? (
+                <Field label="Scale">
+                  {(id) => (
+                    <Input
+                      id={id}
+                      type="number"
+                      step={0.05}
+                      min={selectedLora.minimumScale}
+                      max={selectedLora.maximumScale}
+                      value={loraScale}
+                      onChange={(e) => setLoraScale(e.target.value)}
+                    />
+                  )}
+                </Field>
+              ) : null}
+            </div>
+            {selectedLora !== null ? (
+              // String-expression children throughout: this prose straddles
+              // expressions, and a wrapped boundary is where the space goes missing.
+              <p className="text-xs text-paper-500">
+                {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
+                {"A scale outside it is refused before any spend rather than clamped. The row's trigger words and "}
+                {"prompt additions are woven into the compiled prompt automatically — nothing to type below."}
+              </p>
+            ) : null}
           </div>
         ) : needsChat ? (
           <div className="grid gap-4 sm:grid-cols-[16rem_1fr]">

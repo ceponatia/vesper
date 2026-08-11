@@ -1,0 +1,21 @@
+CREATE TABLE "image_loras" (
+	"id" text PRIMARY KEY NOT NULL,
+	"label" text NOT NULL,
+	"locator_type" text NOT NULL,
+	"locator" text NOT NULL,
+	"compatible_model_slugs" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"compatible_version_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"default_scale" double precision NOT NULL,
+	"minimum_scale" double precision NOT NULL,
+	"maximum_scale" double precision NOT NULL,
+	"trigger_words" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"prompt_prefix" text,
+	"prompt_suffix" text,
+	"allowed_tasks" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL,
+	"builtin" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "image_loras_scale_bounds" CHECK ("image_loras"."minimum_scale" >= 0 AND "image_loras"."minimum_scale" <= 4 AND "image_loras"."default_scale" >= 0 AND "image_loras"."default_scale" <= 4 AND "image_loras"."maximum_scale" >= 0 AND "image_loras"."maximum_scale" <= 4),
+	CONSTRAINT "image_loras_scale_order" CHECK ("image_loras"."minimum_scale" <= "image_loras"."default_scale" AND "image_loras"."default_scale" <= "image_loras"."maximum_scale")
+);

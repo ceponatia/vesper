@@ -1249,6 +1249,27 @@ describe.skipIf(!ready)("image lab finishing passes", () => {
     expect(captured).toHaveLength(0);
   });
 
+  it("refuses a pass naming a LoRA the library does not have, before any spend", async () => {
+    // The LoRA is resolved in the runner, ahead of the provider call, so a
+    // library problem settles onto the row with its own code where an admin can
+    // read it — rather than being discovered by a prediction that has already been
+    // paid for. The code lands VERBATIM, exactly as the `image_profile.*` refusals do.
+    stubSuccessfulRenderer();
+    const source = await seedFinishedSource(await seedCharacterWithPortrait());
+    const { id, sink } = await createFinishingPass(source.id, {
+      settings: { controls: { lora: { id: "imagelabmissingloraaaaaa" } }, controlInput: {} },
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe("image_lora.unreachable_configuration");
+    expect(codes(sink)).toContain("image_lora.unreachable_configuration");
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
   it("records a finishing ruling and refuses one from the control vocabulary", async () => {
     stubSuccessfulRenderer();
     const source = await seedFinishedSource(await seedCharacterWithPortrait());

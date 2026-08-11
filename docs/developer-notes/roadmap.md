@@ -27,9 +27,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
   now reached by every render through the shared intent (slice 2), choosing which
   references survive by role rather than by position and routing control images
-  to the inputs a model declares (slices 3 and 9); remaining are reference
-  preparation and parallel uploads, reproducibility, version promotion, LoRAs,
-  curated profiles and image sets.
+  to the inputs a model declares (slices 3 and 9), with the curated LoRA library
+  built and awaiting its first style trial (slice 6); remaining are reference
+  preparation and parallel uploads, reproducibility, version promotion, curated
+  profiles and image sets.
 
 - **Image identity packs — durable owner-scoped face references** —
   [plan](image-identity-packs.plan.md) · [spec](image-identity-packs.spec.md) —
@@ -43,9 +44,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   control-mapped Qwen edits against ordinary output; Stages 0–3 are complete —
   depth and edge controls proved reliable in both lanes, pose is stochastic,
   Plus stays unregistered, and identity finishing is conditionally viable, only
-  earning its cost when its instruction carries appearance text — and the
-  remaining stages wait on their gates, Stage 4 on the capabilities plan's Qwen
-  LoRA library slice.
+  earning its cost when its instruction carries appearance text — Stage 4's LoRA
+  library and lab wiring are built with the connector registration and
+  style-LoRA trial next, and Stages 5–7 wait on their gates.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

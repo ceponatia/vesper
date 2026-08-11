@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  IMAGE_LORA_INCOMPATIBLE,
+  IMAGE_LORA_UNREACHABLE,
   imageLabDiagnosticCode,
   imageLabExperimentKinds,
   imageLabFailureCodes,
@@ -34,6 +36,21 @@ describe("imageLabFailureExplanation", () => {
       expect(copy).not.toBe(imageLabDiagnosticCode(code));
       expect(copy.length).toBeGreaterThan(20);
     }
+  });
+
+  // The LoRA library refuses in its own namespace and the code settles onto the
+  // row verbatim, so these two would fall through the lab's reader into the
+  // pass-through branch below — an operator reading `image_lora.incompatible`
+  // off a failed pass with no sentence beside it.
+  it("explains the LoRA library's two refusals, and sends each somewhere different", () => {
+    for (const code of [IMAGE_LORA_INCOMPATIBLE, IMAGE_LORA_UNREACHABLE]) {
+      const copy = imageLabFailureExplanation(code);
+      expect(copy).not.toBe(code);
+      expect(copy.length).toBeGreaterThan(20);
+    }
+    expect(imageLabFailureExplanation(IMAGE_LORA_INCOMPATIBLE)).not.toBe(
+      imageLabFailureExplanation(IMAGE_LORA_UNREACHABLE),
+    );
   });
 
   // The render classifier's codes are a separate vocabulary — better raw than

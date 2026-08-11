@@ -364,6 +364,37 @@ describe("controls and budget", () => {
     expect(plan.controlInput).toEqual({ negative_prompt: "blurry", guidance_scale: 9 });
   });
 
+  it("carries an already-resolved LoRA into the payload it was resolved for", () => {
+    // `planImageRender` is pure, so it can only THREAD a binding — the library read
+    // that produces one happens in `renderImageIntent` (or in the lab, which
+    // pre-resolves so a refusal settles onto its own row). What this proves is that
+    // the thread is connected: a binding on the intent reaches the provider fields
+    // this version declared.
+    const plan = planned(
+      intent({
+        profile: resolved({
+          advancedCapabilities: {
+            controls: {
+              loraWeights: { field: "lora_weights", type: "string" },
+              loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+            },
+          },
+        }),
+        resolvedLora: {
+          id: "lora-1",
+          label: "Ink Wash",
+          locator: "owner/ink-wash-lora",
+          scale: 0.8,
+          promptPrefix: null,
+          promptSuffix: null,
+          triggerWords: ["sumi-e"],
+        },
+      }),
+    );
+    expect(plan.controlInput).toEqual({ lora_weights: "owner/ink-wash-lora", lora_scale: 0.8 });
+    expect(plan.prompt).toBe("a scene in a warm room\n\nsumi-e");
+  });
+
   it("leaves the prediction budget to the environment when the profile declares none", () => {
     // A compiled plan always carries a NUMBER so a trial cell can hash its own
     // deadline. Production must not inherit that: all 17 seeded profiles store

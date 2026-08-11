@@ -107,7 +107,8 @@ supports:
   from text;
 - **Qwen Image Edit 2511** is the controlled-composition connector, using pose
   keypoints, depth maps, edge maps, and ordinary visual references, and is also
-  the identity and LoRA connector;
+  the identity connector; the LoRA connector is the dedicated Qwen LoRA
+  explorer endpoint (see the finishing connector and Stage 4);
 - **Qwen Image Edit Plus** is held in reserve, registered only if the Stage 0
   probe shows 2511 ignores control maps.
 
@@ -131,9 +132,12 @@ probe can detect control support. Only a generated result can.
 
 ### Qwen Image Edit 2511 — the plan's model
 
-Accepts up to three reference images and one compatible LoRA, with instruction
-editing, seeds, quality controls, and adjustable LoRA strength. Already seeded,
-probed, and serving scenes and variants.
+Accepts up to three reference images, with instruction editing, seeds, and
+quality controls. Already seeded, probed, and serving scenes and variants. It
+exposes no LoRA input — re-verified against the live schema on 2026-08-11,
+correcting the 2026-08-06 reading; its model card's "integrated LoRAs" phrase
+describes built-in acceleration, not a loadable LoRA — so LoRA work runs on the
+dedicated endpoint named under Stage 4.
 
 Its model card does not mention ControlNet. It is nonetheless the expected
 control-capable model: it is published as an enhancement over 2509, its feature
@@ -363,10 +367,11 @@ when its training set no longer represents the current character.
 
 Owner ruling (2026-08-10): the LoRA library itself — hosting, compatibility,
 scale validation, selection, provenance — is built once, as the capabilities
-plan's Qwen LoRA library slice, running on 2511's integrated LoRA input. This
-plan keeps only the comparison trials that judge whether a LoRA earns its cost.
-A dedicated Qwen LoRA endpoint is registered only if 2511's integrated support
-proves insufficient.
+plan's Qwen LoRA library slice. This plan keeps only the comparison trials that
+judge whether a LoRA earns its cost. A dedicated Qwen LoRA endpoint is
+registered only if 2511's integrated support proves insufficient — and it did
+(2026-08-11): 2511's live schema exposes no LoRA input, so that clause is
+exercised and the dedicated endpoint under Stage 4 is the LoRA connector.
 
 ## Connector model
 
@@ -390,8 +395,10 @@ recorded order.
 
 ### Identity and LoRA finishing connector
 
-Uses Qwen Image Edit 2511, or another live-probed Qwen LoRA endpoint, when a
-trial calls for identity reinforcement or a LoRA.
+Uses Qwen Image Edit 2511 for identity reinforcement. A trial that calls for a
+LoRA runs on the live-probed Qwen LoRA endpoint instead — the official Qwen
+Image Edit 2509 LoRA explorer, registered under Stage 4 once 2511's live schema
+proved it takes no LoRA — because 2511 cannot load one.
 
 This connector is optional for each job. A controlled result may be accepted
 without a finishing pass when it is already better.
@@ -623,7 +630,9 @@ changing structure, clothing, body, camera, lighting, or setting.
 
 ### Stage 4 — curated LoRA support
 
-Status: blocked on the capabilities plan's Qwen LoRA library slice.
+Status: in progress — the LoRA library (capabilities slice 6) and the lab's
+LoRA wiring are built 2026-08-11; registering the LoRA connector and running
+the style-LoRA trial remain.
 
 Run one known compatible style LoRA through the finishing connector, consuming
 the capabilities plan's LoRA library slice for hosting, compatibility, scale
@@ -631,6 +640,14 @@ validation, prompt additions, and provenance rather than building any of that
 here.
 
 Confirm that incompatible or unavailable LoRAs fail before provider spend.
+
+Finding (2026-08-11): Qwen Image Edit 2511 exposes no LoRA input at all on its
+live schema, so the finishing connector for LoRA runs is the dedicated Qwen
+LoRA endpoint the ruling below reserved — the official Qwen Image Edit 2509
+LoRA explorer, which loads a hosted LoRA by link and runs without one when no
+link is given, letting the same pinned model produce the no-LoRA comparison
+arm. The trial protocol and endpoint facts are in the
+[spec](qwen-advanced-image-subsystem.spec.md).
 
 ### Stage 5 — one character LoRA pilot
 
