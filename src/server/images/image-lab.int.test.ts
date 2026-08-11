@@ -333,7 +333,7 @@ async function seedCharacterWithPortrait(): Promise<string> {
     prompt: "lab canonical portrait",
   });
   const saved = await saveImageBuffer(asset.id, await testPngBuffer(384, 512));
-  expect(saved?.status).toBe("ready");
+  if (saved?.status !== "ready") throw new Error("failed to store the lab canonical portrait");
   await db().update(characters).set({ avatarImageId: saved.id }).where(eq(characters.id, characterId));
   return characterId;
 }
