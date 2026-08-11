@@ -6,6 +6,7 @@ export * from "./identity-pack-trial";
 export * from "./identity-trial-model-versions";
 export * from "./image-lab";
 export * from "./image-lab-controls";
+export * from "./image-loras";
 export * from "./models";
 export * from "./model-profiles";
 export * from "./render-intent";

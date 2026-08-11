@@ -3,7 +3,9 @@
 Status: active. Slice 1 shipped 2026-08-05 (reviewed capability ratings, the
 profile table, 17 built-in profiles, and the resolver). Slice 2 shipped
 2026-08-07: every player render now resolves a profile and goes through the
-shared render intent, with payloads unchanged. Slices 3–9 remain queued.
+shared render intent, with payloads unchanged. Slices 3 and 9 shipped their
+selection and control-binding halves and slice 6 shipped the LoRA library, all
+2026-08-11; slices 4–5, 7–8 and the transport half of slice 3 remain.
 
 Outcome: The owner can pick a named, curated setup for each image model — a quick
 portrait, a 4K location, a scene that keeps the same character — so that one
@@ -100,12 +102,22 @@ No picture changed. Every seeded profile either carries an empty policy, which
 selects exactly as the old positional trim did, or lists its roles in the order
 its lane already sends them.
 
+**Shipped (slice 6).** The curated LoRA library is live: an administrator can
+register a hosted LoRA — a Hugging Face repository or a direct HTTPS weights
+link, never a credential — with a curated strength range, allowed tasks, and
+optional trigger words or prompt additions, and a render that names one has it
+validated against the model, version, task and range before any provider money
+is spent. An incompatible or unreachable LoRA refuses with a recorded reason
+instead of silently running without it. The first trial that exercises it is
+the Qwen lab's Stage 4
+([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)).
+
 **Not started.** Reference preparation and parallel uploads (the rest of slice
-3), recorded seeds, safe version promotion, the LoRA library, image sets, and any
-admin or player UI for profiles remain ahead. One gap the migration opens: the
-model pickers still list models, while renders resolve profiles, so a model an
-operator adds without a profile is offered and then quietly passed over for the
-default — visible in the diagnostics, and closed by the picker slice.
+3), recorded seeds, safe version promotion, image sets, and any admin or player
+UI for profiles remain ahead. One gap the migration opens: the model pickers
+still list models, while renders resolve profiles, so a model an operator adds
+without a profile is offered and then quietly passed over for the default —
+visible in the diagnostics, and closed by the picker slice.
 
 ## What stays unchanged
 
@@ -216,10 +228,13 @@ portrait variants. The next improvement is to make its references role-aware:
 identity first, then location, then a style or object example when capacity
 allows.
 
-It should also gain specialized profiles for correcting text in an existing image
-and for applying a curated visual style. Its tested endpoint accepts one custom
-LoRA, so Vesper can offer a house-style or other curated LoRA without building a
-separate Replicate client.
+It should also gain specialized profiles for correcting text in an existing
+image and for applying a curated visual style. Its own endpoint exposes no LoRA
+input — the Qwen lab verified that against the live schema — so curated LoRA
+work runs on the dedicated Qwen LoRA endpoint that lab registered, still
+through the same shared Replicate client
+([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)
+owns that choice).
 
 A LoRA must be compatible with the Qwen Image family and reachable by Replicate.
 The practical starting points are a public Hugging Face repository or a stable
@@ -363,9 +378,10 @@ pipelines to understand batches.
 5. **Version promotion.** Status: queued. Pin the built-ins, add candidate
    probing and capability diffs, and provide an explicit smoke-test-and-activate
    flow.
-6. **Qwen LoRA library.** Status: queued. Add compatible hosted LoRAs, profile
-   selection, scale validation, trigger or prompt additions, and one initial
-   house-style trial.
+6. **Qwen LoRA library.** Status: built 2026-08-11 — awaiting the initial
+   style trial, which runs as the Qwen lab's Stage 4 protocol. Add compatible
+   hosted LoRAs, profile selection, scale validation, trigger or prompt
+   additions, and one initial style trial.
 7. **Model-specific profiles.** Status: queued. Add Seedream high-resolution and
    example-based profiles, Wan generation/edit profiles, Qwen text repair, and
    curated Stable Diffusion portrait profiles.

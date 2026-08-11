@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  emptyImageModelAdvancedCapabilities,
   imageModelProfileSchema,
   imageModelSchema,
   type ImageModel,
@@ -49,6 +50,7 @@ const successfulProbe = {
   supportedAspects: ["3:4"],
   outputFormat: "webp",
   extraInput: { output_quality: 95 },
+  advancedCapabilities: emptyImageModelAdvancedCapabilities(),
 };
 
 describe("identityTrialModelsNeedingProbe", () => {
@@ -127,6 +129,10 @@ describe("imageModelProbeFields", () => {
       supportedAspects: ["3:4"],
       outputFormat: "webp",
       extraInput: { output_quality: 95 },
+      // Written with `probedVersionId`, never apart from it: the bindings describe
+      // one version's inputs, so a record that kept them while the version moved
+      // would point the render path at a field that no longer exists.
+      advancedCapabilities: emptyImageModelAdvancedCapabilities(),
       probedVersionId: "version-123",
     });
   });

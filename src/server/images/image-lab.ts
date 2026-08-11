@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   chooseAspect,
+  effectiveImageLoraSelection,
   emptyImageLabSettings,
   imageLabControlMetaSchema,
   imageLabDiagnosticCode,
@@ -27,6 +28,7 @@ import {
   type ImageLabOutcome,
   type ImageLabRecordVerdictRequest,
   type ImageLabSettings,
+  type ImageLoraRenderBinding,
   type ImageModel,
   type ImageModelProfile,
   type ImageProfileTask,
@@ -47,6 +49,7 @@ import {
 import { characterChats, characters, chatParticipants, db, imageLabExperiments, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
+import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { baseImageModelSlug, withReviewedImageQuality } from "./quality-presets";
@@ -1121,6 +1124,29 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
     );
   }
 
+  // Resolved HERE rather than left to the renderer, for the reason every other
+  // lab precondition is checked here: a LoRA the pinned model cannot take must
+  // settle onto the row with its own code, pre-spend, where an admin reading the
+  // experiment can see why it stopped. The shared helper decides which LoRA is
+  // being asked for so the lab and the render path can never disagree about the
+  // request/default merge (recipes carry no control defaults today, which is
+  // exactly why deriving the answer twice would go unnoticed).
+  const selection = effectiveImageLoraSelection(recipeProfile.controlDefaults, input.controls);
+  let resolvedLora: ImageLoraRenderBinding | undefined;
+  if (selection) {
+    const resolved = await resolveImageLoraForRender(
+      selection,
+      { model, versionId: input.versionId, task: recipeProfile.task },
+      sink,
+    );
+    if (!resolved.ok) {
+      // The `image_lora.*` code lands verbatim, exactly as `image_profile.*` codes
+      // do: the failure vocabulary belongs to the layer that refused.
+      return await settleFailed(row, resolved.code, resolved.message, sink, { columns });
+    }
+    resolvedLora = resolved.binding;
+  }
+
   // The aspect matches the baselines' so the two arms of a comparison stay
   // same-shaped; the versionId rides INSIDE the intent, so the renderer seam
   // keeps its shape and the real renderer needs no lab-specific arm.
@@ -1131,6 +1157,8 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
     target: { aspectRatio: IMAGE_TARGET_ASPECT },
     controls: input.controls,
     versionId: input.versionId,
+    // Passed along so the renderer does not read the library a second time.
+    ...(resolvedLora ? { resolvedLora } : {}),
   };
   const planned = planImageRender(intent);
   if (!planned.ok) {

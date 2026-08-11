@@ -33,12 +33,12 @@ all seven player-facing render lanes call it on every render.
 | Section                             | Status                          |
 | ----------------------------------- | ------------------------------- |
 | Extensions to `image_models`        | shipped 2026-08-05 (mig 0100)   |
-| Advanced capability contract        | shipped; probe fills nothing    |
+| Advanced capability contract        | shipped; probe derives LoRA     |
 | `image_model_profiles`              | shipped 2026-08-05 (mig 0100)   |
 | Profile task eligibility            | shipped 2026-08-05              |
 | Reference policy                    | shipped 2026-08-11 (slice 3)    |
 | Normalized controls                 | shipped 2026-08-05              |
-| `image_loras`                       | not started                     |
+| `image_loras`                       | shipped 2026-08-11 (slice 6)    |
 | Image sets                          | not started                     |
 | Profile resolution                  | shipped 2026-08-07, every lane  |
 | Normalized render intent            | shipped 2026-08-07              |
@@ -156,8 +156,13 @@ comparison therefore refuses them until an admin re-probes.
 
 ### Advanced capability contract
 
-**Shipped 2026-08-05** as `src/contracts/images/image-model-capabilities.ts`. The
-probe does not populate it, so every row holds `{}` and every optional control is
+**Shipped 2026-08-05** as `src/contracts/images/image-model-capabilities.ts`.
+Since slice 6 (2026-08-11) the probe derives the two LoRA bindings —
+`controls.loraWeights` from a string `lora_weights` input and
+`controls.loraScale` from a numeric `lora_scale` input, minimum and maximum
+propagated — and persists the result atomically beside `probedVersionId` at
+create and at re-probe. Every other binding stays underived, so a row probed
+before this slice holds `{}`, and every non-LoRA optional control is still
 dropped with a `no_binding` reason at mapping time — which is exactly current
 render behavior.
 
@@ -428,7 +433,13 @@ image attempt.
 
 ### `image_loras`
 
-Not started — no table, no contract, no route. Slice 6. The design:
+**Shipped 2026-08-11 (slice 6):** the table, the contract
+(`src/contracts/images/image-loras.ts`), the admin CRUD routes
+(`/api/admin/self/image-loras`), render-path resolution, and the settings-page
+library section. Rulings the build settled are in §"Slice 6 implementation
+rulings". The initial style trial runs as the Qwen lab's Stage 4 protocol
+([qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md)),
+which also owns which Replicate endpoint carries LoRA work.
 
 An administrator-managed LoRA library:
 
@@ -456,10 +467,12 @@ record a redacted locator without its query string. Short-lived signed URLs are
 not suitable as durable library entries; use a stable public file or generate a
 fresh signed URL from managed storage at render time in a future storage slice.
 
-The initial Qwen Image Edit binding accepts one LoRA locator and one scale. The
-normalized contract deliberately represents one LoRA. If a future model exposes
-an array, expand the capability and request contract in a separate change rather
-than pretending multiple LoRAs are already supported.
+The tested Qwen-family binding accepts one LoRA locator and one scale (which
+endpoint that is belongs to the Qwen lab spec — Qwen Image Edit 2511 itself
+exposes no LoRA input on its live schema). The normalized contract deliberately
+represents one LoRA. If a future model exposes an array, expand the capability
+and request contract in a separate change rather than pretending multiple LoRAs
+are already supported.
 
 A profile that names a LoRA is invalid unless:
 
@@ -523,8 +536,9 @@ steps 5–11 of the resolution order below and was reused rather than re-invente
 reviewed quality seam, strategy-compiled prompt, model-dialect preparation,
 negative resolution, control mapping, override validation, aspect choice, and
 version pin. `renderImageIntent` calls it and adds what a trial has no use for —
-reference selection against capacity, the required-role gate, and per-request
-control overrides. LoRA resolution and image sets remain later slices.
+reference selection against capacity, the required-role gate, per-request
+control overrides, and — since slice 6 — LoRA resolution against the library.
+Image sets remain a later slice.
 
 Serializable vocabulary lives in `src/contracts/images/render-intent.ts`; the
 buffer-bearing request and the orchestration in
@@ -807,9 +821,13 @@ the design below, all deliberate:
   clamped only where a profile explicitly allows a bounded range. No such opt-in
   exists, so the mapper refuses the value with an `invalid` reason rather than
   sending something nobody configured under a record that claims otherwise.
-- **`seed`, `coherentSet`, and `lora` are explicitly unsupported.** They drop with
-  an `unsupported` reason rather than falling through as `no_binding`, keeping
+- **`seed` and `coherentSet` are explicitly unsupported.** They drop with an
+  `unsupported` reason rather than falling through as `no_binding`, keeping
   "this version has no field" distinct from "Vesper does not send this yet".
+  `lora` left this set with slice 6: a **resolved** LoRA maps onto the version's
+  two LoRA bindings, while an unresolved `{ id, scale }` selection still drops
+  `unsupported`, because only the library resolution may turn an id into a
+  locator.
 - **`filterReservedInputFields` was added.** Override validation was not enough:
   a *mapped* control lands on whatever field the probe declared for it, and those
   declarations genuinely collide (a `size` shape input against a
@@ -1076,11 +1094,13 @@ claims to bypass moderation.
 
 ## Admin UI
 
-Not started. `/settings/image-models` today adds a model by slug, ticks its three
-surface toggles, re-probes it, switches its reference transport, and deletes it.
-Nothing on the page shows the reviewed ratings, the operator warning, the pinned
-version, or profiles — the PATCH route accepts the three reviewed fields, so they
-are currently only settable by API call or migration.
+Mostly not started. `/settings/image-models` today adds a model by slug, ticks
+its three surface toggles, re-probes it, switches its reference transport,
+deletes it — and, since slice 6, manages the LoRA library in its own section
+(list, create, edit, enable, delete). Nothing on the page shows the reviewed
+ratings, the operator warning, the pinned version, or profiles — the PATCH
+route accepts the three reviewed fields, so they are currently only settable by
+API call or migration.
 
 Extend `/settings/image-models` rather than creating six separate settings
 pages.
@@ -1100,8 +1120,8 @@ Profile editing exposes task, operation, prompt strategy, timeout, reference
 policy, curated common controls, optional LoRA, and an advanced JSON override
 editor. The advanced editor validates keys and values before save.
 
-Add a LoRA-library section under the same admin area. Arbitrary player-supplied
-LoRAs are out of scope.
+The LoRA-library section lives under this same admin area (built with slice 6).
+Arbitrary player-supplied LoRAs are out of scope.
 
 Normal image pickers show profile labels. When several profiles use the same
 model, group them under the model label. A profile warning appears before use but
@@ -1302,6 +1322,54 @@ function; `selectIntentReferences` is gone rather than left beside it.
   what a byte budget should give up instead. A render that silently lost its pose
   map looks like a success.
 
+## Slice 6 implementation rulings (2026-08-11)
+
+The library is data plus one resolution seam; nothing about it is
+model-specific, and the endpoint that first exercises it belongs to the Qwen
+lab spec.
+
+- **Resolution happens before planning, because planning is pure.**
+  `planImageRender` cannot read the database, so a LoRA selection
+  (`controls.lora`, `{ id, scale? }`) is resolved into an
+  `ImageLoraRenderBinding` — id, label, locator, resolved scale, prompt
+  additions — before any plan is compiled. `ImageRenderIntent.resolvedLora`
+  carries it, set only by server code that performed the resolution (the
+  `versionId` precedent). `renderImageIntent` self-resolves when a selection is
+  effective and no binding was provided; the lab pre-resolves so its rows can
+  settle the refusal code verbatim before any spend.
+- **The effective selection rule is written once.**
+  `effectiveImageLoraSelection(controlDefaults, controls)` mirrors the compile
+  step's `requested ?? defaults` member merge, so the resolver and the compile
+  step can never disagree about which LoRA a render meant.
+- **Two refusal codes split by whose rule refused.** `image_lora.incompatible`
+  is the LoRA's own curation refusing — model slug not compatible, version not
+  in a non-empty `compatibleVersionIds`, task not allowed, requested scale
+  outside the curated range. `image_lora.unreachable_configuration` is the
+  configuration failing to reach the provider — row missing, unparseable or
+  disabled, the active version exposing no LoRA bindings, a scale outside the
+  provider binding's declared range, or a version that cannot be verified while
+  the compatibility list demands one. Both refuse before provider work; neither
+  is ever clamped into compliance.
+- **The mapper maps only a resolved LoRA.** With `resolvedLora` present it
+  emits the locator and scale onto the version's two declared fields through
+  the ordinary binding checks; a bare `{ id, scale }` selection still drops
+  `unsupported`. `applied.lora` records `{ id, scale }` — the locator goes to
+  the provider payload and nowhere else, and diagnostics use
+  `redactImageLoraLocator`, which strips a URL's query string.
+- **Prompt additions are woven exactly once, in the compile step.**
+  `applyImageLoraPromptAdditions` runs after strategy compilation and before
+  model-dialect preparation, so `finalPrompt` and the controls hash record the
+  prefix, suffix, and any trigger word not already present case-insensitively.
+  The weave lives only in the compile step, so the transport's idempotent
+  re-preparation never applies it twice.
+- **The probe derives the LoRA aliases and nothing else.** `lora_weights`
+  (string) and `lora_scale` (number, range propagated) become
+  `controls.loraWeights`/`controls.loraScale`; no other alias and no
+  `knownInputFields` derivation joined, so no other mapped control can start
+  firing from a re-probe. `advancedCapabilities` is written atomically beside
+  `probedVersionId` at create and re-probe, and the admin PATCH still cannot
+  set it directly.
+
 ## Observability and reproducibility
 
 Not started for ordinary renders. The only place any of this exists is the
@@ -1344,9 +1412,11 @@ Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
 and `image_profile.references_renumbered` from the render intent;
 `image_model.reserved_field_ignored` and `image_model.control_field_reserved`
 from the payload builder; `image_model.references_trimmed` from the inline byte
-budget; and the mapper's typed drop reasons (`no_binding`, `invalid`,
-`unsupported`, `unknown_field`, `reserved`), which are recorded on the plan
-rather than pushed as diagnostics.
+budget; `image_lora.incompatible` and `image_lora.unreachable_configuration`
+from LoRA resolution (refusals before provider work — slice 6); and the
+mapper's typed drop reasons (`no_binding`, `invalid`, `unsupported`,
+`unknown_field`, `reserved`), which are recorded on the plan rather than pushed
+as diagnostics.
 
 `image_profile.references_trimmed` carries a `{ role, reason }` pair per omitted
 reference rather than a bare role list: "location dropped" reads as a capacity
@@ -1364,8 +1434,6 @@ caller's existing lane semantics permit it, using specific diagnostics:
 - `image_profile.required_reference_missing`;
 - `image_profile.control_unsupported`;
 - `image_profile.override_unknown`;
-- `image_lora.incompatible`;
-- `image_lora.unreachable_configuration`;
 - `image_model.prompt_too_long_required`;
 - `image_model.version_profile_conflict`.
 
@@ -1413,7 +1481,12 @@ What exists today, all pure except the last:
 - `src/server/images/model-profiles.int.test.ts` — the seeded profile set, the
   registry's per-row resilience, and the model-deletion cascade, plus the
   assertion that every anchor task still resolves to the model its lane renders
-  with today.
+  with today;
+- `src/contracts/images/image-loras.test.ts` — the library record and request
+  schemas, locator validation and redaction, scale invariants, the render
+  evaluator's full decision table, prompt-addition weaving, and the effective
+  selection rule (slice 6; the mapper, probe, compile and intent suites carry
+  the matching LoRA cases).
 
 The rest of this section is the target coverage for the unbuilt slices.
 

@@ -40,9 +40,16 @@ those systems through their existing exports and adds no second copy.
 | Stage 3 finishing recipe + runner (intent)      | built 2026-08-11 |
 | Finishing create/verdict/comparison UI          | built 2026-08-11 |
 | Stage 3 finishing trial runs + verdicts         | run 2026-08-11   |
+| Stage 4 lab LoRA wiring (library consumption)   | built 2026-08-11 |
+| Stage 4 connector registration + refusal checks | pending          |
+| Stage 4 style-LoRA trial runs + verdicts        | pending          |
 
-Stage 4+ work (LoRA trials, two-character recipes) is deliberately absent from
-this table: Stage 4 waits on the capabilities plan's Qwen LoRA library slice.
+Stage 5+ work (the character-LoRA pilot, two-character recipes) is deliberately
+absent from this table: Stage 5 waits on Stage 4's verdict, and Stage 6 on the
+owner opening the two-character gate. The LoRA library itself is the
+capabilities plan's slice 6
+([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
+§"Slice 6 implementation rulings"); this table tracks only the lab's side.
 
 ## Rulings this build settles
 
@@ -356,6 +363,108 @@ output, the other is the identity pack — and what a reviewer is asked about it
   2026-08-10 ruling "Stage 1+ experiment kinds are refused at create time" is
   spent).
 
+## Stage 4 build rulings (2026-08-11)
+
+Stage 4 consumes the capabilities plan's LoRA library (its slice 6 rulings own
+the library machinery); what this stage settles is which endpoint carries LoRA
+work and how the lab reaches it.
+
+- **Qwen Image Edit 2511 exposes no LoRA input — the "integrated LoRA input"
+  premise is void.** Verified against the live Replicate schema (read-only API,
+  2026-08-11): the pinned-and-still-latest version `a0670a7f…` accepts exactly
+  `seed`, `image`, `prompt`, `go_fast`, `aspect_ratio`, `output_format`,
+  `output_quality`, `disable_safety_checker`. The model card's "integrated
+  LoRAs" phrase describes acceleration baked into the weights, not a
+  user-suppliable input. No other qwen-owner **edit** endpoint carries LoRA
+  fields either (`qwen-image-edit`, `qwen-image-edit-plus` checked); only the
+  text-to-image `qwen/qwen-image` does, and its `img2img` edit mode is screened
+  out of identity-critical tasks, so it cannot be the finishing connector.
+- **The LoRA finishing connector is `qwen/qwen-image-edit-plus-lora`** — the
+  official qwen-owner "Qwen Image Edit 2509 LoRA explorer" (~553k runs at
+  registration time). This is the plan's own fallback clause exercised, not a
+  new decision: the owner ruling of 2026-08-10 registers "a dedicated Qwen LoRA
+  endpoint only if 2511's integrated support proves insufficient", and it now
+  provably is. The endpoint's `lora_weights` takes exactly the library's two
+  locator shapes (a Hugging Face `owner/repo` slug or a direct
+  safetensors/zip/tar URL) and an empty string means "run without a LoRA", so
+  the SAME pinned model runs the no-LoRA comparison arm — which keeps the LoRA's
+  contribution separable from the 2509-versus-2511 model difference.
+  `lora_scale` is a number, provider range 0–4, default 1.
+- **Registration is the ordinary admin flow, not a migration.** The endpoint is
+  registered post-deploy through the add-by-slug probe on
+  `/settings/image-models` (the probe derives the two LoRA bindings and records
+  the pin), then rated by the model PATCH: `editKind: instruction_edit`,
+  `identityPreservation: moderate` (the 2509 generation is documented as weaker
+  at identity than 2511 — `moderate` keeps it eligible for the
+  identity-critical finishing recipe while recording the step down),
+  `maxReferences: 3`. Its reference page joins `docs/image-models/` when the
+  registration happens.
+- **LoRA selection rides the existing normalized-controls seam.** A lab
+  experiment carries `settings.controls.lora` (`{ id, scale? }`) — the create
+  request needed no new field. The runner resolves the selection against the
+  library before any spend (in the shared recipe seam, so the controlled kinds
+  accept a LoRA by API exactly as they accept other normalized controls) and
+  the refusal codes settle onto the row **verbatim**, the same convention as
+  the `image_profile.*` codes. The resolved binding travels on the intent
+  (`resolvedLora`, the `versionId` precedent), so the recorded plan, outcome
+  and final prompt all reflect the LoRA that actually ran.
+- **The form offers the LoRA picker on `finishing_pass` only.** Stage 4's
+  question is asked of the finishing connector; the controlled kinds stay
+  API-reachable for a later arm (the `object`-role precedent — the recipes
+  allow what the form does not yet offer). The picker lists enabled library
+  rows; the scale input is bounded to the row's curated range and pre-filled
+  with its default.
+- **Verdict vocabularies are unchanged.** A LoRA-carrying finishing pass keeps
+  the finishing vocabulary; a style LoRA deliberately changes more than
+  identity, so its rulings are recorded in `verdictNote` and in this spec's
+  trial section rather than through a third vocabulary. Stage 4 proves
+  plumbing; Stage 5 judges value — inventing verdict values for a two-run
+  plumbing trial would churn the per-kind gate for nothing.
+
+## Stage 4 LoRA trial protocol
+
+Owner work with agent assistance, on the Fly deploy with the uxtest admin
+account, after the slice-6 build deploys. Everything before step 4 spends
+nothing.
+
+1. **Register the connector.** Add `qwen/qwen-image-edit-plus-lora` on
+   `/settings/image-models` (the probe pins the version and derives the LoRA
+   bindings), then set the reviewed ratings and `maxReferences: 3` per the
+   build ruling above. Confirm the row records a `probedVersionId` and both
+   LoRA bindings; give it a `docs/image-models/` page in a docs-only commit.
+2. **Create the library row.** One style LoRA, `huggingface_repo` or a direct
+   `https_url` locator, curated scale range around the author's recommendation,
+   `allowedTasks: [variant]`, trigger words per the model card. Candidates
+   researched 2026-08-11: a Qwen-Image-Edit-2509-trained style LoRA with an
+   unmistakable, judgeable effect (the photo-to-anime family) first;
+   `flymy-ai/qwen-image-edit-2509-inscene-lora` as the same-family alternate.
+   The provider doc's own example `flymy-ai/qwen-image-lora` is a person LoRA
+   ("Valentin" trigger) — compatibility-vouched but wrong for a style trial.
+   Verify the exact repository, file layout and license before creating the
+   row.
+3. **Refusal checks — every one must fail before spend** (no `predictionId`,
+   no result row): a finishing pass on 2511 carrying the LoRA
+   (`image_lora.unreachable_configuration` — no bindings); one on the connector
+   with a library row whose `compatibleModelSlugs` names only 2511
+   (`image_lora.incompatible`); a requested scale outside the curated range
+   (`incompatible`); the row disabled (`unreachable_configuration`); a
+   nonexistent LoRA id (`unreachable_configuration`).
+4. **Paid arms.** Over one Stage 3 source (the direct-edit baseline
+   `ssuucjcm…` produced the cleanest Stage 3 result), run finishing passes on
+   the connector: (a) no LoRA — the model-generation baseline, which also
+   measures 2509-generation finishing against Stage 3's 2511 results; (b) the
+   LoRA at its default scale; (c) optionally one more scale point. Every run
+   carries the Stage 3 ruling's mandatory appearance-text instruction.
+5. **Judge and record.** Did the style visibly apply, scaled by `lora_scale`?
+   Did identity and structure survive relative to the no-LoRA arm? Is the run
+   reproducible from its record (pin, LoRA id + scale, final prompt with the
+   trigger additions)? Record verdicts with notes, write the results into this
+   section, and flip the plan's Stage 4 status line when the owner accepts.
+
+Exit: pinning, hosting, selection, strength limits, prompt additions and
+diagnostics are each proven by a live run or a recorded refusal — the plan's
+"prove the plumbing" bar — and the refusal list above all fired pre-spend.
+
 ## Contracts
 
 New file `src/contracts/images/image-lab.ts` (pure; exported via
@@ -415,6 +524,15 @@ Stage 3 additions (2026-08-11):
   `imageLabFinishableKinds` / `isImageLabFinishableKind`.
 - In `src/lib/images/image-lab-instruction.ts`:
   `imageLabFinishingInstruction(ownerInstruction)`.
+
+Stage 4 additions (2026-08-11): none of the lab's own contracts changed — the
+LoRA selection was already a member of the normalized controls the settings
+schema accepts. The library contract (`src/contracts/images/image-loras.ts`:
+the record, locator validation, redaction, the render evaluator, the
+`image_lora.*` codes, `ImageLoraRenderBinding`, and the intent's `resolvedLora`
+field) belongs to
+[image-model-capabilities.spec.md](image-model-capabilities.spec.md); the lab
+consumes it through the shared recipe seam.
 
 ## Ownership rules
 
@@ -592,6 +710,9 @@ asserting fallback **and** code:
 - Finishing pass whose subject offers no identity-pack reference →
   `image_lab.identity_unavailable`, refused before any provider spend, with the
   pack's own blocking code carried in the recorded message.
+- Recipe run naming a LoRA the library refuses → `image_lora.incompatible` /
+  `image_lora.unreachable_configuration` settle onto the row verbatim, refused
+  before any provider spend (the code split is the capabilities spec's).
 - Controlled run whose plan refuses (required role missing, required control
   input unfilled, strategy uncompilable) → the intent path's own
   `image_profile.*` code settles onto the row verbatim, never a thrown 500.

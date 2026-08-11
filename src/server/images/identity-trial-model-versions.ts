@@ -50,8 +50,14 @@ export interface IdentityTrialVersionDependencies {
 
 /**
  * The capability columns a successful Replicate probe owns. Kept here so trial
- * setup and any future bulk re-probe cannot accidentally overwrite reviewed
- * judgments that the API PATCH route deliberately preserves.
+ * setup, the admin add route and the admin re-probe cannot accidentally overwrite
+ * reviewed judgments that the API PATCH route deliberately preserves — and so
+ * "what a probe writes" has exactly one answer.
+ *
+ * `advancedCapabilities` is written with `probedVersionId` rather than beside it:
+ * the bindings describe ONE version's input schema, so a record that kept the
+ * bindings while the version moved would have the render path sending a control
+ * to a field that no longer exists.
  */
 export function imageModelProbeFields(probe: SuccessfulProbe) {
   return {
@@ -63,6 +69,7 @@ export function imageModelProbeFields(probe: SuccessfulProbe) {
     supportedAspects: probe.supportedAspects,
     outputFormat: probe.outputFormat,
     extraInput: probe.extraInput,
+    advancedCapabilities: probe.advancedCapabilities,
     probedVersionId: probe.versionId,
   };
 }
