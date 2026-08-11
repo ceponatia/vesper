@@ -29,7 +29,10 @@ import { LabCharacterSelect, LabRenderPicker, useLabCharacters, useLabPortraits 
  *
  * Fixtures are shown whole (`contain`), never cropped, and every tile states its
  * provenance and whether anyone has reviewed it, because those are the two facts
- * a disputed `ignores_control` verdict is re-examined against.
+ * a disputed `ignores_control` verdict is re-examined against. The two notes ride
+ * the tile as two labelled lines for the same reason they are two meta fields:
+ * what a fixture was made for and what reviewing it settled are separate
+ * evidence, and either one alone answers the wrong half of the question.
  *
  * The tile is also where the looking is RECORDED — marking a fixture reviewed
  * (with the required note) and throwing away one that came out wrong both happen
@@ -284,7 +287,7 @@ export function ImageLabFixturesPanel({
               ))}
             </div>
           </Field>
-          <Field label="Note" hint="Optional — what this fixture is for.">
+          <Field label="Note" hint="Optional — what this fixture is for. Kept apart from the review note.">
             {(id) => (
               <Input id={id} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
             )}
@@ -352,7 +355,7 @@ export function ImageLabFixturesPanel({
             />
             {sourceImageId === null ? "Drawn over nothing (no render picked)" : "Drawn over the render picked above"}
           </label>
-          <Field label="Note" hint="Optional — how it was drawn.">
+          <Field label="Note" hint="Optional — how it was drawn. Kept apart from the review note.">
             {(id) => (
               <Input id={id} value={uploadNote} onChange={(e) => setUploadNote(e.target.value)} maxLength={500} />
             )}
@@ -503,8 +506,27 @@ function FixtureCard({
           {reviewed ? <Tag tone="ok">reviewed</Tag> : <Tag>unreviewed</Tag>}
           <span className="text-paper-600">{new Date(control.createdAt).toLocaleDateString()}</span>
         </span>
-        {control.meta.reviewNote ? (
-          <span className="truncate text-paper-500" title={control.meta.reviewNote}>
+        {/* Both notes, labelled, on their own lines. They answer different
+            questions — what this fixture was made for, and what looking at it
+            settled — and they are separate meta fields precisely so the second
+            cannot overwrite the first. A tile showing one unlabelled note would
+            put that distinction back where the bug was: in the reader's head.
+
+            The review line rides `reviewedAt` rather than the note's presence.
+            A row written before the two notes split carries its creation note in
+            `reviewNote` with no review date and nothing migrates it, so keying
+            off the string alone would label a fixture's own reason for existing
+            as somebody's ruling — under an `unreviewed` tag, in the one panel
+            built to keep those apart. Unreviewed and silent is the true reading. */}
+        {control.meta.originNote ? (
+          <span className="truncate text-paper-500" title={`Made for: ${control.meta.originNote}`}>
+            <span className="text-paper-600">Made for: </span>
+            {control.meta.originNote}
+          </span>
+        ) : null}
+        {reviewed && control.meta.reviewNote ? (
+          <span className="truncate text-paper-500" title={`Review: ${control.meta.reviewNote}`}>
+            <span className="text-paper-600">Review: </span>
             {control.meta.reviewNote}
           </span>
         ) : null}

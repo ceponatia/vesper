@@ -311,10 +311,34 @@ export const imageLabStoredInputListSchema = imageLabInputListSchema.catch((): I
  * bytes, already rides the sweep — and a parallel table would only add a second
  * thing to keep in step with it.
  *
- * `reviewedAt`/`reviewNote` record the human check the Stage 0 protocol demands
- * before a fixture is used ("extract a pose skeleton and a depth map … review
- * both in the fixtures panel"). Absent means unreviewed, which is a fact the
- * panel shows rather than a default it hides.
+ * The two notes are two different facts, so they are two different fields.
+ * `originNote` is the annotation whichever path CREATED the fixture carried —
+ * the extract request's `note`, or the upload's — and it records what the
+ * fixture was made for. `reviewedAt`/`reviewNote` record the later human check
+ * the Stage 0 protocol demands before a fixture is used ("extract a pose
+ * skeleton and a depth map … review both in the fixtures panel"), and they
+ * record what looking at it settled. They stay apart because one shared field
+ * makes reviewing a fixture destroy the record of what it was for — half of the
+ * provenance a disputed `ignores_control` verdict is re-examined against, and
+ * the half that names what was being controlled for. An absent `reviewedAt`
+ * means unreviewed, which is a fact the panel shows rather than a default it
+ * hides.
+ *
+ * Rows written before the split are left exactly as they are — `images.meta` is
+ * a bag, so there is nothing to migrate in bulk and no review date to invent —
+ * and they are read by that same absent `reviewedAt`: a row carrying
+ * `reviewNote` with no `reviewedAt` predates the split, and that string is what
+ * would be written as `originNote` today. It is genuinely unreviewed, so the
+ * panel says so and shows no review line rather than filing a creation note as
+ * a ruling. Reviewing such a row ADOPTS the stranded string as its `originNote`
+ * in the same write that stamps the ruling, because that write is the only
+ * thing left that could destroy it: the migration these rows need, done once
+ * each, by the hand that would otherwise do the damage.
+ *
+ * `originNote` is capped like `reviewNote` rather than like the 500 its two
+ * create requests enforce: a stored cap is a ceiling over every rail that
+ * writes the field, so widening a rail later stays a request-schema edit
+ * instead of a question about rows already written.
  *
  * Unknown keys are dropped, not rejected: `images.meta` is a shared bag that
  * already carries encode metadata, so a strict parse would fail on every real
@@ -328,8 +352,13 @@ export const imageLabControlMetaSchema = z.object({
   sourceImageId: z.string().min(1).optional(),
   preprocessorSlug: z.string().min(1).max(200).optional(),
   preprocessorVersionId: z.string().min(1).max(200).optional(),
+  /** What the admin said this fixture was for, written by the path that made it.
+   * A review never touches it. */
+  originNote: z.string().trim().max(2000).optional(),
   /** ISO instant. Nothing in this module reads a clock. */
   reviewedAt: z.string().min(1).optional(),
+  /** What looking at the fixture settled — the ruling, never the reason it exists
+   * (with the one pre-split exception read above). */
   reviewNote: z.string().trim().max(2000).optional(),
 });
 export type ImageLabControlMeta = z.infer<typeof imageLabControlMetaSchema>;
@@ -537,6 +566,8 @@ export const imageLabExtractControlsRequestSchema = z
   .object({
     sourceImageIds: z.array(z.string().min(1)).min(1).max(4),
     controlKinds: z.array(imageLabControlKindSchema).min(1).max(imageLabControlKinds.length),
+    /** What this extraction is for, stored as every produced fixture's
+     * {@link imageLabControlMetaSchema} `originNote`. */
     note: z.string().trim().max(500).optional(),
   })
   .superRefine((request, ctx) => {
@@ -562,6 +593,8 @@ export const imageLabUploadControlRequestSchema = z.object({
   controlKind: imageLabControlKindSchema,
   /** What the skeleton was drawn over, when it was drawn over something. */
   sourceImageId: z.string().min(1).optional(),
+  /** How it was drawn, stored as the fixture's {@link imageLabControlMetaSchema}
+   * `originNote` — the create path's annotation, not a review. */
   note: z.string().trim().max(500).optional(),
 });
 export type ImageLabUploadControlRequest = z.infer<typeof imageLabUploadControlRequestSchema>;
