@@ -1,5 +1,5 @@
 import {
-  imageLabFailureCodeSchema,
+  imageLabFailureCodeFromDiagnostic,
   type ImageLabControlGenerator,
   type ImageLabControlKind,
   type ImageLabExperimentKind,
@@ -170,11 +170,14 @@ function labFailureCopy(code: ImageLabFailureCode): string {
 /**
  * The English behind a settled experiment's `failureCode`.
  *
+ * The stored code arrives in dotted diagnostic form (`image_lab.…`), so the
+ * contract's own reader unwraps it — this file never spells the namespace.
+ *
  * The code may come from two vocabularies — the lab's own refusals or the render
  * failure classifier — so anything outside the lab's list is surfaced verbatim
  * rather than mistranslated (the trial run detail's precedent).
  */
 export function imageLabFailureExplanation(code: string): string {
-  const parsed = imageLabFailureCodeSchema.safeParse(code);
-  return parsed.success ? labFailureCopy(parsed.data) : code;
+  const parsed = imageLabFailureCodeFromDiagnostic(code);
+  return parsed === null ? code : labFailureCopy(parsed);
 }
