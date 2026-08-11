@@ -3,10 +3,13 @@ import { imageLabControlKinds } from "@/contracts";
 import { imageLabControlRole, imageLabProbeInstruction } from "./image-lab-instruction";
 
 describe("imageLabControlRole", () => {
-  it("feeds pose and depth under their own roles and edge under the generic control role", () => {
+  it("feeds every kind under its own reference role", () => {
+    // One-to-one since `edge` joined `imageReferenceRoles` with the control-role
+    // slice. Edge maps used to ride the generic `control`, which meant a profile
+    // could not require an edge map specifically.
     expect(imageLabControlRole("pose")).toBe("pose");
     expect(imageLabControlRole("depth")).toBe("depth");
-    expect(imageLabControlRole("edge")).toBe("control");
+    expect(imageLabControlRole("edge")).toBe("edge");
   });
 });
 
