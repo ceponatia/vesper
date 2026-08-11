@@ -79,6 +79,22 @@ export interface ImageLabRefusal {
 }
 
 /**
+ * One refusal, in the shape the identity-pack trial settled: the envelope
+ * carries the BARE code — the token a client narrows on — and the dotted
+ * `image_lab.` spelling is the diagnostic sink's alone. A wire code a client had
+ * to strip a namespace off would be a sink's spelling read off a wire.
+ */
+function labRefusal(
+  code: string,
+  message: string,
+  sink: DiagnosticSink | undefined,
+  context: Record<string, unknown>,
+): ImageLabRefusal {
+  sink?.push(diag("warn", `image_lab.${code}`, message, { context }));
+  return { code, message };
+}
+
+/**
  * What one lab run proved about the image provider lane, in the circuit
  * breaker's vocabulary (`startJob`'s `reportProviderOutcome` →
  * `recordProviderOutcome`).
@@ -126,6 +142,9 @@ function isStage0Kind(kind: ImageLabExperimentKind): boolean {
  * runner that died on something other than a provider call. Inventing another
  * enum member for each would freeze them into the wire contract, where a UI
  * would have to know about a state it can only display verbatim anyway.
+ *
+ * Dotted, because every one of them is written to a settled ROW or a sink. A
+ * refusal envelope spells its code bare — see {@link labRefusal}.
  */
 const LAB_KIND_UNSUPPORTED = "image_lab.kind_unsupported";
 const LAB_PROFILE_UNAVAILABLE = "image_lab.profile_unavailable";
@@ -331,21 +350,26 @@ export type CreateImageLabExperimentResult =
 export async function createImageLabExperiment(
   input: CreateImageLabExperimentInput,
 ): Promise<CreateImageLabExperimentResult> {
-  const { ownerId, request } = input;
+  const { ownerId, request, sink } = input;
   if (!isStage0Kind(request.kind)) {
     return {
       ok: false,
-      refusal: {
-        code: LAB_KIND_UNSUPPORTED,
-        message: `${request.kind} experiments arrive with a later stage; Stage 0 runs ${STAGE_0_KINDS.join(", ")}`,
-      },
+      refusal: labRefusal(
+        "kind_unsupported",
+        `${request.kind} experiments arrive with a later stage; Stage 0 runs ${STAGE_0_KINDS.join(", ")}`,
+        sink,
+        { kind: request.kind },
+      ),
     };
   }
   if (request.characterId !== undefined && !(await ownsCharacter(request.characterId, ownerId))) {
-    return { ok: false, refusal: { code: "image_lab.character_not_found", message: "character not found" } };
+    return {
+      ok: false,
+      refusal: labRefusal("character_not_found", "character not found", sink, { characterId: request.characterId }),
+    };
   }
   if (request.chatId !== undefined && !(await ownsChat(request.chatId, ownerId))) {
-    return { ok: false, refusal: { code: "image_lab.chat_not_found", message: "chat not found" } };
+    return { ok: false, refusal: labRefusal("chat_not_found", "chat not found", sink, { chatId: request.chatId }) };
   }
 
   const [row] = await db()
@@ -368,7 +392,7 @@ export async function createImageLabExperiment(
     })
     .returning();
   if (!row) throw new Error("image_lab_experiments insert returned no row");
-  return { ok: true, experiment: toWireExperiment(row, input.sink) };
+  return { ok: true, experiment: toWireExperiment(row, sink) };
 }
 
 async function ownsCharacter(characterId: string, ownerId: string): Promise<boolean> {
@@ -420,10 +444,10 @@ export async function recordImageLabVerdict(
   if (row.kind !== "control_probe") {
     return {
       ok: false,
-      refusal: {
-        code: "image_lab.verdict_not_applicable",
-        message: `a ${row.kind} experiment has no control to rule on`,
-      },
+      refusal: labRefusal("verdict_not_applicable", `a ${row.kind} experiment has no control to rule on`, sink, {
+        experimentId,
+        kind: row.kind,
+      }),
     };
   }
   const [updated] = await db()

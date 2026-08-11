@@ -831,7 +831,9 @@ describe.skipIf(!ready)("image lab experiment records", () => {
       request: { kind: "finishing_pass", instruction: "", inputs: [] },
     });
     expect(created.ok).toBe(false);
-    if (!created.ok) expect(created.refusal.code).toBe("image_lab.kind_unsupported");
+    // BARE on the wire, as every refusal envelope is: the dotted `image_lab.`
+    // spelling is the diagnostic sink's, and a settled row's.
+    if (!created.ok) expect(created.refusal.code).toBe("kind_unsupported");
   });
 
   it("refuses a baseline naming another owner's character", async () => {
@@ -840,7 +842,7 @@ describe.skipIf(!ready)("image lab experiment records", () => {
       request: { kind: "baseline_portrait", characterId: "chrnotyoursaaaaaaaaaaaaa", instruction: "", inputs: [] },
     });
     expect(created.ok).toBe(false);
-    if (!created.ok) expect(created.refusal.code).toBe("image_lab.character_not_found");
+    if (!created.ok) expect(created.refusal.code).toBe("character_not_found");
   });
 
   it("records a probe verdict and refuses one on a baseline", async () => {
@@ -955,10 +957,8 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     const extracted = payload.extracted;
     expect(Array.isArray(extracted)).toBe(true);
     const first = Array.isArray(extracted) ? extracted[0] : undefined;
-    expect(first).toMatchObject({
-      controlKind: "depth",
-      failureCode: imageLabDiagnosticCode("preprocessor_output_invalid"),
-    });
+    // The record carries the bare code; the dotted one is the sink's.
+    expect(first).toMatchObject({ controlKind: "depth", failureCode: "preprocessor_output_invalid" });
     expect(codes(sink)).toContain(imageLabDiagnosticCode("preprocessor_output_invalid"));
     // The provider ANSWERED — with something that was not an image. That is a
     // fact about the extractor, which is exactly why it is recorded apart from a
@@ -988,7 +988,7 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
 
     const extracted = payload.extracted;
     const first = Array.isArray(extracted) ? extracted[0] : undefined;
-    expect(first).toMatchObject({ failureCode: imageLabDiagnosticCode("render_failed") });
+    expect(first).toMatchObject({ failureCode: "render_failed" });
     expect(IMAGE_LAB_DEPTH_PREPROCESSOR.outputField).toBe("grey_depth");
     // Paid work that failed transiently: the breaker hears it, exactly as it
     // would from the render lane this preprocessor shares an upstream with.
@@ -1135,7 +1135,7 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     const notAFixture = await seedReadyImage("portrait_variant");
     const refused = await reviewImageLabControl(ownerId, notAFixture, "looks fine to me");
     expect(refused?.ok).toBe(false);
-    if (refused && !refused.ok) expect(refused.refusal.code).toBe(imageLabDiagnosticCode("control_invalid"));
+    if (refused && !refused.ok) expect(refused.refusal.code).toBe("control_invalid");
     // An absent or foreign id is a MISS, never a refusal: the route answers 404
     // and never confirms a foreign image exists.
     expect(await reviewImageLabControl(ownerId, "imgnotarealimageaaaaaaaa", "n/a")).toBeNull();

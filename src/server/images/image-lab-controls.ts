@@ -453,7 +453,14 @@ async function runPreprocessorControl(pin: ImageLabPreprocessorPin, bytes: Buffe
   return { ok: true, buffer: result.image, ...provenance };
 }
 
-/** The recorded shape of a failed extraction, plus its diagnostic. */
+/**
+ * The recorded shape of a failed extraction, plus its diagnostic.
+ *
+ * The record carries the BARE code and only the sink carries the dotted one —
+ * the identity-pack trial's split. `image_lab.` is the diagnostic stream's
+ * namespace, and a reader who has the record in hand already knows which lab
+ * produced it.
+ */
 function extractionFailure(
   controlKind: ImageLabControlKind,
   code: "render_failed" | "preprocessor_output_invalid",
@@ -461,9 +468,12 @@ function extractionFailure(
   sink: DiagnosticSink | undefined,
   sourceImageId: string,
 ): Record<string, unknown> {
-  const failureCode = imageLabDiagnosticCode(code);
-  sink?.push(diag("warn", failureCode, message.slice(0, 300), { context: { sourceImageId, controlKind } }));
-  return { controlKind, failureCode, error: message.slice(0, 500) };
+  sink?.push(
+    diag("warn", imageLabDiagnosticCode(code), message.slice(0, 300), {
+      context: { sourceImageId, controlKind },
+    }),
+  );
+  return { controlKind, failureCode: code, error: message.slice(0, 500) };
 }
 
 function errorText(err: unknown): string {
@@ -576,9 +586,17 @@ export type ReviewImageLabControlResult =
   | { ok: true; control: ImageLabControl }
   | { ok: false; refusal: ImageLabRefusal };
 
-/** The reading the probe's own fixture check produces, spelled the same way. */
-function controlInvalid(message: string): ImageLabRefusal {
-  return { code: imageLabDiagnosticCode("control_invalid"), message };
+/**
+ * The reading the probe's own fixture check produces, spelled the same way.
+ *
+ * BARE in the envelope, dotted only in the sink — the identity-pack trial's
+ * refusal shape. The envelope's code is the token a client narrows on, and a
+ * client that had to strip a diagnostic namespace off it would be reading a
+ * sink's spelling off a wire.
+ */
+function controlInvalid(message: string, sink: DiagnosticSink | undefined, controlId: string): ImageLabRefusal {
+  sink?.push(diag("warn", imageLabDiagnosticCode("control_invalid"), message, { context: { controlId } }));
+  return { code: "control_invalid", message };
 }
 
 /**
@@ -622,11 +640,17 @@ export async function reviewImageLabControl(
   const row = await ownedImageRow(controlId, ownerId);
   if (!row) return null;
   if (row.kind !== "lab_control") {
-    return { ok: false, refusal: controlInvalid(`image ${controlId} is a ${row.kind}, not a lab control fixture`) };
+    return {
+      ok: false,
+      refusal: controlInvalid(`image ${controlId} is a ${row.kind}, not a lab control fixture`, sink, controlId),
+    };
   }
   const stored = parseOrNull(imageLabControlMetaSchema, row.meta, sink, "images.meta.lab_control");
   if (!stored) {
-    return { ok: false, refusal: controlInvalid(`control image ${controlId} has no readable fixture metadata`) };
+    return {
+      ok: false,
+      refusal: controlInvalid(`control image ${controlId} has no readable fixture metadata`, sink, controlId),
+    };
   }
 
   // The pre-split shape: a creation note stranded in `reviewNote`, with no

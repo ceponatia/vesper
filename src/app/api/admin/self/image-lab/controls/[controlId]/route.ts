@@ -25,8 +25,9 @@ type Params = { controlId: string };
  * impossible. `reviewedAt` is the server's own clock, never the request's.
  *
  * A fixture that cannot say what it is — wrong kind, or metadata that no longer
- * parses — is a 400 carrying `image_lab.control_invalid`, the same reading the
- * probe runner produces when it meets one.
+ * parses — is a 400 carrying `control_invalid`, the same reading the probe
+ * runner produces when it meets one. The envelope's code is bare; the dotted
+ * `image_lab.` spelling of it belongs to the diagnostic sink.
  */
 export const PATCH = withOwnerAdmin<Params>(async (user, req: NextRequest, ctx) => {
   const { controlId } = await ctx.params;
