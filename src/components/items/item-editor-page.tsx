@@ -507,8 +507,10 @@ export function ItemEditorPage({ itemId }: { itemId: string }) {
             <>
               {usage.wornBy.length > 0 ? (
                 <p className="text-xs text-danger-300">
-                  Worn in the default outfit of {usage.wornBy.map((c) => c.name).join(", ")} — that outfit slot
-                  will show &ldquo;not in library&rdquo; after deleting.
+                  Worn in the default outfit of {usage.wornBy.map((c) => c.name).join(", ")}
+                  {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX
+                      text node containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
+                  {" — that outfit slot will show “not in library” after deleting."}
                 </p>
               ) : (
                 <p className="text-xs text-paper-500">Not referenced by any character outfit.</p>

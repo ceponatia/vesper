@@ -552,8 +552,10 @@ export function GalleryPage() {
           </>
         }
       >
-        This permanently removes {pendingDelete?.label ?? "these images"} — from the gallery and anywhere it appears. It
-        can&rsquo;t be undone.
+        This permanently removes {pendingDelete?.label ?? "these images"}
+        {/* String-expression children: swc in next 16.2.x drops the leading space of a multi-line JSX text node
+            containing an HTML entity (swc#11521; fixed in next 16.3.0). */}
+        {" — from the gallery and anywhere it appears. It can’t be undone."}
       </Dialog>
     </PageContainer>
   );
