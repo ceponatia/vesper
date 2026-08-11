@@ -580,7 +580,7 @@ an experimental job without changing normal image behavior.
 
 ### Stage 1 — controlled portraits
 
-Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+Status: complete — 2026-08-11; the trial verdicts are recorded in the spec.
 
 Prove numbered roles on the controlled-composition connector for:
 
@@ -597,7 +597,7 @@ edit baseline with complete saved settings.
 
 ### Stage 2 — controlled single-character scenes
 
-Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+Status: complete — 2026-08-11; the trial verdicts are recorded in the spec.
 
 Run simple single-character scenes through pose, depth, and edge recipes. Preserve
 the detached scene-job behavior and compare each result against the ordinary scene
@@ -608,7 +608,7 @@ an unacceptable identity regression.
 
 ### Stage 3 — optional identity finishing
 
-Status: queued — after the Stage 1 and 2 trial verdicts.
+Status: next — unblocked 2026-08-11 by the recorded Stage 1 and 2 verdicts.
 
 Pass selected controlled results through Qwen Image Edit 2511 using the identity
 pack. Compare:
@@ -796,6 +796,18 @@ image records.
 
 ## Open questions
 
+- how to deliver outfit control, given that filling the model's three-reference
+  capacity collapses identity. Both wardrobe runs — identity plus a control map
+  plus an outfit reference, the model's full capacity — produced a different
+  person and ignored the pose, under two different instructions, while every
+  two-reference run preserved identity at least moderately (the trial results in
+  the [spec](qwen-advanced-image-subsystem.spec.md) record both). Two parts need
+  answering: why crowding at capacity costs identity rather than an optional
+  role, and what shape outfit control should take instead — a separate pass over
+  a finished image, a wardrobe-specific recipe, or a model with more reference
+  room. Owner ruling (2026-08-11): Stage 1 and Stage 2 are accepted as they
+  stand, identity plus one control is the proven configuration, and the wardrobe
+  pipeline is future work outside that acceptance.
 - whether seven varied images of one character are enough to train a useful
   first character LoRA. The owner wants to use the existing seven-image
   reference set (those files live on the owner's disk only — the repository

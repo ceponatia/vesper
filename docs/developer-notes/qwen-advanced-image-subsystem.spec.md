@@ -36,11 +36,12 @@ those systems through their existing exports and adds no second copy.
 | Stage 0 control probe run + recorded verdict    | run 2026-08-11   |
 | Stage 1/2 recipes + controlled runner (intent)  | built 2026-08-11 |
 | Controlled-kind create/verdict/comparison UI    | built 2026-08-11 |
-| Stage 1/2 trial runs + recorded verdicts        | not run          |
+| Stage 1/2 trial runs + recorded verdicts        | run 2026-08-11   |
 
 Stage 3+ work (finishing passes, LoRA trials, two-character recipes) is
-deliberately absent from this table: Stage 3 waits on the Stage 1/2 verdicts,
-and Stage 4 on the capabilities plan's Qwen LoRA library slice.
+deliberately absent from this table: Stage 3 is unbuilt but no longer blocked —
+the Stage 1/2 verdicts below unblocked it on 2026-08-11 — and Stage 4 waits on
+the capabilities plan's Qwen LoRA library slice.
 
 ## Rulings this build settles
 
@@ -546,7 +547,8 @@ Run on the Fly deploy with the uxtest admin account, after the lab ships:
 ## Stage 1/2 trial protocol
 
 Owner work, on the Fly deploy with the uxtest fixtures (or any admin account
-with a reviewed fixture set). Not run as of 2026-08-11.
+with a reviewed fixture set). Run 2026-08-11; the verdicts it produced are
+recorded below the steps.
 
 1. For each control kind with a reviewed fixture (pose, depth, edge): create a
    `controlled_portrait` — identity = a portrait that is NOT the fixture's
@@ -565,6 +567,92 @@ with a reviewed fixture set). Not run as of 2026-08-11.
    is the settings evidence the comparison cites.
 6. Write the verdicts into this spec and flip the plan's Stage 1/2 status lines
    when the owner accepts them.
+
+**Stage 1/2 trial verdicts (run 2026-08-11 on the Fly deploy):**
+
+Constant across every controlled run: model `qwen/qwen-image-edit-2511`,
+requested pin `a0670a7f47d5…dee03ca6c729` on every run, executed version
+`"hidden"` (provider non-disclosure per the ruling above), identity reference
+`qqtzfaz9ii1v2k4q7xfnxif6`, and the three reviewed fixtures — pose
+`qkg1bj6tdolj7vhxllu4jgfk`, depth `o34s05qcro1qet4u8mbv2uma`, edge
+`gmcsw9q83adpydlzuqxfaqlc`. Every run's recorded outcome lists the sent roles
+with zero drops.
+
+**Controlled portraits.** Paired direct-edit baseline
+`ssuucjcm6h5xew3z8c39gaw6`, carrying the same instruction:
+
+- Pose `f8g32azmhbs10tehshuygs75` — **ignores_control**: rendered with no arms
+  against a both-arms-raised-V skeleton.
+- Pose `op1o2sh8b6nlofac8m2ww0rn` — **honours_control**: an exact configuration
+  copy of the failed run above; perfect adherence, and face similarity better
+  than the failed run. The pair demonstrates that pose obedience is stochastic,
+  not a prompt defect.
+- Pose `nhy61r90jqsb2a8ixnm03th0` — **honours_control**: shoulder→wrist within
+  ~6° of the skeleton.
+- Pose `n7tfm5essc6nfvy2p3nunlmt` — **honours_control**, the best structural
+  match of the set: every leg segment within 3°, wrist-elevation ratio 0.355
+  against the skeleton's 0.356.
+- Depth `ilv0sd7v3sncf3xohl4rk2uu` — **honours_control**: hands within ~15 px
+  and limbs within ~5° of the map at matched figure height.
+- Edge `xtyuelauhebdns9rz7piasa5` — **honours_control**: contours within ~6%,
+  and the edge fixture's own open-mouth smile did not transfer to the render.
+
+**Controlled scenes.** Chat `kh4zqvf9x4t4ae9x5zj6a1ix`, run with no location
+reference because that chat holds no scene renders. Paired scene baseline
+`zo3hnihacrlfb6itxzxb6grx`, which runs the scene lane's own resolved profile
+unpinned by design and rendered the default arms-at-sides stance:
+
+- Pose `qtky796japtgzqmvtup8argz` — **ignores_control**: legs followed within
+  ~2°, but the arms substituted a hands-behind-head pose (elbow interior
+  112–116° against the skeleton's 168–178°, no hands rendered).
+- Pose `e7h228i0u4xtrr39jyn0jpvr` — **ignores_control**: invented a gold fabric
+  sheet above her head, present in no prompt and no reference.
+- Depth `on9x9y874447p3xcyi9qvl67` — **honours_control**: perfect alignment with
+  both the identity reference and the depth map (owner note).
+- Edge `qnn65r2c4p85zp7o8ty87tuv` — **honours_control**: dark jeans and bare
+  feet inherited from the edge map's contours. Recorded as a known property of
+  edge control — the map encodes clothing silhouettes — and acceptable absent an
+  outfit reference.
+
+**Wardrobe arm.** Identity + pose control + outfit reference
+`ljsoaj4j19jjp2f4a86hcp5y`, a full-body render of the character in slim denim
+jeans and white canvas sneakers generated for this arm through the portrait
+studio's variant kind `outfit` — the one variant kind whose compiled instruction
+does not append "Keep the same outfit as the reference image":
+
+- `f5atmf8k4hgfihul0k3admka` — **ignores_control**: a completely different
+  character, the pose ignored (hands-behind-head again), and an invented cream
+  dress keeping only the sneakers. All three roles verifiably sent, nothing
+  dropped.
+- `bktrh4dzy4m5hizbjzil1f9h` — **ignores_control**: the instruction rewritten to
+  demand the exact wardrobe-reference outfit with no inferred additions; very
+  odd face generation. Same three references.
+- Both three-reference sends — exactly the model's reference capacity —
+  collapsed identity under two different instructions, while every
+  two-reference send preserved it at least moderately. Reference crowding at
+  capacity is the standing explanation; the plan's open question carries the
+  unresolved part.
+
+**Cross-cutting findings.** A blind adjudication pass over the raw images
+independently agreed with every owner verdict:
+
+- Tally: depth 2/2 honours, edge 2/2 honours, pose two-reference 3/6 (portraits
+  3/4, scenes 0/2), three-reference 0/2. Depth and edge are the reliable control
+  kinds in both lanes; pose is stochastic, with hands-behind-head the recurring
+  substitute pose.
+- Expression drift: 2 of 9 reviewed renders opened the mouth against the
+  reference's closed neutral, uncorrelated with the fixtures — the only fixture
+  encoding an open mouth (edge) produced a closed-mouth render.
+- Identity drift has a consistent direction on controlled renders: a slimmer
+  face and tapered chin against the reference's rounder jaw. Baselines and the
+  best pose pass kept identity closest.
+- The pose fixture's elbows are near-straight (interior ~168°/178°), so renders
+  showing straight arms are faithful to it. A future pose fixture must encode
+  elbow bend explicitly if bend is wanted.
+- Owner ruling (2026-08-11): the Stage 1/2 results are accepted. Identity plus
+  control is the proven configuration; wardrobe/outfit delivery is deferred
+  future work, carried as an open question on the
+  [plan](qwen-advanced-image-subsystem.plan.md).
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 
