@@ -83,6 +83,56 @@ function instantText(instant: string | null): string {
   return instant === null ? "—" : new Date(instant).toLocaleString();
 }
 
+/**
+ * The one way an image is shown on this page: whole (never cropped — a control
+ * map judged on a cropped thumbnail is a wrong ruling), and enlargeable into the
+ * shared lightbox. Both the big panels and the ordered-input strip render
+ * through this, so an input can never be less viewable than a panel.
+ */
+function EnlargeableImage({
+  imageId,
+  label,
+  onEnlarge,
+}: {
+  imageId: string;
+  label: string;
+  onEnlarge: (imageId: string) => void;
+}) {
+  // An experiment outlives the assets it cites: deleting a control fixture drops
+  // its image row and deliberately leaves the ordered inputs intact, so the
+  // asset route can 404 under a perfectly valid record. A broken tile would read
+  // as "the bench lost your reference"; say the asset is gone, and keep the id
+  // beside it (rendered by the caller) so the record still cites what ran.
+  const [missing, setMissing] = useState<string | null>(null);
+  // Render-adjust: a different id is a different question, so re-ask it.
+  if (missing !== null && missing !== imageId) setMissing(null);
+
+  if (missing === imageId) {
+    return (
+      <div className="flex aspect-[3/4] w-full items-center justify-center rounded-card border border-dashed border-ink-600 px-2 text-center text-[11px] text-paper-600">
+        this image no longer exists
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEnlarge(imageId)}
+      aria-label={`Enlarge ${label}`}
+      className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; a control map must be shown whole */}
+      <img
+        src={imageUrl(imageId)}
+        alt={label}
+        onError={() => setMissing(imageId)}
+        className="aspect-[3/4] w-full bg-ink-950 object-contain"
+      />
+    </button>
+  );
+}
+
 function LabImage({
   label,
   imageId,
@@ -100,15 +150,7 @@ function LabImage({
     <figure className="flex flex-col gap-1">
       <figcaption className="text-[11px] tracking-wide text-paper-500 uppercase">{label}</figcaption>
       {imageId !== null ? (
-        <button
-          type="button"
-          onClick={() => onEnlarge(imageId)}
-          aria-label={`Enlarge ${label}`}
-          className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; a control map must be shown whole */}
-          <img src={imageUrl(imageId)} alt={label} className="aspect-[3/4] w-full bg-ink-950 object-contain" />
-        </button>
+        <EnlargeableImage imageId={imageId} label={label} onEnlarge={onEnlarge} />
       ) : pending ? (
         <Skeleton className="aspect-[3/4] w-full rounded-card" />
       ) : (
@@ -354,17 +396,31 @@ export function ImageLabExperimentDetail({
           <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">
             Ordered inputs ({experiment.inputs.length})
           </h3>
+          <p className="mt-1 text-xs text-paper-500">
+            Every reference the run ordered, shown — a slot judged from its id alone is a slot nobody judged.
+          </p>
           {experiment.inputs.length === 0 ? (
             <p className="mt-1 text-xs text-paper-500">None recorded — a baseline orders its own references.</p>
           ) : (
-            <ol className="mt-1 flex flex-col gap-1 text-xs text-paper-300">
-              {experiment.inputs.map((input) => (
-                <li key={input.position}>
-                  <span className="text-paper-500">Image {input.position} —</span> {imageLabRoleLabel(input.role)}{" "}
-                  <code className="break-all text-paper-500">{input.imageId}</code>
-                  {input.note ? <span className="text-paper-500"> · {input.note}</span> : null}
-                </li>
-              ))}
+            <ol className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {experiment.inputs.map((input) => {
+                const slot = `Image ${String(input.position)}`;
+                const label = `${slot} — ${imageLabRoleLabel(input.role)}`;
+                return (
+                  <li key={input.position} className="flex flex-col gap-1">
+                    <EnlargeableImage imageId={input.imageId} label={label} onEnlarge={setEnlarged} />
+                    <p className="text-[11px] text-paper-300">
+                      <span className="text-paper-500">{slot}</span>
+                      {" — "}
+                      {imageLabRoleLabel(input.role)}
+                    </p>
+                    <code className="text-[10px] break-all text-paper-500">{input.imageId}</code>
+                    {input.note !== undefined && input.note !== "" ? (
+                      <p className="text-[11px] text-paper-500">{input.note}</p>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>
