@@ -3,7 +3,12 @@ import { imageLabControlRoles } from "./image-lab";
 import { imageControlReferenceRoles, isImageControlReferenceRole } from "./image-model-capabilities";
 import { imageModelSchema, type ImageModel } from "./image-models";
 import { emptyImageReferencePolicy, type ImageReferencePolicy } from "./image-model-profiles";
-import { controlReferenceTransport, planIntentReferences, type ImageRenderReferenceSpec } from "./render-intent";
+import {
+  controlReferenceTransport,
+  missingRequiredControlInputs,
+  planIntentReferences,
+  type ImageRenderReferenceSpec,
+} from "./render-intent";
 
 /**
  * The pure reference rules: which images are sent, in what order, on which
@@ -103,7 +108,7 @@ describe("planIntentReferences", () => {
     const planned = planIntentReferences(model(), emptyImageReferencePolicy(), references);
     expect(names(planned.primary)).toEqual(["a", "b", "c"]);
     expect(planned.dropped).toEqual([]);
-    expect(planned.reordered).toBe(false);
+    expect(planned.renumbered).toBe(false);
   });
 
   it("implicitly allows a role the policy requires but forgot to list", () => {
@@ -151,5 +156,109 @@ describe("planIntentReferences", () => {
     ]);
     expect(names(planned.dropped.map((entry) => entry.reference))).toEqual(["skeleton-b", "room"]);
     expect(planned.dropped.map((entry) => entry.reason)).toEqual(["role_cap", "model_capacity"]);
+  });
+});
+
+describe("renumbering", () => {
+  const three = () => [ref("identity", "a"), ref("location", "b"), ref("style", "c")];
+
+  it("stays quiet when the trim comes off the tail", () => {
+    // The common capacity case. Slots 1 and 2 still hold what the lane put there,
+    // so a prompt numbering them is still correct.
+    const planned = planIntentReferences(model({ maxReferences: 2 }), emptyImageReferencePolicy(), three());
+    expect(names(planned.primary)).toEqual(["a", "b"]);
+    expect(planned.renumbered).toBe(false);
+  });
+
+  it("fires when a removal from the middle shifts a later reference up a slot", () => {
+    // The lane's prompt calls "c" Image 3; it now arrives as image 2. Ordering is
+    // untouched, which is why an inversion check alone missed this.
+    const planned = planIntentReferences(
+      model(),
+      policy({ allowedRoles: ["identity", "style"] }),
+      three(),
+    );
+    expect(names(planned.primary)).toEqual(["a", "c"]);
+    expect(planned.renumbered).toBe(true);
+  });
+
+  it("fires when a dedicated control vacates a slot ahead of a kept reference", () => {
+    const withPose = model({
+      advancedCapabilities: {
+        additionalImageInputs: [{ roleHint: "pose", binding: { field: "pose_image", arity: "single", required: false } }],
+      },
+    });
+    const planned = planIntentReferences(withPose, emptyImageReferencePolicy(), [
+      ref("identity", "a"),
+      ref("pose", "skeleton"),
+      ref("location", "c"),
+    ]);
+    expect(names(planned.primary)).toEqual(["a", "c"]);
+    expect(planned.renumbered).toBe(true);
+  });
+
+  it("fires when policy ordering moves an image", () => {
+    const planned = planIntentReferences(
+      model(),
+      policy({ allowedRoles: ["identity", "location"], roleOrder: ["location", "identity"] }),
+      [ref("identity", "a"), ref("location", "b")],
+    );
+    expect(names(planned.primary)).toEqual(["b", "a"]);
+    expect(planned.renumbered).toBe(true);
+  });
+});
+
+describe("missingRequiredControlInputs", () => {
+  const required = (roleHint: string, field: string) =>
+    model({
+      advancedCapabilities: {
+        additionalImageInputs: [{ roleHint, binding: { field, arity: "single", required: true } }],
+      },
+    });
+
+  it("names a required control field this render has nothing to put in", () => {
+    // A version that refuses to run without its pose input rejects the prediction;
+    // the round trip is refused before it is spent.
+    const subject = required("pose", "pose_image");
+    const planned = planIntentReferences(subject, emptyImageReferencePolicy(), [ref("identity", "face")]);
+    expect(missingRequiredControlInputs(subject, planned.dedicated)).toEqual([
+      { field: "pose_image", roleHint: "pose" },
+    ]);
+  });
+
+  it("is satisfied once the role is bound", () => {
+    const subject = required("pose", "pose_image");
+    const planned = planIntentReferences(subject, emptyImageReferencePolicy(), [
+      ref("identity", "face"),
+      ref("pose", "skeleton"),
+    ]);
+    expect(missingRequiredControlInputs(subject, planned.dedicated)).toEqual([]);
+  });
+
+  it("ignores an optional declared input", () => {
+    const subject = model({
+      advancedCapabilities: {
+        additionalImageInputs: [{ roleHint: "depth", binding: { field: "depth_image", arity: "single", required: false } }],
+      },
+    });
+    const planned = planIntentReferences(subject, emptyImageReferencePolicy(), []);
+    expect(missingRequiredControlInputs(subject, planned.dedicated)).toEqual([]);
+  });
+
+  it("ignores a required binding that resolves to the numbered array", () => {
+    // It names the primary reference field, so it has no field of its own to be
+    // empty — demanding one would refuse every render on such a model.
+    const subject = model({
+      advancedCapabilities: {
+        additionalImageInputs: [{ roleHint: "pose", binding: { field: "image", arity: "array", required: true } }],
+      },
+    });
+    const planned = planIntentReferences(subject, emptyImageReferencePolicy(), [ref("identity", "face")]);
+    expect(missingRequiredControlInputs(subject, planned.dedicated)).toEqual([]);
+  });
+
+  it("is empty on a model that declares no extra image inputs at all", () => {
+    const planned = planIntentReferences(model(), emptyImageReferencePolicy(), [ref("identity", "face")]);
+    expect(missingRequiredControlInputs(model(), planned.dedicated)).toEqual([]);
   });
 });

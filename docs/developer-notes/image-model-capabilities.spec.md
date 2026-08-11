@@ -315,10 +315,14 @@ scene lane emits.
 
 One coupling the selector cannot fix and therefore reports. A lane that numbers
 its references in its own prompt (`buildSceneRenderPrompt` writes "Image 2: the
-location") builds that text BEFORE selection runs, so a policy that reorders
-would leave the text describing different images than the payload carries. No
-lane triggers it — every one supplies references in its profile's `roleOrder` —
-and `image_profile.references_reordered` (warn) fires if that stops being true.
+location") builds that text BEFORE selection runs, so anything that moves a slot
+leaves the text describing different images than the payload carries.
+`image_profile.references_renumbered` (warn) is that report, and it is SLOT
+equality rather than sort-order inversion: removing the second of three
+references — dropped, disallowed, or routed to a dedicated field — sends the
+third as image two while the prompt still calls it image three. Trimming from the
+tail renumbers nothing, which is why the ordinary capacity case stays quiet. No
+lane triggers it today.
 
 A profile's `referencePolicy` has this shape:
 
@@ -723,6 +727,14 @@ entry is dropped with `image_model.control_field_reserved`, the same rule the
 An edit-only model may run on a bound control alone: a pose map is an input
 image, and requiring an ordinary reference beside it would make the dedicated
 path unusable on the models it exists for.
+
+**A declared input's `required` flag is enforced.** `missingRequiredControlInputs`
+refuses `image_profile.required_control_input_missing` before transport when a
+version demands a control field the render has nothing to bind to — the same
+argument as the profile's `requiredRoles`, one layer down, about the version's
+demand rather than the profile's. This is why `imageUriBindingSchema.required` is
+not optional. A required binding that resolves to `numbered_reference` is
+skipped: it has no field of its own to be empty.
 
 The `edge` reference role was added with this slice. `imageLabControlRole` is now
 one-to-one over the three fixture kinds; before it, an edge map was fed under the
@@ -1254,11 +1266,15 @@ function; `selectIntentReferences` is gone rather than left beside it.
   alone.** A control on its own provider field never entered the primary contest;
   checking only the array would refuse a render whose control was sent correctly.
   This extends the slice 2 ruling above rather than replacing it.
-- **A reorder is reported, not prevented.** Lanes that number their references in
-  their own prompt text build it before selection runs. No lane triggers a
-  reorder today, and `image_profile.references_reordered` (warn) is what makes it
-  visible if a policy edit ever does, rather than the renders quietly describing
-  the wrong images.
+- **Renumbering is reported, not prevented.** Lanes that number their references
+  in their own prompt text build it before selection runs. The signal is SLOT
+  equality, not sort inversion — removing the second of three references sends
+  the third as image two — so a tail trim stays quiet and a middle removal does
+  not. No lane triggers it today; `image_profile.references_renumbered` (warn) is
+  what makes it visible if one starts.
+- **A version's `required` control input is enforced before transport.** The flag
+  exists to say the model refuses to run without the image, so sending the
+  request anyway buys a provider rejection at full latency.
 - **`multi_reference_compose` binds from ONE reference upward** — the opposite of
   the identity vocabulary's two-reference threshold. There, naming a lone image
   would rewrite live single-reference renders for nothing; here, the only
@@ -1313,8 +1329,9 @@ reuse temporary Replicate file URLs.
 Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
 `image_profile.pick_unavailable` from the resolver;
 `image_profile.required_reference_missing`,
+`image_profile.required_control_input_missing`,
 `image_profile.prompt_strategy_unsupported`, `image_profile.references_trimmed`
-and `image_profile.references_reordered` from the render intent;
+and `image_profile.references_renumbered` from the render intent;
 `image_model.reserved_field_ignored` and `image_model.control_field_reserved`
 from the payload builder; `image_model.references_trimmed` from the inline byte
 budget; and the mapper's typed drop reasons (`no_binding`, `invalid`,

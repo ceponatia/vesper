@@ -1,4 +1,5 @@
 import {
+  missingRequiredControlInputs,
   missingRequiredReferenceRoles,
   planIntentReferences,
   type DroppedImageReference,
@@ -102,8 +103,8 @@ export interface PlannedImageRender {
    * diagnostic can name them.
    */
   sentReferences: ImageRenderReference[];
-  /** Whether policy ordering moved a reference out of the order the lane supplied. */
-  referencesReordered: boolean;
+  /** Whether any sent reference occupies a different slot than the lane assumed. */
+  referencesRenumbered: boolean;
 }
 
 /** One dedicated control input's bytes, ready for the transport. */
@@ -116,7 +117,10 @@ export interface PlannedControlReference {
 
 /** Why a render was refused before any provider work happened. */
 export interface ImageRenderRefusal {
-  code: "image_profile.required_reference_missing" | "image_profile.prompt_strategy_unsupported";
+  code:
+    | "image_profile.required_reference_missing"
+    | "image_profile.required_control_input_missing"
+    | "image_profile.prompt_strategy_unsupported";
   message: string;
   context: Record<string, unknown>;
 }
@@ -151,6 +155,26 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
         code: "image_profile.required_reference_missing",
         message: `profile ${profile.key} requires reference roles this render cannot supply`,
         context: { profile: profile.id, task: profile.task, missing, supplied: roleNames(intent.references) },
+      },
+    };
+  }
+
+  // The version's own demand, as against the profile's. A model declaring
+  // `pose_image` as a required input rejects a prediction that omits it, so the
+  // round trip is refused here rather than spent discovering that.
+  const unfilled = missingRequiredControlInputs(model, dedicated);
+  if (unfilled.length > 0) {
+    return {
+      ok: false,
+      refusal: {
+        code: "image_profile.required_control_input_missing",
+        message: `${model.slug} requires control image inputs this render cannot supply`,
+        context: {
+          profile: profile.id,
+          task: profile.task,
+          missing: unfilled,
+          supplied: roleNames(intent.references),
+        },
       },
     };
   }
@@ -194,7 +218,7 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
       timeoutMs: profile.timeoutMs,
       dropped,
       sentReferences: primary,
-      referencesReordered: planned.reordered,
+      referencesRenumbered: planned.renumbered,
     },
   };
 }
@@ -242,16 +266,18 @@ export async function renderImageIntent(
       }),
     );
   }
-  // A reorder is a WARNING, not an observation. Lanes that number their
+  // Renumbering is a WARNING, not an observation. Lanes that number their
   // references in the prompt build that text from their own order, before the
   // policy is consulted (`buildSceneRenderPrompt` writes "Image 2: the
-  // location"). Every lane supplies references in its profile's `roleOrder`
-  // today, so this never fires; if a policy edit ever makes it fire, the prompt
-  // and the payload have started describing different images and the operator
-  // needs to know before the renders look subtly wrong.
-  if (plan.referencesReordered) {
+  // location"). Reordering is one way the slots move and removal from ahead of a
+  // kept reference is the other — dedicate or disallow the second of three and
+  // the third arrives as image two under a prompt still calling it image three.
+  // No lane triggers either today; if one starts, the prompt and the payload
+  // have begun describing different images and the operator needs to know before
+  // the renders look subtly wrong.
+  if (plan.referencesRenumbered) {
     sink?.push(
-      diag("warn", "image_profile.references_reordered", "the profile's role order moved a reference the lane numbered", {
+      diag("warn", "image_profile.references_renumbered", "a reference is being sent in a slot the lane did not number it as", {
         path: "image_model_profiles",
         context: {
           profile: intent.profile.profile.id,

@@ -148,7 +148,7 @@ describe("reference selection", () => {
     expect(plan.references.map((buffer) => buffer.toString())).toEqual(["avatar", "room"]);
     expect(plan.dropped.map((dropped) => dropped.reference.role)).toEqual(["style"]);
     expect(plan.dropped.map((dropped) => dropped.reason)).toEqual(["model_capacity"]);
-    expect(plan.referencesReordered).toBe(false);
+    expect(plan.referencesRenumbered).toBe(false);
   });
 
   it("sends nothing to a model that cannot take references at all", () => {
@@ -193,7 +193,7 @@ describe("reference selection", () => {
     expect(plan.dropped.map((dropped) => dropped.reference.role)).toEqual(["style"]);
     // The order MOVED, and the flag says so — a lane that numbered these in its
     // prompt would now be describing the wrong images.
-    expect(plan.referencesReordered).toBe(true);
+    expect(plan.referencesRenumbered).toBe(true);
   });
 
   it("sorts a required reference ahead of a better-ranked optional one", () => {
@@ -477,5 +477,47 @@ describe("control-image roles", () => {
       }),
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("required control inputs", () => {
+  it("refuses before spend when the version demands a control image the render has not got", () => {
+    // The version's own demand, as against the profile's. A model that refuses to
+    // run without `pose_image` rejects the prediction, so the round trip is
+    // refused rather than spent discovering that.
+    const result = planImageRender(
+      intent({
+        profile: resolved({
+          advancedCapabilities: {
+            ...CAPABILITIES,
+            additionalImageInputs: [
+              { roleHint: "pose", binding: { field: "pose_image", arity: "single", required: true } },
+            ],
+          },
+        }),
+        references: [reference("identity", "avatar")],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe("image_profile.required_control_input_missing");
+    expect(result.refusal.context.missing).toEqual([{ field: "pose_image", roleHint: "pose" }]);
+  });
+
+  it("plans normally once that input is filled", () => {
+    const plan = planned(
+      intent({
+        profile: resolved({
+          advancedCapabilities: {
+            ...CAPABILITIES,
+            additionalImageInputs: [
+              { roleHint: "pose", binding: { field: "pose_image", arity: "single", required: true } },
+            ],
+          },
+        }),
+        references: [reference("identity", "avatar"), reference("pose", "skeleton")],
+      }),
+    );
+    expect(plan.controlReferences).toHaveLength(1);
   });
 });

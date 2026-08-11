@@ -203,10 +203,16 @@ model to follow the control and never render it. The identity-pack vocabulary
 compiles its own separate numbered preamble for the identity trial.
 
 Lanes that number their references in their own prompt text build that text
-before selection runs, so policy ordering must not move an image underneath them.
-Every lane supplies references in its profile's `roleOrder` today; if one ever
-stops, `image_profile.references_reordered` says so rather than letting the
-prompt and the payload describe different images.
+before selection runs, so nothing may move a slot underneath them.
+`image_profile.references_renumbered` reports when something does — measured as
+slot equality, so removing the second of three references (dropped, disallowed,
+or routed to a dedicated field) counts, while trimming from the tail does not. No
+lane triggers it today.
+
+A version may also declare a control input it **requires**. A render with nothing
+to bind to that field is refused with
+`image_profile.required_control_input_missing` before transport, rather than
+buying a provider rejection at full latency.
 
 Two things the intent deliberately does not send. It does **not** pin a provider
 version — an ordinary render follows the model slug's floating latest, while a

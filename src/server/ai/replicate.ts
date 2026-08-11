@@ -263,7 +263,7 @@ export function referenceDataUrl(buffer: Buffer): string {
  * failing the render: fewer references costs fidelity, a rejected request costs
  * the image (docs/resilience.md §2).
  */
-const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
+export const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
 
 /**
  * Run one registry model.

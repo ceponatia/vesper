@@ -172,6 +172,35 @@ export interface DedicatedControlInput<T extends ImageRenderReferenceSpec> {
   references: T[];
 }
 
+/**
+ * Dedicated image inputs this version REQUIRES that the render has nothing to
+ * put in, as `{ field, roleHint }` pairs.
+ *
+ * `imageUriBindingSchema.required` is not optional for exactly this reason: it
+ * records whether the model refuses to run without the image. A render missing
+ * one is a provider rejection that has already cost a round trip, so it is
+ * refused here instead — the same argument as
+ * {@link missingRequiredReferenceRoles}, one layer down, about the version's
+ * demand rather than the profile's.
+ *
+ * A binding that resolves to `numbered_reference` is skipped: its image is not
+ * going to a field of its own, so a field of its own cannot be empty. That
+ * covers the primary-reference-field alias and every content role.
+ *
+ * Empty on every model Vesper runs today, since none declares an
+ * `additionalImageInputs` entry at all.
+ */
+export function missingRequiredControlInputs<T extends ImageRenderReferenceSpec>(
+  model: ImageModel,
+  dedicated: readonly DedicatedControlInput<T>[],
+): { field: string; roleHint: ImageReferenceRole }[] {
+  const filled = new Set(dedicated.filter((input) => input.references.length > 0).map((input) => input.field));
+  return model.advancedCapabilities.additionalImageInputs
+    .filter((input) => input.binding.required && !filled.has(input.binding.field))
+    .filter((input) => controlReferenceTransport(model, input.roleHint).kind === "dedicated_input")
+    .map((input) => ({ field: input.binding.field, roleHint: input.roleHint }));
+}
+
 /** Every reference decision a render makes before a byte leaves the process. */
 export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
   /** The primary reference field's images, in SEND order. */
@@ -181,18 +210,22 @@ export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
   /** Everything not sent, in CALLER order, each with the reason it was left out. */
   dropped: DroppedImageReference<T>[];
   /**
-   * Whether {@link PlannedImageReferences.primary} differs in order from the
-   * references the caller supplied.
+   * Whether any sent reference occupies a different SLOT than the caller's own
+   * order would have given it.
    *
    * Load-bearing, not a statistic. A lane that numbers its references in the
    * prompt — `buildSceneRenderPrompt` writes "Image 2: the location" — builds
-   * that text from its OWN order, before this function runs. If policy ordering
-   * ever moves an image, the text and the payload disagree and the model is told
-   * the room is the person. No lane triggers it today (every one supplies
-   * references in its profile's `roleOrder`), and `renderImageIntent` reports it
-   * loudly if that ever stops being true.
+   * that text from its OWN order, before this function runs. If the slot numbers
+   * move, the text and the payload disagree and the model is told the room is the
+   * person.
+   *
+   * It is slot equality, not sort-order inversion, because REMOVAL renumbers just
+   * as surely as reordering: drop or dedicate the second of three references and
+   * the third arrives as image two while the prompt still calls it image three.
+   * Trimming from the TAIL renumbers nothing and does not trigger it, which is
+   * why the common capacity trim stays quiet.
    */
-  reordered: boolean;
+  renumbered: boolean;
 }
 
 /**
@@ -290,9 +323,10 @@ export function planIntentReferences<T extends ImageRenderReferenceSpec>(
     primary: primary.map((entry) => entry.reference),
     dedicated,
     dropped: drops.map(({ reference, reason }) => ({ reference, reason })),
-    // Ascending caller indexes mean the policy chose the order the lane already
-    // had. Anything else moved an image relative to the text that numbers it.
-    reordered: primary.some((entry, position) => position > 0 && entry.index < (primary[position - 1]?.index ?? 0)),
+    // Slot equality: the reference the caller put at index N is the one arriving
+    // as image N+1. Any mismatch — a reorder, or a removal from ahead of a kept
+    // reference — means the lane's own numbering no longer describes the payload.
+    renumbered: primary.some((entry, position) => entry.index !== position),
   };
 }
 

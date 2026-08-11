@@ -3,6 +3,7 @@ import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contract
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,
+  DATA_URL_BUDGET_BYTES,
   disableSafetyChecker,
   overlayControlInput,
   OUTPUT_TIMEOUT_MS,
@@ -656,12 +657,23 @@ describe("bound control images", () => {
     expect(sink.items.map((entry) => entry.code)).toContain("image_model.control_field_reserved");
   });
 
-  it("charges bound controls against the inline byte budget before optional references", async () => {
+  it("charges bound controls against the inline byte budget before optional references", () => {
     // A control was bound to a field the version declared; an optional trailing
     // style reference is what a byte budget should give up instead.
+    //
+    // The reservation must leave room for SOME references, or this measures the
+    // anchor-preservation fallback (which returns the first reference whatever
+    // the budget says) instead of the reservation. Room for two of three is the
+    // case with an unambiguous answer.
     const small = Buffer.alloc(16);
-    const huge = Buffer.alloc(6 * 1024 * 1024);
-    expect(withinDataUrlBudget([small, small])).toHaveLength(2);
-    expect(withinDataUrlBudget([small, small], huge.byteLength)).toHaveLength(1);
+    expect(withinDataUrlBudget([small, small, small])).toHaveLength(3);
+    expect(withinDataUrlBudget([small, small, small], DATA_URL_BUDGET_BYTES - 40)).toHaveLength(2);
+  });
+
+  it("still sends the anchor when the reservation alone exhausts the budget", () => {
+    // Sending no identity reference renders a stranger, so the anchor survives a
+    // blown budget and the provider is left to accept or refuse it.
+    const small = Buffer.alloc(16);
+    expect(withinDataUrlBudget([small, small], DATA_URL_BUDGET_BYTES)).toEqual([small]);
   });
 });
