@@ -98,6 +98,23 @@ function EnlargeableImage({
   label: string;
   onEnlarge: (imageId: string) => void;
 }) {
+  // An experiment outlives the assets it cites: deleting a control fixture drops
+  // its image row and deliberately leaves the ordered inputs intact, so the
+  // asset route can 404 under a perfectly valid record. A broken tile would read
+  // as "the bench lost your reference"; say the asset is gone, and keep the id
+  // beside it (rendered by the caller) so the record still cites what ran.
+  const [missing, setMissing] = useState<string | null>(null);
+  // Render-adjust: a different id is a different question, so re-ask it.
+  if (missing !== null && missing !== imageId) setMissing(null);
+
+  if (missing === imageId) {
+    return (
+      <div className="flex aspect-[3/4] w-full items-center justify-center rounded-card border border-dashed border-ink-600 px-2 text-center text-[11px] text-paper-600">
+        this image no longer exists
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -106,7 +123,12 @@ function EnlargeableImage({
       className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600"
     >
       {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; a control map must be shown whole */}
-      <img src={imageUrl(imageId)} alt={label} className="aspect-[3/4] w-full bg-ink-950 object-contain" />
+      <img
+        src={imageUrl(imageId)}
+        alt={label}
+        onError={() => setMissing(imageId)}
+        className="aspect-[3/4] w-full bg-ink-950 object-contain"
+      />
     </button>
   );
 }

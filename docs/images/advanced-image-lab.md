@@ -47,6 +47,9 @@ contract: its spec.
   (identity, fixture, result) the ordered-input list renders a role-labeled
   thumbnail per slot, captioned with its position and role and enlargeable into
   the same lightbox. A reference the run sent is never judged from its id alone.
+  An experiment outlives the assets it cites — deleting a control fixture drops
+  its image row and leaves the ordered inputs intact — so a slot whose asset is
+  gone says so in place of the image rather than rendering broken.
 - **Verdicts** are recordable on every kind that declares a control —
   `control_probe`, `controlled_portrait`, `controlled_scene` — with an explicit
   ruling and a required note; baselines have no control to rule on and refuse.
