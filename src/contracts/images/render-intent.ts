@@ -4,6 +4,7 @@ import {
   type ImageBindingArity,
   type ImageReferenceRole,
 } from "./image-model-capabilities";
+import type { ImageLoraRenderBinding } from "./image-loras";
 import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-profiles";
 
 /**
@@ -77,6 +78,23 @@ export interface ImageRenderIntentCore {
    * lane sends any today, which is what keeps the migration payload-neutral.
    */
   controls?: ImageRenderControls;
+  /**
+   * A curated LoRA that has already been resolved against the library
+   * (`resolveImageLoraForRender`): the locator to send, the scale to send it at,
+   * and the prompt additions that come with it.
+   *
+   * Set ONLY by server code that performed that resolution — the image lab, which
+   * resolves before it plans so a refusal settles onto its row pre-spend, and
+   * `renderImageIntent`, which resolves for every caller that did not. A lane
+   * never sets it; a lane asks for a LoRA the same way a profile does, through
+   * `controls.lora`, which is a REQUEST (`{ id, scale? }`) rather than a decision.
+   *
+   * The distinction is the whole safety property: a locator on an intent has been
+   * judged compatible with this model, this version and this task, while a
+   * selection has not, and the control mapper deliberately refuses to send the
+   * second.
+   */
+  resolvedLora?: ImageLoraRenderBinding;
 }
 
 /**

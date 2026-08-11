@@ -1,4 +1,6 @@
 import {
+  IMAGE_LORA_INCOMPATIBLE,
+  IMAGE_LORA_UNREACHABLE,
   imageLabFailureCodeFromDiagnostic,
   type ImageLabControlGenerator,
   type ImageLabControlKind,
@@ -8,6 +10,7 @@ import {
   type ImageLabMode,
   type ImageLabOutcomeDrop,
   type ImageLabVerdict,
+  type ImageLoraRefusalCode,
   type ImageReferenceRole,
 } from "@/contracts";
 import type { TagTone } from "@/components/ui/tag";
@@ -241,16 +244,35 @@ function labFailureCopy(code: ImageLabFailureCode): string {
 }
 
 /**
+ * The curated LoRA library's two refusals, which reach a lab row in their OWN
+ * namespace — the library decides them before the lab has a reason to record, and
+ * the code settles onto the experiment verbatim.
+ *
+ * They are two codes rather than one for the reason the contract splits them:
+ * "this LoRA is not for this job" and "this model has no LoRA input" send an
+ * operator to two different screens, so the copy sends them there too.
+ */
+const IMAGE_LORA_FAILURE_COPY: Record<ImageLoraRefusalCode, string> = {
+  [IMAGE_LORA_INCOMPATIBLE]:
+    "The LoRA's own rules refuse this render — the model, the version, the task, or the requested scale is outside the curated range the library row declares. Nothing was spent. Pick a different LoRA, or widen this one's rules in the LoRA library.",
+  [IMAGE_LORA_UNREACHABLE]:
+    "The configuration cannot reach the provider — the library row is missing or switched off, the model's version exposes no LoRA inputs, or the scale is outside the provider's own range. Nothing was spent. Run this against a model whose version accepts LoRA weights, or fix the row's locator and enabled state.",
+};
+
+/**
  * The English behind a settled experiment's `failureCode`.
  *
  * The stored code arrives in dotted diagnostic form (`image_lab.…`), so the
  * contract's own reader unwraps it — this file never spells the namespace.
  *
- * The code may come from two vocabularies — the lab's own refusals or the render
- * failure classifier — so anything outside the lab's list is surfaced verbatim
- * rather than mistranslated (the trial run detail's precedent).
+ * The code may come from three vocabularies — the lab's own refusals, the LoRA
+ * library's, or the render failure classifier's — so anything outside the two
+ * translated lists is surfaced verbatim rather than mistranslated (the trial run
+ * detail's precedent).
  */
 export function imageLabFailureExplanation(code: string): string {
   const parsed = imageLabFailureCodeFromDiagnostic(code);
-  return parsed === null ? code : labFailureCopy(parsed);
+  if (parsed !== null) return labFailureCopy(parsed);
+  if (code === IMAGE_LORA_INCOMPATIBLE || code === IMAGE_LORA_UNREACHABLE) return IMAGE_LORA_FAILURE_COPY[code];
+  return code;
 }

@@ -260,6 +260,12 @@ export function ImageLabExperimentDetail({
     experiment.requestedVersionId !== null && isUndisclosedProviderVersion(experiment.executedVersionId);
   const hasOverlay =
     Object.keys(experiment.settings.controls).length > 0 || Object.keys(experiment.settings.controlInput).length > 0;
+  // The LoRA this run asked for, as the RECORD holds it: a library id and the
+  // scale it was sent at. Deliberately not resolved back into a label or a
+  // locator here — the library is editable and a row can be deleted, so a
+  // display that went and looked would describe the library as it is now rather
+  // than the weights this run was configured with.
+  const loraSelection = experiment.settings.controls.lora ?? null;
 
   // The paired direct-edit arm: pre-fill only, submitted by the admin. The
   // instruction travels VERBATIM because the shared text is what makes the two
@@ -427,6 +433,15 @@ export function ImageLabExperimentDetail({
           <Fact label="Control fixture">
             <code className="break-all">{experiment.controlImageId ?? "—"}</code>
           </Fact>
+          {loraSelection !== null ? (
+            <Fact label="LoRA">
+              <code className="break-all">
+                {loraSelection.scale === undefined
+                  ? loraSelection.id
+                  : `${loraSelection.id} @ ${String(loraSelection.scale)}`}
+              </code>
+            </Fact>
+          ) : null}
         </dl>
         {versionsDisagree ? (
           <p className="mt-3 text-xs text-danger-300">

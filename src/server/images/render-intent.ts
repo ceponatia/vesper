@@ -1,4 +1,5 @@
 import {
+  effectiveImageLoraSelection,
   missingRequiredControlInputs,
   missingRequiredReferenceRoles,
   planIntentReferences,
@@ -10,8 +11,9 @@ import {
   type ResolvedImageProfile,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { resolveImageLoraForRender } from "./image-loras";
 import { renderWithModel, type RenderWithModelResult } from "./models";
-import { compileProfileRenderPlan } from "./render-profile";
+import { compileProfileRenderPlan, pinnedImageModelVersion } from "./render-profile";
 
 /**
  * THE production render entry point (image-model-capabilities.spec.md
@@ -200,6 +202,10 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
     basePrompt: intent.prompt,
     baseNegativePrompt: null,
     ...(intent.controls ? { controlOverrides: intent.controls } : {}),
+    // Threaded, never resolved here: planning is pure, and resolving a LoRA means
+    // reading the library. `renderImageIntent` does that first, so a plan either
+    // carries a binding somebody already judged or carries none.
+    ...(intent.resolvedLora ? { resolvedLora: intent.resolvedLora } : {}),
     references: { vocabulary: "render_intent", roles: roleNames(primary) },
   });
   if (!compiled.ok) {
@@ -238,6 +244,46 @@ function roleNames(references: readonly ImageRenderReferenceSpec[]): ImageRefere
   return references.map((reference) => reference.role);
 }
 
+/** The intent a plan will be built from, or the refusal that stops the render. */
+type PreparedIntent = { ok: true; intent: ImageRenderIntent } | { ok: false; error: string };
+
+/**
+ * Resolve the LoRA this render is asking for, if any, BEFORE anything is planned.
+ *
+ * The order is the point. Resolution reads the library, so it cannot happen
+ * inside the pure planner; and it must happen before the provider call, so a LoRA
+ * that does not suit this model costs an operator a refusal rather than a
+ * prediction. That makes this the same pre-spend seam as the required-role gate
+ * one layer down.
+ *
+ * A caller that already resolved — the image lab, which settles the refusal onto
+ * its own row — passes the binding on the intent and is left alone here, so a lab
+ * run reads the library once rather than twice.
+ *
+ * The version asked about is the intent's explicit pin when it has one, and
+ * otherwise whatever pins the row: a LoRA row that lists exact compatible versions
+ * must be judged against the version that will actually execute, and a production
+ * render following a floating latest honestly has none to offer — which
+ * `evaluateImageLoraForRender` answers with `unreachable_configuration` rather
+ * than a guess.
+ */
+async function resolveIntentLora(intent: ImageRenderIntent, sink?: DiagnosticSink): Promise<PreparedIntent> {
+  if (intent.resolvedLora) return { ok: true, intent };
+  const { profile, model } = intent.profile;
+  const selection = effectiveImageLoraSelection(profile.controlDefaults, intent.controls);
+  if (!selection) return { ok: true, intent };
+
+  const resolved = await resolveImageLoraForRender(
+    selection,
+    { model, versionId: intent.versionId ?? pinnedImageModelVersion(model), task: profile.task },
+    sink,
+  );
+  // The refusal's diagnostic is pushed by the resolver, in the code it decided —
+  // reporting it again here would double every LoRA failure in the sink.
+  if (!resolved.ok) return { ok: false, error: resolved.message };
+  return { ok: true, intent: { ...intent, resolvedLora: resolved.binding } };
+}
+
 /**
  * Render one intent.
  *
@@ -251,7 +297,9 @@ export async function renderImageIntent(
   intent: ImageRenderIntent,
   sink?: DiagnosticSink,
 ): Promise<RenderWithModelResult> {
-  const planned = planImageRender(intent);
+  const prepared = await resolveIntentLora(intent, sink);
+  if (!prepared.ok) return { ok: false, error: prepared.error };
+  const planned = planImageRender(prepared.intent);
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
     sink?.push(diag("warn", code, message, { path: "image_model_profiles", context }));

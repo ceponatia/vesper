@@ -5,7 +5,7 @@ import { imageEditKindSchema, imageIdentityPreservationSchema, imageReferenceTra
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { probeReplicateModel } from "@/server/ai";
-import { loadImageModel } from "@/server/images";
+import { imageModelProbeFields, loadImageModel } from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -67,11 +67,12 @@ const patchSchema = z.object({
   sort: z.number().int().min(0).max(9999).optional(),
   /** Re-read the model's schema from Replicate and refresh the capability columns. */
   reprobe: z.boolean().optional(),
-  // `advancedCapabilities` is deliberately NOT settable here, and deliberately not
-  // in `probedFields` below either. The probe does not derive control bindings until
-  // a later slice, so it would write `{}` over whatever is stored — and once these
-  // rows carry hand-curated bindings, a re-probe that blanked them would be a
-  // regression that only shows up as a control silently vanishing from a payload.
+  // `advancedCapabilities` is deliberately NOT settable here — but it IS probe-written
+  // now (`imageModelProbeFields`), because the probe derives the LoRA input bindings
+  // from the version's own schema. That is the honest owner: the bindings describe one
+  // version's inputs, so they travel with `probedVersionId` and are refreshed by the
+  // same re-probe that refreshes it. Hand-editing them through this form would create a
+  // second, unversioned source for a field name the render path trusts.
 });
 
 export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx) => {
@@ -86,25 +87,20 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   // Re-probing refreshes what the model CAN do; the surface toggles, the hand-set
   // reference cap, and the three reviewed judgments above are the owner's and are
   // never overwritten by it.
+  //
+  // The refreshed columns are `imageModelProbeFields`' list and nothing else, read
+  // from the shared helper rather than restated here: a second list would be a
+  // second answer to "what does a probe own", and the two would drift the first
+  // time either gained a column. It includes the version those fields were read
+  // FROM — recorded with them or not at all, since stored capabilities whose
+  // version is unknown cannot be checked against a pinned `owner/name:version`
+  // slug later, which is how a control keeps being sent to a field that moved
+  // between versions.
   let probedFields = {};
   if (reprobe) {
     const probed = await probeReplicateModel(existing.slug);
     if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
-    probedFields = {
-      canGenerate: probed.probe.canGenerate,
-      canEdit: probed.probe.canEdit,
-      referenceField: probed.probe.referenceField,
-      referenceArity: probed.probe.referenceArity,
-      aspectMode: probed.probe.aspectMode,
-      supportedAspects: probed.probe.supportedAspects,
-      outputFormat: probed.probe.outputFormat,
-      extraInput: probed.probe.extraInput,
-      // Which version the fields above were read FROM. Recorded with them or not at
-      // all: stored capabilities whose version is unknown cannot be checked against
-      // a pinned `owner/name:version` slug later, which is how a control keeps being
-      // sent to a field that moved between versions.
-      probedVersionId: probed.probe.versionId,
-    };
+    probedFields = imageModelProbeFields(probed.probe);
   }
 
   const update = { ...probedFields, ...fields };

@@ -3,6 +3,7 @@ import {
   emptyImageModelAdvancedCapabilities,
   imageModelAdvancedCapabilitiesSchema,
   type ImageModelAdvancedCapabilities,
+  type ImageModelControlBindings,
 } from "@/contracts";
 import { filterReservedInputFields, mapImageRenderControls, validateProviderOverrides } from "./image-control-mapping";
 
@@ -24,6 +25,17 @@ function capabilities(over: Partial<ImageModelAdvancedCapabilities> = {}): Image
     },
     knownInputFields: ["negative_prompt", "guidance_scale", "num_inference_steps", "scheduler"],
     ...over,
+  });
+}
+
+/** The live Qwen LoRA pair, as the probe records it from the version's schema. */
+function loraCapabilities(over: Partial<ImageModelControlBindings> = {}): ImageModelAdvancedCapabilities {
+  return capabilities({
+    controls: {
+      loraWeights: { field: "lora_weights", type: "string" },
+      loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+      ...over,
+    },
   });
 }
 
@@ -113,9 +125,12 @@ describe("mapImageRenderControls", () => {
     expect(unlisted.dropped).toEqual([{ control: "resolution", reason: "invalid" }]);
   });
 
-  it("reports seed, coherent sets, and LoRA as unsupported rather than unbound", () => {
+  it("reports seed, coherent sets, and an UNRESOLVED LoRA as unsupported rather than unbound", () => {
     // "Vesper does not send this yet" is a different fact from "this version has
     // no field for it", and a reader of the drop list must be able to tell them apart.
+    // A bare `controls.lora` is a REQUEST for a library row, and this module has no
+    // library — sending its id, or guessing a locator from it, is the fabrication
+    // the drop exists to prevent.
     const mapped = mapImageRenderControls({
       controls: { seed: 42, coherentSet: true, lora: { id: "lora-1", scale: 0.8 } },
       capabilities: capabilities(),
@@ -126,6 +141,52 @@ describe("mapImageRenderControls", () => {
       { control: "coherentSet", reason: "unsupported" },
       { control: "lora", reason: "unsupported" },
     ]);
+  });
+
+  it("sends a RESOLVED LoRA's locator and scale, and records neither the locator nor a second entry", () => {
+    const mapped = mapImageRenderControls({
+      controls: { lora: { id: "lora-1", scale: 0.8 } },
+      capabilities: loraCapabilities(),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(mapped.input).toEqual({ lora_weights: "owner/style-lora", lora_scale: 0.8 });
+    // `applied` is what a caller stores and reports, and a signed URL's query string
+    // has no business in a saved record — so the id and the scale go, the locator
+    // never does.
+    expect(mapped.applied).toEqual({ lora: { id: "lora-1", scale: 0.8 } });
+    expect(mapped.dropped).toEqual([]);
+  });
+
+  it("drops the whole LoRA once when the version binds neither field", () => {
+    // Once, not twice: the pair is all-or-nothing (a locator with no scale beside it
+    // runs at the model's own strength), and two entries would read as two problems.
+    const mapped = mapImageRenderControls({
+      controls: {},
+      capabilities: capabilities(),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "lora", reason: "no_binding" }]);
+  });
+
+  it("drops the whole LoRA when the version binds only one of the two fields", () => {
+    const mapped = mapImageRenderControls({
+      controls: {},
+      capabilities: loraCapabilities({ loraScale: undefined }),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "lora", reason: "no_binding" }]);
+  });
+
+  it("drops a scale the version's own binding refuses instead of clamping it", () => {
+    const mapped = mapImageRenderControls({
+      controls: {},
+      capabilities: loraCapabilities(),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 9 },
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "lora", reason: "invalid" }]);
   });
 
   it("sends nothing for an empty control set", () => {

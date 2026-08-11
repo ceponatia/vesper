@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { parseAspectValue, type ImageAspectMode, type ImageReferenceArity } from "@/contracts";
+import {
+  imageModelAdvancedCapabilitiesSchema,
+  parseAspectValue,
+  type ImageAspectMode,
+  type ImageInputBinding,
+  type ImageModelAdvancedCapabilities,
+  type ImageModelControlBindings,
+  type ImageReferenceArity,
+} from "@/contracts";
 
 /**
  * The save-time capability probe (image-model-registry.spec.md §"Capability
@@ -58,6 +66,9 @@ const propertySchema = z
     description: z.string().nullish(),
     default: z.unknown().optional(),
     maxItems: z.number().nullish(),
+    /** The declared numeric range, when a schema states one rather than only prosing it. */
+    minimum: z.number().nullish(),
+    maximum: z.number().nullish(),
     items: z.object({ type: z.string().nullish(), format: z.string().nullish() }).nullish(),
     allOf: z.array(z.object({ $ref: z.string().nullish() })).nullish(),
   });
@@ -140,6 +151,18 @@ export interface ReplicateModelProbe {
   outputFormat: string | null;
   /** Constants worth pinning, derived from the schema (e.g. a safety toggle that exists). */
   extraInput: Record<string, unknown>;
+  /**
+   * The optional input bindings this ONE version declares, as the capability
+   * contract names them.
+   *
+   * Only the LoRA pair is derived today ({@link deriveAdvancedCapabilities});
+   * every other slot stays absent, which the contract already defines as "this
+   * version exposes no field for that control" and the mapper already handles by
+   * dropping it with a reason. Deriving the rest would move behavior on models
+   * nobody re-probed for it, so each further alias arrives with the slice that
+   * has a transport for it.
+   */
+  advancedCapabilities: ImageModelAdvancedCapabilities;
 }
 
 export type ProbeResult = { ok: true; probe: ReplicateModelProbe } | { ok: false; error: string };
@@ -244,8 +267,50 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
       supportedAspects: aspect.supported,
       outputFormat: deriveOutputFormat(properties, schemas),
       extraInput: deriveExtraInput(properties),
+      advancedCapabilities: deriveAdvancedCapabilities(properties),
     },
   };
+}
+
+/**
+ * The optional-input bindings this version declares — LoRA only, for now.
+ *
+ * `lora_weights` and `lora_scale` are the two fields the Qwen LoRA endpoints
+ * publish, and they are derived HERE rather than hand-curated on the row because
+ * a locator sent to a field the active version does not declare is a provider
+ * rejection at spend time. Recording them with the version they were read from
+ * (`probedVersionId`, written in the same update) is what lets the render path
+ * say "this version exposes a LoRA input" rather than guessing from the slug.
+ *
+ * Everything else is deliberately left underived. An alias this function invented
+ * would change what an already-registered model sends the moment somebody
+ * re-probed it, with no slice owning the resulting behavior — so the empty
+ * capability set stays the honest default, and the schema's own thunk defaults
+ * fill the rest of the record.
+ *
+ * The DECLARED numeric type is preserved rather than flattened to `number`:
+ * `bindingAccepts` refuses a fractional value on an integer binding, and calling
+ * an integer field a number would send `0.8` to a provider that rejects it.
+ */
+function deriveAdvancedCapabilities(properties: Record<string, unknown>): ImageModelAdvancedCapabilities {
+  const controls: ImageModelControlBindings = {};
+
+  const weights = propertySchema.safeParse(properties.lora_weights);
+  if (weights.success && weights.data.type === "string") {
+    controls.loraWeights = { field: "lora_weights", type: "string" };
+  }
+
+  const scale = propertySchema.safeParse(properties.lora_scale);
+  if (scale.success && (scale.data.type === "number" || scale.data.type === "integer")) {
+    const binding: ImageInputBinding = { field: "lora_scale", type: scale.data.type };
+    // Absent means "the provider declared no bound", never "unbounded" — so a
+    // missing key is left off rather than written as a made-up range.
+    if (scale.data.minimum != null) binding.minimum = scale.data.minimum;
+    if (scale.data.maximum != null) binding.maximum = scale.data.maximum;
+    controls.loraScale = binding;
+  }
+
+  return imageModelAdvancedCapabilitiesSchema.parse({ controls });
 }
 
 interface ReferenceField {

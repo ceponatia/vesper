@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -42,6 +43,7 @@ import {
   imageLabExperimentStatuses,
   imageLabModes,
   imageLabVerdicts,
+  imageLoraLocatorTypes,
   imageProfileOperations,
   imageProfileTasks,
   imagePromptStrategies,
@@ -1572,6 +1574,78 @@ export const imageModelProfiles = pgTable(
     check(
       "image_model_profiles_timeout_bounds",
       sql`${t.timeoutMs} is null or (${t.timeoutMs} >= 30000 AND ${t.timeoutMs} <= 900000)`,
+    ),
+  ],
+);
+
+/**
+ * The curated LoRA library (image-model-capabilities.spec.md §`image_loras`).
+ *
+ * A LoRA is a weights file the PROVIDER fetches by locator, so a row here is not
+ * another control default — it is an address plus the rules that say where that
+ * address may be sent. Those rules live on the row rather than on the profiles
+ * that name it, because a LoRA is trained against one base model and produces
+ * noise on another: compatibility is a fact about the weights, and duplicating it
+ * onto every profile is how one of the copies goes stale.
+ *
+ * The locator carries no credential (spec §`image_loras`), which is why there is
+ * no token column to leak — private repositories stay out of scope until a
+ * secret can live somewhere other than this table.
+ *
+ * `compatibleVersionIds` empty means "any version of a compatible slug";
+ * `compatibleModelSlugs` and `allowedTasks` empty mean NOTHING is compatible,
+ * because an unfilled list there is an unfinished row rather than a wildcard
+ * (`evaluateImageLoraForRender` is where that asymmetry is decided and explained).
+ */
+export const imageLoras = pgTable(
+  "image_loras",
+  {
+    id: id(),
+    label: text("label").notNull(),
+    /** `https_url` or `huggingface_repo` — the shape `locator` is validated as. */
+    locatorType: text("locator_type", { enum: imageLoraLocatorTypes }).notNull(),
+    /** A public retrieval address: an HTTPS URL, or an `owner/repo` slug. */
+    locator: text("locator").notNull(),
+    /** jsonb string arrays — base model slugs, exact provider versions, trigger words. */
+    compatibleModelSlugs: jsonb("compatible_model_slugs").notNull().default([]),
+    compatibleVersionIds: jsonb("compatible_version_ids").notNull().default([]),
+    /**
+     * Vesper's curated strength band. `doublePrecision` rather than the `real`
+     * used for scores elsewhere in this file because a scale is not a statistic:
+     * it travels verbatim into the provider payload and into the control hash, and
+     * float4 would hand back 0.8500000238418579 for a stored 0.85 — a recorded
+     * configuration that no longer equals the one an operator typed.
+     */
+    defaultScale: doublePrecision("default_scale").notNull(),
+    minimumScale: doublePrecision("minimum_scale").notNull(),
+    maximumScale: doublePrecision("maximum_scale").notNull(),
+    triggerWords: jsonb("trigger_words").notNull().default([]),
+    /** Woven around the compiled prompt before model-dialect preparation. */
+    promptPrefix: text("prompt_prefix"),
+    promptSuffix: text("prompt_suffix"),
+    /** jsonb `ImageProfileTask[]` — the jobs this LoRA may serve. */
+    allowedTasks: jsonb("allowed_tasks").notNull().default([]),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Marks a seeded row for display. Does NOT gate deletion, matching the registry. */
+    builtin: boolean("builtin").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // The provider ceiling observed on the live `lora_scale` binding (0–4), restated
+    // as storage truth. A row outside it could never render, so it should never be
+    // storable; a future model with a wider band relaxes this check and the
+    // contract's own rail together.
+    check(
+      "image_loras_scale_bounds",
+      sql`${t.minimumScale} >= 0 AND ${t.minimumScale} <= 4 AND ${t.defaultScale} >= 0 AND ${t.defaultScale} <= 4 AND ${t.maximumScale} >= 0 AND ${t.maximumScale} <= 4`,
+    ),
+    // An unordered triple is a row whose own default is outside its own range —
+    // every render from it would be refused, which is a configuration error worth
+    // catching at save time rather than at spend time.
+    check(
+      "image_loras_scale_order",
+      sql`${t.minimumScale} <= ${t.defaultScale} AND ${t.defaultScale} <= ${t.maximumScale}`,
     ),
   ],
 );

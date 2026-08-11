@@ -277,6 +277,84 @@ describe("probeReplicateModel", () => {
     expect(result.probe.extraInput).toEqual({ apply_watermark: false, disable_safety_checker: true });
   });
 
+  describe("advanced capabilities", () => {
+    it("derives both LoRA bindings, with the range the schema declared", async () => {
+      // `qwen/qwen-image-edit-plus-lora`'s real shape. A locator sent to a field the
+      // active version does not declare is a provider rejection at spend time, so the
+      // field names come from the schema and are stored with the version they were
+      // read from.
+      stubFetch(() => ({
+        name: "qwen-image-edit-plus-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              image: uriArray(),
+              lora_weights: { type: "string", default: "", description: "Pass a Hugging Face repo slug" },
+              lora_scale: { type: "number", default: 1, minimum: 0, maximum: 4 },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("qwen/qwen-image-edit-plus-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        loraWeights: { field: "lora_weights", type: "string" },
+        loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+      });
+      // Nothing ELSE is derived: an alias this probe invented would change what an
+      // already-registered model sends the moment somebody re-probed it.
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual([]);
+      expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
+    });
+
+    it("records no bindings for a version that declares no LoRA inputs", async () => {
+      // `qwen/qwen-image-edit-2511` — the empty capability set is what keeps every
+      // model that has never been re-probed sending exactly what it sends today.
+      stubFetch(() => ({
+        name: "qwen-image-edit-2511",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({ properties: { prompt: { type: "string" }, image: uriArray() } }),
+        },
+      }));
+
+      const result = await probeReplicateModel("qwen/qwen-image-edit-2511");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({});
+    });
+
+    it("omits a range the schema did not declare, and ignores a LoRA field of the wrong type", async () => {
+      // Absent bounds mean "the provider declared none", never "unbounded" — writing
+      // a made-up range would refuse values the model accepts. And a `lora_weights`
+      // that is not a string is not the binding this derivation knows how to send.
+      stubFetch(() => ({
+        name: "odd-lora",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              lora_weights: { type: "array", items: { type: "string" } },
+              lora_scale: { type: "number", default: 1 },
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/odd-lora");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        loraScale: { field: "lora_scale", type: "number" },
+      });
+    });
+  });
+
   describe("pinned versions", () => {
     const versionSchema = openapi({
       properties: { prompt: { type: "string" }, image_input: uriArray("up to 4 images") },
