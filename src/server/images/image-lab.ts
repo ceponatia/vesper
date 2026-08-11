@@ -1,22 +1,26 @@
 import { and, asc, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   chooseAspect,
   emptyImageLabSettings,
   imageLabControlMetaSchema,
   imageLabDiagnosticCode,
+  imageLabFinishingRecipeProfile,
   imageLabInputListSchema,
   imageLabOutcomeSchema,
   imageLabRecipeProfile,
   imageLabSettingsSchema,
+  IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
   IMAGE_TARGET_ASPECT,
   isImageLabControlRole,
+  isImageLabFinishableKind,
+  isImageLabVerdictForKind,
   isImageLabVerdictKind,
   profileEligibility,
   referenceCapacity,
   type ImageLabControlledKind,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
-  type ImageLabExperimentKind,
   type ImageLabFailureCode,
   type ImageLabInput,
   type ImageLabInputList,
@@ -24,10 +28,14 @@ import {
   type ImageLabRecordVerdictRequest,
   type ImageLabSettings,
   type ImageModel,
+  type ImageModelProfile,
   type ImageProfileTask,
+  type ImageReferenceRole,
+  type ImageRenderControls,
   type ResolvedImageProfile,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { imageLabFinishingInstruction } from "@/lib/images/image-lab-instruction";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import {
   classifyImageFailure,
@@ -38,6 +46,7 @@ import {
 } from "../ai";
 import { characterChats, characters, chatParticipants, db, imageLabExperiments, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
+import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { baseImageModelSlug, withReviewedImageQuality } from "./quality-presets";
@@ -76,7 +85,10 @@ import { pinnedImageModelVersion } from "./render-profile";
  * ride that same intent path but pin the exact version and run a code-defined
  * recipe profile (`imageLabRecipeProfile`), because their question is whether
  * the control still holds when the request is production-shaped — and a
- * controlled comparison must be able to name what it executed.
+ * controlled comparison must be able to name what it executed. `finishing_pass`
+ * runs the same way over a different pair of references: another experiment's
+ * RESULT under the `before` role, plus the subject's identity-pack references,
+ * under an instruction that forbids every change but the face.
  *
  * The job seam lives at the ROUTE, not here: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from this module would close an import
@@ -135,42 +147,24 @@ export interface ImageLabRunPayload extends Record<string, unknown> {
 }
 
 /**
- * The kinds an experiment can actually RUN: the three Stage 0 kinds plus the
- * two controlled recipes the capabilities plan's role selection and compose
- * wording unlocked.
- *
- * `finishing_pass` alone still refuses at create. It names a recipe that does
- * not exist yet (Stage 3's img2img polish over a controlled render), and
- * accepting one would store an experiment nothing can ever settle.
- */
-const RUNNABLE_KINDS = [
-  "control_probe",
-  "baseline_portrait",
-  "baseline_scene",
-  "controlled_portrait",
-  "controlled_scene",
-] as const satisfies readonly ImageLabExperimentKind[];
-
-function isRunnableKind(kind: ImageLabExperimentKind): boolean {
-  return RUNNABLE_KINDS.some((runnable) => runnable === kind);
-}
-
-/**
- * The codes Stage 0's runner needs beyond {@link ImageLabFailureCode}'s own.
+ * The codes this runner needs beyond {@link ImageLabFailureCode}'s own.
  *
  * The contract deliberately types `failureCode` as a bounded string rather than
  * that enum, "because it also carries codes from the render-failure classifier"
  * — the same reason applies here. Each of these names a state the contract's
- * codes cannot:
- * a kind with no recipe, a task the profile registry offers nothing for, and a
- * runner that died on something other than a provider call. Inventing another
- * enum member for each would freeze them into the wire contract, where a UI
- * would have to know about a state it can only display verbatim anyway.
+ * codes cannot: a task the profile registry offers nothing for, and a runner
+ * that died on something other than a provider call. Inventing another enum
+ * member for each would freeze them into the wire contract, where a UI would
+ * have to know about a state it can only display verbatim anyway.
+ *
+ * A third code, `image_lab.kind_unsupported`, is gone as of Stage 3: it existed
+ * while `finishing_pass` was declared but unbuilt, and every declared kind now
+ * has a runner arm, which the exhaustive dispatch below enforces at compile
+ * time rather than at run time.
  *
  * Dotted, because every one of them is written to a settled ROW or a sink. A
  * refusal envelope spells its code bare — see {@link labRefusal}.
  */
-const LAB_KIND_UNSUPPORTED = "image_lab.kind_unsupported";
 const LAB_PROFILE_UNAVAILABLE = "image_lab.profile_unavailable";
 const LAB_RUN_THREW = "image_lab.run_threw";
 
@@ -279,6 +273,7 @@ function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSink): Im
     settings: storedSettings(row, sink),
     resultImageId: row.resultImageId,
     outcome: storedOutcome(row, sink),
+    sourceExperimentId: storedSourceExperimentId(row, sink),
     status: row.status,
     failureCode: row.failureCode,
     verdict: row.verdict,
@@ -318,6 +313,38 @@ function storedOutcome(row: ImageLabExperimentRow, sink?: DiagnosticSink): Image
   const raw = imageMeta(row.meta)["outcome"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(imageLabOutcomeSchema, raw, sink, "image_lab_experiments.meta.outcome");
+}
+
+const sourceExperimentIdSchema = z.string().min(1);
+
+/**
+ * The experiment a finishing pass refines, read out of the same meta bag.
+ *
+ * It lives there rather than in a column because the row already had a bag for
+ * per-experiment facts and Stage 3 wanted no migration — but that put one
+ * requirement on the runner, which {@link labMeta} carries: this key is written
+ * at CREATE and every later write to the bag has to preserve it, or the pointer
+ * would survive exactly until the run that used it settled.
+ */
+function storedSourceExperimentId(row: ImageLabExperimentRow, sink?: DiagnosticSink): string | null {
+  const raw = imageMeta(row.meta)["sourceExperimentId"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(sourceExperimentIdSchema, raw, sink, "image_lab_experiments.meta.sourceExperimentId");
+}
+
+/**
+ * One meta write, over whatever the bag already held.
+ *
+ * Every settle in this module writes `meta` as a whole value, so an assignment
+ * would silently drop the create-time keys — which was harmless while the bag
+ * held nothing but the settle's own record, and is not harmless now that a
+ * finishing pass's `sourceExperimentId` rides in it. Merging costs nothing for
+ * the kinds that write no create-time meta (their stored bag is `{}`) and keeps
+ * the pointer readable after the row settles, which is when the detail screen
+ * asks for it.
+ */
+function labMeta(row: ImageLabExperimentRow, written: Record<string, unknown>): Record<string, unknown> {
+  return { ...imageMeta(row.meta), ...written };
 }
 
 /** One experiment, matched on `(id, owner)` — the authorization root. */
@@ -390,17 +417,6 @@ export async function createImageLabExperiment(
   input: CreateImageLabExperimentInput,
 ): Promise<CreateImageLabExperimentResult> {
   const { ownerId, request, sink } = input;
-  if (!isRunnableKind(request.kind)) {
-    return {
-      ok: false,
-      refusal: labRefusal(
-        "kind_unsupported",
-        `${request.kind} experiments arrive with Stage 3; the lab runs ${RUNNABLE_KINDS.join(", ")}`,
-        sink,
-        { kind: request.kind },
-      ),
-    };
-  }
   if (request.characterId !== undefined && !(await ownsCharacter(request.characterId, ownerId))) {
     return {
       ok: false,
@@ -411,14 +427,29 @@ export async function createImageLabExperiment(
     return { ok: false, refusal: labRefusal("chat_not_found", "chat not found", sink, { chatId: request.chatId }) };
   }
 
+  // A finishing pass is defined by the run it refines, so the source is resolved
+  // BEFORE the row exists: its subject is inherited from that run, and an
+  // experiment stored against a source that cannot be finished would be a queued
+  // render that can only fail. The runner re-checks all of it anyway (rows
+  // outlive their sources), so this is speed of feedback, not the authority.
+  const source = request.sourceExperimentId === undefined ? null : await ownedExperiment(request.sourceExperimentId, ownerId);
+  if (request.sourceExperimentId !== undefined) {
+    const refusal = sourceRefusal(request.sourceExperimentId, source, sink);
+    if (refusal) return { ok: false, refusal };
+  }
+
   const [row] = await db()
     .insert(imageLabExperiments)
     .values({
       ownerId,
       kind: request.kind,
       mode: request.mode ?? null,
-      characterId: request.characterId ?? null,
-      chatId: request.chatId ?? null,
+      // Inherited from the source on a finishing pass (the request carries
+      // neither, per the create schema): the two arms of one comparison must file
+      // against the same subject, and a client that could name a third would be
+      // able to file the finished render under someone else entirely.
+      characterId: request.characterId ?? source?.characterId ?? null,
+      chatId: request.chatId ?? source?.chatId ?? null,
       // The model the plan is about. A named slug is how the fallback connector
       // gets probed if the first verdict reads `ignores_control`.
       modelSlug: request.modelSlug ?? REPLICATE_DEFAULT_EDIT_MODEL,
@@ -427,11 +458,54 @@ export async function createImageLabExperiment(
       controlImageId: request.controlImageId ?? null,
       controlKind: request.controlKind ?? null,
       settings: request.settings ?? emptyImageLabSettings(),
+      // The one create-time meta key: the run this pass refines. Written here
+      // and preserved by every later write through `labMeta`.
+      ...(request.sourceExperimentId === undefined ? {} : { meta: { sourceExperimentId: request.sourceExperimentId } }),
       status: "pending",
     })
     .returning();
   if (!row) throw new Error("image_lab_experiments insert returned no row");
   return { ok: true, experiment: toWireExperiment(row, sink) };
+}
+
+/**
+ * Why this experiment cannot be finished — or `null` when it can.
+ *
+ * Three separate answers rather than one, because they ask three different
+ * things of the admin: find the right id, pick a different experiment, or wait
+ * for (and fix) a run that has not produced an image. One shared "invalid
+ * source" would tell them none of that.
+ *
+ * A source that is not this owner's is reported as missing, exactly as the
+ * detail route reports a foreign experiment: the refusal must not confirm that
+ * someone else's id exists.
+ */
+function sourceRefusal(
+  sourceExperimentId: string,
+  source: ImageLabExperimentRow | null,
+  sink: DiagnosticSink | undefined,
+): ImageLabRefusal | null {
+  const context = { sourceExperimentId };
+  if (!source) {
+    return labRefusal("source_not_found", "the experiment this pass would refine was not found", sink, context);
+  }
+  if (!isImageLabFinishableKind(source.kind)) {
+    return labRefusal(
+      "source_kind_unsupported",
+      `a ${source.kind} cannot be finished; a finishing pass refines a baseline or a controlled run`,
+      sink,
+      { ...context, sourceKind: source.kind },
+    );
+  }
+  if (source.status !== "succeeded" || source.resultImageId === null) {
+    return labRefusal(
+      "source_not_rendered",
+      "that experiment has no result image to refine yet",
+      sink,
+      { ...context, sourceStatus: source.status },
+    );
+  }
+  return null;
 }
 
 async function ownsCharacter(characterId: string, ownerId: string): Promise<boolean> {
@@ -463,11 +537,17 @@ export type RecordImageLabVerdictResult =
 /**
  * Record the reviewing admin's ruling.
  *
- * Verdict kinds only (`isImageLabVerdictKind`) — the kinds that DECLARE a
- * control — and that restriction is the point of the whole protocol: the
- * verdict answers "did the output obey the skeleton?", which is a judgment made
- * by looking at an image, and a baseline has no control to obey. A ruling
+ * Verdict kinds only (`isImageLabVerdictKind`) — the kinds that ask a question a
+ * reviewer can answer — and that restriction is the point of the whole protocol:
+ * the verdict answers "did the output obey the skeleton?", which is a judgment
+ * made by looking at an image, and a baseline has no control to obey. A ruling
  * recorded against one would be a fact about nothing.
+ *
+ * The ruling must also belong to THIS kind's vocabulary
+ * (`isImageLabVerdictForKind`). The wire request speaks the whole union because
+ * it does not know the kind, so this is the one place both facts are in hand —
+ * and without the check a finishing pass could be filed `honours_control`,
+ * recording a control judgment against a run that sent no control.
  *
  * The verdict is INDEPENDENT of `status`: a `succeeded` render can still be
  * ruled `ignores_control`, which is the most informative outcome the bench can
@@ -484,10 +564,21 @@ export async function recordImageLabVerdict(
   if (!isImageLabVerdictKind(row.kind)) {
     return {
       ok: false,
-      refusal: labRefusal("verdict_not_applicable", `a ${row.kind} experiment has no control to rule on`, sink, {
+      refusal: labRefusal("verdict_not_applicable", `a ${row.kind} experiment has nothing to rule on`, sink, {
         experimentId,
         kind: row.kind,
       }),
+    };
+  }
+  if (!isImageLabVerdictForKind(row.kind, request.verdict)) {
+    return {
+      ok: false,
+      refusal: labRefusal(
+        "verdict_not_in_vocabulary",
+        `${request.verdict} is not a ruling a ${row.kind} experiment can record`,
+        sink,
+        { experimentId, kind: row.kind, verdict: request.verdict },
+      ),
     };
   }
   const [updated] = await db()
@@ -597,10 +688,7 @@ function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink):
     case "controlled_scene":
       return runControlled(row, row.kind, sink);
     case "finishing_pass":
-      // Unreachable through `createImageLabExperiment`, which refuses the kind
-      // outright. Kept as a settled refusal rather than a throw so a row that
-      // reached here some other way still records a reason.
-      return settleFailed(row, LAB_KIND_UNSUPPORTED, `${row.kind} has no recipe until Stage 3`, sink);
+      return runFinishingPass(row, sink);
   }
 }
 
@@ -644,7 +732,7 @@ async function settleFailed(
       status: "failed",
       failureCode,
       finishedAt: new Date(),
-      meta: { error: message.slice(0, 2000), ...extras.meta },
+      meta: labMeta(row, { error: message.slice(0, 2000), ...extras.meta }),
     })
     .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
   return { experimentId: row.id, status: "failed", failureCode, providerOutcome: extras.providerOutcome ?? null };
@@ -942,14 +1030,8 @@ async function runControlled(
   }
 
   const settings = storedSettings(row, sink);
-  if (Object.keys(settings.controlInput).length > 0) {
-    return await settleFailed(
-      row,
-      labFailure("settings_unsupported"),
-      "a controlled experiment runs the production shape, which has no raw provider bag; clear controlInput or run a control probe",
-      sink,
-      { columns },
-    );
+  if (carriesRawProviderBag(settings)) {
+    return await settleFailed(row, labFailure("settings_unsupported"), RAW_BAG_REFUSAL, sink, { columns });
   }
 
   const read = await readOrderedInputBytes(inputs, row.ownerId);
@@ -967,7 +1049,67 @@ async function runControlled(
     required: input.role === "identity" || input.imageId === row.controlImageId,
   }));
 
-  const recipeProfile = imageLabRecipeProfile(kind, controlKind, model.id);
+  return await runRecipeIntent(row, {
+    model,
+    versionId,
+    recipeProfile: imageLabRecipeProfile(kind, controlKind, model.id),
+    references,
+    prompt: row.instruction,
+    controls: settings.controls,
+    columns,
+    provenanceRole: "identity",
+    fallbackSourceImageId: inputs[0]?.imageId,
+    sink,
+  });
+}
+
+/**
+ * The refusal both recipe kinds share, and the reason it is one sentence in one
+ * place: the raw bag is a PROBE tool, and a recipe run exists to prove a
+ * production-shaped request. Two spellings of that would let one kind start
+ * stripping the bag while the other refused it.
+ */
+const RAW_BAG_REFUSAL =
+  "a recipe experiment runs the production shape, which has no raw provider bag; clear controlInput or run a control probe";
+
+function carriesRawProviderBag(settings: ImageLabSettings): boolean {
+  return Object.keys(settings.controlInput).length > 0;
+}
+
+/** Everything one recipe run needs past its own preconditions. */
+interface RecipeIntentRun {
+  model: ImageModel;
+  versionId: string;
+  recipeProfile: ImageModelProfile;
+  /** In the order the caller wants them offered; the policy's `roleOrder` decides the send order. */
+  references: ImageRenderReference[];
+  /** The base prompt the strategy prefixes its numbered bindings to. */
+  prompt: string;
+  controls: ImageRenderControls;
+  /** Resolved pre-render and re-applied on every settle, so a stop cannot drop them. */
+  columns: Partial<typeof imageLabExperiments.$inferInsert>;
+  /** Which SENT reference the stored output records as its provenance. */
+  provenanceRole: ImageReferenceRole;
+  /** Used when the plan sent no reference of that role. */
+  fallbackSourceImageId?: string;
+  sink?: DiagnosticSink;
+}
+
+/**
+ * Eligibility, plan, record, render, settle — the half of a recipe run that is
+ * identical for every recipe.
+ *
+ * One function for the controlled kinds and the finishing pass because the
+ * honesty-critical steps live here: the recorded outcome, the compiled prompt
+ * written down BEFORE the provider call, and the pinned version riding inside
+ * the intent. A second copy would be a second place for a recipe to start
+ * recording something other than what it sent.
+ *
+ * What the callers keep is exactly what differs: which references exist at all,
+ * which preconditions must hold before spending, and what the base prompt says.
+ */
+async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRun): Promise<ImageLabRunPayload> {
+  const { model, recipeProfile, columns, sink } = input;
   const eligibility = profileEligibility(recipeProfile, model);
   if (!eligibility.ok) {
     return await settleFailed(
@@ -984,11 +1126,11 @@ async function runControlled(
   // keeps its shape and the real renderer needs no lab-specific arm.
   const intent: ImageRenderIntent = {
     profile: { profile: recipeProfile, model },
-    prompt: row.instruction,
-    references,
+    prompt: input.prompt,
+    references: input.references,
     target: { aspectRatio: IMAGE_TARGET_ASPECT },
-    controls: settings.controls,
-    versionId,
+    controls: input.controls,
+    versionId: input.versionId,
   };
   const planned = planImageRender(intent);
   if (!planned.ok) {
@@ -1004,14 +1146,187 @@ async function runControlled(
     .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
 
   const rendered = await labRenderer()({ mode: "intent", intent }, sink);
-  const identity = planned.plan.sentReferences.find((reference) => reference.role === "identity");
+  const provenance = planned.plan.sentReferences.find((reference) => reference.role === input.provenanceRole);
   return await storeLabRender(row, rendered, {
     finalPrompt,
-    sourceImageId: identity?.sourceImageId ?? inputs[0]?.imageId,
+    sourceImageId: provenance?.sourceImageId ?? input.fallbackSourceImageId,
     columns: columnsWithPrompt,
     sink,
     outcome,
   });
+}
+
+// --- finishing pass --------------------------------------------------------
+
+/**
+ * The Stage 3 finishing pass: another experiment's RESULT, re-edited against the
+ * subject's identity pack under an instruction that forbids every change but the
+ * face (plan §"Stage 3 — optional identity finishing").
+ *
+ * It is the one kind whose ordered inputs the RUNNER resolves rather than the
+ * admin. Both of them are facts the client cannot supply honestly: the base is
+ * whatever the source experiment actually rendered (which may have changed, or
+ * been deleted, since the form listed it), and the identity references come from
+ * the pack, whose selection is a versioned policy decision — an admin choosing
+ * the "identity reference" by hand would be running a different experiment under
+ * this one's name. So they are read here and WRITTEN BACK onto the row, because
+ * a record that only says what the runner intended is not a record of what it
+ * sent.
+ *
+ * The pack gate (`imageIdentityPackReferencesEnabled`) is deliberately NOT
+ * consulted, on the identity-pack trial's own precedent: that flag governs
+ * whether production LANES send pack references, and a bench measuring what the
+ * references are worth cannot be gated on the decision it exists to inform.
+ * Nothing here is player-visible, and every render still lands as a hidden
+ * `lab_output`.
+ */
+async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
+  const sourceExperimentId = storedSourceExperimentId(row, sink);
+  if (sourceExperimentId === null) {
+    return await settleFailed(
+      row,
+      labFailure("source_invalid"),
+      "a finishing pass records the experiment it refines, and this row names none",
+      sink,
+    );
+  }
+  // Re-checked at run time even though the create path checked it: a source can
+  // be deleted, or its output swept, between the queue and the render — and the
+  // service is authoritative for rows that predate any of these rules.
+  const source = await ownedExperiment(sourceExperimentId, row.ownerId);
+  const refusal = sourceRefusal(sourceExperimentId, source, sink);
+  const baseImageId = source?.resultImageId ?? null;
+  if (refusal !== null || source === null || baseImageId === null) {
+    return await settleFailed(row, labFailure("source_invalid"), refusal?.message ?? "the source experiment is gone", sink);
+  }
+
+  const resolved = await resolvePinnedLabModel(row.modelSlug, "a finishing pass", sink);
+  if (!resolved.ok) {
+    return await settleFailed(row, labFailure("version_unpinned"), resolved.message, sink);
+  }
+  const { model, versionId } = resolved;
+  const columns = { requestedVersionId: versionId, modelSlug: model.slug };
+
+  const settings = storedSettings(row, sink);
+  if (carriesRawProviderBag(settings)) {
+    return await settleFailed(row, labFailure("settings_unsupported"), RAW_BAG_REFUSAL, sink, { columns });
+  }
+
+  const base = await readOwnedImageBytes(baseImageId, row.ownerId);
+  if (!base) {
+    return await settleFailed(
+      row,
+      labFailure("input_missing"),
+      `the source experiment's result image ${baseImageId} could not be read`,
+      sink,
+      { columns },
+    );
+  }
+
+  const identity = await finishingIdentityReferences(row, sink);
+  if (!identity.ok) {
+    return await settleFailed(row, labFailure("identity_unavailable"), identity.message, sink, { columns });
+  }
+
+  // Written down as the ordered inputs the run actually sends, so the detail
+  // screen shows every reference as a thumbnail exactly as it does for a
+  // hand-ordered kind, and a verdict written weeks later can see them.
+  const inputs: ImageLabInputList = [
+    { position: 1, role: "before", imageId: baseImageId },
+    ...identity.references.map((reference, index) => ({
+      position: index + 2,
+      role: "identity" as const,
+      imageId: reference.imageId,
+    })),
+  ];
+  const references: ImageRenderReference[] = [
+    { role: "before", buffer: base, sourceImageId: baseImageId, required: true },
+    ...identity.references.map((reference) => ({
+      role: "identity" as const,
+      buffer: reference.buffer,
+      sourceImageId: reference.imageId,
+      required: true,
+    })),
+  ];
+
+  return await runRecipeIntent(row, {
+    model,
+    versionId,
+    recipeProfile: imageLabFinishingRecipeProfile(model.id),
+    references,
+    // The rule the run is judged by IS the prompt; the admin's own text narrows
+    // it and never replaces it (`imageLabFinishingInstruction`).
+    prompt: imageLabFinishingInstruction(row.instruction),
+    controls: settings.controls,
+    columns: { ...columns, inputs },
+    // The base render, not the identity reference: this output is that image
+    // with one thing changed, and provenance should say so.
+    provenanceRole: "before",
+    fallbackSourceImageId: baseImageId,
+    sink,
+  });
+}
+
+/** One identity reference the pack authorized, beside its bytes. */
+interface FinishingIdentityReference {
+  imageId: string;
+  buffer: Buffer;
+}
+
+type FinishingIdentityResult =
+  | { ok: true; references: FinishingIdentityReference[] }
+  | { ok: false; message: string };
+
+/**
+ * The identity references a finishing pass improves the face TOWARD, drawn from
+ * the subject's identity pack.
+ *
+ * The pack is asked rather than the character row, because "which image is this
+ * character's identity" is a versioned, measured decision the pack machinery
+ * already owns — reference size, face size, policy version and provenance
+ * included. Re-deriving it here would be a second answer to a settled question,
+ * and the two would drift the first time either moved.
+ *
+ * The SUBJECT is the experiment's own character, falling back to the primary
+ * character of its chat, because a finishing pass inherits its subject from a
+ * source that may have been a scene (which files against a chat, not a
+ * character). A pass with no subject at all is refused: there is no pack to ask.
+ *
+ * Every refusal carries the pack's own blocking code into the recorded message,
+ * so "no usable face" and "the source portrait changed" stay tellable apart on
+ * the row without the lab restating a vocabulary it does not own.
+ */
+async function finishingIdentityReferences(
+  row: ImageLabExperimentRow,
+  sink?: DiagnosticSink,
+): Promise<FinishingIdentityResult> {
+  const characterId = row.characterId ?? (row.chatId === null ? null : await primaryChatCharacterId(row.chatId));
+  if (characterId === null) {
+    return { ok: false, message: "this experiment names no character, so no identity pack can be asked for references" };
+  }
+
+  const evaluated = await evaluateIdentityPackForProfile({
+    ownerId: row.ownerId,
+    characterId,
+    strategy: IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
+    // The bench's own purpose, shared with the identity-pack trial: this is
+    // measurement, not a player-visible render.
+    purpose: "admin_trial",
+    sink,
+  });
+  if (!evaluated.eligible) {
+    return { ok: false, message: `the identity pack offered no reference (${evaluated.code}: ${evaluated.messageKey})` };
+  }
+
+  const references: FinishingIdentityReference[] = [];
+  for (const candidate of evaluated.candidates) {
+    const buffer = await readOwnedImageBytes(candidate.imageId, row.ownerId);
+    if (buffer) references.push({ imageId: candidate.imageId, buffer });
+  }
+  if (references.length === 0) {
+    return { ok: false, message: "the identity pack's references could not be read for this owner" };
+  }
+  return { ok: true, references };
 }
 
 // --- baselines -------------------------------------------------------------
@@ -1332,8 +1647,9 @@ async function storeLabRender(
       ...input.columns,
       ...provenance,
       // Written only when a plan produced one, so probe rows — whose meta this
-      // update never touched before — keep exactly the meta they had.
-      ...(input.outcome ? { meta: { outcome: input.outcome } } : {}),
+      // update never touched before — keep exactly the meta they had. Merged,
+      // never assigned, so a create-time key survives its own run.
+      ...(input.outcome ? { meta: labMeta(row, { outcome: input.outcome }) } : {}),
       resultImageId: saved.id,
       status: "succeeded",
       failureCode: null,

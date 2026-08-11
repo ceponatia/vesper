@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { imageLabControlKinds } from "@/contracts";
-import { imageLabControlRole, imageLabProbeInstruction } from "./image-lab-instruction";
+import {
+  imageLabControlRole,
+  imageLabFinishingInstruction,
+  imageLabProbeInstruction,
+} from "./image-lab-instruction";
 
 describe("imageLabControlRole", () => {
   it("feeds every kind under its own reference role", () => {
@@ -43,5 +47,31 @@ describe("imageLabProbeInstruction", () => {
       expect(text).toContain("not a person and not a style reference");
       expect(text).toContain("it carries structure only");
     }
+  });
+});
+
+describe("imageLabFinishingInstruction", () => {
+  it("names both halves of the promotion rule: correct the face, keep everything else", () => {
+    const text = imageLabFinishingInstruction("");
+    expect(text).toContain("Refine only the identity in the before image");
+    // The plan's own list — a pass that moved any of these is not promotable, so
+    // the instruction has to have asked for each of them by name.
+    for (const kept of ["pose", "body proportions", "clothing", "camera angle", "lighting", "setting"]) {
+      expect(text).toContain(kept);
+    }
+  });
+
+  it("keeps hair on the identity side, where the drift it must fix lives", () => {
+    expect(imageLabFinishingInstruction("")).toContain("hairline and hair colour");
+  });
+
+  it("sends the rule alone when the admin writes nothing", () => {
+    expect(imageLabFinishingInstruction("   ")).toBe(imageLabFinishingInstruction(""));
+  });
+
+  it("appends the admin's note after the rule rather than replacing it", () => {
+    const text = imageLabFinishingInstruction("  the left eye is drifting  ");
+    expect(text.startsWith(imageLabFinishingInstruction(""))).toBe(true);
+    expect(text.endsWith("the left eye is drifting")).toBe(true);
   });
 });

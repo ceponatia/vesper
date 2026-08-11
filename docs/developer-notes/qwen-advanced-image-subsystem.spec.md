@@ -37,11 +37,12 @@ those systems through their existing exports and adds no second copy.
 | Stage 1/2 recipes + controlled runner (intent)  | built 2026-08-11 |
 | Controlled-kind create/verdict/comparison UI    | built 2026-08-11 |
 | Stage 1/2 trial runs + recorded verdicts        | run 2026-08-11   |
+| Stage 3 finishing recipe + runner (intent)      | built 2026-08-11 |
+| Finishing create/verdict/comparison UI          | built 2026-08-11 |
+| Stage 3 finishing trial runs + verdicts         | not run          |
 
-Stage 3+ work (finishing passes, LoRA trials, two-character recipes) is
-deliberately absent from this table: Stage 3 is unbuilt but no longer blocked —
-the Stage 1/2 verdicts below unblocked it on 2026-08-11 — and Stage 4 waits on
-the capabilities plan's Qwen LoRA library slice.
+Stage 4+ work (LoRA trials, two-character recipes) is deliberately absent from
+this table: Stage 4 waits on the capabilities plan's Qwen LoRA library slice.
 
 ## Rulings this build settles
 
@@ -76,10 +77,10 @@ Rulings the build settled (2026-08-10):
   the lanes call, with `planImageRender` run first purely to capture the
   compiled prompt as `finalPrompt`. `requestedVersionId` stays null on
   baselines because `renderImageIntent` deliberately pins nothing.
-- **`failureCode` is a bounded string, not a closed enum**: three codes beyond
-  the contract's list exist (`image_lab.kind_unsupported`,
-  `image_lab.profile_unavailable`, `image_lab.run_threw`), and provider
-  classifications ride `meta.renderFailure`. A failed extraction *prediction*
+- **`failureCode` is a bounded string, not a closed enum**: codes beyond the
+  contract's list exist (`image_lab.profile_unavailable`, `image_lab.run_threw`
+  — and, until Stage 3 made every kind runnable, `image_lab.kind_unsupported`),
+  and provider classifications ride `meta.renderFailure`. A failed extraction *prediction*
   records `render_failed`; `preprocessor_output_invalid` is reserved for bytes
   sharp cannot decode.
 - **Fixture review is explicit**: `PATCH /controls/[controlId]` (body
@@ -96,7 +97,8 @@ Rulings the build settled (2026-08-10):
   `.catch([])` wholesale fallback, so one corrupt row degrades to one missing
   tile.
 - **Stage 1+ experiment kinds are refused at create time** (400), not accepted
-  and failed later.
+  and failed later. **Spent 2026-08-11:** every declared kind is runnable as of
+  Stage 3, so the guard and its code are gone (Stage 3 rulings below).
 - **Only a reviewed fixture may be probed**: the runner refuses an unreviewed
   control with `image_lab.control_unreviewed` before any spend, and the
   experiment form greys the tile out with a "review it first" line rather than
@@ -251,6 +253,109 @@ declares intent and records outcomes, nothing more.
   nothing to pick would be an empty select. The recipes allow it, so the form
   re-adds it the day a source exists.
 
+## Stage 3 build rulings (2026-08-11)
+
+The finishing pass rides the same intent path the controlled kinds ride. What
+is new is where its references come from — one of them is another experiment's
+output, the other is the identity pack — and what a reviewer is asked about it.
+
+- **A finishing pass addresses its source by EXPERIMENT id, stored in the row's
+  `meta`.** No migration: `image_lab_experiments.meta` already existed for
+  per-run facts, `sourceExperimentId` is written there at create, and the wire
+  experiment exposes it as a nullable field read back through `parseOr`. The
+  pointer is to the experiment rather than to the base image because a finishing
+  pass is one arm of a three-arm comparison and the arm it is read against is a
+  record — instruction, recipe, pinned version, verdict — of which the image is
+  the visible part.
+  - Consequence, and the one behavior change to the existing kinds: every
+    `meta` write in the runner now MERGES the stored bag instead of assigning
+    it. Assignment was harmless while the bag only ever held the settle's own
+    record; it would silently drop a create-time key. Provably inert for the
+    other five kinds — they write no create-time meta, so the merge is over
+    `{}`.
+- **Finishable sources are the two baselines and the two controlled kinds.** A
+  `control_probe` is refused because it is not a production-shaped render of
+  anybody (hand-ordered inputs, possibly a raw provider bag, possibly no
+  identity reference at all), and a `finishing_pass` is refused because a chain
+  accumulates drift with nothing to attribute it to. Baselines ARE allowed: the
+  direct-edit baseline is one of the three images the plan's comparison holds,
+  and "did the second pass earn its cost?" is asked of it on the same terms.
+  Three separate create-time refusals — `source_not_found`,
+  `source_kind_unsupported`, `source_not_rendered` — because they ask three
+  different things of the admin; the runner re-checks all of it and settles
+  `image_lab.source_invalid`, since a source can be deleted between the queue
+  and the render.
+- **The subject is inherited, never sent.** The create schema refuses a
+  `characterId`/`chatId` on a finishing pass and the service copies both from
+  the source, so the two arms of a comparison can never be filed against
+  different characters. Identity references are drawn for the experiment's own
+  character, falling back to the primary character of its chat (a scene source
+  files against a chat, not a character).
+- **The ordered inputs are resolved by the RUNNER and written back onto the
+  row.** Neither is a fact a client can supply honestly: the base is whatever
+  the source actually rendered at run time, and the pack's selection is a
+  versioned policy decision. The create schema therefore refuses any `inputs` on
+  this kind. Writing the resolved list back is what keeps the record honest —
+  the detail screen shows both references as thumbnails exactly as it does for a
+  hand-ordered kind.
+- **Pack references come from `evaluateIdentityPackForProfile` under
+  `canonical_only`, purpose `admin_trial`.** The pack machinery already owns
+  "which image is this character's identity", measurements and provenance
+  included; re-deriving it in the lab would be a second answer to a settled
+  question. `canonical_only` rather than `canonical_then_face_detail` because
+  the base render already occupies a reference slot: canonical plus face detail
+  would fill the model's three exactly, which is the configuration the Stage 1/2
+  trial watched collapse identity in both of its three-reference runs. The
+  recipe's policy allows a second identity reference so the face-detail arm is a
+  one-value change — which must move `imageLabInputListSchema`'s one-identity
+  cap with it. A pack that offers nothing refuses `image_lab.identity_unavailable`
+  before any spend, carrying the pack's own blocking code in the message.
+  - **The pack GATE (`imageIdentityPackReferencesEnabled`) is deliberately not
+    consulted**, on the identity-pack trial's own precedent: that flag governs
+    whether production lanes send pack references, and a bench measuring what
+    those references are worth cannot be gated on the decision it exists to
+    inform. Nothing here is player-visible; every render is a hidden
+    `lab_output`.
+- **The recipe is `finishing_pass/identity`, task `variant`, one profile for
+  every source kind.** Roles `before` (the source's render) then `identity`,
+  both required, `multi_reference_compose` on `edit` like the controlled
+  recipes. `before` is the render-intent vocabulary's own word for "the starting
+  state this render transforms", so the existing role binding describes it with
+  no new wording. The task stays `variant` even when the source was a scene: the
+  task decides which screening `profileEligibility` applies, and a finishing
+  pass is an identity operation — screening it as a scene would test the model
+  for composition the pass is under orders not to touch.
+- **The instruction is fixed text plus an optional narrowing.** The runner sends
+  `imageLabFinishingInstruction(row.instruction)` — a preamble naming both
+  halves of the plan's promotion rule (correct the face toward the reference;
+  keep pose, body, hands, clothing, camera, framing, lighting, colour and
+  setting exactly as they are), then the admin's own text after a blank line
+  when they wrote any. The rule is not editable, because a run whose claim is
+  "one thing changed" cannot let that claim be deleted. Hair sits on the
+  identity side of the preamble: hairline and hair colour are identity signal,
+  and the Stage 1/2 drift the pass exists to fix included them.
+- **The raw `controlInput` bag is refused here too** (`settings_unsupported`,
+  the controlled kinds' own refusal, now shared) — a recipe run proves a
+  production-shaped request, and production has no raw bag.
+- **Verdicts split into two vocabularies over one column.**
+  `imageLabProbeVerdicts` is unchanged; `imageLabFinishingVerdicts` is
+  `improves_identity` / `identity_unchanged` / `changes_beyond_identity` /
+  `inconclusive` — the outcomes the plan's promotion rule produces, since
+  "honours the control" cannot be asked of a run that sends no control.
+  `imageLabVerdicts` is the union the row's `verdict` column and the wire
+  request speak, `imageLabVerdictOptions(kind)` is the per-kind gate, and the
+  service refuses a ruling from the other kind's vocabulary
+  (`verdict_not_in_vocabulary`). One column rather than a second field: an
+  experiment records exactly one ruling whatever kind it is. No migration — the
+  column is plain `text` (drizzle's `{ enum }` is a TypeScript refinement, not a
+  check constraint).
+- **`image_lab.kind_unsupported` is gone.** It existed only while
+  `finishing_pass` was declared but unbuilt. Every declared kind now has a runner
+  arm, which the exhaustive dispatch enforces at compile time, so the create-time
+  kind guard and its code were removed rather than left as unreachable code (the
+  2026-08-10 ruling "Stage 1+ experiment kinds are refused at create time" is
+  spent).
+
 ## Contracts
 
 New file `src/contracts/images/image-lab.ts` (pure; exported via
@@ -291,6 +396,25 @@ Stage 1/2 additions (2026-08-11): `imageLabVerdictKinds` /
 `settings_unsupported` failure code, create-request rules requiring a character
 on `controlled_portrait` and a chat on `controlled_scene`, and the sibling file
 `image-lab-recipes.ts` carrying the recipe profiles (Stage 1/2 rulings above).
+
+Stage 3 additions (2026-08-11):
+
+- `imageLabFinishingVerdicts` and the `imageLabVerdicts` union both sub-tuples
+  `satisfies`; `imageLabVerdictSchema` on the wire experiment's `verdict` and on
+  the record-verdict request; `imageLabVerdictOptions(kind)` (the per-kind gate,
+  `null` for baselines) and `isImageLabVerdictForKind`. `finishing_pass` joins
+  `imageLabVerdictKinds`.
+- `sourceExperimentId` on the wire experiment — nullable, `.catch(null)`,
+  read out of `meta`.
+- Create-request rules: a `finishing_pass` names `sourceExperimentId` and
+  refuses `inputs`, `characterId`, `chatId`, `controlImageId` and `controlKind`;
+  every other kind refuses `sourceExperimentId`.
+- Failure codes `source_invalid` and `identity_unavailable`.
+- In `image-lab-recipes.ts`: `IMAGE_LAB_FINISHING_RECIPE_KEY`,
+  `IMAGE_LAB_FINISHING_IDENTITY_STRATEGY`, `imageLabFinishingRecipeProfile`,
+  `imageLabFinishableKinds` / `isImageLabFinishableKind`.
+- In `src/lib/images/image-lab-instruction.ts`:
+  `imageLabFinishingInstruction(ownerInstruction)`.
 
 ## Ownership rules
 
@@ -351,6 +475,28 @@ the experiment. `baseline_scene` does the same through the scene profile and
 the chat's current reference anchor. Both record profile id, model version,
 and final prompt so a later comparison can show settings parity. Neither
 enqueues the lane's own job type nor writes lane-visible assets.
+
+### Finishing pass run (`finishing_pass`, Stage 3)
+
+Every step before the render is a refusal that costs nothing, in this order:
+
+1. Read `meta.sourceExperimentId`; absent or unreadable → `source_invalid`.
+2. Load that experiment owner-scoped and re-check it: finishable kind,
+   `succeeded`, holding a `resultImageId` → otherwise `source_invalid`.
+3. `pinnedImageModelVersion` → `version_unpinned` without one, exactly as the
+   controlled kinds.
+4. A non-empty raw `controlInput` → `settings_unsupported`.
+5. Read the source's result bytes → `input_missing` if unreadable.
+6. Resolve the subject (the row's character, else the chat's primary character)
+   and evaluate its identity pack under `canonical_only` → `identity_unavailable`
+   with the pack's own code when it offers nothing, or when no candidate's bytes
+   can be read.
+7. Write the resolved ordered inputs onto the row (`before` at position 1, then
+   the identity references), then run the shared recipe path — eligibility,
+   `planImageRender`, recorded outcome, pinned render, `storeLabRender` —
+   under `imageLabFinishingRecipeProfile`. Provenance on the stored output is
+   the BASE render, not the identity reference: the result is that image with
+   one thing changed.
 
 ### Control extraction
 
@@ -437,8 +583,15 @@ asserting fallback **and** code:
   record claiming a control the provider never received. **Probe only:** a
   controlled run's plan records what was sent, so it trims optionals and writes
   every drop into the outcome instead (Stage 1/2 rulings).
-- Controlled run carrying a raw `controlInput` bag →
+- Controlled run OR finishing pass carrying a raw `controlInput` bag →
   `image_lab.settings_unsupported`, refused before any provider spend.
+- Finishing pass whose source experiment is missing, of an unfinishable kind, or
+  holding no result image → `image_lab.source_invalid`, refused before any
+  provider spend. Checked again at run time because a source can be deleted
+  between the queue and the render.
+- Finishing pass whose subject offers no identity-pack reference →
+  `image_lab.identity_unavailable`, refused before any provider spend, with the
+  pack's own blocking code carried in the recorded message.
 - Controlled run whose plan refuses (required role missing, required control
   input unfilled, strategy uncompilable) → the intent path's own
   `image_profile.*` code settles onto the row verbatim, never a thrown 500.
@@ -455,7 +608,8 @@ asserting fallback **and** code:
 - `src/contracts/images/image-lab.ts` — contracts above; exported from
   `src/contracts/index.ts`.
 - `src/contracts/images/image-lab-recipes.ts` — the controlled-kind recipe
-  profiles (pure; exported from `src/contracts/index.ts`).
+  profiles and the Stage 3 finishing recipe (pure; exported from
+  `src/contracts/index.ts`).
 - `src/server/images/image-lab.ts` — experiment service (create, list, detail,
   delete, run, record verdict); exported via `src/server/images/index.ts`.
 - `src/server/images/image-lab-controls.ts` — extraction service + edge-map
@@ -472,8 +626,10 @@ asserting fallback **and** code:
   `pnpm lint:authz`'s census.
 - `src/lib/images/image-lab-instruction.ts` — the pure numbered-role
   instruction-template builder the form pre-fills (identity sentence + per-kind
-  control sentence + structure-only closing), and `imageLabControlRole`
-  (pose→`pose`, depth→`depth`, edge→`control`).
+  control sentence + structure-only closing), `imageLabControlRole`
+  (pose→`pose`, depth→`depth`, edge→`control`), and the finishing pass's fixed
+  preamble (`imageLabFinishingInstruction`), which the runner sends and the form
+  previews from the same function.
 - `src/app/settings/image-lab/page.tsx` →
   `src/components/settings/image-lab-page.tsx` (+ small subcomponents beside
   the identity-trial ones): fixtures panel (extract form with portrait picker,
@@ -653,6 +809,34 @@ independently agreed with every owner verdict:
   control is the proven configuration; wardrobe/outfit delivery is deferred
   future work, carried as an open question on the
   [plan](qwen-advanced-image-subsystem.plan.md).
+
+## Stage 3 finishing trial protocol
+
+Owner work, on the Fly deploy with the uxtest fixtures. Not run — the code is
+built and waiting on these runs.
+
+1. Pick controlled results whose identity drifted while their structure held —
+   the Stage 1/2 corpus names two directly (depth portrait
+   `ilv0sd7v3sncf3xohl4rk2uu`, edge portrait `xtyuelauhebdns9rz7piasa5`, both
+   structurally right with faces slimmer than the reference). That drift is
+   exactly what a finishing pass is supposed to fix.
+2. For each, create a `finishing_pass` naming it as the source. Leave the
+   instruction blank on the first run of each pair, so the fixed rule is the only
+   variable; add a narrowing ("the jaw is too narrow") only on a second run.
+3. Run one finishing pass over the paired direct-edit BASELINE too
+   (`ssuucjcm6h5xew3z8c39gaw6` is the Stage 1/2 pairing). The plan's comparison is
+   three-armed, and a pass that improves the baseline as much as the controlled
+   result says something about the pass rather than about control maps.
+4. Read each detail screen's before/after pair side by side and record a ruling
+   with a note: `improves_identity` only when the face is closer AND pose,
+   clothing, body, camera, lighting and setting are unchanged;
+   `changes_beyond_identity` the moment anything else moved, whatever happened to
+   the face.
+5. Judge the cost question explicitly in the notes: the plan warns that a second
+   pass of the SAME model is a weak prior, so a tally weighted toward
+   `identity_unchanged` is a real Stage 3 answer, not a failed trial.
+6. Write the verdicts into this spec and flip the plan's Stage 3 status line when
+   the owner accepts them.
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 
