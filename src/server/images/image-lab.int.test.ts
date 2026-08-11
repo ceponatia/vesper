@@ -872,7 +872,10 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     expect(controls[0]?.meta.controlKind).toBe("edge");
     expect(controls[0]?.meta.generator).toBe("computed_edge");
     expect(controls[0]?.meta.sourceImageId).toBe(sourceId);
-    expect(controls[0]?.meta.reviewNote).toBe("edge pass over the sofa shot");
+    // The extraction's note is the fixture's ORIGIN note — what it was made for.
+    // A later review writes `reviewNote` and leaves this standing.
+    expect(controls[0]?.meta.originNote).toBe("edge pass over the sofa shot");
+    expect(controls[0]?.meta.reviewNote).toBeUndefined();
     // No preprocessor pin is recorded, because none ran.
     expect(controls[0]?.meta.preprocessorSlug).toBeUndefined();
   });
@@ -1003,7 +1006,12 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     if (result.ok) {
       expect(result.control.meta.generator).toBe("hand_authored");
       expect(result.control.meta.controlKind).toBe("pose");
-      expect(result.control.meta.reviewNote).toBe("drawn over the sofa shot");
+      // The upload's note is the fixture's origin note, exactly as an
+      // extraction's is: it says what the drawing was for, not that anyone has
+      // looked at it.
+      expect(result.control.meta.originNote).toBe("drawn over the sofa shot");
+      expect(result.control.meta.reviewNote).toBeUndefined();
+      expect(result.control.meta.reviewedAt).toBeUndefined();
     }
 
     const [row] = await db()
@@ -1014,15 +1022,27 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     expect(row?.status).toBe("ready");
   });
 
-  it("records a review that persists and still parses as a wire fixture", async () => {
-    const controlId = await seedControlFixture("pose", { reviewed: false });
+  it("records a review that persists, still parses as a wire fixture, and spares the origin note", async () => {
     const sink = new DiagnosticCollector();
+    // Created through the upload path CARRYING its note, because the regression
+    // this guards is a review landing on the annotation that path wrote: the two
+    // shared one meta field once, so reviewing a fixture erased what it was for.
+    const uploaded = await uploadImageLabControl({
+      ownerId,
+      controlKind: "pose",
+      buffer: await testPngBuffer(),
+      note: "drawn over the sofa shot",
+      sink,
+    });
+    if (!uploaded.ok) throw new Error(`the upload path refused a valid fixture: ${uploaded.error}`);
+    const controlId = uploaded.control.imageId;
 
     const reviewed = await reviewImageLabControl(ownerId, controlId, "skeleton reads cleanly; both wrists resolved", sink);
     expect(reviewed?.ok).toBe(true);
     if (reviewed?.ok) {
       expect(reviewed.control.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
       expect(reviewed.control.meta.reviewedAt).toBeTruthy();
+      expect(reviewed.control.meta.originNote).toBe("drawn over the sofa shot");
       // The panel re-parses what the route hands it, so a review that produced
       // a shape the wire schema rejects would empty the fixtures list rather
       // than showing an unreviewed tile.
@@ -1030,10 +1050,12 @@ describe.skipIf(!ready)("image lab control fixtures", () => {
     }
 
     // Stored, not merely returned — and MERGED onto the shared meta bag, so the
-    // row's own `hidden` flag is still there beside the review.
+    // row's own `hidden` flag is still there beside the review, and so is the
+    // origin note the upload wrote.
     const [listed] = await listImageLabControls(ownerId, sink);
     expect(listed?.meta.reviewedAt).toBeTruthy();
     expect(listed?.meta.reviewNote).toBe("skeleton reads cleanly; both wrists resolved");
+    expect(listed?.meta.originNote).toBe("drawn over the sofa shot");
     expect(listed?.meta.generator).toBe("hand_authored");
     const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, controlId)).limit(1);
     expect(imageMeta(row?.meta).hidden).toBe(true);

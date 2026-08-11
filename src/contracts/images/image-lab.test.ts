@@ -80,10 +80,33 @@ describe("imageLabControlMetaSchema", () => {
       sourceImageId: "img_source",
       preprocessorSlug: "some/pose-preprocessor",
       preprocessorVersionId: "ver_123",
+      originNote: "edge pass over the sofa shot",
       reviewedAt: "2026-08-10T12:00:00.000Z",
       reviewNote: "limbs read clearly",
     };
     expect(imageLabControlMetaSchema.parse(meta)).toEqual(meta);
+  });
+
+  it("keeps the create path's note apart from the review's", () => {
+    // The two notes shared one field once, which made marking a fixture reviewed
+    // destroy the record of what it was made for. They are separate fields, and a
+    // fixture may carry either alone.
+    const madeNotReviewed = imageLabControlMetaSchema.parse({
+      controlKind: "pose",
+      generator: "hand_authored",
+      originNote: "drawn over the sofa shot",
+    });
+    expect(madeNotReviewed.originNote).toBe("drawn over the sofa shot");
+    expect(madeNotReviewed.reviewNote).toBeUndefined();
+
+    const reviewedNotAnnotated = imageLabControlMetaSchema.parse({
+      controlKind: "pose",
+      generator: "hand_authored",
+      reviewedAt: "2026-08-10T12:00:00.000Z",
+      reviewNote: "limbs read clearly",
+    });
+    expect(reviewedNotAnnotated.originNote).toBeUndefined();
+    expect(reviewedNotAnnotated.reviewNote).toBe("limbs read clearly");
   });
 
   it("accepts a hand-authored skeleton with no source and no review yet", () => {

@@ -77,10 +77,10 @@ Rulings the build settled (2026-08-10):
   sharp cannot decode.
 - **Fixture review is explicit**: `PATCH /controls/[controlId]` (body
   `imageLabReviewControlRequestSchema`) stamps `reviewedAt` server-side and
-  merges onto the raw image meta so the `hidden` flag and encode metadata
-  survive; `DELETE /controls/[controlId]` removes a fixture, and a citing
-  experiment keeps its recorded settings with `controlImageId` nulled by the
-  FK.
+  merges onto the raw image meta so the `hidden` flag, encode metadata, and the
+  fixture's `originNote` survive; `DELETE /controls/[controlId]` removes a
+  fixture, and a citing experiment keeps its recorded settings with
+  `controlImageId` nulled by the FK.
 - **Client lists drop bad elements, not whole lists**: the UI parses list
   responses element-wise (`listOf`) rather than with the contracts'
   `.catch([])` wholesale fallback, so one corrupt row degrades to one missing
@@ -148,8 +148,11 @@ redeclares — `imageReferenceRoles` from `image-model-capabilities.ts`.
   one `identity` role in Stage 0, roles limited to the reference-role
   vocabulary.
 - `imageLabControlMetaSchema` — `{ controlKind, generator, sourceImageId?,
-  preprocessorSlug?, preprocessorVersionId?, reviewedAt?, reviewNote? }` —
-  stored in `images.meta` for `lab_control` assets.
+  preprocessorSlug?, preprocessorVersionId?, originNote?, reviewedAt?,
+  reviewNote? }` — stored in `images.meta` for `lab_control` assets.
+  `originNote` carries the annotation from whichever path created the fixture
+  (the extraction request or the hand-authored upload) and records what it was
+  made for; `reviewNote` carries the reviewer's ruling.
 - `imageLabProbeVerdicts = ["honours_control", "ignores_control",
   "inconclusive"]` — recorded on `control_probe` experiments by the reviewing
   admin.
@@ -330,10 +333,11 @@ asserting fallback **and** code:
 - `src/app/settings/image-lab/page.tsx` →
   `src/components/settings/image-lab-page.tsx` (+ small subcomponents beside
   the identity-trial ones): fixtures panel (extract form with portrait picker,
-  upload, review notes) and experiments panel (create form with instruction
-  template pre-fill, painting-tile pending state per the PR #70 pattern,
-  list with side-by-side result/source/control, detail drawer showing the full
-  recorded settings). Settings nav gains an admin-only "Image Lab" link.
+  upload, origin and review notes) and experiments panel (create form with
+  instruction template pre-fill, painting-tile pending state per the PR #70
+  pattern, list with side-by-side result/source/control, detail drawer showing
+  the full recorded settings). Settings nav gains an admin-only "Image Lab"
+  link.
 - `src/lib/client/api.ts` — `imageLabApi` client wrappers.
 
 ## Fixtures and tests

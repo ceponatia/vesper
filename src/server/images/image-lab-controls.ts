@@ -245,7 +245,8 @@ export interface RunImageLabControlExtractionInput {
   /** The render a fixture is derived from. Owner-scoped; a foreign id is a miss. */
   sourceImageId: string;
   controlKinds: readonly ImageLabControlKind[];
-  /** The admin's annotation, carried onto every fixture this call produces. */
+  /** The admin's annotation, carried onto every fixture this call produces as its
+   * `originNote` — what the extraction was for, which no later review overwrites. */
   note?: string;
   sink?: DiagnosticSink;
 }
@@ -358,7 +359,7 @@ async function extractOneControl(input: ExtractOneControlInput): Promise<Extract
     generator: imageLabExtractionGenerator(controlKind),
     sourceImageId: input.sourceImageId,
     ...(pin ? { preprocessorSlug: pin.slug, preprocessorVersionId: pin.versionId } : {}),
-    ...(input.note ? { reviewNote: input.note } : {}),
+    ...(input.note ? { originNote: input.note } : {}),
   };
   const stored = await storeControlFixture({ ownerId, meta, buffer: produced.buffer, sink });
   if (!stored) {
@@ -535,6 +536,8 @@ export interface UploadImageLabControlInput {
   buffer: Buffer;
   /** What the skeleton was drawn over, when it was drawn over something. */
   sourceImageId?: string;
+  /** The admin's annotation, stored as the fixture's `originNote` — how it was
+   * drawn, which no later review overwrites. */
   note?: string;
   sink?: DiagnosticSink;
 }
@@ -558,7 +561,7 @@ export async function uploadImageLabControl(input: UploadImageLabControlInput): 
     controlKind: input.controlKind,
     generator: "hand_authored",
     ...(input.sourceImageId ? { sourceImageId: input.sourceImageId } : {}),
-    ...(input.note ? { reviewNote: input.note } : {}),
+    ...(input.note ? { originNote: input.note } : {}),
   };
   const stored = await storeControlFixture({ ownerId: input.ownerId, meta, buffer: input.buffer, sink: input.sink });
   if (!stored) return { ok: false, error: "could not store that control fixture" };
@@ -595,7 +598,11 @@ function controlInvalid(message: string): ImageLabRefusal {
  * The stored bag is MERGED, not replaced. `images.meta` is shared — a ready row
  * also carries the encode metadata the save path wrote — so assigning the
  * fixture's own fields over it would make a review a lossy write wearing an
- * annotation's clothes.
+ * annotation's clothes. The merge is also what carries the create path's
+ * `originNote` through untouched, which is the point of the two notes being two
+ * fields: ruling on a fixture must not erase the record of what it was made
+ * for, because "the fixture was wrong" and "the fixture was for something else"
+ * are different readings of the same `ignores_control` verdict.
  *
  * Null when the image is not this owner's, indistinguishable from never having
  * existed, so the route never confirms a foreign image. An image that IS this
