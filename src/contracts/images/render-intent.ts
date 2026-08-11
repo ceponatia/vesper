@@ -1,5 +1,9 @@
 import { referenceCapacity, type ImageModel } from "./image-models";
-import type { ImageReferenceRole } from "./image-model-capabilities";
+import {
+  isImageControlReferenceRole,
+  type ImageBindingArity,
+  type ImageReferenceRole,
+} from "./image-model-capabilities";
 import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-profiles";
 
 /**
@@ -25,11 +29,9 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
 /**
  * One reference a lane wants to send, minus its bytes.
  *
- * `role` is the point of the whole type. `required` and `priority` exist for the
- * role-aware selector (slice 3), which sorts required references ahead of
- * optional ones and profile role order ahead of numeric priority; until it
- * lands, {@link selectIntentReferences} keeps caller order and only enforces the
- * required roles a profile declares.
+ * `role` is the point of the whole type. `required` and `priority` feed
+ * {@link planIntentReferences}, which sorts required references ahead of
+ * optional ones and profile role order ahead of numeric priority.
  *
  * `sourceImageId` and `name` are provenance, not payload: they let a diagnostic
  * say which stored asset was dropped rather than "reference 3".
@@ -96,33 +98,327 @@ export function missingRequiredReferenceRoles(
   return policy.requiredRoles.filter((role) => !present.has(role));
 }
 
-/** References the model will actually receive, and the ones capacity left behind. */
-export interface SelectedImageReferences<T extends ImageRenderReferenceSpec> {
-  selected: T[];
-  /** Dropped in caller order, so a diagnostic can name the roles that did not fit. */
-  dropped: T[];
+/**
+ * Why a reference the lane offered will not be sent.
+ *
+ * Three genuinely different operator answers, which is why this is not one
+ * "dropped" bucket: `role_not_allowed` means the profile is configured for a
+ * different job, `role_cap` means the profile itself asked for fewer of this
+ * role, and `model_capacity` means the model has no slot left. Only the last is
+ * about scarcity, and only the last changes if you pick a bigger model.
+ */
+export type ImageReferenceDropReason = "role_not_allowed" | "role_cap" | "model_capacity";
+
+export interface DroppedImageReference<T extends ImageRenderReferenceSpec> {
+  reference: T;
+  reason: ImageReferenceDropReason;
 }
 
 /**
- * Trim an intent's references to what the model can accept.
+ * How a structural control image reaches the provider.
  *
- * Caller order is preserved and nothing is reordered. That is the current
- * behavior of every lane — the scene chain already slices to
- * `attemptReferenceCount`, and the single-reference lanes send exactly one — and
- * preserving it is what makes routing the lanes through the intent a change of
- * plumbing rather than a change of renders.
+ * `dedicated_input` is a version that declares its own field for the role — the
+ * ControlNet-style shape `additionalImageInputs` records. Such an image does NOT
+ * compete for the primary reference field's slots, which is the whole reason the
+ * distinction is drawn here rather than left to the transport.
  *
- * Priority selection by role is slice 3's job, and it is a real behavior change:
- * it is what stops a three-reference scene on a two-reference model from
- * dropping whichever reference happened to be last, rather than whichever
- * matters least. The `dropped` half of this result is already reported so that
- * change arrives with the diagnostic that explains it.
+ * `numbered_reference` is the other real answer, and today's only live one: the
+ * model takes control maps as ordinary numbered images in its primary reference
+ * array, with the prompt saying which slot is the skeleton. Qwen Image Edit 2511
+ * works exactly this way — the Stage 0 probes confirmed it honours pose and
+ * depth sent that way (docs/developer-notes/qwen-advanced-image-subsystem.plan.md)
+ * — so a control on that path is scarce like any other reference and is ordered
+ * with them.
  */
-export function selectIntentReferences<T extends ImageRenderReferenceSpec>(
+export type ControlReferenceTransport =
+  | { kind: "dedicated_input"; field: string; arity: ImageBindingArity; maxItems: number }
+  | { kind: "numbered_reference" };
+
+/**
+ * How this model takes a control image of this role.
+ *
+ * A version's `additionalImageInputs` is the only source: the probe records what
+ * the schema declares, and nothing here guesses a field name. No seeded model
+ * declares one today, so every control currently resolves to
+ * `numbered_reference` — the same array Stage 0 proved 2511 obeys.
+ *
+ * The FIRST matching entry wins when a version declares several for one role.
+ * That is a probe-side ambiguity rather than a render-time choice, and picking
+ * deterministically beats refusing a render over a duplicate the operator can
+ * see in the capability record.
+ */
+export function controlReferenceTransport(model: ImageModel, role: ImageReferenceRole): ControlReferenceTransport {
+  if (!isImageControlReferenceRole(role)) return { kind: "numbered_reference" };
+  const declared = model.advancedCapabilities.additionalImageInputs.find((input) => input.roleHint === role);
+  if (!declared) return { kind: "numbered_reference" };
+  // A binding that names the PRIMARY reference field is not a dedicated input at
+  // all — it is the numbered array, described twice. Treating it as dedicated
+  // would have the transport overwrite the whole reference list with the control
+  // image, so the honest reading of "pose goes in `image`" is the one the probe
+  // meant: it rides the numbered references.
+  if (declared.binding.field === model.referenceField) return { kind: "numbered_reference" };
+  // A `single` field holds one image whatever `maxItems` says; an `array` field
+  // holds what it declared, and an array that declared no limit is unbounded as
+  // far as anything here can tell — the profile's own `maxPerRole` is then the
+  // only cap, which is the right place for a judgment call the schema did not make.
+  const declaredMax = declared.binding.arity === "single" ? 1 : (declared.binding.maxItems ?? Number.POSITIVE_INFINITY);
+  return { kind: "dedicated_input", field: declared.binding.field, arity: declared.binding.arity, maxItems: declaredMax };
+}
+
+/** Images bound to one dedicated provider input, in send order. */
+export interface DedicatedControlInput<T extends ImageRenderReferenceSpec> {
+  field: string;
+  arity: ImageBindingArity;
+  references: T[];
+}
+
+/**
+ * Dedicated image inputs this version REQUIRES that the render has nothing to
+ * put in, as `{ field, roleHint }` pairs.
+ *
+ * `imageUriBindingSchema.required` is not optional for exactly this reason: it
+ * records whether the model refuses to run without the image. A render missing
+ * one is a provider rejection that has already cost a round trip, so it is
+ * refused here instead — the same argument as
+ * {@link missingRequiredReferenceRoles}, one layer down, about the version's
+ * demand rather than the profile's.
+ *
+ * A binding that resolves to `numbered_reference` is skipped: its image is not
+ * going to a field of its own, so a field of its own cannot be empty. That
+ * covers the primary-reference-field alias and every content role.
+ *
+ * Empty on every model Vesper runs today, since none declares an
+ * `additionalImageInputs` entry at all.
+ */
+export function missingRequiredControlInputs<T extends ImageRenderReferenceSpec>(
   model: ImageModel,
+  dedicated: readonly DedicatedControlInput<T>[],
+): { field: string; roleHint: ImageReferenceRole }[] {
+  const filled = new Set(dedicated.filter((input) => input.references.length > 0).map((input) => input.field));
+  return model.advancedCapabilities.additionalImageInputs
+    .filter((input) => input.binding.required && !filled.has(input.binding.field))
+    .filter((input) => controlReferenceTransport(model, input.roleHint).kind === "dedicated_input")
+    .map((input) => ({ field: input.binding.field, roleHint: input.roleHint }));
+}
+
+/** Every reference decision a render makes before a byte leaves the process. */
+export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
+  /** The primary reference field's images, in SEND order. */
+  primary: T[];
+  /** Control images that have their own provider field, grouped by that field. */
+  dedicated: DedicatedControlInput<T>[];
+  /** Everything not sent, in CALLER order, each with the reason it was left out. */
+  dropped: DroppedImageReference<T>[];
+  /**
+   * Whether any sent reference occupies a different SLOT than the caller's own
+   * order would have given it.
+   *
+   * Load-bearing, not a statistic. A lane that numbers its references in the
+   * prompt — `buildSceneRenderPrompt` writes "Image 2: the location" — builds
+   * that text from its OWN order, before this function runs. If the slot numbers
+   * move, the text and the payload disagree and the model is told the room is the
+   * person.
+   *
+   * It is slot equality, not sort-order inversion, because REMOVAL renumbers just
+   * as surely as reordering: drop or dedicate the second of three references and
+   * the third arrives as image two while the prompt still calls it image three.
+   * Trimming from the TAIL renumbers nothing and does not trigger it, which is
+   * why the common capacity trim stays quiet.
+   */
+  renumbered: boolean;
+}
+
+/**
+ * Choose which references this render sends, in what order, and on which fields
+ * (image-model-capabilities.spec.md §"Reference policy").
+ *
+ * This is slice 3's priority selection and slice 9's control-role binding in one
+ * function, because they are one decision: whether a control map competes for a
+ * scarce primary slot depends on whether this version gave it a field of its
+ * own, and answering that after selection would mean selecting against a
+ * capacity that was wrong.
+ *
+ * The order of operations, and why each step is where it is:
+ *
+ * 1. **Bind control roles first.** A control with a dedicated input leaves the
+ *    primary contest entirely, so capacity is computed over what actually
+ *    competes.
+ * 2. **Drop roles the policy does not allow.** An EMPTY `allowedRoles` is "no
+ *    allowlist declared", never "nothing allowed" — the four seeded `generate`
+ *    profiles carry `[]` and legitimately send nothing, and reading emptiness as
+ *    a ban would refuse every reference the day a lane started sending one. A
+ *    role the policy REQUIRES is implicitly allowed, so a policy that lists a
+ *    required role only under `requiredRoles` cannot make itself unsatisfiable.
+ * 3. **Sort.** Required before optional; within that, `roleOrder` position, then
+ *    numeric priority descending, then the caller's own order. Roles absent from
+ *    `roleOrder` sort after every role in it — an unranked role is not
+ *    implicitly first.
+ * 4. **Apply per-role caps, then capacity.** In that order, because a cap is a
+ *    profile's own decision and capacity is the model's: reporting `role_cap`
+ *    for an image the profile itself would not have sent is the more useful
+ *    answer, and it does not change if the operator picks a bigger model.
+ *
+ * The empty-policy case must be a NO-OP, and that is what keeps this change from
+ * rewriting live renders: with no allowlist, no `roleOrder`, no priorities and
+ * no caps, every comparison ties and the caller's order survives to the
+ * capacity slice — byte-for-byte what the positional trim did before.
+ */
+export function planIntentReferences<T extends ImageRenderReferenceSpec>(
+  model: ImageModel,
+  policy: ImageReferencePolicy,
   references: readonly T[],
-): SelectedImageReferences<T> {
-  const { max } = referenceCapacity(model);
-  if (max <= 0) return { selected: [], dropped: [...references] };
-  return { selected: references.slice(0, max), dropped: references.slice(max) };
+): PlannedImageReferences<T> {
+  const allowed = new Set<ImageReferenceRole>([...policy.allowedRoles, ...policy.requiredRoles]);
+  const caps = policy.maxPerRole ?? {};
+  // Every reference keeps its caller index for as long as it is being decided
+  // about: the sort's last tie-break needs it, and so does the caller-order
+  // guarantee on `dropped`.
+  const competing: RankedReference<T>[] = [];
+  const bound: BoundControlReference<T>[] = [];
+  const drops: (DroppedImageReference<T> & { index: number })[] = [];
+
+  references.forEach((reference, index) => {
+    if (allowed.size > 0 && !allowed.has(reference.role)) {
+      drops.push({ reference, reason: "role_not_allowed", index });
+      return;
+    }
+    const transport = controlReferenceTransport(model, reference.role);
+    if (transport.kind === "dedicated_input") {
+      bound.push({ reference, index, field: transport.field, arity: transport.arity, maxItems: transport.maxItems });
+      return;
+    }
+    competing.push({ reference, index });
+  });
+
+  const capacity = referenceCapacity(model).max;
+  const perRole = new Map<ImageReferenceRole, number>();
+  const primary: RankedReference<T>[] = [];
+
+  // Sorted on a COPY: the caller's array is not ours to reorder, and `competing`
+  // is derived from it by reference.
+  for (const entry of [...competing].sort((left, right) => compareReferences(left, right, policy.roleOrder))) {
+    const cap = caps[entry.reference.role];
+    const used = perRole.get(entry.reference.role) ?? 0;
+    if (cap !== undefined && used >= cap) {
+      drops.push({ ...entry, reason: "role_cap" });
+      continue;
+    }
+    if (primary.length >= capacity) {
+      drops.push({ ...entry, reason: "model_capacity" });
+      continue;
+    }
+    perRole.set(entry.reference.role, used + 1);
+    primary.push(entry);
+  }
+
+  const dedicated = groupDedicated(bound, caps, drops);
+
+  // Dropped in CALLER order so a diagnostic reads in the order the lane thinks
+  // about its references, not the order the comparator happened to visit them.
+  // Sorted ONCE, after every source of drops has contributed — the dedicated
+  // grouping is the last of them.
+  drops.sort((left, right) => left.index - right.index);
+
+  return {
+    primary: primary.map((entry) => entry.reference),
+    dedicated,
+    dropped: drops.map(({ reference, reason }) => ({ reference, reason })),
+    // Slot equality: the reference the caller put at index N is the one arriving
+    // as image N+1. Any mismatch — a reorder, or a removal from ahead of a kept
+    // reference — means the lane's own numbering no longer describes the payload.
+    renumbered: primary.some((entry, position) => entry.index !== position),
+  };
+}
+
+/** One reference plus the caller position that breaks its ties. */
+interface RankedReference<T extends ImageRenderReferenceSpec> {
+  reference: T;
+  index: number;
+}
+
+interface BoundControlReference<T extends ImageRenderReferenceSpec> extends RankedReference<T> {
+  field: string;
+  arity: ImageBindingArity;
+  /** The field's own ceiling, from its declared arity and `maxItems`. */
+  maxItems: number;
+}
+
+/**
+ * Sort one pair of competing references: required, then profile role order, then
+ * caller priority, then the order the caller supplied them in.
+ */
+function compareReferences<T extends ImageRenderReferenceSpec>(
+  left: RankedReference<T>,
+  right: RankedReference<T>,
+  ranked: readonly ImageReferenceRole[],
+): number {
+  const requiredDelta = Number(right.reference.required ?? false) - Number(left.reference.required ?? false);
+  if (requiredDelta !== 0) return requiredDelta;
+
+  const rankDelta = roleRank(left.reference.role, ranked) - roleRank(right.reference.role, ranked);
+  if (rankDelta !== 0) return rankDelta;
+
+  // Descending: a higher number is a stronger claim on a slot. An unset priority
+  // is not zero — it sorts after every set value, so adding a priority to one
+  // reference never silently demotes the ones that never carried one. Both unset
+  // is a tie, which is why this is a three-way comparison rather than an
+  // arithmetic difference (`-Infinity` minus itself is NaN, and a NaN comparator
+  // silently corrupts the sort).
+  const priorityDelta = comparePriority(left.reference.priority, right.reference.priority);
+  if (priorityDelta !== 0) return priorityDelta;
+
+  return left.index - right.index;
+}
+
+/** Higher priority first; an unset priority sorts after every set one; both unset ties. */
+function comparePriority(left: number | undefined, right: number | undefined): number {
+  if (left === right) return 0;
+  if (left === undefined) return 1;
+  if (right === undefined) return -1;
+  return right - left;
+}
+
+/** A role's position in the profile's order; unranked roles sort after every ranked one. */
+function roleRank(role: ImageReferenceRole, ranked: readonly ImageReferenceRole[]): number {
+  const index = ranked.indexOf(role);
+  return index === -1 ? ranked.length : index;
+}
+
+/**
+ * Group dedicated-input controls by their provider field, enforcing the field's
+ * own arity and the profile's per-role cap.
+ *
+ * A `single` field takes ONE image: a second is dropped as `role_cap` rather
+ * than overwriting the first or being sent as an array the schema does not
+ * declare. That is the same answer `buildRegistryModelInput` gives the primary
+ * reference field, and giving a different one here would make "how many images
+ * fit" depend on which field they landed on.
+ *
+ * `role_cap` covers both ceilings — the profile's `maxPerRole` and the field's
+ * own declared limit — because they are the same answer to an operator: fewer
+ * of this role will be sent than were offered, and a bigger model does not
+ * change it. Only primary-array scarcity is `model_capacity`.
+ */
+function groupDedicated<T extends ImageRenderReferenceSpec>(
+  bound: readonly BoundControlReference<T>[],
+  caps: Partial<Record<ImageReferenceRole, number>>,
+  drops: (DroppedImageReference<T> & { index: number })[],
+): DedicatedControlInput<T>[] {
+  const groups = new Map<string, DedicatedControlInput<T>>();
+  const perRole = new Map<ImageReferenceRole, number>();
+
+  for (const entry of bound) {
+    const cap = caps[entry.reference.role];
+    const used = perRole.get(entry.reference.role) ?? 0;
+    const group = groups.get(entry.field) ?? { field: entry.field, arity: entry.arity, references: [] };
+    if (group.references.length >= entry.maxItems || (cap !== undefined && used >= cap)) {
+      drops.push({ reference: entry.reference, reason: "role_cap", index: entry.index });
+      continue;
+    }
+    perRole.set(entry.reference.role, used + 1);
+    group.references.push(entry.reference);
+    groups.set(entry.field, group);
+  }
+
+  return [...groups.values()];
 }

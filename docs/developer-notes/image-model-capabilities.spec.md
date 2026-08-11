@@ -36,14 +36,14 @@ all seven player-facing render lanes call it on every render.
 | Advanced capability contract        | shipped; probe fills nothing    |
 | `image_model_profiles`              | shipped 2026-08-05 (mig 0100)   |
 | Profile task eligibility            | shipped 2026-08-05              |
-| Reference policy                    | roles + required; no priority   |
+| Reference policy                    | shipped 2026-08-11 (slice 3)    |
 | Normalized controls                 | shipped 2026-08-05              |
 | `image_loras`                       | not started                     |
 | Image sets                          | not started                     |
 | Profile resolution                  | shipped 2026-08-07, every lane  |
 | Normalized render intent            | shipped 2026-08-07              |
-| Prompt strategies                   | 3 of 7 arms; production adds no |
-| Reference preparation and transport | not started                     |
+| Prompt strategies                   | 4 of 7 arms (compose landed)    |
+| Reference preparation and transport | control binding only (slice 9)  |
 | Control mapping                     | shipped 2026-08-07, every lane  |
 | Dimension negotiation               | not started                     |
 | Replicate prediction shell          | timeouts only; single-output    |
@@ -216,8 +216,11 @@ export interface ImageModelAdvancedCapabilities {
 ```
 
 The current primary reference columns remain the normalized binding for ordinary
-references. `additionalImageInputs` is reserved for masks, pose, depth, control,
-or any future model that exposes more than one image-like input.
+references. `additionalImageInputs` carries a control role's OWN provider input —
+mask, pose, depth, edge, control — and is read at render time by
+`controlReferenceTransport` (§"Control-image binding"): an entry routes that role
+off the primary array and onto its own field. It is empty on every model Vesper
+runs today, so every control currently rides the numbered references.
 
 `knownInputFields` supports validation of low-level profile overrides. It is not
 used to construct a payload by itself.
@@ -295,12 +298,31 @@ implemented.
 
 ### Reference policy
 
-**Half live.** `requiredRoles` is enforced — `missingRequiredReferenceRoles`
-runs before any provider work, against the references that survive capacity, so
-a variant profile whose identity anchor was trimmed away refuses rather than
-rendering a stranger. `allowedRoles`, `roleOrder` and `maxPerRole` are still
-unread: selection keeps caller order and trims to `referenceCapacity`, which is
-what every lane already did. Priority selection is slice 3.
+**Shipped 2026-08-11 (slice 3).** `planIntentReferences` in
+`contracts/images/render-intent.ts` reads the whole policy: `allowedRoles`
+filters, `roleOrder` and `priority` sort, `maxPerRole` caps, and
+`referenceCapacity` truncates. `requiredRoles` is checked against everything that
+will be SENT — primary array and dedicated control fields both — so a variant
+profile whose identity anchor was trimmed away refuses rather than rendering a
+stranger.
+
+The empty policy is a NO-OP by construction, and that is what made the change
+payload-neutral: with no allowlist, no `roleOrder`, no priorities and no caps
+every comparison ties and the caller's order survives to the capacity trim,
+byte-for-byte what the positional slice did. The seeded scene profiles carry
+`roleOrder: [identity, location, style, object]`, which is already the order the
+scene lane emits.
+
+One coupling the selector cannot fix and therefore reports. A lane that numbers
+its references in its own prompt (`buildSceneRenderPrompt` writes "Image 2: the
+location") builds that text BEFORE selection runs, so anything that moves a slot
+leaves the text describing different images than the payload carries.
+`image_profile.references_renumbered` (warn) is that report, and it is SLOT
+equality rather than sort-order inversion: removing the second of three
+references — dropped, disallowed, or routed to a dedicated field — sends the
+third as image two while the prompt still calls it image three. Trimming from the
+tail renumbers nothing, which is why the ordinary capacity case stays quiet. No
+lane triggers it today.
 
 A profile's `referencePolicy` has this shape:
 
@@ -346,10 +368,22 @@ export interface ImageRenderReference {
 
 Required references sort before optional references. Within that partition,
 profile role order sorts before numeric priority, then original caller order
-breaks ties. Selection stops at `referenceCapacity(model).max`.
+breaks ties. An unset `priority` sorts after every set one rather than counting
+as zero, so adding a priority to one reference never silently demotes the ones
+that never carried one. A role absent from `roleOrder` sorts after every ranked
+role. Selection stops at `referenceCapacity(model).max`.
 
-The selector returns both selected and dropped references so diagnostics can say
-which roles were omitted.
+A role the policy REQUIRES is implicitly allowed. A policy naming a role only
+under `requiredRoles` would otherwise be unsatisfiable: the reference is dropped
+as disallowed, then the required-role gate refuses the render for the absence it
+just created.
+
+The selector returns selected and dropped references, and each drop carries WHY:
+`role_not_allowed` (the profile is configured for a different job), `role_cap`
+(the profile or the bound field asked for fewer of this role), `model_capacity`
+(no slot left). Three reasons rather than one bucket because only the last one
+changes if the operator picks a bigger model. Drops read out in caller order
+whatever order the comparator visited them in.
 
 ### Normalized controls
 
@@ -570,7 +604,7 @@ resolved through a code registry.
 
 **Partly built.** `compilePromptForStrategy` in
 `src/server/images/render-profile.ts` is that registry, written as an exhaustive
-switch rather than a framework because only three arms have an implementation.
+switch rather than a framework because only four arms have an implementation.
 An eighth strategy is a compile error there rather than a silent fall-through.
 
 It dispatches on the REFERENCE VOCABULARY first, because two different things
@@ -588,11 +622,23 @@ need naming and conflating them would rewrite live renders:
   `preparePromptForImageModel` on the way out), so a second set of bindings would
   describe the same images twice in two conventions.
 
-`multi_reference_compose` REFUSES on the `render_intent` arm rather than falling
-through to "unchanged": its defining semantic is naming each reference, this
-vocabulary has no wording for that yet (slice 3), and returning the base prompt
-would let a profile claim the composing strategy while sending text identical to
-`instruction_edit`. No seeded profile selects it, so nothing refuses today.
+`multi_reference_compose` COMPILES on the `render_intent` arm as of slice 3
+(2026-08-11). It used to refuse, correctly: its defining semantic is naming each
+reference, the vocabulary had no wording for that, and returning the base prompt
+would have let a profile claim the composing strategy while sending text
+identical to `instruction_edit`. `compileReferenceRolePrompt` in
+`src/lib/images/reference-role-prompt.ts` is that wording — a numbered
+`Image N:` binding per role in SEND order, from one reference upward. No seeded
+profile selects the strategy, so no live render changed; a controlled Qwen recipe
+is its first consumer.
+
+The CONTROL roles are why the wording is not a table of nouns. A pose skeleton is
+a constraint to obey, not a thing to depict, and a model handed one under
+"a pose reference" renders the stick figure. Each structural role therefore gets
+imperative follow-this-do-not-draw-it wording, and a closing clause repeats it
+once for the whole set whenever any control is present — deliberately redundant,
+because that failure is catastrophic rather than subtle and the per-slot line
+sits mid-list where position weighting can bury it.
 
 The other four — `text_repair`, `example_transform`, `style_render`,
 `coherent_set` — refuse on both arms, because each needs a contract neither
@@ -646,13 +692,60 @@ safety-critical facts.
 
 ## Reference preparation and transport
 
-Not started. Today `runRegistryImageModel` uploads references serially and
-inlines them for `data_url` models, with no preparation step and no role
-awareness. Slice 3.
+**Control binding shipped 2026-08-11 (slice 9); preparation and concurrency not
+started.** `runRegistryImageModel` now writes bound control images to their own
+provider fields, on both transports, and charges them against the inline byte
+budget before optional references. It still uploads serially and applies no
+preparation step, so the two sub-sections below remain the open half of slice 3.
+
+### Control-image binding
+
+A control role reaching the render path is resolved by
+`controlReferenceTransport` against the active version's
+`additionalImageInputs`, and there are exactly two answers:
+
+- **`dedicated_input`** — the version declares a field for the role. The image is
+  written to that field and does NOT consume a primary reference slot, which is
+  why binding runs BEFORE capacity selection: computing capacity first would drop
+  an image that was never competing. The field's declared arity and `maxItems`
+  cap it (`single` is one image whatever `maxItems` claims; an `array` with no
+  `maxItems` is bounded only by the profile's `maxPerRole`). Surplus drops as
+  `role_cap`.
+- **`numbered_reference`** — no declared field, which is EVERY model Vesper runs
+  today. The control rides the primary array as an ordinary numbered image and is
+  scarce like any other reference. This is the live Stage 1 path: Qwen Image Edit
+  2511 takes pose and depth maps exactly this way, which the Stage 0 probes
+  confirmed it obeys.
+
+Two bindings are refused rather than honoured literally. One naming the model's
+own `referenceField` is read as `numbered_reference` — "pose goes in `image`" is
+the numbered array described twice, and writing it as a dedicated field would
+overwrite the whole reference list. One naming any `reservedImageInputFields`
+entry is dropped with `image_model.control_field_reserved`, the same rule the
+`providerOverrides` overlay follows.
+
+An edit-only model may run on a bound control alone: a pose map is an input
+image, and requiring an ordinary reference beside it would make the dedicated
+path unusable on the models it exists for.
+
+**A declared input's `required` flag is enforced.** `missingRequiredControlInputs`
+refuses `image_profile.required_control_input_missing` before transport when a
+version demands a control field the render has nothing to bind to — the same
+argument as the profile's `requiredRoles`, one layer down, about the version's
+demand rather than the profile's. This is why `imageUriBindingSchema.required` is
+not optional. A required binding that resolves to `numbered_reference` is
+skipped: it has no field of its own to be empty.
+
+The `edge` reference role was added with this slice. `imageLabControlRole` is now
+one-to-one over the three fixture kinds; before it, an edge map was fed under the
+generic `control` because the role list had nothing edge-shaped, so a profile
+could not require an edge map specifically. `control` remains the catch-all for a
+structural map that is none of the three, and `imageLabControlRoles` still
+accepts it so archived pre-`edge` experiments stay readable.
 
 ### Preparation
 
-Create `src/server/images/reference-preparation.ts`.
+Not started. Create `src/server/images/reference-preparation.ts`.
 
 For each selected buffer:
 
@@ -669,18 +762,24 @@ are WebP, but masks and external control images may not be.
 
 ### File transport
 
-Move upload and cleanup mechanics behind
-`transportReplicateReferences(prepared, transport)`.
+Bounded concurrency not started; uploads are still serial. Move upload and
+cleanup mechanics behind `transportReplicateReferences(prepared, transport)`.
 
 For file transport, upload with bounded concurrency of three by default. Preserve
 reference order in the returned URI list regardless of completion order. If one
 upload fails, delete every successful upload best-effort before returning the
 failure.
 
-For data-URL transport, apply the byte budget after preparation. Required
-references are considered first. The identity anchor is never dropped merely to
-meet the budget; when it alone exceeds the budget, send it and allow the
-provider to accept or refuse, matching current behavior.
+For data-URL transport, apply the byte budget after preparation. Bound control
+images are charged FIRST and are never traded away — a control was bound to a
+field the version declared, and a render that silently lost its pose map looks
+like a success. The identity anchor is never dropped merely to meet the budget;
+when it alone exceeds the budget, send it and allow the provider to accept or
+refuse, matching current behavior.
+
+References and bound controls upload under one numbering, controls last, and are
+split back POSITIONALLY rather than by a buffer lookup — two byte-identical
+control images must stay two images.
 
 The diagnostic for trimming includes selected roles and dropped roles but no raw
 image bytes or signed URL query strings.
@@ -1138,6 +1237,61 @@ rulings below are what kept the migration payload-neutral.
   so asking for a seed before slice 4 builds its transport is visible rather than
   silently ineffective.
 
+## Slices 3 and 9 implementation rulings (2026-08-11)
+
+The two slices landed together because they are one decision. Whether a control
+map competes for a scarce primary slot depends on whether the version gave it a
+field of its own, so ordering references without first binding controls would
+select against a capacity that was wrong. `planIntentReferences` is that single
+function; `selectIntentReferences` is gone rather than left beside it.
+
+- **The empty policy is a no-op, and that is the payload-neutrality proof.** No
+  allowlist, no `roleOrder`, no priorities, no caps means every comparison ties
+  and the caller's order reaches the capacity trim unchanged. Every seeded
+  profile is either empty or already lists its roles in the order its lane
+  emits, so no live render moved.
+- **An empty `allowedRoles` means "no allowlist declared", never "nothing
+  allowed".** The four seeded `generate` profiles carry `[]`; reading emptiness
+  as a ban would refuse every reference the day a lane started sending one. This
+  is the opposite of `knownInputFields`, which fails CLOSED — and deliberately
+  so: that list is a security boundary over operator-authored overrides, this one
+  is a description of a job.
+- **A required role is implicitly allowed.** Otherwise a policy naming a role
+  only under `requiredRoles` drops the reference, then refuses the render for the
+  absence it just created.
+- **A per-role cap is applied before capacity.** A cap is the profile's own
+  decision and capacity is the model's, so `role_cap` is the more useful answer
+  and it does not change if the operator picks a bigger model.
+- **The required-role gate now reads everything SENT, not the primary array
+  alone.** A control on its own provider field never entered the primary contest;
+  checking only the array would refuse a render whose control was sent correctly.
+  This extends the slice 2 ruling above rather than replacing it.
+- **Renumbering is reported, not prevented.** Lanes that number their references
+  in their own prompt text build it before selection runs. The signal is SLOT
+  equality, not sort inversion — removing the second of three references sends
+  the third as image two — so a tail trim stays quiet and a middle removal does
+  not. No lane triggers it today; `image_profile.references_renumbered` (warn) is
+  what makes it visible if one starts.
+- **A version's `required` control input is enforced before transport.** The flag
+  exists to say the model refuses to run without the image, so sending the
+  request anyway buys a provider rejection at full latency.
+- **`multi_reference_compose` binds from ONE reference upward** — the opposite of
+  the identity vocabulary's two-reference threshold. There, naming a lone image
+  would rewrite live single-reference renders for nothing; here, the only
+  profiles selecting the strategy exist to name every reference, and one that
+  named nothing at a single image would be `instruction_edit` under a second
+  name.
+- **A control binding onto the primary reference field is read as the numbered
+  array.** "Pose goes in `image`" describes the array twice; honouring it as a
+  dedicated field would overwrite the whole reference list with the control map.
+- **A bound control satisfies an edit-only model's reference requirement.** A
+  pose map is an input image, and demanding an ordinary reference beside it would
+  make the dedicated path unusable on the models it exists for.
+- **Bound controls are charged against the inline byte budget FIRST.** They were
+  bound to a field the version declared; an optional trailing style reference is
+  what a byte budget should give up instead. A render that silently lost its pose
+  map looks like a success.
+
 ## Observability and reproducibility
 
 Not started for ordinary renders. The only place any of this exists is the
@@ -1175,11 +1329,18 @@ reuse temporary Replicate file URLs.
 Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
 `image_profile.pick_unavailable` from the resolver;
 `image_profile.required_reference_missing`,
-`image_profile.prompt_strategy_unsupported` and `image_profile.references_trimmed`
-from the render intent; `image_model.reserved_field_ignored` from the payload
-overlay; and the mapper's typed drop reasons (`no_binding`, `invalid`,
+`image_profile.required_control_input_missing`,
+`image_profile.prompt_strategy_unsupported`, `image_profile.references_trimmed`
+and `image_profile.references_renumbered` from the render intent;
+`image_model.reserved_field_ignored` and `image_model.control_field_reserved`
+from the payload builder; `image_model.references_trimmed` from the inline byte
+budget; and the mapper's typed drop reasons (`no_binding`, `invalid`,
 `unsupported`, `unknown_field`, `reserved`), which are recorded on the plan
 rather than pushed as diagnostics.
+
+`image_profile.references_trimmed` carries a `{ role, reason }` pair per omitted
+reference rather than a bare role list: "location dropped" reads as a capacity
+problem when it may be a profile that never allowed a location at all.
 
 `image_profile.prompt_strategy_unsupported` is not in the list below because the
 list predates the strategy dispatch. It is a refusal, warn-level, raised before
@@ -1252,8 +1413,12 @@ Cover:
 
 - profile eligibility from mechanical and semantic capabilities;
 - legacy model-id resolution to default profiles;
-- required and optional reference role ordering;
-- capacity trimming that retains identity first;
+- required and optional reference role ordering (built —
+  `contracts/images/render-intent.test.ts`);
+- capacity trimming that retains identity first (built — including the empty
+  policy behaving as the old positional trim, and each drop reason);
+- control-role binding: dedicated field versus numbered reference, a binding onto
+  the primary field, arity and `maxItems` ceilings (built);
 - normalized control mapping for every seeded model fixture;
 - unsupported controls being omitted with the expected diagnostic;
 - dimension selection for generate versus edit profiles;

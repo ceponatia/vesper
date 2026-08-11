@@ -764,10 +764,11 @@ function controlInvalid(message: string): ControlFixtureRefusal {
  * - the declared fixture appears EXACTLY ONCE among the ordered inputs. Absent
  *   means it was never sent; twice means the numbered instruction ("the pose
  *   drawn in Image 2") names one of two slots and nobody can say which.
- * - it is sent under a role a control may occupy (pose, depth, or the generic
- *   `control` an edge map rides — `imageLabControlRole`'s own image). A skeleton
- *   ordered under `identity` is a probe asking the model to copy a face from a
- *   stick figure, which answers a question nobody asked.
+ * - it is sent under a role a control may occupy (`imageLabControlRoles`: the
+ *   three kinds' own roles, plus the generic `control` that edge fixtures rode
+ *   before `edge` was a reference role). A skeleton ordered under `identity` is a
+ *   probe asking the model to copy a face from a stick figure, which answers a
+ *   question nobody asked.
  *
  * Then the fixture itself. A control that is not a `lab_control`, or whose meta
  * will not parse, means nothing can say what the fixture IS, and a probe verdict
@@ -818,7 +819,7 @@ async function checkControlBinding(
   }
   if (!isImageLabControlRole(sent.role)) {
     return controlInvalid(
-      `control image ${controlImageId} is sent at position ${String(sent.position)} under the ${sent.role} role; a control fixture is sent as pose, depth, or control`,
+      `control image ${controlImageId} is sent at position ${String(sent.position)} under the ${sent.role} role; a control fixture is sent as pose, depth, edge, or control`,
     );
   }
 

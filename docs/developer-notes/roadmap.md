@@ -25,8 +25,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
   [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
-  now reached by every render through the shared intent (slice 2, shipped);
-  remaining are role-aware transport, reproducibility, version promotion, LoRAs,
+  now reached by every render through the shared intent (slice 2), choosing which
+  references survive by role rather than by position and routing control images
+  to the inputs a model declares (slices 3 and 9); remaining are reference
+  preparation and parallel uploads, reproducibility, version promotion, LoRAs,
   curated profiles and image sets.
 
 - **Image identity packs — durable owner-scoped face references** —
@@ -39,9 +41,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [plan](qwen-advanced-image-subsystem.plan.md) ·
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
   control-mapped Qwen edits against ordinary output; Stage 0 is done — 2511
-  honours pose and depth controls, Plus stays unregistered — and next are
-  capabilities slices 3 and 9 en route to Stage 1, with the LoRA library
-  folded into capabilities slice 6.
+  honours pose and depth controls, Plus stays unregistered — and the capabilities
+  slices Stage 1 waited on have landed, so next are Stage 1 controlled portraits
+  and Stage 2 controlled scenes, with the LoRA library folded into capabilities
+  slice 6.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

@@ -70,10 +70,16 @@ export type ImageIdentityPreservation = (typeof imageIdentityPreservationRatings
  * to name each image's purpose in order.
  *
  * `identity` through `after_example` are roles Vesper's lanes produce or will
- * produce shortly. `mask`, `pose`, `depth` and `control` are reserved for
- * ControlNet-style bindings that no seeded model exposes yet — they exist here
- * so `additionalImageInputs` can be probed and stored without a vocabulary
- * change, which is the registry's whole premise (data edits, not migrations).
+ * produce shortly. `mask` through `control` are the STRUCTURAL roles — an image
+ * the model is asked to OBEY rather than to draw from
+ * ({@link imageControlReferenceRoles}).
+ *
+ * `edge` was added with the control-role slice. Before it, an edge map was fed
+ * under the generic `control` role because this list reserved `pose` and `depth`
+ * but nothing edge-shaped, which made the lab's fixture vocabulary and this one
+ * disagree about a kind they both name. `control` stays as the genuine catch-all
+ * for a structural map that is none of the three — a segmentation mask, a normal
+ * map — rather than as `edge`'s alias.
  */
 export const imageReferenceRoles = [
   "identity",
@@ -86,10 +92,35 @@ export const imageReferenceRoles = [
   "mask",
   "pose",
   "depth",
+  "edge",
   "control",
 ] as const;
 export const imageReferenceRoleSchema = z.enum(imageReferenceRoles);
 export type ImageReferenceRole = (typeof imageReferenceRoles)[number];
+
+/**
+ * The roles that carry STRUCTURE the model must obey, as against content it
+ * draws from.
+ *
+ * The distinction is the whole point of the control-role slice, and it is a
+ * transport fact rather than a semantic nicety: a structural image may have its
+ * own provider input (`additionalImageInputs`), in which case it does not
+ * compete for the primary reference field's scarce slots, and it must be named
+ * in the prompt as something to FOLLOW rather than something to depict. A depth
+ * map ordered as ordinary content produces a render of a grey gradient.
+ *
+ * Derived nowhere else: `imageLabControlRoles` in `./image-lab.ts` is the lab
+ * fixture vocabulary's image over its three kinds, which is a subset of this and
+ * must stay a subset — a test asserts it.
+ */
+export const imageControlReferenceRoles = ["mask", "pose", "depth", "edge", "control"] as const satisfies
+  readonly ImageReferenceRole[];
+export type ImageControlReferenceRole = (typeof imageControlReferenceRoles)[number];
+
+/** Whether this role carries structure to obey rather than content to draw from. */
+export function isImageControlReferenceRole(role: ImageReferenceRole): role is ImageControlReferenceRole {
+  return imageControlReferenceRoles.some((controlRole) => controlRole === role);
+}
 
 /**
  * The primitive type of one optional input, as its OpenAPI schema declares it.
@@ -237,7 +268,13 @@ export type ImageModelOutputCapability = z.infer<typeof imageModelOutputCapabili
 export const imageModelAdvancedCapabilitiesSchema = z.object({
   prompt: imagePromptBindingSchema.optional(),
   controls: imageModelControlBindingsSchema.default((): ImageModelControlBindings => ({})),
-  /** Masks, pose, depth, control. Empty on every model Vesper runs today. */
+  /**
+   * A control role's OWN provider input, where a version declares one. Read at
+   * render time by `controlReferenceTransport`: an entry here routes that role
+   * off the primary reference array and onto its own field. Empty on every model
+   * Vesper runs today, so every control currently rides the numbered references
+   * — which is how Qwen Image Edit 2511 takes a pose or depth map.
+   */
   additionalImageInputs: z.array(imageAdditionalImageInputSchema).default((): ImageAdditionalImageInput[] => []),
   /**
    * Assumed single until a probe says otherwise: every current lane consumes one

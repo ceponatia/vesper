@@ -3,6 +3,7 @@ import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contract
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,
+  DATA_URL_BUDGET_BYTES,
   disableSafetyChecker,
   overlayControlInput,
   OUTPUT_TIMEOUT_MS,
@@ -534,5 +535,145 @@ describe("runRegistryImageModel", () => {
     const image = Buffer.from("image");
     expect(unwrapReplicateImage({ ok: true, image }, "fallback")).toBe(image);
     expect(() => unwrapReplicateImage({ ok: false, error: "replicate 429" }, "fallback")).toThrow("replicate 429");
+  });
+});
+
+describe("bound control images", () => {
+  /**
+   * Run one request through a stub that fakes uploads, the prediction, and the
+   * output download, and hand back the posted input.
+   */
+  async function postedInput(
+    request: RegistryModelRequest,
+    over: Partial<ImageModel> = {},
+  ): Promise<Record<string, unknown>> {
+    let uploadNumber = 0;
+    let input: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (target: string | URL | Request, init?: RequestInit) => {
+        const url = String(target);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/v1/files") && method === "POST") {
+          uploadNumber += 1;
+          return Response.json({ id: `f${uploadNumber}`, urls: { get: `https://files.test/${uploadNumber}` } });
+        }
+        if (url.includes("/predictions")) {
+          input = (JSON.parse(String(init?.body)) as { input: Record<string, unknown> }).input;
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        if (url.includes("/v1/files/") && method === "DELETE") return new Response(null, { status: 204 });
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    await runRegistryImageModel(model(over), request);
+    return input;
+  }
+
+  it("writes a bound control to its own field, leaving the reference array alone", async () => {
+    const input = await postedInput(
+      {
+        prompt: "portrait",
+        references: [Buffer.from("face")],
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+      },
+      { referenceArity: "array", maxReferences: 2 },
+    );
+    // Uploads are numbered references-first, so the face is file 1 and the
+    // skeleton file 2 — and the skeleton is NOT in the `image` list.
+    expect(input.image).toEqual(["https://files.test/1"]);
+    expect(input.pose_image).toBe("https://files.test/2");
+  });
+
+  it("writes an array-arity control field as a list even at one image", async () => {
+    const input = await postedInput({
+      prompt: "portrait",
+      controlReferences: [{ field: "edges", arity: "array", buffers: [Buffer.from("e1")] }],
+    });
+    expect(input.edges).toEqual(["https://files.test/1"]);
+  });
+
+  it("keeps two byte-identical control images apart", async () => {
+    // The positional split exists for exactly this: a lookup keyed by buffer
+    // would collapse these onto one URL and silently send half the images.
+    const input = await postedInput({
+      prompt: "portrait",
+      controlReferences: [
+        { field: "pose_image", arity: "single", buffers: [Buffer.from("same")] },
+        { field: "depth_image", arity: "single", buffers: [Buffer.from("same")] },
+      ],
+    });
+    expect(input.pose_image).toBe("https://files.test/1");
+    expect(input.depth_image).toBe("https://files.test/2");
+  });
+
+  it("inlines bound controls for a data_url model, uploading nothing", async () => {
+    const input = await postedInput(
+      {
+        prompt: "a scene",
+        references: [Buffer.from("face")],
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+      },
+      { referenceField: "images", referenceArity: "array", referenceTransport: "data_url", maxReferences: 4 },
+    );
+    expect(input.images).toEqual([referenceDataUrl(Buffer.from("face"))]);
+    expect(input.pose_image).toBe(referenceDataUrl(Buffer.from("skeleton")));
+  });
+
+  it("lets an edit-only model run on a control image alone", async () => {
+    // Without this the dedicated-input path would be unusable on the very models
+    // it exists for: a pose map IS an input image.
+    const input = await postedInput(
+      {
+        prompt: "portrait",
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+      },
+      { canGenerate: false },
+    );
+    expect(input.pose_image).toBe("https://files.test/1");
+  });
+
+  it("refuses a control bound to a field the render path owns", async () => {
+    const sink = new DiagnosticCollector();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (target: string | URL | Request, init?: RequestInit) => {
+        const url = String(target);
+        if (url.endsWith("/v1/files")) return Response.json({ id: "f1", urls: { get: "https://files.test/1" } });
+        if (url.includes("/predictions")) {
+          const body = (JSON.parse(String(init?.body)) as { input: Record<string, unknown> }).input;
+          expect(body.prompt).toBe("portrait");
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        if ((init?.method ?? "GET") === "DELETE") return new Response(null, { status: 204 });
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    await runRegistryImageModel(
+      model(),
+      { prompt: "portrait", controlReferences: [{ field: "prompt", arity: "single", buffers: [Buffer.from("x")] }] },
+      sink,
+    );
+    expect(sink.items.map((entry) => entry.code)).toContain("image_model.control_field_reserved");
+  });
+
+  it("charges bound controls against the inline byte budget before optional references", () => {
+    // A control was bound to a field the version declared; an optional trailing
+    // style reference is what a byte budget should give up instead.
+    //
+    // The reservation must leave room for SOME references, or this measures the
+    // anchor-preservation fallback (which returns the first reference whatever
+    // the budget says) instead of the reservation. Room for two of three is the
+    // case with an unambiguous answer.
+    const small = Buffer.alloc(16);
+    expect(withinDataUrlBudget([small, small, small])).toHaveLength(3);
+    expect(withinDataUrlBudget([small, small, small], DATA_URL_BUDGET_BYTES - 40)).toHaveLength(2);
+  });
+
+  it("still sends the anchor when the reservation alone exhausts the budget", () => {
+    // Sending no identity reference renders a stranger, so the anchor survives a
+    // blown budget and the provider is left to accept or refuse it.
+    const small = Buffer.alloc(16);
+    expect(withinDataUrlBudget([small, small], DATA_URL_BUDGET_BYTES)).toEqual([small]);
   });
 });

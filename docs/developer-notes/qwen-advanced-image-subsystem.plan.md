@@ -75,21 +75,25 @@ fails, register and probe Plus as the controlled-composition connector and keep
 
 ## Prerequisites
 
-The shared render intent shipped (capabilities slice 2, 2026-08-07), so every
-render lane already describes its references by role. Two capabilities-plan
-pieces are still missing. Stage 0's lab shell and control probe need neither;
-Stage 1 onward needs both, because without them a lab connector would arrange
-provider inputs itself — exactly the duplication this plan's boundary forbids.
+**All met as of 2026-08-11.** The shared render intent shipped (capabilities
+slice 2, 2026-08-07), so every render lane describes its references by role, and
+the two pieces Stage 1 was waiting on landed together:
 
-- **Reference priority selection** (capabilities slice 3 remainder): choosing
-  which references survive when capacity is short, and the wording that lets a
-  profile name each reference's role in the prompt.
-- **Control-image roles** (capabilities slice 9): the input-binding vocabulary
-  for pose, depth, and edge images.
+- **Reference priority selection** (capabilities slice 3 remainder) — a profile's
+  policy chooses which references survive when capacity is short, in what order,
+  and the composing prompt strategy names each reference's role in the prompt.
+- **Control-image roles** (capabilities slice 9) — pose, depth and edge images
+  are routed by what the model declares, with `edge` now a reference role of its
+  own. On 2511 that routing is the numbered-image path Stage 0 proved.
 
 Owner ruling (2026-08-10): build Stage 0 first, then build these two pieces
 under the capabilities plan as part of this same effort, then return here for
-Stage 1. The lab never grows its own reference-arrangement code.
+Stage 1. The lab never grows its own reference-arrangement code — that ruling
+still binds every stage below.
+
+Stage 1 is therefore unblocked. Its recipes select `multi_reference_compose` and
+declare their control roles in the profile's `referencePolicy`; nothing in this
+plan arranges provider inputs itself.
 
 ## Recommendation
 
