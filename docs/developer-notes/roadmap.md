@@ -41,10 +41,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [plan](qwen-advanced-image-subsystem.plan.md) ·
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
   control-mapped Qwen edits against ordinary output; Stage 0 is done — 2511
-  honours pose and depth controls, Plus stays unregistered — and the capabilities
-  slices Stage 1 waited on have landed, so next are Stage 1 controlled portraits
-  and Stage 2 controlled scenes, with the LoRA library folded into capabilities
-  slice 6.
+  honours pose and depth controls, Plus stays unregistered — and Stage 1
+  controlled portraits and Stage 2 controlled scenes are built on the shared
+  intent path, awaiting the owner's trial runs; the LoRA library stays folded
+  into capabilities slice 6.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

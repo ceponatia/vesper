@@ -42,6 +42,8 @@ function referenceRoleBinding(role: ImageReferenceRole, position: number): strin
       return `Image ${position}: a style reference. Take its rendering style, palette, and finish; take no subject or object from it.`;
     case "object":
       return `Image ${position}: an object reference — an item that appears in the scene. Preserve its shape, material, and markings.`;
+    case "outfit":
+      return `Image ${position}: the wardrobe reference — dress the subject in exactly this clothing. Preserve its colour, cut, fabric, and details; take nothing else from it.`;
     case "product":
       return `Image ${position}: the product reference. Reproduce it exactly, including proportions, colour, and any text on it.`;
     case "before":

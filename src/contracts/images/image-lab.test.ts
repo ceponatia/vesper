@@ -5,18 +5,23 @@ import {
   imageLabControlRole,
   imageLabCreateExperimentRequestSchema,
   imageLabDiagnosticCode,
+  imageLabExperimentKinds,
   imageLabExperimentListSchema,
   imageLabExperimentSchema,
   imageLabExtractControlsRequestSchema,
   imageLabFailureCodeFromDiagnostic,
   imageLabFailureCodes,
   imageLabInputListSchema,
+  imageLabOutcomeSchema,
   imageLabRecordVerdictRequestSchema,
   imageLabSettingsSchema,
   imageLabStoredInputListSchema,
   imageLabStoredSettingsSchema,
   imageLabUploadControlRequestSchema,
+  imageLabVerdictKinds,
+  isImageLabVerdictKind,
   type ImageLabExperiment,
+  type ImageLabOutcome,
 } from "./image-lab";
 
 const probeInputs = [
@@ -181,6 +186,7 @@ describe("imageLabExperimentSchema", () => {
       controlKind: "pose",
       settings: emptyImageLabSettings(),
       resultImageId: "img_result",
+      outcome: null,
       status: "succeeded",
       failureCode: null,
       verdict: "honours_control",
@@ -207,6 +213,8 @@ describe("imageLabExperimentSchema", () => {
     expect(parsed.verdict).toBeNull();
     expect(parsed.inputs).toEqual([]);
     expect(parsed.settings).toEqual(emptyImageLabSettings());
+    // Every Stage 0 row predates the recorded outcome, so absent parses to null.
+    expect(parsed.outcome).toBeNull();
   });
 
   it("keeps a classifier code that is not one of the lab's own", () => {
@@ -226,6 +234,71 @@ describe("imageLabExperimentSchema", () => {
   it("degrades a malformed list to an empty one rather than breaking the lab page", () => {
     expect(imageLabExperimentListSchema.parse([{ id: "exp_4" }])).toEqual([]);
     expect(imageLabExperimentListSchema.parse(undefined)).toEqual([]);
+  });
+});
+
+describe("imageLabOutcomeSchema", () => {
+  it("defaults an empty record to the inert decision: nothing sent, nothing dropped", () => {
+    expect(imageLabOutcomeSchema.parse({})).toEqual({ sentRoles: [], dropped: [], renumbered: false });
+  });
+
+  it("round-trips a controlled run's full decision", () => {
+    const outcome: ImageLabOutcome = {
+      recipeKey: "controlled_portrait/pose",
+      sentRoles: ["identity", "pose", "outfit"],
+      dropped: [{ role: "style", reason: "model_capacity", sourceImageId: "img_style" }],
+      renumbered: false,
+    };
+    expect(imageLabOutcomeSchema.parse(outcome)).toEqual(outcome);
+  });
+
+  it("costs one bad meta bag the field, never the experiment row", () => {
+    const experiment = imageLabExperimentSchema.parse({
+      id: "exp_outcome",
+      kind: "controlled_portrait",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      createdAt: "2026-08-11T12:00:00.000Z",
+      outcome: { sentRoles: "not-an-array" },
+    });
+    expect(experiment.outcome).toBeNull();
+    expect(experiment.id).toBe("exp_outcome");
+  });
+
+  it("carries a recorded outcome through the experiment schema intact", () => {
+    const experiment = imageLabExperimentSchema.parse({
+      id: "exp_outcome_ok",
+      kind: "controlled_scene",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      createdAt: "2026-08-11T12:00:00.000Z",
+      outcome: { recipeKey: "controlled_scene/depth", sentRoles: ["identity", "depth"], dropped: [], renumbered: true },
+    });
+    expect(experiment.outcome).toEqual({
+      recipeKey: "controlled_scene/depth",
+      sentRoles: ["identity", "depth"],
+      dropped: [],
+      renumbered: true,
+    });
+  });
+
+  it("refuses a drop reason outside the planner's vocabulary", () => {
+    // The reasons restate `planIntentReferences`' own union; an invented one in
+    // a stored bag must not survive into the record.
+    const result = imageLabOutcomeSchema.safeParse({
+      dropped: [{ role: "style", reason: "operator_whim" }],
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("imageLabVerdictKinds", () => {
+  it("covers every kind that declares a control, and only those", () => {
+    expect(imageLabVerdictKinds).toEqual(["control_probe", "controlled_portrait", "controlled_scene"]);
+    for (const kind of imageLabExperimentKinds) {
+      const declaresControl = kind === "control_probe" || kind === "controlled_portrait" || kind === "controlled_scene";
+      expect(isImageLabVerdictKind(kind)).toBe(declaresControl);
+    }
   });
 });
 
@@ -345,6 +418,39 @@ describe("imageLabCreateExperimentRequestSchema", () => {
   it("refuses an unregistered experiment kind", () => {
     expect(imageLabCreateExperimentRequestSchema.safeParse({ kind: "freestyle" }).success).toBe(false);
   });
+
+  it("refuses a controlled portrait with no character to be about", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "controlled_portrait",
+      inputs: probeInputs,
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses a controlled scene with no chat to be about", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "controlled_scene",
+      characterId: "chr_1",
+      inputs: probeInputs,
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a controlled portrait naming its character with its control declared among the inputs", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "controlled_portrait",
+      characterId: "chr_1",
+      instruction: "Render the person from Image 1 in the pose drawn in Image 2.",
+      inputs: probeInputs,
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("imageLabExtractControlsRequestSchema", () => {
@@ -420,6 +526,12 @@ describe("imageLabDiagnosticCode", () => {
   it("reports lab failures on the image_lab namespace", () => {
     expect(imageLabDiagnosticCode("version_unpinned")).toBe("image_lab.version_unpinned");
     expect(imageLabDiagnosticCode("preprocessor_output_invalid")).toBe("image_lab.preprocessor_output_invalid");
+  });
+
+  it("owns the controlled runner's raw-bag refusal in both spellings", () => {
+    expect(imageLabFailureCodes).toContain("settings_unsupported");
+    expect(imageLabDiagnosticCode("settings_unsupported")).toBe("image_lab.settings_unsupported");
+    expect(imageLabFailureCodeFromDiagnostic("image_lab.settings_unsupported")).toBe("settings_unsupported");
   });
 });
 
