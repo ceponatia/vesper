@@ -172,11 +172,13 @@ Ruling settled 2026-08-11 — **a probe may not be fed its own answer**:
   pixels, not the label. Sending the render a control was extracted from lets
   the output match the control by copying that reference, so a
   `honours_control` verdict would record a pass the probe never earned.
-  Refused before any provider spend, beside `control_unreviewed`;
-  hand-authored fixtures name no source and are exempt by construction. The
-  experiment form greys the source render out in the identity picker and
-  clears a conflicting pick, so the refusal is reachable only through direct
-  API calls.
+  Refused before any provider spend, beside `control_unreviewed`. The
+  exemption is the meta's, not the generator's: a fixture recording no
+  `sourceImageId` has no render holding the answer to copy, and a
+  hand-authored upload may record one (a skeleton traced over a render),
+  which puts it under the same rule. The experiment form greys the source
+  render out in the identity picker and clears a conflicting pick, so the
+  refusal is reachable only through direct API calls.
 
 ## Contracts
 
