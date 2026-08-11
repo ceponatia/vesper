@@ -103,6 +103,23 @@ export function ImageLabExperimentForm({ controls, onCreated }: ImageLabExperime
   const isProbe = kind === "control_probe";
   const unreviewedCount = controls.filter((entry) => !isReviewedFixture(entry)).length;
 
+  // The render the chosen fixture was extracted from, when it has one (a
+  // hand-authored skeleton names none). Sending it as the identity reference
+  // hands the model the answer: the output can match the control by copying that
+  // reference, and the probe reads as a pass it never earned. So it is barred in
+  // the picker below — and cleared here if it was already picked, which the
+  // order render-then-fixture makes reachable (render-adjust, never a setState
+  // inside an effect). No previous-value latch: clearing the pick extinguishes
+  // the condition, so this cannot run twice.
+  const fixtureSourceId = control?.meta.sourceImageId ?? null;
+  if (fixtureSourceId !== null && sourceImageId === fixtureSourceId) {
+    setSourceImageId(null);
+  }
+  // The bar is only something to explain while the barred tile is on screen —
+  // it is a render of whichever character the picker is currently showing.
+  const fixtureSourceShown =
+    isProbe && fixtureSourceId !== null && portraitRows.some((image) => image.id === fixtureSourceId);
+
   // The ordered send list. Positions are assigned HERE, in array order, because
   // the contract requires the two to agree and the numbered instruction below is
   // written against exactly these numbers.
@@ -243,14 +260,31 @@ export function ImageLabExperimentForm({ controls, onCreated }: ImageLabExperime
               )}
             </Field>
             {isProbe ? (
-              <LabRenderPicker
-                label="Identity reference"
-                hint="The render whose face the output must keep. Optional — a probe may test structure alone."
-                characterId={characterId}
-                portraits={portraits}
-                value={sourceImageId}
-                onChange={setSourceImageId}
-              />
+              <div className="flex flex-col gap-2">
+                <LabRenderPicker
+                  label="Identity reference"
+                  hint="The render whose face the output must keep. Optional — a probe may test structure alone."
+                  characterId={characterId}
+                  portraits={portraits}
+                  value={sourceImageId}
+                  onChange={setSourceImageId}
+                  excluded={
+                    fixtureSourceId === null
+                      ? null
+                      : {
+                          imageId: fixtureSourceId,
+                          reason: "source of the selected fixture — using it invalidates the probe",
+                        }
+                  }
+                />
+                {fixtureSourceShown ? (
+                  <p className="text-xs text-paper-500">
+                    One render is greyed out because the selected fixture was extracted from it. Sending that render as
+                    the identity reference would hand the model the answer — the output could match the control by
+                    copying it, instead of proving the model obeys a control at all.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         )}

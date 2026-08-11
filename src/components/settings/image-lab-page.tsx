@@ -26,6 +26,9 @@ import { ImageLabFixturesPanel } from "./image-lab-fixtures-panel";
  * extraction ends when the fixture list has grown by what it promised; a queued
  * experiment ends when its row appears and settles. Neither is a timer someone
  * remembered to cancel.
+ *
+ * `initialExperimentId` (the `?experiment=` param, read by the server page) opens
+ * that record's detail on mount.
  */
 
 const POLL_MS = 3000;
@@ -38,17 +41,31 @@ const POLL_MS = 3000;
  */
 const MAX_EXTRACT_POLLS = 40;
 
-export function ImageLabPage() {
+export function ImageLabPage({ initialExperimentId }: { initialExperimentId?: string }) {
   const me = useAsyncData(() => meApi.get(), []);
   const controls = useAsyncData(() => imageLabApi.controls.list(), []);
   const experiments = useAsyncData(() => imageLabApi.experiments.list(), []);
 
-  const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
+  const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(initialExperimentId ?? null);
   const [queuedExperimentId, setQueuedExperimentId] = useState<string | null>(null);
   // The fixture count when an extraction was accepted, and how many new fixtures
   // it promised; null when nothing is being waited on.
   const [extractWatch, setExtractWatch] = useState<{ baseline: number; expected: number } | null>(null);
   const [extractPolls, setExtractPolls] = useState(0);
+
+  // The single door for changing which experiment is open: state and URL move
+  // together, so a refresh or a pasted link lands back on the same record — the
+  // point of a bench whose rulings are cited by id. `replaceState`, never
+  // `pushState` (the chat-conversation precedent): nothing here listens for
+  // popstate, so a pushed entry would let Back rewind the address bar while the
+  // view stayed where it was. Other params are left alone.
+  const selectExperiment = (experimentId: string | null) => {
+    setSelectedExperimentId(experimentId);
+    const url = new URL(window.location.href);
+    if (experimentId === null) url.searchParams.delete("experiment");
+    else url.searchParams.set("experiment", experimentId);
+    window.history.replaceState(null, "", url);
+  };
 
   const controlRows = controls.data ?? [];
   const experimentRows = experiments.data ?? [];
@@ -114,11 +131,11 @@ export function ImageLabPage() {
           key={selectedExperimentId}
           experimentId={selectedExperimentId}
           onBack={() => {
-            setSelectedExperimentId(null);
+            selectExperiment(null);
             experiments.reload({ silent: true });
           }}
           onDeleted={() => {
-            setSelectedExperimentId(null);
+            selectExperiment(null);
             experiments.reload({ silent: true });
           }}
         />
@@ -166,7 +183,7 @@ export function ImageLabPage() {
           error={experiments.error}
           queued={experimentQueued}
           onReload={() => experiments.reload()}
-          onSelect={setSelectedExperimentId}
+          onSelect={selectExperiment}
         />
       </div>
     </PageContainer>

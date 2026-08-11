@@ -110,7 +110,11 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
   const toast = useToast();
   const detail = useAsyncData(() => imageLabApi.experiments.detail(experimentId), [experimentId]);
 
-  const [verdict, setVerdict] = useState<ImageLabProbeVerdict>("honours_control");
+  // Unset until someone picks. On a bench whose whole output is trustworthy
+  // rulings, the most favourable ruling must never be the one a distracted click
+  // records by default — an unchosen verdict has to be indistinguishable from
+  // no verdict, which a pre-selected option cannot be.
+  const [verdict, setVerdict] = useState<ImageLabProbeVerdict | "">("");
   const [note, setNote] = useState("");
   const [recording, setRecording] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -131,7 +135,7 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
   }
 
   const record = async () => {
-    if (note.trim() === "") return;
+    if (verdict === "" || note.trim() === "") return;
     setRecording(true);
     const result = await imageLabApi.experiments.recordVerdict(experimentId, { verdict, note: note.trim() });
     setRecording(false);
@@ -182,6 +186,21 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
   const hasOverlay =
     Object.keys(experiment.settings.controls).length > 0 || Object.keys(experiment.settings.controlInput).length > 0;
 
+  // The id is what a written-up ruling cites, so it has to leave the page exactly
+  // as stored — bare, with no surrounding label to hand-trim out of the paste.
+  const copyId = () => {
+    void navigator.clipboard
+      .writeText(experiment.id)
+      .then(() => toast.push({ title: "Experiment id copied", tone: "success" }))
+      .catch(() =>
+        toast.push({
+          title: "Couldn't copy that id",
+          description: "The browser refused clipboard access — select it in the header instead.",
+          tone: "error",
+        }),
+      );
+  };
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -199,6 +218,13 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
             <Tag tone="accent">{imageLabControlKindLabel(experiment.controlKind)}</Tag>
           ) : null}
           {verdictChip ? <Tag tone={verdictChip.tone}>{verdictChip.label}</Tag> : null}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-paper-500">
+          <span>id</span>
+          <code className="break-all">{experiment.id}</code>
+          <Button size="sm" variant="quiet" onClick={copyId} aria-label="Copy experiment id">
+            Copy
+          </Button>
         </div>
         <p className="mt-1 text-[11px] text-paper-500">
           created {instantText(experiment.createdAt)} · started {instantText(experiment.startedAt)} · finished{" "}
@@ -333,13 +359,21 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
             plan runs on this model or on a second connector.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Ruling" hint={imageLabVerdictHint(verdict)}>
+            <Field
+              label="Ruling"
+              hint={
+                verdict === ""
+                  ? "Nothing is pre-judged — pick the ruling the output actually earned."
+                  : imageLabVerdictHint(verdict)
+              }
+            >
               {(id) => (
                 <Select
                   id={id}
                   value={verdict}
-                  onChange={(e) => setVerdict(e.target.value as ImageLabProbeVerdict)}
+                  onChange={(e) => setVerdict(e.target.value as ImageLabProbeVerdict | "")}
                 >
+                  <option value="">— Choose a ruling —</option>
                   {imageLabProbeVerdicts.map((entry) => (
                     <option key={entry} value={entry}>
                       {imageLabVerdictLabel(entry)}
@@ -355,7 +389,12 @@ export function ImageLabExperimentDetail({ experimentId, onBack, onDeleted }: Im
             </Field>
           </div>
           <div className="mt-3 flex items-center gap-3">
-            <Button variant="primary" busy={recording} disabled={note.trim() === ""} onClick={() => void record()}>
+            <Button
+              variant="primary"
+              busy={recording}
+              disabled={verdict === "" || note.trim() === ""}
+              onClick={() => void record()}
+            >
               {experiment.verdict === null ? "Record verdict" : "Update verdict"}
             </Button>
             {experiment.verdict !== null ? (
