@@ -1,6 +1,8 @@
 import {
+  missingRequiredControlInputs,
   missingRequiredReferenceRoles,
-  selectIntentReferences,
+  planIntentReferences,
+  type DroppedImageReference,
   type ImageModel,
   type ImageReferenceRole,
   type ImageRenderIntentCore,
@@ -78,18 +80,47 @@ export interface PlannedImageRender {
   /** The strategy-compiled, model-dialect-prepared prompt. */
   prompt: string;
   references: Buffer[];
+  /**
+   * Structural controls this version gave a field of their own, keyed by that
+   * field — a ControlNet-style `pose_image` rather than another numbered entry
+   * in the primary array.
+   *
+   * Empty on every seeded model, because none declares an
+   * `additionalImageInputs` entry. A control on such a model rides `references`
+   * as a numbered image instead, which is how Qwen Image Edit 2511 takes one.
+   */
+  controlReferences: PlannedControlReference[];
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   targetRatio: number;
   /** The profile's own budget, or null to leave it to the environment. */
   timeoutMs: number | null;
-  /** References the model's capacity could not take, in caller order. */
-  dropped: ImageRenderReference[];
+  /** References that will not be sent, in caller order, each with its reason. */
+  dropped: DroppedImageReference<ImageRenderReference>[];
+  /**
+   * The primary references in SEND order — the same images as
+   * {@link PlannedImageRender.references}, with the roles still attached so a
+   * diagnostic can name them.
+   */
+  sentReferences: ImageRenderReference[];
+  /** Whether any sent reference occupies a different slot than the lane assumed. */
+  referencesRenumbered: boolean;
+}
+
+/** One dedicated control input's bytes, ready for the transport. */
+export interface PlannedControlReference {
+  field: string;
+  /** `single` writes one URL; `array` writes a list, exactly as the schema declares. */
+  arity: "single" | "array";
+  buffers: Buffer[];
 }
 
 /** Why a render was refused before any provider work happened. */
 export interface ImageRenderRefusal {
-  code: "image_profile.required_reference_missing" | "image_profile.prompt_strategy_unsupported";
+  code:
+    | "image_profile.required_reference_missing"
+    | "image_profile.required_control_input_missing"
+    | "image_profile.prompt_strategy_unsupported";
   message: string;
   context: Record<string, unknown>;
 }
@@ -106,12 +137,17 @@ export type PlanImageRenderResult = { ok: true; plan: PlannedImageRender } | { o
  */
 export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResult {
   const { profile, model } = intent.profile;
-  const { selected, dropped } = selectIntentReferences(model, intent.references);
+  const planned = planIntentReferences(model, profile.referencePolicy, intent.references);
+  const { primary, dedicated, dropped } = planned;
 
-  // Checked against the SELECTED references, not the supplied ones: a required
-  // identity anchor that capacity pushed out is exactly as absent as one the
-  // lane never had, and rendering anyway would produce a stranger.
-  const missing = missingRequiredReferenceRoles(profile.referencePolicy, selected);
+  // Checked against everything that will actually be SENT — the primary array
+  // and the dedicated control fields alike — not the references the lane
+  // supplied. A required identity anchor that capacity pushed out is exactly as
+  // absent as one the lane never had, and rendering anyway would produce a
+  // stranger; a required pose map that reached its own provider field is
+  // present, even though it never entered the primary contest.
+  const sent = [...primary, ...dedicated.flatMap((input) => input.references)];
+  const missing = missingRequiredReferenceRoles(profile.referencePolicy, sent);
   if (missing.length > 0) {
     return {
       ok: false,
@@ -123,13 +159,37 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
     };
   }
 
+  // The version's own demand, as against the profile's. A model declaring
+  // `pose_image` as a required input rejects a prediction that omits it, so the
+  // round trip is refused here rather than spent discovering that.
+  const unfilled = missingRequiredControlInputs(model, dedicated);
+  if (unfilled.length > 0) {
+    return {
+      ok: false,
+      refusal: {
+        code: "image_profile.required_control_input_missing",
+        message: `${model.slug} requires control image inputs this render cannot supply`,
+        context: {
+          profile: profile.id,
+          task: profile.task,
+          missing: unfilled,
+          supplied: roleNames(intent.references),
+        },
+      },
+    };
+  }
+
+  // Only the PRIMARY roles are named to the strategy, and in send order. A
+  // dedicated-input control is bound by its provider field, not by a position in
+  // a numbered list, so numbering it in the prompt would name a slot that does
+  // not exist in the array the text is describing.
   const compiled = compileProfileRenderPlan({
     model,
     profile,
     basePrompt: intent.prompt,
     baseNegativePrompt: null,
     ...(intent.controls ? { controlOverrides: intent.controls } : {}),
-    references: { vocabulary: "render_intent", roles: roleNames(selected) },
+    references: { vocabulary: "render_intent", roles: roleNames(primary) },
   });
   if (!compiled.ok) {
     return {
@@ -147,11 +207,18 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
     plan: {
       model,
       prompt: compiled.plan.finalPrompt,
-      references: selected.map((reference) => reference.buffer),
+      references: primary.map((reference) => reference.buffer),
+      controlReferences: dedicated.map((input) => ({
+        field: input.field,
+        arity: input.arity,
+        buffers: input.references.map((reference) => reference.buffer),
+      })),
       controlInput: compiled.plan.controlInput,
       targetRatio: intent.target.aspectRatio,
       timeoutMs: profile.timeoutMs,
       dropped,
+      sentReferences: primary,
+      referencesRenumbered: planned.renumbered,
     },
   };
 }
@@ -182,13 +249,41 @@ export async function renderImageIntent(
   const { plan } = planned;
   if (plan.dropped.length > 0) {
     sink?.push(
-      diag("info", "image_profile.references_trimmed", "the model could not accept every reference this render offered", {
+      diag("info", "image_profile.references_trimmed", "this render will not send every reference it was offered", {
         path: "image_model_profiles",
         context: {
           profile: intent.profile.profile.id,
           slug: plan.model.slug,
-          sent: roleNames(intent.references).slice(0, plan.references.length),
-          dropped: roleNames(plan.dropped),
+          // The roles actually going, read off the plan. Slicing the caller's
+          // list by the sent COUNT was equivalent while selection was a
+          // positional trim; under policy ordering it names the wrong images.
+          sent: roleNames(plan.sentReferences),
+          // Roles alone were not enough once a drop could mean three different
+          // things: "location dropped" reads as a capacity problem when it may be
+          // a profile that never allowed a location at all.
+          dropped: plan.dropped.map((entry) => ({ role: entry.reference.role, reason: entry.reason })),
+        },
+      }),
+    );
+  }
+  // Renumbering is a WARNING, not an observation. Lanes that number their
+  // references in the prompt build that text from their own order, before the
+  // policy is consulted (`buildSceneRenderPrompt` writes "Image 2: the
+  // location"). Reordering is one way the slots move and removal from ahead of a
+  // kept reference is the other — dedicate or disallow the second of three and
+  // the third arrives as image two under a prompt still calling it image three.
+  // No lane triggers either today; if one starts, the prompt and the payload
+  // have begun describing different images and the operator needs to know before
+  // the renders look subtly wrong.
+  if (plan.referencesRenumbered) {
+    sink?.push(
+      diag("warn", "image_profile.references_renumbered", "a reference is being sent in a slot the lane did not number it as", {
+        path: "image_model_profiles",
+        context: {
+          profile: intent.profile.profile.id,
+          slug: plan.model.slug,
+          supplied: roleNames(intent.references),
+          sending: roleNames(plan.sentReferences),
         },
       }),
     );
@@ -198,6 +293,7 @@ export async function renderImageIntent(
       model: plan.model,
       prompt: plan.prompt,
       references: plan.references,
+      controlReferences: plan.controlReferences,
       targetRatio: plan.targetRatio,
       controlInput: plan.controlInput,
       timeoutMs: plan.timeoutMs,

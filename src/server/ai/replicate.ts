@@ -72,10 +72,37 @@ export interface ReplicateImageResult {
   executedVersionId?: string;
 }
 
+/**
+ * One structural control image and the provider input it was bound to.
+ *
+ * The field is resolved upstream from the version's `additionalImageInputs`
+ * (`planImageRender`); this module never derives it. That is the same division
+ * `controlInput` follows — alias discovery happens once, in the probe, and the
+ * transport writes what it was told.
+ */
+export interface RenderControlReference {
+  field: string;
+  /** `single` writes one URI; `array` writes a list, matching the declared schema. */
+  arity: "single" | "array";
+  buffers: Buffer[];
+}
+
 export interface RegistryModelRequest {
   prompt: string;
   /** Ordered identity/location references; trimmed to what the model accepts. */
   references?: Buffer[];
+  /**
+   * Structural controls that have their own provider input, already bound to a
+   * field name.
+   *
+   * They travel the same transport as `references` — uploaded as short-lived
+   * files, or inlined for a `data_url` model — but they are NOT subject to
+   * `fitReferences`, because the primary field's capacity says nothing about how
+   * many images a separate `pose_image` input takes. Their own arity, resolved
+   * from the schema that declared them, is the limit, and it was applied before
+   * this call.
+   */
+  controlReferences?: RenderControlReference[];
   /**
    * The shape to request, already negotiated against the model's offerings by
    * `chooseAspect`. Null omits the aspect key entirely, letting the model use
@@ -236,7 +263,7 @@ export function referenceDataUrl(buffer: Buffer): string {
  * failing the render: fewer references costs fidelity, a rejected request costs
  * the image (docs/resilience.md §2).
  */
-const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
+export const DATA_URL_BUDGET_BYTES = 6 * 1024 * 1024;
 
 /**
  * Run one registry model.
@@ -269,47 +296,49 @@ export async function runRegistryImageModel(
 ): Promise<ReplicateImageResult> {
   if (!hasReplicate()) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
   const references = fitReferences(model, request.references ?? []);
-  if (references.length === 0 && !model.canGenerate) {
+  const controls = request.controlReferences ?? [];
+  // A bound control image is an input image: an edit-only model handed nothing
+  // but a pose map has something to work from, and refusing it here would make
+  // the dedicated-input path unusable on exactly the models it exists for.
+  if (references.length === 0 && controls.length === 0 && !model.canGenerate) {
     return { ok: false, error: `${model.slug} requires at least one reference image` };
   }
+  const controlBuffers = controls.flatMap((control) => control.buffers);
 
   if (model.referenceTransport === "data_url") {
-    const inlined = withinDataUrlBudget(references);
+    const reserved = controlBuffers.reduce((total, buffer) => total + buffer.byteLength, 0);
+    const inlined = withinDataUrlBudget(references, reserved);
     if (inlined.length < references.length) {
       sink?.push(
         diag("warn", "image_model.references_trimmed", "dropped references that did not fit the inline byte budget", {
           path: "image_models",
-          context: { slug: model.slug, sent: inlined.length, requested: references.length },
+          context: { slug: model.slug, sent: inlined.length, requested: references.length, reservedBytes: reserved },
         }),
       );
     }
     return await runReplicateImageModel(
       model.slug,
-      overlayControlInput(
-        buildRegistryModelInput(model, request.prompt, inlined.map(referenceDataUrl), request.aspect),
-        request.controlInput,
-        model,
-        sink,
-      ),
+      buildPayload(model, request, inlined.map(referenceDataUrl), controlUris(controls, controlBuffers.map(referenceDataUrl)), sink),
       request,
     );
   }
 
   const uploads: ReplicateFile[] = [];
   try {
-    for (const [index, reference] of references.entries()) {
-      const upload = await uploadReplicateFile(reference, `vesper-reference-${index + 1}.webp`);
+    // One numbering across both lists so a Replicate file name is unique within
+    // the run; the control images upload last so a reference's name stays what it
+    // was before controls existed.
+    for (const [index, buffer] of [...references, ...controlBuffers].entries()) {
+      const upload = await uploadReplicateFile(buffer, `vesper-reference-${index + 1}.webp`);
       if (!upload.ok) return { ok: false, error: upload.error };
       uploads.push(upload.file);
     }
+    // Split back POSITIONALLY, on the same order they were uploaded in. Keying a
+    // lookup by buffer would collapse two identical control images onto one URL.
+    const urls = uploads.map((file) => file.url);
     return await runReplicateImageModel(
       model.slug,
-      overlayControlInput(
-        buildRegistryModelInput(model, request.prompt, uploads.map((file) => file.url), request.aspect),
-        request.controlInput,
-        model,
-        sink,
-      ),
+      buildPayload(model, request, urls.slice(0, references.length), controlUris(controls, urls.slice(references.length)), sink),
       request,
     );
   } finally {
@@ -317,10 +346,87 @@ export async function runRegistryImageModel(
   }
 }
 
-/** The leading references that fit {@link DATA_URL_BUDGET_BYTES}; order is preserved. */
-export function withinDataUrlBudget(references: readonly Buffer[]): Buffer[] {
+/**
+ * Build the prediction input for one transport: the ordinary payload, the bound
+ * control fields written over it, then the caller's control overlay.
+ *
+ * Shared by both transports so the field-writing rules have one home. The ORDER
+ * matters and is the capabilities spec's: controls are structural inputs the
+ * render path owns, so they are written before `controlInput`, whose overlay
+ * refuses reserved fields but is otherwise a later layer that wins.
+ */
+function buildPayload(
+  model: ImageModel,
+  request: RegistryModelRequest,
+  referenceUris: readonly string[],
+  controls: readonly { field: string; value: string | string[] }[],
+  sink?: DiagnosticSink,
+): Record<string, unknown> {
+  const built = buildRegistryModelInput(model, request.prompt, referenceUris, request.aspect);
+  const reserved = new Set(reservedImageInputFields(model));
+  const refused: string[] = [];
+  for (const control of controls) {
+    // The same rule the override overlay follows, for the same reason: a probe
+    // that recorded an image input named `prompt` (or the aspect key) would
+    // otherwise have the control image overwrite what the render path itself
+    // wrote. The binding step already rules out the primary reference field.
+    if (reserved.has(control.field)) {
+      refused.push(control.field);
+      continue;
+    }
+    built[control.field] = control.value;
+  }
+  if (refused.length > 0) {
+    sink?.push(
+      diag("warn", "image_model.control_field_reserved", "a bound control image named a render-path field", {
+        path: "image_models",
+        context: { slug: model.slug, fields: refused.sort() },
+      }),
+    );
+  }
+  return overlayControlInput(built, request.controlInput, model, sink);
+}
+
+/**
+ * Each bound control's field and the URI(s) its declared arity calls for.
+ *
+ * `uris` is the control images' URIs in the SAME order the controls list their
+ * buffers — the order they were inlined or uploaded in — and is walked with a
+ * cursor rather than matched by buffer, so two byte-identical control images
+ * stay two images.
+ */
+function controlUris(
+  controls: readonly RenderControlReference[],
+  uris: readonly string[],
+): { field: string; value: string | string[] }[] {
+  let cursor = 0;
+  return controls.flatMap((control) => {
+    const taken = uris.slice(cursor, cursor + control.buffers.length);
+    cursor += control.buffers.length;
+    if (taken.length === 0) return [];
+    // An `array` field takes the list even at one image — the schema declared a
+    // list, and a bare string where a list is expected is a validation failure,
+    // not a convenience. A `single` field takes the first and only image the
+    // binding step allowed through.
+    const value: string | string[] = control.arity === "array" ? [...taken] : (taken[0] ?? "");
+    return [{ field: control.field, value }];
+  });
+}
+
+/**
+ * The leading references that fit {@link DATA_URL_BUDGET_BYTES}; order is
+ * preserved.
+ *
+ * `reservedBytes` is payload already spoken for — the bound control images,
+ * which are inlined whole. They are charged FIRST because they are not
+ * negotiable: a control was bound to a field the version declared, and an
+ * unconstrained render that silently lost its pose map looks like a success. An
+ * optional trailing style reference is exactly the thing a byte budget should
+ * give up instead.
+ */
+export function withinDataUrlBudget(references: readonly Buffer[], reservedBytes = 0): Buffer[] {
   const kept: Buffer[] = [];
-  let total = 0;
+  let total = reservedBytes;
   for (const reference of references) {
     total += reference.byteLength;
     if (total > DATA_URL_BUDGET_BYTES) break;

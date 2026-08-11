@@ -68,11 +68,12 @@ export type ImageLabMode = (typeof imageLabModes)[number];
  * a depth map, `edge` a white-on-black edge map.
  *
  * Deliberately NOT the same list as `imageReferenceRoles`: the reference roles
- * say what slot an image occupies in a model's inputs (and already reserve
- * `pose`/`depth`/`control` for exactly this), while these three say what a lab
- * FIXTURE is — what was extracted, how it may be reviewed, and which recipe can
- * use it. An `edge` fixture is fed under the `control` role; collapsing the two
- * would lose that distinction.
+ * say what slot an image occupies in a model's inputs, while these three say
+ * what a lab FIXTURE is — what was extracted, how it may be reviewed, and which
+ * recipe can use it. The two lists now agree on all three names
+ * ({@link imageLabControlRole} is one-to-one), but they remain separate lists
+ * because `imageReferenceRoles` also carries structural roles no lab fixture is
+ * extracted as (`mask`, and the generic `control`).
  */
 export const imageLabControlKinds = ["pose", "depth", "edge"] as const;
 export const imageLabControlKindSchema = z.enum(imageLabControlKinds);
@@ -81,10 +82,12 @@ export type ImageLabControlKind = (typeof imageLabControlKinds)[number];
 /**
  * The reference role a control fixture of each kind is fed under.
  *
- * `edge` maps to the generic `control` role deliberately: the fixture vocabulary
- * (what was extracted) and the reference-role vocabulary (which slot a model is
- * fed) are different lists, and `imageReferenceRoles` reserves `pose` and
- * `depth` but nothing edge-shaped.
+ * One-to-one since `edge` joined `imageReferenceRoles` with the control-role
+ * slice. It used to send an edge map under the generic `control` role, which was
+ * the honest answer while the role list had nothing edge-shaped in it, but it
+ * meant a profile could not require an edge map specifically and a probe's
+ * ordered inputs could not say whether a `control` slot held an edge map or a
+ * segmentation mask.
  *
  * It lives here, beside the two vocabularies it bridges, rather than in the UI
  * helper that first needed it: the experiment form uses it to build the send
@@ -99,16 +102,21 @@ export function imageLabControlRole(kind: ImageLabControlKind): ImageReferenceRo
     case "depth":
       return "depth";
     case "edge":
-      return "control";
+      return "edge";
   }
 }
 
 /**
- * Every role a control fixture is ever sent under — the structure a model is
- * asked to OBEY, as against the identity it is asked to preserve. This is the
- * image of {@link imageLabControlRole} over the three kinds, and nothing else.
+ * Every role a control fixture may be sent under.
+ *
+ * This is the image of {@link imageLabControlRole} over the three kinds PLUS the
+ * generic `control`, which is retained for one reason: experiments recorded
+ * before `edge` existed stored their edge fixtures under `control`, and a
+ * validator that stopped accepting it would refuse to re-run — or even
+ * re-read — probes already in the archive. New experiments never produce it.
  */
-export const imageLabControlRoles = ["pose", "depth", "control"] as const satisfies readonly ImageReferenceRole[];
+export const imageLabControlRoles = ["pose", "depth", "edge", "control"] as const satisfies
+  readonly ImageReferenceRole[];
 
 /** Whether an ordered input's role is one a control fixture may be sent under. */
 export function isImageLabControlRole(role: ImageReferenceRole): boolean {

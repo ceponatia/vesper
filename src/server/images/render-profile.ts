@@ -10,6 +10,7 @@ import {
   type TrialResolvedControls,
 } from "@/contracts";
 import { compileIdentityReferencePrompt } from "@/lib/images/identity-reference-prompt";
+import { compileReferenceRolePrompt } from "@/lib/images/reference-role-prompt";
 import {
   disableSafetyChecker,
   filterReservedInputFields,
@@ -292,7 +293,7 @@ function compilePromptForStrategy(
     case "identity_pack":
       return compileIdentityPackPrompt(strategy, basePrompt, references.roles);
     case "render_intent":
-      return compileRenderIntentPrompt(strategy, basePrompt);
+      return compileRenderIntentPrompt(strategy, basePrompt, references.roles);
   }
 }
 
@@ -326,21 +327,26 @@ function compileIdentityPackPrompt(
  * — so prefixing a second set of bindings would rewrite renders that work today
  * and describe the same image twice, in two conventions.
  *
- * `multi_reference_compose` REFUSES rather than falling through to "unchanged".
- * Its defining semantic is that it explicitly names the purpose and order of
- * each reference (image-model-capabilities.spec.md §"Prompt strategies"), and
- * this vocabulary has no wording for that yet — the general-role naming arrives
- * with the role-aware selector in slice 3. Returning the base prompt would let a
- * profile claim the composing strategy while sending text identical to
- * `instruction_edit`, which is the exact drift the strategy enum exists to make
- * visible. No seeded profile selects it, so nothing refuses today.
+ * `multi_reference_compose` now COMPILES here, which it could not before slice
+ * 3: its defining semantic is naming the purpose and order of each reference
+ * (image-model-capabilities.spec.md §"Prompt strategies"), and this vocabulary
+ * had no wording for that, so the only honest answer was refusal — returning the
+ * base prompt would have let a profile claim the composing strategy while
+ * sending text identical to `instruction_edit`. {@link compileReferenceRolePrompt}
+ * is that wording. No seeded profile selects the strategy, so no live render
+ * changes; a controlled Qwen recipe is the first thing that will.
  */
-function compileRenderIntentPrompt(strategy: ImagePromptStrategy, basePrompt: string): StrategyPromptCompile {
+function compileRenderIntentPrompt(
+  strategy: ImagePromptStrategy,
+  basePrompt: string,
+  roles: readonly ImageReferenceRole[],
+): StrategyPromptCompile {
   switch (strategy) {
     case "instruction_edit":
     case "text_to_image_description":
       return { ok: true, prompt: basePrompt };
     case "multi_reference_compose":
+      return { ok: true, prompt: compileReferenceRolePrompt({ basePrompt, roles }) };
     case "text_repair":
     case "example_transform":
     case "style_render":

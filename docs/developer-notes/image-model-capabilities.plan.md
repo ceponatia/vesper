@@ -83,12 +83,29 @@ the move changed where the configuration comes from and not what the provider
 receives. The model-level selection code the lanes used before was deleted rather
 than left beside the profile layer.
 
-**Not started.** Role-aware reference priority and parallel uploads, recorded
-seeds, safe version promotion, the LoRA library, image sets, and any admin or
-player UI for profiles remain ahead. One gap the migration opens: the model
-pickers still list models, while renders resolve profiles, so a model an operator
-adds without a profile is offered and then quietly passed over for the default —
-visible in the diagnostics, and closed by the picker slice.
+**Shipped and live (slices 3 and 9).** A profile's reference policy now decides
+which references survive when the model cannot take them all, and in what order:
+required first, then the profile's role order, then a caller's priority, then the
+order the lane offered them. A three-reference scene on a two-reference model
+drops whichever reference matters least instead of whichever happened to be last,
+and says which of three reasons it went for. Structural controls — pose, depth,
+edge, mask — are routed by what the model declares: to their own provider input
+where one exists (spending no ordinary reference slot), and otherwise as numbered
+images in the ordinary list, which is how the model this work is aimed at accepts
+them. The composing prompt strategy can finally be compiled, because there is now
+wording that names each reference's job and tells the model to obey a control map
+rather than draw it.
+
+No picture changed. Every seeded profile either carries an empty policy, which
+selects exactly as the old positional trim did, or lists its roles in the order
+its lane already sends them.
+
+**Not started.** Reference preparation and parallel uploads (the rest of slice
+3), recorded seeds, safe version promotion, the LoRA library, image sets, and any
+admin or player UI for profiles remain ahead. One gap the migration opens: the
+model pickers still list models, while renders resolve profiles, so a model an
+operator adds without a profile is offered and then quietly passed over for the
+default — visible in the diagnostics, and closed by the picker slice.
 
 ## What stays unchanged
 
@@ -332,11 +349,12 @@ pipelines to understand batches.
    production still follows each model's floating latest version rather than the
    compile step's pin, and still takes its prediction budget from the environment
    unless a profile declares one.
-3. **Role-aware references and transport.** Replace positional trimming with
-   priority selection, add bounded concurrent uploads, and preserve Wan's inline
-   path. References now carry roles and a profile's required roles are enforced;
-   what remains is choosing WHICH references survive when capacity is short, and
-   the general-vocabulary wording that lets a profile name each one in the prompt.
+3. **Role-aware references and transport.** — **priority selection and prompt
+   wording shipped 2026-08-11.** A profile's policy now chooses which references
+   survive when capacity is short, in what order, and reports why each omission
+   happened; the composing strategy has general-vocabulary wording that names
+   every reference's job. What remains is the transport half: a preparation step
+   and bounded concurrent uploads, preserving Wan's inline path.
 4. **Common controls and reproducibility.** Store seeds, add quality profiles,
    map guidance, steps, negative prompt, and edit strength only where supported,
    and use per-profile prediction timeouts. Mapping and timeouts are done;
@@ -350,8 +368,11 @@ pipelines to understand batches.
    Diffusion portrait profiles.
 8. **Image sets.** Normalize multiple outputs and add the separate coherent-set
    storage and UI workflow.
-9. **Future visual controls.** Extend the input-binding vocabulary to masks,
-   pose, depth, and other control images when a selected model requires them.
+9. **Future visual controls.** — **shipped 2026-08-11.** Masks, pose, depth and
+   edge images are routed by what the active model declares: to a dedicated
+   provider input where the version has one, and otherwise as numbered images in
+   the ordinary reference list. `edge` became a reference role of its own, so a
+   profile can require an edge map rather than a generic control.
 
 Each slice should be independently usable. Image sets must not change ordinary
 scene generation.
