@@ -1,6 +1,16 @@
 # Testing
 
-Vitest 4, one root config (`vitest.config.ts`) including `src/**/*.test.ts` and `scripts/**/*.test.ts`. The global setup file `src/test/setup.ts` forces demo mode for every test: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no test can hit a real provider. `pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
+Vitest 4, one root config (`vitest.config.ts`) declaring three **projects**:
+
+| Project      | Covers                                             | Setup               |
+| ------------ | -------------------------------------------------- | ------------------- |
+| `app`        | `src/**` + `scripts/**`, minus `*.int.test.ts`     | `src/test/setup.ts` |
+| `app-int`    | `src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `src/test/setup.ts` |
+| `image-core` | `packages/image-core/src/**`                       | none — by design    |
+
+`src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
+
+`pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
 
 ## Layers
 
@@ -112,9 +122,9 @@ force test edits, while broken production logic and crossed policy tripwires
 ## Commands
 
 ```
-pnpm test               # all non-DB suites (excludes **/*.int.test.ts)
-pnpm test:watch         # same exclusion, watch mode
-pnpm test:int           # DB suites only (filename filter ".int.test.", file parallelism off — they share one DB)
+pnpm test               # the app + image-core projects: everything that needs no DB
+pnpm test:watch         # same two projects, watch mode
+pnpm test:int           # the app-int project: DB suites only (file parallelism off — they share one DB)
 pnpm test:int:strict    # the SAME run as a release gate: REQUIRE_INTEGRATION_DB=true, so an unreachable
                         #   or unmigrated database FAILS the converted suites instead of skipping them
 pnpm test:engine        # the successor engine's authority + narrator + sim-route int suites
@@ -123,6 +133,9 @@ pnpm test:engine-e2-5   # focused successor branch transaction + crash/concurren
 pnpm typecheck
 pnpm lint
 ```
+
+The `test:engine*` scripts pass file paths, which Vitest applies as filters
+across every project — so they keep working without naming one.
 
 ## Strict integration mode (the release form)
 
