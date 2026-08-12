@@ -651,7 +651,13 @@ arm. The trial protocol and endpoint facts are in the
 
 ### Stage 5 — one character LoRA pilot
 
-Status: queued — after Stage 4; the dataset-size question below stays open.
+Status: in progress — the LoRA-only comparison arm and the training runbook
+are built 2026-08-11; the dataset, the training run, and the comparison arms
+remain. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
+Vale, and the training set is her curated identity-faithful renders plus
+synthesized variants to about twenty images — a training set is assembled only
+from images whose generation provenance is verifiable, which the app's own
+renders are by construction.
 
 Train or obtain one character LoRA from a reviewed, varied image set. Compare:
 
@@ -838,9 +844,3 @@ image records.
   [character-schema.plan.md](character-schema.plan.md)'s ground — the question
   for Stage 7 is whether that plan supplies the text, whether the lab derives it
   another way, or whether the pass stays admin-only until one of those exists.
-- whether seven varied images of one character are enough to train a useful
-  first character LoRA. The owner wants to use the existing seven-image
-  reference set (those files live on the owner's disk only — the repository
-  deliberately does not track them); Stage 5 needs a researched answer on
-  minimum viable set size before committing to it, recorded in the
-  [spec](qwen-advanced-image-subsystem.spec.md).

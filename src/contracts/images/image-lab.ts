@@ -274,6 +274,29 @@ export function isImageLabVerdictForKind(kind: ImageLabExperimentKind, verdict: 
 }
 
 /**
+ * Which ARM of the Stage 5 comparison a finishing pass runs.
+ *
+ * The two are the same operation over two different reference sets, and the
+ * difference is the whole measurement:
+ *
+ * - `identity` — the Stage 3 pass: the base render plus the subject's
+ *   identity-pack references. What a finishing pass has always been, and what an
+ *   absent variant means on every row written before this vocabulary existed.
+ * - `lora_only` — the base render and NOTHING else, with a character LoRA
+ *   blended in. It exists because Stage 5 asks what the LoRA contributes on its
+ *   own, and that question cannot be answered by a run that also sends the pack:
+ *   an improved face would be unattributable between the two.
+ *
+ * A variant is a fact about the run rather than a preference, so it is recorded
+ * at create and read back by the runner — the recipe it selects is what the
+ * outcome cites, and a pass whose record named the wrong arm would poison the
+ * comparison it exists to feed.
+ */
+export const imageLabFinishingVariants = ["identity", "lora_only"] as const;
+export const imageLabFinishingVariantSchema = z.enum(imageLabFinishingVariants);
+export type ImageLabFinishingVariant = (typeof imageLabFinishingVariants)[number];
+
+/**
  * An experiment's lifecycle position. `pending` has spent nothing, `running` has
  * begun charging the image budget, and the two terminal states are settled by
  * the runner — never by the reviewer, whose verdict is a separate field
@@ -676,6 +699,22 @@ export const imageLabExperimentSchema = z.object({
    */
   sourceExperimentId: z.string().min(1).nullable().catch(null).default(null),
 
+  /**
+   * Which arm a `finishing_pass` runs — null on every other kind, and null on a
+   * pass that declared none, which MEANS {@link imageLabFinishingVariants}'
+   * `identity` (the Stage 3 behavior every row written before Stage 5 has).
+   *
+   * Null rather than a defaulted `"identity"` because the two facts are
+   * different: a row that says nothing is a row nobody asked a question of, and
+   * writing the default here would make a Stage 3 pass indistinguishable from a
+   * Stage 5 one that deliberately chose the identity arm. The RUNNER applies the
+   * default, in one place, where the recipe is chosen.
+   *
+   * It rides the meta bag beside `sourceExperimentId`, and carries `.catch` for
+   * the same reason: a bag that no longer parses costs the field, never the row.
+   */
+  finishingVariant: imageLabFinishingVariantSchema.nullable().catch(null).default(null),
+
   status: imageLabExperimentStatusSchema,
   failureCode: z.string().min(1).max(120).nullable().default(null),
   verdict: imageLabVerdictSchema.nullable().default(null),
@@ -729,7 +768,13 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   quietly ignored, which would leave a record of an input that had no effect.
  * - no other kind carries a source experiment. A pointer on a kind that never
  *   reads one is a client bug, and storing it would leave a row claiming a
- *   lineage its render did not have.
+ *   lineage its render did not have. A `finishingVariant` is refused everywhere
+ *   else for the same reason: no other kind's runner reads one, so a stored
+ *   variant would describe an arm the render never ran.
+ * - a `lora_only` pass names the LoRA it measures. The arm withholds the
+ *   identity references precisely so the weights can be judged alone, and
+ *   without weights there is nothing left to judge — the run would re-render its
+ *   own source image under the name of a comparison arm.
  *
  * Deliberately NOT enforced here: that a probe carries any particular inputs, or
  * that it declares a control at all. Both are the runner's recorded refusals
@@ -752,6 +797,8 @@ export const imageLabCreateExperimentRequestSchema = z
     controlKind: imageLabControlKindSchema.optional(),
     /** The succeeded experiment a `finishing_pass` refines. Required there, refused everywhere else. */
     sourceExperimentId: z.string().min(1).optional(),
+    /** Which arm a `finishing_pass` runs. Absent means `identity`; refused on every other kind. */
+    finishingVariant: imageLabFinishingVariantSchema.optional(),
     settings: imageLabSettingsSchema.optional(),
   })
   .superRefine((request, ctx) => {
@@ -784,12 +831,29 @@ export const imageLabCreateExperimentRequestSchema = z
           message: "a finishing pass inherits its subject from the source experiment",
         });
       }
-    } else if (request.sourceExperimentId !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["sourceExperimentId"],
-        message: "only a finishing pass refines another experiment's result",
-      });
+      if (request.finishingVariant === "lora_only" && request.settings?.controls.lora === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["settings", "controls", "lora"],
+          message:
+            "a LoRA-only pass names the LoRA it measures; with no LoRA and no identity reference it would only re-render the source image",
+        });
+      }
+    } else {
+      if (request.sourceExperimentId !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sourceExperimentId"],
+          message: "only a finishing pass refines another experiment's result",
+        });
+      }
+      if (request.finishingVariant !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["finishingVariant"],
+          message: "only a finishing pass declares which arm it runs",
+        });
+      }
     }
     if (request.kind === "baseline_portrait" && request.characterId === undefined) {
       ctx.addIssue({

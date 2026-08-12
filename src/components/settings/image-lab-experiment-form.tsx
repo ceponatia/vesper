@@ -90,6 +90,12 @@ import {
  * ID, never a locator: which weights that id points at is the library's ruling,
  * re-made at render time, so a record can never claim an address the run did not
  * use.
+ *
+ * With a LoRA picked, the pass may additionally be run as the Stage 5 LORA-ONLY
+ * ARM: the base render goes alone, with no identity reference beside it, so what
+ * the weights contribute can be read without the pack contributing to the same
+ * face. The checkbox appears only once a LoRA is chosen, because the arm without
+ * weights is not a comparison — it is the source image rendered twice.
  */
 
 /** What the runner uses when the form names no model. Shown, never sent. */
@@ -97,7 +103,8 @@ const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
 
 /**
  * The send order a finishing pass compiles its numbered bindings over: the base
- * render, then one identity reference.
+ * render, then one identity reference — and on the LoRA-only arm, the base render
+ * alone.
  *
  * One identity, because the recipe draws pack references under
  * `IMAGE_LAB_FINISHING_IDENTITY_STRATEGY` and that strategy is `canonical_only`.
@@ -106,6 +113,7 @@ const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
  * a two-line change, and this comment is the second line's address.
  */
 const FINISHING_PREVIEW_ROLES: readonly ImageReferenceRole[] = ["before", "identity"];
+const FINISHING_LORA_ONLY_PREVIEW_ROLES: readonly ImageReferenceRole[] = ["before"];
 
 /**
  * The optional third reference each controlled recipe is offered, and the one
@@ -247,6 +255,7 @@ export function ImageLabExperimentForm({
   const [modelSlug, setModelSlug] = useState("");
   const [loraId, setLoraId] = useState("");
   const [loraScale, setLoraScale] = useState("");
+  const [loraOnly, setLoraOnly] = useState(false);
   const [instructionText, setInstructionText] = useState(prefill?.instruction ?? "");
   const [instructionEdited, setInstructionEdited] = useState(prefill !== null && prefill.instruction !== "");
   const [submitting, setSubmitting] = useState(false);
@@ -288,12 +297,21 @@ export function ImageLabExperimentForm({
   }
   // A different LoRA is a different curated band, so the scale returns to that
   // row's own default rather than carrying the previous row's number across
-  // (render-adjust with a latch, never a setState inside an effect).
+  // (render-adjust with a latch, never a setState inside an effect). The arm
+  // resets with it: "measure THESE weights alone" is a decision about one row,
+  // and a checkbox left standing through a change of LoRA would silently apply it
+  // to a different question — including when the pick is cleared, after which the
+  // checkbox is no longer on screen to be unticked.
   const [prevLoraId, setPrevLoraId] = useState(loraId);
   if (loraId !== prevLoraId) {
     setPrevLoraId(loraId);
     setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
+    setLoraOnly(false);
   }
+  // The arm as the request will state it. Guarded on the pick rather than trusted
+  // from the checkbox alone, so the one render between a vanished LoRA and the
+  // latch above cannot describe an arm with no weights in it.
+  const loraOnlyArm = selectedLora !== null && loraOnly;
   // An emptied box means the row's own default, which is the same fallback the
   // evaluator applies server-side — spelled here so the disabled-submit check
   // below judges the number that will actually be sent.
@@ -420,11 +438,15 @@ export function ImageLabExperimentForm({
 
   // A finishing pass previews the WHOLE fixed text, bindings and rule together,
   // because unlike the controlled kinds none of it is the admin's: they can only
-  // add to it. Compiled by the same two pure functions the runner calls, so what
-  // is read here is what is sent — the images filling the two slots are the only
-  // thing this preview cannot show, and the note below says so.
+  // add to it. Compiled by the same two pure functions the runner calls, over the
+  // same roles the chosen ARM sends, so what is read here is what is sent — the
+  // images filling the slots are the only thing this preview cannot show, and the
+  // note below says so.
   const finishingPreview = isFinishing
-    ? compileReferenceRolePrompt({ basePrompt: imageLabFinishingInstruction(""), roles: FINISHING_PREVIEW_ROLES })
+    ? compileReferenceRolePrompt({
+        basePrompt: imageLabFinishingInstruction("", loraOnlyArm ? "lora_only" : "identity"),
+        roles: loraOnlyArm ? FINISHING_LORA_ONLY_PREVIEW_ROLES : FINISHING_PREVIEW_ROLES,
+      })
     : "";
 
   const controlReady = control !== null && isReviewedFixture(control);
@@ -476,6 +498,12 @@ export function ImageLabExperimentForm({
           // key at all — an overlay nobody chose is an overlay the record would
           // then claim was configured, and the raw provider bag stays empty
           // either way (a recipe run that carries one is refused outright).
+          //
+          // The arm rides in the same conditional, and is likewise sent only when
+          // asked for: an absent `finishingVariant` MEANS the identity arm, so
+          // stating it would make every ordinary pass indistinguishable from one
+          // that deliberately chose the pack. The server refuses `lora_only`
+          // without a LoRA, and this shape cannot produce that pair.
           ...(selectedLora === null || effectiveLoraScale === null
             ? {}
             : {
@@ -483,6 +511,7 @@ export function ImageLabExperimentForm({
                   controls: { lora: { id: selectedLora.id, scale: effectiveLoraScale } },
                   controlInput: {},
                 },
+                ...(loraOnlyArm ? { finishingVariant: "lora_only" as const } : {}),
               }),
         }
       : {
@@ -652,7 +681,9 @@ export function ImageLabExperimentForm({
             <p className="text-xs text-paper-500">
               {finishableSources.length === 0
                 ? "No finished baseline or controlled run to refine yet — a probe cannot be finished, and neither can another finishing pass."
-                : "The runner sends that run's result as the base image and the character's identity-pack reference beside it. Nothing else is picked here: the pack decides which image its identity is."}
+                : loraOnlyArm
+                  ? "The runner sends that run's result as the base image and stops there — the LoRA-only arm asks the identity pack for nothing."
+                  : "The runner sends that run's result as the base image and the character's identity-pack reference beside it. Nothing else is picked here: the pack decides which image its identity is."}
             </p>
 
             <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
@@ -692,13 +723,29 @@ export function ImageLabExperimentForm({
               ) : null}
             </div>
             {selectedLora !== null ? (
-              // String-expression children throughout: this prose straddles
-              // expressions, and a wrapped boundary is where the space goes missing.
-              <p className="text-xs text-paper-500">
-                {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
-                {"A scale outside it is refused before any spend rather than clamped. The row's trigger words and "}
-                {"prompt additions are woven into the compiled prompt automatically — nothing to type below."}
-              </p>
+              <>
+                {/* String-expression children throughout: this prose straddles
+                    expressions, and a wrapped boundary is where the space goes missing. */}
+                <p className="text-xs text-paper-500">
+                  {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
+                  {"A scale outside it is refused before any spend rather than clamped. The row's trigger words and "}
+                  {"prompt additions are woven into the compiled prompt automatically — nothing to type below."}
+                </p>
+                <label className="flex items-center gap-2 text-sm text-paper-300">
+                  <input
+                    type="checkbox"
+                    checked={loraOnly}
+                    onChange={() => setLoraOnly((on) => !on)}
+                    className="accent-accent-500"
+                  />
+                  LoRA-only arm — send no identity reference
+                </label>
+                <p className="text-xs text-paper-500">
+                  {loraOnly
+                    ? "This pass sends the base render alone, so what the weights do to the face is not shared with the identity pack. The compiled prompt below changes to match — it names no reference image."
+                    : "Leave it off and the pack's reference goes too. Tick it to measure the LoRA on its own: the pass sends the base render and nothing else, which is the only arm that can attribute an improved face to the weights."}
+                </p>
+              </>
             ) : null}
           </div>
         ) : needsChat ? (
@@ -835,7 +882,9 @@ export function ImageLabExperimentForm({
                 : controlledKind !== null
                   ? "Nothing ordered yet — a controlled run sends its identity, its control fixture, and at most one extra."
                   : isFinishing
-                    ? "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
+                    ? loraOnlyArm
+                      ? "Resolved at run time — the source run's result, and nothing else. The LoRA-only arm sends no identity reference at all."
+                      : "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
                     : "None — a baseline resolves the lane's own references itself."}
             </p>
           ) : (
