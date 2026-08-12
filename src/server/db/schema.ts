@@ -17,7 +17,6 @@ import {
   uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
-import type { AuthoredRelationship } from "@/contracts";
 import type {
   SimulationCommandEnvelope,
   SimulationCommandResultRecord,
