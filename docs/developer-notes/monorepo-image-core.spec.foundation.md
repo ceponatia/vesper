@@ -6,7 +6,9 @@ Implementation state: not started — queued behind Slice 2 by delivery order.
 
 Give the small primitives that genuinely cross package boundaries one home, and
 delete the temporary diagnostic copy in `image-core`. Shared mechanics are in
-[monorepo-image-core.spec.md](monorepo-image-core.spec.md).
+[monorepo-image-core.spec.md](monorepo-image-core.spec.md); package registration,
+import integrity and runtime-target guardrails are already active from
+[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
 
 ## Why this package, and why now
 
@@ -27,6 +29,22 @@ foundation because they are generic trust-boundary behavior rather than game
 domain vocabulary. `image-core` does not need them today. Moving them is a
 deliberate pre-positioning decision for shared package boundaries, not a reason
 to make the core parse application-owned data.
+
+## Runtime target
+
+`@vesper/contracts` is a **pure, browser/server-portable package**.
+
+It may depend on runtime-neutral libraries such as `zod`, but it does not gain:
+
+- Next/server framework dependencies;
+- Node-only filesystem/crypto/network modules;
+- persistence;
+- ambient environment reads;
+- clock/random behavior;
+- Vesper game-domain vocabulary.
+
+Its package-local TypeScript project must reflect that runtime instead of
+borrowing the web application's Next plugin or `@/*` alias.
 
 ## Scope: exactly two primitive groups
 
@@ -117,15 +135,16 @@ This is not a compatibility implementation shim: the application barrels remain
 valid architectural entry points while the implementation gains a shared owner.
 
 Package code imports `@vesper/contracts` directly. It never imports the
-application barrels.
+application barrels or the package through a filesystem/deep subpath.
 
 ## Public export surface
 
 `@vesper/contracts` follows the monorepo's curated-root ruling:
 
-- one public root import path;
-- explicit exports for diagnostics and parsing;
-- no deep public subpaths;
+- one public root code import path;
+- explicit named exports for diagnostics and parsing;
+- no root `export *`;
+- no deep public code subpaths;
 - no app-domain contract re-exports.
 
 The small surface is intentional. A caller should be able to read
@@ -148,13 +167,21 @@ package adopts `parseOr` only when that package itself owns the trust boundary.
 
 ## Registration
 
-Before Slice 6, use the shared registration points from the hub spec:
+Use the registration/integrity checklist from the hub and Slice 1 guardrails.
+This package is not considered registered until all of these agree:
 
-- `packages/contracts/package.json`;
-- root `tsconfig.json` package mapping;
-- root `vitest.config.ts` package mapping;
-- `next.config.ts` `transpilePackages`;
-- Dockerfile manifest copy.
+- `packages/contracts/package.json` with curated root exports and owned deps;
+- `packages/contracts/tsconfig.json` with the universal runtime target;
+- root `pnpm typecheck` includes the package project;
+- root Vitest discovers its tests without application-global setup;
+- `next.config.ts` lists it in `transpilePackages` if the web app imports it;
+- Dockerfile copies its manifest before workspace install;
+- the real-workspace/package-name CI smoke check resolves `@vesper/contracts`;
+- `lint:package-boundaries` recognizes its allowed package-graph edges.
+
+Do not add wildcard TypeScript/Vitest aliases. If a tool temporarily requires an
+exact root-name mapping, normal workspace/package `exports` resolution still has
+to be exercised separately in CI.
 
 `packages/contracts/package.json` declares:
 
@@ -165,11 +192,13 @@ Before Slice 6, use the shared registration points from the hub spec:
 - `zod` as its runtime dependency.
 
 `packages/image-core/package.json` gains
-`"@vesper/contracts": "workspace:*"` and imports diagnostics by package name.
+`"@vesper/contracts": "workspace:*"` and imports diagnostics by exact package
+root name.
 
-The Slice 1 package-boundary checker must already be active before this package
-is added, so a relative import from `image-core` into `packages/contracts` fails
-rather than becoming the precedent.
+The Slice 1 workspace checker must already be active before this package is
+added, so a relative import from `image-core` into `packages/contracts` or an
+application relative deep import into `contracts/src` fails rather than becoming
+the precedent.
 
 Update the root package inventory documentation in the implementation PR to say
 there are two packages.
@@ -194,31 +223,39 @@ the application barrel.
 
 ### Package independence
 
-Foundation tests have no application setup, DB, env or Next dependency. They run
-under the shared repository test command but are fully package-contained.
+Foundation tests run in the package-scoped Vitest project already established by
+Slice 1. They have no application setup, DB, env or Next dependency. The
+package-local TypeScript project covers all package source/tests without the app
+alias or Next plugin.
 
 ## Invariants
 
 1. There is exactly one diagnostic contract definition.
 2. `image-core` and future packages import diagnostics from
-   `@vesper/contracts`, never from `src/contracts`.
+   `@vesper/contracts`, never from `src/contracts` or a filesystem/deep package
+   path.
 3. Application code may keep the existing diagnostics/parse paths only because
    those files are explicit re-export barrels with no implementation.
 4. `@vesper/contracts` contains no Vesper domain vocabulary.
-5. Parser behavior and diagnostic codes do not change during extraction.
-6. `parseOr` is not introduced into new call sites merely because it became
+5. `@vesper/contracts` remains browser/server portable.
+6. Parser behavior and diagnostic codes do not change during extraction.
+7. `parseOr` is not introduced into new call sites merely because it became
    available to packages.
-7. Package-to-package imports are by declared workspace dependency name.
+8. Package-to-package imports are by declared workspace dependency root name.
+9. Package root exports remain explicit and curated.
 
 ## Verification
 
 - CI `verify` is green for the Slice 3 PR.
+- package-local typecheck and package-scoped tests are green;
+- the real-workspace import smoke check resolves `@vesper/contracts` through its
+  manifest/exports;
 - `grep`/symbol search finds one implementation of `diag`,
-  `DiagnosticCollector`, `parseOr` and `parseOrNull`.
-- The old diagnostic compatibility test is deleted, not skipped.
-- Existing application boundary-parsing tests still assert their fallback and
-  diagnostic code.
-- `lint:package-boundaries` proves `image-core -> contracts` is a declared
-  package dependency rather than a relative escape.
-- No file under `packages/contracts` imports the application or reads
-  `process.env`.
+  `DiagnosticCollector`, `parseOr` and `parseOrNull`;
+- the old diagnostic compatibility test is deleted, not skipped;
+- existing application boundary-parsing tests still assert their fallback and
+  diagnostic code;
+- `lint:package-boundaries` proves `image-core -> contracts` is an allowed,
+  declared package dependency and rejects relative/deep-import alternatives;
+- no file under `packages/contracts` imports the application, reads
+  `process.env`, or introduces Node-only runtime dependencies.
