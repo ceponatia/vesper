@@ -236,7 +236,9 @@ jobs:
   production-build:
     name: production build
     needs: changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
+    # Manual dispatch is the pre-deploy release-candidate run, so the build
+    # gate must fire there too, not only on PRs.
+    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
