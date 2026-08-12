@@ -22,6 +22,7 @@
     "test:int": "vitest run --no-file-parallelism .int.test.",
     "test:int:strict": "REQUIRE_INTEGRATION_DB=true vitest run --no-file-parallelism .int.test.",
     "verify": "pnpm lint && pnpm lint:cycles && pnpm lint:authz && pnpm typecheck && pnpm test && pnpm jscpd",
+    "gates:local": "bash scripts/local-gates.sh",
     "prepare": "husky",
     "db:up": "docker compose up -d --wait",
     "db:create": "tsx scripts/db-create.ts",
