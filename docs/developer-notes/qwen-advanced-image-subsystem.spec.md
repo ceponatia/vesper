@@ -45,7 +45,8 @@ those systems through their existing exports and adds no second copy.
 | Stage 4 style-LoRA smoke arms (no-LoRA / LoRA)  | run 2026-08-11   |
 | Stage 4 owner verdicts                          | pending          |
 | Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
-| Stage 5 dataset, training run, comparison arms  | pending          |
+| Stage 5 dataset + character-LoRA training run   | run 2026-08-11   |
+| Stage 5 artifact hosting + comparison arms      | pending          |
 
 Stage 6+ work (two-character recipes, the promotion decision) is deliberately
 absent from this table: Stage 6 waits on the owner opening the two-character
@@ -558,6 +559,60 @@ finding).
    the pack-only arm, not against memory of Stage 3.
 7. **Record everything here** (ids, verdicts, notes); flip the plan's Stage 5
    line when the owner accepts.
+
+**Stage 5 pilot run — dataset and training (2026-08-11):**
+
+The dataset that actually trained is **20 images**: fifteen of the seventeen
+curated ids in step 1 — `nqu5ph8ifltfcitixo58lh91` and
+`mbeamkkgmhwdfjugvs4ylon9` were dropped as near-duplicate raised-arm poses —
+plus five variant renders made for the gaps: `hlub8i65jfzidmpw7gmywbf1` (red
+satin slip dress), `n66yvuf2taly5plzlf7fv403` (cream cable-knit and boots),
+`c159q2vrz5d3fcfljaaoscmd` (city park at golden hour),
+`pbfifmtdovtyhhys5fb66g42` (open laugh, close portrait),
+`puc7vtogi3m0rekgt5f9jm3y` (dim café, chest-up). Every image carries a
+descriptive caption naming "Sabrina"; the trainer recorded twenty captions and
+generated none of its own.
+
+| Training fact   | Value                                                     |
+| --------------- | --------------------------------------------------------- |
+| Training id     | `0q8vz9f389rmw0czydkbb670r8`                              |
+| Trainer version | `f28eb39544f2…` (the pinned default)                      |
+| Hyperparameters | 1500 steps, rank 32, alpha 32, LR 2e-4, batch 1, adamw    |
+| Duration / cost | 18.7 min predict (20.9 min total) ≈ $1.71 on gpu-h200      |
+| Destination     | `ceponatia/vesper-sabrina-qwen-lora:9324083579d2…`        |
+| Artifact        | `lora.safetensors`, 590 MB, 1680 F16 tensors              |
+
+**The artifact's key convention is native.** Every tensor is
+`transformer.<block>.…lora_A/lora_B.weight` — diffusers/peft naming, already
+`transformer.`-prefixed — so the connector's remapper (which prefixes
+`transformer.` and drops `.default.` segments) has nothing to correct. The
+naming-mismatch risk the research flagged for ai-toolkit exports does not
+apply to this trainer's output.
+
+**The durable ZIP URL is refused, as predicted.** Prediction
+`hyyacj0cgnrp00czydy8zvgmx4` on the connector with `lora_weights` set to the
+training's `replicate.delivery` zip failed with
+`Error while deserializing header: header too large` — the endpoint downloads
+whatever the locator names and parses it as safetensors, so an archive is
+refused by the parser rather than by a format check. The connector README's
+"unsupported: zipped/tar archives" is the authority; its `lora_weights` field
+description claiming otherwise is stale. **Consequence: the extracted
+`lora.safetensors` must be re-hosted, and a library row may never point at a
+training's zip URL.**
+
+**Operational finding — a 500 from trainings-create may still have created the
+training.** Three consecutive script runs answered
+`500 {"detail":"An unexpected error ocurred"}` on
+`POST /v1/models/…/trainings` while each in fact created a running training;
+the Replicate status page reported no incident, and the failure is at the
+response layer rather than in validation (a canary on a different version of
+the same trainer answered 201 for an identical body). The keeper ran on the
+pinned default version, so no trainer version was ever at fault. **Before
+retrying a create that answered 500, list `/v1/trainings` and cancel the
+duplicates** — two surplus trainings were cancelled here, and an uncancelled
+one bills in full. Cancellation goes through
+`POST /v1/trainings/<id>/cancel`; the predictions-scoped cancel path answers
+503 for a training id.
 
 ## Stage 4 LoRA trial protocol
 

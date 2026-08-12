@@ -651,9 +651,10 @@ arm. The trial protocol and endpoint facts are in the
 
 ### Stage 5 — one character LoRA pilot
 
-Status: in progress — the LoRA-only comparison arm and the training runbook
-are built 2026-08-11; the dataset, the training run, and the comparison arms
-remain. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
+Status: in progress — the LoRA-only comparison arm, the training runbook, the
+twenty-image dataset and the character-LoRA training itself are done
+2026-08-11; hosting the trained weights and running the comparison arms
+remain, and hosting is blocked on credentials for the owner's chosen host. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
 Vale, and the training set is her curated identity-faithful renders plus
 synthesized variants to about twenty images — a training set is assembled only
 from images whose generation provenance is verifiable, which the app's own
