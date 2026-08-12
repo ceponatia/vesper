@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { sceneGenStateSchema } from "@/contracts/state/scene-gen";
-import type { ProviderRenderResult, SceneAttemptId } from "../ai";
+import type { ProviderRenderResult, SceneAttemptId } from "@vesper/image-core";
 import { composeSceneSpec, executeSceneChain, shouldGenerateScene } from "./scene";
 
 describe("shouldGenerateScene", () => {

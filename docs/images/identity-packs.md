@@ -25,7 +25,7 @@ Automatic derivation is therefore the deterministic `heuristic_v1` crop for port
 `detector` by inference — and it **fails closed with `no_usable_face`** on any other shape rather than guessing a
 rectangle out of a group shot. Face-box expansion, lost-padding refusal and the multi-face `ambiguous_faces` refusal
 (never the biggest or most central face) are implemented and proven against injected test detectors. Every tunable
-number lives in `lib/images/identity-pack-policy.ts` behind `derive_v1` (bump when crop **bytes** would change) and
+number lives in `packages/image-core/src/identity/identity-pack-policy.ts` behind `derive_v1` (bump when crop **bytes** would change) and
 `policy_v1` (bump when a **threshold** re-judges stored measurements), with golden fixtures pinning the geometry so "the
 crop moved" is always deliberate. The v1 values are conservative placeholders; blur and occlusion
 thresholds are `null` — defined, not armed.

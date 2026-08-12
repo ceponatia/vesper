@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageLabCreateExperimentRequestSchema } from "@/contracts";
+import { imageLabCreateExperimentRequestSchema } from "@vesper/image-core";
 import {
   imageRenderRejection,
   jobCapRejection,

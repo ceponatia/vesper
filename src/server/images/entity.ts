@@ -3,7 +3,7 @@ import { db, images, items, locations } from "../db";
 import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
-import { parseAspectValue, type ResolvedImageProfile } from "@/contracts";
+import { parseAspectValue, type ResolvedImageProfile } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";

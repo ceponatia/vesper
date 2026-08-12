@@ -36,7 +36,7 @@ trial, and license/terms review.
 
 ## Explicit native dimensions
 
-The provider defaults `width`/`height` to 1080×1080. `src/server/images/quality-presets.ts` sends the same portrait bucket used for
+The provider defaults `width`/`height` to 1080×1080. `packages/image-core/src/models/quality-presets.ts` sends the same portrait bucket used for
 [Juggernaut XL v9](juggernaut-xl-v9.md) and [NSFW FLUX Dev](nsfw-flux-dev.md):
 
 ```json

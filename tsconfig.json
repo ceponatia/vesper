@@ -26,6 +26,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@vesper/image-core": [
+        "./packages/image-core/src/index.ts"
       ]
     }
   },

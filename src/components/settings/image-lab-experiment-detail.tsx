@@ -2,13 +2,13 @@
 
 import { useState, type ReactNode } from "react";
 import {
+  type ImageLabExperiment,
+  type ImageLabVerdict,
   imageLabVerdictOptions,
   isImageLabControlledKind,
   isUndisclosedProviderVersion,
   providerVersionsDisagree,
-  type ImageLabExperiment,
-  type ImageLabVerdict,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { imageLabApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";

@@ -44,7 +44,7 @@ field name is therefore essential; a hardcoded generic `image` key would fail.
 The provider defaults to 768×1024, but relying on a remote default would let a
 future wrapper update change Vesper's shape silently.
 
-`src/server/images/quality-presets.ts` sends:
+`packages/image-core/src/models/quality-presets.ts` sends:
 
 ```json
 {

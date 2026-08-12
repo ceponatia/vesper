@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   emptyImageModelAdvancedCapabilities,
-  imageModelProfileSchema,
-  imageModelSchema,
   type ImageModel,
   type ImageModelProfile,
-} from "@/contracts";
+  imageModelProfileSchema,
+  imageModelSchema,
+} from "@vesper/image-core";
 import {
   ensureIdentityTrialModelVersions,
   identityTrialModelsNeedingProbe,

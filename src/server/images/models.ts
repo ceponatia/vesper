@@ -1,11 +1,17 @@
 import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import type { output as ZodOutput, ZodType } from "zod";
-import { chooseAspect, imageModelSchema, IMAGE_TARGET_ASPECT, type ImageModel } from "@/contracts";
+import {
+  chooseAspect,
+  IMAGE_TARGET_ASPECT,
+  type ImageModel,
+  imageModelSchema,
+  preparePromptForImageModel,
+  withReviewedImageQuality,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { runRegistryImageModel, type RenderControlReference } from "../ai";
-import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-presets";
 
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).

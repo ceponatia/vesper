@@ -1,0 +1,14 @@
+{
+  "name": "@vesper/image-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider-neutral image engine: model capabilities, profiles, render intent, references, identity packs, lab recipes, failure classification.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

@@ -177,7 +177,7 @@ non-disclosure, not a disagreeing version**:
 - **The record stays verbatim.** `executedVersionId` still stores exactly what
   the provider said, `"hidden"` included; the interpreting happens at one
   shared seam, `providerVersionsDisagree` in
-  `src/contracts/images/image-models.ts`, which both the lab detail screen and
+  `packages/image-core/src/models/image-models.ts`, which both the lab detail screen and
   the identity-pack trial's post-render audit call. It reports a disagreement
   only when both sides are present, differ, and the executed side is not
   undisclosed.
@@ -211,7 +211,7 @@ Ruling settled 2026-08-11 — **a probe may not be fed its own answer**:
 The controlled kinds ride the shared machinery end to end; the lab's own code
 declares intent and records outcomes, nothing more.
 
-- **Recipes are code, not profile rows.** `src/contracts/images/image-lab-recipes.ts`
+- **Recipes are code, not profile rows.** `packages/image-core/src/lab/image-lab-recipes.ts`
   defines one recipe per (controlled kind × control kind): a fully-shaped
   `ImageModelProfile` — operation `edit`, strategy `multi_reference_compose`,
   reference policy requiring `identity` + the control role and ordering
@@ -913,7 +913,7 @@ remaining Stage 4 step.
 
 ## Contracts
 
-New file `src/contracts/images/image-lab.ts` (pure; exported via
+New file `packages/image-core/src/lab/image-lab.ts` (pure; exported via
 `src/contracts/index.ts` beside the other image contracts). It reuses — never
 redeclares — `imageReferenceRoles` from `image-model-capabilities.ts`.
 
@@ -968,7 +968,7 @@ Stage 3 additions (2026-08-11):
 - In `image-lab-recipes.ts`: `IMAGE_LAB_FINISHING_RECIPE_KEY`,
   `IMAGE_LAB_FINISHING_IDENTITY_STRATEGY`, `imageLabFinishingRecipeProfile`,
   `imageLabFinishableKinds` / `isImageLabFinishableKind`.
-- In `src/lib/images/image-lab-instruction.ts`:
+- In `packages/image-core/src/lab/image-lab-instruction.ts`:
   `imageLabFinishingInstruction(ownerInstruction)`.
 
 Stage 6 additions (2026-08-12):
@@ -990,7 +990,7 @@ Stage 6 additions (2026-08-12):
 
 Stage 4 additions (2026-08-11): none of the lab's own contracts changed — the
 LoRA selection was already a member of the normalized controls the settings
-schema accepts. The library contract (`src/contracts/images/image-loras.ts`:
+schema accepts. The library contract (`packages/image-core/src/loras/image-loras.ts`:
 the record, locator validation, redaction, the render evaluator, the
 `image_lora.*` codes, `ImageLoraRenderBinding`, and the intent's `resolvedLora`
 field) belongs to
@@ -1203,9 +1203,9 @@ asserting fallback **and** code:
 
 ## Code organization
 
-- `src/contracts/images/image-lab.ts` — contracts above; exported from
+- `packages/image-core/src/lab/image-lab.ts` — contracts above; exported from
   `src/contracts/index.ts`.
-- `src/contracts/images/image-lab-recipes.ts` — the controlled-kind recipe
+- `packages/image-core/src/lab/image-lab-recipes.ts` — the controlled-kind recipe
   profiles and the Stage 3 finishing recipe (pure; exported from
   `src/contracts/index.ts`).
 - `src/server/images/image-lab.ts` — experiment service (create, list, detail,
@@ -1222,7 +1222,7 @@ asserting fallback **and** code:
   `controls/[controlId]/route.ts` (PATCH review, DELETE),
   `controls/extract/route.ts` (POST) — all `withOwnerAdmin`, all passing
   `pnpm lint:authz`'s census.
-- `src/lib/images/image-lab-instruction.ts` — the pure numbered-role
+- `packages/image-core/src/lab/image-lab-instruction.ts` — the pure numbered-role
   instruction-template builder the form pre-fills (identity sentence + per-kind
   control sentence + structure-only closing), `imageLabControlRole`
   (pose→`pose`, depth→`depth`, edge→`control`), and the finishing pass's fixed

@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import {
+  type ImageIdentityPackTrialReviewPairWire,
   perTrialGradeDimension,
   trialGradeDimensions,
-  type ImageIdentityPackTrialReviewPairWire,
   type TrialPairGrades,
-} from "@/contracts";
-import { trialPromptFixtureById } from "@/lib/images/identity-pack-trial";
+  trialPromptFixtureById,
+} from "@vesper/image-core";
 import { adminIdentityPacksApi, identityPackTrialRefusal, imageUrl } from "@/lib/client/api";
 import {
   identityPackTrialRefusalCopy,

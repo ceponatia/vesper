@@ -1,4 +1,4 @@
-import type { SceneVisualReference } from "../../../src/contracts";
+import type { SceneVisualReference } from "@vesper/image-core";
 import type { SceneCharacterSpec, SceneRenderPlan } from "../../../src/server/images";
 
 /**

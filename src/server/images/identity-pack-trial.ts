@@ -1,52 +1,50 @@
 import { createHash } from "node:crypto";
 import { and, asc, count, desc, eq, inArray, lt } from "drizzle-orm";
 import {
-  imageIdentityPackTrialCellSpecSchema,
-  imageIdentityPackTrialDiagnosticCode,
-  imageIdentityPackTrialResultSchema,
-  imageProfileOffered,
-  providerVersionsDisagree,
-  referenceCapacity,
-  trialCellComboSchema,
-  trialPairGradeSchema,
+  aggregateTrialGrades,
+  buildTrialCellPlans,
+  compareTrialCellKeys,
+  type EnsureIdentityPackResult,
+  type EvaluateIdentityPackResult,
+  IDENTITY_PACK_POLICY_VERSION,
+  type IdentityPackTrialPromptFixture,
   type IdentityReferenceRole,
   type IdentityReferenceStrategy,
   type ImageIdentityPackStatus,
   type ImageIdentityPackTrialCellSpec,
+  imageIdentityPackTrialCellSpecSchema,
   type ImageIdentityPackTrialCreateRequest,
+  imageIdentityPackTrialDiagnosticCode,
   type ImageIdentityPackTrialGradeRequest,
   type ImageIdentityPackTrialRefusalCode,
   type ImageIdentityPackTrialResult,
+  imageIdentityPackTrialResultSchema,
   type ImageIdentityPackTrialReviewPairWire,
   type ImageIdentityPackTrialRunSummary,
   type ImageIdentityPackTrialSummaryWire,
+  type ImageIdentityPackV1,
   type ImageModel,
   type ImageModelProfile,
+  imageProfileOffered,
+  pairTrialCells,
+  providerVersionsDisagree,
+  referenceCapacity,
+  trialCellComboSchema,
   type TrialCellCounts,
+  type TrialCellPair,
+  type TrialCellPlan,
   type TrialCellStatus,
+  type TrialGradeRecord,
+  type TrialPairableCell,
+  trialPairGradeSchema,
+  trialPromptFixtureById,
   type TrialRenderedCombo,
   type TrialRunStatus,
   type TrialVerdict,
   type TrialVerdictValue,
-  type EnsureIdentityPackResult,
-  type EvaluateIdentityPackResult,
-  type ImageIdentityPackV1,
-} from "@/contracts";
-import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
-import { IDENTITY_PACK_POLICY_VERSION } from "@/lib/images/identity-pack-policy";
-import {
-  buildTrialCellPlans,
-  compareTrialCellKeys,
-  pairTrialCells,
-  trialPromptFixtureById,
   unblindTrialPairGrade,
-  aggregateTrialGrades,
-  type IdentityPackTrialPromptFixture,
-  type TrialCellPair,
-  type TrialCellPlan,
-  type TrialGradeRecord,
-  type TrialPairableCell,
-} from "@/lib/images/identity-pack-trial";
+} from "@vesper/image-core";
+import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { newId } from "@/lib/ids";
 import { classifyImageFailure, OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai";
 import {
@@ -93,7 +91,7 @@ import {
  * pairs for review, aggregate the grades, and record per-(profile, strategy)
  * verdicts. Everything pure — the cartesian planner, the pairing rule, the
  * unblinding flip, the aggregation math — lives in
- * `src/lib/images/identity-pack-trial.ts`; this module owns persistence, the
+ * `packages/image-core/src/identity/identity-pack-trial-planning.ts`; this module owns persistence, the
  * pack/profile resolution at planning time, and the provider call.
  *
  * Four rules shape it:

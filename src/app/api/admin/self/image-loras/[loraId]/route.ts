@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageLoraUpdateRequestSchema } from "@/contracts";
+import { imageLoraUpdateRequestSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { deleteImageLora, updateImageLora } from "@/server/images";
 

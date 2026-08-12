@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { imageIdentityPackTrialRefusalCodeSchema, type ImageIdentityPackTrialCellWire } from "@/contracts";
+import {
+  type ImageIdentityPackTrialCellWire,
+  imageIdentityPackTrialRefusalCodeSchema,
+} from "@vesper/image-core";
 import { adminIdentityPacksApi, identityPackTrialRefusal } from "@/lib/client/api";
 import {
   identityPackTrialRefusalCopy,

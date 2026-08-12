@@ -12,7 +12,7 @@ import type { ClothingLayer } from "@/contracts/items/item";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { INTIMATE_ATTRIBUTE_CATEGORIES, isBelowWaist, isFeatureAttributeCategory } from "@/contracts/body/locations";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
-import type { SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
+import type { SceneVisualReferenceKind } from "@vesper/image-core";
 import {
   resolveViewerParts,
   VIEWER_SKIN_ATTRIBUTE_IDS,

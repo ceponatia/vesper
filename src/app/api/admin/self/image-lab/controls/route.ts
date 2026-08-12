@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS, imageLabUploadControlRequestSchema } from "@/contracts";
+import { IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS, imageLabUploadControlRequestSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, uploadRejection, withOwnerAdmin } from "@/server/api";
 import { decodeDataUrl, listImageLabControls, uploadImageLabControl } from "@/server/images";
 

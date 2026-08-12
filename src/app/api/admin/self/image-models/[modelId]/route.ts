@@ -1,7 +1,11 @@
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { imageEditKindSchema, imageIdentityPreservationSchema, imageReferenceTransportSchema } from "@/contracts";
+import {
+  imageEditKindSchema,
+  imageIdentityPreservationSchema,
+  imageReferenceTransportSchema,
+} from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { probeReplicateModel } from "@/server/ai";

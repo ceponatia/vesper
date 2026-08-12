@@ -89,7 +89,7 @@ jobs:
             esac
 
             case "$path" in
-              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml|Dockerfile)
+              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml|Dockerfile)
                 integration=true
                 ;;
               .github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|*.config.*)

@@ -46,7 +46,7 @@ identity checks should remain separate from the coarse eligibility rating.
 ## Quality policy before profiles are wired
 
 The provider defaults `go_fast` to `true`. The image-model profile rows are still
-dormant, so `src/server/images/quality-presets.ts` applies the reviewed effective
+dormant, so `packages/image-core/src/models/quality-presets.ts` applies the reviewed effective
 setting at the shared render seam:
 
 ```json

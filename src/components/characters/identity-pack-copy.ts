@@ -9,7 +9,7 @@ import type {
   TrialGradeDimension,
   TrialRunStatus,
   TrialVerdictValue,
-} from "@/contracts";
+} from "@vesper/image-core";
 import type { TagTone } from "@/components/ui/tag";
 
 /**

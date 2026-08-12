@@ -1,4 +1,4 @@
-import { emptyImageModelAdvancedCapabilities, type ImageModel } from "../../../src/contracts";
+import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
 import { runRegistryImageModel, type ReplicateImageResult } from "../../../src/server/ai";
 
 /**

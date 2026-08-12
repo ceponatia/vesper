@@ -1,5 +1,4 @@
 export * from "./assets";
-export * from "./identity-pack-detector";
 export * from "./identity-packs";
 export * from "./identity-pack-references";
 export * from "./identity-pack-trial";

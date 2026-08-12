@@ -3,7 +3,7 @@ import type {
   EnsureIdentityPackResult,
   IdentityPackNormalizedCropWire,
   IdentityPackSummaryWire,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { jsonError, jsonOk } from "@/server/api";
 import {
   getIdentityPackForOwner,

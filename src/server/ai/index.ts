@@ -10,5 +10,4 @@ export * from "./embeddings";
 export * from "./errors";
 export * from "./replicate";
 export * from "./replicate-probe";
-export * from "./image-control-mapping";
 export * from "./image-providers";

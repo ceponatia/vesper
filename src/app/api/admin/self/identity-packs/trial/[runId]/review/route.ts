@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageIdentityPackTrialGradeRequestSchema } from "@/contracts";
+import { imageIdentityPackTrialGradeRequestSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { nextUnreviewedTrialPair, submitTrialPairGrade } from "@/server/images";
 

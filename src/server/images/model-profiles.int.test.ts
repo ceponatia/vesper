@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
-import type { ImageProfileTask } from "@/contracts";
+import type { ImageProfileTask } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageModelProfiles, imageModels } from "../db";

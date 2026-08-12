@@ -2,7 +2,7 @@ import sharp from "sharp";
 import { and, eq } from "drizzle-orm";
 import { characters, db } from "../db";
 import { logEvent } from "../events";
-import { AVATAR_HEIGHT, AVATAR_WIDTH } from "@/lib/images/crop";
+import { AVATAR_HEIGHT, AVATAR_WIDTH } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { createImageAsset, failImage, saveImageBuffer } from "./assets";
 import { promoteVariant } from "./variants";
