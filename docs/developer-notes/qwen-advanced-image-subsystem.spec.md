@@ -51,11 +51,11 @@ those systems through their existing exports and adds no second copy.
 | Stage 6 two-character kind, recipe, runner      | built 2026-08-12 |
 | Stage 6 subject-aware compose bindings          | built 2026-08-12 |
 | Stage 6 create/verdict/comparison UI            | built 2026-08-12 |
-| Stage 6 two-character trial runs + verdicts     | not run          |
+| Stage 6 two-character trial runs + verdicts     | run 2026-08-12   |
 
 Stage 7 (the promotion decision) is deliberately absent from this table: it
-closes the plan. Stages 0–5 are all closed; Stage 6's machinery is built and
-its trial has not run. The LoRA library itself is the capabilities plan's
+closes the plan. Stages 0–5 are all closed; Stage 6's machinery is built and its
+trial has run, with its verdicts awaiting owner acceptance. The LoRA library itself is the capabilities plan's
 slice 6 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 §"Slice 6 implementation rulings"); this table tracks only the lab's side, and
 the subject-aware compose bindings belong to the capabilities spec
@@ -1536,6 +1536,65 @@ verdicts it produces are recorded below the steps when the trial runs.
    Stage 6 status line when the owner accepts. Stage 6's exit feeds Stage 7:
    whether two-character scenes are reliable enough to consider promoting at
    all, and under which control.
+
+### Stage 6 trial run (2026-08-12)
+
+Run on Fly v189 against the uxtest fixtures; the verdicts are agent rulings at
+the owner's direction, pending owner acceptance. Cast: **Sabrina Vale**
+`wdijgtnp5dnosx3or16wwsvv` (canonical `qqtzfaz9ii1v2k4q7xfnxif6`) and **Milo
+Finch** `gvpn0txsmu5760oae0setkds` (canonical `ujlyykcqm18xm2ftfmswd52g`), a
+dark-haired woman and a shorter-haired man — visibly distinct as step 1 asks.
+All five arms succeeded, every one recorded `dropped: []` with both subjects in
+the final prompt.
+
+| Arm             | Experiment                 | Verdict                |
+| --------------- | -------------------------- | ---------------------- |
+| Uncontrolled 1  | `vx4thh3z5k3y3g4mzd51fbly` | `both_identities_held` |
+| Uncontrolled 2  | `n3hbwk1h7szn676e4sk5gjhn` | `both_identities_held` |
+| Depth           | `taki66nxuydsgpwnpljapuwl` | `both_identities_held` |
+| Pose            | `xozjc4sko163o2twdogjdvkg` | `character_missing`    |
+| Pose, confirmed | `dtw5s9mv6dp35l59xafnirrb` | `character_missing`    |
+
+- **Uncontrolled, 2/2 held.** Arm 1 placed the pair side by side in a kitchen;
+  arm 2 sat them across a café table with the faces close together, the harder
+  merge test. Both rendered each person exactly once against their own numbered
+  reference. Prompt obedience was partial in both — props and left/right
+  placement obeyed, gaze and "turned toward her" not — but no arm swapped,
+  merged or duplicated a character.
+- **Depth, 1/1 held, and one map guided BOTH people.** Fixture
+  `hj7g3uu7uyfk8hlbuwz5izgs`, a two-person depth map extracted from arm 1 and
+  reviewed. The render placed Milo at the map's back-left plane with his arms
+  crossed as mapped and Sabrina at the front-right plane in the mapped
+  lean, matching relative scale, head heights and crop, while the instruction's
+  greenhouse re-dressed the setting over that structure — the counter became a
+  potting bench, the mug a plant pot at the same depth position. Identity
+  fidelity was the best of the five arms. This is the answer to the arm's
+  question: depth control transfers to a two-character cast intact.
+- **Pose, 0/2, and destructive.** Fixture `qkg1bj6tdolj7vhxllu4jgfk`, the
+  reviewed SINGLE-person skeleton, against a two-person cast. Both runs
+  collapsed the cast into one body built to the skeleton's stance. Run 1 kept
+  Sabrina's face and grafted Milo onto the same torso as a second pair of
+  arms in his shirt colour — four arms, one head. Run 2 removed the confound by
+  naming no arm positions at all, and the collapse reproduced worse: the single
+  surviving face belonged to **neither** reference, a hybrid in clothing taken
+  from nothing sent. Pose ownership, the fact step 4 exists to record: the
+  skeleton claims the whole frame rather than one body, and the cast clause
+  does not survive it.
+
+**Findings for Stage 7.** Two-character scenes are reliable on this connector
+uncontrolled and under depth — 3/3 with both identities held, including the
+close-faces case. They are not reliable under a single-person pose skeleton, and
+the failure is not stochastic drift but a structural one that reproduces: a
+pose fixture describing one body forces one body. A promoted two-character path
+should refuse pose control unless the fixture itself encodes two figures, and
+depth is the control kind to promote with.
+
+**Incidental finding — identity references carry wardrobe, or the model invents
+it.** Milo's canonical portrait is a bare-shouldered head-and-shoulders crop
+(the `waist-up` portrait prompt did not produce a clothed frame), so every arm
+dressed him from nothing while Sabrina's shirt carried through exactly in all
+five. Outfit fidelity for a character is therefore untested here, and a
+two-character path that cares about wardrobe needs clothed canonical portraits.
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 
