@@ -986,6 +986,56 @@ describe("buildSceneRenderPrompt — multi-reference", () => {
     expect(prompt).toContain("Every visible body part belongs to Mira, Sayed or Wren.");
   });
 
+  // The budgeter's only knobs were outfit and setting text, but the fields that
+  // grow with CAST SIZE — identity anchors, the figure line, an unanchored
+  // character's appearance — were uncapped, so a crowded prompt could not be
+  // shrunk and `clampToLimit` cut the tail instead. These are state-derived and
+  // genuinely long (untruncated garment and attribute text), so two characters
+  // is enough to reach it.
+  const longAnchors = `dark brown hair in loose waves past the shoulders; brown almond eyes; ${"thick straight brows and a soft oval face with a broad rounded jaw; ".repeat(6)}`;
+  const crowded: SceneRenderPlan = {
+    ...emptySceneRenderPlan(),
+    focal: {
+      name: "Mira",
+      action: "leaning on the rail",
+      outfitSummary: `red dress ${"of heavy raw silk with a hand-rolled hem; ".repeat(8)}`,
+      appearance: "",
+      identityAnchors: longAnchors,
+      lowerBody: "long-limbed",
+      exposure: "bare legs",
+    },
+    others: [
+      {
+        name: "Sayed",
+        action: "beside her",
+        outfitSummary: `wool coat ${"in charcoal herringbone with horn buttons; ".repeat(8)}`,
+        appearance: "",
+        identityAnchors: longAnchors,
+        lowerBody: "broad-shouldered",
+        exposure: "barefoot",
+      },
+    ],
+    setting: "a rain-streaked library",
+  };
+
+  it("excerpts the per-character text under budget pressure instead of clamping the tail", () => {
+    const prompt = buildSceneRenderPrompt(crowded, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt.length).toBeLessThanOrEqual(EDIT_RENDER_PROMPT_LIMIT);
+    // The identity anchors were shortened rather than carried whole — the knob
+    // that did not exist before.
+    expect(prompt).not.toContain(longAnchors);
+    expect(prompt).toContain("dark brown hair");
+    // The tail survives: the clause that stops the edit model re-painting a
+    // garment the fiction already removed.
+    expect(prompt).toContain("Depict only the clothing described");
+    expect(prompt).toContain("never merge, swap, or duplicate them");
+  });
+
   it("emits intimate detail for multi-references only on the uncensored route", () => {
     const nude = {
       ...emptySceneRenderPlan(),

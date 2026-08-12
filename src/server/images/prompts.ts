@@ -1867,11 +1867,17 @@ function assembleMulti(
     const parts: string[] = [];
     if (!isRef) {
       if (c.species) parts.push(excerpt(c.species, 160));
-      if (c.appearance) parts.push(c.appearance);
+      // Budgeted like the outfit text. These per-person fields are the ones that
+      // scale with cast size, so leaving them uncapped meant the budgeter's five
+      // steps could not shrink a multi-character prompt below the limit and
+      // `clampToLimit` cut the TAIL instead — taking the clothing-authority
+      // clause this builder is documented never to drop. At the first step the
+      // cap is Infinity, so a prompt that already fits is unchanged.
+      if (c.appearance) parts.push(fit(c.appearance, outfitCap));
     }
     // Anchored characters get the identity-reinforcement phrase (reference stays authoritative).
-    if (isRef && c.identityAnchors) parts.push(`matching the reference: ${c.identityAnchors}`);
-    if (isRef && c.lowerBody) parts.push(`figure: ${c.lowerBody}`);
+    if (isRef && c.identityAnchors) parts.push(`matching the reference: ${fit(c.identityAnchors, outfitCap)}`);
+    if (isRef && c.lowerBody) parts.push(`figure: ${fit(c.lowerBody, outfitCap)}`);
     if (c.action) parts.push(c.action);
     if (c.outfitSummary) parts.push(`wearing ${fit(c.outfitSummary, outfitCap)}`);
     else if (!c.exposure && !isRef) parts.push("wearing casual everyday clothing");
