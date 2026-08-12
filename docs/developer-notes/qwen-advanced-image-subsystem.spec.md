@@ -46,7 +46,8 @@ those systems through their existing exports and adds no second copy.
 | Stage 4 owner verdicts                          | pending          |
 | Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
 | Stage 5 dataset + character-LoRA training run   | run 2026-08-11   |
-| Stage 5 artifact hosting + comparison arms      | pending          |
+| Stage 5 hosting + comparison arms               | run 2026-08-11   |
+| Stage 5 owner verdicts                          | pending          |
 
 Stage 6+ work (two-character recipes, the promotion decision) is deliberately
 absent from this table: Stage 6 waits on the owner opening the two-character
@@ -599,6 +600,46 @@ refused by the parser rather than by a format check. The connector README's
 description claiming otherwise is stale. **Consequence: the extracted
 `lora.safetensors` must be re-hosted, and a library row may never point at a
 training's zip URL.**
+
+**Hosting and the library row (2026-08-11).** The extracted `lora.safetensors`
+was uploaded to the owner's public S3 bucket — key
+`s3://snarebox-pub/lora/vesper-sabrina-qwen-lora-0q8vz9f3.safetensors`,
+`us-east-2`, served by the bucket's own `AllowPublicRead` policy at a plain
+HTTPS URL with no query string, which is what the library's `https_url`
+locator wants and what the connector can fetch unauthenticated. Hosting cost is
+about two cents a month: $0.013/month of storage, with each 0.58 GB fetch
+inside AWS's 100 GB monthly free egress tier. Library row
+`w9v1o24wdk6hr5vg38lyf5ky` — "Sabrina (character)", compatible with the
+connector only, curated band 0.6–1.2 default 0.9, trigger word "Sabrina", task
+`variant`.
+
+**Comparison arms (run 2026-08-11, all on the connector at pin `b37d69a6…`,
+all over source `ssuucjcm6h5xew3z8c39gaw6` with the Stage 3 appearance
+instruction, LoRA at 0.9) — awaiting owner verdicts:**
+
+- **(a) pack only, no LoRA** — `c1fiaht1pg018zeq3f30yx2c`, result
+  `f317yd8fc44tfbt046o1trwp`. Reused from the Stage 4 smoke: same connector,
+  same instruction, no LoRA, so it is the pack-only arm without re-rendering.
+- **(b) pack + LoRA** — `cg7zw2k70ltmenrm5pv6hwfj`, prediction
+  `zkk1azx555rp20czyebva75mew`, result `h55zhh57s02rtstznlq45gu5`. **The
+  key-compatibility smoke passed here**: the weights loaded on first attempt,
+  which the artifact's native `transformer.…lora_A/lora_B` naming predicted,
+  and the recorded final prompt ends with the woven trigger word.
+- **(c) LoRA only** — `b1akug8wxjtuj3sajw3scx42`, result
+  `x1hwl593xos24j6rku5s0afx`, recipe `finishing_pass/lora_only`, sent roles
+  `["before"]`. The isolation is proven by the record: one reference, no
+  identity-pack image, no pack evaluation.
+
+Observations offered to the verdicts, not substituting for them. All three arms
+recropped the full-body source to chest-up, so that framing violation is a
+property of the finishing pass on this connector rather than of the LoRA. Arm
+(c) is visibly the LoRA acting alone — smoother, warmer-lit and more idealized
+than the photographic (a) and (b), with fuller cheeks and a rounder jaw than
+either, which is the direction the appearance text asks for and also the
+direction an overfit to a studio-lit training corpus would produce. Arm (b)
+reads close to arm (a), so the LoRA's marginal contribution when pack
+references are already present is the question the owner's ruling has to
+settle. Evidence images: `screenshots/stage5-*.webp`.
 
 **Operational finding — a 500 from trainings-create may still have created the
 training.** Three consecutive script runs answered
