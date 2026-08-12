@@ -813,7 +813,10 @@ async function settle(training: Training, args: Args, token: string): Promise<vo
     process.exitCode = 1;
     return;
   }
-  const outDir = resolve(args.out);
+  // One directory PER TRAINING, keyed by the training id, so a rerun with the
+  // default --out can neither overwrite an earlier run's expensive artifact nor
+  // pick a stale .safetensors out of it when reporting which file to re-host.
+  const outDir = join(resolve(args.out), training.id);
   console.log("");
   console.log("Downloading the weights …");
   const zipPath = await downloadWeights(weightsUrl, outDir, token);
