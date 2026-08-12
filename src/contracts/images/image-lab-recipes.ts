@@ -16,8 +16,8 @@ import {
 /**
  * The Advanced Image Lab's recipes — code-defined `ImageModelProfile` values for
  * the `controlled_portrait` / `controlled_scene` experiment kinds
- * (qwen-advanced-image-subsystem.spec.md, Stages 1–2) and for the Stage 3
- * `finishing_pass`.
+ * (qwen-advanced-image-subsystem.spec.md, Stages 1–2), for the Stage 3
+ * `finishing_pass`, and for the Stage 6 `two_character_scene`.
  *
  * A recipe is CODE, deliberately not a row in `image_model_profiles`, for two
  * reasons that outweigh the convenience of editing it on the admin page:
@@ -38,9 +38,17 @@ import {
  */
 
 /**
- * The two kinds that run on the render-intent path under a recipe. Declared as
- * a subset of the experiment kinds (the `satisfies` is the tie) so a renamed
- * kind breaks here at compile time instead of silently orphaning its recipe.
+ * The two kinds whose recipe is a (kind × REQUIRED control) pair. Declared as a
+ * subset of the experiment kinds (the `satisfies` is the tie) so a renamed kind
+ * breaks here at compile time instead of silently orphaning its recipe.
+ *
+ * Not "every kind that runs on the render-intent path" — the finishing pass and
+ * the two-character scene both do, and neither is here. What this list selects is
+ * the kinds {@link imageLabRecipeProfile} serves: the ones that always declare a
+ * control, so their recipe is indexed by a non-null control kind. A
+ * `two_character_scene` is deliberately absent because its control is OPTIONAL
+ * and it has a runner and a recipe of its own; adding it would make
+ * `imageLabRecipeKey`'s non-null `controlKind` a lie for one member.
  */
 export const imageLabControlledKinds = [
   "controlled_portrait",
@@ -169,6 +177,107 @@ export function imageLabRecipeProfile(
     operation: "edit",
     promptStrategy: "multi_reference_compose",
     referencePolicy: imageLabRecipePolicy(kind, controlKind),
+    controlDefaults: emptyImageControlDefaults(),
+    providerOverrides: {},
+    timeoutMs: null,
+    enabled: true,
+    isDefault: false,
+    builtin: false,
+    sort: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 6 — the two-character recipe
+// ---------------------------------------------------------------------------
+
+/**
+ * The two-character recipe's stable name, per control arm — and it has an arm
+ * for NO control, which is what makes it a function of a nullable kind rather
+ * than of a kind.
+ *
+ * The uncontrolled arm is not a degenerate case to be folded into the controlled
+ * one: Stage 6 asks both "do two people survive at all?" and "can one control
+ * guide both of them?", and the first is answered by a run that sends no fixture.
+ * Two keys keep the two answers apart in the record, exactly as the finishing
+ * arms do — "both identities held" means something different when a pose skeleton
+ * was also in the send, and one key covering both would make them
+ * indistinguishable a month later.
+ *
+ * `none` is spelled out rather than left as a bare `two_character_scene`, so
+ * every key this file mints has the same shape and a reader never has to wonder
+ * whether a suffix went missing.
+ */
+export function imageLabTwoCharacterRecipeKey(controlKind: ImageLabControlKind | null): string {
+  return `two_character_scene/${controlKind ?? "none"}`;
+}
+
+/**
+ * The two-character recipe's reference policy: BOTH identities required, the
+ * declared control required when there is one, and deliberately nothing else
+ * allowed.
+ *
+ * Required, because the plan's own two-character rule is a refusal rather than a
+ * trim — "if all required identities and the selected control do not fit, the
+ * workflow is ineligible rather than silently dropping a character". A dropped
+ * identity here is not a thinner render, it is a DIFFERENT experiment: the row
+ * says two people and the image has one, and the verdict `character_missing`
+ * would be filed against the planner rather than against the model.
+ *
+ * `maxPerRole` allows two identities and exactly one control. That is the first
+ * policy in this file to allow two of anything, and it is what the whole kind
+ * rests on — the controlled recipes cap every role at one precisely so an
+ * unhonoured control stays attributable, and this kind spends that second slot on
+ * purpose because two faces ARE the measurement.
+ *
+ * NO OPTIONAL CONTENT ROLES — no location, no outfit, no style, unlike every
+ * other recipe here. Two identities and a control are three references, which is
+ * the entire capacity of Qwen Image Edit 2511, so a fourth allowed role could
+ * only ever be dropped. Allowing one would put a slot in the policy that the
+ * model cannot honour and invite a trial arm that spends an admin's time
+ * discovering it. The bound is the model's, and the policy states it plainly
+ * rather than leaving it to capacity to enforce quietly.
+ */
+function imageLabTwoCharacterPolicy(controlKind: ImageLabControlKind | null): ImageReferencePolicy {
+  const ordered: ImageReferenceRole[] =
+    controlKind === null ? ["identity"] : ["identity", imageLabControlRole(controlKind)];
+  const maxPerRole: Partial<Record<ImageReferenceRole, number>> = {};
+  for (const role of ordered) maxPerRole[role] = role === "identity" ? 2 : 1;
+  // Each field gets its own array, for the reason the controlled policy gives:
+  // the policy type is mutable, and two fields sharing one instance would let an
+  // edit to either silently rewrite both.
+  return { requiredRoles: [...ordered], allowedRoles: [...ordered], roleOrder: [...ordered], maxPerRole };
+}
+
+/**
+ * The fully-shaped profile one two-character run executes.
+ *
+ * Task `scene`, because that is what a render with two people in a place IS, and
+ * because the scene screening is the one whose composition demands match what is
+ * being asked of the model. `edit` on `multi_reference_compose` like every other
+ * recipe here — and the compose strategy is doing more work in this recipe than
+ * in any other, since it is the only thing in the request that says which face
+ * belongs to which numbered image.
+ *
+ * `imageModelId` leads the parameter list, matching
+ * {@link imageLabFinishingRecipeProfile}: both are recipes whose second argument
+ * selects an arm rather than a kind.
+ */
+export function imageLabTwoCharacterRecipeProfile(
+  imageModelId: string,
+  controlKind: ImageLabControlKind | null,
+): ImageModelProfile {
+  const key = imageLabTwoCharacterRecipeKey(controlKind);
+  const control = controlKind === null ? "uncontrolled" : imageLabRecipeControlNoun(controlKind);
+  return {
+    id: `${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}${key}`,
+    imageModelId,
+    key,
+    label: `Two-character scene — ${control}`,
+    task: "scene",
+    operation: "edit",
+    promptStrategy: "multi_reference_compose",
+    referencePolicy: imageLabTwoCharacterPolicy(controlKind),
     controlDefaults: emptyImageControlDefaults(),
     providerOverrides: {},
     timeoutMs: null,

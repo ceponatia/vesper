@@ -16,7 +16,8 @@ contract: its spec.
   before any spend), `baseline_portrait` / `baseline_scene` (re-run the
   ordinary lane's own resolved profile + render-intent configuration, so the
   recorded settings prove parity), `controlled_portrait` / `controlled_scene`
-  (below), and `finishing_pass` (below). Every experiment records model slug, requested
+  (below), `two_character_scene` (below), and `finishing_pass` (below). Every
+  experiment records model slug, requested
   and executed version, final prompt, ordered input roles, settings, and
   prediction id — enough to compare or retry. Outputs save as hidden
   `lab_output` assets, so lab activity never mints a player-visible variant or
@@ -41,6 +42,24 @@ contract: its spec.
   the intent path's own `image_profile.*` code on the row. The raw
   provider-shaped `controlInput` settings bag is a probe tool only: a
   controlled run carrying one refuses with `image_lab.settings_unsupported`.
+- A **two-character scene** sends one identity reference per character — exactly
+  two, each input BOUND to the character it depicts (`characterId` on the
+  ordered input), the two characters distinct and owner-checked — plus an
+  OPTIONAL pose/depth/edge fixture, filed against a chat. The compose strategy
+  weaves each character's name into their reference's numbered binding and adds
+  a cast clause ("this render depicts exactly 2 people … never merge, swap, or
+  duplicate them") whenever the send names two distinct subjects; the runner
+  resolves both names owner-scoped, all-or-nothing. Its recipes are
+  `two_character_scene/<pose|depth|edge|none>` — the uncontrolled arm is a real
+  arm, not a degenerate case — with no optional content roles: two identities
+  plus a control is the model's whole reference capacity. Required references
+  REFUSE rather than trim (`image_lab.capacity_exceeded`) when they exceed the
+  model's capacity, because the generic planner checks required roles by
+  presence and would otherwise drop one character silently; an undeclared
+  control-class input and half a control pointer both refuse as
+  `image_lab.control_invalid`. A two-character result is not a valid
+  finishing-pass source — a finishing pass refines one face toward one
+  identity pack.
 - A **finishing pass** re-edits another experiment's result to correct identity
   and nothing else. It names its source experiment by id — a succeeded baseline
   or controlled run holding a result image; a probe and another finishing pass
@@ -80,12 +99,16 @@ contract: its spec.
   additions the LoRA wove in, so a LoRA run is reproducible from its row.
 - **Verdicts** are recordable on every kind that asks a question, with an
   explicit ruling and a required note; baselines have nothing to rule on and
-  refuse. Two vocabularies share the one recorded field, and each kind may only
-  use its own: `control_probe` / `controlled_portrait` / `controlled_scene` rule
-  `honours_control` / `ignores_control` / `inconclusive`, while a
+  refuse. Three vocabularies share the one recorded field, and each kind may
+  only use its own: `control_probe` / `controlled_portrait` / `controlled_scene`
+  rule `honours_control` / `ignores_control` / `inconclusive`; a
+  `two_character_scene` rules on its cast — `both_identities_held` (the only
+  promotable outcome), `identities_swapped`, `character_missing`,
+  `character_duplicated`, `identity_degraded`, or `inconclusive` — with control
+  obedience and pose ownership recorded in the note, never the verdict; and a
   `finishing_pass` rules `improves_identity` (the face is closer and nothing
   else moved — the only promotable outcome), `identity_unchanged`,
-  `changes_beyond_identity`, or `inconclusive`. A ruling from the other kind's
+  `changes_beyond_identity`, or `inconclusive`. A ruling from another kind's
   vocabulary is refused. A succeeded controlled experiment offers a paired
   direct-edit baseline action that pre-fills a `baseline_portrait` /
   `baseline_scene` with the same subject and instruction, so a comparison pair
@@ -104,7 +127,8 @@ contract: its spec.
   otherwise the run is refused rather than judged against a fixture the
   provider never saw. Probe input lists that exceed the model's reference
   capacity are refused (`image_lab.capacity_exceeded`) instead of silently
-  trimmed; controlled runs trim optionals and record the drops in their
+  trimmed, and a two-character scene refuses the same way over its required
+  references; controlled runs trim optionals and record the drops in their
   outcome.
 - A probe may not be fed its own answer: when the fixture's meta names the
   render it was derived from (`sourceImageId` — recorded by extraction, and

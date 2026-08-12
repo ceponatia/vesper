@@ -28,11 +28,45 @@ import { isImageControlReferenceRole, type ImageReferenceRole } from "@/contract
  */
 
 /**
+ * One reference to bind, as the compiler needs it: its role, and the subject it
+ * depicts when naming that subject is what keeps two same-role references apart.
+ *
+ * A binding rather than a bare role because a role stopped being enough the day
+ * two identity references could ride one render — see {@link
+ * CompileReferenceRolePromptInput}.
+ */
+export interface CompileReferenceBinding {
+  role: ImageReferenceRole;
+  /**
+   * Whose reference this is. Honoured on `identity` only, and deliberately so:
+   * identity is the one role a render sends twice, so it is the one role whose
+   * two slots need telling apart by name. A location, an outfit or a control map
+   * is singular in every recipe that exists, and naming a subject on one would be
+   * prompt text asserting a distinction the payload does not make.
+   */
+  subject?: string;
+}
+
+/**
  * The instruction line for one reference slot. The position is 1-based and is
  * the slot's index in the SEND order, which is the order
  * `planIntentReferences` resolved — not the order the lane happened to supply.
+ *
+ * The subject-bearing identity line is a SECOND wording rather than an
+ * interpolation into the first, because the two say different things. Unnamed,
+ * the honest instruction is "the person this render depicts" — there is one, and
+ * this image is them. Named, the render has more than one person in it and the
+ * line has to say which of them this image is, which is a different sentence and
+ * not the same sentence with a word dropped in.
  */
-function referenceRoleBinding(role: ImageReferenceRole, position: number): string {
+function referenceRoleBinding(binding: CompileReferenceBinding, position: number): string {
+  const { role, subject } = binding;
+  if (role === "identity" && subject !== undefined) {
+    return (
+      `Image ${position}: the identity reference for ${subject} — one of the people this render depicts. ` +
+      `Preserve ${subject}'s face, hair, build, and apparent age exactly as shown in this image.`
+    );
+  }
   switch (role) {
     case "identity":
       return `Image ${position}: the identity reference — the person this render depicts. Preserve their face, hair, build, and apparent age.`;
@@ -76,10 +110,64 @@ const CONTROL_REFERENCE_CLAUSE =
   "The structural reference images above define layout only. Reproduce the structure they describe using the " +
   "subject and setting from the other references; never render the control images themselves.";
 
+/**
+ * The cast clause, emitted when the identity references name two or more
+ * DISTINCT subjects.
+ *
+ * It is the counterpart of {@link CONTROL_REFERENCE_CLAUSE} and exists for the
+ * same reason: a per-slot line sits in the middle of a list the model may weight
+ * by position, and the failure it guards against is catastrophic rather than
+ * subtle. A multi-reference edit handed two faces has three ways to go wrong that
+ * a viewer notices instantly — it renders one person twice, it renders one person
+ * and drops the other, or it blends both into a stranger — and none of them is
+ * prevented by two correct per-slot bindings, because each of those is a
+ * statement about ONE image and the failure is a statement about the set.
+ *
+ * The count is stated as a number AND the subjects are named, because the two
+ * halves fail differently: the number is what stops a duplicate or an extra
+ * bystander, and the names are what tie each person back to the slot that
+ * described them.
+ *
+ * DISTINCT SUBJECTS, not identity-reference count, is the trigger — and the
+ * difference is load-bearing rather than pedantic. Two identity references are
+ * not two people: the finishing recipe's policy already allows a second identity
+ * slot so the pack's face-detail crop can join the canonical portrait, and those
+ * are two images OF ONE PERSON. Counting references there would tell the model a
+ * solo portrait depicts exactly two people and instruct it to render them both,
+ * which is the very failure this sentence exists to prevent, aimed at a render
+ * that was never at risk of it. Subjects are the only thing in the input that
+ * says how many people there are, so they are what the clause counts.
+ */
+function subjectsClause(subjects: readonly string[]): string {
+  return (
+    `This render depicts exactly ${String(subjects.length)} people: ${joinSubjects(subjects)}. ` +
+    "Render each person exactly once, matched to their own identity reference; never merge, swap, or duplicate them."
+  );
+}
+
+/** `A and B`, `A, B, and C` — the Oxford comma from three up. */
+function joinSubjects(subjects: readonly string[]): string {
+  if (subjects.length <= 1) return subjects[0] ?? "";
+  if (subjects.length === 2) return `${String(subjects[0])} and ${String(subjects[1])}`;
+  return `${subjects.slice(0, -1).join(", ")}, and ${String(subjects[subjects.length - 1])}`;
+}
+
 export interface CompileReferenceRolePromptInput {
   basePrompt: string;
-  /** Roles in SEND order — the same order the reference images are transported in. */
-  roles: readonly ImageReferenceRole[];
+  /**
+   * The references in SEND order — the same order the images are transported in.
+   *
+   * Bindings rather than bare roles because a role alone cannot describe a
+   * two-character send: both references are `identity`, both would compile to the
+   * same sentence, and the model would be told twice that one image is "the
+   * person this render depicts" with nothing saying they are two different
+   * people. A binding carries the name that resolves it.
+   *
+   * A subject-less binding compiles EXACTLY as its bare role did — the wording is
+   * hashed into comparison identity, so every render that predates this field has
+   * to keep producing the same bytes.
+   */
+  references: readonly CompileReferenceBinding[];
 }
 
 /**
@@ -95,12 +183,30 @@ export interface CompileReferenceRolePromptInput {
  *
  * Zero references returns `basePrompt` unchanged — there is nothing to bind, and
  * a preamble about images that are not there is worse than no preamble.
+ *
+ * The two closing clauses are ordered cast-then-control, and the order is not
+ * arbitrary. The cast clause is about the SUBJECTS the per-slot identity lines
+ * just introduced, so it belongs beside them; the control clause is the last word
+ * because it is a prohibition, and a prohibition read last is the one a model is
+ * least likely to weigh against the descriptive lines above it. Putting the cast
+ * clause after it would separate the control rule from the end of the preamble
+ * for a sentence that has nothing to do with structure.
  */
 export function compileReferenceRolePrompt(input: CompileReferenceRolePromptInput): string {
-  const { basePrompt, roles } = input;
-  if (roles.length === 0) return basePrompt;
+  const { basePrompt, references } = input;
+  if (references.length === 0) return basePrompt;
 
-  const lines = roles.map((role, index) => referenceRoleBinding(role, index + 1));
-  if (roles.some(isImageControlReferenceRole)) lines.push(CONTROL_REFERENCE_CLAUSE);
+  const lines = references.map((reference, index) => referenceRoleBinding(reference, index + 1));
+  // Deduplicated in SEND order, so the clause names the cast in the order the
+  // numbered bindings above just introduced them.
+  const subjects = [
+    ...new Set(
+      references.flatMap((reference) =>
+        reference.role === "identity" && reference.subject !== undefined ? [reference.subject] : [],
+      ),
+    ),
+  ];
+  if (subjects.length >= 2) lines.push(subjectsClause(subjects));
+  if (references.some((reference) => isImageControlReferenceRole(reference.role))) lines.push(CONTROL_REFERENCE_CLAUSE);
   return `${lines.join("\n")}\n\n${basePrompt}`;
 }

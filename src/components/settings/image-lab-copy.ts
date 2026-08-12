@@ -39,6 +39,8 @@ export function imageLabExperimentKindLabel(kind: ImageLabExperimentKind): strin
       return "controlled portrait";
     case "controlled_scene":
       return "controlled scene";
+    case "two_character_scene":
+      return "two-character scene";
     case "finishing_pass":
       return "finishing pass";
   }
@@ -107,8 +109,8 @@ export function imageLabControlGeneratorLabel(generator: ImageLabControlGenerato
 }
 
 /**
- * The reviewing admin's ruling, as the verdict control offers it — both
- * vocabularies, because the union is what a stored row carries and the copy
+ * The reviewing admin's ruling, as the verdict control offers it — every
+ * vocabulary at once, because the union is what a stored row carries and the copy
  * layer must be able to name whatever it finds there. Which rulings a given
  * experiment may CHOOSE from is the contract's own per-kind gate
  * (`imageLabVerdictOptions`), never a guess made here.
@@ -125,6 +127,16 @@ export function imageLabVerdictLabel(verdict: ImageLabVerdict): string {
       return "No meaningful improvement";
     case "changes_beyond_identity":
       return "Changed more than the face";
+    case "both_identities_held":
+      return "Both identities held";
+    case "identities_swapped":
+      return "Identities swapped";
+    case "character_missing":
+      return "Character missing";
+    case "character_duplicated":
+      return "Character duplicated";
+    case "identity_degraded":
+      return "Identity degraded";
     case "inconclusive":
       return "Inconclusive";
   }
@@ -143,6 +155,16 @@ export function imageLabVerdictHint(verdict: ImageLabVerdict): string {
       return "The face is no closer than the base image's. The pass cost a render and earned nothing.";
     case "changes_beyond_identity":
       return "Something other than the face moved — pose, clothing, body, camera, lighting, or setting. Not promotable whatever it did to identity.";
+    case "both_identities_held":
+      return "Two people, each present exactly once, and each face matches the reference bound to that character. The only ruling that says two identities survived one render.";
+    case "identities_swapped":
+      return "Both faces are in the image, on the wrong people — each character was rendered from the other's reference.";
+    case "character_missing":
+      return "Fewer people than the run declared: one of the two identities never reached the image.";
+    case "character_duplicated":
+      return "One identity is rendered more than once, or the scene gained a person nobody sent a reference for.";
+    case "identity_degraded":
+      return "Both characters are present and in the right places, but one or both faces drifted from their own reference.";
     case "inconclusive":
       return "The fixture was ambiguous, or something unrelated broke — this run settles nothing.";
   }
@@ -160,6 +182,19 @@ export function imageLabVerdictChip(verdict: ImageLabVerdict): { label: string; 
       return { label: "no improvement", tone: "default" };
     case "changes_beyond_identity":
       return { label: "changed too much", tone: "danger" };
+    case "both_identities_held":
+      return { label: "both identities held", tone: "ok" };
+    // The four two-character failures are all `danger`, drift included: this
+    // vocabulary rules on one question — did both identities survive the render —
+    // and a face that came back drifted answers it no, however tidy the scene is.
+    case "identities_swapped":
+      return { label: "identities swapped", tone: "danger" };
+    case "character_missing":
+      return { label: "character missing", tone: "danger" };
+    case "character_duplicated":
+      return { label: "character duplicated", tone: "danger" };
+    case "identity_degraded":
+      return { label: "identity degraded", tone: "danger" };
     case "inconclusive":
       return { label: "inconclusive", tone: "accent" };
   }

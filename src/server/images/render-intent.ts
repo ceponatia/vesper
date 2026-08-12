@@ -11,6 +11,7 @@ import {
   type ResolvedImageProfile,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { CompileReferenceBinding } from "@/lib/images/reference-role-prompt";
 import { resolveImageLoraForRender } from "./image-loras";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 import { compileProfileRenderPlan, pinnedImageModelVersion } from "./render-profile";
@@ -192,7 +193,7 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
     };
   }
 
-  // Only the PRIMARY roles are named to the strategy, and in send order. A
+  // Only the PRIMARY references are named to the strategy, and in send order. A
   // dedicated-input control is bound by its provider field, not by a position in
   // a numbered list, so numbering it in the prompt would name a slot that does
   // not exist in the array the text is describing.
@@ -206,7 +207,11 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
     // reading the library. `renderImageIntent` does that first, so a plan either
     // carries a binding somebody already judged or carries none.
     ...(intent.resolvedLora ? { resolvedLora: intent.resolvedLora } : {}),
-    references: { vocabulary: "render_intent", roles: roleNames(primary) },
+    // Built from the PLANNED primary rather than from the caller's list, so a
+    // subject travels with the reference through selection and reordering. A
+    // subject read off the caller's order instead would name the wrong slot the
+    // moment the policy moved one.
+    references: { vocabulary: "render_intent", references: compileBindings(primary) },
   });
   if (!compiled.ok) {
     return {
@@ -242,6 +247,22 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
 
 function roleNames(references: readonly ImageRenderReferenceSpec[]): ImageReferenceRole[] {
   return references.map((reference) => reference.role);
+}
+
+/**
+ * The prompt compiler's view of the references being sent: the role, plus the
+ * subject when this reference names one.
+ *
+ * The subject is omitted rather than passed as `undefined` so a render that names
+ * nobody hands the compiler exactly the shape it saw before subjects existed —
+ * the compiled text is hashed into comparison identity, and every existing lane
+ * must keep producing the same bytes.
+ */
+function compileBindings(references: readonly ImageRenderReferenceSpec[]): CompileReferenceBinding[] {
+  return references.map((reference) => ({
+    role: reference.role,
+    ...(reference.subject === undefined ? {} : { subject: reference.subject }),
+  }));
 }
 
 /** The intent a plan will be built from, or the refusal that stops the render. */

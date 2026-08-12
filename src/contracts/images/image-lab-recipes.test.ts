@@ -12,6 +12,8 @@ import {
   imageLabRecipeKey,
   imageLabRecipeProfile,
   imageLabRecipeTask,
+  imageLabTwoCharacterRecipeKey,
+  imageLabTwoCharacterRecipeProfile,
   isImageLabControlledKind,
   isImageLabFinishableKind,
 } from "./image-lab-recipes";
@@ -243,6 +245,110 @@ describe("imageLabFinishingRecipeProfile — the LoRA-only arm", () => {
   });
 });
 
+describe("imageLabTwoCharacterRecipeProfile", () => {
+  it("keys each control arm apart, and spells the uncontrolled one out", () => {
+    expect(imageLabTwoCharacterRecipeKey("pose")).toBe("two_character_scene/pose");
+    expect(imageLabTwoCharacterRecipeKey("depth")).toBe("two_character_scene/depth");
+    // Not a bare `two_character_scene`: every key this file mints has the same
+    // shape, so a reader never wonders whether a suffix went missing.
+    expect(imageLabTwoCharacterRecipeKey(null)).toBe("two_character_scene/none");
+    // Two arms, two keys — "both identities held" means something different when
+    // a skeleton was also in the send.
+    expect(imageLabTwoCharacterRecipeKey(null)).not.toBe(imageLabTwoCharacterRecipeKey("pose"));
+  });
+
+  it("names itself under the recipe id prefix, labelled by its arm", () => {
+    const controlled = imageLabTwoCharacterRecipeProfile("mdl_x", "pose");
+    expect(controlled.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}two_character_scene/pose`);
+    expect(controlled.key).toBe("two_character_scene/pose");
+    expect(controlled.imageModelId).toBe("mdl_x");
+    expect(controlled.label).toBe("Two-character scene — pose skeleton");
+
+    const uncontrolled = imageLabTwoCharacterRecipeProfile("mdl_x", null);
+    expect(uncontrolled.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}two_character_scene/none`);
+    expect(uncontrolled.label).toBe("Two-character scene — uncontrolled");
+  });
+
+  it("requires BOTH identities and allows two of them — the only policy here that does", () => {
+    // Required rather than trimmable is the plan's own two-character rule: a
+    // dropped identity is not a thinner render, it is a different experiment.
+    const policy = imageLabTwoCharacterRecipeProfile("mdl_x", "pose").referencePolicy;
+    expect(policy.requiredRoles).toEqual(["identity", "pose"]);
+    expect(policy.allowedRoles).toEqual(["identity", "pose"]);
+    expect(policy.roleOrder).toEqual(["identity", "pose"]);
+    expect(policy.maxPerRole).toEqual({ identity: 2, pose: 1 });
+  });
+
+  it("requires the two identities alone when no control is declared", () => {
+    const policy = imageLabTwoCharacterRecipeProfile("mdl_x", null).referencePolicy;
+    expect(policy.requiredRoles).toEqual(["identity"]);
+    expect(policy.allowedRoles).toEqual(["identity"]);
+    expect(policy.roleOrder).toEqual(["identity"]);
+    expect(policy.maxPerRole).toEqual({ identity: 2 });
+  });
+
+  it("carries the declared control under its own role, whichever kind it is", () => {
+    for (const controlKind of imageLabControlKinds) {
+      const policy = imageLabTwoCharacterRecipeProfile("mdl_x", controlKind).referencePolicy;
+      expect(policy.requiredRoles).toEqual(["identity", controlKind]);
+      expect(policy.maxPerRole?.[controlKind]).toBe(1);
+    }
+  });
+
+  it("allows no optional content role at all, because two identities plus a control IS the capacity", () => {
+    // Every other recipe here offers content roles after its required ones. This
+    // one deliberately does not: a fourth allowed role on a three-slot model
+    // could only ever be dropped, and a policy slot the model cannot honour
+    // invites a trial arm that spends an admin's time discovering it.
+    for (const arm of [null, "pose"] as const) {
+      const policy = imageLabTwoCharacterRecipeProfile("mdl_x", arm).referencePolicy;
+      for (const role of ["location", "outfit", "style", "object", "before"] as const) {
+        expect(policy.allowedRoles).not.toContain(role);
+      }
+    }
+  });
+
+  it("screens as a scene on the compose strategy with inert knobs", () => {
+    const profile = imageLabTwoCharacterRecipeProfile("mdl_x", null);
+    expect(profile.task).toBe("scene");
+    expect(profile.operation).toBe("edit");
+    // The compose strategy does more work in this recipe than in any other: it is
+    // the only thing in the request saying which face belongs to which image.
+    expect(profile.promptStrategy).toBe("multi_reference_compose");
+    expect(profile.controlDefaults).toEqual({ seedPolicy: "random" });
+    expect(profile.providerOverrides).toEqual({});
+    expect(profile.timeoutMs).toBeNull();
+    expect(profile.isDefault).toBe(false);
+    expect(profile.builtin).toBe(false);
+  });
+
+  it("is a valid profile row in every way but storage, on both arms", () => {
+    for (const arm of [null, ...imageLabControlKinds] as const) {
+      const profile = imageLabTwoCharacterRecipeProfile("mdl_x", arm);
+      expect(imageModelProfileSchema.parse(profile)).toEqual(profile);
+    }
+  });
+
+  it("passes eligibility on the plan's model and refuses one that would render a stranger", () => {
+    const model = qwen2511();
+    expect(profileEligibility(imageLabTwoCharacterRecipeProfile(model.id, "pose"), model)).toEqual({ ok: true });
+    expect(profileEligibility(imageLabTwoCharacterRecipeProfile(model.id, null), model)).toEqual({ ok: true });
+    expect(
+      profileEligibility(imageLabTwoCharacterRecipeProfile("mdl_x", null), qwen2511({ identityPreservation: "weak" })),
+    ).toEqual({ ok: false, reason: "identity_too_weak" });
+  });
+
+  it("stays out of the controlled-kind list, whose recipes are indexed by a required control", () => {
+    // `imageLabRecipeKey` takes a NON-NULL control kind. A kind whose control is
+    // optional cannot be a member without making that signature a lie.
+    expect(isImageLabControlledKind("two_character_scene")).toBe(false);
+    expect(imageLabControlledKinds).not.toContain("two_character_scene");
+    // Nor finishable: a finishing pass improves ONE face toward one pack, and
+    // this render has two people in it.
+    expect(isImageLabFinishableKind("two_character_scene")).toBe(false);
+  });
+});
+
 describe("imageLabFinishableKinds", () => {
   it("finishes the runs that produced a production-shaped render, and nothing else", () => {
     expect(imageLabFinishableKinds).toEqual([
@@ -252,7 +358,9 @@ describe("imageLabFinishableKinds", () => {
       "controlled_scene",
     ]);
     for (const kind of imageLabExperimentKinds) {
-      const refused = kind === "control_probe" || kind === "finishing_pass";
+      // A probe is not production-shaped, a chain has no bottom, and a
+      // two-character render has two faces where the pass improves one.
+      const refused = kind === "control_probe" || kind === "finishing_pass" || kind === "two_character_scene";
       expect(isImageLabFinishableKind(kind)).toBe(!refused);
     }
   });

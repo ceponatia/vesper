@@ -48,13 +48,18 @@ those systems through their existing exports and adds no second copy.
 | Stage 5 dataset + character-LoRA training run   | run 2026-08-11   |
 | Stage 5 hosting + comparison arms               | run 2026-08-11   |
 | Stage 5 owner verdicts                          | run 2026-08-11   |
+| Stage 6 two-character kind, recipe, runner      | built 2026-08-12 |
+| Stage 6 subject-aware compose bindings          | built 2026-08-12 |
+| Stage 6 create/verdict/comparison UI            | built 2026-08-12 |
+| Stage 6 two-character trial runs + verdicts     | not run          |
 
-Stage 6+ work (two-character recipes, the promotion decision) is deliberately
-absent from this table: Stage 6 waits on the owner opening the two-character
-gate, and Stage 7 closes the plan. Stages 0–5 are all closed. The LoRA library
-itself is the capabilities plan's slice 6
-([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
-§"Slice 6 implementation rulings"); this table tracks only the lab's side.
+Stage 7 (the promotion decision) is deliberately absent from this table: it
+closes the plan. Stages 0–5 are all closed; Stage 6's machinery is built and
+its trial has not run. The LoRA library itself is the capabilities plan's
+slice 6 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
+§"Slice 6 implementation rulings"); this table tracks only the lab's side, and
+the subject-aware compose bindings belong to the capabilities spec
+(§"Prompt strategies", §"Reference policy") with the lab as first consumer.
 
 ## Rulings this build settles
 
@@ -510,6 +515,95 @@ Owner rulings (2026-08-11), recorded here because the pilot runs on them:
   is refused by the endpoint: a public durable `https_url` locator under
   owner-controlled hosting, in preference to a public model-hub upload.
 
+## Stage 6 build rulings (2026-08-12)
+
+Stage 6 puts two people in one render. The build adds one experiment kind, one
+recipe family, and the prompt vocabulary that makes two same-role references
+distinguishable; everything else rides the Stage 1–5 machinery unchanged.
+
+- **`two_character_scene` is its own kind, not a `controlled_scene` carrying a
+  second identity.** The two ask different questions: a controlled scene's
+  subject is the CONTROL (declared, required, ruled on for obedience), a
+  two-character scene's subject is the CAST (both people surviving, unswapped
+  and undoubled, with the control optional). One kind covering both would need a
+  verdict column that meant different things depending on how many identity
+  inputs the row carried. Widening the kinds tuple was code-only — the column is
+  plain `text` — exactly the bet the Stage 0 declaration made.
+- **Subjects ride the identity INPUTS, not the row.** `imageLabInputSchema`
+  gained an optional `characterId`; a two-character create names its chat,
+  refuses a top-level `characterId`, and sends exactly two identity inputs
+  naming two DIFFERENT owned characters (each checked for ownership at create,
+  the same authorization weight as the top-level checks). Only identity inputs
+  of this kind may carry the binding — every other kind's runner reads no
+  per-input subject, so the create request refuses one there.
+- **The one-identity cap moved out of `imageLabInputListSchema`** into the
+  kind-aware create-request refinements, with the runner re-checking. It could
+  not stay and be relaxed per kind: the stored read-back derives from the list
+  schema via `.catch([])`, so a stored two-identity list refused there would
+  read back as NO inputs and settle `input_missing` — a valid experiment failing
+  with a reason describing nothing. Every kind but this one still refuses a
+  second identity, at create and in the runner.
+- **The prompt vocabulary is the capabilities spec's, consumed here.**
+  `ImageRenderReferenceSpec.subject` (sent, unlike the diagnostics-only `name`),
+  the subject-bearing identity binding, and the cast clause — emitted at two or
+  more DISTINCT subjects, never at two identity references, because the
+  finishing recipe sends two identity images of one person — are owned by
+  [image-model-capabilities.spec.md](image-model-capabilities.spec.md)
+  (§"Reference policy", §"Prompt strategies"). The runner resolves both
+  characters' names owner-scoped, all-or-nothing (a partial cast would bind one
+  face by name and leave the other anonymous), and falls back to the stored id
+  if a name is somehow blank; the form's preview compiles through the same pure
+  function with the same fallback.
+- **Recipes: `two_character_scene/<pose|depth|edge|none>`.** Task `scene`,
+  `edit` on `multi_reference_compose`, policy requiring identity (max 2) plus
+  the declared control (max 1), NO optional content roles — two identities and
+  a control are 2511's whole capacity, so an allowed fourth role could only
+  ever be dropped. The uncontrolled arm is a real recipe key, not a degenerate
+  case: "do two people survive at all?" is answered by a run that sends no
+  fixture, and one key covering both arms would make their verdicts
+  indistinguishable. The kind stays out of `imageLabControlledKinds` (those
+  recipes are indexed by a REQUIRED control) and out of
+  `imageLabFinishableKinds` (a finishing pass refines one face toward one pack;
+  a two-person render has no single subject to finish).
+- **Capacity refuses rather than trims — and the runner's pre-check is the only
+  enforcement.** The plan's rule ("if all required identities and the selected
+  control do not fit, the workflow is ineligible rather than silently dropping
+  a character") cannot be delegated to the intent path:
+  `planIntentReferences`' required-role gate is per-role PRESENCE (the
+  capabilities spec §"Reference policy" records the property), so on a two-slot
+  model it would drop the second character, find `identity` present, and render
+  a solo portrait wearing a two-person record. The runner counts its required
+  references — two identities plus the declared control — against the effective
+  model's capacity and settles `image_lab.capacity_exceeded` pre-spend. The
+  code is no longer probe-only.
+- **The control is optional, and its integrity gates are unchanged.** A declared
+  fixture passes every Stage 0 gate (reviewed, sent exactly once under a
+  control role, source render barred). The runner adds two refusals of its own,
+  both `control_invalid`: half a control pointer (image without kind or kind
+  without image, mirroring the create schema's pairing rule), and a
+  control-class role among the ordered inputs of a run that declares NO fixture
+  — an undeclared skeleton would send structure the record does not name, the
+  Stage 0 "verdict about an image nobody can identify" failure reached from the
+  other direction.
+- **Verdicts: a third vocabulary, `imageLabTwoCharacterVerdicts`** —
+  `both_identities_held` (the only promotable outcome), `identities_swapped`,
+  `character_missing`, `character_duplicated`, `identity_degraded`, and the
+  shared `inconclusive`. The five substantive values are the plan's own failure
+  modes, kept separate because each points at a different fix (a swap is a
+  binding failure, a merge-or-drop is a capacity one). **Control obedience is
+  deliberately NOT in the vocabulary**: the row has one verdict column, and a
+  controlled two-character run wants two questions answered — so the column
+  carries the kind's defining question (the cast) and pose ownership is
+  recorded in `verdictNote`. A render that obeyed the skeleton and merged both
+  faces is a failure; one that held both faces and ignored the pose is a result
+  worth having.
+- **Subjects are any two distinct owned characters, not the chat's members.**
+  The chat says where the evidence is filed, exactly as `controlled_scene`'s
+  identity reference is any portrait of its character rather than the chat's
+  anchor — bench looseness the Stage 1/2 rulings already accepted. Constraining
+  the cast to chat membership would add trial setup (a real two-character chat)
+  for no evidentiary gain.
+
 ## Stage 5 pilot protocol
 
 Owner work with agent assistance, on the Fly deploy, after the Stage 5
@@ -857,6 +951,21 @@ Stage 3 additions (2026-08-11):
 - In `src/lib/images/image-lab-instruction.ts`:
   `imageLabFinishingInstruction(ownerInstruction)`.
 
+Stage 6 additions (2026-08-12):
+
+- `two_character_scene` in `imageLabExperimentKinds`; `characterId` on
+  `imageLabInputSchema`; the one-identity cap relocated from
+  `imageLabInputListSchema` to the kind-aware create-request refinements (the
+  build ruling above records why it could not stay).
+- `imageLabTwoCharacterVerdicts` + the widened `imageLabVerdicts` union; the
+  kind in `imageLabVerdictKinds` and `imageLabVerdictOptions`.
+- In `image-lab-recipes.ts`: `imageLabTwoCharacterRecipeKey`,
+  `imageLabTwoCharacterRecipeProfile` (both arms, `/none` included).
+- Outside the lab's contracts, consumed from the capabilities vocabulary:
+  `ImageRenderReferenceSpec.subject`, `CompileReferenceBinding`, and the
+  `render_intent` arm of `PromptReferenceBinding` now carrying bindings rather
+  than bare roles ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)).
+
 Stage 4 additions (2026-08-11): none of the lab's own contracts changed — the
 LoRA selection was already a member of the normalized controls the settings
 schema accepts. The library contract (`src/contracts/images/image-loras.ts`:
@@ -1030,9 +1139,19 @@ asserting fallback **and** code:
 - Ordered inputs beyond the resolved model's reference capacity →
   `image_lab.capacity_exceeded`, refused rather than trimmed — the render path
   fits an overlong list to the model's arity, so a trimmed run would leave a
-  record claiming a control the provider never received. **Probe only:** a
-  controlled run's plan records what was sent, so it trims optionals and writes
-  every drop into the outcome instead (Stage 1/2 rulings).
+  record claiming a control the provider never received. **Probe and
+  two-character only:** a controlled run's plan records what was sent, so it
+  trims optionals and writes every drop into the outcome instead (Stage 1/2
+  rulings); a two-character run refuses over its REQUIRED references — two
+  identities plus the declared control — because the planner's per-role
+  presence gate would otherwise drop one character silently (Stage 6 rulings).
+- Two-character row whose identity inputs are not exactly two, each naming a
+  different owned character → `image_lab.input_missing` with the rule restated,
+  refused before any provider spend; the create schema refuses the same shapes
+  as a 400, and per-input character ownership is checked at create.
+- Two-character row carrying half a control pointer, or a control-class role
+  among its ordered inputs when it declares no fixture →
+  `image_lab.control_invalid`, refused before any provider spend.
 - Controlled run OR finishing pass carrying a raw `controlInput` bag →
   `image_lab.settings_unsupported`, refused before any provider spend.
 - Finishing pass whose source experiment is missing, of an unfinishable kind, or
@@ -1355,6 +1474,42 @@ attributes. The trial character carries none — its only authored set is the fe
 one — so the round-2 text was hand-derived from the canonical reference. Where
 that text comes from in production is carried as an open question on the
 [plan](qwen-advanced-image-subsystem.plan.md).
+
+## Stage 6 two-character trial protocol
+
+Owner work with agent assistance, on the Fly deploy, after the Stage 6 build
+deploys. Fire every paid call SEQUENTIALLY (the Stage 4 throttle finding). The
+verdicts it produces are recorded below the steps when the trial runs.
+
+1. **Stand up the second character.** The uxtest account holds one fixture
+   character (Sabrina Vale). Create or pick a second with a clearly different
+   look — hair colour and length, face shape, build — and give it a canonical
+   portrait through the ordinary portrait flow; visibly distinct casts make
+   swaps and merges legible. Record both character ids here.
+2. **Uncontrolled arm first** (`two_character_scene`, no fixture): both
+   identities, an instruction naming both characters and what each is doing.
+   This is the kind's baseline — it measures swap, duplication, and loss with
+   nothing else in the send. Run it at least twice; Stage 1/2 showed obedience
+   is stochastic, so a single render proves little either way.
+3. **Depth arm** (identity ×2 + a reviewed two-person depth fixture): depth was
+   the reliable control kind in both Stage 1/2 lanes, so it asks "can one
+   control guide both people?" with the strongest prior. A two-person fixture
+   needs extracting first — render or pick a two-person image, extract, review.
+4. **Pose-ownership arm** (identity ×2 + a reviewed SINGLE-person pose
+   skeleton): deliberately ambiguous — the skeleton describes one body and the
+   scene holds two, and the note records whose body the structure claimed, or
+   whether it bled onto both. Record pose ownership in `verdictNote`; the
+   verdict column stays the cast ruling.
+5. **Judge with the two-character vocabulary** — count the people, then match
+   each face to its own reference: `both_identities_held` /
+   `identities_swapped` / `character_missing` / `character_duplicated` /
+   `identity_degraded` / `inconclusive`, control obedience and pose ownership
+   in the note. The recorded outcome (sent roles, subjects in the final
+   prompt, zero drops) plus the pin is the settings evidence.
+6. **Write the verdicts into this spec**, tally per arm, and update the plan's
+   Stage 6 status line when the owner accepts. Stage 6's exit feeds Stage 7:
+   whether two-character scenes are reliable enough to consider promoting at
+   all, and under which control.
 
 ## Research record — character-LoRA dataset size (for Stage 5)
 
