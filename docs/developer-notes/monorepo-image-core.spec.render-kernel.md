@@ -2,36 +2,80 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 2
 
-Implementation state: not started — blocked on the Slice 1 package-boundary correction.
+Implementation state: not started — blocked on Slice 1 guardrail completion.
 
 Move the profile compile step and the pure render planner into
 `@vesper/image-core` by inverting the remaining application-owned facts rather
-than letting the package read the application. Shared mechanics (registration,
-boundaries, export policy and package rules) are in
-[monorepo-image-core.spec.md](monorepo-image-core.spec.md).
+than letting the package read the application. Shared mechanics are in
+[monorepo-image-core.spec.md](monorepo-image-core.spec.md); the prerequisite
+workspace/runtime guardrails are in
+[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
+
+`@vesper/image-core` remains browser/server portable. This slice therefore moves
+pure compile/fingerprint **construction** but does not move the current
+`node:crypto` SHA-256 execution into the package's public runtime graph.
 
 ## What moves
 
 Two application modules split at seams that mostly already exist.
 
-### `src/server/images/render-profile.ts` — moves whole
+### `src/server/images/render-profile.ts` — pure kernel moves, Node hash wrapper stays
 
-Every export is pure after the remaining environment/import dependencies are
-inverted:
+Move these runtime-neutral exports after the remaining environment/import
+dependencies are inverted:
 
-| Export                                                    | Note                          |
-| --------------------------------------------------------- | ----------------------------- |
-| `stableJson`, `sha256Hex`                                 | `node:crypto` only            |
-| `TRIAL_FALLBACK_PREDICTION_MS`, `MAX_TRIAL_PREDICTION_MS` | Constants                     |
-| `pinnedImageModelVersion`                                 | Pure over `ImageModel`        |
-| `PromptReferenceBinding`                                  | Type                          |
-| `CompileProfileRenderPlanInput` and result types          | Types                         |
-| `compileProfileRenderPlan`                                | The compile step              |
-| `profileRenderControlsHash`, its input type               | Configuration fingerprint     |
+| Export / responsibility                                  | Target                                |
+| -------------------------------------------------------- | ------------------------------------- |
+| `stableJson`                                             | `@vesper/image-core`                  |
+| deterministic controls-fingerprint serialization        | `@vesper/image-core`                  |
+| `TRIAL_FALLBACK_PREDICTION_MS`, `MAX_TRIAL_PREDICTION_MS` | `@vesper/image-core`                |
+| `pinnedImageModelVersion`                               | `@vesper/image-core`                  |
+| `PromptReferenceBinding`                                | `@vesper/image-core`                  |
+| `CompileProfileRenderPlanInput` and result types        | `@vesper/image-core`                  |
+| `compileProfileRenderPlan`                              | `@vesper/image-core`                  |
+| `sha256Hex`                                             | application/server                    |
+| final `profileRenderControlsHash` SHA-256 wrapper       | application/server                    |
 
-Private helpers move with it: `referenceBindingCount`, `nonBlank`,
-`compilePromptForStrategy` and its two arms, `resolvedNegativePrompt`, and
-`withResolvedSafetyChecker`.
+Private compile helpers move with the kernel: `referenceBindingCount`,
+`nonBlank`, `compilePromptForStrategy` and its two arms,
+`resolvedNegativePrompt`, and `withResolvedSafetyChecker`.
+
+### Fingerprint split: package constructs, application hashes
+
+Today `profileRenderControlsHash` both determines **what** represents the
+configuration and performs the Node SHA-256 operation. Split those concerns
+without changing the stored hash.
+
+Add a runtime-neutral package helper, nameable along these lines:
+
+```ts
+export function profileRenderControlsFingerprintJson(
+  input: ProfileRenderControlsFingerprintInput,
+): string;
+```
+
+It returns the exact deterministic serialized string that the current
+`profileRenderControlsHash` feeds to `sha256Hex` after all effective model,
+controls, dropped-control, safety and timeout decisions have been made.
+
+The application keeps the thin wrapper:
+
+```ts
+export function profileRenderControlsHash(input: ...): string {
+  return sha256Hex(profileRenderControlsFingerprintJson(input));
+}
+```
+
+The name of the package helper may differ if the implementation has a clearer
+existing seam, but the ownership is fixed:
+
+- package: deciding the fingerprint contents and deterministic serialization;
+- application/server: Node SHA-256 execution;
+- behavior: the final hash string remains byte-for-byte identical.
+
+Do **not** solve the runtime-target problem by adding `node:crypto` to the
+`image-core` public graph or by making `image-core` server-only. Existing
+client-importable contracts already consume its runtime schemas.
 
 ### `src/server/images/render-intent.ts` — splits
 
@@ -162,29 +206,30 @@ single-source guarantee.
 
 ## What stays, and why
 
-| Module                             | Why it stays                            |
-| ---------------------------------- | --------------------------------------- |
-| `render-intent.ts` (IO half)       | App runtime facts, LoRA read, transport |
-| `image-loras.ts`                   | Drizzle reads, `newId`                  |
-| `models.ts`                        | Drizzle reads, `sharp`, transport call  |
-| `identity-pack-trial.ts`           | Persistence, claims, job state          |
-| `identity-trial-model-versions.ts` | Registry reads                          |
+| Module / responsibility            | Why it stays                                      |
+| ---------------------------------- | ------------------------------------------------- |
+| `render-intent.ts` (IO half)       | App runtime facts, LoRA read, transport           |
+| SHA-256 hash wrapper               | Node-only execution; `image-core` stays universal |
+| `image-loras.ts`                   | Drizzle reads, `newId`                            |
+| `models.ts`                        | Drizzle reads, `sharp`, transport call            |
+| `identity-pack-trial.ts`           | Persistence, claims, job state                    |
+| `identity-trial-model-versions.ts` | Registry reads                                    |
 
 ## Consumers to repoint
 
 Moved symbols become `@vesper/image-core` imports. Inventory exported symbol
-usage before deleting the old re-exports.
+usage before deleting old implementations/re-exports.
 
 Known consumers:
 
 - `src/server/images/render-intent.ts` — moved planner/types and compile helpers;
-- `src/server/images/identity-pack-trial.ts` —
-  `compileProfileRenderPlan`, `MAX_TRIAL_PREDICTION_MS`,
-  `pinnedImageModelVersion`, `profileRenderControlsHash`, `sha256Hex`;
+- `src/server/images/identity-pack-trial.ts` — compile helpers/constants and the
+  application-owned final hash wrapper;
 - `src/server/images/identity-trial-model-versions.ts` —
   `pinnedImageModelVersion`;
 - `src/server/ai/replicate.ts` — `reservedImageInputFields`;
-- application image barrels — remove re-exports of implementations that moved.
+- application image barrels — re-export only application-owned wrappers that are
+  still genuine application APIs; remove moved implementation exports.
 
 `identity-pack-trial.ts` has direct compile calls that each gain the required
 `safetyCheckerDisabled` value.
@@ -207,26 +252,33 @@ packages/image-core/src/
     plan-image-render.ts
   render-kernel/
     compile-profile-plan.ts
-    controls-hash.ts
+    fingerprint-json.ts
     stable-json.ts
 ```
+
+The application keeps its Node hashing helper/wrapper under the server image
+layer.
 
 Exact filenames may follow the existing package naming pattern, but ownership is
 fixed:
 
 - capability-derived reserved fields live under `capabilities`;
 - normalized intent planning lives under `render-intent`;
-- profile compilation/fingerprinting lives under `render-kernel`.
+- profile compilation and deterministic fingerprint construction live under
+  `render-kernel`;
+- SHA-256 execution stays application/server-side.
 
-Add a `render-kernel/index.ts` and expose the application-facing symbols through
-the curated package root. Do not create deep public subpath imports.
+Add a `render-kernel/index.ts` for internal organization and expose only actual
+application-facing symbols through the package's **explicit** curated root.
+Do not create deep public subpath imports or add a root `export *`.
 
 ## Tests
 
 ### `render-profile.test.ts`
 
-Move the suite beside `render-kernel`. Preserve all existing behavior assertions.
-The environment-stubbing cases become ordinary input cases:
+Move compile/fingerprint-construction cases beside `render-kernel`. Preserve all
+existing behavior assertions. The environment-stubbing cases become ordinary
+input cases:
 
 ```ts
 compileProfileRenderPlan({
@@ -246,48 +298,73 @@ Split with the implementation:
 
 All package planner calls supply `ImageRenderRuntimeFacts` explicitly.
 
-### Golden fingerprint
+### Golden fingerprint: two levels
 
-Before moving the kernel, make sure a fixture pins the complete controls hash for
-an unchanged configuration. Run that same fixture after the move. The expected
-hash must not be regenerated merely because files moved.
+Before moving the kernel, pin both:
 
-If an existing fixture already pins the hash, reuse it. If not, add the assertion
-before moving the implementation so the before/after comparison is meaningful.
+1. the deterministic serialized fingerprint input;
+2. the final SHA-256 hash currently stored/compared by the application.
+
+After the move:
+
+- package tests prove the serialized fingerprint input is identical;
+- application tests prove `sha256Hex(serializedInput)` produces the identical
+  final hash.
+
+Do not regenerate either expected value merely because files moved.
+
+### Browser-safety regression
+
+Keep a small client-importable application fixture/module that imports an
+existing runtime symbol from `@vesper/image-core` (for example one of the schemas
+already consumed by client-safe contracts). The production Next build must stay
+green after the render kernel moves.
+
+This is specifically intended to catch a Node-only transitive dependency entering
+the package root. Package unit tests alone cannot prove that browser graph.
 
 ### Package independence
 
-Moved tests must neither import application test support nor depend on the app's
-global AI/Replicate environment setup. The shared root Vitest runner may execute
-them; their behavior must be package-contained.
+Moved tests run under the package-scoped Vitest project established by Slice 1.
+They neither import application test support nor depend on the app's global
+AI/Replicate environment setup. The package-local TypeScript project must cover
+all moved source/tests without the Next plugin or app alias.
 
 ## Invariants this slice must not break
 
-1. **What is hashed is what the compiler planned to send.**
-   `profileRenderControlsHash` reads the effective plan, including the supplied
+1. **What is fingerprinted is what the compiler planned to send.** The package's
+   fingerprint serialization reads the effective plan, including the supplied
    safety fact and all dropped controls.
-2. **The effective model is what counts.** `withReviewedImageQuality` runs before
+2. **The final stored hash is unchanged.** Application SHA-256 wraps the exact
+   package-owned serialization used before extraction.
+3. **The effective model is what counts.** `withReviewedImageQuality` runs before
    compilation/fingerprinting.
-3. **Prompt preparation remains byte-stable.** `preparePromptForImageModel`
+4. **Prompt preparation remains byte-stable.** `preparePromptForImageModel`
    remains idempotent across the compile step and `renderWithModel`.
-4. **Production still pins no version by default.** A production intent follows
+5. **Production still pins no version by default.** A production intent follows
    the model slug unless a controlled caller explicitly supplies `versionId`.
-5. **Production still forces no timeout when the profile stores none.** The trial
+6. **Production still forces no timeout when the profile stores none.** The trial
    may compile/hash an explicit comparison budget without changing ordinary
    render timeout behavior.
-6. **Refusals are returned, not thrown.** All existing render refusal codes and
+7. **Refusals are returned, not thrown.** All existing render refusal codes and
    pre-spend behavior stay intact.
-7. **The package reads no environment.** Runtime facts arrive as values.
-8. **No database/library resolution moves into the package.** Registry and LoRA
+8. **The package reads no environment.** Runtime facts arrive as values.
+9. **No database/library resolution moves into the package.** Registry and LoRA
    resolution stay application-owned.
+10. **`image-core` remains browser/server portable.** No Node-only module enters
+    its public runtime graph.
 
 ## Verification
 
-- Slice 1's package-boundary gate is green before this PR begins.
+- Slice 1's full guardrail gate is green before this PR begins.
 - CI `verify` is green for the Slice 2 PR.
-- The moved suites pass with no package-side `process.env` stubbing.
-- The golden controls hash is identical before and after extraction.
+- Package-local typecheck covers the moved source without Next/app aliases.
+- The moved suites pass with no package-side `process.env` stubbing or app setup.
+- The golden fingerprint serialization and final SHA-256 hash are identical
+  before and after extraction.
+- The production build exercises a client-safe `@vesper/image-core` runtime
+  import and remains green.
 - Existing production intent tests still prove no automatic version pin and no
   forced timeout.
-- A symbol inventory finds no live import of the deleted application
+- A symbol inventory finds no live import of deleted application
   implementations after the move.
