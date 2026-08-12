@@ -658,7 +658,7 @@ function costWarning(steps: number): string {
     (minutes * scale * 60 * H200_USD_PER_SECOND).toFixed(2),
   );
   return (
-    `This spends real money: ${DESTINATION_HARDWARE} at $${String(H200_USD_PER_SECOND)}/second, ` +
+    `This spends real money: the trainer runs on gpu-h200 at $${String(H200_USD_PER_SECOND)}/second, ` +
     `and the vendor states ${String(MINUTES_PER_1000_STEPS.low)}-${String(MINUTES_PER_1000_STEPS.high)} minutes at 1000 steps. ` +
     `At ${String(steps)} steps expect roughly $${String(band[0])}-$${String(band[1])}.`
   );
