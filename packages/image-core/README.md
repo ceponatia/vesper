@@ -10,9 +10,11 @@ How the application uses it: [docs/images/](../../docs/images/README.md).
 ## Boundary
 
 **The package may not import application code.** No `@/contracts`, no `@/lib`,
-no `@/server`, no `@/app` — no `@/` at all. `eslint.config.mjs` fails the build
-on any such import, which is what makes this a boundary rather than a folder
-with a different name.
+no `@/server`, no `@/app` — no `@/` at all, and no relative path that climbs out
+of the package either (`../../../src/server/db` reaches the same module and would
+otherwise match no alias glob). `eslint.config.mjs` fails the build on both
+spellings, which is what makes this a boundary rather than a folder with a
+different name. Another package is imported by its name, never by path.
 
 The rule is one-directional and deliberate: the application depends on the
 package, never the reverse. When the package appears to need something from the

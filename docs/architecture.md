@@ -91,7 +91,7 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
 These are the only two lanes — there is no world/session lane.
 
-- **Workspace packages import nothing from the app.** `@/…` is the application's alias, and a package may not use it — not contracts, not lib, not server. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app. (Lint-enforced. Rationale and the current package: [packages/image-core/README.md](../packages/image-core/README.md).)
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current package: [packages/image-core/README.md](../packages/image-core/README.md).)
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.

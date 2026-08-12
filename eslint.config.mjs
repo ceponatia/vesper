@@ -83,11 +83,18 @@ export default defineConfig([
   // 0. Workspace packages: the one-way boundary. `@vesper/image-core` is the
   //    provider-neutral image engine — it may not reach back into the
   //    application for ANYTHING, which is the rule that makes it a package
-  //    rather than a folder with a different name. `@/*` is the app's alias, so
-  //    banning the whole alias bans the database, routes, characters, chats and
-  //    the simulation engine in one line, and keeps the package extractable to
-  //    its own repository later without untangling imports first.
+  //    rather than a folder with a different name. It keeps the package
+  //    extractable to its own repository later without untangling imports first.
   //    (monorepo-image-core.plan.md §"The rule".)
+  //
+  //    TWO patterns, because there are two ways to name the app. `@/*` is its
+  //    alias, and banning the alias bans the database, routes, characters, chats
+  //    and the simulation engine in one line. But an alias ban alone is not a
+  //    boundary: `../../../src/server/db` reaches exactly the same module and
+  //    matches no `@/` glob, so the escape is spelled as a path instead. The
+  //    second pattern closes it by rejecting any relative climb that lands in a
+  //    top-level app directory — a package file never needs one, since
+  //    everything it may import is either beneath it or a package specifier.
   {
     files: ["packages/**/*.{ts,tsx}"],
     rules: {
@@ -96,6 +103,13 @@ export default defineConfig([
           group: ["@/*", "@/**"],
           message:
             "Workspace packages are standalone: no @/ imports. If a package needs something from the app, invert it — take the value as an argument, or leave the code in the app (monorepo-image-core.plan.md).",
+        },
+        {
+          // `../src/…`, `../../src/…`, `../../../scripts/…`, `../../packages/…` —
+          // any number of climbs landing on a top-level directory of the repo.
+          regex: "^\\.\\.(/\\.\\.)*/(src|scripts|drizzle|packages)(/|$)",
+          message:
+            "Workspace packages are standalone: a relative path that climbs out of the package is the same boundary violation as an @/ import. Import another package by its name (@vesper/…), never by path.",
         },
         RESTRICT_PROVIDER,
       ] }],

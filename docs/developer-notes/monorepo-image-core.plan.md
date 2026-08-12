@@ -58,8 +58,10 @@ measured in how the next image change goes.
   carry and in what role, how a prompt is compiled for a profile, what an
   identity pack is and when it is usable, what a failure message means.
 - **A boundary a mistake cannot cross quietly.** The package may not import
-  application code at all. Trying to fails `pnpm lint`, so the separation stays
-  true without anyone policing it in review.
+  application code at all — not by the app's alias and not by a relative path
+  climbing out of the package, because both spellings reach the same modules.
+  Either one fails `pnpm lint`, so the separation stays true without anyone
+  policing it in review.
 - **Faster, narrower model experimentation.** Adding or characterizing a model
   touches the package and its tests, not the app.
 - **A cheaper future split.** If the image engine ever becomes its own product,
@@ -174,7 +176,8 @@ because only a transport knows that error shape.
 
 ## Success criteria
 
-- `pnpm lint` fails on an `@/…` import added anywhere under `packages/`.
+- `pnpm lint` fails on an app import added anywhere under `packages/`, whether
+  it is written as `@/server/db` or as `../../../src/server/db`.
 - The application's image behavior is unchanged: the same suites cover the same
   rules, moved next to the code they test, and CI's `verify` is green.
 - A developer can read `packages/image-core` start to finish and never need to
