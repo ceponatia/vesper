@@ -10,6 +10,16 @@ name: CI
 # when affected. Push CI remains on long-lived branches that may receive direct
 # pushes. `main` is protected by PR `verify`, so the identical suite is not
 # repeated after merge.
+#
+# Billing shape: GitHub charges per job, rounded UP to the minute, so a job's
+# fixed setup (checkout + install) costs as much as its work on short gates.
+# Two consequences are designed for here. The Gate 1 benchmark is a step of the
+# engine job rather than a job of its own — 25s of eval was paying a whole
+# job's setup. And the production build, the slowest gate, runs on PRs only
+# when the build surface itself moves; every other code PR is covered by the
+# `gh workflow run CI --ref main` dispatch that precedes each deploy, which
+# always builds. Lint, static checks, and the pure suite stay unconditional on
+# every ready code PR.
 on:
   pull_request:
     branches: [main, prod, engine]
@@ -34,6 +44,7 @@ jobs:
       code: ${{ steps.classify.outputs.code }}
       integration: ${{ steps.classify.outputs.integration }}
       engine: ${{ steps.classify.outputs.engine }}
+      build: ${{ steps.classify.outputs.build }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,6 +69,7 @@ jobs:
               echo "code=true"
               echo "integration=true"
               echo "engine=true"
+              echo "build=true"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -76,6 +88,7 @@ jobs:
           code=false
           integration=false
           engine=false
+          build=false
 
           # A promotion to prod is intentionally a full release-candidate run.
           if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "prod" ]]; then
@@ -83,6 +96,7 @@ jobs:
             code=true
             integration=true
             engine=true
+            build=true
           fi
 
           while IFS= read -r path; do
@@ -97,19 +111,33 @@ jobs:
                 ;;
             esac
 
+            # `scripts/eval/engine-gate1/*` is listed here as well as under the
+            # engine patterns below so that `engine` is a strict subset of
+            # `integration` — the Gate 1 benchmark now runs as a step of the
+            # engine job, and a step cannot run in a job that was skipped.
+            #
+            # The old `*.config.*` catch-all also set `engine`, so an
+            # eslint.config.mjs or next.config.ts edit spun up Postgres and the
+            # eval. Only the configs that actually shape those runs are listed.
             case "$path" in
-              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml|Dockerfile)
+              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|vitest.config.*|drizzle.config.*)
                 integration=true
-                ;;
-              .github/workflows/*|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|*.config.*)
-                integration=true
-                engine=true
                 ;;
             esac
 
             case "$path" in
               src/server/engine/*|src/lib/simulation/*|src/contracts/simulation/*|scripts/eval/engine-gate1/*)
                 engine=true
+                ;;
+            esac
+
+            # Editing this workflow used to force integration + engine, so a
+            # one-line CI change cost a full suite to validate. It is code, so
+            # lint/static/unit still cover it; the pre-deploy dispatch is what
+            # exercises every job end to end.
+            case "$path" in
+              package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|packages/*/package.json|packages/*/tsconfig.json|next.config.*|Dockerfile|src/middleware.ts|src/instrumentation.ts)
+                build=true
                 ;;
             esac
           done < changed-files.txt
@@ -119,6 +147,7 @@ jobs:
             echo "code=$code"
             echo "integration=$integration"
             echo "engine=$engine"
+            echo "build=$build"
           } >> "$GITHUB_OUTPUT"
 
   lint:
@@ -221,30 +250,24 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  engine-benchmark:
-    name: engine benchmark
-    needs: changes
-    if: needs.changes.outputs.engine == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
+      # Folded in from the former `engine benchmark` job: the eval needs no
+      # database, and 25s of work was paying a second checkout + install. It
+      # runs after teardown so a benchmark failure cannot leak the container,
+      # and stays gated on `engine` — the classifier keeps that a subset of
+      # `integration`, so this step is never stranded in a skipped job.
       - name: Gate 1 deterministic-path benchmark
+        if: needs.changes.outputs.engine == 'true'
         run: pnpm eval:engine-gate1
 
   production-build:
     name: production build
     needs: changes
-    # Manual dispatch is the pre-deploy release-candidate run, so the build
-    # gate must fire there too, not only on PRs.
-    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.code == 'true'
+    # The slowest gate, and the one the pre-deploy dispatch always repeats, so
+    # PRs pay for it only when the build surface moves (manifests, module
+    # resolution, the Next or Docker build config). `build` is forced true for
+    # workflow_dispatch and for prod-bound PRs, so the release-candidate run
+    # and every promotion still build.
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -274,7 +297,6 @@ jobs:
       - static
       - unit
       - integration
-      - engine-benchmark
       - production-build
     runs-on: ubuntu-latest
     steps:
@@ -285,7 +307,6 @@ jobs:
           STATIC_RESULT: ${{ needs.static.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
-          ENGINE_RESULT: ${{ needs.engine-benchmark.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
           DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         run: |
@@ -296,7 +317,6 @@ jobs:
             "$STATIC_RESULT" \
             "$UNIT_RESULT" \
             "$INTEGRATION_RESULT" \
-            "$ENGINE_RESULT" \
             "$BUILD_RESULT"; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "An applicable CI job ended with: $result"

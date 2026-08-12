@@ -23,14 +23,14 @@ surface yet. The inventory below is its canonical technical record.
 
 ## Implementation status
 
-| Slice | State                                      | Blocked by                |
-| ----- | ------------------------------------------ | ------------------------- |
-| 1     | in progress — guardrail completion remains | —                         |
-| 2     | not started                                | Slice 1 completion        |
-| 3     | not started                                | Slice 2 delivery order    |
-| 4     | not started                                | Slices 2 and 3            |
-| 5     | not started, not planned                   | no pure surface exists    |
-| 6     | not started                                | Slice 4 seam-proving gate |
+| Slice | State                                   | Blocked by                |
+| ----- | --------------------------------------- | ------------------------- |
+| 1     | complete — 2026-08-12                   | —                         |
+| 2     | built 2026-08-12 — awaiting CI `verify` | —                         |
+| 3     | next                                    | —                         |
+| 4     | not started                             | Slice 3                   |
+| 5     | not started, not planned                | no pure surface exists    |
+| 6     | not started                             | Slice 4 seam-proving gate |
 
 ## Cross-slice ownership map
 

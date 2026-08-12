@@ -4,6 +4,7 @@ import {
   aggregateTrialGrades,
   buildTrialCellPlans,
   compareTrialCellKeys,
+  compileProfileRenderPlan,
   type EnsureIdentityPackResult,
   type EvaluateIdentityPackResult,
   IDENTITY_PACK_POLICY_VERSION,
@@ -26,7 +27,10 @@ import {
   type ImageModel,
   type ImageModelProfile,
   imageProfileOffered,
+  MAX_TRIAL_PREDICTION_MS,
   pairTrialCells,
+  pinnedImageModelVersion,
+  type ProfileRenderPlan,
   providerVersionsDisagree,
   referenceCapacity,
   trialCellComboSchema,
@@ -46,7 +50,7 @@ import {
 } from "@vesper/image-core";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { newId } from "@/lib/ids";
-import { classifyImageFailure, OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai";
+import { classifyImageFailure, disableSafetyChecker, OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai";
 import {
   db,
   imageIdentityPackTrialCells,
@@ -75,14 +79,7 @@ import {
 } from "./identity-pack-references";
 import { loadImageModels, renderWithModel, type RenderWithModelResult } from "./models";
 import { loadImageModelProfiles } from "./model-profiles";
-import {
-  compileProfileRenderPlan,
-  MAX_TRIAL_PREDICTION_MS,
-  pinnedImageModelVersion,
-  profileRenderControlsHash,
-  sha256Hex,
-  type ProfileRenderPlan,
-} from "./render-profile";
+import { profileRenderControlsHash, sha256Hex } from "./render-fingerprint";
 
 /**
  * The fixed identity-reference trial service
@@ -1136,6 +1133,11 @@ async function resolveTrialCell(
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
+    // Read at the application boundary, exactly where the payload builder reads
+    // it: the compile step is pure and takes the enforcement in force NOW as a
+    // value, which is what makes a flip between planning and execution a
+    // `cell_conflict` rather than an invisible change.
+    safetyCheckerDisabled: disableSafetyChecker(),
     references: { vocabulary: "identity_pack", roles },
   });
   if (!compiled.ok) {
@@ -2334,6 +2336,7 @@ async function executeOneTrialCell(
     profile,
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
+    safetyCheckerDisabled: disableSafetyChecker(),
     references: { vocabulary: "identity_pack", roles: spec.orderedReferenceRoles },
   });
   if (!recompiled.ok) {

@@ -2,8 +2,8 @@
 
 Status: required completion work for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) Slice 1
 
-Implementation state: built 2026-08-12 — every gate item below is active;
-awaiting a ready-state CI `verify` before Slice 2 begins.
+Implementation state: complete — 2026-08-12 (PR #96), with one correction landing
+in the Slice 2 PR: see the export-curation ruling below.
 
 This spec turns the monorepo boundary from an architectural intention into a
 repository invariant. The first extraction proved that `@vesper/image-core` can
@@ -47,9 +47,17 @@ Both new checks run in CI's static gate and in `pnpm verify`.
   runtime targets, so Slices 3 and 4 inherit a decided position instead of
   inventing one at extraction time. An unranked `@vesper/*` workspace fails the
   check the moment it appears.
-- **`diagnostics.ts` is not public.** No application file imports it, so the
-  curated root does not export it; it stays package-internal until Slice 3
-  replaces it with `@vesper/contracts`.
+- **`diagnostics.ts` IS public, and the first curation got that wrong.** The
+  export list was derived by scanning `import { … } from "@vesper/image-core"`
+  statements, which does not see an inline `import("@vesper/image-core").X` type
+  reference — and `src/contracts/images/identity-pack-boundary.test.ts` has one,
+  deliberately, to assert that the package's diagnostic shape and the
+  application's stay assignable in both directions. Dropping `DiagnosticSink`
+  broke typecheck and the production build, and PR #96 was merged with that
+  `verify` red. The root exports `Diagnostic`, `DiagnosticSeverity` and
+  `DiagnosticSink` again, and Slice 3 removes them along with the temporary copy.
+  The lesson for the next curation: a public surface is proven by typecheck, not
+  by a regex over import statements — trim it, then run the gate before merging.
 - **Package tests own their own tooling.** `vitest` is a devDependency of
   `packages/image-core` — reachability through the root install is not ownership,
   and the dependency-ownership rule is what proves it.
@@ -383,9 +391,8 @@ the present repository state, not the checker semantics.
 
 ## Slice 1 completion gate
 
-Slice 2 remains blocked until all of these are true. Every line is met as of
-2026-08-12; what remains is the ready-state CI `verify` that proves it on a clean
-machine.
+Slice 2 was blocked until all of these were true. Every line is met as of
+2026-08-12.
 
 - ✅ `lint:package-boundaries` checks cross-workspace relative paths in both
   directions, on resolved real paths;
@@ -402,8 +409,8 @@ machine.
 - ✅ `image-core` is explicitly protected as browser/server portable;
 - ✅ the guardrail fixture suite exists and its cases are green.
 
-Only then is the first package boundary strong enough to serve as the template
-for `@vesper/contracts` and `@vesper/image-replicate`.
+The boundary is now strong enough to serve as the template for
+`@vesper/contracts` and `@vesper/image-replicate`.
 
 ## Adding a package after this
 

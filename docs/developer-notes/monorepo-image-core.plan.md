@@ -158,8 +158,8 @@ it becomes useful without importing anything from the game. None hold today.
 
 ### Slice 1 — the workspace exists and the image core is a package
 
-Status: built 2026-08-12 — awaiting the ready-state CI `verify` that proves the
-guardrail on a clean machine.
+Status: complete — 2026-08-12 (landed in PR #96; one typecheck defect it carried
+is fixed in the Slice 2 PR).
 
 The workspace and `@vesper/image-core` package exist and application imports
 point at its public API. Review found that the first lint-only boundary was too
@@ -184,11 +184,18 @@ is now in place, and it is what the rest of the migration is built on:
 
 Two commands carry it — `pnpm lint:package-boundaries` for import integrity and
 `pnpm lint:package-resolution` for real-workspace wiring — and both run in CI's
-static gate. Slice 2 does not begin until that gate is green.
+static gate.
+
+**The slice merged with a red `verify`.** Trimming the package's public exports
+to what the application imports missed one inline type reference, so typecheck
+and the production build failed on a single missing export. Nothing about the
+guardrail itself was wrong, and the fix rides with Slice 2; the detail is in
+[the guardrails spec](monorepo-image-core.spec.guardrails.md) and
+[the render-kernel spec](monorepo-image-core.spec.render-kernel.md).
 
 ### Slice 2 — the render kernel joins the package
 
-Status: next — starts once Slice 1's guardrail run is green in CI.
+Status: built 2026-08-12 — awaiting a ready-state CI `verify`.
 
 Every kind of image the app makes — a portrait, a scene, a variant, a lab
 experiment — passes through one step that turns "what this render wants" into
@@ -209,7 +216,7 @@ byte-for-byte compatible. The Slice 2 spec carries the exact split.
 
 ### Slice 3 — the shared foundation becomes `@vesper/contracts`
 
-Status: queued behind Slice 2 — unblocks Slice 4.
+Status: next — Slice 2's build cleared its blocker; it unblocks Slice 4.
 
 The image package currently carries a temporary copy of the diagnostic shapes it
 needs to report degradation. A tiny shared package gives diagnostics one owner
@@ -282,7 +289,7 @@ The package's current contract with the application is
 | ------------------------------------------------------------------ | ------------------ | ---------------- |
 | [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics   | revised          |
 | [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | built 2026-08-12 |
-| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | revised          |
+| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | built 2026-08-12 |
 | [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | revised          |
 | [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised          |
 | [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised          |

@@ -42,7 +42,8 @@ vesper/
         capabilities/    #     what a model declares; binding controls to real fields
         models/          #     registry row shape, per-task profiles, reviewed presets
         loras/           #     LoRA definitions and render bindings
-        render-intent/   #     what one render asks for, in one vocabulary
+        render-intent/   #     what one render asks for, plus the pure planner
+        render-kernel/   #     profile compilation + deterministic fingerprint text
         references/      #     reference shapes, roles, and the prompts naming them
         identity/        #     identity packs: schema, policy, crop, quality, trials
         lab/             #     Advanced Image Lab contracts, recipes, instructions

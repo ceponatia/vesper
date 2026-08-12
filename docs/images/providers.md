@@ -179,14 +179,23 @@ failing. A malformed profile payload degrades to `[]` rather than throwing
 (`imageModelProfileListSchema`, docs/resilience.md §1), and a single unparseable
 row is skipped with `image_profile.row_invalid` rather than emptying the list.
 
-**A render is described as an intent, not as a model call**
-(`server/images/render-intent.ts`). A lane supplies its resolved profile, its
-prompt, a target ratio, and references that carry a **role** — `identity`,
-`location`, `style`, `object`, and the structural control roles — instead of an
-anonymous buffer list where a reference's meaning was its position. Planning is
-pure and happens before any bytes leave the process, and it decides which
-references survive, in what order, and on which provider field
+**A render is described as an intent, not as a model call.** A lane supplies its
+resolved profile, its prompt, a target ratio, and references that carry a
+**role** — `identity`, `location`, `style`, `object`, and the structural control
+roles — instead of an anonymous buffer list where a reference's meaning was its
+position. Planning is pure and happens before any bytes leave the process, and it
+decides which references survive, in what order, and on which provider field
 (`planIntentReferences`).
+
+The path is split across the workspace boundary at exactly that line. Planning
+and profile compilation are `@vesper/image-core` (`planImageRender`,
+`compileProfileRenderPlan`): no database, no provider, no environment. The
+application half (`server/images/render-intent.ts`) resolves the LoRA binding
+against the library, resolves the deployment facts the planner may not read —
+today just whether the provider's safety checker is bypassed — reports the
+diagnostics below, and calls the transport. A lane still renders through
+`renderImageIntent` and never touches the planner directly; the Advanced Image
+Lab is the one exception, because it needs the compiled prompt before it renders.
 
 **Which references survive is the profile's policy, not the caller's order.**
 Selection sorts required references ahead of optional ones, then by the profile's

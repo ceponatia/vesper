@@ -35,11 +35,17 @@ import {
   type ImageProfileTask,
   type ImageReferenceRole,
   type ImageRenderControls,
+  type ImageRenderIntent,
+  type ImageRenderReference,
+  type ImageRenderRuntimeFacts,
   isImageLabControlRole,
   isImageLabFinishableKind,
   isImageLabVerdictForKind,
   isImageLabVerdictKind,
   mapImageRenderControls,
+  pinnedImageModelVersion,
+  planImageRender,
+  type PlannedImageRender,
   profileEligibility,
   referenceCapacity,
   type ResolvedImageProfile,
@@ -49,6 +55,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import {
   classifyImageFailure,
+  disableSafetyChecker,
   REPLICATE_DEFAULT_EDIT_MODEL,
   runRegistryImageModel,
 } from "../ai";
@@ -58,14 +65,7 @@ import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { resolveImageProfileForTask } from "./model-profiles";
-import {
-  planImageRender,
-  renderImageIntent,
-  type ImageRenderIntent,
-  type ImageRenderReference,
-  type PlannedImageRender,
-} from "./render-intent";
-import { pinnedImageModelVersion } from "./render-profile";
+import { renderImageIntent } from "./render-intent";
 
 /**
  * The Advanced Image Lab's experiment service
@@ -112,6 +112,19 @@ import { pinnedImageModelVersion } from "./render-profile";
  */
 
 export type ImageLabExperimentRow = typeof imageLabExperiments.$inferSelect;
+
+/**
+ * The deployment facts the lab's own planning paths hand the pure planner.
+ *
+ * The lab plans directly rather than through `renderImageIntent` — it needs the
+ * compiled prompt before it renders, so the experiment row records what actually
+ * ran — which means it also owns reading the setting the planner may not read.
+ * Same value, same moment as the production path (monorepo-image-core.spec.render-kernel.md
+ * §"The remaining inversions").
+ */
+function labRuntimeFacts(): ImageRenderRuntimeFacts {
+  return { safetyCheckerDisabled: disableSafetyChecker() };
+}
 
 /** A refusal reported to the admin as a 400: nothing was stored, nothing spent. */
 export interface ImageLabRefusal {
@@ -1268,7 +1281,7 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
     // Passed along so the renderer does not read the library a second time.
     ...(resolvedLora ? { resolvedLora } : {}),
   };
-  const planned = planImageRender(intent);
+  const planned = planImageRender(intent, labRuntimeFacts());
   if (!planned.ok) {
     return await settleFailed(row, planned.refusal.code, planned.refusal.message, sink, { columns });
   }
@@ -1895,7 +1908,7 @@ async function runBaseline(
   // instruction would claim parity it cannot show. The compile is pure and its
   // prompt preparation is idempotent, so the plan built here is byte-identical
   // to the one the render builds a line later.
-  const planned = planImageRender(intent);
+  const planned = planImageRender(intent, labRuntimeFacts());
   if (!planned.ok) return await settleFailed(row, LAB_PROFILE_UNAVAILABLE, planned.refusal.message, sink);
 
   const finalPrompt = planned.plan.prompt;

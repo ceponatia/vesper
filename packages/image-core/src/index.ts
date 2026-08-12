@@ -22,6 +22,12 @@
  * one.
  */
 
+// The package's temporary structural copy of the application's diagnostic
+// contract. It is public for one reason: `src/contracts/images/identity-pack-boundary.test.ts`
+// asserts that the two declarations stay assignable in BOTH directions, and it
+// can only do that if it can name this one. Slice 3 replaces both with
+// `@vesper/contracts` and this export goes away with them.
+export type { Diagnostic, DiagnosticSeverity, DiagnosticSink } from "./diagnostics";
 export {
   emptyImageModelAdvancedCapabilities,
   filterReservedInputFields,
@@ -31,6 +37,7 @@ export {
   imageIdentityPreservationSchema,
   imageModelAdvancedCapabilitiesSchema,
   mapImageRenderControls,
+  reservedImageInputFields,
   validateProviderOverrides,
 } from "./capabilities";
 export type {
@@ -110,13 +117,36 @@ export type {
 export {
   missingRequiredControlInputs,
   missingRequiredReferenceRoles,
+  planImageRender,
   planIntentReferences,
 } from "./render-intent";
 export type {
   DroppedImageReference,
+  ImageRenderIntent,
   ImageRenderIntentCore,
+  ImageRenderReference,
   ImageRenderReferenceSpec,
+  ImageRenderRefusal,
+  ImageRenderRuntimeFacts,
+  PlanImageRenderResult,
+  PlannedControlReference,
+  PlannedImageRender,
 } from "./render-intent";
+export {
+  MAX_TRIAL_PREDICTION_MS,
+  TRIAL_FALLBACK_PREDICTION_MS,
+  compileProfileRenderPlan,
+  pinnedImageModelVersion,
+  profileRenderControlsFingerprintJson,
+  stableJson,
+} from "./render-kernel";
+export type {
+  CompileProfileRenderPlanInput,
+  CompileProfileRenderPlanResult,
+  ProfileRenderControlsFingerprintInput,
+  ProfileRenderPlan,
+  PromptReferenceBinding,
+} from "./render-kernel";
 export {
   compileIdentityReferencePrompt,
   compileReferenceRolePrompt,

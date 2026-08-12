@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fitReferences, type ImageModel } from "@vesper/image-core";
+import { fitReferences, type ImageModel, reservedImageInputFields } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";
@@ -136,34 +136,6 @@ export interface RegistryModelRequest {
    * `/predictions` carrying it even for a bare `owner/name` slug.
    */
   versionId?: string;
-}
-
-/**
- * The input fields the render path owns, which nothing merged later may write.
- *
- * This is the one spelling of that set, shared by the `controlInput` overlay
- * below and by the images layer's `providerOverrides` validation — two copies
- * would be two answers to "may a profile redirect the prompt?", and the copy
- * nobody edits is the one that eventually says yes.
- *
- * `prompt`, the reference field and the aspect key are structural: they are
- * what {@link buildRegistryModelInput} writes, and an override reaching one of
- * them would send the render somewhere the caller did not compile. `version` is
- * never an input key at all, but naming it here keeps a stored profile from
- * looking like it can repin the model. `disable_safety_checker` is the safety
- * enforcement the env owns; a database row must not be able to flip it.
- */
-export function reservedImageInputFields(model: ImageModel): string[] {
-  const fields = new Set<string>([
-    "prompt",
-    model.referenceField,
-    model.aspectMode === "size" ? "size" : "aspect_ratio",
-    "version",
-    "disable_safety_checker",
-  ]);
-  const probedPromptField = model.advancedCapabilities.prompt?.field;
-  if (probedPromptField) fields.add(probedPromptField);
-  return [...fields];
 }
 
 /**
