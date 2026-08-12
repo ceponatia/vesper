@@ -16,14 +16,20 @@ import {
   type ImageLabMode,
   type ImageReferenceRole,
 } from "@/contracts";
-import { chatsApi, imageLabApi, imageLorasApi } from "@/lib/client/api";
+import {
+  chatsApi,
+  imageLabApi,
+  imageLorasApi,
+  type CharacterSummary,
+  type ImageRecord,
+} from "@/lib/client/api";
 import {
   imageLabControlRole,
   imageLabFinishingInstruction,
   imageLabProbeInstruction,
 } from "@/lib/images/image-lab-instruction";
 import { compileReferenceRolePrompt } from "@/lib/images/reference-role-prompt";
-import { useAsyncData } from "@/components/hooks/use-async";
+import { useAsyncData, type AsyncState } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -72,6 +78,17 @@ import {
  * identity pack, both resolved by the runner — so the form picks the SOURCE and
  * nothing else, and the ordered list below says so instead of showing an empty
  * send order.
+ *
+ * A TWO-CHARACTER SCENE is the one kind that picks two subjects. Each half names
+ * a character AND the render carrying that character's face, and the two
+ * identity inputs are BOUND to their characters — the trial it feeds rules on
+ * which face landed on whom ("identities swapped"), and a slot whose subject was
+ * only implied by its position could not be checked against that ruling. Its
+ * control fixture is OPTIONAL, unlike every other fixture-sending kind: the
+ * required references are the two identities, and a fixture spends the slot after
+ * them, so "no control" is a legitimate arm and the default one. Like the
+ * controlled kinds, the instruction is the base prompt only — the runner compiles
+ * the numbered bindings from the send order below.
  *
  * `mode` is sent by the controlled kinds alone (default
  * `controlled_composition` — the bias their recipes exist to exercise). A probe
@@ -194,6 +211,59 @@ function sourceOptionLabel(experiment: ImageLabExperiment): string {
 }
 
 /**
+ * One half of a two-character cast: who this character is, and which of their
+ * renders carries the face the output must keep.
+ *
+ * One component rather than two blocks of JSX because the halves differ only in
+ * which character they name, and a second copy is exactly how the two slots would
+ * come to behave differently about a pick whose list moved under it.
+ *
+ * `slot` is the letter the whole form calls this half by — the send order is A
+ * then B, which is the order the runner's numbered bindings are compiled in.
+ */
+function LabCastSlot({
+  slot,
+  characters,
+  characterId,
+  onCharacterChange,
+  portraits,
+  imageId,
+  onImageChange,
+  excluded,
+}: {
+  slot: "A" | "B";
+  characters: CharacterSummary[];
+  characterId: string;
+  onCharacterChange: (characterId: string) => void;
+  portraits: AsyncState<ImageRecord[]>;
+  imageId: string | null;
+  onImageChange: (imageId: string | null) => void;
+  excluded: { imageId: string; reason: string } | null;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Field
+        label={`Character ${slot}`}
+        hint="The character this half of the scene is about. The other half's pick is not offered here — one person cannot be both."
+      >
+        {(id) => (
+          <LabCharacterSelect id={id} characters={characters} value={characterId} onChange={onCharacterChange} />
+        )}
+      </Field>
+      <LabRenderPicker
+        label={`${slot}'s identity reference`}
+        hint="The render whose face this character must keep. Required — the run sends one reference per character."
+        scopeId={characterId}
+        images={portraits}
+        value={imageId}
+        onChange={onImageChange}
+        excluded={excluded}
+      />
+    </div>
+  );
+}
+
+/**
  * A client-side pre-fill of this form — the paired-baseline action on a
  * succeeded controlled experiment's detail. Values only; nothing submits until
  * the admin does. `fromExperimentId` is display-only provenance and is never
@@ -246,6 +316,12 @@ export function ImageLabExperimentForm({
   const [kind, setKind] = useState<ImageLabExperimentKind>(prefill?.kind ?? "control_probe");
   const [characterId, setCharacterId] = useState(prefill?.characterId ?? "");
   const [sourceImageId, setSourceImageId] = useState<string | null>(null);
+  // The SECOND half of a two-character cast. The first half reuses the character
+  // and identity-render state every other subject-picking kind already holds — so
+  // a character chosen before the kind was switched is still chosen after — and
+  // only the extra subject needs state of its own.
+  const [characterBId, setCharacterBId] = useState("");
+  const [sourceImageBId, setSourceImageBId] = useState<string | null>(null);
   const [chatId, setChatId] = useState(prefill?.chatId ?? "");
   const [controlImageId, setControlImageId] = useState<string | null>(null);
   const [sourceExperimentId, setSourceExperimentId] = useState("");
@@ -263,9 +339,17 @@ export function ImageLabExperimentForm({
   const controlledKind: ImageLabControlledKind | null = isImageLabControlledKind(kind) ? kind : null;
   const isProbe = kind === "control_probe";
   const isFinishing = kind === "finishing_pass";
-  /** Kinds that declare a control fixture and send an ordered input list. */
+  const isTwoCharacter = kind === "two_character_scene";
+  /** Kinds whose send order REQUIRES a control fixture. */
   const sendsFixture = isProbe || controlledKind !== null;
-  const needsChat = kind === "baseline_scene" || kind === "controlled_scene";
+  /**
+   * Kinds that offer the fixture picker at all. A two-character scene is the one
+   * kind whose fixture is optional — its required references are the two
+   * identities, and a control spends the slot after them — so it offers the
+   * picker without requiring it, and "no control" is the arm it starts on.
+   */
+  const offersFixture = sendsFixture || isTwoCharacter;
+  const needsChat = kind === "baseline_scene" || kind === "controlled_scene" || isTwoCharacter;
 
   // What a finishing pass may refine: a succeeded run of a finishable kind that
   // still holds its render. The server refuses anything else outright, so a
@@ -335,8 +419,34 @@ export function ImageLabExperimentForm({
   const identityCharacterId = kind === "controlled_scene" ? chatCharacterId : characterId;
   const portraits = useLabPortraits(identityCharacterId);
   const portraitRows = portraits.data ?? [];
+  // The second cast slot's own renders. Scoped to the kind so a character left
+  // picked here does not keep fetching while another kind is on screen; the hook
+  // itself is called unconditionally, and an empty id resolves to an empty list
+  // without a request.
+  const portraitsB = useLabPortraits(isTwoCharacter ? characterBId : "");
+  const portraitBRows = portraitsB.data ?? [];
   const scenes = useLabChatScenes(kind === "controlled_scene" ? chatId : "");
   const sceneRows = scenes.data ?? [];
+
+  // Nobody is both halves of a two-character scene: each select hides the other
+  // slot's pick, so "identities swapped" stays a ruling about the model rather
+  // than about a form that let one character be sent twice.
+  const characterRows = characters.data ?? [];
+  const castAOptions = characterRows.filter((character) => character.id !== characterBId);
+  const castBOptions = characterRows.filter((character) => character.id !== characterId);
+
+  /**
+   * Whom an ordered input depicts, by NAME — what the runner binds a subject by,
+   * resolved here from the same character list the selects above are drawn from.
+   * `null` for an input that names nobody, which is every input of every other
+   * kind. The runner falls back to the stored id when a name cannot be read, and
+   * so does this: a preview that quietly dropped the subject would also drop the
+   * cast clause, which is the one sentence a merged pair of faces is prevented by.
+   */
+  const boundSubject = (input: ImageLabInput): string | null => {
+    if (input.characterId === undefined) return null;
+    return characterRows.find((character) => character.id === input.characterId)?.name ?? input.characterId;
+  };
 
   // A change of identity source — the picked character, or the chat whose
   // character it is — invalidates the picked render (render-adjust, never a
@@ -345,6 +455,13 @@ export function ImageLabExperimentForm({
   if (identityCharacterId !== prevIdentityCharacterId) {
     setPrevIdentityCharacterId(identityCharacterId);
     setSourceImageId(null);
+  }
+  // The same rule for the second cast slot, whose list is scoped to its own
+  // character (render-adjust with a latch, for the reason above).
+  const [prevCharacterBId, setPrevCharacterBId] = useState(characterBId);
+  if (characterBId !== prevCharacterBId) {
+    setPrevCharacterBId(characterBId);
+    setSourceImageBId(null);
   }
 
   // An extra role the current kind does not offer resets to none — a stale role
@@ -385,10 +502,17 @@ export function ImageLabExperimentForm({
   if (fixtureSourceId !== null && extraImageId === fixtureSourceId) {
     setExtraImageId(null);
   }
-  // The bar is only something to explain while the barred tile is on screen —
-  // it is a render of whichever character the picker is currently showing.
+  if (fixtureSourceId !== null && sourceImageBId === fixtureSourceId) {
+    setSourceImageBId(null);
+  }
+  // The bar is only something to explain while the barred tile is on screen — it
+  // is a render of whichever character a picker is currently showing, and a
+  // two-character scene shows two of them.
   const fixtureSourceShown =
-    sendsFixture && fixtureSourceId !== null && portraitRows.some((image) => image.id === fixtureSourceId);
+    offersFixture &&
+    fixtureSourceId !== null &&
+    (portraitRows.some((image) => image.id === fixtureSourceId) ||
+      portraitBRows.some((image) => image.id === fixtureSourceId));
 
   // The ordered send list. Positions are assigned HERE, in array order, because
   // the contract requires the two to agree. A probe's numbered template below is
@@ -397,7 +521,32 @@ export function ImageLabExperimentForm({
   // Identity leads and the fixture follows, matching the recipes' own
   // roleOrder, so the send order and the recipe never disagree about a slot.
   const inputs: ImageLabInput[] = [];
-  if (sendsFixture) {
+  if (isTwoCharacter) {
+    // One identity per character, in cast order, each BOUND to the character it
+    // is a reference for. The binding is not decoration: the trial this kind
+    // feeds rules on which face landed on whom, and a slot whose subject was only
+    // implied by its position could not be checked against that ruling.
+    if (characterId !== "" && sourceImageId !== null) {
+      inputs.push({ position: inputs.length + 1, role: "identity", imageId: sourceImageId, characterId });
+    }
+    if (characterBId !== "" && sourceImageBId !== null) {
+      inputs.push({
+        position: inputs.length + 1,
+        role: "identity",
+        imageId: sourceImageBId,
+        characterId: characterBId,
+      });
+    }
+    // The optional fixture takes the slot after both identities — identity first,
+    // then the control, the same order every other fixture-sending kind uses.
+    if (control !== null) {
+      inputs.push({
+        position: inputs.length + 1,
+        role: imageLabControlRole(control.meta.controlKind),
+        imageId: control.imageId,
+      });
+    }
+  } else if (sendsFixture) {
     if (sourceImageId !== null) {
       inputs.push({ position: inputs.length + 1, role: "identity", imageId: sourceImageId });
     }
@@ -426,14 +575,27 @@ export function ImageLabExperimentForm({
       : "";
   const instruction = instructionEdited ? instructionText : template;
 
-  // What the runner will PREFIX to a controlled instruction: the compose
-  // strategy's numbered role bindings over exactly this send order. Compiled by
-  // the same pure function the server compiles it with — never restated — so
-  // the preview cannot drift from what runs. An empty base prompt yields the
-  // bindings alone; trimmed because the joiner leaves a seam for the base text.
+  // What the runner will PREFIX to a controlled or two-character instruction: the
+  // compose strategy's numbered role bindings over exactly this send order.
+  // Compiled by the same pure function the server compiles it with — never
+  // restated — so the preview cannot drift from what runs. An empty base prompt
+  // yields the bindings alone; trimmed because the joiner leaves a seam for the
+  // base text.
+  //
+  // A two-character send names its subjects, because the compiler needs them to
+  // say which face belongs to which numbered image — and because two or more
+  // distinct subjects are what make it emit the cast clause at all, which is the
+  // sentence standing between this kind and a merged pair of faces. That is worth
+  // reading before the render is paid for.
   const bindingPreview =
-    controlledKind !== null && inputs.length > 0
-      ? compileReferenceRolePrompt({ basePrompt: "", roles: inputs.map((input) => input.role) }).trimEnd()
+    (controlledKind !== null || isTwoCharacter) && inputs.length > 0
+      ? compileReferenceRolePrompt({
+          basePrompt: "",
+          references: inputs.map((input) => {
+            const subject = boundSubject(input);
+            return subject === null ? { role: input.role } : { role: input.role, subject };
+          }),
+        }).trimEnd()
       : "";
 
   // A finishing pass previews the WHOLE fixed text, bindings and rule together,
@@ -445,11 +607,21 @@ export function ImageLabExperimentForm({
   const finishingPreview = isFinishing
     ? compileReferenceRolePrompt({
         basePrompt: imageLabFinishingInstruction("", loraOnlyArm ? "lora_only" : "identity"),
-        roles: loraOnlyArm ? FINISHING_LORA_ONLY_PREVIEW_ROLES : FINISHING_PREVIEW_ROLES,
+        // Roles alone: a finishing pass names no subject, and a binding without
+        // one compiles exactly as the bare role always did.
+        references: (loraOnlyArm ? FINISHING_LORA_ONLY_PREVIEW_ROLES : FINISHING_PREVIEW_ROLES).map((role) => ({
+          role,
+        })),
       })
     : "";
 
   const controlReady = control !== null && isReviewedFixture(control);
+  // The optional-fixture reading of the same rule: none is a legitimate arm, and
+  // a fixture that IS picked must still be reviewed. Unreviewed tiles are already
+  // unclickable, so this is a rail rather than a reachable state — but a queued
+  // run whose only possible outcome is `control_unreviewed` is worse than a
+  // disabled button.
+  const optionalControlReady = control === null || isReviewedFixture(control);
   // A role picked with no image is an unfinished thought, not a request with a
   // hole in it — the submit waits for the pair or for none.
   const extraComplete = extraRole === "" || extraImageId !== null;
@@ -465,6 +637,19 @@ export function ImageLabExperimentForm({
         return characterId !== "" && sourceImageId !== null && controlReady && extraComplete;
       case "controlled_scene":
         return chatId !== "" && sourceImageId !== null && controlReady && extraComplete;
+      case "two_character_scene":
+        // Both halves whole, and different people. The distinctness is enforced by
+        // the selects above, so this is the same kind of rail the reviewed-fixture
+        // check is: the request it would send is one the server refuses.
+        return (
+          chatId !== "" &&
+          characterId !== "" &&
+          characterBId !== "" &&
+          characterId !== characterBId &&
+          sourceImageId !== null &&
+          sourceImageBId !== null &&
+          optionalControlReady
+        );
       case "finishing_pass":
         return sourceExperimentId !== "" && loraReady;
     }
@@ -476,8 +661,14 @@ export function ImageLabExperimentForm({
     }
     const record =
       portraitRows.find((image) => image.id === input.imageId) ??
+      portraitBRows.find((image) => image.id === input.imageId) ??
       sceneRows.find((image) => image.id === input.imageId);
-    return record ? labRenderLabel(record) : input.imageId;
+    const rendered = record ? labRenderLabel(record) : input.imageId;
+    // A two-character send order has two identity rows, and a caption reading
+    // "portrait" twice says nothing about who is who. The bound subject does, and
+    // it is the same name the compiled bindings below will use.
+    const subject = boundSubject(input);
+    return subject === null ? rendered : `${subject} · ${rendered}`;
   };
 
   const submit = async () => {
@@ -524,9 +715,11 @@ export function ImageLabExperimentForm({
           characterId: sendsCharacter && characterId !== "" ? characterId : undefined,
           chatId: needsChat && chatId !== "" ? chatId : undefined,
           // A control image and its kind are recorded together or not at all — half
-          // a pointer names a fixture nothing can check.
-          controlImageId: sendsFixture && control !== null ? control.imageId : undefined,
-          controlKind: sendsFixture && control !== null ? control.meta.controlKind : undefined,
+          // a pointer names a fixture nothing can check. Guarded on the kind
+          // OFFERING a fixture, so a pick left over from a kind that sends one
+          // cannot ride into a request from a kind that does not.
+          controlImageId: offersFixture && control !== null ? control.imageId : undefined,
+          controlKind: offersFixture && control !== null ? control.meta.controlKind : undefined,
           // The bias knob belongs to the controlled recipes alone: a probe or
           // baseline declaring one would claim a recipe existed to be biased, and
           // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
@@ -613,7 +806,7 @@ export function ImageLabExperimentForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Kind"
-            hint="A probe asks whether the model obeys a control at all; a controlled run asks whether that holds production-shaped; a baseline re-runs a lane's own settings beside it; a finishing pass re-edits one of those results to fix the face."
+            hint="A probe asks whether the model obeys a control at all; a controlled run asks whether that holds production-shaped; a baseline re-runs a lane's own settings beside it; a two-character scene asks whether two identities survive one render; a finishing pass re-edits one of those results to fix the face."
           >
             {(id) => (
               <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as ImageLabExperimentKind)}>
@@ -755,7 +948,9 @@ export function ImageLabExperimentForm({
               hint={
                 kind === "baseline_scene"
                   ? "A scene baseline re-runs this conversation's own scene settings."
-                  : "The conversation this evidence is filed against; its character and scene renders feed the pickers."
+                  : isTwoCharacter
+                    ? "The conversation this evidence is filed against. Both characters are picked below, so this says where the scene belongs — not who is in it."
+                    : "The conversation this evidence is filed against; its character and scene renders feed the pickers."
               }
             >
               {(id) => (
@@ -796,11 +991,48 @@ export function ImageLabExperimentForm({
           </div>
         )}
 
-        {sendsFixture ? (
+        {isTwoCharacter ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <LabCastSlot
+                slot="A"
+                characters={castAOptions}
+                characterId={characterId}
+                onCharacterChange={setCharacterId}
+                portraits={portraits}
+                imageId={sourceImageId}
+                onImageChange={setSourceImageId}
+                excluded={fixtureSourceId === null ? null : { imageId: fixtureSourceId, reason: FIXTURE_SOURCE_REASON }}
+              />
+              <LabCastSlot
+                slot="B"
+                characters={castBOptions}
+                characterId={characterBId}
+                onCharacterChange={setCharacterBId}
+                portraits={portraitsB}
+                imageId={sourceImageBId}
+                onImageChange={setSourceImageBId}
+                excluded={fixtureSourceId === null ? null : { imageId: fixtureSourceId, reason: FIXTURE_SOURCE_REASON }}
+              />
+            </div>
+            <p className="text-xs text-paper-500">
+              {"A is sent first and B second, and the runner's numbered bindings follow that order — so the "}
+              {"instruction below should name both characters rather than image numbers. "}
+              {`${DEFAULT_MODEL_SLUG} accepts at most 3 reference images, which the two identities and one control `}
+              {"fixture fill exactly."}
+            </p>
+          </>
+        ) : null}
+
+        {offersFixture ? (
           <>
             <Field
-              label="Control fixture"
-              hint="The structure the output must obey. Required, and only a reviewed fixture may be sent."
+              label={isTwoCharacter ? "Control fixture (optional)" : "Control fixture"}
+              hint={
+                isTwoCharacter
+                  ? "Optional here — the two identities are the required references, and a fixture spends the slot after them. Click a chosen tile again to go back to no control. Only a reviewed fixture may be sent."
+                  : "The structure the output must obey. Required, and only a reviewed fixture may be sent."
+              }
             >
               <ImageChoiceGrid
                 choices={controls.map((entry) => ({
@@ -810,11 +1042,21 @@ export function ImageLabExperimentForm({
                   disabled: !isReviewedFixture(entry),
                 }))}
                 value={controlImageId}
-                onChange={setControlImageId}
+                // Clicking the chosen tile again clears it — the render picker's own
+                // idiom, needed here because one kind's fixture is optional and a
+                // picker with no way back to none would hide that arm.
+                onChange={(imageId) => setControlImageId(imageId === controlImageId ? null : imageId)}
                 fit="contain"
                 emptyHint="No fixtures yet — extract or upload one above."
               />
             </Field>
+            {isTwoCharacter ? (
+              <p className="text-xs text-paper-500">
+                {control === null
+                  ? "No control — the scene is composed from the two identity references alone, which is the arm this kind starts on."
+                  : `Controlled arm — the ${imageLabControlKindLabel(control.meta.controlKind)} is sent after both identities, and the trial reads it for pose ownership: whose body the structure claimed.`}
+              </p>
+            ) : null}
             {unreviewedCount > 0 ? (
               <p className="text-xs text-paper-500">
                 {unreviewedCount}
@@ -881,11 +1123,13 @@ export function ImageLabExperimentForm({
                 ? "Nothing ordered yet — a probe with no inputs is refused as input_missing."
                 : controlledKind !== null
                   ? "Nothing ordered yet — a controlled run sends its identity, its control fixture, and at most one extra."
-                  : isFinishing
-                    ? loraOnlyArm
-                      ? "Resolved at run time — the source run's result, and nothing else. The LoRA-only arm sends no identity reference at all."
-                      : "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
-                    : "None — a baseline resolves the lane's own references itself."}
+                  : isTwoCharacter
+                    ? "Nothing ordered yet — a two-character scene sends one identity reference per character, and a control fixture after them only if you pick one."
+                    : isFinishing
+                      ? loraOnlyArm
+                        ? "Resolved at run time — the source run's result, and nothing else. The LoRA-only arm sends no identity reference at all."
+                        : "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
+                      : "None — a baseline resolves the lane's own references itself."}
             </p>
           ) : (
             <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
@@ -899,7 +1143,7 @@ export function ImageLabExperimentForm({
           )}
         </div>
 
-        {controlledKind !== null ? (
+        {controlledKind !== null || isTwoCharacter ? (
           <div className="rounded-card border border-ink-700 bg-ink-950/40 px-3 py-2">
             <p className="text-[11px] tracking-wide text-paper-500 uppercase">Prompt prefix (compiled by the runner)</p>
             {bindingPreview === "" ? (
@@ -931,9 +1175,11 @@ export function ImageLabExperimentForm({
               ? "Pre-filled from the numbered-role template; the numbers match the list above. Sent exactly as written."
               : controlledKind !== null
                 ? "The base prompt only. The runner prefixes the numbered bindings shown above and records the full text as the final prompt."
-                : isFinishing
-                  ? "Optional — appended after the rule above to narrow it (“the left eye is wrong”), never to replace it."
-                  : "Optional — a baseline renders the lane's own compiled prompt."
+                : isTwoCharacter
+                  ? "Describe the scene, naming both characters and what each is doing. The base prompt only — the runner prefixes the numbered bindings shown above, which name each face themselves, so don't number the images here."
+                  : isFinishing
+                    ? "Optional — appended after the rule above to narrow it (“the left eye is wrong”), never to replace it."
+                    : "Optional — a baseline renders the lane's own compiled prompt."
           }
         >
           {(id) => (
@@ -951,9 +1197,11 @@ export function ImageLabExperimentForm({
                   ? "Pick a control fixture to fill the template."
                   : controlledKind !== null
                     ? "What the render should be, past the bindings — sent after the prefix."
-                    : isFinishing
-                      ? "Leave blank to send the rule alone."
-                      : ""
+                    : isTwoCharacter
+                      ? "Name both characters and say what each is doing — “Sabrina sits at the bar; Wren leans against it, talking to her.”"
+                      : isFinishing
+                        ? "Leave blank to send the rule alone."
+                        : ""
               }
               maxLength={8000}
             />

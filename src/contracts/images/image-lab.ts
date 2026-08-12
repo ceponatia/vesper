@@ -34,14 +34,27 @@ import type { ImageReferenceDropReason } from "./render-intent";
  * as a numbered image and see whether the output obeys it); the two baselines
  * re-run an ordinary lane's own configuration so a later comparison has a
  * same-settings control to sit beside; the two controlled kinds ask whether the
- * control still holds when the request is production-shaped; and
- * `finishing_pass` re-edits one of those results against the subject's identity
- * pack, changing nothing but the face.
+ * control still holds when the request is production-shaped;
+ * `two_character_scene` puts TWO people in one render; and `finishing_pass`
+ * re-edits one of those results against the subject's identity pack, changing
+ * nothing but the face.
  *
- * All six were declared at once, three of them unused for two stages, because
- * the record shape had to survive Stages 1–3 without a migration — an
+ * The first six were declared at once, three of them unused for two stages,
+ * because the record shape had to survive Stages 1–3 without a migration — an
  * experiment kind arriving later would otherwise mean altering a column every
- * stored row uses. All six run as of Stage 3.
+ * stored row uses. That bet paid off exactly as intended when Stage 6 added a
+ * seventh: the column is plain `text`, so widening this tuple was a code change
+ * and nothing else.
+ *
+ * `two_character_scene` is its own kind rather than a `controlled_scene`
+ * carrying a second identity input, because the two ask different questions and
+ * a shared kind could answer neither cleanly. A controlled scene's whole subject
+ * is the CONTROL — it declares one, it requires one, and its verdict vocabulary
+ * is about obedience to it. A two-character scene's subject is the CAST: whether
+ * both people survive, unswapped and undoubled, with the control optional and
+ * pose ownership a note rather than the ruling. One kind covering both would need
+ * a verdict column that meant different things depending on how many identity
+ * inputs the row happened to carry.
  *
  * `schema.ts` imports this tuple for its `text(..., { enum })` column (the
  * `trialRunStatuses` precedent), so the column and the parser cannot drift.
@@ -52,6 +65,7 @@ export const imageLabExperimentKinds = [
   "baseline_scene",
   "controlled_portrait",
   "controlled_scene",
+  "two_character_scene",
   "finishing_pass",
 ] as const;
 export const imageLabExperimentKindSchema = z.enum(imageLabExperimentKinds);
@@ -193,6 +207,64 @@ export const imageLabFinishingVerdictSchema = z.enum(imageLabFinishingVerdicts);
 export type ImageLabFinishingVerdict = (typeof imageLabFinishingVerdicts)[number];
 
 /**
+ * The reviewing admin's ruling on a `two_character_scene`, and the third
+ * vocabulary for the same reason there was a second.
+ *
+ * Neither existing question fits. "Honours the control" cannot be the ruling
+ * here because the control is OPTIONAL — half these runs declare none, and the
+ * ones that do declare one are still not primarily about it. "Improves identity"
+ * is a comparison against a base render this kind has no base for. The question
+ * Stage 6 exists to settle is the CAST: put two people in one render and count
+ * what comes back.
+ *
+ * The five substantive rulings are the failure modes the plan names ("identity
+ * swapping, duplicated people, missing characters"), each kept separate because
+ * each sends the trial somewhere different:
+ *
+ * - `both_identities_held` — both characters present exactly once, each matching
+ *   their own reference. The only promotable outcome, and the whole bar: two
+ *   recognisable people is what a two-character render IS.
+ * - `identities_swapped` — both are there, but the faces or bodies are exchanged.
+ *   Separate from a degradation because it is not one: the likenesses survived
+ *   intact and the BINDING failed, which is a prompt problem (the numbered
+ *   reference did not stick) rather than a model-capacity one.
+ * - `character_missing` — fewer people than the row declared. The model collapsed
+ *   the cast rather than getting it wrong.
+ * - `character_duplicated` — one identity rendered more than once, or extra
+ *   people who were never referenced. The opposite failure, and it reads
+ *   identically to `character_missing` in a bare "the cast is wrong" bucket while
+ *   pointing at the opposite fix.
+ * - `identity_degraded` — both present, no swap and no duplicate, but a likeness
+ *   drifted. The structural questions all came out right and the model simply
+ *   could not hold two faces at once, which is the outcome that says the arity is
+ *   the limit rather than the wording.
+ *
+ * `inconclusive` is shared with the other two vocabularies and means the same
+ * thing: this run settles nothing.
+ *
+ * CONTROL OBEDIENCE IS NOT HERE. A controlled two-character run wants both
+ * questions answered — did the cast survive, and did the pose take — but the row
+ * has one verdict column, and a kind whose ruling could come from either of two
+ * vocabularies is a kind whose stored verdict cannot be read without knowing
+ * which question the reviewer happened to be answering. So the column carries the
+ * kind's DEFINING question, which is the two-character one, and pose ownership is
+ * written in `verdictNote` beside it. That is a deliberate ranking of two real
+ * facts, not an oversight: a render that obeyed the skeleton perfectly and merged
+ * both faces is a failure, and one that held both faces while ignoring the pose is
+ * a result worth having.
+ */
+export const imageLabTwoCharacterVerdicts = [
+  "both_identities_held",
+  "identities_swapped",
+  "character_missing",
+  "character_duplicated",
+  "identity_degraded",
+  "inconclusive",
+] as const satisfies readonly ImageLabVerdict[];
+export const imageLabTwoCharacterVerdictSchema = z.enum(imageLabTwoCharacterVerdicts);
+export type ImageLabTwoCharacterVerdict = (typeof imageLabTwoCharacterVerdicts)[number];
+
+/**
  * Every ruling any experiment kind may record — the union the row's `verdict`
  * column and the record-verdict request both speak.
  *
@@ -214,6 +286,11 @@ export const imageLabVerdicts = [
   "improves_identity",
   "identity_unchanged",
   "changes_beyond_identity",
+  "both_identities_held",
+  "identities_swapped",
+  "character_missing",
+  "character_duplicated",
+  "identity_degraded",
   "inconclusive",
 ] as const;
 export const imageLabVerdictSchema = z.enum(imageLabVerdicts);
@@ -221,19 +298,30 @@ export type ImageLabVerdict = (typeof imageLabVerdicts)[number];
 
 /**
  * The experiment kinds a verdict may be recorded on: every kind whose output
- * asks a question a reviewer can answer by looking at it. The probe was the only
- * one while it was the only kind that sent a fixture; the controlled recipes
- * declare one too, and their whole point is that the same limb-for-limb judgment
- * applies to a production-shaped render. A `finishing_pass` declares no control
- * and is judged against its own base image instead, which is why it rules in a
- * vocabulary of its own. Baselines still have none — a ruling recorded against a
- * run that neither declares a control nor refines one would be a fact about
- * nothing.
+ * asks a question a reviewer can answer by looking at it.
+ *
+ * The list used to be "the kinds that declare a control", and it stopped being
+ * that when `two_character_scene` joined — a two-character run may declare no
+ * control at all and is still eminently rulable, because it is judged by looking
+ * at the SUBJECTS rather than at obedience to a fixture. So the rule is the more
+ * general one it always really was: a kind rules when its output settles the
+ * question the kind was run to ask.
+ *
+ * How each kind earns its place: the probe was the first, while it was the only
+ * kind that sent a fixture; the controlled recipes declare one too, and their
+ * whole point is that the same limb-for-limb judgment applies to a
+ * production-shaped render; a two-character scene is judged on its cast; and a
+ * `finishing_pass` declares no control and is judged against its own base image.
+ * Three different questions, which is why they rule in three vocabularies.
+ *
+ * Baselines still have none — a ruling recorded against a run that declares no
+ * control, refines nothing, and depicts one person would be a fact about nothing.
  */
 export const imageLabVerdictKinds = [
   "control_probe",
   "controlled_portrait",
   "controlled_scene",
+  "two_character_scene",
   "finishing_pass",
 ] as const satisfies readonly ImageLabExperimentKind[];
 export type ImageLabVerdictKind = (typeof imageLabVerdictKinds)[number];
@@ -250,7 +338,7 @@ export function isImageLabVerdictKind(kind: ImageLabExperimentKind): kind is Ima
  * it and they must not disagree: a select offering "honours the control" on a
  * finishing pass would collect a ruling the service then refused, and a service
  * accepting one would file a control judgment against a run that sent no
- * control. Exhaustive over the kinds, so a seventh kind is a compile error here
+ * control. Exhaustive over the kinds, so an eighth kind is a compile error here
  * rather than a silently unrulable experiment.
  */
 export function imageLabVerdictOptions(kind: ImageLabExperimentKind): readonly ImageLabVerdict[] | null {
@@ -259,6 +347,8 @@ export function imageLabVerdictOptions(kind: ImageLabExperimentKind): readonly I
     case "controlled_portrait":
     case "controlled_scene":
       return imageLabProbeVerdicts;
+    case "two_character_scene":
+      return imageLabTwoCharacterVerdicts;
     case "finishing_pass":
       return imageLabFinishingVerdicts;
     case "baseline_portrait":
@@ -330,11 +420,26 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  * - `capacity_exceeded` — the experiment orders more references than the
  *   resolved model accepts. The render path TRIMS an overlong list, so the run
  *   is refused before it instead: a probe whose record claimed a control was
- *   sent that the provider never received is evidence about nothing.
+ *   sent that the provider never received is evidence about nothing. Raised by
+ *   the probe over its whole ordered list, and by `two_character_scene` over its
+ *   REQUIRED ones — the plan's own two-character rule ("if all required
+ *   identities and the selected control do not fit, the workflow is ineligible
+ *   rather than silently dropping a character"). It is not a probe-only code:
+ *   the controlled kinds deliberately trim and record instead, because there the
+ *   overflow can only reach an optional content role.
  * - `source_invalid` — a `finishing_pass` names a source experiment that is not
  *   an owned, succeeded run holding a result image of a finishable kind. The
  *   pass edits that render, so without it there is nothing to finish; refused
  *   before any provider spend.
+ * - `subject_invalid` — a `two_character_scene`'s subject bindings cannot support
+ *   its claim: the two characters resolve to one indistinguishable (or blank)
+ *   name, or an identity input names an image that is not a render of the
+ *   character it is bound to. Names are not unique and an image's subject is not
+ *   implied by the id beside it, so both are reachable with perfectly valid rows
+ *   — and either one turns the numbered bindings that say which face is whose
+ *   into a statement the send does not honour, which is the one thing this kind's
+ *   evidence rests on. Refused before any provider spend, because the resulting
+ *   render would look exactly like a model that swapped or duplicated a person.
  * - `identity_unavailable` — no identity reference could be drawn for the
  *   subject: the finishing pass has nothing to improve the face TOWARD, and a
  *   run without one would be an unconstrained re-edit wearing the name of an
@@ -357,6 +462,7 @@ export const imageLabFailureCodes = [
   "control_source_sent",
   "capacity_exceeded",
   "source_invalid",
+  "subject_invalid",
   "identity_unavailable",
   "settings_unsupported",
   "preprocessor_output_invalid",
@@ -422,17 +528,29 @@ export const IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS = 3_000_000;
  *
  * `note` is the admin's own annotation ("skeleton drawn over the sofa shot"),
  * carried so a verdict written weeks later can still say what the slot held.
+ *
+ * `characterId` is which character an IDENTITY input depicts, and it is a fact
+ * about the slot rather than about the experiment — which is why it rides here
+ * and not in a second top-level column. A `two_character_scene` files one row
+ * against two people, so "the subject" stops being a single value the moment the
+ * kind exists; binding each face to its own input is the only placement that
+ * survives it, and it is also what lets the runner name the right person in the
+ * right numbered binding. Meaningful only on an identity input of that kind:
+ * every other kind's runner reads no per-input subject, so the create request
+ * refuses one there rather than storing a fact with no effect.
  */
 export const imageLabInputSchema = z.object({
   position: z.number().int().min(1).max(IMAGE_LAB_MAX_INPUTS),
   role: imageReferenceRoleSchema,
   imageId: z.string().min(1),
   note: z.string().trim().max(500).optional(),
+  /** Whom this identity reference depicts. See the note above on placement. */
+  characterId: z.string().min(1).optional(),
 });
 export type ImageLabInput = z.infer<typeof imageLabInputSchema>;
 
 /**
- * An experiment's ordered inputs, with the two rules the spec states.
+ * An experiment's ordered inputs, with the one rule that holds for every kind.
  *
  * **Positions are contiguous from 1 AND match array order.** The looser reading
  * — "the set of positions is {1..n}" — would allow an array whose order
@@ -442,10 +560,21 @@ export type ImageLabInput = z.infer<typeof imageLabInputSchema>;
  * numbering describe two different renders wearing one record. Requiring
  * `position === index + 1` collapses that to one answer.
  *
- * **At most one `identity` role.** Two identity references in Stage 0 would make
- * an unhonoured control unattributable — was the pose ignored, or was the model
- * busy reconciling two faces? The cap is a Stage 0 rule and lives here rather
- * than in the runner so an experiment carrying two can never be stored.
+ * **The identity cap is NOT here**, and its absence is deliberate rather than an
+ * omission. Every kind but one still carries it — two faces would make an
+ * unhonoured control unattributable, which was the Stage 0 argument — but a
+ * `two_character_scene` sends exactly two by definition, so the cap became
+ * kind-dependent and moved one layer up, to
+ * {@link imageLabCreateExperimentRequestSchema} where the kind is in hand, with
+ * the runner re-checking it for rows that arrive around the request schema.
+ *
+ * It could not simply stay here and be relaxed for one kind, because this schema
+ * has a second reader with no kind to consult:
+ * {@link imageLabStoredInputListSchema} derives from it and degrades a failing
+ * parse to `[]`. A two-identity list refused here would therefore read back as NO
+ * inputs, and the runner would settle the row `input_missing` — a stored,
+ * valid two-character experiment failing with a reason that describes nothing
+ * about it.
  *
  * An EMPTY list is valid: a baseline experiment resolves the lane's own
  * references itself and orders none.
@@ -463,9 +592,6 @@ export const imageLabInputListSchema = z
         });
       }
     });
-    if (inputs.filter((input) => input.role === "identity").length > 1) {
-      ctx.addIssue({ code: "custom", message: "an experiment carries at most one identity reference" });
-    }
   });
 export type ImageLabInputList = z.infer<typeof imageLabInputListSchema>;
 
@@ -758,6 +884,26 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   fixture but renders the ordered inputs, so a request declaring fixture A
  *   while ordering fixture B would file a verdict against a skeleton the
  *   provider never saw — the one failure a bench cannot survive.
+ * - EVERY kind but `two_character_scene` carries at most one identity input.
+ *   Two faces would make an unhonoured control unattributable — was the pose
+ *   ignored, or was the model reconciling two people? This is the Stage 0 rule,
+ *   which lived on {@link imageLabInputListSchema} until a kind existed that
+ *   legitimately sends two; see that schema for why it could not stay there and
+ *   simply be relaxed.
+ * - only a `two_character_scene` input carries a `characterId`. Every other
+ *   kind's runner reads no per-input subject, so one stored there would record a
+ *   fact with no effect on the render — indistinguishable, later, from a subject
+ *   binding that did something.
+ * - a `two_character_scene` names its CHAT and never a top-level character. The
+ *   subjects ride the identity inputs, one each, because the row files against
+ *   two people and a single `characterId` column cannot say which of them the
+ *   experiment is about. It carries exactly TWO identity inputs, each naming a
+ *   character, and the two characters DIFFER — a run naming one person twice is
+ *   not a two-character scene, it is a duplication the render was supposed to be
+ *   tested for. Its control is OPTIONAL (the pairing and sent-exactly-once rules
+ *   above still apply to a control it does declare), because "does one control
+ *   guide both people?" and "do two people survive at all?" are separate
+ *   questions and the second is answerable without a fixture.
  * - a `finishing_pass` names its source experiment and nothing else: no
  *   subject, no ordered inputs, no control. Every one of those is INHERITED or
  *   RESOLVED — the subject from the source (so the two arms of a comparison can
@@ -852,6 +998,70 @@ export const imageLabCreateExperimentRequestSchema = z
           code: "custom",
           path: ["finishingVariant"],
           message: "only a finishing pass declares which arm it runs",
+        });
+      }
+    }
+    if (request.kind === "two_character_scene") {
+      if (request.chatId === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chatId"],
+          message: "a two-character scene names the chat it is about",
+        });
+      }
+      if (request.characterId !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["characterId"],
+          message: "a two-character scene names its subjects on the identity inputs, not on the experiment",
+        });
+      }
+      const identities = request.inputs.filter((input) => input.role === "identity");
+      if (identities.length !== 2) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: `a two-character scene sends exactly two identity references, one per character; this one sends ${String(identities.length)}`,
+        });
+      }
+      const named = identities.filter((input) => input.characterId !== undefined);
+      if (named.length !== identities.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "each identity reference names the character it depicts, so the prompt can bind the right face to the right image",
+        });
+      }
+      const subjects = new Set(named.map((input) => input.characterId));
+      if (named.length > 1 && subjects.size !== named.length) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "a two-character scene names two DIFFERENT characters; one character twice is the duplication this kind measures",
+        });
+      }
+      // A subject on a location or a pose map would claim the render binds a
+      // person to an image that does not depict one.
+      if (request.inputs.some((input) => input.role !== "identity" && input.characterId !== undefined)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "only an identity reference names a character",
+        });
+      }
+    } else {
+      if (request.inputs.filter((input) => input.role === "identity").length > 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: "an experiment carries at most one identity reference",
+        });
+      }
+      if (request.inputs.some((input) => input.characterId !== undefined)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["inputs"],
+          message: `only a two-character scene binds a character to an input; a ${request.kind} runner reads none`,
         });
       }
     }

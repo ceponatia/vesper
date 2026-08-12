@@ -378,8 +378,21 @@ export interface ImageRenderReference {
   priority?: number;
   sourceImageId?: string;
   name?: string;
+  subject?: string;
 }
 ```
+
+`subject` (2026-08-12, for the Qwen lab's two-character recipe — its first
+consumer) is the one optional field that IS sent to the provider: a short
+subject label — a character's name — that `multi_reference_compose` weaves into
+that reference's numbered binding. It exists because two references of the SAME
+role stop being distinguishable the moment there are two of them: "the identity
+reference" said twice names neither person. It is deliberately separate from
+`name`, which stays diagnostics-only, so a loose operator label can never
+silently become prompt text. A reference without a `subject` compiles
+byte-identically to the pre-field wording. `planImageRender` builds the
+compiler's bindings from the PLANNED primary list, so a subject travels with its
+reference through selection and reordering.
 
 Required references sort before optional references. Within that partition,
 profile role order sorts before numeric priority, then original caller order
@@ -392,6 +405,15 @@ A role the policy REQUIRES is implicitly allowed. A policy naming a role only
 under `requiredRoles` would otherwise be unsatisfiable: the reference is dropped
 as disallowed, then the required-role gate refuses the render for the absence it
 just created.
+
+**`requiredRoles` is per-role PRESENCE, not a count.** The gate asks whether any
+reference of the role survived selection, so a policy cannot require two of one
+role: on a model whose capacity holds only one of them, the planner drops the
+second, finds the role present, and renders — a silent single-drop that
+satisfies the check. A caller that requires N > 1 of a role must gate the count
+itself before spending; the Qwen lab's two-character runner is the precedent
+(`image_lab.capacity_exceeded`, refusing pre-spend when its two identities plus
+a declared control exceed the model's capacity).
 
 The selector returns selected and dropped references, and each drop carries WHY:
 `role_not_allowed` (the profile is configured for a different job), `role_cap`
@@ -663,6 +685,22 @@ imperative follow-this-do-not-draw-it wording, and a closing clause repeats it
 once for the whole set whenever any control is present — deliberately redundant,
 because that failure is catastrophic rather than subtle and the per-slot line
 sits mid-list where position weighting can bury it.
+
+The compiler binds SUBJECTS as of 2026-08-12 (for the Qwen lab's two-character
+recipe). Its input is a list of `CompileReferenceBinding` — role plus optional
+`subject` — rather than bare roles, and the `render_intent` arm of
+`PromptReferenceBinding` carries the same shape. An identity reference with a
+subject compiles to a per-slot binding naming that person ("Image 1: the
+identity reference for Sabrina — one of the people this render depicts…"), and
+two or more DISTINCT subjects add a cast clause stating the head count and the
+names, ordered before the control clause ("This render depicts exactly 2
+people: … Render each person exactly once, matched to their own identity
+reference; never merge, swap, or duplicate them"). The trigger is distinct
+subjects, never identity-reference count — the finishing recipe legitimately
+sends two identity images of ONE person, and a reference-counting clause would
+order a solo portrait to render two people. Subject-less input compiles
+byte-identically to the pre-change wording; the byte-identity fixtures in
+`reference-role-prompt.test.ts` pin it.
 
 The other four — `text_repair`, `example_transform`, `style_render`,
 `coherent_set` — refuse on both arms, because each needs a contract neither
