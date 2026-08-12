@@ -108,6 +108,53 @@ references — so what remains is deciding when the tool is worth building
 against the rest of the roadmap. The first thing it should make cheap is a
 deliberately varied training set, since that is what the pilot lacked.
 
+**Build it together with free-form image iteration, below** (owner direction
+2026-08-11): the two are one workflow. Iterating a reference image by
+instruction is how a varied training set gets made in the first place, and a
+trained LoRA is what makes the next round of images better.
+
+## Free-form image iteration — reference image plus an instruction
+
+_Owner direction 2026-08-11, alongside the LoRA training tool above; build the
+two at the same time._
+
+Portrait Studio can only change a **fixed menu** of things: its variant kinds
+are pose, outfit, expression and setting, each compiling its own instruction
+against the character's canonical portrait. There is no way to say
+"make her eyebrows a little thinner" — an ordinary, specific, small edit — and
+no way to work from an image other than the canonical one.
+
+What the owner wants: **supply an image, write an instruction in plain
+language, get a result, and keep going from that result.** The value is direct
+for LoRA datasets (targeted variety on demand is exactly what the Stage 5
+pilot could not produce), and it is a better editing surface in its own right.
+
+What it has to settle:
+
+- **Any source, not just the canonical portrait** — an uploaded image, or any
+  render the character already has. The lab's finishing pass already addresses
+  a prior result by id; this generalizes that to the studio.
+- **A free-form instruction beside the fixed kinds**, not instead of them. The
+  four variant kinds carry compiled wording that has been tuned; a free-form
+  path needs its own preamble deciding what stays locked, and the lab's
+  finishing recipe is the worked example — a fixed change-nothing-else rule
+  plus the author's narrow instruction, with the rule not editable.
+- **Iteration with lineage.** Each result becomes the next input, so the chain
+  needs to record what it descends from. The lab deliberately refuses a
+  finishing pass over another finishing pass because "a chain accumulates
+  drift with nothing to attribute it to" — a studio built for chaining has to
+  answer that rather than inherit the refusal, most likely by showing the
+  chain and letting a step be reverted to any ancestor.
+- **Drift is the risk, and it compounds.** Every Qwen edit in this lab moved
+  something it was told to leave alone; ten chained edits will drift further
+  than one. Identity-pack references and the appearance instruction are the
+  known mitigations, and the connector's own recrop habit
+  ([qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md)
+  §"Stage 4 verdicts") is the first thing to watch.
+- **Who gets it.** Admin-only first, like the lab; a player-facing version is a
+  separate decision about how much freedom an ordinary editing surface should
+  have.
+
 ## World authoring — locations, travel distances & durations
 
 _Owner direction 2026-07-23: world setup for bespoke first-party worlds and

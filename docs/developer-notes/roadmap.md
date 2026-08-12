@@ -44,10 +44,11 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   control-mapped Qwen edits against ordinary output; Stages 0–3 are complete —
   depth and edge controls proved reliable in both lanes, pose is stochastic,
   Plus stays unregistered, identity finishing is conditionally viable, only
-  earning its cost when its instruction carries appearance text, and a trained
-  character LoRA improves identity alongside pack references (Stage 5 complete;
-  an in-app training tool is parked in `deferred.plan.md`) — Stage 4's owner
-  verdicts are still pending, and Stages 6–7 wait on their gates.
+  earning its cost when its instruction carries appearance text, a curated LoRA
+  runs and refuses safely, and a trained character LoRA improves identity
+  alongside pack references — Stages 0–5 are all closed, an in-app LoRA
+  training tool and free-form image iteration are parked together in
+  `deferred.plan.md`, and Stages 6–7 wait on their gates.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

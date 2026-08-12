@@ -630,9 +630,11 @@ changing structure, clothing, body, camera, lighting, or setting.
 
 ### Stage 4 — curated LoRA support
 
-Status: built + trial run 2026-08-11 — the library, the lab wiring, the
-registered connector, all five pre-spend refusal checks, and both style-LoRA
-smoke arms are done; awaiting owner rulings on the two arms.
+Status: complete — 2026-08-11. The library, the lab wiring, the registered
+connector, all five pre-spend refusal checks and both style-LoRA arms are done
+and ruled on: a curated LoRA can be selected, validated, run, and reproduced
+from its record, and an incompatible or unreachable one is refused before any
+money is spent.
 
 Run one known compatible style LoRA through the finishing connector, consuming
 the capabilities plan's LoRA library slice for hosting, compatibility, scale
