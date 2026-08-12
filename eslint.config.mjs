@@ -11,6 +11,16 @@ const RESTRICT_PROVIDER = {
   message: "Build LLM providers only in the model gateway (src/server/ai); consume them through its barrel.",
 };
 
+// A workspace package publishes ONE curated entry point, so `@vesper/x/anything`
+// is a path into someone else's internals. `pnpm lint:package-boundaries` is the
+// authoritative check (it also proves the target exists and is declared); this
+// is the same rule at editor latency.
+const RESTRICT_PACKAGE_SUBPATH = {
+  group: ["@vesper/*/*", "@vesper/*/**"],
+  message:
+    "Import a workspace package by its exact name (@vesper/<name>). Code subpaths are not public API — add the symbol to the package's root barrel instead.",
+};
+
 const NAMING_CONVENTION = [
   "error",
   { selector: "default", format: ["camelCase"], leadingUnderscore: "allowDouble", trailingUnderscore: "allow" },
@@ -112,6 +122,7 @@ export default defineConfig([
             "Workspace packages are standalone: a relative path that climbs out of the package is the same boundary violation as an @/ import. Import another package by its name (@vesper/…), never by path.",
         },
         RESTRICT_PROVIDER,
+        RESTRICT_PACKAGE_SUBPATH,
       ] }],
     },
   },
@@ -125,6 +136,7 @@ export default defineConfig([
           message: "src/contracts and src/lib are pure and client-importable: no @/server, @/app, or @/components imports.",
         },
         RESTRICT_PROVIDER,
+        RESTRICT_PACKAGE_SUBPATH,
       ] }],
     },
   },
@@ -139,6 +151,7 @@ export default defineConfig([
           message: "Client code must not import @/server; reach the server through a route handler in src/app/api.",
         },
         RESTRICT_PROVIDER,
+        RESTRICT_PACKAGE_SUBPATH,
       ] }],
     },
   },
@@ -170,6 +183,7 @@ export default defineConfig([
             message: "Internal image mutations are reserved for trusted workers and verified cascade paths, never route modules.",
           },
           RESTRICT_PROVIDER,
+          RESTRICT_PACKAGE_SUBPATH,
         ],
       }],
     },
@@ -182,6 +196,7 @@ export default defineConfig([
       "no-restricted-imports": ["error", { patterns: [
         { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
         RESTRICT_PROVIDER,
+        RESTRICT_PACKAGE_SUBPATH,
       ] }],
     },
   },
@@ -191,7 +206,27 @@ export default defineConfig([
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
+        RESTRICT_PACKAGE_SUBPATH,
       ] }],
+    },
+  },
+
+  // A package root barrel IS the package's public API, so it lists what it
+  // publishes. With `export *` a helper added to an internal domain barrel
+  // becomes public through a chain of wildcards, in a diff that shows only the
+  // helper. Internal folder barrels keep their wildcards — they are reading
+  // aids, not publication. (monorepo-image-core.spec.guardrails.md.)
+  {
+    files: ["packages/*/src/index.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ExportAllDeclaration",
+          message:
+            "A package root barrel may not use `export *` — list the public API explicitly, so adding an internal helper cannot publish it accidentally.",
+        },
+      ],
     },
   },
 

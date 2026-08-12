@@ -2,7 +2,8 @@
 
 Status: required completion work for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) Slice 1
 
-Implementation state: not started — blocks Slice 2.
+Implementation state: built 2026-08-12 — every gate item below is active;
+awaiting a ready-state CI `verify` before Slice 2 begins.
 
 This spec turns the monorepo boundary from an architectural intention into a
 repository invariant. The first extraction proved that `@vesper/image-core` can
@@ -11,6 +12,53 @@ still make that boundary porous while lint, typecheck, or tests stayed green.
 
 Slice 1 is not complete until the checks below are active. No additional image
 code crosses into a package before then.
+
+## What is built
+
+| Guardrail                  | Lives in                                                          |
+| -------------------------- | ----------------------------------------------------------------- |
+| Workspace import integrity | `scripts/check-workspace-imports.ts` (`lint:package-boundaries`)  |
+| Checker regression suite   | `scripts/check-workspace-imports.test.ts`                         |
+| Real-workspace resolution  | `scripts/check-package-resolution.ts` (`lint:package-resolution`) |
+| Editor-latency subset      | `eslint.config.mjs` (subpath ban, root-barrel `export *` ban)     |
+| Explicit public surface    | `packages/image-core/src/index.ts`                                |
+| Package TypeScript project | `packages/image-core/tsconfig.json`                               |
+| Package-scoped tests       | `vitest.config.ts` (`app` / `app-int` / `image-core` projects)    |
+| Browser-safety fixture     | `src/contracts/state/scene-gen.ts` + its test                     |
+
+Both new checks run in CI's static gate and in `pnpm verify`.
+
+### Rulings this build settled
+
+- **`Buffer` stays in the package's type surface.** Two provider seams name it
+  where image bytes cross them (`ProviderRenderResult.image`,
+  `IdentityFaceDetector.detect`). The package project therefore carries
+  `"types": ["node"]`, and that concession is type-space only: the checker's
+  `universal-runtime-global` rule rejects *evaluating* `Buffer`, `process`,
+  `document` or `window` in package runtime source, so a type annotation stays
+  legal while `Buffer.from(...)` does not. Converting these seams to
+  `Uint8Array` is a provider-API change, not a guardrail, and was left alone.
+- **`lib` is `["ES2022", "DOM"]`, not the Next lib set.** DOM is the only
+  TypeScript library declaring the web-standard globals a universal package may
+  use — `URL` is the one in play — and browser-only globals are rejected by the
+  rule above rather than by the lib list.
+- **The layer policy pre-declares packages that do not exist yet.**
+  `@vesper/contracts` and `@vesper/image-replicate` already carry ranks and
+  runtime targets, so Slices 3 and 4 inherit a decided position instead of
+  inventing one at extraction time. An unranked `@vesper/*` workspace fails the
+  check the moment it appears.
+- **`diagnostics.ts` is not public.** No application file imports it, so the
+  curated root does not export it; it stays package-internal until Slice 3
+  replaces it with `@vesper/contracts`.
+- **Package tests own their own tooling.** `vitest` is a devDependency of
+  `packages/image-core` — reachability through the root install is not ownership,
+  and the dependency-ownership rule is what proves it.
+- **Vitest CLI `--exclude` does not reach projects.** Vitest passes only a fixed
+  set of CLI options down to a project's config, and `include`/`exclude` are not
+  among them. The unit/integration split therefore moved into `vitest.config.ts`
+  as the `app` and `app-int` projects, and `pnpm test` / `pnpm test:int` select
+  projects instead of filtering filenames. The path-filtered `test:engine*`
+  scripts are unchanged: positional filters still apply across projects.
 
 ## The invariant: workspaces communicate only through declared public APIs
 
@@ -61,9 +109,11 @@ package metadata. It is not a precedent for code subpaths.
 
 ## One authoritative workspace-import checker
 
-Replace the narrow "package escape" mental model with a repository
-**workspace-import-integrity** checker. Keep the immediate ESLint restrictions
-for fast editor feedback, but make this checker authoritative.
+The narrow "package escape" mental model is replaced by a repository
+**workspace-import-integrity** checker, `scripts/check-workspace-imports.ts`. The
+ESLint restrictions remain for fast editor feedback; this checker is the
+authoritative one, and it takes a repository root plus a policy so its own tests
+can run it over fixture trees.
 
 ### Source forms it must inspect
 
@@ -160,12 +210,15 @@ Every reusable package has one deliberately curated code entry point.
   easier to read; they are not public merely because they exist.
 - adding a new root export is a visible public-API change in the diff.
 
-Add a lint/source rule for root barrels so a helper added to an internal domain
-barrel cannot become public accidentally through a chain of wildcards.
+A lint/source rule covers root barrels so a helper added to an internal domain
+barrel cannot become public accidentally through a chain of wildcards: ESLint
+rejects `ExportAllDeclaration` in `packages/*/src/index.ts`, and the boundary
+checker rejects it independently from the `exports` map's `"."` target.
 
-During the Slice 1 correction, replace the existing
-`packages/image-core/src/index.ts` wildcard surface with explicit exports based on
-actual external consumers. Do not rename live exports as part of that cleanup.
+`packages/image-core/src/index.ts` now lists 311 explicit exports, derived from
+the names application source actually imports; no live export was renamed. Names
+the application never imported — the package's internal `DiagnosticSink` among
+them — are no longer public.
 
 ## Package-local TypeScript projects start now
 
@@ -173,9 +226,8 @@ Do not wait for Slice 6 to discover whether a package only typechecks because th
 root Next application lends it aliases, DOM libraries, generated types, or other
 ambient configuration.
 
-Before Slice 2:
+The rule for every package, starting with `packages/image-core/tsconfig.json`:
 
-- add `packages/image-core/tsconfig.json`;
 - give every later package its own `tsconfig.json` when created;
 - include all package source and package tests that are meant to typecheck;
 - do not expose the application's `@/*` alias;
@@ -193,11 +245,8 @@ A green Next build is never accepted as package type coverage.
 
 ## Package tests stop inheriting application setup now
 
-The current shared Vitest setup applies `src/test/setup.ts` to package tests. That
-is intentionally temporary and is removed as part of Slice 1 completion rather
-than Slice 6.
-
-Use Vitest projects or an equivalent scoped configuration so:
+The shared Vitest setup used to apply `src/test/setup.ts` to package tests. Vitest
+projects replace it, as part of Slice 1 rather than Slice 6, so that:
 
 - application tests keep `src/test/setup.ts`;
 - `@vesper/image-core` tests run with no application setup;
@@ -210,20 +259,25 @@ behavior is not established by another workspace's test environment.
 
 ## Prefer real workspace resolution over aliases
 
-The repository currently maps workspace package names directly to source in root
+The repository used to map workspace package names directly to source in root
 TypeScript and Vitest configuration. Those aliases are convenient, but they can
 hide a broken `package.json`, `exports` map, workspace link, or lockfile importer.
 
-After package-local projects exist:
+Both aliases are gone: `@vesper/image-core` resolves through the workspace link
+and the package's `exports` map in TypeScript, in Vitest, and in the Next build.
+The standing rules are:
 
-1. try resolving `@vesper/image-core` through normal pnpm/package `exports` in
-   TypeScript and Vitest;
-2. remove the package-name alias where normal workspace resolution works;
-3. if a tool genuinely requires a mapping, keep it exact-root-only — never add a
+1. resolve a package through normal pnpm/package `exports` wherever it works;
+2. if a tool genuinely requires a mapping, keep it exact-root-only — never add a
    wildcard such as `@vesper/* -> packages/*/src`;
-4. add a CI smoke check that imports each package by its public package name
+3. keep the CI smoke check that imports each package by its public package name
    through the installed workspace, so manifest/exports wiring is exercised even
-   when another tool has an alias.
+   if a tool later needs an alias again.
+
+The root TypeScript project excludes `packages/` so package files are covered by
+the package project rather than incidentally by the app's. Files the application
+imports are still pulled into the app program as dependencies; the package
+project is what covers the rest.
 
 No package is considered registered merely because an alias makes its source
 reachable.
@@ -255,10 +309,16 @@ from importing it.
 
 ### Browser-safety regression check
 
-Keep at least one small build/type fixture in a client-importable application
-surface that imports a designated runtime symbol from `@vesper/image-core`. The
-production build must continue to accept that path after Slice 2. This catches a
-Node-only transitive dependency that pure unit tests would not reveal.
+At least one small build/type fixture in a client-importable application surface
+imports a designated runtime symbol from `@vesper/image-core`. The production
+build must continue to accept that path after Slice 2. This catches a Node-only
+transitive dependency that pure unit tests would not reveal.
+
+`src/contracts/state/scene-gen.ts` is that fixture: it is client-importable and
+consumes `sceneReferenceModeSchema` as a runtime value. `scene-gen.test.ts` pins
+both facts — that the import is a runtime import rather than a type-only one, and
+that the schema still behaves — so removing the last client-side import of the
+package cannot quietly remove the guarantee.
 
 ## Consequence for Slice 2 hashing
 
@@ -287,8 +347,10 @@ This is an ownership correction, not permission to change the fingerprint.
 
 ## Adversarial tests for the guardrail
 
-The boundary checker needs its own regression suite. At minimum include fixtures
-for:
+`scripts/check-workspace-imports.test.ts` is the checker's regression suite. Each
+case builds a throwaway repository, breaks exactly one thing, and asserts the
+rule that fires; the legal trees must come back with no violations at all. It
+covers, at minimum, fixtures for:
 
 - package -> app alias import;
 - package -> app relative escape;
@@ -309,28 +371,46 @@ for:
 - an intentionally legal internal relative import;
 - an intentionally legal root package import.
 
-The test suite should operate on temporary/fixture trees rather than relying on
-there currently being no violations in production source; otherwise it proves
-only the present repository state, not the checker semantics.
+It also covers an escape laundered through a symlink, a package importing itself
+by name, a package with no `"."` export, an unranked `@vesper/*` workspace, a
+manifest-only graph cycle, and the universal-runtime rules in both directions
+(a Node built-in and a server-only module rejected; a platform type in an
+annotation accepted).
+
+The test suite operates on temporary fixture trees rather than relying on there
+currently being no violations in production source; otherwise it would prove only
+the present repository state, not the checker semantics.
 
 ## Slice 1 completion gate
 
-Slice 2 remains blocked until all of these are true:
+Slice 2 remains blocked until all of these are true. Every line is met as of
+2026-08-12; what remains is the ready-state CI `verify` that proves it on a clean
+machine.
 
-- `lint:package-boundaries` checks cross-workspace relative paths in both
-  directions;
-- package code subpath imports are rejected;
-- workspace and third-party dependency ownership is checked against the nearest
+- ✅ `lint:package-boundaries` checks cross-workspace relative paths in both
+  directions, on resolved real paths;
+- ✅ package code subpath imports are rejected;
+- ✅ workspace and third-party dependency ownership is checked against the nearest
   manifest;
-- package graph direction and cycles are checked;
-- `image-core` has a package-local TypeScript project included in root
+- ✅ package graph direction and cycles are checked;
+- ✅ `image-core` has a package-local TypeScript project included in root
   typechecking;
-- package tests no longer inherit application setup;
-- package root wildcard exports are replaced and mechanically prohibited;
-- package resolution has a real-workspace smoke check rather than relying only on
-  source aliases;
-- `image-core` is explicitly protected as browser/server portable;
-- the guardrail fixture suite is green.
+- ✅ package tests no longer inherit application setup;
+- ✅ package root wildcard exports are replaced and mechanically prohibited;
+- ✅ package resolution has a real-workspace smoke check rather than relying only
+  on source aliases;
+- ✅ `image-core` is explicitly protected as browser/server portable;
+- ✅ the guardrail fixture suite exists and its cases are green.
 
 Only then is the first package boundary strong enough to serve as the template
 for `@vesper/contracts` and `@vesper/image-replicate`.
+
+## Adding a package after this
+
+A new workspace package needs, in the same change: its `package.json` (name,
+`"."` export, its own dependencies), a `tsconfig.json` plus a line in root
+`pnpm typecheck`, a Vitest project if it has tests, a rank and runtime target in
+the checker's layer policy, `transpilePackages` in `next.config.ts`, and a
+manifest `COPY` line in the Dockerfile. The checker fails on the missing layer
+rank, and the resolution smoke check fails on a missing or broken `exports` map,
+so the two easiest omissions are caught rather than discovered in a build.

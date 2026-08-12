@@ -158,7 +158,8 @@ it becomes useful without importing anything from the game. None hold today.
 
 ### Slice 1 — the workspace exists and the image core is a package
 
-Status: in progress — extraction landed 2026-08-12; guardrail completion remains.
+Status: built 2026-08-12 — awaiting the ready-state CI `verify` that proves the
+guardrail on a clean machine.
 
 The workspace and `@vesper/image-core` package exist and application imports
 point at its public API. Review found that the first lint-only boundary was too
@@ -166,8 +167,9 @@ narrow: a relative path can escape a package without matching the spelling rule,
 and consumers could still bypass the package root through filesystem deep
 imports.
 
-Before more code moves, Slice 1 completes the full guardrail in
-[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md):
+The full guardrail described in
+[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md)
+is now in place, and it is what the rest of the migration is built on:
 
 - resolved cross-workspace path enforcement in both directions;
 - exact public package imports rather than code subpaths;
@@ -180,11 +182,13 @@ Before more code moves, Slice 1 completes the full guardrail in
 - explicit browser/server portability for `image-core`;
 - adversarial tests for the guardrail itself.
 
-Slice 2 does not begin until that list is green in CI.
+Two commands carry it — `pnpm lint:package-boundaries` for import integrity and
+`pnpm lint:package-resolution` for real-workspace wiring — and both run in CI's
+static gate. Slice 2 does not begin until that gate is green.
 
 ### Slice 2 — the render kernel joins the package
 
-Status: blocked on Slice 1 guardrail completion.
+Status: next — starts once Slice 1's guardrail run is green in CI.
 
 Every kind of image the app makes — a portrait, a scene, a variant, a lab
 experiment — passes through one step that turns "what this render wants" into
@@ -274,14 +278,14 @@ which indexes one spec per remaining slice and owns their implementation status.
 The package's current contract with the application is
 [packages/image-core/README.md](../../packages/image-core/README.md) §Boundary.
 
-| Spec                                                                 | Covers                      | State   |
-| -------------------------------------------------------------------- | --------------------------- | ------- |
-| [spec.md](monorepo-image-core.spec.md)                               | Shared mechanics            | revised |
-| [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)         | Slice 1 completion          | ready   |
-| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md)   | Slice 2                     | revised |
-| [spec.foundation.md](monorepo-image-core.spec.foundation.md)         | Slice 3                     | revised |
-| [spec.replicate.md](monorepo-image-core.spec.replicate.md)           | Slice 4                     | revised |
-| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)             | Slice 6                     | revised |
+| Spec                                                               | Covers             | State            |
+| ------------------------------------------------------------------ | ------------------ | ---------------- |
+| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics   | revised          |
+| [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | built 2026-08-12 |
+| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | revised          |
+| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | revised          |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised          |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised          |
 
 Slice 5 has no spec by design — the hub spec carries its inventory and the
 condition that would start it.

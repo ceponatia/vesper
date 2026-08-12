@@ -163,6 +163,12 @@ jobs:
         run: pnpm lint:cycles
       - name: Route-authorization guard
         run: pnpm lint:authz
+      - name: Workspace import integrity
+        run: pnpm lint:package-boundaries
+      # Imports every workspace package by its public name through the installed
+      # workspace, so a broken exports map or link cannot hide behind a tool alias.
+      - name: Workspace package resolution
+        run: pnpm lint:package-resolution
       - name: Typecheck
         run: pnpm typecheck
         env:

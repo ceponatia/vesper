@@ -17,7 +17,17 @@
 
 Vesper is a pnpm workspace with one application and a small number of packages. The application lives at the repo root — it is not under `apps/` — and each package under `packages/` is a subsystem that operates without it.
 
-A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the first to qualify. Both kinds of boundary are enforced the same way, by the ESLint `no-restricted-imports` rules in `eslint.config.mjs`.
+A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the first to qualify.
+
+The two kinds of boundary are enforced differently, because they promise different things. A folder boundary is a spelling rule: the ESLint `no-restricted-imports` rules in `eslint.config.mjs` reject the import paths that would cross it. A **workspace** boundary is a containment rule, and spelling cannot decide it — `../../foundation/src/x` never mentions `packages/` and still leaves the package. So `pnpm lint:package-boundaries` (`scripts/check-workspace-imports.ts`) resolves every import and answers the questions ESLint cannot:
+
+- does this relative path stay inside the workspace that wrote it — in **either** direction, so the app cannot reach into package internals either;
+- is the package imported by its exact public name, rather than a code subpath;
+- does the importing workspace's own `package.json` declare what it imports;
+- does the `@vesper/*` graph stay acyclic **and** flow one way through its layers;
+- does a package that promises browser/server portability stay out of the Node-only graph.
+
+`pnpm lint:package-resolution` then imports each package by its public name through the installed workspace, so a broken `exports` map cannot hide behind a tool alias. Both run in CI's static gate. The rules and the reasoning behind them: [monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md).
 
 ## Directory layout
 
