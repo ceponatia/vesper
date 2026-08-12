@@ -1344,6 +1344,26 @@ export function resolveScenePlan(
     others.push(characterSpec(entry, other.action, embodied));
   }
 
+  // MEMBERSHIP IS THE ROSTER'S, NOT THE COMPOSER'S. The caller has already
+  // decided who is in the room — the chat lane filters on `presence`, which is
+  // the only location-like state chat tracks — so the composer's job is the
+  // focal pick and what each person is doing, never who exists. Left to it, a
+  // forgotten member produces a prompt that contradicts itself three ways: the
+  // render still sends that person's identity reference, still says to compose
+  // all referenced people together, and then asserts a person count that
+  // excludes them. Backfilled with an empty action, which `characterSpec` fills
+  // from their own posture/activity.
+  for (const entry of roster) {
+    if (seen.has(normalizeName(entry.name))) continue;
+    seen.add(normalizeName(entry.name));
+    others.push(characterSpec(entry, "", embodied));
+    sink?.push(
+      diag("info", "images.scene_composer.present_character_added", "composer omitted a present character — added from the roster", {
+        context: { added: entry.name, roster: roster.map((c) => c.name) },
+      }),
+    );
+  }
+
   return {
     focal,
     others,

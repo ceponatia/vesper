@@ -1844,6 +1844,26 @@ three-reference sends collapse identity and Stage 6 saw three hold, so the count
 alone does not predict the result. The lane must decide what to drop at capacity,
 and the two identities are what the cast ruling protects.
 
+Two rulings the P1 review settled (2026-08-12, PR #95):
+
+- **Membership belongs to the roster, not the composer.** `resolveScenePlan`
+  backfills any present character the composer left out of its `others` list,
+  with a `images.scene_composer.present_character_added` diagnostic. The composer
+  picks the focal and says what each person is doing; who exists was decided
+  upstream by presence. Left to it, an omission produced a prompt contradicting
+  itself three ways — the render still sent that person's identity reference,
+  still said to compose all referenced people together, and then asserted a
+  person count excluding them.
+- **A name collision degrades, where the lab refuses.** Character names are not
+  unique and every downstream binding is by name (the plan's roster map, the
+  composer's dedupe, the prompt's reference set), so two same-named present
+  characters collapse into one and the cast clause never fires. Stage 6 refuses
+  this outright as `characters_share_name`, which is right for an experiment
+  whose output is evidence. A player-facing render draws the first of the pair
+  and logs instead: refusing would mean no picture at all, and
+  [resilience.md](../resilience.md) puts a degraded default above a failed
+  render. The remedy — renaming one character — is the same either way.
+
 **P2 — edge-controlled portrait variants.** Two design rulings are owed before
 coding:
 

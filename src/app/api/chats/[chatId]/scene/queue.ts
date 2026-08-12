@@ -86,6 +86,25 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // filing subject, which is exactly what a pre-roster queue always sent. The
     // cast is never empty — a subject with no state row still renders.
     const castStates = args.flavor === "selfie" ? onlySubject : present.length > 0 ? present : onlySubject;
+    // Character names are NOT unique, and every downstream binding is by name —
+    // the plan's roster map, the composer's dedupe, the prompt's reference set.
+    // Two same-named people collapse into one there, so the model cannot tie each
+    // face to its own reference and the cast clause never fires. The lab refuses
+    // this outright, which is right for an experiment; a player-facing render
+    // degrades instead (docs/resilience.md) and draws the first of the pair.
+    const castNames = new Set<string>();
+    const cleanCast = castStates.filter(({ member }) => {
+      const key = member.name.trim().toLowerCase();
+      if (key && castNames.has(key)) {
+        log.warn("chat_scene", "two present characters share a name — rendering only the first", {
+          chatId: args.chatId,
+          name: member.name,
+        });
+        return false;
+      }
+      castNames.add(key);
+      return true;
+    });
 
     const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
     const playerWardrobe = scenario
@@ -106,7 +125,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // attach to whichever character it was handed to — dressing one person in
     // another's clothes.
     const cast = await Promise.all(
-      castStates.map(async ({ member, stored }) => {
+      cleanCast.map(async ({ member, stored }) => {
         const profile = parseOr(
           characterProfileSchema,
           member.profile ?? {},

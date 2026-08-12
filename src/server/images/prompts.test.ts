@@ -1051,12 +1051,25 @@ describe("resolveScenePlan", () => {
     expect(sink.items.some((d) => d.code === "images.scene_composer.absent_character_dropped")).toBe(true);
   });
 
+  // Membership belongs to the roster, not the composer: a present character the
+  // composer never mentioned is still in the room, and the render sends their
+  // reference either way — so leaving them out of the plan makes the prompt
+  // contradict itself.
+  it("adds a present character the composer omitted, and records the diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira" }), libraryContext, sink);
+    expect(plan.others.map((o) => o.name)).toEqual(["Sayed"]);
+    expect(plan.others[0]?.action).toBe("shelving books"); // backfilled from their own state
+    expect(sink.items.some((d) => d.code === "images.scene_composer.present_character_added")).toBe(true);
+  });
+
   it("dedupes the focal out of others and yields a null focal for an empty room", () => {
     const dup = resolveScenePlan(
       sceneSpecSchema.parse({ focalCharacter: "Mira", others: [{ name: "mira", action: "again" }] }),
       libraryContext,
     );
-    expect(dup.others).toEqual([]);
+    // Mira is the focal and must not appear twice; Sayed is present and joins.
+    expect(dup.others.map((o) => o.name)).toEqual(["Sayed"]);
     const empty = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira" }), { present: [], locationName: "Atrium", locationDescription: "Glass and rain." });
     expect(empty.focal).toBeNull();
     expect(empty.others).toEqual([]);
