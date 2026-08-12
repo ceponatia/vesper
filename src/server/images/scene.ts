@@ -18,11 +18,12 @@ import {
   type ResolvedImageProfile,
   routeSceneAttempts,
   type SceneAttemptId,
+  type SceneReferenceMode,
   type SceneRenderRequest,
   type SceneVisualReference,
   type SceneVisualReferenceKind,
 } from "@vesper/image-core";
-import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
+import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {

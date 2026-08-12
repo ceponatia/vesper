@@ -20,7 +20,7 @@ import {
   type TrialCellPlanInput,
   type TrialGradeRecord,
   type TrialPairableCell,
-} from "./identity-pack-trial";
+} from "./identity-pack-trial-planning";
 
 /** The variant key a `{ source: "revision" }` selector for char_1 rev 2 derives. */
 const REV_KEY = "rev:char_1:2";
