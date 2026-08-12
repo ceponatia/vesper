@@ -43,7 +43,7 @@ those systems through their existing exports and adds no second copy.
 | Stage 4 lab LoRA wiring (library consumption)   | built 2026-08-11 |
 | Stage 4 connector registration + refusal checks | run 2026-08-11   |
 | Stage 4 style-LoRA smoke arms (no-LoRA / LoRA)  | run 2026-08-11   |
-| Stage 4 owner verdicts                          | pending          |
+| Stage 4 arm verdicts                            | run 2026-08-11   |
 | Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
 | Stage 5 dataset + character-LoRA training run   | run 2026-08-11   |
 | Stage 5 hosting + comparison arms               | run 2026-08-11   |
@@ -51,10 +51,8 @@ those systems through their existing exports and adds no second copy.
 
 Stage 6+ work (two-character recipes, the promotion decision) is deliberately
 absent from this table: Stage 6 waits on the owner opening the two-character
-gate, and Stage 7 closes the plan. Stage 4's owner verdicts are still pending —
-Stage 5's machinery was built without waiting on them (owner direction at its
-kickoff), and its own paid legs are tracked above. The LoRA library itself is
-the capabilities plan's slice 6
+gate, and Stage 7 closes the plan. Stages 0–5 are all closed. The LoRA library
+itself is the capabilities plan's slice 6
 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 §"Slice 6 implementation rulings"); this table tracks only the lab's side.
 
@@ -763,6 +761,30 @@ pin above, both carrying the Stage 3 round-2 appearance instruction:
   into anime") — the prompt-addition weave proven in the record and honoured in
   the output. Executed version echoed `"hidden"` (official-model
   non-disclosure, per the standing ruling).
+
+**Stage 4 verdicts (agent rulings 2026-08-11, at the owner's direction).** Both
+arms record `changes_beyond_identity`, for opposite reasons — the vocabulary
+describes what happened to the image, and the notes carry why:
+
+- **(f) no-LoRA** `c1fiaht1pg018zeq3f30yx2c` — the face is good, among the
+  closest the finishing pass has produced, with hair, eyes and brows all
+  tracking the appearance instruction. It fails the promotion rule on
+  everything else: full-body recropped to chest-up, and the source's sunlit
+  cream studio became a dark grey-green backdrop, so framing, lighting and
+  setting all moved.
+- **(g) style LoRA @1.0** `nb2e7xfyoo59az0bl3ocn5hn` — the whole render became
+  a flat anime illustration, which is what a style LoRA is for and therefore
+  the intended result of a plumbing test rather than a regression. The
+  finishing vocabulary has no value meaning "deliberately stylised", so the
+  ruling records the image while Stage 4's real question is answered below.
+
+**The style arm preserved MORE of the source than the plain arm did** — the
+grey button-up with its pocket and rolled sleeves, the centre-parted dark hair,
+the diagonal sunlight shape on the wall, and a gentler waist-up crop. A LoRA
+that transforms every pixel of style held composition better than a pass told
+to change nothing but the face, which is worth carrying into Stage 7: the
+recrop is the finishing pass's own failure mode on this connector, and it is
+not caused by, nor cured by, the LoRA.
 
 Findings worth carrying: the plumbing bar is met end to end (selection,
 pinning, hosting by HF slug, curated and provider strength limits, prompt
