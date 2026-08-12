@@ -128,5 +128,7 @@ own Vesper state or read ambient application configuration.
   exact-name alias remains for a tool, CI still exercises the installed workspace
   package by public name so the alias cannot hide broken manifest wiring.
 - Tests live beside their subject and run without application-global setup.
-- Validation is CI-only, as everywhere in this repo — code/config changes go
-  through a PR and the repository gates rather than local `verify` runs.
+- Validation follows the repository milestone-gate policy: code/config work is
+  proven by ready-state CI `verify`; `pnpm gates:local` is permitted only as the
+  explicit batch checkpoint described in root `CLAUDE.md`, never as an automatic
+  per-task gate. Raw lint/type/test/verify commands remain banned locally.
