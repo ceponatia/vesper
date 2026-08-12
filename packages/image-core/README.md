@@ -32,7 +32,11 @@ Practical consequences:
   a parsed value; the package never fetches one.
 - **Diagnostics are reported, not collected.** `DiagnosticSink` here is a
   one-method structural interface the application's collector already satisfies
-  (see `src/diagnostics.ts` for why the type is declared twice).
+  (see `src/diagnostics.ts` for why the type is declared twice). The two
+  declarations are held assignable in both directions by
+  `src/contracts/images/identity-pack-boundary.test.ts`; a `@vesper/contracts`
+  package collapses them into one
+  ([spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md)).
 
 ## Layout
 

@@ -23,10 +23,12 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 ## Active (building now)
 
 - **Monorepo migration — the image engine as the first package** —
-  [plan](monorepo-image-core.plan.md) — the repo becomes a pnpm workspace and
-  the provider-neutral image code moves into `@vesper/image-core`, behind a
-  lint-enforced rule that a package may never import the app; the render kernel,
-  Replicate transport, and the move to `apps/web` follow in later slices.
+  [plan](monorepo-image-core.plan.md) · [spec index](monorepo-image-core.spec.md)
+  — the repo is a pnpm workspace and the provider-neutral image code lives in
+  `@vesper/image-core`, behind a lint-enforced rule that a package may never
+  import the app (slice 1 complete); next is the render kernel, then a shared
+  `@vesper/contracts` foundation, Replicate transport, and finally the move to
+  `apps/web`.
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
