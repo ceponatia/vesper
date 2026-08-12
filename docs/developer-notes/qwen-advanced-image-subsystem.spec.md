@@ -1544,16 +1544,17 @@ the owner's direction, pending owner acceptance. Cast: **Sabrina Vale**
 `wdijgtnp5dnosx3or16wwsvv` (canonical `qqtzfaz9ii1v2k4q7xfnxif6`) and **Milo
 Finch** `gvpn0txsmu5760oae0setkds` (canonical `ujlyykcqm18xm2ftfmswd52g`), a
 dark-haired woman and a shorter-haired man — visibly distinct as step 1 asks.
-All five arms succeeded, every one recorded `dropped: []` with both subjects in
+All six arms succeeded, every one recorded `dropped: []` with both subjects in
 the final prompt.
 
-| Arm             | Experiment                 | Verdict                |
-| --------------- | -------------------------- | ---------------------- |
-| Uncontrolled 1  | `vx4thh3z5k3y3g4mzd51fbly` | `both_identities_held` |
-| Uncontrolled 2  | `n3hbwk1h7szn676e4sk5gjhn` | `both_identities_held` |
-| Depth           | `taki66nxuydsgpwnpljapuwl` | `both_identities_held` |
-| Pose            | `xozjc4sko163o2twdogjdvkg` | `character_missing`    |
-| Pose, confirmed | `dtw5s9mv6dp35l59xafnirrb` | `character_missing`    |
+| Arm                     | Experiment                 | Verdict                |
+| ----------------------- | -------------------------- | ---------------------- |
+| Uncontrolled 1          | `vx4thh3z5k3y3g4mzd51fbly` | `both_identities_held` |
+| Uncontrolled 2          | `n3hbwk1h7szn676e4sk5gjhn` | `both_identities_held` |
+| Depth                   | `taki66nxuydsgpwnpljapuwl` | `both_identities_held` |
+| Pose, one-person map    | `xozjc4sko163o2twdogjdvkg` | `character_missing`    |
+| Pose, one-person map ×2 | `dtw5s9mv6dp35l59xafnirrb` | `character_missing`    |
+| Pose, two-person map    | `d93rlajrdsabvxpey7x4el3e` | `both_identities_held` |
 
 - **Uncontrolled, 2/2 held.** Arm 1 placed the pair side by side in a kitchen;
   arm 2 sat them across a café table with the faces close together, the harder
@@ -1570,24 +1571,38 @@ the final prompt.
   potting bench, the mug a plant pot at the same depth position. Identity
   fidelity was the best of the five arms. This is the answer to the arm's
   question: depth control transfers to a two-character cast intact.
-- **Pose, 0/2, and destructive.** Fixture `qkg1bj6tdolj7vhxllu4jgfk`, the
-  reviewed SINGLE-person skeleton, against a two-person cast. Both runs
-  collapsed the cast into one body built to the skeleton's stance. Run 1 kept
-  Sabrina's face and grafted Milo onto the same torso as a second pair of
-  arms in his shirt colour — four arms, one head. Run 2 removed the confound by
-  naming no arm positions at all, and the collapse reproduced worse: the single
-  surviving face belonged to **neither** reference, a hybrid in clothing taken
-  from nothing sent. Pose ownership, the fact step 4 exists to record: the
-  skeleton claims the whole frame rather than one body, and the cast clause
-  does not survive it.
+- **Pose with a single-person skeleton, 0/2, and destructive.** Fixture
+  `qkg1bj6tdolj7vhxllu4jgfk`, the reviewed SINGLE-person skeleton, against a
+  two-person cast. Both runs collapsed the cast into one body built to the
+  skeleton's stance. Run 1 kept Sabrina's face and grafted Milo onto the same
+  torso as a second pair of arms in his shirt colour — four arms, one head. Run
+  2 removed the confound by naming no arm positions at all, and the collapse
+  reproduced worse: the single surviving face belonged to **neither** reference,
+  a hybrid in clothing taken from nothing sent.
+- **Pose with a count-matched skeleton, 1/1 held — the person count is the whole
+  story.** Fixture `hw2q2n7fpg6ivs58lwyltm3s`, two separated skeletons extracted
+  from the arm-1 render and reviewed, run under the **same instruction as the
+  confirm run** so the fixture is the only variable. The collapse does not
+  reproduce: two people, one each, correct faces, Milo back-left with his folded
+  arms mapped faithfully and Sabrina front-right. Pose ownership, the fact step
+  4 exists to record: each figure took its own skeleton and nothing bled between
+  them. Obedience is partial rather than exact — the render crops waist-up
+  against the fixture's full-body extent, and Sabrina's arm angles are
+  approximate. Caveat for a later run: this fixture was extracted from a render
+  of this same pair in this same arrangement, so it encodes a composition
+  already known to work; a two-person skeleton taken from unrelated subjects is
+  the stronger test.
 
 **Findings for Stage 7.** Two-character scenes are reliable on this connector
-uncontrolled and under depth — 3/3 with both identities held, including the
-close-faces case. They are not reliable under a single-person pose skeleton, and
-the failure is not stochastic drift but a structural one that reproduces: a
-pose fixture describing one body forces one body. A promoted two-character path
-should refuse pose control unless the fixture itself encodes two figures, and
-depth is the control kind to promote with.
+uncontrolled, under depth, and under a pose skeleton that describes two people —
+4/4 with both identities held, including the close-faces case. The one failure
+mode is a **control fixture whose person count disagrees with the cast**: a
+skeleton describing one body forces one body, twice, structurally rather than as
+stochastic drift. The rule that follows is about counts, not about pose: a
+promoted two-character path should refuse a pose fixture that does not encode
+two figures, rather than refuse pose control. Depth carries no such constraint
+in these results — its two-person map guided both people, and no single-person
+depth map was tried against the pair.
 
 **Incidental finding — identity references carry wardrobe, or the model invents
 it.** Milo's canonical portrait is a bare-shouldered head-and-shoulders crop
