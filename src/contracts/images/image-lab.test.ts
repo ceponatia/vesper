@@ -20,6 +20,7 @@ import {
   imageLabUploadControlRequestSchema,
   imageLabFinishingVerdicts,
   imageLabProbeVerdicts,
+  imageLabTwoCharacterVerdicts,
   imageLabVerdictKinds,
   imageLabVerdictOptions,
   imageLabVerdicts,
@@ -63,14 +64,29 @@ describe("imageLabInputListSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a second identity reference", () => {
-    // Two faces make an unhonoured control unattributable: was the pose ignored, or
-    // was the model reconciling two people?
-    const result = imageLabInputListSchema.safeParse([
-      { position: 1, role: "identity", imageId: "img_face" },
-      { position: 2, role: "identity", imageId: "img_other_face" },
-    ]);
-    expect(result.success).toBe(false);
+  it("accepts two identity references, because the cap is now the kind's rather than the list's", () => {
+    // The Stage 0 cap — two faces make an unhonoured control unattributable — is
+    // still enforced, one layer up where the KIND is known
+    // (`imageLabCreateExperimentRequestSchema`), because a two-character scene
+    // legitimately sends two. It cannot live here: the stored read-back schema
+    // derives from this one and degrades a failure to `[]`, so a refusal here
+    // would make a valid two-character row read back as NO inputs and fail its
+    // run as `input_missing`.
+    const twoIdentities = [
+      { position: 1, role: "identity" as const, imageId: "img_face_a", characterId: "chr_a" },
+      { position: 2, role: "identity" as const, imageId: "img_face_b", characterId: "chr_b" },
+    ];
+    expect(imageLabInputListSchema.parse(twoIdentities)).toEqual(twoIdentities);
+    expect(imageLabStoredInputListSchema.parse(twoIdentities)).toEqual(twoIdentities);
+  });
+
+  it("round-trips the character an identity input depicts", () => {
+    const inputs = [
+      { position: 1, role: "identity" as const, imageId: "img_face", characterId: "chr_sabrina", note: "canonical" },
+    ];
+    expect(imageLabInputListSchema.parse(inputs)).toEqual(inputs);
+    // Absent is the ordinary case — every kind but the two-character scene.
+    expect(imageLabInputListSchema.parse(probeInputs)[0]?.characterId).toBeUndefined();
   });
 
   it("rejects a role outside the shared reference vocabulary", () => {
@@ -373,6 +389,7 @@ describe("imageLabVerdictKinds", () => {
       "control_probe",
       "controlled_portrait",
       "controlled_scene",
+      "two_character_scene",
       "finishing_pass",
     ]);
     for (const kind of imageLabExperimentKinds) {
@@ -404,16 +421,47 @@ describe("imageLabVerdictOptions", () => {
     ]);
   });
 
+  it("offers the cast vocabulary to a two-character scene, whose control is optional", () => {
+    // The list used to be "the kinds that declare a control". This kind may
+    // declare none and is still rulable, because it is judged on its subjects.
+    expect(imageLabVerdictOptions("two_character_scene")).toEqual([
+      "both_identities_held",
+      "identities_swapped",
+      "character_missing",
+      "character_duplicated",
+      "identity_degraded",
+      "inconclusive",
+    ]);
+  });
+
   it("offers a baseline nothing to rule on", () => {
     expect(imageLabVerdictOptions("baseline_portrait")).toBeNull();
     expect(imageLabVerdictOptions("baseline_scene")).toBeNull();
   });
 
-  it("keeps the union a superset of both vocabularies, with inconclusive shared once", () => {
-    for (const verdict of [...imageLabProbeVerdicts, ...imageLabFinishingVerdicts]) {
+  it("keeps the union a superset of all three vocabularies, with inconclusive shared once", () => {
+    for (const verdict of [...imageLabProbeVerdicts, ...imageLabFinishingVerdicts, ...imageLabTwoCharacterVerdicts]) {
       expect(imageLabVerdicts).toContain(verdict);
     }
     expect(new Set(imageLabVerdicts).size).toBe(imageLabVerdicts.length);
+  });
+
+  it("keeps the two-character rulings inside their own kind", () => {
+    // The one failure the split exists to prevent, in the third vocabulary's
+    // direction: `character_missing` filed against a controlled portrait would
+    // be a ruling about a cast that run never had.
+    expect(isImageLabVerdictForKind("two_character_scene", "both_identities_held")).toBe(true);
+    expect(isImageLabVerdictForKind("two_character_scene", "identities_swapped")).toBe(true);
+    expect(isImageLabVerdictForKind("two_character_scene", "inconclusive")).toBe(true);
+    // Control obedience is recorded in the NOTE, not the verdict: one column,
+    // one ruling, and the kind's defining question is the two-character one.
+    expect(isImageLabVerdictForKind("two_character_scene", "honours_control")).toBe(false);
+    expect(isImageLabVerdictForKind("two_character_scene", "improves_identity")).toBe(false);
+    for (const kind of ["control_probe", "controlled_portrait", "controlled_scene", "finishing_pass"] as const) {
+      expect(isImageLabVerdictForKind(kind, "character_missing")).toBe(false);
+      expect(isImageLabVerdictForKind(kind, "both_identities_held")).toBe(false);
+    }
+    expect(isImageLabVerdictForKind("baseline_scene", "both_identities_held")).toBe(false);
   });
 
   it("refuses a ruling from the other kind's vocabulary", () => {
@@ -644,6 +692,138 @@ describe("imageLabCreateExperimentRequestSchema", () => {
   });
 });
 
+describe("imageLabCreateExperimentRequestSchema — two-character scenes", () => {
+  const castInputs = [
+    { position: 1, role: "identity" as const, imageId: "img_face_a", characterId: "chr_a" },
+    { position: 2, role: "identity" as const, imageId: "img_face_b", characterId: "chr_b" },
+  ];
+
+  function twoCharacter(overrides: Record<string, unknown> = {}) {
+    return imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "two_character_scene",
+      chatId: "cht_1",
+      instruction: "The two of them on the balcony at dusk.",
+      inputs: castInputs,
+      ...overrides,
+    });
+  }
+
+  it("accepts two named identities on a chat with no control at all", () => {
+    // The uncontrolled arm is a real arm, not a degenerate one: "do two people
+    // survive?" is answerable without a fixture.
+    const result = twoCharacter();
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.inputs.map((input) => input.characterId)).toEqual(["chr_a", "chr_b"]);
+      expect(result.data.controlImageId).toBeUndefined();
+    }
+  });
+
+  it("accepts a declared control sent exactly once under a control role", () => {
+    const result = twoCharacter({
+      inputs: [...castInputs, { position: 3, role: "pose", imageId: "img_skeleton" }],
+      controlImageId: "img_skeleton",
+      controlKind: "pose",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("refuses a cast that is not exactly two", () => {
+    expect(twoCharacter({ inputs: [castInputs[0]] }).success).toBe(false);
+    expect(
+      twoCharacter({
+        inputs: [...castInputs, { position: 3, role: "identity", imageId: "img_face_c", characterId: "chr_c" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses an identity reference that does not say whom it depicts", () => {
+    // Without the binding the prompt cannot name the right face in the right
+    // numbered slot, and "identities swapped" stops being checkable.
+    const result = twoCharacter({
+      inputs: [castInputs[0], { position: 2, role: "identity", imageId: "img_face_b" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses one character sent twice — the duplication this kind measures", () => {
+    const result = twoCharacter({
+      inputs: [castInputs[0], { position: 2, role: "identity", imageId: "img_face_b", characterId: "chr_a" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("refuses a top-level subject, which cannot say which of the two it means", () => {
+    expect(twoCharacter({ characterId: "chr_a" }).success).toBe(false);
+  });
+
+  it("refuses a two-character scene with no chat to be about", () => {
+    expect(twoCharacter({ chatId: undefined }).success).toBe(false);
+  });
+
+  it("refuses a character bound to an input that depicts no person", () => {
+    const result = twoCharacter({
+      inputs: [...castInputs, { position: 3, role: "location", imageId: "img_room", characterId: "chr_a" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("still refuses a source experiment and a finishing variant, like every non-finishing kind", () => {
+    expect(twoCharacter({ sourceExperimentId: "exp_controlled" }).success).toBe(false);
+    expect(twoCharacter({ finishingVariant: "lora_only" }).success).toBe(false);
+  });
+
+  it("still refuses half a control pointer and a control it does not send", () => {
+    expect(twoCharacter({ controlImageId: "img_skeleton" }).success).toBe(false);
+    expect(twoCharacter({ controlKind: "pose" }).success).toBe(false);
+    expect(twoCharacter({ controlImageId: "img_elsewhere", controlKind: "pose" }).success).toBe(false);
+  });
+});
+
+describe("imageLabCreateExperimentRequestSchema — the relocated identity cap", () => {
+  it("refuses a second identity reference on every kind but the two-character scene", () => {
+    // The Stage 0 rule, enforced where the kind is known now that one kind
+    // legitimately sends two.
+    const twoFaces = [
+      { position: 1, role: "identity" as const, imageId: "img_face_a" },
+      { position: 2, role: "identity" as const, imageId: "img_face_b" },
+    ];
+    for (const kind of ["control_probe", "baseline_portrait", "controlled_portrait"] as const) {
+      const result = imageLabCreateExperimentRequestSchema.safeParse({
+        kind,
+        characterId: "chr_1",
+        inputs: twoFaces,
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("refuses a per-input character on a kind whose runner reads none", () => {
+    // A subject binding on a kind that never reads one would record a fact with
+    // no effect on the render — and read, later, exactly like one that had an effect.
+    for (const kind of ["control_probe", "baseline_portrait", "controlled_portrait"] as const) {
+      const result = imageLabCreateExperimentRequestSchema.safeParse({
+        kind,
+        characterId: "chr_1",
+        inputs: [{ position: 1, role: "identity", imageId: "img_face", characterId: "chr_1" }],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("leaves a single unbound identity reference alone, which is every other kind's shape", () => {
+    expect(
+      imageLabCreateExperimentRequestSchema.safeParse({
+        kind: "controlled_portrait",
+        characterId: "chr_1",
+        inputs: probeInputs,
+        controlImageId: "img_skeleton",
+        controlKind: "pose",
+      }).success,
+    ).toBe(true);
+  });
+});
+
 describe("imageLabExtractControlsRequestSchema", () => {
   it("accepts one source and several distinct kinds", () => {
     const parsed = imageLabExtractControlsRequestSchema.parse({
@@ -786,6 +966,15 @@ describe("imageLabDiagnosticCode", () => {
     expect(imageLabFailureCodes).toContain("settings_unsupported");
     expect(imageLabDiagnosticCode("settings_unsupported")).toBe("image_lab.settings_unsupported");
     expect(imageLabFailureCodeFromDiagnostic("image_lab.settings_unsupported")).toBe("settings_unsupported");
+  });
+
+  // The two-character kind's whole claim is that each numbered binding names the
+  // right person, so the refusal that fires when it cannot has to survive the
+  // round trip through the row it is stored on.
+  it("owns the two-character subject refusal in both spellings", () => {
+    expect(imageLabFailureCodes).toContain("subject_invalid");
+    expect(imageLabDiagnosticCode("subject_invalid")).toBe("image_lab.subject_invalid");
+    expect(imageLabFailureCodeFromDiagnostic("image_lab.subject_invalid")).toBe("subject_invalid");
   });
 });
 

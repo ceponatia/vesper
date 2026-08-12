@@ -6,6 +6,7 @@ import {
   imageLabExperimentKinds,
   imageLabFailureCodes,
   imageLabOutcomeDropReasons,
+  imageLabTwoCharacterVerdicts,
   imageLabVerdictOptions,
   imageLabVerdicts,
 } from "@/contracts";
@@ -80,12 +81,12 @@ describe("imageLabDropReasonExplanation", () => {
 });
 
 /**
- * The verdict copy spans two vocabularies now, and the reviewer is choosing
+ * The verdict copy spans three vocabularies now, and the reviewer is choosing
  * between them from these words alone — a ruling offered as a bare identifier,
  * or offered with the wrong hint, is a misfiled ruling.
  */
 describe("verdict copy", () => {
-  it("names every ruling in both vocabularies, and hints at each", () => {
+  it("names every ruling in every vocabulary, and hints at each", () => {
     for (const verdict of imageLabVerdicts) {
       expect(imageLabVerdictLabel(verdict)).not.toBe(verdict);
       expect(imageLabVerdictHint(verdict).length).toBeGreaterThan(20);
@@ -111,5 +112,28 @@ describe("verdict copy", () => {
   it("marks the one promotable finishing ruling as good news and the over-reach as bad", () => {
     expect(imageLabVerdictChip("improves_identity").tone).toBe("ok");
     expect(imageLabVerdictChip("changes_beyond_identity").tone).toBe("danger");
+  });
+
+  // The two-character rulings are read as a set — four ways one render can lose a
+  // cast, and one way it can keep it — so the reviewer has to be able to tell them
+  // apart at a glance as well as in the select.
+  it("names every two-character ruling and marks the clean one as good news", () => {
+    for (const verdict of imageLabTwoCharacterVerdicts) {
+      expect(imageLabVerdictLabel(verdict)).not.toBe(verdict);
+      expect(imageLabVerdictHint(verdict).length).toBeGreaterThan(20);
+    }
+    expect(imageLabVerdictChip("both_identities_held").tone).toBe("ok");
+    expect(imageLabVerdictChip("identities_swapped").tone).toBe("danger");
+  });
+
+  // A kind whose gate answered `null` would render no verdict section at all, and
+  // the loop above would pass over it in silence — so the gate is asserted, not
+  // just iterated.
+  it("offers the two-character kind a vocabulary to rule in", () => {
+    const options = imageLabVerdictOptions("two_character_scene");
+    expect(options).not.toBeNull();
+    for (const verdict of options ?? []) {
+      expect(imageLabVerdictLabel(verdict).length).toBeGreaterThan(0);
+    }
   });
 });

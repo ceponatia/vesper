@@ -677,7 +677,10 @@ obedience, structural control, latency, failure rate, and overall preference.
 
 ### Stage 6 — two-character controlled trials
 
-Status: queued — only after the single-character path passes its trials.
+Status: built 2026-08-12 — awaiting the two-character trial and its verdicts on
+the deployed bench (protocol in the
+[spec](qwen-advanced-image-subsystem.spec.md)). The single-character gate it
+waited on opened with the Stage 1–5 acceptances.
 
 Add carefully bounded two-character tests only after the single-character path
 passes. Measure identity swapping, duplicated people, missing characters, pose

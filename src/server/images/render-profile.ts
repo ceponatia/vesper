@@ -7,12 +7,11 @@ import {
   type ImageModel,
   type ImageModelProfile,
   type ImagePromptStrategy,
-  type ImageReferenceRole,
   type ImageRenderControls,
   type TrialResolvedControls,
 } from "@/contracts";
 import { compileIdentityReferencePrompt } from "@/lib/images/identity-reference-prompt";
-import { compileReferenceRolePrompt } from "@/lib/images/reference-role-prompt";
+import { compileReferenceRolePrompt, type CompileReferenceBinding } from "@/lib/images/reference-role-prompt";
 import {
   disableSafetyChecker,
   filterReservedInputFields,
@@ -161,10 +160,34 @@ function nonBlank(value: string | null | undefined): string | null {
  * a discriminated union rather than a widened role array because those two
  * answers are genuinely different, and a single array would force the compiler
  * to guess which naming convention a caller meant from the role names alone.
+ *
+ * The two arms carry different SHAPES as well as different role vocabularies:
+ * the identity-pack arm is a role list, and the render-intent arm is a list of
+ * {@link CompileReferenceBinding}. The asymmetry is real rather than untidy — a
+ * render-intent send can hold two references of one role and needs a per-slot
+ * name to keep them apart, while the identity pack's roles are distinct by
+ * construction (`canonical_identity` and `face_detail` are one slot each) and a
+ * subject on either would name the one person both already depict.
  */
 export type PromptReferenceBinding =
   | { vocabulary: "identity_pack"; roles: readonly IdentityReferenceRole[] }
-  | { vocabulary: "render_intent"; roles: readonly ImageReferenceRole[] };
+  | { vocabulary: "render_intent"; references: readonly CompileReferenceBinding[] };
+
+/**
+ * How many references this binding names, whichever arm it is.
+ *
+ * Read by {@link preparePromptForImageModel}, which applies Qwen Edit's
+ * multi-reference lock from the COUNT alone — so the two arms have to answer it
+ * the same way even though they store their references differently.
+ */
+function referenceBindingCount(references: PromptReferenceBinding): number {
+  switch (references.vocabulary) {
+    case "identity_pack":
+      return references.roles.length;
+    case "render_intent":
+      return references.references.length;
+  }
+}
 
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
@@ -307,7 +330,7 @@ function compilePromptForStrategy(
     case "identity_pack":
       return compileIdentityPackPrompt(strategy, basePrompt, references.roles);
     case "render_intent":
-      return compileRenderIntentPrompt(strategy, basePrompt, references.roles);
+      return compileRenderIntentPrompt(strategy, basePrompt, references.references);
   }
 }
 
@@ -349,18 +372,23 @@ function compileIdentityPackPrompt(
  * sending text identical to `instruction_edit`. {@link compileReferenceRolePrompt}
  * is that wording. No seeded profile selects the strategy, so no live render
  * changes; a controlled Qwen recipe is the first thing that will.
+ *
+ * The two non-composing arms ignore the bindings' subjects along with everything
+ * else about them, which is correct rather than lossy: neither names a reference
+ * at all, so there is no sentence for a subject to appear in, and inventing one
+ * here would rewrite every live render that runs `instruction_edit`.
  */
 function compileRenderIntentPrompt(
   strategy: ImagePromptStrategy,
   basePrompt: string,
-  roles: readonly ImageReferenceRole[],
+  references: readonly CompileReferenceBinding[],
 ): StrategyPromptCompile {
   switch (strategy) {
     case "instruction_edit":
     case "text_to_image_description":
       return { ok: true, prompt: basePrompt };
     case "multi_reference_compose":
-      return { ok: true, prompt: compileReferenceRolePrompt({ basePrompt, roles }) };
+      return { ok: true, prompt: compileReferenceRolePrompt({ basePrompt, references }) };
     case "text_repair":
     case "example_transform":
     case "style_render":
@@ -404,7 +432,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // and doing it before the strategy would let a numbered-reference preamble be
   // pushed below the LoRA's own prefix.
   const loraPrompt = applyImageLoraPromptAdditions(strategyPrompt.prompt, input.resolvedLora);
-  const finalPrompt = preparePromptForImageModel(effectiveModel, loraPrompt, references.roles.length);
+  const finalPrompt = preparePromptForImageModel(effectiveModel, loraPrompt, referenceBindingCount(references));
 
   const defaults = profile.controlDefaults;
   const requested = input.controlOverrides;

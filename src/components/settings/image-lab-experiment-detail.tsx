@@ -13,6 +13,7 @@ import { imageLabApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
+import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
@@ -60,6 +61,14 @@ import type { ImageLabExperimentPrefill } from "./image-lab-experiment-form";
  * the order they are read. It cites its source experiment as a record rather
  * than as an image, because the comparison the plan asks for is between three
  * runs and their settings, not three pictures.
+ *
+ * A TWO-CHARACTER SCENE shows one identity panel per character instead of one
+ * "the identity reference", and shows a control panel only when it actually
+ * declared a fixture — its control is optional, so an empty panel would read as a
+ * missing input rather than as the arm it is. Every ordered input carrying a
+ * character binding names it, because the rulings this kind offers ("identities
+ * swapped", "character duplicated") are claims about which reference was supposed
+ * to produce which person.
  */
 
 const POLL_MS = 3000;
@@ -252,6 +261,7 @@ export function ImageLabExperimentDetail({
   // The rulings THIS kind may record — the contract's gate, never a local guess.
   const verdictOptions = imageLabVerdictOptions(experiment.kind);
   const isFinishing = experiment.kind === "finishing_pass";
+  const isTwoCharacter = experiment.kind === "two_character_scene";
   // A finishing pass is read as a before/after pair, so the panel that holds a
   // control fixture on every other kind holds the render being refined here.
   const beforeInput = experiment.inputs.find((input) => input.role === "before") ?? null;
@@ -270,6 +280,44 @@ export function ImageLabExperimentDetail({
   // runner reads as the identity arm — so only the isolating arm is worth a line,
   // and the absence of that line means what every pass before Stage 5 meant.
   const loraOnlyArm = experiment.finishingVariant === "lora_only";
+
+  // A two-character scene sent one identity reference PER character, and the
+  // panels are what a swapped or duplicated cast is read from — a single
+  // "identity reference" panel would name one of the two people as THE identity
+  // and hide the other. The fallback is every other kind's one panel, which also
+  // catches a two-character row whose inputs no longer parse.
+  const identityInputs = experiment.inputs.filter((input) => input.role === "identity");
+  const identityPanels =
+    isTwoCharacter && identityInputs.length > 0
+      ? identityInputs.map((input, index) => ({
+          key: `identity-${String(input.position)}`,
+          label: `Identity ${String(index + 1)} (Image ${String(input.position)})`,
+          imageId: input.imageId,
+        }))
+      : [{ key: "identity", label: "Identity reference", imageId: identityInput?.imageId ?? null }];
+  // The two-character fixture is OPTIONAL, so an uncontrolled run shows no
+  // control panel rather than an empty one — a dashed box captioned "no control
+  // fixture was sent" reads as a missing input on the one kind where sending none
+  // is a deliberate arm.
+  const showsControlPanel = !isFinishing && !(isTwoCharacter && experiment.controlImageId === null);
+  const panelCount = (isFinishing ? 1 : 0) + identityPanels.length + (showsControlPanel ? 1 : 0) + 1;
+
+  // What this kind's ruling is ABOUT, and what it decides. Both are read before
+  // the vocabulary is offered, because a ruling picked against the wrong question
+  // is a misfiled ruling.
+  const verdictLead = isFinishing
+    ? "Read the after against the before, in that order: did the face get closer to the identity reference, and did anything else move? A pass is only promotable when the first is yes and the second is no."
+    : isTwoCharacter
+      ? "Count the people first, then match each face to its own reference: both characters present exactly once, each rendered from the reference bound to them."
+      : "Judge the output against the fixture: limb for limb, and identity preserved.";
+  const verdictStake =
+    experiment.kind === "control_probe"
+      ? "This ruling decides whether the plan runs on this model or on a second connector."
+      : isFinishing
+        ? "This ruling decides whether a finishing pass earns its render at all."
+        : isTwoCharacter
+          ? "This ruling says whether two identities can share one render without swapping, duplicating, or losing one."
+          : "This ruling says whether the control still held in a production-shaped run.";
 
   // The paired direct-edit arm: pre-fill only, submitted by the admin. The
   // instruction travels VERBATIM because the shared text is what makes the two
@@ -338,7 +386,9 @@ export function ImageLabExperimentDetail({
         </p>
       </header>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      {/* Four panels — two identities, a fixture, and the result — get a row of
+          their own on a wide screen; three still read best as thirds. */}
+      <div className={cx("mb-6 grid gap-3 sm:grid-cols-3", panelCount > 3 ? "lg:grid-cols-4" : null)}>
         {isFinishing ? (
           <LabImage
             label="Before (the source's result)"
@@ -348,23 +398,26 @@ export function ImageLabExperimentDetail({
             onEnlarge={setEnlarged}
           />
         ) : null}
-        <LabImage
-          label="Identity reference"
-          imageId={identityInput?.imageId ?? null}
-          // The LoRA-only arm never resolves one, so it is not pending — it is
-          // absent by design, and a spinner there would promise an image that is
-          // never coming.
-          pending={isFinishing && !loraOnlyArm && live}
-          emptyHint={
-            loraOnlyArm
-              ? "this arm sends none — the likeness comes from the LoRA"
-              : isFinishing
-                ? "the pack's reference is resolved when the pass runs"
-                : "no identity reference was sent"
-          }
-          onEnlarge={setEnlarged}
-        />
-        {isFinishing ? null : (
+        {identityPanels.map((panel) => (
+          <LabImage
+            key={panel.key}
+            label={panel.label}
+            imageId={panel.imageId}
+            // The LoRA-only arm never resolves one, so it is not pending — it is
+            // absent by design, and a spinner there would promise an image that is
+            // never coming.
+            pending={isFinishing && !loraOnlyArm && live}
+            emptyHint={
+              loraOnlyArm
+                ? "this arm sends none — the likeness comes from the LoRA"
+                : isFinishing
+                  ? "the pack's reference is resolved when the pass runs"
+                  : "no identity reference was sent"
+            }
+            onEnlarge={setEnlarged}
+          />
+        ))}
+        {showsControlPanel ? (
           <LabImage
             label="Control fixture"
             imageId={experiment.controlImageId}
@@ -372,7 +425,7 @@ export function ImageLabExperimentDetail({
             emptyHint="no control fixture was sent"
             onEnlarge={setEnlarged}
           />
-        )}
+        ) : null}
         <LabImage
           label={isFinishing ? "After (this pass)" : "Result"}
           imageId={experiment.resultImageId}
@@ -486,7 +539,16 @@ export function ImageLabExperimentDetail({
             <ol className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {experiment.inputs.map((input) => {
                 const slot = `Image ${String(input.position)}`;
-                const label = `${slot} — ${imageLabRoleLabel(input.role)}`;
+                // A slot BOUND to a character says which face was supposed to
+                // land on whom, and that is the fact a swapped-identities ruling
+                // is written against: two tiles both captioned "identity
+                // reference" cannot tell one cast member from the other. The id is
+                // shown whole, like every id on this page — a ruling cites what the
+                // record stores, and the character list is not fetched here.
+                const label =
+                  input.characterId === undefined
+                    ? `${slot} — ${imageLabRoleLabel(input.role)}`
+                    : `${slot} — ${imageLabRoleLabel(input.role)} for character ${input.characterId}`;
                 return (
                   <li key={input.position} className="flex flex-col gap-1">
                     <EnlargeableImage imageId={input.imageId} label={label} onEnlarge={setEnlarged} />
@@ -496,6 +558,12 @@ export function ImageLabExperimentDetail({
                       {imageLabRoleLabel(input.role)}
                     </p>
                     <code className="text-[10px] break-all text-paper-500">{input.imageId}</code>
+                    {input.characterId !== undefined ? (
+                      <p className="text-[10px] text-paper-500">
+                        {"bound to character "}
+                        <code className="break-all">{input.characterId}</code>
+                      </p>
+                    ) : null}
                     {input.note !== undefined && input.note !== "" ? (
                       <p className="text-[11px] text-paper-500">{input.note}</p>
                     ) : null}
@@ -597,18 +665,9 @@ export function ImageLabExperimentDetail({
       {verdictOptions !== null && experiment.status === "succeeded" ? (
         <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
-            {isFinishing ? "Finishing verdict" : "Control verdict"}
+            {isFinishing ? "Finishing verdict" : isTwoCharacter ? "Two-character verdict" : "Control verdict"}
           </h2>
-          <p className="mt-1 mb-3 text-sm text-paper-400">
-            {isFinishing
-              ? "Read the after against the before, in that order: did the face get closer to the identity reference, and did anything else move? A pass is only promotable when the first is yes and the second is no."
-              : "Judge the output against the fixture: limb for limb, and identity preserved."}{" "}
-            {experiment.kind === "control_probe"
-              ? "This ruling decides whether the plan runs on this model or on a second connector."
-              : isFinishing
-                ? "This ruling decides whether a finishing pass earns its render at all."
-                : "This ruling says whether the control still held in a production-shaped run."}
-          </p>
+          <p className="mt-1 mb-3 text-sm text-paper-400">{`${verdictLead} ${verdictStake}`}</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field
               label="Ruling"

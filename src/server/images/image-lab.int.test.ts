@@ -9,6 +9,7 @@ import {
   REPLICATE_VERSION_UNDISCLOSED,
   type ImageLabControlKind,
   type ImageLabCreateExperimentRequest,
+  type ImageLabInput,
 } from "@/contracts";
 import {
   imageRenderRejection,
@@ -29,7 +30,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { characters, db, imageLabExperiments, imageLoras, imageModels, images, jobs } from "../db";
+import { characterChats, characters, db, imageLabExperiments, imageLoras, imageModels, images, jobs } from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import {
   createImageLabExperiment,
@@ -80,13 +81,22 @@ const ready = await probeIntegrationDb("image lab.int.test", "image_lab_experime
 const PINNED_MODEL_ID = "imgmdlimagelabpinnedaaaa";
 const UNPINNED_MODEL_ID = "imgmdlimagelabfloataaaaa";
 const CAPPED_MODEL_ID = "imgmdlimagelabcappedaaaa";
+const TWO_REF_MODEL_ID = "imgmdlimagelabtworefaaaa";
 const THREE_REF_MODEL_ID = "imgmdlimagelabthreerefaa";
 const LORA_MODEL_ID = "imgmdlimagelabloraaaaaaa";
-const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID, THREE_REF_MODEL_ID, LORA_MODEL_ID];
+const FIXTURE_MODEL_IDS = [
+  PINNED_MODEL_ID,
+  UNPINNED_MODEL_ID,
+  CAPPED_MODEL_ID,
+  TWO_REF_MODEL_ID,
+  THREE_REF_MODEL_ID,
+  LORA_MODEL_ID,
+];
 
 const PINNED_SLUG = "vesper-test/image-lab-pinned";
 const UNPINNED_SLUG = "vesper-test/image-lab-floating";
 const CAPPED_SLUG = "vesper-test/image-lab-one-reference";
+const TWO_REF_SLUG = "vesper-test/image-lab-two-reference";
 const THREE_REF_SLUG = "vesper-test/image-lab-three-reference";
 const LORA_SLUG = "vesper-test/image-lab-lora";
 const PINNED_VERSION = "imagelabversionaaaaaaaaa";
@@ -140,6 +150,21 @@ beforeAll(async () => {
         canGenerate: true,
         canEdit: true,
         maxReferences: 1,
+        probedVersionId: PINNED_VERSION,
+      },
+      {
+        // Pinned with TWO reference slots — the shape that makes the
+        // two-character capacity pre-check load-bearing. Two identities and a
+        // control need three, and `planIntentReferences` would happily drop one
+        // character and still find an `identity` reference present, because its
+        // required-role check is Set-based. Two identities ALONE fit here, so the
+        // refusal is observably about the required COUNT rather than the kind.
+        id: TWO_REF_MODEL_ID,
+        slug: TWO_REF_SLUG,
+        label: "Image Lab Two-Reference Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 2,
         probedVersionId: PINNED_VERSION,
       },
       {
@@ -314,10 +339,23 @@ async function createRunnableProbe(
   return { id, sink, identityId, controlId };
 }
 
-/** A character the controlled kinds can be about — the create schema demands one. */
-async function seedOwnedCharacter(): Promise<string> {
-  const [row] = await db().insert(characters).values({ ownerId, name: "Lab Subject" }).returning({ id: characters.id });
+/**
+ * A character the controlled kinds can be about — the create schema demands one.
+ *
+ * The NAME is a parameter because a two-character scene reads both subjects'
+ * names into its prompt, and two characters sharing one name would let a runner
+ * that bound the wrong face to the wrong slot pass every assertion.
+ */
+async function seedOwnedCharacter(name = "Lab Subject"): Promise<string> {
+  const [row] = await db().insert(characters).values({ ownerId, name }).returning({ id: characters.id });
   if (!row) throw new Error("failed to seed a character for the lab suite");
+  return row.id;
+}
+
+/** A chat the scene kinds can be about. Every other column carries a default. */
+async function seedOwnedChat(): Promise<string> {
+  const [row] = await db().insert(characterChats).values({ ownerId }).returning({ id: characterChats.id });
+  if (!row) throw new Error("failed to seed a chat for the lab suite");
   return row.id;
 }
 
@@ -365,6 +403,83 @@ async function createRunnableControlled(
     ...overrides,
   });
   return { id, sink, identityId, controlId };
+}
+
+const TWO_CHARACTER_INSTRUCTION = "The two of them on the balcony rail at dusk.";
+const CAST_A = "Sabrina Vale";
+const CAST_B = "Lysandra Vane";
+
+/**
+ * A runnable two-character scene: one identity render per character, each bound
+ * to the character it depicts, on a chat this owner has.
+ *
+ * The control is OPTIONAL and OFF by default, which is the kind's own default arm
+ * — "do two people survive one render?" is answerable without a fixture, and the
+ * uncontrolled runs below are testing exactly that rather than working around a
+ * missing fixture.
+ */
+async function createTwoCharacterScene(
+  opts: { control?: "pose" | "undeclared" | "unreviewed"; modelSlug?: string } = {},
+  overrides: Partial<ImageLabCreateExperimentRequest> = {},
+): Promise<{
+  id: string;
+  sink: DiagnosticCollector;
+  castAId: string;
+  castBId: string;
+  faceAId: string;
+  faceBId: string;
+  controlId: string | null;
+}> {
+  const sink = new DiagnosticCollector();
+  const castAId = await seedOwnedCharacter(CAST_A);
+  const castBId = await seedOwnedCharacter(CAST_B);
+  const faceAId = await seedCharacterFace(castAId);
+  const faceBId = await seedCharacterFace(castBId);
+  const controlId =
+    opts.control === undefined ? null : await seedControlFixture("pose", { reviewed: opts.control !== "unreviewed" });
+
+  const inputs: ImageLabInput[] = [
+    { position: 1, role: "identity", imageId: faceAId, characterId: castAId },
+    { position: 2, role: "identity", imageId: faceBId, characterId: castBId },
+    ...(controlId === null ? [] : [{ position: 3, role: "pose" as const, imageId: controlId }]),
+  ];
+  const request: ImageLabCreateExperimentRequest = {
+    kind: "two_character_scene",
+    modelSlug: opts.modelSlug ?? PINNED_SLUG,
+    chatId: await seedOwnedChat(),
+    instruction: TWO_CHARACTER_INSTRUCTION,
+    inputs,
+    // `undeclared` sends the fixture under a control role while the record names
+    // none — the refusal the uncontrolled arm's honesty rests on. Every other
+    // arm declares what it sends.
+    ...(opts.control !== undefined && opts.control !== "undeclared" && controlId !== null
+      ? { controlImageId: controlId, controlKind: "pose" as const }
+      : {}),
+    ...overrides,
+  };
+  const created = await createImageLabExperiment({ ownerId, request, sink });
+  if (!created.ok) throw new Error(`unexpected create refusal: ${created.refusal.code}`);
+  return { id: created.experiment.id, sink, castAId, castBId, faceAId, faceBId, controlId };
+}
+
+/**
+ * A ready portrait FILED AGAINST a character — what a real one looks like, and
+ * the only shape the lab's own picker can offer: `listOwnedPortraits` selects on
+ * `entityKind`/`entityId`, so every image a form can put in an identity slot
+ * carries this link. The two-character runner checks it before spending, so a
+ * fixture without one would be testing a request the UI cannot make.
+ */
+async function seedCharacterFace(characterId: string): Promise<string> {
+  const asset = await createImageAsset({
+    ownerId,
+    kind: "avatar",
+    entityKind: "character",
+    entityId: characterId,
+    prompt: "lab identity fixture",
+  });
+  const saved = await saveImageBuffer(asset.id, await testPngBuffer());
+  expect(saved?.status).toBe("ready");
+  return asset.id;
 }
 
 /**
@@ -1096,6 +1211,383 @@ describe.skipIf(!ready)("image lab controlled runs", () => {
     });
     expect(recorded?.ok).toBe(true);
     if (recorded?.ok) expect(recorded.experiment.verdict).toBe("honours_control");
+  });
+});
+
+/**
+ * The Stage 6 kind end to end: two named identities in one render, an optional
+ * control beside them, and the refusals that keep the record equal to the send.
+ *
+ * The capacity case is the one worth reading twice. Every other refusal here
+ * would eventually surface some other way; that one is the only thing standing
+ * between a two-slot model and a solo portrait filed as a two-character scene.
+ */
+describe.skipIf(!ready)("image lab two-character scenes", () => {
+  it("sends both named identities and the control, and weaves the subjects into the prompt", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createTwoCharacterScene({ control: "pose" });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    expect(experiment?.executedVersionId).toBe(EXECUTED_VERSION);
+    expect(experiment?.resultImageId).not.toBeNull();
+
+    // The whole reason the kind carries a per-input subject: each numbered
+    // binding names the person whose face that slot holds, so "identities
+    // swapped" is a ruling about the model rather than about a prompt that never
+    // distinguished them.
+    expect(experiment?.finalPrompt).toContain(`Image 1: the identity reference for ${CAST_A}`);
+    expect(experiment?.finalPrompt).toContain(`Image 2: the identity reference for ${CAST_B}`);
+    expect(experiment?.finalPrompt).toContain(`This render depicts exactly 2 people: ${CAST_A} and ${CAST_B}.`);
+    expect(experiment?.finalPrompt).toContain("never merge, swap, or duplicate them");
+    expect(experiment?.finalPrompt).toContain("Image 3: a pose skeleton");
+    expect(experiment?.finalPrompt).toContain("never render the control images themselves");
+    expect(experiment?.finalPrompt?.endsWith(TWO_CHARACTER_INSTRUCTION)).toBe(true);
+
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.versionId).toBe(PINNED_VERSION);
+      expect(request.intent.profile.profile.key).toBe("two_character_scene/pose");
+      expect(request.intent.profile.profile.id).toBe("image-lab/two_character_scene/pose");
+      expect(request.intent.references).toHaveLength(3);
+      // Both identities are REQUIRED, so neither can be trimmed away by a policy
+      // that would still find an `identity` reference present.
+      expect(request.intent.references.filter((reference) => reference.role === "identity")).toHaveLength(2);
+      expect(request.intent.references.map((reference) => reference.subject)).toEqual([CAST_A, CAST_B, undefined]);
+    }
+
+    expect(experiment?.outcome).toEqual({
+      recipeKey: "two_character_scene/pose",
+      sentRoles: ["identity", "identity", "pose"],
+      dropped: [],
+      renumbered: false,
+    });
+  });
+
+  it("runs the uncontrolled arm, which is a real arm and the default one", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createTwoCharacterScene();
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.controlImageId).toBeNull();
+    // A separate recipe key, so a recorded outcome says which arm ran: "both
+    // identities held" means something different with a skeleton in the send.
+    expect(experiment?.outcome).toEqual({
+      recipeKey: "two_character_scene/none",
+      sentRoles: ["identity", "identity"],
+      dropped: [],
+      renumbered: false,
+    });
+    // The cast clause still goes; the control clause has nothing to describe.
+    expect(experiment?.finalPrompt).toContain(`exactly 2 people: ${CAST_A} and ${CAST_B}`);
+    expect(experiment?.finalPrompt).not.toContain("never render the control images themselves");
+  });
+
+  it("refuses rather than dropping a character when the required references do not fit", async () => {
+    stubSuccessfulRenderer();
+    // Two identities and a control need three slots; this model has two. The
+    // intent path would drop one character, find `identity` still present in its
+    // Set-based required check, and render a solo portrait under a row that says
+    // there are two people in it.
+    const { id, sink } = await createTwoCharacterScene({ control: "pose", modelSlug: TWO_REF_SLUG });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("capacity_exceeded"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("capacity_exceeded"));
+    // Refused BEFORE any spend, which is the point — a trimmed send would have
+    // cost a render and produced evidence about the planner.
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    // The pin was resolved before the capacity read, so it is on the record.
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+  });
+
+  it("fits the same two characters on the same model once the control is dropped", async () => {
+    stubSuccessfulRenderer();
+    // The counterpart of the case above: the refusal is about the REQUIRED count,
+    // not about the kind, so two identities alone run on a two-slot model.
+    const { id, sink } = await createTwoCharacterScene({ modelSlug: TWO_REF_SLUG });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(captured).toHaveLength(1);
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.outcome?.sentRoles).toEqual(["identity", "identity"]);
+  });
+
+  it("refuses an identity input naming a character this owner does not have", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createTwoCharacterScene();
+    // Deleted after the row was stored — the create path checks ownership, and
+    // the runner re-checks because a character can go away between queue and
+    // render. Without the name there is nothing to bind that face to.
+    await db().delete(characters).where(and(eq(characters.ownerId, ownerId), eq(characters.name, CAST_B)));
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("input_missing"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("refuses a foreign character on an identity input at create, before a row exists", async () => {
+    const sink = new DiagnosticCollector();
+    const stranger = await seedTestUser("image-lab-two-char-stranger");
+    const [foreign] = await db()
+      .insert(characters)
+      .values({ ownerId: stranger.id, name: "Not This Owner's" })
+      .returning({ id: characters.id });
+    const created = await createImageLabExperiment({
+      ownerId,
+      request: {
+        kind: "two_character_scene",
+        modelSlug: PINNED_SLUG,
+        chatId: await seedOwnedChat(),
+        instruction: TWO_CHARACTER_INSTRUCTION,
+        inputs: [
+          { position: 1, role: "identity", imageId: await seedReadyImage("avatar"), characterId: await seedOwnedCharacter(CAST_A) },
+          { position: 2, role: "identity", imageId: await seedReadyImage("avatar"), characterId: foreign?.id ?? "chr_missing" },
+        ],
+      },
+      sink,
+    });
+
+    expect(created.ok).toBe(false);
+    // Reported exactly as a missing character, so the refusal never confirms
+    // that someone else's id exists.
+    if (!created.ok) expect(created.refusal.code).toBe("character_not_found");
+    await purgeOwnerRows([stranger.id]);
+  });
+
+  it("refuses a cast whose two characters answer to one name, before any spend", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink, castBId } = await createTwoCharacterScene();
+    // Renamed after the row was stored, which is the only way this row reaches the
+    // runner — the create path refuses the pair outright. `characters.name` is not
+    // unique, so two real and genuinely different subjects can wear one label, and
+    // then the numbered bindings that tell the model which face is whose say the
+    // same words twice: no cast clause at all, and a paid render whose swap
+    // verdict would be a fact about the prompt.
+    await db().update(characters).set({ name: CAST_A }).where(eq(characters.id, castBId));
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("reads one name in two spellings as one name", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink, castBId } = await createTwoCharacterScene();
+    // The model reads both bindings as prose, where "sabrina vale" and "Sabrina
+    // Vale" are one person — so a case-only difference is not a distinction the
+    // render could act on.
+    await db().update(characters).set({ name: CAST_A.toLowerCase() }).where(eq(characters.id, castBId));
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses two characters sharing one name at create, so the admin sees the rename to make", async () => {
+    const sink = new DiagnosticCollector();
+    // Same name, different rows — nothing in the request schema can see it, since
+    // both ids are real, owned, and distinct.
+    const twinA = await seedOwnedCharacter("Ada Twin");
+    const twinB = await seedOwnedCharacter("Ada Twin");
+    const created = await createImageLabExperiment({
+      ownerId,
+      request: {
+        kind: "two_character_scene",
+        modelSlug: PINNED_SLUG,
+        chatId: await seedOwnedChat(),
+        instruction: TWO_CHARACTER_INSTRUCTION,
+        inputs: [
+          { position: 1, role: "identity", imageId: await seedCharacterFace(twinA), characterId: twinA },
+          { position: 2, role: "identity", imageId: await seedCharacterFace(twinB), characterId: twinB },
+        ],
+      },
+      sink,
+    });
+
+    expect(created.ok).toBe(false);
+    // Refused at the form rather than settled as a failed row: the fix is a rename
+    // in another screen, and a queued experiment is a poor way to ask for one.
+    if (!created.ok) expect(created.refusal.code).toBe("characters_share_name");
+  });
+
+  it("refuses an identity image that is not a render of the character it is bound to", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink, castAId, castBId, faceAId } = await createTwoCharacterScene();
+    // B's slot repointed at A's portrait: owned, ready, a real face — the wrong
+    // one. Nothing else in the pipeline asks whose face it is, so the run would
+    // send A twice, once under B's name, and manufacture the exact swap this stage
+    // exists to measure. It is also the one-portrait-for-both shape, which the same
+    // check closes: an image is filed against at most one entity.
+    await db()
+      .update(imageLabExperiments)
+      .set({
+        inputs: [
+          { position: 1, role: "identity", imageId: faceAId, characterId: castAId },
+          { position: 2, role: "identity", imageId: faceAId, characterId: castBId },
+        ],
+      })
+      .where(and(eq(imageLabExperiments.id, id), eq(imageLabExperiments.ownerId, ownerId)));
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("refuses an identity image filed against nobody at all", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink, castAId, castBId, faceAId } = await createTwoCharacterScene();
+    // The other half of the same gate: an image with no entity link depicts nobody
+    // the app can name, so binding a character to it is a claim with nothing behind
+    // it. This is the shape a direct API caller reaches first — the lab's own
+    // picker cannot offer one, since `listOwnedPortraits` selects on the link.
+    const unlinked = await seedReadyImage("avatar");
+    await db()
+      .update(imageLabExperiments)
+      .set({
+        inputs: [
+          { position: 1, role: "identity", imageId: faceAId, characterId: castAId },
+          { position: 2, role: "identity", imageId: unlinked, characterId: castBId },
+        ],
+      })
+      .where(and(eq(imageLabExperiments.id, id), eq(imageLabExperiments.ownerId, ownerId)));
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a structural control image the record does not declare", async () => {
+    stubSuccessfulRenderer();
+    // The uncontrolled arm's whole claim is that nothing structural was sent. An
+    // undeclared skeleton riding along would send one the record cannot name, so
+    // no verdict about the control could be filed against the run.
+    const { id, sink } = await createTwoCharacterScene({ control: "undeclared" });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("keeps the Stage 0 fixture gates on a declared control", async () => {
+    stubSuccessfulRenderer();
+    // A declared fixture is held to every rule a probe's is: an unreviewed
+    // skeleton cannot be ruled out as the reason a run came back wrong.
+    const { id, sink } = await createTwoCharacterScene({ control: "unreviewed" });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_unreviewed"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses the probe's raw provider bag, like every recipe kind", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createTwoCharacterScene({}, { settings: { controls: {}, controlInput: { true_cfg_scale: 4 } } });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("settings_unsupported"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("settings_unsupported"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a stored row whose cast rule no longer holds, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // The create schema refuses this, so the row is inserted directly: the runner
+    // stays authoritative for rows that arrive around the request schema, and the
+    // failure it prevents is a MISFILED render rather than a broken one.
+    const [row] = await db()
+      .insert(imageLabExperiments)
+      .values({
+        ownerId,
+        kind: "two_character_scene",
+        modelSlug: PINNED_SLUG,
+        chatId: await seedOwnedChat(),
+        instruction: TWO_CHARACTER_INSTRUCTION,
+        inputs: [{ position: 1, role: "identity", imageId: await seedReadyImage("avatar") }],
+        settings: {},
+        status: "pending",
+      })
+      .returning({ id: imageLabExperiments.id });
+    const id = row?.id ?? "";
+    const sink = new DiagnosticCollector();
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("records a cast ruling and refuses one from another kind's vocabulary", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createTwoCharacterScene();
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const recorded = await recordImageLabVerdict(id, ownerId, {
+      verdict: "identities_swapped",
+      note: "each face landed on the other character; both likenesses survived intact",
+    });
+    expect(recorded?.ok).toBe(true);
+    if (recorded?.ok) expect(recorded.experiment.verdict).toBe("identities_swapped");
+
+    // Control obedience rides the NOTE, never the column: one row, one ruling,
+    // and this kind's defining question is the two-character one.
+    const wrongVocabulary = await recordImageLabVerdict(id, ownerId, {
+      verdict: "honours_control",
+      note: "the skeleton took",
+    });
+    expect(wrongVocabulary?.ok).toBe(false);
+    if (wrongVocabulary && !wrongVocabulary.ok) {
+      expect(wrongVocabulary.refusal.code).toBe("verdict_not_in_vocabulary");
+    }
   });
 });
 

@@ -36,6 +36,13 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
  *
  * `sourceImageId` and `name` are provenance, not payload: they let a diagnostic
  * say which stored asset was dropped rather than "reference 3".
+ *
+ * `subject` is the one field here that IS payload, and the split from `name` is
+ * deliberate rather than redundant. Both hold a person's name; only `subject`
+ * crosses into the provider, woven into this reference's numbered binding by the
+ * compose strategy. Keeping the sent one separate means a diagnostic label can
+ * stay as loose as a diagnostic label should be — a place, an id fragment, an
+ * operator's shorthand — without any of it silently becoming prompt text.
  */
 export interface ImageRenderReferenceSpec {
   role: ImageReferenceRole;
@@ -45,8 +52,21 @@ export interface ImageRenderReferenceSpec {
   priority?: number;
   /** The `images.id` these bytes came from, when they came from a stored asset. */
   sourceImageId?: string;
-  /** A human label for diagnostics — a character or place name, never sent. */
+  /** A human label for DIAGNOSTICS — a character or place name, never sent. */
   name?: string;
+  /**
+   * A short subject label — a character's name — that the compose strategy weaves
+   * into this reference's numbered binding, and which therefore IS SENT to the
+   * provider as prompt text.
+   *
+   * It exists because two references of the SAME role stop being distinguishable
+   * the moment there are two of them: "the identity reference" said twice names
+   * neither person, and a two-character render whose prompt cannot say which face
+   * belongs to which image is a swap waiting to happen. Set only where that
+   * ambiguity is real (identity today); left unset, the compiled text is
+   * byte-identical to what it was before this field existed.
+   */
+  subject?: string;
 }
 
 /**
