@@ -24,9 +24,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Monorepo migration — the image engine as the first package** —
   [plan](monorepo-image-core.plan.md) · [spec index](monorepo-image-core.spec.md)
-  — `@vesper/image-core` is extracted, but Slice 1 remains active until the
-  workspace/deep-import/dependency/typecheck/test guardrails are mechanically
-  complete; only then does the render-kernel extraction begin.
+  — `@vesper/image-core` is extracted and its boundary is now mechanically
+  enforced in both directions, with the package independently typechecked and
+  tested; the render-kernel extraction begins once that gate is green in CI.
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·

@@ -26,9 +26,6 @@
     "paths": {
       "@/*": [
         "./src/*"
-      ],
-      "@vesper/image-core": [
-        "./packages/image-core/src/index.ts"
       ]
     }
   },
@@ -40,6 +37,7 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "packages"
   ]
 }

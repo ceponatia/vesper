@@ -36,13 +36,16 @@ sibling-package escapes such as a path that normalizes into `packages/contracts`
 The same resolved-workspace check prevents app/root code from reaching inward by
 filesystem path.
 
-**Slice 1 enforcement is still being completed.** The first ESLint rule catches
-`@/` and common relative climbs, but review found that spelling-based lint alone
-cannot prove containment or prevent reverse deep imports. Before more extraction,
-[the guardrails spec](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md)
-adds the authoritative workspace-import checker, manifest dependency ownership,
-package graph direction/cycle checks, explicit root-export enforcement,
-package-local typechecking, package-scoped tests, and adversarial checker tests.
+**These rules are mechanically enforced, not conventions.** ESLint catches `@/`
+and common relative climbs at editor latency, but spelling-based lint cannot
+prove containment or stop a reverse deep import. `pnpm lint:package-boundaries`
+resolves every import and owns the real answer: cross-workspace containment in
+both directions, exact-name package imports, manifest dependency ownership,
+package-graph direction and cycles, root-barrel wildcards, and this package's
+browser/server portability. `pnpm lint:package-resolution` separately imports the
+package by name through the installed workspace. Both run in CI's static gate;
+the rules and their rationale are in
+[the guardrails spec](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md).
 
 The dependency direction is deliberate: the application depends on the package,
 never the reverse. When code here appears to need something from the application,
@@ -62,17 +65,22 @@ Practical consequences:
   consume runtime schemas from this package, so its public runtime graph may not
   pull in Node-only modules or Next/server-only framework code. Pure
   runtime-neutral utilities and deterministic arithmetic are fine; Node SHA-256
-  execution stays at the application/server boundary.
+  execution stays at the application/server boundary. The rule is about what
+  runs: naming a platform type at a provider seam (`Buffer` on
+  `ProviderRenderResult.image`) is allowed, evaluating one (`Buffer.from`,
+  `process.env`, `document`) is not. `src/contracts/state/scene-gen.ts` is the
+  designated client-side fixture that keeps the production build honest about it.
 - **Diagnostics are reported, not persisted.** The current package-local
   `DiagnosticSink` is a temporary structural copy of the application's
   diagnostic contract. Slice 3 replaces both declarations with
   `@vesper/contracts`; see
   [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
 - **Tests are package-contained.** They run through the repository's shared
-  Vitest command but must not receive application-global DB/env/test setup.
-- **Typechecking is package-contained.** Slice 1 gives this package its own
-  TypeScript project without the application's `@/*` alias or Next plugin; root
-  verification still aggregates it.
+  Vitest command, as the `image-core` project, and receive no application-global
+  DB/env/test setup and no `@/` alias.
+- **Typechecking is package-contained.** `tsconfig.json` here is the package's
+  own project — no `@/*` alias, no Next plugin, `ES2022 + DOM` libraries — and
+  root `pnpm typecheck` runs it alongside the app project.
 - **Dependencies are owned here.** A third-party or workspace dependency imported
   by package runtime source belongs in this package's manifest; reachability
   elsewhere in pnpm's install is not ownership.
@@ -93,11 +101,12 @@ Read in this order — each layer consumes the one above it.
 | `geometry/`           | Crop math                                                 |
 | `provider-interface/` | Attempt routing and failure vocabulary                    |
 
-Each folder may have an internal `index.ts` for reading/navigation. The package
-has one public code import path, `@vesper/image-core`. The **root**
-`src/index.ts` is a curated public surface and, once the Slice 1 correction
-lands, uses explicit named exports rather than wildcard export chains. Adding an
-internal helper must not publish it accidentally.
+Each folder may have an internal `index.ts` for reading/navigation, and those may
+use `export *` — they are reading aids, not publication. The package has one
+public code import path, `@vesper/image-core`, and the **root** `src/index.ts`
+lists every public name explicitly. Adding an entry there is a public-API change
+and should be read as one; adding an internal helper cannot publish it by
+accident.
 
 ## What stays outside this package
 
@@ -124,9 +133,13 @@ own Vesper state or read ambient application configuration.
   TypeScript source and is consumed as a workspace dependency.
 - Next transpiles it when consumed by the app, but package correctness is also
   checked through the package-local TypeScript project.
-- Prefer real pnpm/package `exports` resolution over tool aliases. If a temporary
-  exact-name alias remains for a tool, CI still exercises the installed workspace
-  package by public name so the alias cannot hide broken manifest wiring.
+- Resolution runs through pnpm/package `exports`, not tool aliases: TypeScript,
+  Vitest and Next all reach this package by name through the workspace link, and
+  `pnpm lint:package-resolution` proves it in CI. If a tool ever needs a mapping
+  again, keep it exact-root-only — never `@vesper/* -> packages/*/src`.
+- Dependencies this package imports belong in **its** `package.json`, including
+  test-only ones. `pnpm lint:package-boundaries` fails on anything reachable only
+  through the root install.
 - Tests live beside their subject and run without application-global setup.
 - Validation follows the repository milestone-gate policy: code/config work is
   proven by ready-state CI `verify`; `pnpm gates:local` is permitted only as the
