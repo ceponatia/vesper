@@ -2,20 +2,22 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 2
 
+Implementation state: not started — blocked on the Slice 1 package-boundary correction.
+
 Move the profile compile step and the pure render planner into
-`@vesper/image-core`, by inverting the three application dependencies that
-currently hold them in `src/server/images`. Shared mechanics (registration
-points, boundary rule, conventions) are in
+`@vesper/image-core` by inverting the remaining application-owned facts rather
+than letting the package read the application. Shared mechanics (registration,
+boundaries, export policy and package rules) are in
 [monorepo-image-core.spec.md](monorepo-image-core.spec.md).
 
 ## What moves
 
-Two modules, split at their existing pure/IO seam.
+Two application modules split at seams that mostly already exist.
 
 ### `src/server/images/render-profile.ts` — moves whole
 
-Every export is pure once the two `../ai` imports are resolved
-([below](#the-three-inversions)):
+Every export is pure after the remaining environment/import dependencies are
+inverted:
 
 | Export                                                    | Note                          |
 | --------------------------------------------------------- | ----------------------------- |
@@ -25,88 +27,144 @@ Every export is pure once the two `../ai` imports are resolved
 | `PromptReferenceBinding`                                  | Type                          |
 | `CompileProfileRenderPlanInput` and result types          | Types                         |
 | `compileProfileRenderPlan`                                | The compile step              |
-| `profileRenderControlsHash`, its input type               | The configuration fingerprint |
+| `profileRenderControlsHash`, its input type               | Configuration fingerprint     |
 
 Private helpers move with it: `referenceBindingCount`, `nonBlank`,
-`compilePromptForStrategy` and its two arms, `resolvedNegativePrompt`,
+`compilePromptForStrategy` and its two arms, `resolvedNegativePrompt`, and
 `withResolvedSafetyChecker`.
 
 ### `src/server/images/render-intent.ts` — splits
 
-**Moves** — the pure planner and its whole type surface:
-`ImageRenderReference`, `ImageRenderIntent`, `PlannedImageRender`,
-`PlannedControlReference`, `ImageRenderRefusal`, `PlanImageRenderResult`,
-`planImageRender`, and the private `roleNames` / `compileBindings`.
+**Moves** — the pure planning half and its type surface:
 
-**Stays** — the IO half, which is already thin by design:
-`resolveIntentLora` (reads the LoRA library) and `renderImageIntent` (resolves,
-plans, pushes diagnostics, calls the transport).
+- `ImageRenderReference`;
+- `ImageRenderIntent`;
+- `PlannedImageRender`;
+- `PlannedControlReference`;
+- `ImageRenderRefusal`;
+- `PlanImageRenderResult`;
+- `planImageRender`;
+- private `roleNames` / `compileBindings`.
 
-The seam already exists. `planImageRender` is pure today and
-`renderImageIntent` is written as its thin IO wrapper — the module comment says
-so, and `render-intent.test.ts:477` already records that "`planImageRender` is
-pure, so it can only THREAD a binding". This slice makes the file boundary
-match the seam that is already there.
+**Stays in the application** — orchestration and IO:
 
-### `reservedImageInputFields` — moves from the transport
+- `resolveIntentLora`, because it reads the LoRA library;
+- `renderImageIntent`, because it resolves application-owned runtime facts,
+  reports diagnostics and invokes `renderWithModel`.
 
-`src/server/ai/replicate.ts:156` declares it, but it is a pure function of an
-`ImageModel`'s declared fields — it belongs in the package's `capabilities/`
-domain, not in a Replicate module. Both current callers keep working: the
-transport imports it back by name, and the compile step stops reaching into
-`../ai` for it.
+The seam already exists in behavior. This slice makes the file/package boundary
+match it.
 
-Moving it now rather than in slice 4 is deliberate: it is one of the two things
-blocking this slice, and leaving it behind would mean the compile step
-imports the transport, which is the wrong direction permanently.
+### `reservedImageInputFields` — moves from the Replicate module
 
-## The three inversions
+`src/server/ai/replicate.ts` currently declares it, but the function is a pure
+calculation over an `ImageModel`'s declared fields. It belongs in
+`image-core/capabilities`, not in a network transport.
 
-### 1. `disableSafetyChecker()` — an environment read
+Both current users then import the one package-owned definition: the compile
+step uses it before accepting provider overrides, and the Replicate transport
+uses it before overlaying provider-shaped controls.
 
-`withResolvedSafetyChecker` calls it to resolve `disable_safety_checker` into
-the effective model, so the fingerprint tracks the enforcement that will
-actually apply rather than the row's placeholder. That property must survive;
-only the *source* of the boolean changes.
+## The remaining inversions
+
+The earlier plan text described the model registry and LoRA library as blockers.
+They are no longer blockers: callers already resolve the profile/model and LoRA
+binding before planning. The remaining issues are the safety setting and the
+reserved-field helper.
+
+### 1. The safety setting becomes an explicit runtime fact
+
+`withResolvedSafetyChecker` currently calls `disableSafetyChecker()`, which
+reads `REPLICATE_SAFE_MODE`. A pure package cannot do that.
 
 Add a required field to `CompileProfileRenderPlanInput`:
 
+```ts
+export interface CompileProfileRenderPlanInput {
+  // existing fields...
+  safetyCheckerDisabled: boolean;
+}
 ```
-/** Whether the provider's safety checker will be disabled for this render. */
-safetyCheckerDisabled: boolean;
+
+The value remains required even for a model that does not expose the provider
+field. Forgetting a deployment-owned enforcement fact must be a compile error,
+not a silent default. `withResolvedSafetyChecker` keeps the existing guard: it
+only replaces the value when the model's `extraInput` already declares
+`disable_safety_checker`; it never invents an unsupported provider field.
+
+### 2. `planImageRender` also receives runtime facts separately from intent
+
+The safety value must reach the production planner too. Do **not** add it to
+`ImageRenderIntent`: an intent describes what the render wants, not how this
+process is configured.
+
+Introduce a separate pure input:
+
+```ts
+export interface ImageRenderRuntimeFacts {
+  safetyCheckerDisabled: boolean;
+}
+
+export function planImageRender(
+  intent: ImageRenderIntent,
+  runtime: ImageRenderRuntimeFacts,
+): PlanImageRenderResult;
 ```
 
-Callers pass `disableSafetyChecker()`. Make it **required**, not optional with a
-default — a defaulted boolean here silently fingerprints the wrong enforcement
-if a caller forgets, which is exactly the drift `withResolvedSafetyChecker`
-exists to prevent. A required field makes the omission a compile error.
+`planImageRender` passes `runtime.safetyCheckerDisabled` into
+`compileProfileRenderPlan`.
 
-The key is still never *added* to a model that does not declare it; the guard
-`if (!("disable_safety_checker" in model.extraInput))` moves unchanged.
+Application callers resolve the current fact at the application boundary and
+pass it in:
 
-### 2. `reservedImageInputFields` — an import direction
+- `renderImageIntent` resolves it immediately before planning;
+- controlled Image Lab paths that call `planImageRender` directly pass it;
+- identity-pack trial compile call sites pass it directly to
+  `compileProfileRenderPlan`.
 
-Move it to the package ([above](#reservedimageinputfields--moves-from-the-transport)).
-No signature change.
+Search the symbol `planImageRender`, not only `render-intent.ts`, before changing
+the signature; the Image Lab has direct planning paths.
 
-### 3. `resolveImageLoraForRender` — a library read
+This keeps the package pure without teaching the intent type about deployment.
 
-**Already inverted.** `ImageRenderIntent.resolvedLora` exists and
-`compileProfileRenderPlan` takes `resolvedLora` as an input; `resolveIntentLora`
-does the read *before* planning and threads the binding in. Nothing to change —
-the resolver simply stays in the application, on the correct side of the line.
+### 3. The model registry and LoRA reads are already inverted
 
-The same is true of the model registry read. `ImageRenderIntent.profile` is a
-`ResolvedImageProfile` the caller already looked up, for a reason the module
-comment records (a lane must know its model before it reserves an image row).
-The plan's slice-2 description called both of these blockers; the code shows
-the inversion was done ahead of the extraction.
+`ImageRenderIntent.profile` already carries a `ResolvedImageProfile`, so the
+planner does not load a registry row. That is correct: lanes need the resolved
+model before they reserve an image row and record its model metadata.
+
+`ImageRenderIntent.resolvedLora` and `CompileProfileRenderPlanInput.resolvedLora`
+already carry a binding judged against the library/model/version/task. The
+application's `resolveIntentLora` performs the read before planning. Keep that
+seam.
+
+### 4. `reservedImageInputFields` moves without a signature change
+
+Move the helper to `packages/image-core/src/capabilities/` and import it from
+`@vesper/image-core` in the transport. Do not duplicate the reserved-field list
+inside the kernel.
+
+## Safety parity across Slice 2 and Slice 4
+
+Slice 2 removes environment reads **from the core package**, but the Replicate
+transport still owns its current environment read until Slice 4. That means the
+compile path and send path temporarily obtain the same setting from the same
+process environment through two application-side calls, matching today's
+behavior.
+
+Do not claim Slice 2 has created a single runtime configuration snapshot. Slice
+4 closes that remaining seam by resolving Replicate configuration once for the
+process and handing the same safety value to both planning and sending.
+
+The Slice 2 tests must prove the package uses the boolean it was handed and no
+longer reads or stubs `process.env`. Slice 4 adds the stronger compile/send
+single-source guarantee.
 
 ## What stays, and why
 
 | Module                             | Why it stays                            |
 | ---------------------------------- | --------------------------------------- |
-| `render-intent.ts` (IO half)       | Reads the LoRA library, calls transport |
+| `render-intent.ts` (IO half)       | App runtime facts, LoRA read, transport |
 | `image-loras.ts`                   | Drizzle reads, `newId`                  |
 | `models.ts`                        | Drizzle reads, `sharp`, transport call  |
 | `identity-pack-trial.ts`           | Persistence, claims, job state          |
@@ -114,88 +172,122 @@ the inversion was done ahead of the extraction.
 
 ## Consumers to repoint
 
-All become `@vesper/image-core` imports. None changes behavior.
+Moved symbols become `@vesper/image-core` imports. Inventory exported symbol
+usage before deleting the old re-exports.
 
-- `src/server/images/render-intent.ts` — for the moved planner and types.
-- `src/server/images/identity-pack-trial.ts` — imports `compileProfileRenderPlan`,
-  `MAX_TRIAL_PREDICTION_MS`, `pinnedImageModelVersion`, `profileRenderControlsHash`,
-  `sha256Hex`. It is the heaviest consumer and its compile call sites
-  (`:1134`, `:2332`) each need the new `safetyCheckerDisabled` argument.
-- `src/server/images/identity-trial-model-versions.ts` — `pinnedImageModelVersion`.
-- `src/server/ai/replicate.ts` — `reservedImageInputFields`, now imported.
-- `src/server/images/index.ts` / `internal.ts` — drop the moved re-exports.
+Known consumers:
 
-**One cross-boundary composition to preserve.** `identity-pack-trial.ts:1456`
-builds `STALE_CLAIM_MS` from `MAX_TRIAL_PREDICTION_MS` (moving to the package)
-plus `REQUEST_TIMEOUT_MS` and `OUTPUT_TIMEOUT_MS` (staying in `replicate.ts`
-until slice 4). That is fine — the application is allowed to compose values from
-both — but the constant must keep its current value, since it sizes the window
-that has to outlast a render.
+- `src/server/images/render-intent.ts` — moved planner/types and compile helpers;
+- `src/server/images/identity-pack-trial.ts` —
+  `compileProfileRenderPlan`, `MAX_TRIAL_PREDICTION_MS`,
+  `pinnedImageModelVersion`, `profileRenderControlsHash`, `sha256Hex`;
+- `src/server/images/identity-trial-model-versions.ts` —
+  `pinnedImageModelVersion`;
+- `src/server/ai/replicate.ts` — `reservedImageInputFields`;
+- application image barrels — remove re-exports of implementations that moved.
 
-## Target layout in the package
+`identity-pack-trial.ts` has direct compile calls that each gain the required
+`safetyCheckerDisabled` value.
 
-The compile step is the layer *between* capabilities and a provider call, and it
-consumes `models/`, `capabilities/`, `references/`, `loras/` and
-`render-intent/`. It gets its own domain folder rather than being appended to
-one it depends on:
+**Cross-boundary composition to preserve:** `STALE_CLAIM_MS` is built from
+`MAX_TRIAL_PREDICTION_MS` plus Replicate request/output timeout constants. The
+application may compose package and transport constants; the resulting window
+must keep exactly its current value until Slice 4 deliberately changes the
+transport ownership.
 
-```
+## Target layout in `@vesper/image-core`
+
+```text
 packages/image-core/src/
-  capabilities/       + reservedImageInputFields
-  render-intent/      + planImageRender and its types
-  render-kernel/      compile-profile-plan.ts, controls-hash.ts, stable-json.ts
+  capabilities/
+    ...
+    reserved-image-input-fields.ts
+  render-intent/
+    render-intent.ts
+    plan-image-render.ts
+  render-kernel/
+    compile-profile-plan.ts
+    controls-hash.ts
+    stable-json.ts
 ```
 
-`planImageRender` joins the existing `render-intent/` folder — it is the planner
-for the intent type that folder already owns, and splitting them would separate
-a type from the only function that consumes it.
+Exact filenames may follow the existing package naming pattern, but ownership is
+fixed:
 
-Add `render-kernel/index.ts` and re-export from `src/index.ts`, per the wide
-barrel the package uses today (hub spec §"Export surface policy").
+- capability-derived reserved fields live under `capabilities`;
+- normalized intent planning lives under `render-intent`;
+- profile compilation/fingerprinting lives under `render-kernel`.
+
+Add a `render-kernel/index.ts` and expose the application-facing symbols through
+the curated package root. Do not create deep public subpath imports.
 
 ## Tests
 
-Both suites move beside their subjects and keep asserting the same rules:
+### `render-profile.test.ts`
 
-- `render-profile.test.ts` (546 lines) → `packages/image-core/src/render-kernel/`.
-- `render-intent.test.ts` (699 lines) → splits the same way the module does. The
-  cases exercising `planImageRender` move; any covering `renderImageIntent`'s
-  diagnostics and LoRA resolution stay in the application.
+Move the suite beside `render-kernel`. Preserve all existing behavior assertions.
+The environment-stubbing cases become ordinary input cases:
 
-**The env-stubbing cases get simpler, and that is the tell.**
-`render-profile.test.ts` manipulates `process.env.REPLICATE_SAFE_MODE` directly
-(`:105`, `:510`, `:515`, `:522`) to drive `withResolvedSafetyChecker`. After the
-inversion those become a passed boolean, and the `delete process.env.…` cleanup
-disappears. A test that still needs the environment after this slice means the
-inversion is incomplete.
+```ts
+compileProfileRenderPlan({
+  // ...
+  safetyCheckerDisabled: true,
+});
+```
+
+No package test manipulates `REPLICATE_SAFE_MODE` after the move.
+
+### `render-intent.test.ts`
+
+Split with the implementation:
+
+- cases for `planImageRender` and its refusals move into the package;
+- cases for LoRA resolution, diagnostics and `renderImageIntent` stay in the app.
+
+All package planner calls supply `ImageRenderRuntimeFacts` explicitly.
+
+### Golden fingerprint
+
+Before moving the kernel, make sure a fixture pins the complete controls hash for
+an unchanged configuration. Run that same fixture after the move. The expected
+hash must not be regenerated merely because files moved.
+
+If an existing fixture already pins the hash, reuse it. If not, add the assertion
+before moving the implementation so the before/after comparison is meaningful.
+
+### Package independence
+
+Moved tests must neither import application test support nor depend on the app's
+global AI/Replicate environment setup. The shared root Vitest runner may execute
+them; their behavior must be package-contained.
 
 ## Invariants this slice must not break
 
-These are the properties the moved code exists to hold. A move that changes any
-of them is a behavior change wearing a refactor's clothes.
-
-1. **What is hashed is what is sent.** `profileRenderControlsHash` reads fields
-   off the plan the same call produced. Adding a field to the payload without
-   adding it to the hash is the drift this design prevents.
+1. **What is hashed is what the compiler planned to send.**
+   `profileRenderControlsHash` reads the effective plan, including the supplied
+   safety fact and all dropped controls.
 2. **The effective model is what counts.** `withReviewedImageQuality` runs before
-   hashing, so the reviewed-quality seam cannot change the payload silently.
-3. **`preparePromptForImageModel` idempotence.** It runs here and again in
-   `renderWithModel`; the text hashed must stay byte-for-byte the text the
-   provider receives.
-4. **Production pins nothing and forces no budget.** `renderImageIntent`
-   deliberately passes neither a version pin nor a forced timeout. The planner
-   may *carry* an explicit pin from a controlled caller; it must not start
-   applying one.
-5. **Refusals are returned, never thrown.** All four `ImageRenderRefusal` codes
-   stay returned values; the diagnostic is pushed by the application half.
+   compilation/fingerprinting.
+3. **Prompt preparation remains byte-stable.** `preparePromptForImageModel`
+   remains idempotent across the compile step and `renderWithModel`.
+4. **Production still pins no version by default.** A production intent follows
+   the model slug unless a controlled caller explicitly supplies `versionId`.
+5. **Production still forces no timeout when the profile stores none.** The trial
+   may compile/hash an explicit comparison budget without changing ordinary
+   render timeout behavior.
+6. **Refusals are returned, not thrown.** All existing render refusal codes and
+   pre-spend behavior stay intact.
+7. **The package reads no environment.** Runtime facts arrive as values.
+8. **No database/library resolution moves into the package.** Registry and LoRA
+   resolution stay application-owned.
 
 ## Verification
 
-- CI `verify` green — the classifier runs the full gate set for `packages/*`.
-- The two moved suites pass unchanged in substance; diffs should be imports,
-  the `safetyCheckerDisabled` argument, and the removed env stubbing.
-- `identity-pack-trial`'s recorded hashes are unchanged for an unchanged
-  configuration. This is the highest-value check in the slice: a moved compile
-  step that fingerprints differently invalidates every stored comparison. If a
-  fixture-based hash assertion does not already exist in `render-profile.test.ts`,
-  add one before moving the code, so the before/after is checkable.
+- Slice 1's package-boundary gate is green before this PR begins.
+- CI `verify` is green for the Slice 2 PR.
+- The moved suites pass with no package-side `process.env` stubbing.
+- The golden controls hash is identical before and after extraction.
+- Existing production intent tests still prove no automatic version pin and no
+  forced timeout.
+- A symbol inventory finds no live import of the deleted application
+  implementations after the move.

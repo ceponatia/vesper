@@ -2,9 +2,10 @@
 
 Status: companion to [monorepo-image-core.plan.md](monorepo-image-core.plan.md)
 
-This file owns what every slice needs and no single slice owns: how a package is
-registered, how the boundary is enforced, what a package may export, and where
-the shared primitives live today. One spec per remaining slice carries the rest.
+This file owns what every slice needs and no single slice owns: package
+registration, package-boundary enforcement, package-to-package dependency rules,
+public export policy, shared primitives, and the vision-path inventory. One spec
+per remaining implementation slice carries the rest.
 
 ## Spec index
 
@@ -19,200 +20,272 @@ Slice 5 (vision) has no spec — see [The vision path](#the-vision-path-inventor
 
 ## Implementation status
 
-| Slice | State                    | Blocked by                      |
-| ----- | ------------------------ | ------------------------------- |
-| 1     | complete — 2026-08-12    | —                               |
-| 2     | not started              | —                               |
-| 3     | not started              | —                               |
-| 4     | not started              | slices 2 and 3                  |
-| 5     | not started, not planned | no pure surface exists          |
-| 6     | not started              | an unnamed soak (open question) |
+| Slice | State                                              | Blocked by                         |
+| ----- | -------------------------------------------------- | ---------------------------------- |
+| 1     | in progress — boundary correction remains         | —                                  |
+| 2     | not started                                        | Slice 1 correction                 |
+| 3     | not started                                        | Slice 2 by delivery order          |
+| 4     | not started                                        | Slices 2 and 3                     |
+| 5     | not started, not planned                           | no pure surface exists             |
+| 6     | not started                                        | Slice 4 seam-proving gate          |
 
-## Adding a package: the registration points
+## Adding a package before the `apps/web` move
 
-Packages ship TypeScript source with **no build step**. Three separate
-resolvers therefore have to be told where the source is, and each is a distinct
-failure if missed — `tsc` passing while Vitest cannot resolve the alias is the
-normal way this goes wrong.
-
-Five files change when a package is added:
+Packages ship TypeScript source with **no build step**. While the Next.js app
+remains at the repository root, five registration points have to agree about a
+new package:
 
 | File                        | Add                                                   |
 | --------------------------- | ----------------------------------------------------- |
-| `packages/<n>/package.json` | Name, `private`, `type: module`, `exports`            |
-| `tsconfig.json`             | A `paths` entry to `./packages/<n>/src/index.ts`      |
-| `vitest.config.ts`          | The same mapping as a resolve alias                   |
-| `next.config.ts`            | The name in `transpilePackages`                       |
-| `Dockerfile`                | A manifest `COPY` beside the existing image-core line |
+| `packages/<n>/package.json` | Name, `private`, `type: module`, exports, dependencies |
+| `tsconfig.json`             | A path entry to the package's root source export       |
+| `vitest.config.ts`          | The same package mapping for the shared test runner    |
+| `next.config.ts`            | The package name in `transpilePackages`                |
+| `Dockerfile`                | Its manifest beside the other workspace manifests      |
 
-Two files need **no** change, and this is deliberate rather than luck:
+`pnpm-workspace.yaml` already includes `packages/*`. The CI classifier already
+counts `packages/*` as a code change, so a package-only PR runs the code gates.
+Slice 6 replaces this temporary root-app registration shape with explicit
+application and package TypeScript projects; do not copy the pre-Slice-6 shape
+blindly after the app has moved.
 
-- `pnpm-workspace.yaml` globs `packages/*`, so a new folder is picked up.
-- `eslint.config.mjs` scopes the boundary rule to `packages/**/*.{ts,tsx}`, so a
-  new package is governed from its first commit rather than from the commit
-  where someone remembers to add it.
-
-The CI classifier already counts `packages/*` as a code change
-(`.github/workflows/ci.yml`), so a package-only PR runs the full gate set.
-
-**The Dockerfile line is the one that is easy to miss and expensive to debug.**
-The build copies manifests before sources to keep the install layer cacheable; a
-package whose `package.json` is not copied fails `pnpm install --frozen-lockfile`
-inside the image with a workspace-resolution error that says nothing about the
-missing COPY.
+**The Dockerfile manifest copy is easy to miss and expensive to diagnose.** The
+build copies manifests before sources to keep the install layer cacheable. A
+workspace package whose `package.json` is absent at `pnpm install
+--frozen-lockfile` fails with a workspace-resolution error rather than a useful
+"manifest was not copied" message.
 
 ### Package manifest shape
 
-Follow `packages/image-core/package.json` exactly:
+Until Slice 6 introduces package-local tooling configuration, follow the current
+`packages/image-core/package.json` shape unless a detail spec says otherwise:
 
 - `"name": "@vesper/<n>"`, `"version": "0.0.0"`, `"private": true`.
 - `"type": "module"`.
 - `"exports"` maps `"."` to `./src/index.ts` and `"./package.json"` to itself.
-- Runtime dependencies are declared normally. `@types/node` is not needed for
-  `Buffer` or `node:crypto` — the root's types reach the package through the
-  shared `tsconfig`.
+- Runtime dependencies are declared in the package that imports them.
+- Workspace dependencies use `"workspace:*"`.
+- A package never relies on an undeclared sibling workspace dependency just
+  because pnpm made it reachable somewhere in `node_modules`.
 
-## The boundary rule, as enforced
+## Package boundary: contract and enforcement
 
-`eslint.config.mjs` blocks two spellings under `packages/**`, and both matter
-because they reach the same modules:
+The contract is stronger than a naming convention:
 
-- Any `@/` alias import — `@/contracts`, `@/lib`, `@/server`, `@/app`.
-- Any relative path that climbs out of the package — `../src/…`,
-  `../../src/…`, `../../packages/…`.
+1. A workspace package never imports application code.
+2. A relative import from one package never resolves outside that package's own
+   directory.
+3. Another workspace package is imported by its package name and is declared in
+   the importing package's manifest.
+4. The package graph remains one-way and acyclic.
 
-The second is the one a naive alias-only rule misses, and it is the spelling an
-agent reaches for when the alias fails.
+### Known gap in the first Slice 1 guardrail
 
-Consequences a slice must design around, not work around:
+The current ESLint rule correctly rejects `@/...` and common relative climbs
+that literally contain top-level names such as `src`, `scripts`, `drizzle` or
+`packages`. It does **not** prove that every relative specifier stays inside the
+current package. From `packages/image-core/src/...`, for example, a spelling such
+as `../../contracts/src/...` can reach a sibling package without containing a
+literal `packages` segment after the `..` components are normalized.
 
-- **No Vesper type appears in a package signature.** A function needing a
-  character's appearance takes the prompt text or the resolved reference, never
-  a `CharacterProfile`.
-- **No persistence, no environment, no clock, no randomness.** A registry row
-  arrives as a parsed value; the package never fetches one and never reads
-  `process.env`. Node standard library that is *pure* is fine — `node:crypto`'s
-  `createHash` is a function of its input, and `Buffer` already appears in
-  package signatures (`provider-interface/failures.ts`,
-  `identity/identity-pack-detector.ts`).
-- **Diagnostics are reported, not collected.** The package takes a sink and
-  pushes to it; it never owns a collector.
+That means the package extraction is real, but the claim that lint alone proves
+the complete boundary is not yet true. Closing this is the remaining work in
+Slice 1 and blocks Slice 2.
 
-When a package appears to need something from the application there are exactly
-two answers: pass the value in as an argument, or leave the code in the app.
-Adding a third would put the game's simulation concepts underneath an image
-library, which is the outcome the whole plan exists to avoid.
+### Required correction: resolve paths, do not pattern-match spellings
 
-### Package-to-package imports
+Add a repository package-boundary check that inspects import-like module
+specifiers under `packages/*/src/**/*.{ts,tsx}` and resolves relative specifiers
+from the importing file.
 
-A package imports another **by name** (`@vesper/contracts`), never by path, and
-declares it as a dependency in its own manifest. The dependency graph stays
-acyclic and shallow: `image-replicate` → `image-core` → `contracts`.
+The checker must cover static forms TypeScript source can use to name another
+module:
 
-`image-core` must not import `image-replicate`. If the core needs to invoke a
-provider, it declares the interface and the application supplies the
-implementation — the inversion that makes a second provider cheap.
+- `import ... from "..."` and side-effect imports;
+- `export ... from "..."`;
+- type imports such as `import("...")` in type positions;
+- dynamic `import("...")` when the argument is a string literal.
+
+For a relative specifier, normalize `path.resolve(dirname(source), specifier)`.
+The normalized target must remain strictly inside the importing
+`packages/<name>/` directory. The check does not need to guess an extension or
+index file to establish containment; the normalized path is enough. A target
+outside the package fails whether it reaches `src/`, another package, a root
+script, a config file, or any other repository path.
+
+For a bare `@vesper/<name>` import:
+
+- the referenced workspace package must exist;
+- it must not be a relative-path spelling of that package;
+- the importer must declare it in `dependencies` (or `devDependencies` only for
+  test/tool-only use that never enters runtime source);
+- ordinary source should not import its own package by name when a local relative
+  import is sufficient.
+
+The existing ESLint `@/` ban stays because it gives immediate file-level
+feedback. The resolved-path checker is the authoritative escape check.
+
+Wire the checker into repository verification as `lint:package-boundaries` and
+run it in the CI static gate beside cycle/authz/type checks. A future package is
+not considered registered until this check covers it automatically through the
+`packages/*` glob.
+
+### Purity versus transport packages
+
+Do not apply one impossible definition of "package purity" to every package.
+
+- `@vesper/contracts` and `@vesper/image-core` are **pure packages**: no
+  persistence, network IO, ambient environment reads, clock reads, or randomness
+  in their decision logic. Pure Node standard-library functions such as hashing
+  are fine.
+- `@vesper/image-replicate` is a **transport package**: network IO, timeouts and
+  polling are its job. What it may not own is Vesper application state or ambient
+  configuration. It receives a resolved config object and never reads
+  `process.env` itself.
+
+This distinction replaces the overly broad earlier rule that said no package
+could perform IO.
+
+### Server-only provider transport
+
+Moving Replicate out of `src/server/**` must not accidentally make it
+client-importable. When Slice 4 creates `@vesper/image-replicate`, extend the
+application's import guardrails so these layers cannot import it:
+
+- `src/components/**`;
+- non-route `src/app/**`;
+- `src/contracts/**`;
+- `src/lib/**`.
+
+After Slice 6, rewrite those same zones to `apps/web/src/**`. Server modules,
+route handlers and root operational scripts may use the configured application
+adapter where appropriate. Do not add a Next-specific `server-only` dependency
+to the transport package merely to compensate for a missing repository boundary.
+
+## Package-to-package imports
+
+A package imports another **by name**, never by path, and declares it in its own
+manifest. The intended graph after Slice 4 is shallow:
+
+```text
+@vesper/image-replicate -> @vesper/image-core -> @vesper/contracts
+                                      \-------> @vesper/contracts (where needed)
+```
+
+`image-core` never imports `image-replicate`. The core does not need to invent a
+provider-plugin framework to preserve this direction: it produces provider-ready
+planning data, the application owns orchestration, and the configured transport
+consumes the model/request data it is handed.
+
+If a second provider later proves that an invocation interface is useful, add it
+from the two real implementations. Do not create one in this refactor solely so
+the architecture diagram can contain an "interface" box.
 
 ## Export surface policy
 
-**Open question, owned by the plan.** The decision is due before slice 3, whose
-new package will set the precedent whichever way it goes.
+**Ruling (2026-08-12): one curated root barrel, no subpath proliferation.**
 
-Today `packages/image-core/src/index.ts` re-exports every domain barrel, and the
-application imports `@vesper/image-core` rather than a deep path. That is why
-slice 1's import churn was mechanical, and it is the property worth keeping.
+Consumers keep the ergonomic import:
 
-The tension is real in both directions:
+```ts
+import { ... } from "@vesper/image-core";
+```
 
-- A wide barrel means the package's public API is "everything", so nothing can be
-  refactored without a potential ripple, and a reader cannot tell which exports
-  are the intended entry points.
-- Subpath exports (`@vesper/image-core/identity`) make the entry points explicit
-  but multiply the registration burden — every subpath needs its own `exports`
-  entry, `tsconfig` path, and Vitest alias, in three files that already drift.
+but `src/index.ts` is not permission to publish every helper in every folder.
+Before a domain is re-exported, inventory application/package consumers. The root
+barrel exports only symbols or domain barrels that are genuine package entry
+points. A helper or domain used only inside the package is internal and stays out
+of `src/index.ts`.
 
-The criterion to decide on: whether any domain has consumers **only** inside the
-package. A domain the application never imports is internal, and publishing it
-is the mistake worth fixing. A domain the application imports from a dozen call
-sites is a genuine entry point, and hiding it behind a subpath buys nothing.
+This preserves the property that made Slice 1's import churn mechanical without
+creating three parallel alias/exports registrations for every subpath. It also
+sets the precedent for `@vesper/contracts` and `@vesper/image-replicate`: one
+public root, deliberately curated.
 
-Until this is settled, new packages copy the wide barrel — one pattern, whatever
-it is, beats two.
+A public API change during this refactor is allowed only when it is a deletion of
+an export with **no external consumer**. Do not rename or reshape live public
+symbols as part of an extraction.
 
-## Where diagnostics and boundary parsing live today
+## Diagnostics and boundary parsing before Slice 3
 
-The duplication is deliberate, documented, and slice 3's whole subject.
+The duplication is deliberate and Slice 3 removes it.
 
-- `src/contracts/diagnostics.ts` is the application's canonical owner. It carries
-  `Diagnostic`, `DiagnosticSink`, the zod schema, `DiagnosticCollector`,
-  `teeSink`, and `diag`.
-- `packages/image-core/src/diagnostics.ts` re-declares `Diagnostic`,
-  `DiagnosticSeverity` and `DiagnosticSink` structurally — the three shapes the
-  package needs in order to *report* degradation — and nothing else.
-- The package owns **no boundary parser**. `parseOr` lives in `src/lib/parse.ts`
-  and stays there until slice 3.
+- `src/contracts/diagnostics.ts` is the application's canonical owner today. It
+  carries `Diagnostic`, `DiagnosticSink`, the zod schema,
+  `DiagnosticCollector`, `teeSink`, and `diag`.
+- `packages/image-core/src/diagnostics.ts` re-declares
+  `Diagnostic`, `DiagnosticSeverity` and `DiagnosticSink` structurally — the
+  three shapes the package currently needs to report degradation.
+- `parseOr` / `parseOrNull` live in `src/lib/parse.ts`.
 
-Because `DiagnosticSink` is a one-method structural interface, the application's
-collector satisfies the package's sink with no adapter. Drift is caught at
-typecheck by the third `describe` block in
-`src/contracts/images/identity-pack-boundary.test.ts`, which asserts assignability
-in **both** directions.
+Because `DiagnosticSink` is structural, the application's collector satisfies
+the package sink without an adapter. The existing compatibility test holds the
+two declarations assignable until Slice 3 replaces both with one package-owned
+contract.
 
-> **Known stale pointer.** `packages/image-core/README.md` and the module comment
-> in `packages/image-core/src/diagnostics.ts` both cite a
-> `src/contracts/diagnostics.compat.test.ts` that does not exist; the check is in
-> `identity-pack-boundary.test.ts`. The README is corrected; the `.ts` comment is
-> a code change and rides the next PR to touch that file — slice 3 deletes the
-> module outright.
+`parseOr` is not currently needed by `image-core`; moving it is a deliberate
+shared-foundation decision, not evidence that the core should start parsing
+application boundaries. See the foundation spec.
 
 ## The vision path: inventory
 
-The target architecture names `@vesper/image-vision`. This is what is actually
-there, so the question does not have to be re-derived.
+The target architecture names `@vesper/image-vision`. This is what actually
+exists today, so the question does not need to be re-derived.
 
-The path runs on **OpenRouter, not Replicate** — Replicate is generation and
-editing only. Its entry point is `generateChecked` with an `images` option, and
-`visionModelId()` (`src/server/ai/provider.ts`, `MODEL_DEFAULTS.vision`) is the
-code-default model with no override layer. Two consumers:
+The path runs on **OpenRouter, not Replicate**. Its entry point is
+`generateChecked` with an `images` option, and `visionModelId()`
+(`src/server/ai/provider.ts`, `MODEL_DEFAULTS.vision`) supplies the code-default
+model. Two consumers exist:
 
 | Consumer                                      | What it does                        |
 | --------------------------------------------- | ----------------------------------- |
 | `src/server/authoring/portrait-attributes.ts` | Portrait → closed-vocabulary traits |
 | `src/server/engine/chat-vision.ts`            | Describes a message's attachments   |
 
-Neither has a provider-neutral core worth a package:
+Neither exposes a provider-neutral image core worth a package:
 
-- `portrait-attributes.ts` builds its output schema **from the attribute
-  registry** at call time, and merges readings against a character draft. Take
-  the registry away and there is no function left.
-- `chat-vision.ts` is 94 lines: four constants, a system prompt, one
-  `generateChecked` call, and a degradation to a fallback string. Its only
-  non-Vesper content is the prompt text.
-- What they genuinely share — `generateChecked`, `withGenerateTimeout`,
-  `isDemoMode` — is the **general** model-call layer the narrator uses too. It
-  belongs to a hypothetical `@vesper/ai`, not to an image package, and extracting
-  it is not this plan's work.
+- `portrait-attributes.ts` builds its schema from the Vesper attribute registry
+  and merges readings against a character draft.
+- `chat-vision.ts` is a small game-facing prompt and one general model call with
+  a fallback.
+- What they genuinely share — `generateChecked`, `withGenerateTimeout`, and demo
+  handling — is the general model-call layer the narrator also uses. A future
+  extraction there would be an `@vesper/ai` concern, not an image package.
 
-**The condition that starts slice 5:** a third vision consumer arrives, or the
-two existing ones are found to share a real contract — a common reading vocabulary,
-a shared grounding step, a shared degradation policy worth stating once. Neither
-holds today. Adding the package now would produce a folder holding a string
-constant and a five-line schema, and would make the target diagram look complete
-while delivering nothing.
+**The condition that starts Slice 5:** a third vision consumer arrives, or the
+two existing consumers acquire a real shared contract such as a common reading
+vocabulary, grounding step, or degradation policy. Until then, creating the
+package would move names without moving ownership.
 
 Reference doc for this path: [docs/images/vision.md](../images/vision.md).
+
+## Test independence
+
+Package tests may run from the repository's shared Vitest command, but a pure
+package test must not import application test support or require application
+setup to establish its behavior. Environment manipulation that exists solely for
+OpenRouter/Replicate application tests is not part of an `image-core` test's
+contract.
+
+Slice 6 makes this separation explicit in the workspace test configuration so
+moving the app's `src/test/setup.ts` cannot silently become a package test
+dependency.
 
 ## Conventions every slice follows
 
 - **One slice, one PR, `verify` green.** Validation is CI-only (root
   `CLAUDE.md`); never run the gates locally.
-- **Tests move with the code they cover** and run in the ordinary `pnpm test`.
-  A test that needs a database stays in the application by construction — if a
-  moved test needs one, the wrong thing moved.
-- **Behavior is unchanged at every slice.** These are extractions. A slice that
-  wants to also fix a bug it uncovered files the bug separately; a moved module
-  whose output changed cannot be reviewed as a move.
-- **Prefer deletion to wrappers.** No compatibility shim preserves an old import
-  path (root `CLAUDE.md`). A barrel that re-exports a package is not a shim —
-  it publishes a new home — but it must be the app's own barrel, never a stub
-  left behind for callers nobody updated.
+- **Tests move with the code they cover.** A database-dependent test stays in the
+  application; a supposedly moved pure test that still needs DB/app setup is a
+  boundary smell to fix before moving it.
+- **Behavior is unchanged at every extraction slice.** A bug uncovered by the
+  move is filed or fixed separately unless correcting it is required to preserve
+  the stated boundary itself.
+- **Prefer deletion to wrappers.** No compatibility module preserves an old
+  implementation location. An existing application barrel may re-export a
+  package when that barrel is still the application-facing API; it must not hide
+  dead implementation code.
+- **Inventory by exported symbol, not only by module path.** Wide barrels mean a
+  consumer may use provider/package symbols without naming the source module in
+  its import text. Before deleting or moving a barrel export, search the exported
+  names as well as the file path.
