@@ -6,7 +6,7 @@ import {
   isDemoMode,
   toolModelId,
 } from "../ai";
-import { renderImageIntent, type ImageRenderReference } from "./render-intent";
+import { renderImageIntent } from "./render-intent";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -14,6 +14,7 @@ import {
   IMAGE_TARGET_ASPECT,
   type ImageProviderFailure,
   type ImageReferenceRole,
+  type ImageRenderReference,
   type ProviderRenderResult,
   referenceCapacity,
   type ResolvedImageProfile,

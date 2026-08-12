@@ -1,16 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { imageModelSchema, type ImageModel } from "../models/image-models";
 import {
-  type ImageModel,
-  type ImageModelProfile,
   imageModelProfileSchema,
-  imageModelSchema,
+  type ImageModelProfile,
   type ResolvedImageProfile,
-} from "@vesper/image-core";
-import { planImageRender, type ImageRenderIntent, type ImageRenderReference } from "./render-intent";
+} from "../models/image-model-profiles";
+import {
+  planImageRender,
+  type ImageRenderIntent,
+  type ImageRenderReference,
+  type ImageRenderRuntimeFacts,
+} from "./plan-image-render";
 
 /**
- * The intent's contract, asserted where it is cheapest: rows and buffers in, the
- * exact provider-bound plan out. No database, no provider.
+ * The deployment facts every case plans under. They are an ARGUMENT now rather
+ * than an environment read, which is what lets this suite run with no
+ * application around it — and what makes "which safety posture was this planned
+ * under?" a question the caller answers rather than the process.
+ */
+const RUNTIME: ImageRenderRuntimeFacts = { safetyCheckerDisabled: true };
+
+/**
+ * The planner's contract, asserted where it is cheapest: rows and buffers in,
+ * the exact provider-bound plan out. No database, no provider, no environment.
  *
  * The property most of these cases defend is PAYLOAD NEUTRALITY. Slice 2 moved
  * seven lanes off `resolveSurfaceModel` + `renderWithModel` and onto this path,
@@ -76,7 +88,7 @@ function intent(over: Partial<ImageRenderIntent> = {}): ImageRenderIntent {
 
 /** Plan and UNWRAP — a refusal in a case that wants a plan is a broken fixture. */
 function planned(input: ImageRenderIntent) {
-  const result = planImageRender(input);
+  const result = planImageRender(input, RUNTIME);
   if (!result.ok) throw new Error(`[render-intent] unexpected refusal: ${result.refusal.code}`);
   return result.plan;
 }
@@ -136,7 +148,7 @@ describe("prompt neutrality", () => {
 
   it("refuses the four strategies that have no implementation anywhere", () => {
     for (const promptStrategy of ["text_repair", "example_transform", "style_render", "coherent_set"] as const) {
-      expect(planImageRender(intent({ profile: resolved({}, { promptStrategy }) })).ok).toBe(false);
+      expect(planImageRender(intent({ profile: resolved({}, { promptStrategy }) }), RUNTIME).ok).toBe(false);
     }
   });
 });
@@ -289,7 +301,7 @@ describe("required reference roles", () => {
   it("refuses before any provider work when a required role was never supplied", () => {
     // A variant profile requires an identity reference. Rendering without one
     // would produce a stranger and bill for it, so this fails at planning.
-    const result = planImageRender(intent({ profile: resolved({}, requiresIdentity), references: [] }));
+    const result = planImageRender(intent({ profile: resolved({}, requiresIdentity), references: [] }), RUNTIME);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.refusal.code).toBe("image_profile.required_reference_missing");
@@ -316,6 +328,7 @@ describe("required reference roles", () => {
         profile: resolved({ maxReferences: 1 }, contradictory),
         references: [reference("location", "room"), reference("identity", "avatar")],
       }),
+      RUNTIME,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -336,7 +349,7 @@ describe("required reference roles", () => {
 
   it("passes a policy that requires nothing, which is what every seeded scene profile carries", () => {
     // The scene ladder's `generate` rung legitimately runs with zero references.
-    expect(planImageRender(intent({ references: [] })).ok).toBe(true);
+    expect(planImageRender(intent({ references: [] }), RUNTIME).ok).toBe(true);
   });
 });
 
@@ -369,6 +382,7 @@ describe("required reference drops", () => {
     // input rendered a solo portrait for a caller that ordered two people.
     const result = planImageRender(
       intent({ profile: resolved({ maxReferences: 1 }, identityPolicy(2)), references: twoFaces }),
+      RUNTIME,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -386,6 +400,7 @@ describe("required reference drops", () => {
     // the two apart — only one of them is fixed by picking a bigger model.
     const result = planImageRender(
       intent({ profile: resolved({ maxReferences: 3 }, identityPolicy(1)), references: twoFaces }),
+      RUNTIME,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -405,6 +420,7 @@ describe("required reference drops", () => {
         profile: resolved({}, identityPolicy(1)),
         references: [{ ...reference("identity", "avatar"), required: true }, { ...reference("style", "mood"), required: true }],
       }),
+      RUNTIME,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -651,6 +667,7 @@ describe("control-image roles", () => {
         profile: resolved(withControlInput("pose", "pose_image"), policy),
         references: [reference("identity", "avatar"), reference("pose", "skeleton")],
       }),
+      RUNTIME,
     );
     expect(result.ok).toBe(true);
   });
@@ -673,6 +690,7 @@ describe("required control inputs", () => {
         }),
         references: [reference("identity", "avatar")],
       }),
+      RUNTIME,
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;

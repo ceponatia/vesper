@@ -89,17 +89,18 @@ Practical consequences:
 
 Read in this order — each layer consumes the one above it.
 
-| Folder                | Owns                                                     |
-| --------------------- | -------------------------------------------------------- |
-| `capabilities/`       | Model declarations; binding controls to provider fields  |
-| `models/`             | Registry row shape, per-task profiles, reviewed presets  |
-| `loras/`              | LoRA definitions and render bindings                      |
-| `render-intent/`      | What one render asks for, in one vocabulary               |
-| `references/`         | Reference shapes, roles, and prompts that name them       |
-| `identity/`           | Identity-pack schema, policy, crops, quality, trials      |
-| `lab/`                | Advanced Image Lab contracts, recipes, instruction text   |
-| `geometry/`           | Crop math                                                 |
-| `provider-interface/` | Attempt routing and failure vocabulary                    |
+| Folder                | Owns                                                    |
+| --------------------- | ------------------------------------------------------- |
+| `capabilities/`       | Model declarations; binding controls to provider fields |
+| `models/`             | Registry row shape, per-task profiles, reviewed presets |
+| `loras/`              | LoRA definitions and render bindings                    |
+| `render-intent/`      | What one render asks for, and the pure planner          |
+| `render-kernel/`      | Profile compilation and fingerprint construction        |
+| `references/`         | Reference shapes, roles, and prompts that name them     |
+| `identity/`           | Identity-pack schema, policy, crops, quality, trials    |
+| `lab/`                | Advanced Image Lab contracts, recipes, instruction text |
+| `geometry/`           | Crop math                                               |
+| `provider-interface/` | Attempt routing and failure vocabulary                  |
 
 Each folder may have an internal `index.ts` for reading/navigation, and those may
 use `export *` — they are reading aids, not publication. The package has one

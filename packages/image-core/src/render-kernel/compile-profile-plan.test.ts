@@ -1,32 +1,33 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { IdentityReferenceRole } from "../identity/identity-pack";
+import { imageModelSchema, type ImageModel } from "../models/image-models";
 import {
-  type IdentityReferenceRole,
-  type ImageModel,
-  type ImageModelProfile,
   imageModelProfileSchema,
-  imageModelSchema,
   imagePromptStrategies,
+  type ImageModelProfile,
   type ImagePromptStrategy,
-  preparePromptForImageModel,
-} from "@vesper/image-core";
-import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai/replicate";
-import { STALE_CLAIM_MS } from "./identity-pack-trial";
+} from "../models/image-model-profiles";
+import { preparePromptForImageModel } from "../models/quality-presets";
 import {
   compileProfileRenderPlan,
   MAX_TRIAL_PREDICTION_MS,
   pinnedImageModelVersion,
-  profileRenderControlsHash,
-  sha256Hex,
-  stableJson,
   TRIAL_FALLBACK_PREDICTION_MS,
   type CompileProfileRenderPlanInput,
   type ProfileRenderPlan,
-} from "./render-profile";
+} from "./compile-profile-plan";
+import { profileRenderControlsFingerprintJson } from "./fingerprint-json";
 
 /**
  * The compile step's contract, asserted where it is cheapest to assert: pure
- * rows in, a plan out. The integration suite proves the plan REACHES the
- * provider seam; these cases prove the plan is right.
+ * rows in, a plan out. The application's integration suite proves the plan
+ * REACHES the provider seam; these cases prove the plan is right.
+ *
+ * Nothing here reads or stubs an environment variable. That is the property the
+ * render-kernel move bought: the safety setting arrives as a boolean input, so
+ * every case that used to flip `REPLICATE_SAFE_MODE` is now an ordinary
+ * argument, and a leaked env var can no longer change what a later case
+ * compiles.
  */
 
 const CAPABILITIES = {
@@ -75,7 +76,7 @@ function profile(over: Record<string, unknown> = {}): ImageModelProfile {
  */
 function compiledPlan(input: CompileProfileRenderPlanInput): ProfileRenderPlan {
   const result = compileProfileRenderPlan(input);
-  if (!result.ok) throw new Error(`[render-profile] unexpected refusal: ${result.reason} (${result.promptStrategy})`);
+  if (!result.ok) throw new Error(`[render-kernel] unexpected refusal: ${result.reason} (${result.promptStrategy})`);
   return result.plan;
 }
 
@@ -85,25 +86,24 @@ function plan(modelOver: Record<string, unknown> = {}, profileOver: Record<strin
     profile: profile(profileOver),
     basePrompt: "change the outfit",
     baseNegativePrompt: null,
+    safetyCheckerDisabled: true,
     references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
   });
 }
 
-function hashOf(compiled: ProfileRenderPlan): string {
-  return profileRenderControlsHash(compiled, {
+/**
+ * The package's half of the fingerprint: the deterministic string. The final
+ * SHA-256 is the application's, and `render-fingerprint.test.ts` pins that the
+ * stored hash of this exact string never moved.
+ */
+function fingerprintOf(compiled: ProfileRenderPlan): string {
+  return profileRenderControlsFingerprintJson(compiled, {
     profileId: "profile-1",
     profileKey: "compile-fixture",
     promptStrategy: "instruction_edit",
     orderedReferenceRoles: ["canonical_identity"],
   });
 }
-
-// `REPLICATE_SAFE_MODE` decides the value of a declared safety toggle at send
-// time, so the cases below set it and MUST put it back: a leaked env var would
-// silently change what every later case in this process compiles.
-afterEach(() => {
-  delete process.env.REPLICATE_SAFE_MODE;
-});
 
 describe("pinnedImageModelVersion", () => {
   it("prefers the probed version and falls back to the slug's own pin", () => {
@@ -139,25 +139,6 @@ describe("pinnedImageModelVersion", () => {
   });
 });
 
-describe("the trial's stale-claim window", () => {
-  it("exceeds everything one cell span can legitimately spend", () => {
-    // The window's whole job is to be longer than a single CELL SPAN — the
-    // prediction ceiling, the reference uploads and settling poll, and the
-    // output download — so recovery can never hand a LIVE render to a second
-    // worker and pay for it twice. Derived rather than guessed, and asserted
-    // here so a change to any of its inputs has to face this inequality.
-    const oneRenderMs = MAX_TRIAL_PREDICTION_MS + 4 * REQUEST_TIMEOUT_MS + OUTPUT_TIMEOUT_MS;
-    expect(STALE_CLAIM_MS).toBeGreaterThan(oneRenderMs);
-    // One span is all it must cover — and that is a fact about the HEARTBEAT,
-    // not about queue depth. Every cell boundary re-stamps `claimed_at` on the
-    // pass's whole remaining queue, so the oldest claim a live pass can hold is
-    // the one it stamped at the start of the cell now in flight. A cell queued
-    // behind nineteen others is exactly as fresh as the cell rendering ahead of
-    // it, which is why this bound does not have to scale with `maxRenders`.
-    expect(STALE_CLAIM_MS).toBeLessThan(2 * oneRenderMs);
-  });
-});
-
 describe("the prompt-strategy dispatch", () => {
   /** The three the identity-reference path can honestly compile. Everything else
    * in `imagePromptStrategies` must fail closed, and the partition below is what
@@ -175,17 +156,18 @@ describe("the prompt-strategy dispatch", () => {
       profile: profile({ promptStrategy }),
       basePrompt: "change the outfit",
       baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles },
     });
   }
 
   it("makes multi_reference_compose send different text than instruction_edit at ONE reference", () => {
-    // THE BUG THIS CLOSES: `promptStrategy` was hashed into
-    // `resolvedControlsHash` but never consulted, so two profiles differing only
-    // in strategy fingerprinted differently and sent byte-identical prompts —
-    // the hash asserted a difference nothing downstream made. The strategy's
-    // defining semantic is that it NAMES each reference, so at one reference it
-    // must diverge or it is `instruction_edit` under a second name.
+    // THE BUG THIS CLOSES: `promptStrategy` was fingerprinted but never
+    // consulted, so two profiles differing only in strategy fingerprinted
+    // differently and sent byte-identical prompts — the fingerprint asserted a
+    // difference nothing downstream made. The strategy's defining semantic is
+    // that it NAMES each reference, so at one reference it must diverge or it is
+    // `instruction_edit` under a second name.
     const edit = compileWith("instruction_edit", ["canonical_identity"]);
     const compose = compileWith("multi_reference_compose", ["canonical_identity"]);
     expect(edit.ok && compose.ok).toBe(true);
@@ -195,9 +177,6 @@ describe("the prompt-strategy dispatch", () => {
     expect(compose.plan.finalPrompt).toBe(
       "Image 1: the canonical identity reference for the subject.\n\nchange the outfit",
     );
-    // The positive-prompt hash is what a trial cell pins, so a divergent prompt
-    // has to be a divergent fingerprint too.
-    expect(sha256Hex(compose.plan.finalPrompt)).not.toBe(sha256Hex(edit.plan.finalPrompt));
   });
 
   it("leaves the zero-reference baseline alone under every executable strategy", () => {
@@ -238,6 +217,7 @@ describe("compileProfileRenderPlan", () => {
       profile: profile(),
       basePrompt: "change the outfit",
       baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles: ["face_detail", "canonical_identity"] },
     });
     expect(compiled.finalPrompt.startsWith("Image 1: a close facial-detail reference")).toBe(true);
@@ -257,6 +237,7 @@ describe("compileProfileRenderPlan", () => {
       profile: profile({ controlDefaults: { negativePrompt: "profile default", seedPolicy: "random" } }),
       basePrompt: "p",
       baseNegativePrompt: "fixture negative",
+      safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles: [] },
     });
     expect(compiled.negativePrompt).toBe("fixture negative");
@@ -265,7 +246,7 @@ describe("compileProfileRenderPlan", () => {
 
   it("reports a negative prompt this version cannot carry as null, with the drop recorded", () => {
     // "Nothing goes" is the render-facing truth; WHY nothing goes survives in
-    // the drop list, so the hash still distinguishes the two configurations.
+    // the drop list, so the fingerprint still distinguishes the two configurations.
     const compiled = plan(
       { advancedCapabilities: { knownInputFields: ["scheduler"] } },
       { controlDefaults: { negativePrompt: "blurry", seedPolicy: "random" } },
@@ -311,8 +292,8 @@ describe("compileProfileRenderPlan", () => {
   it("resolves a profile with no timeout to an explicit budget instead of deferring to the env", () => {
     // `timeoutMs: null` used to reach the renderer as "ask
     // REPLICATE_PREDICTION_TIMEOUT_MS", which can be set to half an hour — so a
-    // cell's real deadline was unrecorded, unhashed, and unbounded, and the
-    // stale-claim window had nothing firm to be sized against.
+    // cell's real deadline was unrecorded, unfingerprinted, and unbounded, and
+    // the stale-claim window had nothing firm to be sized against.
     const compiled = plan();
     expect(compiled.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
     expect(compiled.resolvedControls.timeoutMs).toBe(TRIAL_FALLBACK_PREDICTION_MS);
@@ -322,6 +303,7 @@ describe("compileProfileRenderPlan", () => {
       profile: { ...profile(), timeoutMs: 30 * 60_000 },
       basePrompt: "p",
       baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles: [] },
     });
     expect(overLong.timeoutMs).toBe(MAX_TRIAL_PREDICTION_MS);
@@ -330,7 +312,7 @@ describe("compileProfileRenderPlan", () => {
   it("drops a mapped control whose probed binding collides with a render-path field", () => {
     // A size-mode model's shape key IS `size`, and `resolutionTier` is commonly
     // probed as `size` too. Left alone, the mapped value travels, the transport
-    // discards it, and the hash claims a control was sent that never was.
+    // discards it, and the fingerprint claims a control was sent that never was.
     const compiled = plan(
       {
         aspectMode: "size",
@@ -370,7 +352,7 @@ describe("compileProfileRenderPlan", () => {
   });
 
   it("reports an extraInput negative prompt as sent, and a deliberately empty one as absent", () => {
-    // `buildRegistryModelInput` copies `extraInput` constants into the payload
+    // The payload builder copies `extraInput` constants into the payload
     // verbatim, so a row carrying `negative_prompt` sends it with no binding and
     // no control involved. Reporting null claimed nothing was sent while
     // something was.
@@ -386,6 +368,50 @@ describe("compileProfileRenderPlan", () => {
     // reviewed seam corrects it, and the plan must describe the corrected model.
     const compiled = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
     expect(compiled.effectiveModel.extraInput).toEqual({ go_fast: false });
+  });
+});
+
+describe("the safety setting as an input", () => {
+  const withToggle = { extraInput: { disable_safety_checker: true } };
+
+  function compileWithSafety(safetyCheckerDisabled: boolean): ProfileRenderPlan {
+    return compiledPlan({
+      model: model(withToggle),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+  }
+
+  it("writes the caller's value into the effective model, not the row's placeholder", () => {
+    // The row stores a placeholder; the deployment decides. Before the value was
+    // resolved into the plan, an operator flipping enforcement between planning a
+    // grid and executing it changed what every cell sent with nothing to show
+    // for it — and two arms of one comparison could run under different
+    // enforcement.
+    expect(compileWithSafety(true).effectiveModel.extraInput).toEqual({ disable_safety_checker: true });
+    expect(compileWithSafety(false).effectiveModel.extraInput).toEqual({ disable_safety_checker: false });
+  });
+
+  it("fingerprints the two enforcement postures differently", () => {
+    expect(fingerprintOf(compileWithSafety(true))).not.toBe(fingerprintOf(compileWithSafety(false)));
+  });
+
+  it("never introduces the key on a model whose schema does not declare it", () => {
+    // A model that has no such input must not be handed one, so its fingerprint
+    // cannot move with the setting either.
+    const off = compiledPlan({
+      model: model(),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: false,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(off.effectiveModel.extraInput).toEqual({});
+    expect(fingerprintOf(off)).toBe(fingerprintOf(plan()));
   });
 });
 
@@ -414,6 +440,7 @@ describe("a resolved LoRA", () => {
       profile: profile(),
       basePrompt: "change the outfit",
       baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
       ...over,
     });
@@ -424,7 +451,7 @@ describe("a resolved LoRA", () => {
     expect(compiled.controlInput).toEqual({ lora_weights: "owner/ink-wash-lora", lora_scale: 0.8 });
   });
 
-  it("weaves the prompt additions into the text that is hashed and sent", () => {
+  it("weaves the prompt additions into the text that is fingerprinted and sent", () => {
     // The weave happens after the strategy compiles and before the dialect rewrite,
     // so `finalPrompt` is the whole truth about what the provider will read —
     // additions applied at the transport would leave a prompt in the record that
@@ -436,9 +463,9 @@ describe("a resolved LoRA", () => {
   });
 
   it("fingerprints differently from the same compile without it", () => {
-    // A field that reaches the provider without reaching the hash is a change a
-    // pinned comparison cannot detect.
-    expect(hashOf(loraPlan({ resolvedLora: binding }))).not.toBe(hashOf(loraPlan()));
+    // A field that reaches the provider without reaching the fingerprint is a
+    // change a pinned comparison cannot detect.
+    expect(fingerprintOf(loraPlan({ resolvedLora: binding }))).not.toBe(fingerprintOf(loraPlan()));
   });
 
   it("changes nothing when no LoRA was resolved", () => {
@@ -450,9 +477,9 @@ describe("a resolved LoRA", () => {
 
 describe("preparePromptForImageModel idempotency", () => {
   it("leaves an already-prepared prompt byte-identical", () => {
-    // `compileProfileRenderPlan` hashes the prepared prompt and `renderWithModel`
-    // prepares again on the way out. If this ever stops holding, every trial cell
-    // starts refusing cell_conflict against its own compiled prompt.
+    // `compileProfileRenderPlan` fingerprints the prepared prompt and the
+    // transport prepares again on the way out. If this ever stops holding, every
+    // trial cell starts refusing cell_conflict against its own compiled prompt.
     const legacy =
       "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
     const target = { slug: "qwen/qwen-image-edit-2511" };
@@ -460,87 +487,5 @@ describe("preparePromptForImageModel idempotency", () => {
       const once = preparePromptForImageModel(target, `${legacy} Then change the outfit.`, count);
       expect(preparePromptForImageModel(target, once, count)).toBe(once);
     }
-  });
-});
-
-describe("profileRenderControlsHash", () => {
-  it("is stable across two identical compiles", () => {
-    expect(hashOf(plan())).toBe(hashOf(plan()));
-  });
-
-  it("moves when the EFFECTIVE model's payload constants move", () => {
-    // The gap this closes: the reviewed-quality table rewrites `extraInput` at
-    // the render boundary, so hashing the raw row let that table change what a
-    // pinned comparison sends with no conflict to show for it.
-    const raw = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
-    const asStored = profileRenderControlsHash(
-      { ...raw, effectiveModel: model({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } }) },
-      {
-        profileId: "profile-1",
-        profileKey: "compile-fixture",
-        promptStrategy: "instruction_edit",
-        orderedReferenceRoles: ["canonical_identity"],
-      },
-    );
-    expect(hashOf(raw)).not.toBe(asStored);
-  });
-
-  it("moves when a control, a drop, the timeout, the version, or the role order changes", () => {
-    const base = hashOf(plan());
-    expect(hashOf(plan({}, { controlDefaults: { guidance: 6, seedPolicy: "random" } }))).not.toBe(base);
-    expect(hashOf(plan({}, { controlDefaults: { steps: 30, seedPolicy: "random" } }))).not.toBe(base);
-    expect(hashOf(plan({}, { timeoutMs: 90_000 }))).not.toBe(base);
-    expect(hashOf(plan({ probedVersionId: "version-other" }))).not.toBe(base);
-    expect(
-      profileRenderControlsHash(plan(), {
-        profileId: "profile-1",
-        profileKey: "compile-fixture",
-        promptStrategy: "instruction_edit",
-        orderedReferenceRoles: ["face_detail", "canonical_identity"],
-      }),
-    ).not.toBe(base);
-  });
-
-  it("moves when the env flips the safety enforcement the render will run under", () => {
-    // `disable_safety_checker` is resolved from REPLICATE_SAFE_MODE at send
-    // time, so hashing the STORED value fingerprinted a placeholder. An operator
-    // flipping the env between planning a grid and executing it changed provider
-    // enforcement for every cell, with matching hashes to say nothing happened —
-    // and two arms of one comparison could run under different enforcement.
-    delete process.env.REPLICATE_SAFE_MODE;
-    const withToggle = { extraInput: { disable_safety_checker: true } };
-    const permissive = hashOf(plan(withToggle));
-    expect(plan(withToggle).effectiveModel.extraInput).toEqual({ disable_safety_checker: true });
-
-    process.env.REPLICATE_SAFE_MODE = "true";
-    expect(plan(withToggle).effectiveModel.extraInput).toEqual({ disable_safety_checker: false });
-    expect(hashOf(plan(withToggle))).not.toBe(permissive);
-
-    // The key is never INTRODUCED — a model whose schema does not declare the
-    // input must not be handed one, so its hash cannot move with the env either.
-    const unaffected = hashOf(plan());
-    delete process.env.REPLICATE_SAFE_MODE;
-    expect(hashOf(plan())).toBe(unaffected);
-  });
-
-  it("ignores display-only edits", () => {
-    // A renamed profile is the same experiment; invalidating a grid over a label
-    // edit would train operators to ignore cell_conflict.
-    expect(hashOf(plan({ label: "Renamed", sort: 99 }, { label: "Renamed too", sort: 42 }))).toBe(hashOf(plan()));
-  });
-});
-
-describe("stableJson", () => {
-  it("sorts keys recursively so two spellings of one object hash alike", () => {
-    expect(stableJson({ b: 1, a: { d: 2, c: 3 } })).toBe(stableJson({ a: { c: 3, d: 2 }, b: 1 }));
-    expect(sha256Hex(stableJson({ a: 1 }))).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it("preserves array order, which is meaningful", () => {
-    expect(stableJson([1, 2])).not.toBe(stableJson([2, 1]));
-  });
-
-  it("drops undefined members and renders null honestly", () => {
-    expect(stableJson({ a: undefined, b: null })).toBe('{"b":null}');
   });
 });

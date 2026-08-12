@@ -10,7 +10,6 @@ import {
   referenceDataUrl,
   replicatePredictionTarget,
   REQUEST_TIMEOUT_MS,
-  reservedImageInputFields,
   runRegistryImageModel,
   unwrapReplicateImage,
   withinDataUrlBudget,
@@ -224,15 +223,6 @@ describe("control input overlay", () => {
   it("returns the built payload untouched when there is no control input", () => {
     const built = buildRegistryModelInput(model(), "p", [], null);
     expect(overlayControlInput(built, undefined, model())).toBe(built);
-  });
-
-  it("names the aspect key each model actually writes as reserved", () => {
-    expect(reservedImageInputFields(model())).toContain("aspect_ratio");
-    expect(reservedImageInputFields(model({ aspectMode: "size" }))).toContain("size");
-    // Safety enforcement and the version pin are the render path's, not a profile's.
-    expect(reservedImageInputFields(model())).toEqual(
-      expect.arrayContaining(["prompt", "image", "version", "disable_safety_checker"]),
-    );
   });
 });
 
