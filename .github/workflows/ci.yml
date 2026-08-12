@@ -1,13 +1,19 @@
 name: CI
 
-# Pull requests get a required aggregate `verify` result. Documentation-only
-# changes stop after classification; code gates run in parallel; database and
-# engine-specific work only runs when affected. Push CI remains on long-lived
-# branches that may receive direct pushes. `main` is protected by PR `verify`,
-# so the identical suite is not repeated after merge.
+# Milestone-gated CI (Actions minutes are budgeted — see CLAUDE.md "Validation").
+# Draft PRs are free: every job is draft-guarded, so pushes to a draft bill zero
+# minutes. Marking a PR ready for review (`gh pr ready`) runs the full applicable
+# suite and produces the aggregate `verify` result; `gh pr ready --undo` returns
+# to free iteration. Manual dispatch (`gh workflow run CI --ref main`) is the
+# deliberate pre-deploy verification and runs every gate. Documentation-only
+# changes stop after classification; database and engine-specific work only runs
+# when affected. Push CI remains on long-lived branches that may receive direct
+# pushes. `main` is protected by PR `verify`, so the identical suite is not
+# repeated after merge.
 on:
   pull_request:
     branches: [main, prod, engine]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [prod, engine]
   workflow_dispatch:
@@ -19,6 +25,9 @@ concurrency:
 jobs:
   changes:
     name: classify changes
+    # Draft gate for the whole workflow: every other job `needs` this one, so
+    # skipping it here skips the entire suite for draft PRs at zero cost.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
@@ -248,7 +257,9 @@ jobs:
 
   verify:
     name: verify
-    if: always()
+    # always() so one failed gate can't hide behind a skipped dependent, but
+    # never on drafts — a draft must show no `verify` at all, not a green one.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     needs:
       - changes
       - lint

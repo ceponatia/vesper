@@ -115,6 +115,13 @@ Deploys are **manual** — pushing to GitHub does **not** auto-deploy (there is 
 Fly↔GitHub integration firing; every release so far has been a hand-run
 `fly deploy`). So a `git push` ships nothing on its own — run the deploy after.
 
+- **First, verify `main`.** CI is milestone-gated (draft PRs skip it, and `main`
+  has no push CI), so the accumulated state of `main` is validated now, as the
+  release candidate: `gh workflow run CI --ref main`, then watch it
+  (`gh run watch`, or `gh run list --workflow CI` for the id). A manual dispatch
+  deliberately runs **every** gate — lint, static checks, unit, engine
+  integration, engine benchmark, production build. Deploy only on a green
+  `verify`.
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
   remote builder, runs the `release_command` (`pnpm db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
