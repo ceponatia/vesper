@@ -72,31 +72,33 @@ measured in how the next image change goes.
 ### In scope
 
 - Turning the repository into a pnpm workspace, with the Next.js application
-  staying at the repo root for now.
+  staying at the repo root until the final slice.
 - Extracting `@vesper/image-core` and moving into it only code that already
   operates without knowing there is a database or a Next.js app.
 - A lint rule that fails the build when a package imports application code.
 - Repointing every application import at the package's public API, and keeping
   the tests that moved with the code they cover.
+- Moving the render kernel — the compile step every image lane goes through —
+  across the same boundary, by having callers supply what it used to look up.
+- A small shared foundation package for the two primitives both sides need: a
+  way to report degradation, and a way to read untrusted data without throwing.
+- Replicate transport behind its own package, once the seam it plugs into has
+  held still through real use.
+- The conventional `apps/web` layout, last, after the boundary has soaked.
 
 ### Non-goals
 
-- **Moving the application to `apps/web`.** A later, separate step — combining
-  it with the first extraction would mix a path-alias, Docker, CI and test
-  reshuffle into the work of finding the subsystem boundary.
-- **`@vesper/image-replicate` and `@vesper/image-vision`.** Both are wanted;
-  neither is created until the core's interface has settled under real use.
-  Replicate transport (prediction creation and polling, provider input
-  serialization, output retrieval, version pins, model-specific input mapping)
-  stays in `src/server/ai` until then.
-- **Extracting `@vesper/contracts`.** Named in the target shape, not built here.
-  See [Open questions](#open-questions).
 - **Moving Vesper-specific image code.** Character scenes, identity-pack
   lifecycle, asset persistence, the gallery, the chat scene queue, portrait
   routes, the model registry's database rows, authorization, job ownership and
   cost accounting stay in the application. Translating world state into an
   image request is application work; `renderCharacterSceneImage` is the clearest
   example and stays put.
+- **A general plugin architecture for providers.** The provider interface is
+  shaped by the providers actually in use. It gains an abstraction when a second
+  provider needs it, not in anticipation.
+- **Publishing any package.** Everything stays private to this workspace. No
+  versioning, no changelogs, no release cadence.
 - **A separate repository.** Deferred behind the conditions below.
 
 ### When a separate repository would be justified
@@ -109,92 +111,140 @@ it becomes useful without importing anything from the game. None hold today.
 
 ## Slices
 
-- **Slice 1 — the workspace exists and the image core is a package.**
-  Status: complete — 2026-08-12. The repository is a pnpm workspace,
-  `@vesper/image-core` holds the demonstrably pure image code, the boundary is
-  lint-enforced against both spellings of an app import, and every application
-  import points at the package's public API.
+### Slice 1 — the workspace exists and the image core is a package
 
-- **Slice 2 — the render kernel joins the package.** Status: queued.
-  `render-intent.ts` and `render-profile.ts` are the compile step every lane now
-  goes through, and both are nearly pure — what holds them back is that they
-  reach the model registry and the LoRA library through database-backed
-  lookups. Inverting those two reads (the caller resolves the row; the package
-  compiles the plan) moves the kernel across.
+Status: complete — 2026-08-12.
 
-- **Slice 3 — Replicate transport becomes `@vesper/image-replicate`.**
-  Status: blocked on slice 2. Only worth doing once the core's provider
-  interface has held still through a real model addition, so the adapter is
-  written against a settled seam rather than the current one.
+The repository is a pnpm workspace, `@vesper/image-core` holds the demonstrably
+pure image code, the boundary is lint-enforced against both spellings of an app
+import, and every application import points at the package's public API.
 
-- **Slice 4 — the application moves to `apps/web`.** Status: queued behind a
-  deliberate soak. The conventional monorepo shape, taken only after the
-  package boundary has run long enough to prove it was drawn in the right place.
+### Slice 2 — the render kernel joins the package
+
+Status: next.
+
+Every kind of image the app makes — a portrait, a scene, a variant, a lab
+experiment — passes through one step that turns "what this render wants" into
+the exact instructions a provider is handed. That step is nearly all rules and
+arithmetic, and it is the piece a developer most often needs to reason about on
+its own, because it decides what the provider actually sees.
+
+Two things hold it on the application side, and both are lookups rather than
+logic: it asks the database for the settings of the model being run, and it asks
+the library for the style weights a render selected. Neither is a decision the
+step makes; both are facts it is handed. When the caller does those lookups and
+passes the answers in, the whole compile step crosses — and the fingerprint that
+says whether two experiments really ran the same configuration crosses with it,
+which is what makes controlled comparisons checkable without a database.
+
+### Slice 3 — the shared foundation becomes `@vesper/contracts`
+
+Status: queued — unblocks slice 4.
+
+Two small things are needed on both sides of the boundary: a way for code to
+report that it degraded rather than failed, and a way to read data from an
+untrusted source without crashing the request. Today the image package carries
+its own copy of the first and does without the second entirely, kept honest by a
+test that fails if the two copies ever drift.
+
+That works, and it does not scale to a second package. A small shared foundation
+gives both one home, and the duplicate copy and its drift test are deleted in
+the same change. It is deliberately tiny — these two primitives and nothing
+else — because a foundation package that starts collecting whatever is
+convenient becomes the thing the boundary was built to prevent.
+
+### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
+
+Status: blocked on slices 2 and 3.
+
+The code that actually talks to Replicate — starting a prediction, waiting for
+it, reading the result back, handling that provider's particular errors and
+version pinning — is the last large piece of the engine still mixed in with the
+app's own server code. Behind its own package, adding or characterizing a model
+stops teaching the rest of the app that provider's vocabulary.
+
+It waits on the two slices above for a concrete reason rather than tidiness: it
+needs the shared foundation to report degradation, and it should be written
+against a provider seam that has already held still while the render kernel
+moved through it. Writing the adapter first would mean fitting it to a seam that
+is about to change.
+
+### Slice 5 — the vision path
+
+Status: blocked — nothing provider-neutral to move yet.
+
+"Images" now means two directions: making a picture, and a model looking at one.
+The second path is live — it reads a portrait into character attributes, and it
+describes photos a player attaches to a chat — and the target architecture names
+a package for it.
+
+An inventory says it is not time. Both consumers are almost entirely game
+concepts (the attribute vocabulary; a chat message's attachments), and what they
+share underneath is the general model-call layer the narrator also uses, which is
+not an image concern at all. A package extracted today would hold a system prompt
+and a fallback string. It becomes real work when a third consumer arrives, or
+when the two existing ones are found to share a genuine contract; until then the
+honest answer is that the target shape has a slot with nothing in it. The
+inventory is recorded so nobody has to redo it.
+
+### Slice 6 — the application moves to `apps/web`
+
+Status: queued behind a deliberate soak.
+
+The conventional monorepo shape, taken only after the package boundary has run
+long enough to prove it was drawn in the right place. This is the slice with the
+most disruption and the least architectural content — it moves files and
+rewrites configuration without changing a single decision about what belongs
+where — so it is deliberately last, and it is worth nothing until the boundary
+above it has been tested by real work.
 
 ## Where the work stands
 
-This plan has no spec yet and owns its own slice status until it grows one.
-Slice 1's design decisions are recorded in
-[packages/image-core/README.md](../../packages/image-core/README.md) §Boundary —
-the package's own contract with the application — and in the module comments the
-extraction touched.
+Technical detail lives in [monorepo-image-core.spec.md](monorepo-image-core.spec.md),
+which indexes one spec per remaining slice and owns their implementation status.
+The package's own contract with the application is
+[packages/image-core/README.md](../../packages/image-core/README.md) §Boundary.
 
-## What moved, and what did not
+| Spec                                                               | Covers           | State  |
+| ------------------------------------------------------------------ | ---------------- | ------ |
+| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics | living |
+| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2          | ready  |
+| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3          | ready  |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4          | ready  |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6          | ready  |
 
-The test applied to every candidate: does it already run without knowing there
-is a database, a route, a character, a chat, or a simulation engine?
-
-Moved — the package's domains, one folder each:
-
-| Folder                 | Owns                                                      |
-| ---------------------- | --------------------------------------------------------- |
-| `capabilities/`        | What a model declares; binding controls to real fields     |
-| `models/`              | Registry row shape, per-task profiles, reviewed presets    |
-| `loras/`               | LoRA definitions and render bindings                       |
-| `render-intent/`       | What one render asks for, in one vocabulary                |
-| `references/`          | Reference shapes, roles, and the prompts that name them    |
-| `identity/`            | Identity packs: schema, policy, cropping, quality, trials  |
-| `lab/`                 | Advanced Image Lab contracts, recipes, instruction text    |
-| `geometry/`            | Crop math                                                  |
-| `provider-interface/`  | Attempt routing, reference capacity, failure vocabulary    |
-
-Stayed, and why:
-
-- **`prompts.ts`** — pure, but it is pure *Vesper*: attributes, species, garment
-  visibility, body locations, world profiles. It composes the game's state into
-  image-facing text, which is application work by definition.
-- **`viewer-body.ts`** — reads the game's item-visibility model.
-- **`identity-packs.ts`, `identity-pack-trial.ts`, `image-lab.ts`,
-  `character-scene.ts`, `scene.ts`, `assets.ts`, `avatar.ts`, `variants.ts`,
-  `upload.ts`** — all persistence, ownership, job state and event logging.
-- **`replicate.ts`, `replicate-probe.ts`** — transport, awaiting slice 3.
-
-One module was split rather than moved: the provider seam. The classification
-rules and attempt routing are in the package; what stayed in `src/server/ai` is
-the four-line adapter that digs a real message out of an AI-SDK `APICallError`,
-because only a transport knows that error shape.
+Slice 5 has no spec by design — the hub spec carries its inventory and the
+condition that would start it.
 
 ## Success criteria
 
 - `pnpm lint` fails on an app import added anywhere under `packages/`, whether
   it is written as `@/server/db` or as `../../../src/server/db`.
-- The application's image behavior is unchanged: the same suites cover the same
-  rules, moved next to the code they test, and CI's `verify` is green.
+- The application's image behavior is unchanged at every slice: the same suites
+  cover the same rules, moved next to the code they test, and CI's `verify` is
+  green.
 - A developer can read `packages/image-core` start to finish and never need to
   know what a chat is.
+- The compile step that decides what a provider is sent can be exercised, and
+  its configuration fingerprint checked, with no database in the process.
+- Exactly one definition of a diagnostic exists in the repository.
 
 ## Open questions
 
-- **Where do `Diagnostic` and `parseOr` live?** Both are generic, pure, and used
-  by the whole application; the package needs the first and will eventually want
-  the second. Today the package declares its own structural `Diagnostic` /
-  `DiagnosticSink` and owns no boundary parser, with a compile-time
-  compatibility check in `src/contracts/images/identity-pack-boundary.test.ts`
-  to catch drift. The alternative is a small `@vesper/contracts` package that
-  both depend on. Resolving this is a precondition for slice 3, which will want
-  the same primitives.
-  Detail: [packages/image-core/src/diagnostics.ts](../../packages/image-core/src/diagnostics.ts).
 - **Does the package publish a curated surface or a wide barrel?** Its root
   barrel currently re-exports every domain, which is why the application's
   import churn was mechanical. Whether some domains should stay behind subpath
-  exports is worth deciding before a second package copies the pattern.
+  exports is worth deciding before a second package copies the pattern, since
+  whatever slice 3 does will be the precedent.
+  Detail: [spec.md](monorepo-image-core.spec.md) §"Export surface policy".
+- **Does the app's contracts barrel re-export the foundation, or do 230 files
+  change their imports?** Re-exporting keeps the diff small and matches what the
+  barrel already is; repointing is the only way the old path stops existing.
+  This is a one-time decision that sets how every later extraction is done.
+  Detail: [spec.foundation.md](monorepo-image-core.spec.foundation.md)
+  §"The import-churn decision".
+- **What soak does slice 6 wait on?** "Long enough to prove the boundary" is not
+  a condition anyone can check. It needs a nameable event — a model added
+  entirely within the package, or the Replicate extraction completing without
+  the seam moving.
+  Detail: [spec.apps-web.md](monorepo-image-core.spec.apps-web.md) §"The gate".
