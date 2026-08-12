@@ -5,7 +5,7 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
-import { IMAGE_TARGET_ASPECT } from "@/contracts";
+import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";

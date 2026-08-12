@@ -1,20 +1,20 @@
 import sharp from "sharp";
 import { and, desc, eq } from "drizzle-orm";
 import {
-  imageLabControlMetaSchema,
-  imageLabDiagnosticCode,
+  imageFailureHealthOutcome,
+  type ImageFailureReason,
   type ImageLabControl,
   type ImageLabControlGenerator,
   type ImageLabControlKind,
   type ImageLabControlMeta,
-} from "@/contracts";
+  imageLabControlMetaSchema,
+  imageLabDiagnosticCode,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import {
   classifyImageFailure,
-  imageFailureHealthOutcome,
   runReplicatePreprocessor,
-  type ImageFailureReason,
   type ReplicateImageResult,
   type ReplicatePreprocessorRequest,
 } from "../ai";

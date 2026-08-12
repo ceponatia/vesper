@@ -23,6 +23,10 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 # scripts: sharp" warning is benign — the @img/sharp-* optional dep provides it).
 FROM base AS build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Workspace package manifests must exist before install, or pnpm resolves the
+# `workspace:*` dependencies against nothing. Only the manifests are copied here
+# so editing package SOURCE doesn't bust the install layer.
+COPY packages/image-core/package.json ./packages/image-core/
 RUN pnpm install --frozen-lockfile
 COPY . .
 # NODE_OPTIONS raises V8's old-space ceiling for the build only (inline, so the

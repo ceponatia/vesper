@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  imageModelProfileSchema,
-  imageModelSchema,
   type ImageModel,
   type ImageModelProfile,
+  imageModelProfileSchema,
+  imageModelSchema,
   type ResolvedImageProfile,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { planImageRender, type ImageRenderIntent, type ImageRenderReference } from "./render-intent";
 
 /**

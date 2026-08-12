@@ -268,7 +268,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   scene image featured — the authoritative, queryable record that replaced
   `images.meta.references` (scene-images.spec.md §4; the Gallery reads it).
   `SceneVisualReference` is the render-input superset, `SceneReference` the Gallery
-  projection (contracts/images/scene-reference.ts).
+  projection (packages/image-core/src/references/scene-reference.ts).
 - **`image_lab_experiments`** — the Advanced Image Lab's durable experiment record
   (images/advanced-image-lab.md): `owner_id` (→ `users`, **FK-cascade**), `kind`
   (`control_probe`/`baseline_portrait`/`baseline_scene`, later stages reserved), `character_id?`

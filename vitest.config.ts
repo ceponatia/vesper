@@ -5,11 +5,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@vesper/image-core": path.resolve(__dirname, "./packages/image-core/src/index.ts"),
     },
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "scripts/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     setupFiles: ["./src/test/setup.ts"],
     // Cap worker fan-out: the default forks pool otherwise spawns ~1 process
     // per core (20 here), each holding the full module graph — a big RAM spike

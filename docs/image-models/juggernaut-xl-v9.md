@@ -44,7 +44,7 @@ starting point is:
 - `scheduler: "KarrasDPM"`;
 - `negative_prompt: ""`.
 
-These values are applied by `src/server/images/quality-presets.ts` at the shared
+These values are applied by `packages/image-core/src/models/quality-presets.ts` at the shared
 render seam. They overlay the probed row because provider defaults describe what
 the cog will do, not the quality policy Vesper wants.
 

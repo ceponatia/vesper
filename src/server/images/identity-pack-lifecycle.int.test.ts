@@ -3,8 +3,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { and, asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import type { DetectedFaceCandidate, ImageIdentityPackV1 } from "@/contracts";
-import { INTRINSIC_POLICY_V1, PROFILE_POLICY_DEFAULTS_V1 } from "@/lib/images/identity-pack-policy";
+import {
+  type DetectedFaceCandidate,
+  type ImageIdentityPackV1,
+  INTRINSIC_POLICY_V1,
+  PROFILE_POLICY_DEFAULTS_V1,
+  setIdentityFaceDetectorForTesting,
+} from "@vesper/image-core";
 import {
   apiRequest,
   bindAuthUser,
@@ -20,7 +25,6 @@ import {
 } from "@/server/test-support";
 import { characters, db, imageIdentityPacks, images } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
-import { setIdentityFaceDetectorForTesting } from "./identity-pack-detector";
 import { evaluateIdentityPackForProfile, identityReferenceProvenanceFor } from "./identity-pack-references";
 import {
   cleanupIdentityPackRevisions,

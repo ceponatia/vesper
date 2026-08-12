@@ -31,7 +31,7 @@ renderWithModel
   -> cropToTargetAspect when needed
 ```
 
-Both functions live in `src/server/images/quality-presets.ts`, called from
+Both functions live in `packages/image-core/src/models/quality-presets.ts`, called from
 `src/server/images/models.ts`. This is intentionally the narrowest seam that
 improves every current lane without wiring the dormant profile rows halfway.
 

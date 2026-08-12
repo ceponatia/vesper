@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageLabExtractControlsRequestSchema } from "@/contracts";
+import { imageLabExtractControlsRequestSchema } from "@vesper/image-core";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withOwnerAdmin } from "@/server/api";
 import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/images";
 

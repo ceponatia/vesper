@@ -25,7 +25,7 @@ const NAMING_CONVENTION = [
 ];
 
 export default defineConfig([
-  globalIgnores([".next/**", "node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs", ".claude/**"]),
+  globalIgnores([".next/**", "**/node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs", ".claude/**"]),
   ...nextPlugin,
 
   // ---------------------------------------------------------------------------
@@ -80,6 +80,27 @@ export default defineConfig([
   // Each zone carries the provider-gateway ban except src/server/ai itself.
   // ---------------------------------------------------------------------------
 
+  // 0. Workspace packages: the one-way boundary. `@vesper/image-core` is the
+  //    provider-neutral image engine — it may not reach back into the
+  //    application for ANYTHING, which is the rule that makes it a package
+  //    rather than a folder with a different name. `@/*` is the app's alias, so
+  //    banning the whole alias bans the database, routes, characters, chats and
+  //    the simulation engine in one line, and keeps the package extractable to
+  //    its own repository later without untangling imports first.
+  //    (monorepo-image-core.plan.md §"The rule".)
+  {
+    files: ["packages/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [
+        {
+          group: ["@/*", "@/**"],
+          message:
+            "Workspace packages are standalone: no @/ imports. If a package needs something from the app, invert it — take the value as an argument, or leave the code in the app (monorepo-image-core.plan.md).",
+        },
+        RESTRICT_PROVIDER,
+      ] }],
+    },
+  },
   // 1. Purity: contracts + lib stay client-importable — no server/app/components.
   {
     files: ["src/contracts/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],

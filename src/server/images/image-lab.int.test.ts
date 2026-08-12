@@ -2,15 +2,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { and, eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
-  imageLabControlSchema,
-  imageLabDiagnosticCode,
   IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY,
   IMAGE_LAB_FINISHING_RECIPE_KEY,
-  REPLICATE_VERSION_UNDISCLOSED,
   type ImageLabControlKind,
+  imageLabControlSchema,
   type ImageLabCreateExperimentRequest,
+  imageLabDiagnosticCode,
   type ImageLabInput,
-} from "@/contracts";
+  REPLICATE_VERSION_UNDISCLOSED,
+} from "@vesper/image-core";
 import {
   imageRenderRejection,
   laneHealth,

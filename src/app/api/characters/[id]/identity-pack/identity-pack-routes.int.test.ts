@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { IdentityPackSummaryWire } from "@/contracts";
+import type { IdentityPackSummaryWire } from "@vesper/image-core";
 import { characters, db } from "@/server/db";
 
 const authState = vi.hoisted(() => ({

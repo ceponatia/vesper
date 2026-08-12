@@ -3,13 +3,16 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import type { DetectedFaceCandidate, ImageIdentityPackWarningCode } from "@/contracts";
 import {
+  type DetectedFaceCandidate,
   IDENTITY_PACK_DERIVATION_VERSION,
   IDENTITY_PACK_POLICY_VERSION,
   IDENTITY_PACK_SCHEMA_VERSION,
+  type IdentityFaceDetector,
+  type ImageIdentityPackWarningCode,
   INTRINSIC_POLICY_V1,
-} from "@/lib/images/identity-pack-policy";
+  setIdentityFaceDetectorForTesting,
+} from "@vesper/image-core";
 import {
   endTestPool,
   probeIntegrationDb,
@@ -21,7 +24,6 @@ import {
 } from "@/server/test-support";
 import { characters, db, imageIdentityPacks, images, jobs, JOB_STALE_MS } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageRow } from "./assets";
-import { setIdentityFaceDetectorForTesting, type IdentityFaceDetector } from "./identity-pack-detector";
 import {
   cleanupIdentityPackRevisions,
   deriveIdentityPackWithoutProcessLockForTesting,

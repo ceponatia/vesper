@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { identityReferenceStrategySchema, trialVerdictValueSchema } from "@/contracts";
+import { identityReferenceStrategySchema, trialVerdictValueSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { recordTrialVerdict } from "@/server/images";
 

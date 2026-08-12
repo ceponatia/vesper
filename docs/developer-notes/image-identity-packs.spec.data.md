@@ -23,14 +23,14 @@ The data model must preserve these invariants:
 Pure contracts belong in:
 
 ```text
-src/contracts/images/identity-pack.ts
+packages/image-core/src/identity/identity-pack.ts
 ```
 
 Pure crop geometry and measurement helpers belong in:
 
 ```text
-src/lib/images/identity-pack-crop.ts
-src/lib/images/identity-pack-quality.ts
+packages/image-core/src/identity/identity-pack-crop.ts
+packages/image-core/src/identity/identity-pack-quality.ts
 ```
 
 They may accept decoded dimensions or pixel arrays, but they do not read files,
@@ -40,7 +40,7 @@ Server ownership belongs in:
 
 ```text
 src/server/images/identity-packs.ts
-src/server/images/identity-pack-detector.ts
+packages/image-core/src/identity/identity-pack-detector.ts
 ```
 
 `src/server/images/index.ts` is the only server import surface. Image lanes do not

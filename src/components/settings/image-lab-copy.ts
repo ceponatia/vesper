@@ -1,18 +1,18 @@
 import {
   IMAGE_LORA_INCOMPATIBLE,
   IMAGE_LORA_UNREACHABLE,
-  imageLabFailureCodeFromDiagnostic,
   type ImageLabControlGenerator,
   type ImageLabControlKind,
   type ImageLabExperimentKind,
   type ImageLabExperimentStatus,
   type ImageLabFailureCode,
+  imageLabFailureCodeFromDiagnostic,
   type ImageLabMode,
   type ImageLabOutcomeDrop,
   type ImageLabVerdict,
   type ImageLoraRefusalCode,
   type ImageReferenceRole,
-} from "@/contracts";
+} from "@vesper/image-core";
 import type { TagTone } from "@/components/ui/tag";
 
 /**

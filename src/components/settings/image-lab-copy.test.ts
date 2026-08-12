@@ -9,7 +9,7 @@ import {
   imageLabTwoCharacterVerdicts,
   imageLabVerdictOptions,
   imageLabVerdicts,
-} from "@/contracts";
+} from "@vesper/image-core";
 import {
   imageLabDropReasonExplanation,
   imageLabFailureExplanation,

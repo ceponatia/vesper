@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { jsonOk, withUser } from "@/server/api";
 import { characters, db, imageReferences, images, items, locations } from "@/server/db";
-import type { SceneReference } from "@/contracts";
+import type { SceneReference } from "@vesper/image-core";
 
 /** Default page size; `limit` is clamped to [1, 500] (the old single-payload cap). */
 const GALLERY_PAGE = 100;

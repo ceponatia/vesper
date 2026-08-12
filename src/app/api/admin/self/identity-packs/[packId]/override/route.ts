@@ -3,7 +3,7 @@ import {
   identityPackAdminOverrideRequestSchema,
   type IdentityPackAdminRevision,
   type IdentityPackNormalizedCropWire,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { jsonError, readBody } from "@/server/api";
 import { saveManualIdentityCrop, type ManualIdentityCropInput } from "@/server/images";
 // The pack-write response vocabulary, imported rather than restated: a stale

@@ -78,7 +78,7 @@ client as JSON, so adding a timestamp forces a date-serialization decision no
 consumer needs until the admin version card shows "capabilities changed at".
 
 **Beneath a model sit task profiles — "how to use this model for one job."**
-`image_model_profiles` (contract `contracts/images/image-model-profiles.ts`) is
+`image_model_profiles` (contract `packages/image-core/src/models/image-model-profiles.ts`) is
 the extension point one permanent `extraInput` bag could never be: the same
 Seedream row is an everyday 2K scene model in one place and a slow 4K location
 model in another. A profile carries `task` (`portrait` · `variant` · `scene` ·
@@ -96,7 +96,7 @@ index), and profiles cascade-delete with their model. A profile may *narrow* a
 model; it can never claim a capability the model does not expose.
 
 **A LoRA is a curated library row, never a raw locator on a request.**
-`image_loras` (contract `contracts/images/image-loras.ts`, admin CRUD under
+`image_loras` (contract `packages/image-core/src/loras/image-loras.ts`, admin CRUD under
 `/api/admin/self/image-loras`, managed from a section of
 `/settings/image-models`) carries a label, a locator — a Hugging Face
 `owner/repo` slug or a direct HTTPS weights URL, never a credential —
@@ -271,7 +271,7 @@ serves Vesper's 3:4 portraits, Stable Diffusion 3.5 Large (whose enum has **no**
 3:4 — it renders 4:5 and gets cropped), Wan 2.7 (which has no aspect input at all
 and takes `1536*2048` pixel pairs), and the entity lanes.
 
-**Selection stays fail-visible.** `routeSceneAttempts` orders one model's
+**Selection stays fail-visible.** `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's
 degradation ladder — multi-reference edit → single-reference edit → bare prompt —
 and the bare-prompt rung is reachable **only** when no reference image exists at
 all. A render never hops to a *different* model, so a failure stays visible and
@@ -298,5 +298,14 @@ declares it (Replicate rejects unknown inputs); its value comes from
 
 **Billing failures are their own class.** `replicate 402: Insufficient credit`
 would otherwise match the transient status-code pattern and earn a pointless
-retry, so `classifyImageFailure` checks billing first and `isBillingFailure`
-names it.
+retry, so classification checks billing first and `isBillingFailure` names it.
+
+**Failure classification is split across the boundary.** The vocabulary and the
+rules — transient / content rejection / other, and what each says about provider
+health — are provider-neutral and live in
+`packages/image-core/src/provider-interface/failures.ts`, taking a plain message.
+`src/server/ai/image-providers.ts` is the four-line adapter that turns a *thrown*
+value into that message, which is the one part that has to know the AI SDK: an
+upstream moderation verdict arrives buried in `APICallError.responseBody`, not in
+`error.message`. A second image transport reuses every rule by describing its own
+errors and calling the same functions.

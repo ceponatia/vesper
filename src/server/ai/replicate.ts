@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fitReferences, type ImageModel } from "@/contracts";
+import { fitReferences, type ImageModel } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 
 const REPLICATE_BASE = "https://api.replicate.com/v1";

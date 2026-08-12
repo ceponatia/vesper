@@ -22,6 +22,12 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Active (building now)
 
+- **Monorepo migration — the image engine as the first package** —
+  [plan](monorepo-image-core.plan.md) — the repo becomes a pnpm workspace and
+  the provider-neutral image code moves into `@vesper/image-core`, behind a
+  lint-enforced rule that a package may never import the app; the render kernel,
+  Replicate transport, and the move to `apps/web` follow in later slices.
+
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
   [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
@@ -178,8 +184,8 @@ Unpromoted ideas live in [deferred.plan.md](deferred.plan.md) — the
 successor-engine improvement backlog ([deferred/CLAUDE.md](deferred/CLAUDE.md)),
 owner-gated live eval runs, the body-affordance scene-image consumer,
 [NPC puppeting](npc-puppeting.deferred.md), comms expansions, in-play item
-acquisition, the remaining UX-audit deferrals, observer POV, and two permanent
-parks (monorepo split, companion-role-as-romance-eligibility).
+acquisition, the remaining UX-audit deferrals, observer POV, and one permanent
+park (companion-role-as-romance-eligibility).
 
 Two remainders are documented but unplanned and need a home:
 [condition-attribute-effects.md](condition-attribute-effects.md) (four small

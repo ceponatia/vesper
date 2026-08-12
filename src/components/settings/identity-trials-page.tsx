@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import {
+  IDENTITY_PACK_TRIAL_PROMPT_FIXTURES,
   identityReferenceStrategies,
-  trialPackVariantKey,
   type IdentityReferenceStrategy,
+  trialPackVariantKey,
   type TrialPackVariantSelector,
-} from "@/contracts";
-import { IDENTITY_PACK_TRIAL_PROMPT_FIXTURES } from "@/lib/images/identity-pack-trial";
+} from "@vesper/image-core";
 import { adminIdentityPacksApi, identityPackTrialRefusal, meApi } from "@/lib/client/api";
 import {
   identityPackTrialRefusalCopy,

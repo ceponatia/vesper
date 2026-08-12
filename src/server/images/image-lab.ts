@@ -1,52 +1,54 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
+  baseImageModelSlug,
   chooseAspect,
   effectiveImageLoraSelection,
   emptyImageLabSettings,
-  imageLabControlMetaSchema,
-  imageLabDiagnosticCode,
-  imageLabFinishingRecipeProfile,
-  imageLabFinishingVariantSchema,
-  imageLabInputListSchema,
-  imageLabOutcomeSchema,
-  imageLabRecipeProfile,
-  imageLabSettingsSchema,
-  imageLabTwoCharacterRecipeProfile,
   IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
   IMAGE_TARGET_ASPECT,
-  isImageLabControlRole,
-  isImageLabFinishableKind,
-  isImageLabVerdictForKind,
-  isImageLabVerdictKind,
-  profileEligibility,
-  referenceCapacity,
+  imageFailureHealthOutcome,
   type ImageLabControlKind,
   type ImageLabControlledKind,
+  imageLabControlMetaSchema,
   type ImageLabCreateExperimentRequest,
+  imageLabDiagnosticCode,
   type ImageLabExperiment,
   type ImageLabFailureCode,
+  imageLabFinishingInstruction,
+  imageLabFinishingRecipeProfile,
   type ImageLabFinishingVariant,
+  imageLabFinishingVariantSchema,
   type ImageLabInput,
   type ImageLabInputList,
+  imageLabInputListSchema,
   type ImageLabOutcome,
+  imageLabOutcomeSchema,
+  imageLabRecipeProfile,
   type ImageLabRecordVerdictRequest,
   type ImageLabSettings,
+  imageLabSettingsSchema,
+  imageLabTwoCharacterRecipeProfile,
   type ImageLoraRenderBinding,
   type ImageModel,
   type ImageModelProfile,
   type ImageProfileTask,
   type ImageReferenceRole,
   type ImageRenderControls,
+  isImageLabControlRole,
+  isImageLabFinishableKind,
+  isImageLabVerdictForKind,
+  isImageLabVerdictKind,
+  mapImageRenderControls,
+  profileEligibility,
+  referenceCapacity,
   type ResolvedImageProfile,
-} from "@/contracts";
+  withReviewedImageQuality,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { imageLabFinishingInstruction } from "@/lib/images/image-lab-instruction";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import {
   classifyImageFailure,
-  imageFailureHealthOutcome,
-  mapImageRenderControls,
   REPLICATE_DEFAULT_EDIT_MODEL,
   runRegistryImageModel,
 } from "../ai";
@@ -56,7 +58,6 @@ import { evaluateIdentityPackForProfile } from "./identity-pack-references";
 import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { baseImageModelSlug, withReviewedImageQuality } from "./quality-presets";
 import {
   planImageRender,
   renderImageIntent,

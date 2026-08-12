@@ -2,24 +2,26 @@ import { createHash } from "node:crypto";
 import {
   applyImageLoraPromptAdditions,
   chooseAspect,
+  compileIdentityReferencePrompt,
+  type CompileReferenceBinding,
+  compileReferenceRolePrompt,
+  filterReservedInputFields,
   type IdentityReferenceRole,
   type ImageLoraRenderBinding,
   type ImageModel,
   type ImageModelProfile,
   type ImagePromptStrategy,
   type ImageRenderControls,
+  mapImageRenderControls,
+  preparePromptForImageModel,
   type TrialResolvedControls,
-} from "@/contracts";
-import { compileIdentityReferencePrompt } from "@/lib/images/identity-reference-prompt";
-import { compileReferenceRolePrompt, type CompileReferenceBinding } from "@/lib/images/reference-role-prompt";
+  validateProviderOverrides,
+  withReviewedImageQuality,
+} from "@vesper/image-core";
 import {
   disableSafetyChecker,
-  filterReservedInputFields,
-  mapImageRenderControls,
   reservedImageInputFields,
-  validateProviderOverrides,
 } from "../ai";
-import { preparePromptForImageModel, withReviewedImageQuality } from "./quality-presets";
 
 /**
  * THE profile compile step: one profile row plus one prompt in, the exact

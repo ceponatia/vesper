@@ -55,18 +55,18 @@ all seven player-facing render lanes call it on every render.
 
 The implementation is spread across these seams:
 
-- `src/contracts/images/image-models.ts` — model record, surface filtering,
+- `packages/image-core/src/models/image-models.ts` — model record, surface filtering,
   reference capacity, and aspect selection;
-- `src/contracts/images/image-model-capabilities.ts` — reviewed capability
+- `packages/image-core/src/capabilities/image-model-capabilities.ts` — reviewed capability
   vocabulary and the advanced-capability contract;
-- `src/contracts/images/image-model-profiles.ts` — profile record, normalized
+- `packages/image-core/src/models/image-model-profiles.ts` — profile record, normalized
   controls, eligibility, and the pure resolver;
 - `src/server/ai/replicate-probe.ts` — save-time OpenAPI probe;
 - `src/server/ai/replicate.ts` — input construction, the reserved-field set,
   reference transport, prediction polling, output download, and file cleanup;
-- `src/server/ai/image-control-mapping.ts` — normalized controls onto one
+- `packages/image-core/src/capabilities/image-control-mapping.ts` — normalized controls onto one
   version's declared fields, plus provider-override validation;
-- `src/server/ai/image-providers.ts` — scene attempt ordering and capability
+- `packages/image-core/src/provider-interface/` — scene attempt ordering and capability
   checks;
 - `src/server/images/models.ts` — registry resolution, shape negotiation, and
   crop normalization;
@@ -74,11 +74,11 @@ The implementation is spread across these seams:
 - `src/server/images/render-profile.ts` — the profile compile step
   (`compileProfileRenderPlan`), the prompt-strategy dispatch over both reference
   vocabularies, and the version-pin rule;
-- `src/contracts/images/render-intent.ts` — the intent vocabulary, the
+- `packages/image-core/src/render-intent/render-intent.ts` — the intent vocabulary, the
   required-role check, and capacity selection;
 - `src/server/images/render-intent.ts` — `planImageRender` and
   `renderImageIntent`, the entry point every render lane calls;
-- `src/server/images/quality-presets.ts` — the reviewed-quality seam that
+- `packages/image-core/src/models/quality-presets.ts` — the reviewed-quality seam that
   rewrites a model's constants and prompt dialect at the render boundary;
 - `src/server/images/scene.ts` — scene degradation ladder and the current
   three-reference cap, now carrying reference roles through each rung;
@@ -156,7 +156,7 @@ comparison therefore refuses them until an admin re-probes.
 
 ### Advanced capability contract
 
-**Shipped 2026-08-05** as `src/contracts/images/image-model-capabilities.ts`.
+**Shipped 2026-08-05** as `packages/image-core/src/capabilities/image-model-capabilities.ts`.
 Since slice 6 (2026-08-11) the probe derives the two LoRA bindings —
 `controls.loraWeights` from a string `lora_weights` input and
 `controls.loraScale` from a numeric `lora_scale` input, minimum and maximum
@@ -304,7 +304,7 @@ implemented.
 ### Reference policy
 
 **Shipped 2026-08-11 (slice 3).** `planIntentReferences` in
-`contracts/images/render-intent.ts` reads the whole policy: `allowedRoles`
+`packages/image-core/src/render-intent/render-intent.ts` reads the whole policy: `allowedRoles`
 filters, `roleOrder` and `priority` sort, `maxPerRole` caps, and
 `referenceCapacity` truncates. `requiredRoles` is checked against everything that
 will be SENT — primary array and dedicated control fields both — so a variant
@@ -461,7 +461,7 @@ image attempt.
 ### `image_loras`
 
 **Shipped 2026-08-11 (slice 6):** the table, the contract
-(`src/contracts/images/image-loras.ts`), the admin CRUD routes
+(`packages/image-core/src/loras/image-loras.ts`), the admin CRUD routes
 (`/api/admin/self/image-loras`), render-path resolution, and the settings-page
 library section. Rulings the build settled are in §"Slice 6 implementation
 rulings". The initial style trial runs as the Qwen lab's Stage 4 protocol
@@ -531,7 +531,7 @@ create an image set.
 ## Profile resolution
 
 **Shipped 2026-08-05; live on every lane 2026-08-07.** The pure resolver is
-`resolveImageProfile` in `src/contracts/images/image-model-profiles.ts`; the
+`resolveImageProfile` in `packages/image-core/src/models/image-model-profiles.ts`; the
 server loader is `resolveImageProfileForTask` in
 `src/server/images/model-profiles.ts`. Each of the seven lanes calls it for its
 own task before it reserves an image row, so the row's `meta.model` records what
@@ -567,7 +567,7 @@ reference selection against capacity, the required-role gate, per-request
 control overrides, and — since slice 6 — LoRA resolution against the library.
 Image sets remain a later slice.
 
-Serializable vocabulary lives in `src/contracts/images/render-intent.ts`; the
+Serializable vocabulary lives in `packages/image-core/src/render-intent/render-intent.ts`; the
 buffer-bearing request and the orchestration in
 `src/server/images/render-intent.ts`.
 
@@ -678,7 +678,7 @@ need naming and conflating them would rewrite live renders:
 reference, the vocabulary had no wording for that, and returning the base prompt
 would have let a profile claim the composing strategy while sending text
 identical to `instruction_edit`. `compileReferenceRolePrompt` in
-`src/lib/images/reference-role-prompt.ts` is that wording — a numbered
+`packages/image-core/src/references/reference-role-prompt.ts` is that wording — a numbered
 `Image N:` binding per role in SEND order, from one reference upward. No seeded
 profile selects the strategy, so no live render changed; a controlled Qwen recipe
 is its first consumer.
@@ -853,7 +853,7 @@ image bytes or signed URL query strings.
 
 ## Control mapping
 
-**Built 2026-08-06 as `src/server/ai/image-control-mapping.ts`; on every lane
+**Built 2026-08-06 as `packages/image-core/src/capabilities/image-control-mapping.ts`; on every lane
 since 2026-08-07.** `compileProfileRenderPlan` remains its sole caller and now
 runs on every render. It changes no payload today: all 17 seeded profiles store
 inert `{}` defaults, and the probe derives no control bindings, so every control
@@ -1513,7 +1513,7 @@ What exists today, all pure except the last:
 - `src/contracts/images/image-model-capabilities.test.ts` — the advanced
   capability schema including its per-row default isolation, and the two binding
   schemas;
-- `src/server/ai/image-control-mapping.test.ts` — control mapping, reserved-field
+- `packages/image-core/src/capabilities/image-control-mapping.test.ts` — control mapping, reserved-field
   filtering, and provider-override validation;
 - `src/server/images/render-profile.test.ts` — the version-pin rule, the
   prompt-strategy dispatch, `compileProfileRenderPlan`, prompt-preparation

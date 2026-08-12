@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { ImageModel, ImageModelProfile } from "@/contracts";
+import type { ImageModel, ImageModelProfile } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { probeReplicateModel } from "../ai";
 import { db, imageModels } from "../db";

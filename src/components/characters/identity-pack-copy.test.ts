@@ -3,7 +3,7 @@ import {
   identityPackSummaryStatuses,
   imageIdentityPackFailureCodes,
   imageIdentityPackWarningCodes,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { identityPackCodeCopy, identityPackStatusChip, identityPackStatusHint } from "./identity-pack-copy";
 
 /**

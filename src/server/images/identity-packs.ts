@@ -3,53 +3,48 @@ import sharp from "sharp";
 import { and, count, desc, eq, inArray, isNotNull, isNull, lt, max, or, sql } from "drizzle-orm";
 import { z, type ZodType } from "zod";
 import {
-  imageIdentityPackQualitySchema,
-  imageIdentityPackWarningCodeSchema,
-  isAllowedIdentityPackTransition,
-  sourcePixelCropSchema,
+  buildIdentityPackQuality,
+  deriveDetectorCrop,
   type DetectedFaceCandidate,
   type EnsureIdentityPackInput,
   type EnsureIdentityPackResult,
+  evaluateIdentityPackIntrinsic,
+  HEURISTIC_V1,
+  heuristicCropV1,
+  IDENTITY_CROP_POLICY_V1,
+  IDENTITY_PACK_DERIVATION_VERSION,
+  IDENTITY_PACK_POLICY_VERSION,
+  IDENTITY_PACK_SCHEMA_VERSION,
+  identityBlurScore,
+  identityCropOutputSide,
+  identityFaceDetector,
   type IdentityPackAdminRevision,
   type IdentityPackIntrinsicPolicy,
   type IdentityPackSummaryWire,
   type ImageIdentityCropMethod,
   type ImageIdentityPackFailureCode,
   type ImageIdentityPackQuality,
+  imageIdentityPackQualitySchema,
   type ImageIdentityPackStatus,
   type ImageIdentityPackV1,
   type ImageIdentityPackWarningCode,
+  imageIdentityPackWarningCodeSchema,
+  INTRINSIC_POLICY_V1,
+  isAllowedIdentityPackTransition,
+  isHeuristicEligibleSource,
+  type NormalizedCrop,
+  normalizedCropToSourcePixels,
+  PROFILE_POLICY_DEFAULTS_V1,
+  selectIdentityFaceCandidate,
+  type SourceDimensions,
   type SourcePixelCrop,
-} from "@/contracts";
+  sourcePixelCropSchema,
+  squareSourcePixelCrop,
+  validateIdentityCrop,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { runInBatches } from "@/lib/batches";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import {
-  deriveDetectorCrop,
-  heuristicCropV1,
-  identityCropOutputSide,
-  isHeuristicEligibleSource,
-  normalizedCropToSourcePixels,
-  squareSourcePixelCrop,
-  validateIdentityCrop,
-  type NormalizedCrop,
-  type SourceDimensions,
-} from "@/lib/images/identity-pack-crop";
-import {
-  buildIdentityPackQuality,
-  evaluateIdentityPackIntrinsic,
-  identityBlurScore,
-  selectIdentityFaceCandidate,
-} from "@/lib/images/identity-pack-quality";
-import {
-  HEURISTIC_V1,
-  IDENTITY_CROP_POLICY_V1,
-  IDENTITY_PACK_DERIVATION_VERSION,
-  IDENTITY_PACK_POLICY_VERSION,
-  IDENTITY_PACK_SCHEMA_VERSION,
-  INTRINSIC_POLICY_V1,
-  PROFILE_POLICY_DEFAULTS_V1,
-} from "@/lib/images/identity-pack-policy";
 import { characters, db, hasLiveCharacterJob, imageIdentityPacks, images, JOB_STALE_MS, jobs, type Db } from "../db";
 import { log } from "@/server/log";
 // Direct module path, NOT the `@/server/engine` barrel: that barrel re-exports
@@ -72,7 +67,6 @@ import {
   type ImageKind,
   type ImageRow,
 } from "./assets";
-import { identityFaceDetector } from "./identity-pack-detector";
 
 /**
  * The identity-pack service: the one place a character's face reference is

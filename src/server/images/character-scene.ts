@@ -6,7 +6,7 @@ import { resolveImageProfileForTask } from "./model-profiles";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import type { SceneReferenceSource } from "@/contracts/images/scene-reference";
+import type { SceneReferenceSource } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
 import { classifyImageFailure, hasReplicate, isDemoMode } from "../ai";

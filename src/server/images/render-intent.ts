@@ -1,17 +1,17 @@
 import {
-  effectiveImageLoraSelection,
-  missingRequiredControlInputs,
-  missingRequiredReferenceRoles,
-  planIntentReferences,
+  type CompileReferenceBinding,
   type DroppedImageReference,
+  effectiveImageLoraSelection,
   type ImageModel,
   type ImageReferenceRole,
   type ImageRenderIntentCore,
   type ImageRenderReferenceSpec,
+  missingRequiredControlInputs,
+  missingRequiredReferenceRoles,
+  planIntentReferences,
   type ResolvedImageProfile,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import type { CompileReferenceBinding } from "@/lib/images/reference-role-prompt";
 import { resolveImageLoraForRender } from "./image-loras";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 import { compileProfileRenderPlan, pinnedImageModelVersion } from "./render-profile";

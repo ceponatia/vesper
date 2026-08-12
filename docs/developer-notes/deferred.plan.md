@@ -337,55 +337,14 @@ second provenance path the items model doesn't have yet.
 See [location-design-spec.phase3.md](finished/location-design-spec.phase3.md)
 §Ownership.
 
-## Monorepo split (gated on a second deployable)
+## Monorepo split — GRADUATED 2026-08-12
 
-**Owner ruling (2026-06-16): permanently deferred for now.** No second
-deployable is foreseen — this is one game.
-
-**Context.** The question behind the monorepo idea was never packaging for its
-own sake: a monorepo breaks domains up into packages legibly, and having
-everything listed under `src/` has been harder to hold in the head. The real
-question is whether a flat `src/` is the best scheme for the coding agents
-working in this repo, or whether some other organization scheme would help them
-track the codebase better. A flat `src/` is acceptable if it is the optimal
-shape for that; the trade is legibility, not packaging orthodoxy.
-
-**Assessment (2026-06-16).** The codebase is **already domain-segmented**, just
-folders instead of packages — `contracts/` (pure domain), `lib/` (pure utils),
-`server/{ai,db,engine,images,authoring,events}/` (each a domain behind a
-barrel), `components/`, `app/`. Those boundaries are real and **enforced**
-(ESLint `no-restricted-imports` + barrels + the `@/` alias) — packages without
-the `package.json` tax. Physical packages would not improve agent navigation:
-agents grep and jump to symbols, which works the same in folders or packages,
-while packages _add_ indirection (cross-package builds, more config). What
-actually helps an agent track a codebase is a crisp **module map**, consistent
-**barrels** as each domain's public API, and a **boundary lint** that makes
-violations mechanical — all three already exist here. The recommendation is
-therefore not to restructure: treat each `server/<domain>/` folder as an
-internal package whose barrel is its public surface, which is already the
-design, and make the map legible.
-
-**Cheapest available improvement.** [architecture.md](../architecture.md)
-already documents directory layout and boundaries. If `src/` still reads as
-confusing, the one-screen win is a **domain map** at the top of that doc naming,
-per domain: folder, barrel, what it owns, and what it may import. A specific
-folder split that trips a reader up is better answered with a targeted rename
-than a wholesale reshuffle.
-
-**Evaluation (2026-06-14) — verdict: not yet.** Converting the single Next.js
-app into a pnpm workspace was assessed and declined. Vesper was deliberately
-collapsed _from_ a 12-package monorepo because every package had one consumer,
-and that still holds (one deployable). Boundaries are already clean and enforced
-by convention + barrels + the `@/` alias. Park behind a **trigger**: the first
-second consumer of the engine — most likely a background **world-simulation /
-scheduled-arrival worker**. When it fires, do a small **4-package,
-consumer-driven** split (`core` / `engine` / `web` / `worker`), not the old
-12-package shape. Interim action available now: an ESLint boundary rule + gating
-the one `process.env` read in `lib/log.ts`.
-
-The full analysis doc (`monorepo-evaluation.md`, with the package outline and
-boundary-enforcement design) was retired 2026-07-13 — permanently deferred; the
-verdict and trigger recorded here are what survives.
+Graduated to [monorepo-image-core.plan.md](monorepo-image-core.plan.md). The
+2026-06-16 permanent deferral was correct for the question it answered —
+packaging for its own sake, gated on a second deployable. The question that
+reopened it is different: the image subsystem grew into its own product and
+needs a boundary the app cannot cross, which one workspace package supplies
+without any second deployable.
 
 ## Observer / god-mode session POV
 

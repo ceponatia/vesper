@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import {
-  trialGradeDimensions,
-  trialVerdicts,
   type IdentityReferenceStrategy,
+  trialGradeDimensions,
   type TrialRenderedCombo,
   type TrialStrategyComparison,
   type TrialVerdict,
+  trialVerdicts,
   type TrialVerdictValue,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { adminIdentityPacksApi, identityPackTrialRefusal } from "@/lib/client/api";
 import {
   identityPackTrialRefusalCopy,

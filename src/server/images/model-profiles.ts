@@ -1,13 +1,13 @@
 import { asc } from "drizzle-orm";
 import {
-  imageModelProfileSchema,
-  imageProfileCandidates,
-  resolveImageProfile,
   type ImageModel,
   type ImageModelProfile,
+  imageModelProfileSchema,
+  imageProfileCandidates,
   type ImageProfileTask,
   type ResolvedImageProfile,
-} from "@/contracts";
+  resolveImageProfile,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModelProfiles } from "../db";
 import { loadImageModels, parseRegistryRows } from "./models";

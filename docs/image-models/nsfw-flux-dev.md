@@ -40,7 +40,7 @@ trial, and license/terms review.
 
 The provider defaults `width`/`height` to 1024×1024. Sent unmodified, every
 render would come back square and then lose a quarter of the frame to
-`cropToTargetAspect`'s 3:4 crop. `src/server/images/quality-presets.ts` instead
+`cropToTargetAspect`'s 3:4 crop. `packages/image-core/src/models/quality-presets.ts` instead
 sends the portrait bucket this architecture is trained on:
 
 ```json

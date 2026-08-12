@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { IdentityPackSummaryStatus } from "@/contracts";
+import type { IdentityPackSummaryStatus } from "@vesper/image-core";
 import { identityPacksApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { IdentityCropDialog } from "./identity-crop-dialog";
