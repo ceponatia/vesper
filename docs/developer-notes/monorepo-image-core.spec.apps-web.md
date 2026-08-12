@@ -7,7 +7,9 @@ Implementation state: not started — blocked on Slice 4 completing without a co
 Move the Next.js application from the repository root into `apps/web` without
 changing application behavior, package ownership, persistent storage, or the
 operational commands that still run from the repository root. Shared package
-mechanics are in [monorepo-image-core.spec.md](monorepo-image-core.spec.md).
+mechanics are in [monorepo-image-core.spec.md](monorepo-image-core.spec.md), and
+the workspace import/dependency guardrails already exist by this point from
+[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
 
 This slice is deliberately last because it changes many paths while adding
 almost no architectural value by itself. It should be reviewed as a migration,
@@ -83,6 +85,14 @@ The lockfile must show a separate importer for `apps/web`. A successful local
 file move without a corresponding workspace/lockfile importer is not a complete
 monorepo migration.
 
+The Slice 1 workspace-import checker now treats `apps/web` as a workspace root
+automatically. Cross-workspace relative imports remain forbidden after the move;
+root scripts that legitimately need application behavior use the application's
+public/approved import path rather than turning `../apps/web/src/...` into a new
+general convention. Existing root operational scripts that still require direct
+application source during this migration are explicitly inventoried exceptions
+and should be reduced rather than silently normalized.
+
 ## Package manifests and dependency ownership
 
 ### `apps/web/package.json`
@@ -102,8 +112,10 @@ Its dependencies must include everything application source imports at runtime,
 including the workspace packages and web/server libraries such as Next, React,
 Drizzle, Sharp, Better Auth, AI SDK/provider packages and zod where still used.
 
-Do not rely on a dependency merely because the root happens to install it.
-Workspace package ownership should match import ownership.
+Do not rely on a dependency merely because the root happens to install it. The
+workspace dependency checker established in Slice 1 is updated to recognize
+`apps/web/package.json` as the nearest manifest and must fail if web source uses a
+bare dependency the web package does not own.
 
 ### Root `package.json`
 
@@ -127,26 +139,23 @@ the repository's existing ports and deployment behavior.
 
 ## TypeScript project structure
 
-The current root `tsconfig.json` does three jobs at once:
-
-- Next app configuration;
-- repo-wide type coverage for `packages/**`;
-- alias/type resolution for root `scripts/`.
-
-Moving that file wholesale into `apps/web` would leave packages and scripts
-without the project that currently owns them. Slice 6 therefore creates an
-explicit project hierarchy.
+Package-local TypeScript projects already exist before Slice 6. This slice
+reorganizes the root/application hierarchy around the new path; it does not make
+packages independently typechecked for the first time.
 
 ### Root `tsconfig.base.json`
 
-Own shared compiler options only:
+Create a shared base for compiler options that truly apply across projects:
 
-- target/lib/module/moduleResolution;
+- target/module/moduleResolution;
 - strictness flags;
 - noEmit/isolatedModules as appropriate;
 - common interop/JSON options.
 
-Do not put the Next plugin or app alias in the shared base.
+Do not put the Next plugin, the app alias, or browser/server runtime libraries in
+the shared base merely for convenience. Each project owns the environment it
+actually targets. Existing package-local projects are adjusted to extend this
+base without gaining new ambient capabilities.
 
 ### `apps/web/tsconfig.json`
 
@@ -155,110 +164,124 @@ Extends the base and owns:
 - Next's TypeScript plugin;
 - JSX configuration;
 - Next-generated type includes;
+- browser/DOM libraries required by the application;
 - `@/* -> ./src/*`;
-- package source mappings only if workspace package resolution alone is
-  insufficient for the no-build source exports.
+- package source mappings only if normal workspace/package `exports` resolution
+  is demonstrably insufficient.
+
+Do not introduce a wildcard `@vesper/* -> ../../packages/*/src` path mapping. The
+real-workspace resolution smoke check from Slice 1 remains authoritative against
+manifest/export drift.
 
 ### Package-local `tsconfig.json`
 
-Each package gets a local project extending the base and including only its
-source/tests. Pure packages do not inherit the Next plugin, DOM assumptions they
-do not need, or the application's `@/*` alias.
-
-This makes the package boundary visible to TypeScript/ESLint rather than relying
-on one giant root project forever.
+Keep each package-local project and move only shared compiler settings into the
+base. `@vesper/image-core` and `@vesper/contracts` remain universal packages;
+`@vesper/image-replicate` remains Node/server. None inherits the Next plugin or
+application `@/*` alias.
 
 ### Root `tsconfig.json`
 
-Keep a root workspace/scripts project. It must continue to cover root
-`scripts/**` and give them the application alias they currently use, rewritten
-to:
-
-```json
-"@/*": ["./apps/web/src/*"]
-```
-
-It may also act as the repository aggregation project, or the root `typecheck`
-script may explicitly check web/packages/scripts projects. Either way,
-`pnpm typecheck` must still cover:
+Keep a root workspace/scripts project or solution project. Root `pnpm typecheck`
+must still cover:
 
 - every app source file;
 - every package source file, including package-internal files no app currently
   imports;
 - every root TypeScript script.
 
-A green Next build is not a substitute for this coverage.
+If project references are used, make the dependency direction match the
+workspace layer policy. A green Next build is not a substitute for repository
+TypeScript coverage.
 
 ## Vitest and test setup
 
 Keep `vitest.config.ts` at the repository root as the workspace-wide runner.
-Moving it into `apps/web` would make package and root-script tests secondary to
-the app for no benefit.
+Package/app setup isolation already exists from Slice 1; preserve that separation
+while rewriting paths.
 
-Update its paths:
+Update:
 
-- app test includes move from `src/**` to `apps/web/src/**`;
-- `@` resolves to `apps/web/src`;
-- package test discovery remains under `packages/*/src/**`;
-- script test discovery remains under `scripts/**`.
+- app test includes from `src/**` to `apps/web/src/**`;
+- the application `@` alias to `apps/web/src`;
+- the app project's setup path to `apps/web/src/test/setup.ts`;
+- package test discovery under `packages/*/src/**` without application setup;
+- script test discovery under `scripts/**` with only root/tooling setup.
 
-### Isolate application setup from package tests
-
-The current runner applies `src/test/setup.ts` to every test, including package
-tests. That setup mutates AI/provider environment state and is application test
-support, not part of `image-core` or `contracts`.
-
-After the move, configure Vitest projects (or an equivalent scoped setup) so:
-
-- application tests use `apps/web/src/test/setup.ts`;
-- package tests run without application setup unless a package explicitly owns
-  its own setup;
-- root script tests receive only the setup they actually need.
-
-Do not preserve a global app setup merely because it makes the migration diff
-smaller. Package test independence is one of the reasons for the monorepo.
+Do not collapse the projects back into one global setup simply because the path
+move makes a single configuration shorter.
 
 ## ESLint and package boundaries
 
 Keep the root `eslint.config.mjs`. Rewrite application globs from `src/**` to
 `apps/web/src/**` rule by rule.
 
-The package boundary block remains `packages/**`, including the resolved-path
-`lint:package-boundaries` check introduced by the Slice 1 correction.
+Carry forward:
 
-Also carry forward the Slice 4 server-only restriction for
-`@vesper/image-replicate` into the new app paths.
+- the workspace-import/dependency guardrail from Slice 1;
+- package root export enforcement;
+- the Slice 4 server-only restriction for `@vesper/image-replicate`;
+- all current application zone rules, rewritten to the moved path.
 
 A stale ESLint glob is dangerous because it usually fails open. Review every
 zone, not only search/replace the string `src/`.
 
-## Repository tools with hard-coded app paths
+### Tell Next-aware ESLint where the app moved
+
+Once the Next application is no longer at the repository root, configure the
+Next ESLint settings/root so `eslint-config-next` resolves `apps/web` as the
+application rather than assuming the repository root is the Next project. Keep
+that location explicit in the root flat config and cover it in lint verification.
+
+A green ESLint run that silently stopped applying Next-specific rules to the web
+application is a migration failure.
+
+## Repository path and working-directory audit
 
 Do a repo-wide inventory of live path assumptions before moving files. Do not
-limit the checklist to the files remembered when this spec was written.
+limit the checklist to files remembered when this spec was written, and do not
+limit the search to strings containing `src/`.
 
-Known required updates include:
+### Source/config path spellings
 
-- `package.json` script arguments that name `src/...` tests/modules;
-- `scripts/check-route-authz.ts`, whose route regex names `src/app/api`;
-- `lint:cycles` / madge roots and TypeScript config;
-- `.jscpd.json`, whose scan paths currently include root `src`;
-- `vitest.config.ts` includes, alias and app setup path;
-- `drizzle.config.ts` schema path;
+Search and classify at least:
+
+- `src/`, `./src`, `../src` and path-specific regular expressions;
+- package.json script arguments naming app tests/modules;
+- `scripts/check-route-authz.ts` route regexes;
+- `lint:cycles` / Madge roots and TypeScript config paths;
+- `.jscpd.json` scan roots;
+- Vitest includes, aliases and setup paths;
+- Drizzle schema/config paths;
 - `.github/workflows/ci.yml` classifier globs;
 - VS Code workspace/debug paths;
-- any root scripts with direct `../src/...` imports;
 - live reference/working docs that cite current application paths.
 
-Use a repository search for `src/`, `./src`, `../src`, and path-specific regular
-expressions/config keys, then classify every hit as:
+### CWD and filesystem assumptions
 
-- live path to rewrite;
+Also search and classify:
+
+- every `process.cwd()`;
+- `import.meta.url`, `__dirname`-style repo-relative resource resolution, and
+  `path.resolve`/`path.join` calls that assume a repository/application root;
+- direct filesystem reads/writes with relative paths;
+- generated output/cache/report directories;
+- `.gitignore` and `.dockerignore` entries whose meaning changes when `.next`,
+  generated files, or app assets move;
+- Docker/Fly commands that assume the Next project is the current directory;
+- scripts that infer repo root by a fixed number of `..` segments.
+
+For each hit, classify it as:
+
+- live path/root assumption to rewrite or make explicit;
+- intentional workspace-root behavior to preserve and regression-test;
 - historical `finished/` documentation to leave untouched;
 - prose example that remains valid;
 - unrelated string.
 
-This inventory is part of implementation, not optional cleanup.
+This inventory is part of implementation, not optional cleanup. The persistent
+image path below is one known high-risk case, not the only CWD-sensitive path to
+check.
 
 ## `jscpd` and silent coverage loss
 
@@ -290,7 +313,9 @@ Slice 6 PR, make a deliberate changed file under a path that formerly triggered
 each important class and confirm the expected jobs are scheduled.
 
 Package-only changes must continue to trigger the full code/static/unit/build
-set as they do before the move.
+set as they do before the move. `apps/web` manifest/config changes must also
+trigger the same config/integration-sensitive classes that equivalent root app
+changes trigger today.
 
 ## Environment ownership
 
@@ -354,6 +379,9 @@ Before merging Slice 6, prove:
 - creating a new render writes beside the existing images on the same Fly
   volume.
 
+Any other CWD-sensitive path found by the repository audit receives an equivalent
+before/after assertion or an explicit reason it is unaffected.
+
 ## Docker build and runtime
 
 Keep the build context at the repository root.
@@ -383,6 +411,10 @@ Do not rely on root `node_modules/next` after dependency ownership moves to
 `apps/web`; invoke the binary from the web workspace or another explicit
 workspace-safe path.
 
+The Docker install/build is part of the real-workspace resolution proof: it must
+not depend on TypeScript/Vitest source aliases to make workspace package imports
+work.
+
 ## Fly release command and operational scripts
 
 `fly.toml` keeps the release command at the root operational layer. Prefer an
@@ -406,9 +438,10 @@ applicable:
 - representative engine test shards;
 - image eval scripts that import app/package code.
 
-Root scripts with direct relative imports such as `../src/...` are rewritten to
-`../apps/web/src/...`; scripts using the `@/` alias rely on the root TypeScript
-project's updated mapping.
+For root scripts that currently import application source directly, inventory the
+edge before rewriting it. If it is genuinely an operational app dependency,
+make the exception explicit and keep it covered by the workspace boundary
+policy; do not broadly exempt `scripts/** -> apps/web/src/**` relative imports.
 
 ## Next/postcss application config
 
@@ -419,12 +452,17 @@ to the web app.
 
 - security headers;
 - server external packages;
-- all workspace packages in `transpilePackages`;
+- all workspace packages in `transpilePackages` that still require source
+  transpilation;
 - allowed dev origins;
 - Turbopack cache choice.
 
 Any root-env loading needed by the new project location is added here or through
 the one root launcher path described above; do not create competing env loaders.
+
+Keep the Next project root explicit everywhere that tool resolution depends on
+it: launcher/build command, ESLint Next settings, generated types, and any build
+cache/output assumptions.
 
 ## Documentation
 
@@ -453,8 +491,8 @@ The PR contains only migration-required work:
 - file moves;
 - workspace/package manifests;
 - path/config rewrites;
-- TypeScript/test/tool project separation required by the new layout;
-- environment/storage preservation required to keep behavior unchanged;
+- TypeScript/test/tool project re-rooting required by the new layout;
+- environment/storage/CWD preservation required to keep behavior unchanged;
 - documentation path updates.
 
 No unrelated renames, refactors or feature fixes.
@@ -470,9 +508,22 @@ harder to review than a rebased path rewrite.
 - aggregate `verify` green;
 - classifier demonstrably schedules the expected jobs for moved app paths;
 - package-only changes still classify as code;
-- TypeScript covers app, packages and root scripts;
-- package tests run without app-global setup;
+- TypeScript covers app, packages and root scripts through their intended
+  projects;
+- package tests remain isolated from app-global setup;
+- workspace/dependency/import-direction guardrails remain green with `apps/web`
+  as a workspace;
+- real package-name/exports resolution smoke checks remain green;
+- Next-aware ESLint rules demonstrably apply to `apps/web`;
 - `jscpd` visibly scans `apps/web/src`.
+
+### Path/CWD audit
+
+- every live `src/` path assumption is classified;
+- every `process.cwd()` and equivalent repo-root/filesystem assumption is
+  classified;
+- `.gitignore` / `.dockerignore` still cover intended generated/runtime data;
+- no check becomes green merely because its old scan root disappeared.
 
 ### Local/repository command shape
 
@@ -498,7 +549,8 @@ Run representative non-CI-covered root commands after deploy, including:
 - `sim:advance`;
 - `eval:engine-gate1`;
 - one engine test shard or equivalent resolution check;
-- one image eval script that crosses root script -> app/package imports.
+- one image eval script that crosses root tooling -> application/package
+  boundaries.
 
 ## What this slice explicitly does not do
 
