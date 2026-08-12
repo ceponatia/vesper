@@ -565,17 +565,22 @@ distinguishable; everything else rides the Stage 1–5 machinery unchanged.
   recipes are indexed by a REQUIRED control) and out of
   `imageLabFinishableKinds` (a finishing pass refines one face toward one pack;
   a two-person render has no single subject to finish).
-- **Capacity refuses rather than trims — and the runner's pre-check is the only
-  enforcement.** The plan's rule ("if all required identities and the selected
-  control do not fit, the workflow is ineligible rather than silently dropping
-  a character") cannot be delegated to the intent path:
-  `planIntentReferences`' required-role gate is per-role PRESENCE (the
-  capabilities spec §"Reference policy" records the property), so on a two-slot
-  model it would drop the second character, find `identity` present, and render
-  a solo portrait wearing a two-person record. The runner counts its required
-  references — two identities plus the declared control — against the effective
-  model's capacity and settles `image_lab.capacity_exceeded` pre-spend. The
-  code is no longer probe-only.
+- **Capacity refuses rather than trims.** The plan's rule ("if all required
+  identities and the selected control do not fit, the workflow is ineligible
+  rather than silently dropping a character") is enforced twice. The runner
+  counts its required references — two identities plus the declared control —
+  against the effective model's capacity and settles
+  `image_lab.capacity_exceeded` pre-spend, in the lab's own vocabulary with the
+  plan's wording; the code is no longer probe-only. Behind it, the intent path
+  refuses any plan that drops a reference marked `required: true`
+  (`image_profile.required_reference_dropped` — the capabilities spec
+  §"Reference policy" owns the mechanism), which closed the planner's
+  per-role-presence gap for every caller; the runner's earlier check stays as
+  the first-line refusal because its message and code are the ones the lab's
+  record and tests cite. A consequence ratified with that fix: an API-built
+  two-character row carrying an extra input beyond the recipe's roles now
+  refuses (every input is marked required, and the recipe allows nothing else)
+  instead of dropping it while the stored input list claimed it was sent.
 - **The control is optional, and its integrity gates are unchanged.** A declared
   fixture passes every Stage 0 gate (reviewed, sent exactly once under a
   control role, source render barred). The runner adds two refusals of its own,

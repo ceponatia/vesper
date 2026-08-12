@@ -32,7 +32,9 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
  *
  * `role` is the point of the whole type. `required` and `priority` feed
  * {@link planIntentReferences}, which sorts required references ahead of
- * optional ones and profile role order ahead of numeric priority.
+ * optional ones and profile role order ahead of numeric priority. Selection only
+ * ORDERS a required reference; the refusal half of the flag lives one layer up,
+ * in `planImageRender` — see the field.
  *
  * `sourceImageId` and `name` are provenance, not payload: they let a diagnostic
  * say which stored asset was dropped rather than "reference 3".
@@ -46,7 +48,24 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
  */
 export interface ImageRenderReferenceSpec {
   role: ImageReferenceRole;
-  /** Fail the render rather than send it without this reference. */
+  /**
+   * Fail the render rather than send it without this reference.
+   *
+   * Two layers honour it, and both are needed. Selection sorts required
+   * references ahead of optional ones, so the slots go to them first; and
+   * `planImageRender` refuses the whole plan
+   * (`image_profile.required_reference_dropped`) when one is dropped anyway —
+   * for capacity, for a per-role cap, for a role the policy never allowed, or
+   * for a dedicated input's own ceiling. Sorting alone would have made this
+   * field a preference with a promise's name.
+   *
+   * Distinct from the policy's `requiredRoles`, which is a demand about ROLES
+   * and is answered with a set: a lane sending two required identity references
+   * is asking for both FACES, and "an identity reference survived" cannot tell
+   * that apart from one of them being trimmed. This flag is per reference, so
+   * the second one going missing refuses instead of rendering a two-character
+   * scene with one character in it.
+   */
   required?: boolean;
   /** Tie-break within a role band; higher wins. Unset sorts after any set value. */
   priority?: number;
