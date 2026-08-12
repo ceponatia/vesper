@@ -604,6 +604,42 @@ describe("control-image roles", () => {
     expect(plan.dropped.map((dropped) => dropped.reason)).toEqual(["role_cap"]);
   });
 
+  it("gives a capped control field to the reference the caller cannot lose", () => {
+    // The dedicated contest is sorted by the same comparator as the primary
+    // array, so "the first one fills the field" is a statement about POLICY order
+    // rather than about the order the lane happened to build its list in. Ordered
+    // by caller index alone, the optional map here would take the only slot and
+    // the required one would drop — sending the expendable image and, now that a
+    // dropped required reference refuses, failing the render over it.
+    const plan = planned(
+      intent({
+        profile: resolved(withControlInput("pose", "pose_image")),
+        references: [reference("pose", "optional"), { ...reference("pose", "wanted"), required: true }],
+      }),
+    );
+    expect(plan.controlReferences[0]?.buffers).toEqual([Buffer.from("wanted")]);
+    expect(plan.dropped.map((dropped) => ({ name: dropped.reference.name, reason: dropped.reason }))).toEqual([
+      { name: "optional", reason: "role_cap" },
+    ]);
+  });
+
+  it("leaves caller order alone on a control field when nothing outranks anything", () => {
+    // Byte neutrality for that sort. With no flags, no priorities and no role
+    // ranking, every comparison ties down to the caller's index, so a multi-image
+    // field receives exactly what it received before the dedicated group was
+    // ordered at all — the same no-op argument the empty policy makes upstream.
+    const plan = planned(
+      intent({
+        profile: resolved(withControlInput("pose", "pose_image", { arity: "array", maxItems: 2 })),
+        references: [reference("pose", "first"), reference("pose", "second")],
+      }),
+    );
+    expect(plan.controlReferences).toEqual([
+      { field: "pose_image", arity: "array", buffers: [Buffer.from("first"), Buffer.from("second")] },
+    ]);
+    expect(plan.dropped).toEqual([]);
+  });
+
   it("counts a control on its own field as satisfying a required role", () => {
     // It never entered the primary contest, so a required-role check that looked
     // only at the array would refuse a render whose control was sent correctly.

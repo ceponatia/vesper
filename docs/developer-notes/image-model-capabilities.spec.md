@@ -1450,6 +1450,7 @@ reuse temporary Replicate file URLs.
 Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
 `image_profile.pick_unavailable` from the resolver;
 `image_profile.required_reference_missing`,
+`image_profile.required_reference_dropped`,
 `image_profile.required_control_input_missing`,
 `image_profile.prompt_strategy_unsupported`, `image_profile.references_trimmed`
 and `image_profile.references_renumbered` from the render intent;
