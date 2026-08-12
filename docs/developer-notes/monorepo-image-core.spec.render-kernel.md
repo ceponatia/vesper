@@ -21,20 +21,19 @@ Two application modules split at seams that mostly already exist.
 
 ### `src/server/images/render-profile.ts` — pure kernel moves, Node hash wrapper stays
 
-Move these runtime-neutral exports after the remaining environment/import
-dependencies are inverted:
+Move these runtime-neutral responsibilities after the remaining
+environment/import dependencies are inverted:
 
-| Export / responsibility                                  | Target                                |
-| -------------------------------------------------------- | ------------------------------------- |
-| `stableJson`                                             | `@vesper/image-core`                  |
-| deterministic controls-fingerprint serialization        | `@vesper/image-core`                  |
-| `TRIAL_FALLBACK_PREDICTION_MS`, `MAX_TRIAL_PREDICTION_MS` | `@vesper/image-core`                |
-| `pinnedImageModelVersion`                               | `@vesper/image-core`                  |
-| `PromptReferenceBinding`                                | `@vesper/image-core`                  |
-| `CompileProfileRenderPlanInput` and result types        | `@vesper/image-core`                  |
-| `compileProfileRenderPlan`                              | `@vesper/image-core`                  |
-| `sha256Hex`                                             | application/server                    |
-| final `profileRenderControlsHash` SHA-256 wrapper       | application/server                    |
+- `stableJson` -> `@vesper/image-core`;
+- deterministic controls-fingerprint serialization -> `@vesper/image-core`;
+- `TRIAL_FALLBACK_PREDICTION_MS` and `MAX_TRIAL_PREDICTION_MS` ->
+  `@vesper/image-core`;
+- `pinnedImageModelVersion` -> `@vesper/image-core`;
+- `PromptReferenceBinding` -> `@vesper/image-core`;
+- `CompileProfileRenderPlanInput` and result types -> `@vesper/image-core`;
+- `compileProfileRenderPlan` -> `@vesper/image-core`;
+- `sha256Hex` -> application/server;
+- final `profileRenderControlsHash` SHA-256 wrapper -> application/server.
 
 Private compile helpers move with the kernel: `referenceBindingCount`,
 `nonBlank`, `compilePromptForStrategy` and its two arms,
