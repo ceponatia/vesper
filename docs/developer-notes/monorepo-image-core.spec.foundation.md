@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 3
 
-Implementation state: not started — queued behind Slice 2 by delivery order.
+Implementation state: not started — next, now that Slice 2 has been built.
 
 Give the small primitives that genuinely cross package boundaries one home, and
 delete the temporary diagnostic copy in `image-core`. Shared mechanics are in

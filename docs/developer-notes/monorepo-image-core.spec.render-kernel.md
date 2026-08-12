@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 2
 
-Implementation state: not started — blocked on Slice 1 guardrail completion.
+Implementation state: built 2026-08-12 — awaiting a ready-state CI `verify`.
 
 Move the profile compile step and the pure render planner into
 `@vesper/image-core` by inverting the remaining application-owned facts rather
@@ -15,14 +15,64 @@ workspace/runtime guardrails are in
 pure compile/fingerprint **construction** but does not move the current
 `node:crypto` SHA-256 execution into the package's public runtime graph.
 
+## What is built
+
+| Moved to `@vesper/image-core` | Now at                                        |
+| ----------------------------- | --------------------------------------------- |
+| Profile compilation           | `render-kernel/compile-profile-plan.ts`       |
+| Fingerprint serialization     | `render-kernel/fingerprint-json.ts`           |
+| Deterministic JSON            | `render-kernel/stable-json.ts`                |
+| The pure render planner       | `render-intent/plan-image-render.ts`          |
+| Reserved provider fields      | `capabilities/reserved-image-input-fields.ts` |
+
+The application keeps `src/server/images/render-fingerprint.ts` (SHA-256
+execution and the `profileRenderControlsHash` wrapper) and
+`src/server/images/render-intent.ts` (LoRA resolution, runtime facts,
+diagnostics, the transport call). `src/server/images/render-profile.ts` is
+deleted rather than left as a re-export shim.
+
+### Rulings this build settled
+
+- **Runtime facts are read at three application call sites, not one.**
+  `renderImageIntent` resolves them for every production lane; the Advanced
+  Image Lab resolves them in `labRuntimeFacts()` because it plans directly (it
+  needs the compiled prompt before it renders); the identity trial passes them
+  into `compileProfileRenderPlan` at both its planning and its execute-time
+  recompile. Each reads the same setting at the same moment the payload builder
+  does, so behavior is unchanged — Slice 4 is what collapses them into one
+  configured runtime.
+- **The golden hashes are pinned as literals, not recomputed.** Seven values
+  captured from the pre-move code live in
+  `src/server/images/render-fingerprint.test.ts` and were verified identical
+  after the move. The package suite pins the serialized string's behavior; the
+  application suite pins the SHA-256 of it. Neither may be regenerated because a
+  file moved.
+- **`ImageRenderReference` carries `Buffer` into the package.** It is a type
+  position at a provider seam, which the Slice 1 runtime-target rule allows and
+  mechanically enforces — the package names the type and never evaluates one.
+  The old "the bytes are why this type is not in contracts" note no longer
+  applies to the package boundary.
+- **The moved tests dropped their environment stubbing entirely.** No package
+  test sets or clears `REPLICATE_SAFE_MODE`; the safety posture is an argument,
+  so the cases that used to flip the env are ordinary inputs.
+- **Slice 1 landed on `main` with a red `verify`.** PR #96 was merged while
+  `static checks` and `production build` were failing on one error: the Slice 1
+  export curation scanned `import { … } from "@vesper/image-core"` statements and
+  missed an inline `import("@vesper/image-core").DiagnosticSink` type reference in
+  `src/contracts/images/identity-pack-boundary.test.ts`, so the curated root
+  stopped exporting a name that was in use. This slice's PR carries the fix — the
+  package root exports its diagnostic types again, with a note that Slice 3
+  removes them along with the temporary copy. It corrects the guardrails spec's
+  ruling that "`diagnostics.ts` is not public".
+
 ## What moves
 
 Two application modules split at seams that mostly already exist.
 
-### `src/server/images/render-profile.ts` — pure kernel moves, Node hash wrapper stays
+### `src/server/images/render-profile.ts` — pure kernel moved, Node hash wrapper stayed
 
-Move these runtime-neutral responsibilities after the remaining
-environment/import dependencies are inverted:
+These runtime-neutral responsibilities moved once the remaining
+environment/import dependencies were inverted:
 
 - `stableJson` -> `@vesper/image-core`;
 - deterministic controls-fingerprint serialization -> `@vesper/image-core`;
@@ -45,28 +95,34 @@ Today `profileRenderControlsHash` both determines **what** represents the
 configuration and performs the Node SHA-256 operation. Split those concerns
 without changing the stored hash.
 
-Add a runtime-neutral package helper, nameable along these lines:
+The package owns the serialization, keeping the existing two-argument shape so
+no call site had to change:
 
 ```ts
 export function profileRenderControlsFingerprintJson(
-  input: ProfileRenderControlsFingerprintInput,
+  plan: ProfileRenderPlan,
+  extra: ProfileRenderControlsFingerprintInput,
 ): string;
 ```
 
-It returns the exact deterministic serialized string that the current
-`profileRenderControlsHash` feeds to `sha256Hex` after all effective model,
-controls, dropped-control, safety and timeout decisions have been made.
+It returns the exact deterministic serialized string that
+`profileRenderControlsHash` used to feed to `sha256Hex` after all effective
+model, controls, dropped-control, safety and timeout decisions have been made.
+(`ProfileRenderControlsHashInput` was renamed to
+`ProfileRenderControlsFingerprintInput` with the move; no other name changed.)
 
 The application keeps the thin wrapper:
 
 ```ts
-export function profileRenderControlsHash(input: ...): string {
-  return sha256Hex(profileRenderControlsFingerprintJson(input));
+export function profileRenderControlsHash(
+  plan: ProfileRenderPlan,
+  extra: ProfileRenderControlsFingerprintInput,
+): string {
+  return sha256Hex(profileRenderControlsFingerprintJson(plan, extra));
 }
 ```
 
-The name of the package helper may differ if the implementation has a clearer
-existing seam, but the ownership is fixed:
+The ownership is fixed:
 
 - package: deciding the fingerprint contents and deterministic serialization;
 - application/server: Node SHA-256 execution;
@@ -199,8 +255,8 @@ Do not claim Slice 2 has created a single runtime configuration snapshot. Slice
 4 closes that remaining seam by resolving Replicate configuration once for the
 process and handing the same safety value to both planning and sending.
 
-The Slice 2 tests must prove the package uses the boolean it was handed and no
-longer reads or stubs `process.env`. Slice 4 adds the stronger compile/send
+The Slice 2 tests prove the package uses the boolean it was handed and no longer
+reads or stubs `process.env`. Slice 4 adds the stronger compile/send
 single-source guarantee.
 
 ## What stays, and why
@@ -355,15 +411,25 @@ all moved source/tests without the Next plugin or app alias.
 
 ## Verification
 
-- Slice 1's full guardrail gate is green before this PR begins.
-- CI `verify` is green for the Slice 2 PR.
-- Package-local typecheck covers the moved source without Next/app aliases.
-- The moved suites pass with no package-side `process.env` stubbing or app setup.
-- The golden fingerprint serialization and final SHA-256 hash are identical
-  before and after extraction.
-- The production build exercises a client-safe `@vesper/image-core` runtime
-  import and remains green.
-- Existing production intent tests still prove no automatic version pin and no
-  forced timeout.
-- A symbol inventory finds no live import of deleted application
-  implementations after the move.
+Done before the PR opened:
+
+- the golden fingerprint hashes were captured from the pre-move code and
+  re-verified identical afterwards — all seven, including both safety postures;
+- `pnpm lint:package-boundaries` and `pnpm lint:package-resolution` are green,
+  so nothing in the move crossed the workspace boundary the wrong way;
+- the package project typechecks on its own (`tsc -p packages/image-core`), and
+  the root project typechecks with the moved consumers repointed;
+- `pnpm lint:cycles` finds no cycle across the new package folders;
+- ESLint is clean on every touched file;
+- a symbol inventory finds no live import of the deleted
+  `src/server/images/render-profile.ts`.
+
+Owed from CI, which is where the suites and the build run:
+
+- CI `verify` green for this PR — including the unit suites, the engine
+  integration suite, and the production build that exercises the client-safe
+  `@vesper/image-core` runtime import;
+- the moved suites passing with no package-side `process.env` stubbing or app
+  setup;
+- the existing production intent cases still proving no automatic version pin
+  and no forced timeout.

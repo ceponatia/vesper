@@ -9,7 +9,7 @@ export * from "./image-loras";
 export * from "./models";
 export * from "./model-profiles";
 export * from "./render-intent";
-export * from "./render-profile";
+export * from "./render-fingerprint";
 export * from "./route-safe";
 export * from "./chat-look";
 export * from "./monogram";

@@ -12,6 +12,7 @@ import {
   imageIdentityPackTrialResultSchema,
   perTrialGradeDimension,
   REPLICATE_VERSION_UNDISCLOSED,
+  TRIAL_FALLBACK_PREDICTION_MS,
   type TrialPairGrades,
   trialPromptFixtureById,
 } from "@vesper/image-core";
@@ -57,7 +58,6 @@ import {
   type TrialCellRenderer,
   type TrialCellRenderInput,
 } from "./identity-pack-trial";
-import { TRIAL_FALLBACK_PREDICTION_MS } from "./render-profile";
 
 /**
  * The trial service end to end against DATABASE_URL and a sandboxed DATA_ROOT

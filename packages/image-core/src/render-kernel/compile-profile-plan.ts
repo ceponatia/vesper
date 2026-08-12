@@ -1,48 +1,37 @@
-import { createHash } from "node:crypto";
 import {
-  applyImageLoraPromptAdditions,
-  chooseAspect,
-  compileIdentityReferencePrompt,
-  type CompileReferenceBinding,
-  compileReferenceRolePrompt,
   filterReservedInputFields,
-  type IdentityReferenceRole,
-  type ImageLoraRenderBinding,
-  type ImageModel,
-  type ImageModelProfile,
-  type ImagePromptStrategy,
-  type ImageRenderControls,
   mapImageRenderControls,
-  preparePromptForImageModel,
-  type TrialResolvedControls,
   validateProviderOverrides,
-  withReviewedImageQuality,
-} from "@vesper/image-core";
-import {
-  disableSafetyChecker,
-  reservedImageInputFields,
-} from "../ai";
+} from "../capabilities/image-control-mapping";
+import { reservedImageInputFields } from "../capabilities/reserved-image-input-fields";
+import type { IdentityReferenceRole } from "../identity/identity-pack";
+import type { TrialResolvedControls } from "../identity/identity-pack-trial";
+import { applyImageLoraPromptAdditions, type ImageLoraRenderBinding } from "../loras/image-loras";
+import { chooseAspect, type ImageModel } from "../models/image-models";
+import type { ImageModelProfile, ImagePromptStrategy, ImageRenderControls } from "../models/image-model-profiles";
+import { preparePromptForImageModel, withReviewedImageQuality } from "../models/quality-presets";
+import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
+import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
 
 /**
  * THE profile compile step: one profile row plus one prompt in, the exact
  * provider-shaped configuration out (image-model-capabilities.spec.md
  * §"Normalized render intent" steps 5–11, §"Control mapping", §"Timeouts").
  *
- * This is the kernel of the capabilities plan's slice 2/4 work, landed early
- * because the identity trial needs it FIRST: a comparison harness that records a
- * profile's controls but sends the model row's raw defaults is grading a
- * configuration nobody ran. It is written to be adopted by the production render
- * intent rather than re-invented beside it — `renderImageIntent` should call
- * this for its resolved profile and add only the parts a trial has no use for
- * (reference selection by policy, LoRA resolution, per-request control
+ * Every kind of image the application makes — a portrait, a scene, a variant, a
+ * lab experiment, a trial cell — passes through here on its way to a provider.
+ * It is written to be adopted rather than re-invented beside: `planImageRender`
+ * calls it for its resolved profile and adds only the parts a trial has no use
+ * for (reference selection by policy, LoRA resolution, per-request control
  * overrides, image sets).
  *
  * Three properties are load-bearing and are why this lives in ONE function:
  *
- * 1. **What is hashed is what is sent.** {@link profileRenderControlsHash}
- *    hashes fields taken from the plan this same call produced, so a field
- *    cannot enter the hash unless it entered the payload. The old trial hash was
- *    assembled independently of the render call and drifted from it immediately.
+ * 1. **What is fingerprinted is what is sent.**
+ *    {@link profileRenderControlsFingerprintJson} reads fields taken from the
+ *    plan this same call produced, so a field cannot enter the fingerprint
+ *    unless it entered the payload. The old trial hash was assembled
+ *    independently of the render call and drifted from it immediately.
  * 2. **The EFFECTIVE model is what counts.** `withReviewedImageQuality` rewrites
  *    `extraInput` at the render boundary (Qwen Edit's `go_fast`, Juggernaut's
  *    step/CFG correction). Hashing the raw row let that table change the
@@ -50,36 +39,13 @@ import {
  *    to what a pinned comparison sends.
  * 3. **Nothing is guessed and nothing is silently dropped.** Controls map only
  *    through the version's probed bindings, and every omission is recorded in
- *    `resolvedControls.droppedControls`, which is itself hashed.
- */
-
-/**
- * Deterministic JSON for hashing: keys sorted recursively, `undefined` members
- * dropped. Exported so the one hashing helper in the image lane has one home —
- * a second copy would be a second answer to "did this configuration move?".
+ *    `resolvedControls.droppedControls`, which is itself fingerprinted.
  *
- * Local rather than imported from the engine's `canonicalJson` because that
- * module carries the contact-ledger machinery, and reaching into it from the
- * image lane for a string formatter would couple two systems over nothing.
+ * Everything it needs arrives as a value. The safety setting in particular is an
+ * input rather than an environment read, which is what lets the whole step be
+ * exercised with no deployment in the process
+ * (monorepo-image-core.spec.render-kernel.md §"The remaining inversions").
  */
-export function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map((entry) => stableJson(entry)).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const body = Object.keys(record)
-      .sort()
-      .filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-      .join(",");
-    return `{${body}}`;
-  }
-  return JSON.stringify(value) ?? "null";
-}
-
-/** Hex sha256 of a string. One spelling, shared by prompt and control hashes. */
-export function sha256Hex(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
-}
 
 /**
  * The prediction budget a compiled plan falls back to when its profile declares
@@ -154,8 +120,8 @@ function nonBlank(value: string | null | undefined): string | null {
  * comes first, so the compiled text has to say which image is which.
  * `render_intent` is the production lanes' general role vocabulary (identity,
  * location, style, object…), where the lane's own prompt builder ALREADY names
- * its references — `buildSceneRenderPrompt` writes the multi-reference bindings
- * for a scene, and Qwen Edit's multi-reference lock is applied by
+ * its references — the scene builder writes the multi-reference bindings for a
+ * scene, and Qwen Edit's multi-reference lock is applied by
  * {@link preparePromptForImageModel} on the way out.
  *
  * So the vocabulary decides whether the strategy prefixes anything at all. It is
@@ -198,6 +164,19 @@ export interface CompileProfileRenderPlanInput {
   basePrompt: string;
   /** The caller's negative prompt; null falls back to the profile's default. */
   baseNegativePrompt: string | null;
+  /**
+   * Whether this deployment bypasses the provider's safety checker — the value
+   * the payload builder will apply at send time, handed in rather than read.
+   *
+   * REQUIRED even for a model that exposes no such provider field. Forgetting a
+   * deployment-owned enforcement fact must be a compile error rather than a
+   * silent default: the value is fingerprinted, so a plan that guessed it would
+   * claim a safety posture the render did not run under. It is still only
+   * APPLIED where the model's `extraInput` already declares the key
+   * ({@link withResolvedSafetyChecker}) — a model whose schema does not have the
+   * input is never handed one.
+   */
+  safetyCheckerDisabled: boolean;
   /**
    * Per-render controls, merged OVER the profile's stored defaults (the spec's
    * "a later layer wins"). This is the request half of the control vocabulary:
@@ -251,10 +230,10 @@ export interface ProfileRenderPlan {
    * when the model offers none.
    *
    * The default is baked in because the caller this field exists for — the
-   * trial's control hash — only ever renders 3:4. `renderImageIntent` ignores it
-   * and negotiates the shape against its own target instead, since the entity and
-   * place lanes ask for 1:1 and 3:2. Read this as "the shape a 3:4 render of this
-   * profile would use", not "the shape this plan will produce".
+   * trial's control fingerprint — only ever renders 3:4. `renderImageIntent`
+   * ignores it and negotiates the shape against its own target instead, since the
+   * entity and place lanes ask for 1:1 and 3:2. Read this as "the shape a 3:4
+   * render of this profile would use", not "the shape this plan will produce".
    */
   aspectValue: string | null;
   /** Mapped controls plus validated overrides, keyed by provider field name. */
@@ -266,8 +245,8 @@ export interface ProfileRenderPlan {
    * "ask the environment". The profile's own `timeoutMs` when it has one,
    * {@link TRIAL_FALLBACK_PREDICTION_MS} when it does not, clamped to
    * {@link MAX_TRIAL_PREDICTION_MS}. Being explicit is the whole point: an
-   * env-resolved budget is a budget the compiled plan cannot state, cannot hash,
-   * and cannot be bounded by.
+   * env-resolved budget is a budget the compiled plan cannot state, cannot
+   * fingerprint, and cannot be bounded by.
    */
   timeoutMs: number;
   /** The pinned provider version, or null when this row has none. */
@@ -313,8 +292,8 @@ type StrategyPromptCompile = { ok: true; prompt: string } | { ok: false };
  *   reference, so it binds from ONE reference upward. That is what makes the
  *   strategy genuinely change the compiled text relative to `instruction_edit`
  *   at a single reference — before this dispatch existed, `promptStrategy` was
- *   hashed but never consulted, so two profiles differing only in strategy
- *   claimed different configurations and sent identical prompts.
+ *   fingerprinted but never consulted, so two profiles differing only in
+ *   strategy claimed different configurations and sent identical prompts.
  * - `text_repair`, `example_transform`, `style_render` and `coherent_set` REFUSE.
  *   Each needs a contract the identity-reference vocabulary does not carry — a
  *   text region and its replacement, a before/after role pair, curated style and
@@ -366,14 +345,13 @@ function compileIdentityPackPrompt(
  * — so prefixing a second set of bindings would rewrite renders that work today
  * and describe the same image twice, in two conventions.
  *
- * `multi_reference_compose` now COMPILES here, which it could not before slice
- * 3: its defining semantic is naming the purpose and order of each reference
- * (image-model-capabilities.spec.md §"Prompt strategies"), and this vocabulary
- * had no wording for that, so the only honest answer was refusal — returning the
- * base prompt would have let a profile claim the composing strategy while
- * sending text identical to `instruction_edit`. {@link compileReferenceRolePrompt}
- * is that wording. No seeded profile selects the strategy, so no live render
- * changes; a controlled Qwen recipe is the first thing that will.
+ * `multi_reference_compose` COMPILES here, which it could not before slice 3 of
+ * the capabilities plan: its defining semantic is naming the purpose and order
+ * of each reference (image-model-capabilities.spec.md §"Prompt strategies"), and
+ * this vocabulary had no wording for that, so the only honest answer was refusal
+ * — returning the base prompt would have let a profile claim the composing
+ * strategy while sending text identical to `instruction_edit`.
+ * {@link compileReferenceRolePrompt} is that wording.
  *
  * The two non-composing arms ignore the bindings' subjects along with everything
  * else about them, which is correct rather than lossy: neither names a reference
@@ -410,15 +388,15 @@ function compileRenderIntentPrompt(
  * The FIRST step is the profile's declared `promptStrategy`
  * ({@link compilePromptForStrategy}), and it is the one step that can refuse.
  * That ordering is the point: a strategy this path cannot execute must stop the
- * compile before anything downstream produces controls, hashes, or a plan that
- * a caller could mistake for a runnable one.
+ * compile before anything downstream produces controls, fingerprints, or a plan
+ * that a caller could mistake for a runnable one.
  *
- * `preparePromptForImageModel` runs HERE and again inside `renderWithModel`.
- * That is deliberate and safe: the rewrite is idempotent (it replaces the legacy
- * identity lock, and a prompt with no legacy lock left in it passes through
- * untouched), so the text hashed here is byte-for-byte the text the provider
- * receives. Relying on that property beats adding a "already prepared" flag
- * whose two code paths would need keeping honest forever.
+ * `preparePromptForImageModel` runs HERE and again inside the transport's
+ * render call. That is deliberate and safe: the rewrite is idempotent (it
+ * replaces the legacy identity lock, and a prompt with no legacy lock left in it
+ * passes through untouched), so the text fingerprinted here is byte-for-byte the
+ * text the provider receives. Relying on that property beats adding an "already
+ * prepared" flag whose two code paths would need keeping honest forever.
  */
 export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): CompileProfileRenderPlanResult {
   const { model, profile, basePrompt, baseNegativePrompt, references } = input;
@@ -426,13 +404,13 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   if (!strategyPrompt.ok) {
     return { ok: false, reason: "unsupported_prompt_strategy", promptStrategy: profile.promptStrategy };
   }
-  const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model));
+  const effectiveModel = withResolvedSafetyChecker(withReviewedImageQuality(model), input.safetyCheckerDisabled);
   // The LoRA's prompt additions are woven HERE — after the strategy has produced
-  // its text, before the model-dialect rewrite and before anything is hashed — so
-  // `finalPrompt` is the whole truth about what the provider will read. Doing it
-  // at the transport instead would leave a prompt in the record that nobody sent,
-  // and doing it before the strategy would let a numbered-reference preamble be
-  // pushed below the LoRA's own prefix.
+  // its text, before the model-dialect rewrite and before anything is
+  // fingerprinted — so `finalPrompt` is the whole truth about what the provider
+  // will read. Doing it at the transport instead would leave a prompt in the
+  // record that nobody sent, and doing it before the strategy would let a
+  // numbered-reference preamble be pushed below the LoRA's own prefix.
   const loraPrompt = applyImageLoraPromptAdditions(strategyPrompt.prompt, input.resolvedLora);
   const finalPrompt = preparePromptForImageModel(effectiveModel, loraPrompt, referenceBindingCount(references));
 
@@ -454,7 +432,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send, and
   // no seed transport exists anywhere in the render path yet — so a seed-shaped
   // default is recorded as a DROP below rather than quietly ignored, because
-  // "this run was not seeded" is a fact the comparison hash must carry. A
+  // "this run was not seeded" is a fact the comparison fingerprint must carry. A
   // REQUESTED numeric seed does travel to the mapper, which refuses it as
   // `unsupported` and records that refusal, so asking for one is visible rather
   // than silently ineffective.
@@ -495,8 +473,8 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // probed as `size`, which IS the shape key on a size-mode model — and the
   // transport would then discard it on the way out. Filtering here rather than
   // letting that happen is what keeps the recorded payload equal to the sent
-  // one; a control the hash claims was sent and the provider never saw is the
-  // exact drift this compile step exists to make impossible.
+  // one; a control the fingerprint claims was sent and the provider never saw is
+  // the exact drift this compile step exists to make impossible.
   const sendableMapped = filterReservedInputFields(mapped.input, reservedFields);
   const overrides = validateProviderOverrides(
     profile.providerOverrides,
@@ -506,8 +484,8 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // Overrides merge LAST, per the spec's "a later layer wins". They therefore
   // may also replace a mapped control's value, which is why the reported
   // negative below is read back out of the FINAL payload rather than from the
-  // mapping step: a hash that described the pre-override text would be a hash of
-  // something the provider never saw.
+  // mapping step: a fingerprint that described the pre-override text would be a
+  // fingerprint of something the provider never saw.
   const controlInput = { ...sendableMapped.input, ...overrides.input };
 
   // Typed as the contract's own list rather than the mapper's narrower union:
@@ -522,7 +500,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     // outputs would be billed for four and graded on one, so the count never
     // travels — and the request is recorded as a drop rather than silently
     // reinterpreted as 1, because "this profile wanted a set" is a real
-    // difference between two configurations and the hash must carry it.
+    // difference between two configurations and the fingerprint must carry it.
     droppedControls.push({ control: "outputCount", reason: "single_image_path" });
   }
   if (defaults.seedPolicy !== "random") {
@@ -562,10 +540,10 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
  * mapped control or an override written to the version's `negativePrompt`
  * binding, read back out of the FINAL payload so an override that replaced the
  * mapped value is the text reported. The second is the model row's own
- * `extraInput`: `buildRegistryModelInput` copies those constants into the
- * payload verbatim, so a row carrying `negative_prompt: "blurry"` sends it with
- * no binding and no control involved. Reporting null there claimed no negative
- * was sent while one was — the reviewed-quality rows that set it to `""` are the
+ * `extraInput`: the payload builder copies those constants into the payload
+ * verbatim, so a row carrying `negative_prompt: "blurry"` sends it with no
+ * binding and no control involved. Reporting null there claimed no negative was
+ * sent while one was — the reviewed-quality rows that set it to `""` are the
  * case that keeps this honest in the other direction, since an empty string is
  * "deliberately no negative" and stays null.
  */
@@ -578,94 +556,23 @@ function resolvedNegativePrompt(model: ImageModel, controlInput: Record<string, 
 }
 
 /**
- * Resolve the env-owned safety toggle into the model's own `extraInput`, so the
+ * Write the caller's safety fact into the model's own `extraInput`, so the
  * effective model describes what the provider will be sent rather than what the
  * row happens to store.
  *
- * `buildRegistryModelInput` overrides this key's VALUE from
- * `REPLICATE_SAFE_MODE` at send time and never introduces the key. Hashing the
- * stored value therefore fingerprinted a placeholder: an operator flipping the
- * env between planning a grid and executing it changed provider enforcement for
- * every cell, with two arms of one comparison potentially running under
- * different enforcement and matching hashes to say nothing happened. Resolving
- * it here makes that flip a `cell_conflict` — loud, and refusing to spend —
- * which is the only honest outcome for a comparison whose safety posture moved.
+ * The payload builder overrides this key's VALUE from the deployment setting at
+ * send time and never introduces the key. Fingerprinting the stored value
+ * therefore described a placeholder: an operator flipping the setting between
+ * planning a grid and executing it changed provider enforcement for every cell,
+ * with two arms of one comparison potentially running under different
+ * enforcement and matching fingerprints to say nothing happened. Resolving it
+ * here makes that flip a `cell_conflict` — loud, and refusing to spend — which
+ * is the only honest outcome for a comparison whose safety posture moved.
  *
  * The key is never ADDED, exactly as at the payload builder: a model whose
  * schema does not declare the input must not be handed one.
  */
-function withResolvedSafetyChecker(model: ImageModel): ImageModel {
+function withResolvedSafetyChecker(model: ImageModel, safetyCheckerDisabled: boolean): ImageModel {
   if (!("disable_safety_checker" in model.extraInput)) return model;
-  return { ...model, extraInput: { ...model.extraInput, disable_safety_checker: disableSafetyChecker() } };
-}
-
-export interface ProfileRenderControlsHashInput {
-  profileId: string;
-  profileKey: string;
-  promptStrategy: ImagePromptStrategy;
-  /** Reference roles in send order — part of the configuration, not of the prompt. */
-  orderedReferenceRoles: readonly IdentityReferenceRole[];
-}
-
-/**
- * The fingerprint of an ACTUALLY-EXECUTING configuration: everything about how
- * this render will be made beyond its prompt text.
- *
- * Two rules decide what goes in. Everything hashed must be something the render
- * sends or is shaped by — the effective model's identity and transport facts,
- * the resolved control payload, the drops, the version, the timeout, the
- * profile's identity and strategy. And nothing the render sends may be left out,
- * which is why the input is the PLAN rather than the rows: a field that reaches
- * the provider without reaching this hash is a change a pinned comparison cannot
- * detect.
- *
- * `promptStrategy` earns its place under the FIRST rule, and only since
- * {@link compilePromptForStrategy} shipped: the strategy now decides how the
- * references are named in the compiled text, or refuses the compile outright. It
- * was hashed before that dispatch existed too, and that was the bug — two
- * profiles differing only in strategy fingerprinted differently while sending
- * identical prompts, so the hash asserted a difference nothing downstream made.
- *
- * Display-only fields (labels, sort order, `enabled`) are deliberately absent: a
- * renamed profile is the same experiment, and invalidating a grid over a label
- * edit would train operators to ignore `cell_conflict`.
- *
- * What this hash describes is the MERGE INPUTS, not the post-merge payload, and
- * the distinction is worth stating because `buildRegistryModelInput` applies
- * `extraInput` AFTER the aspect key: a model whose `extraInput` carries `size`
- * or `aspect_ratio` overrides the `aspectValue` recorded here, so the two fields
- * below can disagree with what finally travels. That is safe rather than
- * sloppy — both are hashed, so any drift in either still moves the fingerprint —
- * and the alternative (hashing a payload this function would have to rebuild)
- * would be a second construction of the provider input, which is precisely the
- * duplication "what is hashed is what is sent" exists to remove.
- *
- * `extraInput`'s `disable_safety_checker` is the ENV-RESOLVED value by the time
- * a plan reaches here ({@link compileProfileRenderPlan}), so this hash tracks the
- * enforcement that will actually apply rather than the row's placeholder.
- */
-export function profileRenderControlsHash(plan: ProfileRenderPlan, extra: ProfileRenderControlsHashInput): string {
-  const model = plan.effectiveModel;
-  return sha256Hex(
-    stableJson({
-      modelId: model.id,
-      modelSlug: model.slug,
-      modelVersion: plan.versionId,
-      referenceField: model.referenceField,
-      referenceArity: model.referenceArity,
-      referenceTransport: model.referenceTransport,
-      maxReferences: model.maxReferences,
-      aspect: plan.aspectValue,
-      outputFormat: model.outputFormat,
-      extraInput: model.extraInput,
-      operation: plan.resolvedControls.operation,
-      promptStrategy: extra.promptStrategy,
-      timeoutMs: plan.timeoutMs,
-      controlInput: plan.controlInput,
-      droppedControls: plan.resolvedControls.droppedControls,
-      profileId: extra.profileId,
-      profileKey: extra.profileKey,
-      orderedReferenceRoles: [...extra.orderedReferenceRoles],
-    }),
-  );
+  return { ...model, extraInput: { ...model.extraInput, disable_safety_checker: safetyCheckerDisabled } };
 }

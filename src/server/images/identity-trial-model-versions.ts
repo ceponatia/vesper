@@ -1,11 +1,10 @@
 import { eq } from "drizzle-orm";
-import type { ImageModel, ImageModelProfile } from "@vesper/image-core";
+import { type ImageModel, type ImageModelProfile, pinnedImageModelVersion } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { probeReplicateModel } from "../ai";
 import { db, imageModels } from "../db";
 import { loadImageModelProfiles } from "./model-profiles";
 import { loadImageModels } from "./models";
-import { pinnedImageModelVersion } from "./render-profile";
 
 /**
  * Identity-trial setup for provider versions.
