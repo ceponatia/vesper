@@ -946,6 +946,96 @@ describe("buildSceneRenderPrompt — multi-reference", () => {
     expect(prompt).toMatch(/Wren\b.*no reference image.*Hair color: brown/);
   });
 
+  // Stage 7 promotion (qwen-advanced-image-subsystem.spec.md): the count assertion
+  // says how many people and names them; the cast clause says what must not happen
+  // to them. Two faces in one edit can be merged, swapped or duplicated, and no
+  // per-slot binding prevents that — each of those is a statement about ONE image
+  // while the failure is about the set.
+  it("forbids merging, swapping and duplicating once two characters are referenced", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt).toContain("never merge, swap, or duplicate them");
+    expect(prompt).toContain("Render each person exactly once");
+  });
+
+  it("omits the cast clause when only one character is referenced (nothing to swap)", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "The Library", kind: "location" },
+      ],
+    });
+    expect(prompt).not.toContain("never merge, swap, or duplicate them");
+  });
+
+  // The possession binding used to degrade to "belongs to one of them" past one
+  // subject, which keeps the abstraction but drops the binding — and the binding is
+  // the half the phantom-limb A/B proved was doing the work.
+  it("names every subject in the possession binding rather than saying 'one of them'", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt).not.toContain("one of them");
+    expect(prompt).toContain("Every visible body part belongs to Mira, Sayed or Wren.");
+  });
+
+  // The budgeter's only knobs were outfit and setting text, but the fields that
+  // grow with CAST SIZE — identity anchors, the figure line, an unanchored
+  // character's appearance — were uncapped, so a crowded prompt could not be
+  // shrunk and `clampToLimit` cut the tail instead. These are state-derived and
+  // genuinely long (untruncated garment and attribute text), so two characters
+  // is enough to reach it.
+  const longAnchors = `dark brown hair in loose waves past the shoulders; brown almond eyes; ${"thick straight brows and a soft oval face with a broad rounded jaw; ".repeat(6)}`;
+  const crowded: SceneRenderPlan = {
+    ...emptySceneRenderPlan(),
+    focal: {
+      name: "Mira",
+      action: "leaning on the rail",
+      outfitSummary: `red dress ${"of heavy raw silk with a hand-rolled hem; ".repeat(8)}`,
+      appearance: "",
+      identityAnchors: longAnchors,
+      lowerBody: "long-limbed",
+      exposure: "bare legs",
+    },
+    others: [
+      {
+        name: "Sayed",
+        action: "beside her",
+        outfitSummary: `wool coat ${"in charcoal herringbone with horn buttons; ".repeat(8)}`,
+        appearance: "",
+        identityAnchors: longAnchors,
+        lowerBody: "broad-shouldered",
+        exposure: "barefoot",
+      },
+    ],
+    setting: "a rain-streaked library",
+  };
+
+  it("excerpts the per-character text under budget pressure instead of clamping the tail", () => {
+    const prompt = buildSceneRenderPrompt(crowded, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt.length).toBeLessThanOrEqual(EDIT_RENDER_PROMPT_LIMIT);
+    // The identity anchors were shortened rather than carried whole — the knob
+    // that did not exist before.
+    expect(prompt).not.toContain(longAnchors);
+    expect(prompt).toContain("dark brown hair");
+    // The tail survives: the clause that stops the edit model re-painting a
+    // garment the fiction already removed.
+    expect(prompt).toContain("Depict only the clothing described");
+    expect(prompt).toContain("never merge, swap, or duplicate them");
+  });
+
   it("emits intimate detail for multi-references only on the uncensored route", () => {
     const nude = {
       ...emptySceneRenderPlan(),
@@ -1011,12 +1101,25 @@ describe("resolveScenePlan", () => {
     expect(sink.items.some((d) => d.code === "images.scene_composer.absent_character_dropped")).toBe(true);
   });
 
+  // Membership belongs to the roster, not the composer: a present character the
+  // composer never mentioned is still in the room, and the render sends their
+  // reference either way — so leaving them out of the plan makes the prompt
+  // contradict itself.
+  it("adds a present character the composer omitted, and records the diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const plan = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira" }), libraryContext, sink);
+    expect(plan.others.map((o) => o.name)).toEqual(["Sayed"]);
+    expect(plan.others[0]?.action).toBe("shelving books"); // backfilled from their own state
+    expect(sink.items.some((d) => d.code === "images.scene_composer.present_character_added")).toBe(true);
+  });
+
   it("dedupes the focal out of others and yields a null focal for an empty room", () => {
     const dup = resolveScenePlan(
       sceneSpecSchema.parse({ focalCharacter: "Mira", others: [{ name: "mira", action: "again" }] }),
       libraryContext,
     );
-    expect(dup.others).toEqual([]);
+    // Mira is the focal and must not appear twice; Sayed is present and joins.
+    expect(dup.others.map((o) => o.name)).toEqual(["Sayed"]);
     const empty = resolveScenePlan(sceneSpecSchema.parse({ focalCharacter: "Mira" }), { present: [], locationName: "Atrium", locationDescription: "Glass and rain." });
     expect(empty.focal).toBeNull();
     expect(empty.others).toEqual([]);
@@ -1114,7 +1217,7 @@ describe("buildSceneRenderPrompt", () => {
   it("asserts person count and total limb possession on the disembodied prompt", () => {
     const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
     expect(prompt).toContain("Exactly two people are fully in frame: Mira and Sayed. Nobody else appears.");
-    expect(prompt).toContain("Every visible body part belongs to one of them.");
+    expect(prompt).toContain("Every visible body part belongs to Mira or Sayed.");
     const solo = buildSceneRenderPrompt({ ...plan, others: [] }, { referenceName: "Mira" });
     expect(solo).toContain("Exactly one person is fully in frame: Mira.");
     expect(solo).toContain("Every visible body part belongs to Mira.");
@@ -1267,9 +1370,15 @@ describe("sceneFramingRule (scene-pov-embodiment slices 1+2)", () => {
     expect(SCENE_POV_RULE).not.toMatch(/no hands|no body/i);
   });
 
-  it("binds limbs to 'one of them' with several subjects, and skips possession for location-only", () => {
+  // Named alternatives, not "one of them" (Stage 7): the A/B that settled this
+  // sentence proved a NAME binds possession, and the anonymous plural kept the
+  // abstraction while dropping the binding.
+  it("names the subjects in the possession binding, and skips possession for location-only", () => {
     expect(sceneFramingRule({ parts: [], subjects: ["Mira", "Sayed"] })).toContain(
-      "Every visible body part belongs to one of them.",
+      "Every visible body part belongs to Mira or Sayed.",
+    );
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira", "Sayed", "Wren"] })).toContain(
+      "Every visible body part belongs to Mira, Sayed or Wren.",
     );
     expect(sceneFramingRule({ parts: [], subjects: [] })).not.toContain("belongs to");
   });

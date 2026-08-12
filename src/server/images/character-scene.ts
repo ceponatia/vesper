@@ -28,28 +28,47 @@ import { composeSceneSpec, renderResolvedScene } from "./scene";
 export const DEFAULT_CHAT_ROOM =
   "A warm, softly lit room — a comfortable couch, a low wooden table, shelves of books along one wall, and a tall window letting in natural light.";
 
-export interface RenderCharacterSceneInput {
+/**
+ * One character the render draws, with everything about them that varies per
+ * person. The cast is the roster filtered to `presence: "present"` — chat's only
+ * location-like state, so "in the same room" and "present" are the same claim
+ * (qwen-advanced-image-subsystem.spec.md §"Stage 7 promotion delivery").
+ */
+export interface SceneCastMember {
   characterId: string;
-  userId: string;
   name: string;
   profile: CharacterProfile;
   avatarImageId: string | null;
-  room?: string;
-  timeOfDay?: string;
-  recentChat?: string[];
   outfit?: string;
   outfitExposed?: boolean;
   exposure?: RegionExposure;
   garmentNotes?: readonly string[];
+  meters?: Record<string, number>;
+  conditions?: ActiveCondition[];
+  /**
+   * This character's look-anchor key. Absent ⇒ anchor on their avatar. Only the
+   * primary's look is minted today, so a second cast member normally anchors on
+   * their canonical portrait and takes its wardrobe from the prompt's clothing
+   * authority rather than from the reference.
+   */
+  lookKey?: string;
+}
+
+export interface RenderCharacterSceneInput {
+  /** The character the scene row is FILED against — the strip reads by this id. */
+  characterId: string;
+  userId: string;
+  /** Everyone in frame, in roster order. Never empty. */
+  cast: readonly SceneCastMember[];
+  room?: string;
+  timeOfDay?: string;
+  recentChat?: string[];
   playerExposure?: RegionExposure;
   playerAttributes?: ReadonlyArray<AttributeValue>;
   playerProfile?: CharacterProfile;
-  meters?: Record<string, number>;
-  conditions?: ActiveCondition[];
   chatId?: string;
   anchorMessageId?: string;
   flavor?: "selfie";
-  lookKey?: string;
   place?: { name: string; imageId: string };
   /** Persisted registry model id; unknown/absent values fall back to the scene default. */
   sceneModel?: string;
@@ -73,46 +92,43 @@ export function visualStateNote(meters: Record<string, number> = {}): string {
   return parts.join("; ");
 }
 
-export function buildCharacterSceneContext(input: {
-  name: string;
-  profile: CharacterProfile;
-  room: string;
-  timeOfDay?: string;
-  recentChat: string[];
-  outfit: string;
-  outfitExposed: boolean;
-  exposure?: RegionExposure;
-  garmentNotes?: readonly string[];
-  playerExposure?: RegionExposure;
-  playerAttributes?: ReadonlyArray<AttributeValue>;
-  playerProfile?: CharacterProfile;
-  meters?: Record<string, number>;
-  conditions?: ActiveCondition[];
-}): SceneComposerContext {
-  const exposure: RegionExposure = input.exposure ?? (input.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
-  const resolved = resolveAttributes(input.profile.attributes, conditionAttributeOverlays(input.conditions ?? []));
-  const stateNote = visualStateNote(input.meters);
-  const appearance = [characterAppearanceSummary(resolved, undefined, false, input.profile), stateNote]
+/** One cast member's composer entry — everything the shot needs about that person. */
+function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
+  const exposure: RegionExposure =
+    member.exposure ?? (member.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
+  const resolved = resolveAttributes(member.profile.attributes, conditionAttributeOverlays(member.conditions ?? []));
+  const stateNote = visualStateNote(member.meters);
+  const appearance = [characterAppearanceSummary(resolved, undefined, false, member.profile), stateNote]
     .filter(Boolean)
     .join(". ");
-  const present: ScenePresentCharacter = {
-    name: input.name,
-    species: speciesLabelPhrase(input.profile.speciesId, input.profile.heritageId),
+  return {
+    name: member.name,
+    species: speciesLabelPhrase(member.profile.speciesId, member.profile.heritageId),
     wornVisible: [],
-    outfitDescription: [input.outfit.trim(), ...(input.garmentNotes ?? []).map((note) => note.trim())]
+    outfitDescription: [(member.outfit ?? "").trim(), ...(member.garmentNotes ?? []).map((note) => note.trim())]
       .filter(Boolean)
       .join("; "),
     exposure,
     wardrobeTracked: true,
     appearance,
-    identityAnchors: identityAnchorSummary(resolved, input.profile),
-    ageAnchor: apparentAgeAnchor(input.name, resolved),
-    lowerBody: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: false }),
-    intimateAppearance: sceneRevealAppearance(resolved, exposure, input.profile, { intimate: true }),
+    identityAnchors: identityAnchorSummary(resolved, member.profile),
+    ageAnchor: apparentAgeAnchor(member.name, resolved),
+    lowerBody: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: false }),
+    intimateAppearance: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: true }),
   };
+}
 
+export function buildCharacterSceneContext(input: {
+  cast: readonly SceneCastMember[];
+  room: string;
+  timeOfDay?: string;
+  recentChat: string[];
+  playerExposure?: RegionExposure;
+  playerAttributes?: ReadonlyArray<AttributeValue>;
+  playerProfile?: CharacterProfile;
+}): SceneComposerContext {
   return {
-    present: [present],
+    present: input.cast.map(presentCharacter),
     locationName: "the room",
     locationDescription: input.room,
     timeOfDay: input.timeOfDay?.trim() || "day",
@@ -166,21 +182,17 @@ async function loadCharacterAvatar(
 export async function renderCharacterSceneImage(input: RenderCharacterSceneInput): Promise<string> {
   const selfie = input.flavor === "selfie";
   const room = input.room?.trim() || DEFAULT_CHAT_ROOM;
+  // A selfie is the subject's own phone camera and its framing ends "No one else
+  // in frame", so it stays single-subject however many people share the room.
+  const cast = selfie ? input.cast.slice(0, 1) : input.cast;
   const context = buildCharacterSceneContext({
-    name: input.name,
-    profile: input.profile,
+    cast,
     room,
     timeOfDay: input.timeOfDay,
     recentChat: (input.recentChat ?? []).filter((text) => text.trim()),
-    outfit: input.outfit ?? "",
-    outfitExposed: input.outfitExposed ?? false,
-    exposure: input.exposure,
-    garmentNotes: input.garmentNotes,
     playerExposure: input.playerExposure,
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,
-    meters: input.meters,
-    conditions: input.conditions,
   });
   const plan = await composeSceneSpec({ ...context, sink: input.sink });
 
@@ -192,31 +204,48 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, input.sink);
   const model = imageProfile?.model ?? null;
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
-  const look = referenceRoute && input.chatId && input.lookKey ? await latestChatLook(input.chatId, input.lookKey) : null;
-  const anchor = look
-    ? { imageId: look.imageId, buffer: look.buffer, source: "generated" as SceneReferenceSource }
-    : referenceRoute
-      ? await loadCharacterAvatar(input.userId, input.avatarImageId)
-      : null;
+  // One anchor per cast member, resolved in roster order: this character's own
+  // tracked look when the chat has minted one, else their canonical portrait. A
+  // member with neither renders from the prompt's textual description, which the
+  // multi-reference prompt already labels as such.
+  const anchors = new Map<string, { imageId: string; buffer: Buffer; source: SceneReferenceSource }>();
+  if (referenceRoute) {
+    for (const member of cast) {
+      const look =
+        input.chatId && member.lookKey ? await latestChatLook(input.chatId, member.characterId, member.lookKey) : null;
+      const anchor = look
+        ? { imageId: look.imageId, buffer: look.buffer, source: "generated" as SceneReferenceSource }
+        : await loadCharacterAvatar(input.userId, member.avatarImageId);
+      if (anchor) anchors.set(member.characterId, anchor);
+    }
+  }
   const referenceBuffers = new Map<string, Buffer>();
-  if (anchor) referenceBuffers.set(anchor.imageId, anchor.buffer);
+  for (const anchor of anchors.values()) referenceBuffers.set(anchor.imageId, anchor.buffer);
 
+  // The place rides behind the people: identity is what the cast ruling protects,
+  // so when capacity is short the setting is what gives way, never a character.
   const placeRef =
-    !selfie && anchor && input.place && input.chatId ? await loadChatPlaceImage(input.userId, input.place.imageId) : null;
+    !selfie && anchors.size > 0 && input.place && input.chatId
+      ? await loadChatPlaceImage(input.userId, input.place.imageId)
+      : null;
   if (placeRef) referenceBuffers.set(placeRef.imageId, placeRef.buffer);
+  const imageBearing = anchors.size + (placeRef ? 1 : 0);
 
   const renderOnce = (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> =>
     renderResolvedScene({
       plan: attemptPlan,
       references: [
-        {
-          kind: "character",
-          entityId: input.characterId,
-          name: input.name,
-          role: "focal",
-          allowForIntimate: allowIntimate,
-          ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
-        },
+        ...cast.map((member) => {
+          const anchor = anchors.get(member.characterId);
+          return {
+            kind: "character" as const,
+            entityId: member.characterId,
+            name: member.name,
+            role: attemptPlan.focal?.name === member.name ? "focal" : "other",
+            allowForIntimate: allowIntimate,
+            ...(anchor ? { imageId: anchor.imageId, source: anchor.source } : {}),
+          };
+        }),
         ...(placeRef
           ? [
               {
@@ -231,7 +260,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
           : []),
       ],
       referenceBuffers,
-      mode: placeRef ? "multi" : "single",
+      mode: imageBearing >= 2 ? "multi" : "single",
       profile: imageProfile,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,

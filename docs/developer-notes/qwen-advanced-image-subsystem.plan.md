@@ -677,11 +677,10 @@ obedience, structural control, latency, failure rate, and overall preference.
 
 ### Stage 6 — two-character controlled trials
 
-Status: built 2026-08-12; trial run 2026-08-12 — awaiting owner acceptance of
-its verdicts (six arms, protocol and results in the
-[spec](qwen-advanced-image-subsystem.spec.md)). Held both characters
-uncontrolled, under depth, and under a two-person pose skeleton; lost one only
-when the control fixture described a single body.
+Status: complete — 2026-08-12; the owner accepted its verdicts (six arms,
+protocol and results in the [spec](qwen-advanced-image-subsystem.spec.md)). Held
+both characters uncontrolled, under depth, and under a two-person pose skeleton;
+lost one only when the control fixture described a single body.
 
 Add carefully bounded two-character tests only after the single-character path
 passes. Measure identity swapping, duplicated people, missing characters, pose
@@ -689,13 +688,39 @@ ownership, and whether one structural control can guide both people reliably.
 
 ### Stage 7 — promotion decision
 
-Status: queued — the plan's closing decision.
+Status: in progress — the promotion is ruled; the first of its three items (two
+characters in one chat scene image) is built 2026-08-12 and awaiting a look on
+the deploy, and the other two each owe one design ruling. The assessment behind
+the ruling is in the [spec](qwen-advanced-image-subsystem.spec.md)
+§"Stage 7 promotion assessment".
 
 Decide which parts, if any, should graduate into ordinary Portrait Studio or scene
 controls.
 
 A connector or mode may remain an admin tool even if another part of the subsystem
 is promoted.
+
+The assessment weighed five candidates — two characters in one chat scene image,
+edge-controlled portrait variants, depth-controlled scenes, the identity-finishing
+pass, and LoRA use in ordinary lanes — against what each would cost.
+
+**Owner ruling (2026-08-12): three of the five graduate.**
+
+- **Two characters in one chat scene image** — a chat whose roster holds two
+  characters currently renders scene images showing one of them. The cast renders
+  automatically, with no toggle, **when two characters are established as being in
+  the same location**; a roster entry who is not in the current scene is not drawn
+  into it.
+- **Edge-controlled portrait variants** — the reliable control that costs no
+  provider call.
+- **A reviewed style LoRA in an ordinary lane**, behind a curated profile.
+
+Depth-controlled scenes and the identity-finishing pass stay admin-only. Both are
+blocked on plans that have not started — a production source of control maps, and
+authored appearance attributes — and neither blocker is this plan's to remove.
+
+Delivery order and the remaining design rulings each promotion needs are in the
+spec's §"Stage 7 promotion delivery".
 
 ## Trial and evidence
 

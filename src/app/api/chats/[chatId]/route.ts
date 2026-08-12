@@ -445,7 +445,13 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
       // "Auto at big moments" (slice 9): the engine signals, this route queues — a scene
       // render anchored to the exchange's reply, deduped against live renders.
       onBigMoment: ({ assistantMessageId }) => {
-        void queueChatScene({ userId: user.id, chatId, character: owned.character, anchorMessageId: assistantMessageId });
+        void queueChatScene({
+          userId: user.id,
+          chatId,
+          character: owned.character,
+          roster: owned.roster.map((member) => member.character),
+          anchorMessageId: assistantMessageId,
+        });
       },
       // The reply sent a selfie (chat-selfies.plan.md): queue the subject's-own-camera
       // render anchored to it — same dedupe, always the identity-locked route. The
