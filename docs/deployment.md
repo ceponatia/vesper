@@ -120,8 +120,14 @@ Fly↔GitHub integration firing; every release so far has been a hand-run
   release candidate: `gh workflow run CI --ref main`, then watch it
   (`gh run watch`, or `gh run list --workflow CI` for the id). A manual dispatch
   deliberately runs **every** gate — lint, static checks, unit, engine
-  integration, engine benchmark, production build. Deploy only on a green
-  `verify`.
+  integration (which carries the Gate 1 benchmark as its final step), production
+  build. Deploy only on a green `verify`.
+- **This dispatch is the only build gate most changes get.** Pull requests run
+  the production build only when the build surface itself moves — package
+  manifests, the lockfile, `tsconfig*.json`, `next.config.*`, `Dockerfile`,
+  `src/middleware.ts`, `src/instrumentation.ts`. An app-code or package-internal
+  change reaches `main` without ever being built, so skipping the pre-deploy
+  dispatch means `fly deploy` is the first thing to compile it.
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
   remote builder, runs the `release_command` (`pnpm db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
