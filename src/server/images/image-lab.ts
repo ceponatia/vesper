@@ -1340,8 +1340,8 @@ const HALF_CONTROL_POINTER =
  * - **Capacity REFUSES rather than trims**, which is the controlled runner's
  *   behaviour inverted, and deliberately: there the overflow can only reach an
  *   optional content role, while here every reference is required and a trim
- *   would silently drop a person. See the pre-check below for why the intent
- *   path cannot catch this one itself.
+ *   would silently drop a person. See the pre-check below for why this kind
+ *   keeps a refusal of its own now that the intent path refuses too.
  */
 async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
   const inputs = storedInputs(row, sink);
@@ -1415,15 +1415,20 @@ async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Diagnosti
   // selected control do not fit, the workflow is ineligible rather than silently
   // dropping a character".
   //
-  // This pre-check is the ONLY thing enforcing it, and that is worth stating
-  // plainly. `planIntentReferences` checks required roles with a SET — it asks
-  // whether an `identity` reference survived, not whether both did — so on a
-  // two-slot model it would drop the second character, find `identity` present,
-  // and render a solo portrait that the row describes as a scene with two people
-  // in it. Every downstream honesty mechanism would then work perfectly and
-  // record the wrong thing: the outcome would show the drop, the verdict select
-  // would offer `character_missing`, and a reviewer would file the planner's
-  // arithmetic as a finding about the model.
+  // It is no longer the only thing enforcing it: `planImageRender` now refuses a
+  // plan that drops a reference the caller marked required
+  // (`image_profile.required_reference_dropped`), so the hole this pre-check was
+  // written against — the set-based required-ROLE check finding `identity`
+  // present after the second character was trimmed, and a solo portrait going
+  // out under a row that says two people — is closed for every caller.
+  //
+  // It stays because the answer it gives this kind is the better one, in two
+  // ways. It speaks the lab's own vocabulary (`capacity_exceeded`, which the
+  // panel already explains to an admin) and states the plan's ineligibility rule
+  // in the plan's words, where the planner can only report a role and a reason;
+  // and it fires before eligibility, the LoRA read and the recipe compile run at
+  // all, so an experiment that was never going to fit settles on its row without
+  // any of that work.
   //
   // Capacity is read off the EFFECTIVE model for the probe's reason — the quality
   // overlay only merges `extraInput` today, and reading through it is what keeps

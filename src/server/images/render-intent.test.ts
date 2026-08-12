@@ -340,6 +340,115 @@ describe("required reference roles", () => {
   });
 });
 
+describe("required reference drops", () => {
+  /**
+   * A policy that requires the identity ROLE and allows `cap` references of it —
+   * the shape that makes the set-based check above insufficient on its own.
+   */
+  function identityPolicy(cap: number): Record<string, unknown> {
+    return {
+      referencePolicy: {
+        allowedRoles: ["identity"],
+        requiredRoles: ["identity"],
+        roleOrder: ["identity"],
+        maxPerRole: { identity: cap },
+      },
+    };
+  }
+
+  /** The two-character shape: two faces, both of them the point of the render. */
+  const twoFaces: ImageRenderReference[] = [
+    { ...reference("identity", "first"), required: true, sourceImageId: "image-1" },
+    { ...reference("identity", "second"), required: true, sourceImageId: "image-2" },
+  ];
+
+  it("refuses when capacity drops a reference the caller marked required", () => {
+    // The hole this check closes. Both references carry the required ROLE, so
+    // whichever one survives satisfies `requiredRoles`; only the per-reference
+    // flag can say that the second face was the whole experiment. Before it, this
+    // input rendered a solo portrait for a caller that ordered two people.
+    const result = planImageRender(
+      intent({ profile: resolved({ maxReferences: 1 }, identityPolicy(2)), references: twoFaces }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe("image_profile.required_reference_dropped");
+    expect(result.refusal.context.dropped).toEqual([
+      { role: "identity", reason: "model_capacity", sourceImageId: "image-2" },
+    ]);
+  });
+
+  it("refuses when the profile's own role cap drops a required reference", () => {
+    // The same demand refused by the PROFILE rather than by the model, and the
+    // reason the check does not single out capacity: a cap of one is the profile
+    // declining to send the second face, which is no more "send it without this
+    // reference" than a full model is. The reason travels so an operator can tell
+    // the two apart — only one of them is fixed by picking a bigger model.
+    const result = planImageRender(
+      intent({ profile: resolved({ maxReferences: 3 }, identityPolicy(1)), references: twoFaces }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe("image_profile.required_reference_dropped");
+    expect(result.refusal.context.dropped).toEqual([
+      { role: "identity", reason: "role_cap", sourceImageId: "image-2" },
+    ]);
+  });
+
+  it("refuses a required reference whose role the profile never allowed", () => {
+    // The third reason, and the one that is a configuration mistake rather than
+    // scarcity: a lane demanding a role this profile does not list would render
+    // without it forever, silently. `sourceImageId` is absent from the context
+    // here because this reference names no stored asset — omitted, not null.
+    const result = planImageRender(
+      intent({
+        profile: resolved({}, identityPolicy(1)),
+        references: [{ ...reference("identity", "avatar"), required: true }, { ...reference("style", "mood"), required: true }],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.code).toBe("image_profile.required_reference_dropped");
+    expect(result.refusal.context.dropped).toEqual([{ role: "style", reason: "role_not_allowed" }]);
+  });
+
+  it("plans normally when the reference capacity dropped was an optional one", () => {
+    // The flag is a demand about ONE reference, not a rule about drops: a style
+    // board that did not fit is exactly the trim the outcome record exists to
+    // report, and refusing it would ground every lane that offers more than fits.
+    const plan = planned(
+      intent({
+        profile: resolved({ maxReferences: 1 }),
+        references: [{ ...reference("identity", "avatar"), required: true }, reference("style", "mood")],
+      }),
+    );
+    expect(plan.references.map((buffer) => buffer.toString())).toEqual(["avatar"]);
+    expect(plan.dropped.map((entry) => ({ role: entry.reference.role, reason: entry.reason }))).toEqual([
+      { role: "style", reason: "model_capacity" },
+    ]);
+  });
+
+  it("changes nothing about a render whose required references all fit", () => {
+    // Payload neutrality for the flag itself, asserted against the same plan
+    // without it. Every lane that already marks its identity anchor required —
+    // variants, chat looks, every lab recipe — sends what it always sent.
+    const plain = planned(intent({ references: [reference("identity", "avatar"), reference("location", "room")] }));
+    const marked = planned(
+      intent({
+        references: [
+          { ...reference("identity", "avatar"), required: true },
+          { ...reference("location", "room"), required: true },
+        ],
+      }),
+    );
+    expect(marked.references).toEqual(plain.references);
+    expect(marked.prompt).toBe(plain.prompt);
+    expect(marked.dropped).toEqual([]);
+    expect(marked.sentReferences.map((entry) => entry.role)).toEqual(["identity", "location"]);
+    expect(marked.referencesRenumbered).toBe(plain.referencesRenumbered);
+  });
+});
+
 describe("controls and budget", () => {
   it("maps the profile's defaults onto the version's real field names", () => {
     const plan = planned(
@@ -493,6 +602,42 @@ describe("control-image roles", () => {
     );
     expect(plan.controlReferences[0]?.buffers).toEqual([Buffer.from("first")]);
     expect(plan.dropped.map((dropped) => dropped.reason)).toEqual(["role_cap"]);
+  });
+
+  it("gives a capped control field to the reference the caller cannot lose", () => {
+    // The dedicated contest is sorted by the same comparator as the primary
+    // array, so "the first one fills the field" is a statement about POLICY order
+    // rather than about the order the lane happened to build its list in. Ordered
+    // by caller index alone, the optional map here would take the only slot and
+    // the required one would drop — sending the expendable image and, now that a
+    // dropped required reference refuses, failing the render over it.
+    const plan = planned(
+      intent({
+        profile: resolved(withControlInput("pose", "pose_image")),
+        references: [reference("pose", "optional"), { ...reference("pose", "wanted"), required: true }],
+      }),
+    );
+    expect(plan.controlReferences[0]?.buffers).toEqual([Buffer.from("wanted")]);
+    expect(plan.dropped.map((dropped) => ({ name: dropped.reference.name, reason: dropped.reason }))).toEqual([
+      { name: "optional", reason: "role_cap" },
+    ]);
+  });
+
+  it("leaves caller order alone on a control field when nothing outranks anything", () => {
+    // Byte neutrality for that sort. With no flags, no priorities and no role
+    // ranking, every comparison ties down to the caller's index, so a multi-image
+    // field receives exactly what it received before the dedicated group was
+    // ordered at all — the same no-op argument the empty policy makes upstream.
+    const plan = planned(
+      intent({
+        profile: resolved(withControlInput("pose", "pose_image", { arity: "array", maxItems: 2 })),
+        references: [reference("pose", "first"), reference("pose", "second")],
+      }),
+    );
+    expect(plan.controlReferences).toEqual([
+      { field: "pose_image", arity: "array", buffers: [Buffer.from("first"), Buffer.from("second")] },
+    ]);
+    expect(plan.dropped).toEqual([]);
   });
 
   it("counts a control on its own field as satisfying a required role", () => {

@@ -133,6 +133,7 @@ export interface PlannedControlReference {
 export interface ImageRenderRefusal {
   code:
     | "image_profile.required_reference_missing"
+    | "image_profile.required_reference_dropped"
     | "image_profile.required_control_input_missing"
     | "image_profile.prompt_strategy_unsupported";
   message: string;
@@ -145,9 +146,10 @@ export type PlanImageRenderResult = { ok: true; plan: PlannedImageRender } | { o
  * The pure half: everything decided before a byte leaves the process.
  *
  * Separated from {@link renderImageIntent} so the interesting decisions —
- * capacity trimming, the required-role gate, control precedence, a strategy this
- * path cannot execute — are testable without a database or a provider. The IO
- * half below is deliberately thin enough to read in one screen.
+ * capacity trimming, the two required-reference gates (the profile's roles and
+ * the caller's own flags), control precedence, a strategy this path cannot
+ * execute — are testable without a database or a provider. The IO half below is
+ * deliberately thin enough to read in one screen.
  */
 export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResult {
   const { profile, model } = intent.profile;
@@ -169,6 +171,44 @@ export function planImageRender(intent: ImageRenderIntent): PlanImageRenderResul
         code: "image_profile.required_reference_missing",
         message: `profile ${profile.key} requires reference roles this render cannot supply`,
         context: { profile: profile.id, task: profile.task, missing, supplied: roleNames(intent.references) },
+      },
+    };
+  }
+
+  // The CALLER's demand, as against the profile's one check up, and the reason
+  // both exist: `requiredRoles` is answered with a set, so it asks whether a
+  // role survived and never how many of it the lane needed. A lane sending two
+  // required identity references is asking for both faces, and a capacity trim
+  // that takes the second leaves `identity` present — the check above passes and
+  // the render goes out one character short of the scene it was ordered as.
+  //
+  // Every drop reason is refused, because none of them is "send it without this
+  // reference": `model_capacity` and `role_cap` are the two ways a second
+  // reference of one role disappears, `role_not_allowed` is a profile that was
+  // never going to send it at all, and a dedicated input's own ceiling arrives
+  // in the same list. Sorting already gave required references the first slots,
+  // so reaching here means the request genuinely does not fit the profile.
+  const droppedRequired = dropped.filter((entry) => entry.reference.required === true);
+  if (droppedRequired.length > 0) {
+    return {
+      ok: false,
+      refusal: {
+        code: "image_profile.required_reference_dropped",
+        message: `profile ${profile.key} cannot send a reference this render marked required`,
+        context: {
+          profile: profile.id,
+          task: profile.task,
+          // Role AND reason, for the reason the trim diagnostic carries both: an
+          // operator reading "identity dropped" cannot tell a model too small
+          // from a profile that never allowed the role, and only one of those is
+          // fixed by picking a bigger model. The source asset is named when
+          // there is one, so the answer points at an image rather than a slot.
+          dropped: droppedRequired.map((entry) => ({
+            role: entry.reference.role,
+            reason: entry.reason,
+            ...(entry.reference.sourceImageId === undefined ? {} : { sourceImageId: entry.reference.sourceImageId }),
+          })),
+        },
       },
     };
   }
