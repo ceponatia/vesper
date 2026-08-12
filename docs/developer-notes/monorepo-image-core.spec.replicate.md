@@ -2,57 +2,98 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 4
 
-Put Replicate's transport behind its own package, so adding or characterizing a
-model stops teaching the rest of the application that provider's vocabulary.
-Shared mechanics are in [monorepo-image-core.spec.md](monorepo-image-core.spec.md).
+Implementation state: not started — blocked on Slices 2 and 3.
 
-**Blocked on slices 2 and 3.** Slice 3 supplies `diag`, which this code uses
-throughout and which the structural-interface trick cannot provide. Slice 2 puts
-the render kernel across the boundary, which is what proves the provider seam
-has held still — writing this adapter first would fit it to a seam about to move.
+Put Replicate's network transport and schema probing behind a server-only
+workspace package while keeping secrets, deployment settings and Vesper state in
+the application. Shared mechanics are in
+[monorepo-image-core.spec.md](monorepo-image-core.spec.md).
 
 ## What moves
 
-| Module                             | Lines | Content                        |
-| ---------------------------------- | ----- | ------------------------------ |
-| `src/server/ai/replicate.ts`       | 835   | Predictions, payloads, polling |
-| `src/server/ai/replicate-probe.ts` | 443   | Version/schema probing         |
+Two modules move after their environment reads are inverted:
 
-By then `reservedImageInputFields` has already left for `image-core` (slice 2),
-so what remains in `replicate.ts` is genuinely transport: `hasReplicate`,
-`disableSafetyChecker`, the payload builders (`buildRegistryModelInput`,
-`overlayControlInput`), data-URL handling and its budget, `runRegistryImageModel`,
-`runReplicatePreprocessor`, `unwrapReplicateImage`, `replicatePredictionTarget`,
-and the timeout constants.
+| Module                             | Owns                             |
+| ---------------------------------- | -------------------------------- |
+| `src/server/ai/replicate.ts`       | Prediction/upload/poll/download  |
+| `src/server/ai/replicate-probe.ts` | Model/version schema probing     |
+
+By then `reservedImageInputFields` has already moved to `image-core` in Slice 2.
+The transport package owns Replicate vocabulary and mechanics:
+
+- prediction targets and version pins;
+- request payload construction and provider-field overlay;
+- file upload/delete lifecycle;
+- data-URL conversion and byte budget;
+- prediction creation, polling, cancellation and output download;
+- provider output URL allow-listing;
+- preprocessor execution;
+- model/version OpenAPI probing and Replicate-specific capability derivation;
+- Replicate response schemas and error normalization local to this transport;
+- fixed request/output/probe timeout constants.
 
 ## What stays in the application
 
-- **`src/server/ai/image-providers.ts`** — the four-line adapter that digs a real
-  message out of an AI-SDK `APICallError`. It depends on `describeProviderError`
-  in `src/server/ai/errors.ts`, which knows the AI-SDK's error shape; that is a
-  *different* transport's vocabulary and does not belong in a Replicate package.
-  Slice 1 already split this correctly — leave it split.
-- **`src/server/images/models.ts`** — Drizzle reads, `sharp` cropping, and the
-  call into the transport.
-- Everything else in `src/server/ai/` — the OpenRouter provider, the narrator
-  helpers, embeddings.
+### Vesper image orchestration
 
-## The environment inversion
+`src/server/images/models.ts` stays. It still owns:
 
-Four `process.env` reads block the move, and a package may not read the
-environment (hub spec §"The boundary rule"):
+- registry DB reads;
+- `sharp` crop normalization;
+- Vesper's `RenderWithModelResult` application shape;
+- the call that bridges a planned Vesper render into the configured Replicate
+  transport.
 
-| Line   | Reads                             | Used for                   |
-| ------ | --------------------------------- | -------------------------- |
-| `:27`  | `REPLICATE_API_TOKEN`             | `hasReplicate()`           |
-| `:45`  | `REPLICATE_SAFE_MODE`             | `disableSafetyChecker()`   |
-| `:796` | `REPLICATE_PREDICTION_TIMEOUT_MS` | Default prediction budget  |
-| `:821` | `REPLICATE_API_TOKEN`             | The `Authorization` header |
+All character/chat/identity/asset/job modules stay for the same reason.
 
-**Resolve them into a config object the application constructs once**, rather
-than threading four arguments through every call site:
+### General AI-SDK error extraction
 
-```
+`src/server/ai/image-providers.ts` stays. It turns an AI-SDK error into a message
+before calling provider-neutral failure classification from `image-core`. That
+adapter knows the AI-SDK/OpenRouter-side error shape, not Replicate transport
+mechanics.
+
+### Environment resolution and configured runtime
+
+A small application adapter stays in `src/server/ai`, for example
+`replicate-runtime.ts`. It is the only code that reads Replicate environment
+variables after this slice.
+
+It owns:
+
+- resolving the process environment into a validated `ReplicateConfig`;
+- lazily memoizing one config/client pair for the lifetime of the running
+  process;
+- application convenience accessors such as `hasReplicate()` and the current
+  `safetyCheckerDisabled` fact;
+- handing the configured client to application/server and root-script callers.
+
+Do not construct the snapshot eagerly at module import time. Next may load server
+modules while building or analyzing routes, when runtime secrets are absent. The
+first real runtime use resolves the environment and memoizes the result; later
+calls in that process reuse it.
+
+## Environment inversion
+
+The first inventory counted four environment reads in `replicate.ts`. There is a
+fifth relevant read in `replicate-probe.ts`: `probeReplicateModel` reads
+`REPLICATE_API_TOKEN` independently. All five disappear from package source.
+
+The application resolves:
+
+- `REPLICATE_API_TOKEN`;
+- `REPLICATE_SAFE_MODE`;
+- `REPLICATE_PREDICTION_TIMEOUT_MS`.
+
+The token read used by the probe is not a separate setting; probing uses the same
+configured client as rendering.
+
+### Config contract
+
+`@vesper/image-replicate` owns the provider config type because it owns the code
+that consumes it:
+
+```ts
 export interface ReplicateConfig {
   apiToken: string | null;
   safetyCheckerDisabled: boolean;
@@ -60,68 +101,269 @@ export interface ReplicateConfig {
 }
 ```
 
-The application builds it from `process.env` at its own boundary and hands it to
-the package. `hasReplicate()` becomes a property of the config rather than a
-function that reads the world.
+Resolution rules stay behavior-compatible with today's transport:
 
-**Read the environment once, not per call.** Today `disableSafetyChecker()` is
-called at send time (`replicate.ts:244`) and again during compilation
-(slice 2's `safetyCheckerDisabled` argument). Those must agree — the render
-kernel spec's invariant 1 depends on the value the fingerprint recorded being
-the value that was sent. A single config resolved per request is how they stay
-equal; two independent reads across a long-running prediction are how they
-diverge.
+- missing/blank token means the provider is unavailable;
+- `REPLICATE_SAFE_MODE === "true"` means the safety checker remains enabled;
+  every other value means `safetyCheckerDisabled: true`, preserving the current
+  controlled-environment default;
+- prediction timeout uses the configured number only when finite and at least
+  30 seconds, clamps it at 30 minutes, and otherwise uses five minutes.
 
-## The provider interface
+Per-request `timeoutMs` still overrides the config default and is clamped to the
+same 30-second–30-minute range by the package.
 
-`image-core` already owns the provider-neutral half: attempt routing, reference
-capacity (`fitReferences`), failure classification, provider-health semantics.
-This slice's job is to make `image-replicate` an *implementation* of that seam
-rather than a second place where routing decisions are made.
+### Configured client
 
-The dependency direction is fixed and one-way: `image-replicate` → `image-core`
-→ `contracts`. `image-core` must never import `image-replicate`. Where the core
-needs a provider invoked, it declares the interface and the application supplies
-the implementation.
+Prefer one configured object rather than passing the token/config through every
+private function:
 
-Do not build a general provider-plugin architecture here (plan §Non-goals). The
-interface is shaped by the one provider in use; it earns an abstraction when a
-second provider needs it.
+```ts
+export interface ReplicateClient {
+  readonly configured: boolean;
+  readonly safetyCheckerDisabled: boolean;
 
-## Consumers to repoint
+  runRegistryImageModel(
+    model: ImageModel,
+    request: RegistryModelRequest,
+    sink?: DiagnosticSink,
+  ): Promise<ReplicateImageResult>;
 
-`src/server/ai/index.ts` currently re-exports `./replicate` and
-`./replicate-probe`. Both lines go, and importers move to
-`@vesper/image-replicate`:
+  runReplicatePreprocessor(
+    request: ReplicatePreprocessorRequest,
+  ): Promise<ReplicateImageResult>;
 
-- `src/server/images/models.ts` — `runRegistryImageModel`, `RenderControlReference`.
-- `src/server/images/identity-pack-trial.ts` — `REQUEST_TIMEOUT_MS`,
-  `OUTPUT_TIMEOUT_MS` for `STALE_CLAIM_MS` (`:1456`), which must keep its value.
-- Probe consumers in the admin/lab surfaces and `replicate-probe.test.ts`.
+  probeReplicateModel(slug: string): Promise<ProbeResult>;
+}
 
-Grep both module names before starting; `src/server/ai/index.ts` is a wide
-barrel, so some importers reach these symbols via `../ai` without naming the
-file.
+export function createReplicateClient(config: ReplicateConfig): ReplicateClient;
+```
 
-## Registration
+The exact method declarations may reuse existing exported request/result types;
+the ownership rule is the important part. Every network helper closes over the
+same immutable config.
 
-Five files per the hub spec §"Adding a package". The manifest declares
-`@vesper/image-core` and `@vesper/contracts` as workspace dependencies, plus
-`zod` (`replicate.ts` uses it for response shapes).
+Pure helpers that are useful without credentials — for example
+`replicatePredictionTarget`, response-shape helpers worth testing directly, or
+payload construction — may remain ordinary package exports if they are genuine
+external entry points. Curate them; do not make every private helper public.
 
-Update the root `CLAUDE.md` package inventory and
-`packages/image-core/README.md`'s note that transport "stays in `src/server/ai`
-until then".
+## One safety value from plan to send
+
+Slice 2 makes the render kernel accept `safetyCheckerDisabled` as an explicit
+runtime fact. Slice 4 is where that fact becomes single-source.
+
+For an ordinary render:
+
+1. the application obtains its memoized Replicate runtime;
+2. `renderImageIntent` passes `runtime.client.safetyCheckerDisabled` into
+   `planImageRender`;
+3. the plan/fingerprint resolves the effective model with that value;
+4. `renderWithModel` invokes the **same configured client**;
+5. payload construction uses the client's closed-over config when replacing a
+   declared `disable_safety_checker` value.
+
+No second environment read is allowed between steps 2 and 5. A process cannot
+fingerprint one safety posture and send another because there is only one
+resolved runtime snapshot.
+
+Controlled trial/lab paths that compile and send separately must likewise carry
+or obtain the same application runtime for the operation. Do not re-resolve env
+inside the package to make a call site easier.
+
+## The provider seam
+
+Do not introduce a general plugin framework in this slice.
+
+`image-core` already owns the provider-neutral decisions that should remain
+provider-neutral: model/profile contracts, reference planning, control mapping,
+prompt compilation, attempt/failure vocabulary and the final planned render
+shape.
+
+The application is the bridge:
+
+```text
+Vesper state
+   -> resolved image intent/profile
+   -> @vesper/image-core planning
+   -> application render wrapper / crop + persistence context
+   -> configured @vesper/image-replicate client
+   -> Replicate
+```
+
+The dependency direction is:
+
+```text
+@vesper/image-replicate -> @vesper/image-core -> @vesper/contracts
+@vesper/image-replicate ----------------------> @vesper/contracts (diagnostics)
+application ------------> all three
+```
+
+`image-core` never imports `image-replicate`. It does not need to declare an
+invocation interface solely for this refactor; the plan/result types are the
+provider-neutral data seam. If a second provider later needs a shared invocation
+interface, design it from both real implementations.
+
+## Server-only application boundary
+
+Moving Replicate out of `src/server/**` removes the protection that path name
+currently provides. The Slice 4 PR therefore updates application import
+boundaries at the same time.
+
+Add `@vesper/image-replicate` to prohibited imports for:
+
+- `src/components/**/*.{ts,tsx}`;
+- non-route `src/app/**/*.{ts,tsx}`;
+- `src/contracts/**/*.{ts,tsx}`;
+- `src/lib/**/*.{ts,tsx}`.
+
+Server routes/modules and root operational scripts may use the configured
+application adapter. Prefer that adapter over constructing a second config.
+
+Do not add `server-only` or another Next-specific dependency inside the provider
+package; repository boundaries should make the package reusable without Next.
+
+## Consumer inventory
+
+Do not inventory by the two source module names alone. `src/server/ai/index.ts`
+currently re-exports their symbols, so many consumers import through `../ai` and
+never spell `replicate.ts`.
+
+Before the move, enumerate **every exported symbol** from `replicate.ts` and
+`replicate-probe.ts`, then search each symbol. Classify each consumer as one of:
+
+- package direct import of a pure type/helper;
+- application use of the configured Replicate runtime/client;
+- application convenience check such as `hasReplicate()`;
+- stale/dead export to delete.
+
+Known consumers that must be included in that inventory include:
+
+- `src/server/images/models.ts` — registry model execution and control-reference
+  types;
+- `src/server/images/identity-pack-trial.ts` — request/output timeout constants;
+- `src/server/images/image-lab.ts` — direct controlled render path/default model
+  constants where still live;
+- `src/server/images/image-lab-controls.ts` — preprocessors;
+- `src/server/images/chat-look.ts` — provider-availability check;
+- `src/server/images/character-scene.ts` — provider-availability check;
+- `src/server/images/identity-trial-model-versions.ts` — probing/version work;
+- admin image-model routes — model probing;
+- `scripts/eval/scene-images/model.ts` — direct eval rendering;
+- Replicate unit tests and probe tests.
+
+Search again after deleting the old `src/server/ai` exports. The old barrel must
+not continue re-exporting transport implementations under their former home.
+It may export the tiny application runtime adapter because that adapter remains
+application-owned.
+
+## Package layout
+
+A straightforward target:
+
+```text
+packages/image-replicate/
+  package.json
+  src/
+    index.ts
+    client.ts
+    config.ts               # types only; no process.env reads
+    prediction.ts           # targets, polling, cancellation
+    files.ts                # upload/delete/data URL
+    outputs.ts              # output URL selection/download allow-list
+    payload.ts              # provider payload + overlays
+    preprocessor.ts
+    probe.ts
+```
+
+Do not split mechanically to hit a line count. The layout is a suggested domain
+separation; keep helpers together where the transport flow is easier to read.
+
+The root export is curated per the hub spec. Private polling/parsing helpers stay
+private.
+
+## Dependencies and registration
+
+Before Slice 6, use the hub's five package registration points.
+
+`packages/image-replicate/package.json` declares:
+
+- `@vesper/image-core: workspace:*`;
+- `@vesper/contracts: workspace:*` where diagnostics are imported directly;
+- `zod`;
+- no Next, Drizzle, Sharp, Better Auth or Vesper application dependency.
+
+Node's built-in `fetch`, `FormData`, `Blob`, `URL`, `AbortSignal` and `Buffer`
+remain the transport primitives; do not add the Replicate npm SDK as part of this
+refactor unless a separate decision replaces the existing HTTP transport.
+
+Update package inventory/reference documentation in the Slice 4 implementation
+PR.
+
+## Tests
+
+Move `replicate.test.ts` and `replicate-probe.test.ts` with their subjects, then
+rewrite environment cases as config/client cases.
+
+Required coverage includes:
+
+- missing token -> configured client reports unavailable and calls fail before
+  network work;
+- safety true/false changes only models that declare the provider field;
+- config prediction timeout fallback/clamping matches current behavior;
+- per-request timeout overrides config without mutating it;
+- official versus version-pinned prediction target behavior is unchanged;
+- file and data-URL reference transport behavior is unchanged;
+- upload cleanup still runs on success and failure;
+- output host allow-list remains enforced;
+- probe uses the configured token/client and never reads environment;
+- model/version probe parsing and capability derivation stay unchanged;
+- package source contains no `process.env`.
+
+The package tests must install/mock `fetch` at their own boundary; they must not
+rely on `src/test/setup.ts` deleting the application token.
 
 ## Verification
 
-- CI `verify` green.
-- `grep -rn "process.env" packages/` returns nothing.
-- `replicate.test.ts` and `replicate-probe.test.ts` move with their subjects.
-  The `disableSafetyChecker()` env cases (`replicate.test.ts:168`, `:173`) become
-  config-object cases; a test still reaching for `process.env` means the
-  inversion is incomplete.
-- A live render still works against the Fly deploy (`docs/deployment.md`) — this
-  is the one slice where a config-threading mistake produces a package that
-  typechecks, passes tests, and cannot authenticate. Verify a real generation,
-  not just green CI.
+### Repository gates
+
+- CI `verify` green for the Slice 4 PR.
+- `lint:package-boundaries` accepts only declared package dependencies.
+- no source under `packages/image-replicate` imports `@/` or resolves outside
+  the package through a relative path;
+- `grep`/AST search finds no `process.env` in `packages/image-replicate`;
+- client-importable app layers cannot import `@vesper/image-replicate`.
+
+### Consumer completeness
+
+- exported-symbol inventory finds no live consumer of deleted
+  `src/server/ai/replicate*` implementation exports;
+- `scripts/eval/scene-images/model.ts` still runs through the configured runtime
+  rather than constructing its own environment interpretation;
+- `hasReplicate()` callers still behave the same through the application adapter.
+
+### Live verification
+
+This slice requires two deployed smoke checks because rendering and probing used
+separate credential reads before the extraction:
+
+1. **Real render:** generate an image on the Fly dev deploy and confirm the image
+   saves normally with provider provenance.
+2. **Real probe:** probe/save a known Replicate model from the admin model surface
+   and confirm schema/version data returns normally.
+
+A green unit/build suite is not enough for this slice. A config-wiring mistake can
+typecheck while every real provider call is unauthenticated.
+
+## Invariants
+
+1. The package owns Replicate mechanics, not Vesper state.
+2. The package performs network IO but owns no ambient environment reads.
+3. One immutable runtime config snapshot feeds compile and send for a process.
+4. Probe and render share the same configured token/client.
+5. Existing timeout, version pin, upload cleanup and output-host security behavior
+   stays unchanged.
+6. The application still owns cropping, persistence, jobs, authorization and
+   registry database reads.
+7. The provider package remains inaccessible to client-importable code.
+8. No general provider-plugin framework is introduced in this extraction.

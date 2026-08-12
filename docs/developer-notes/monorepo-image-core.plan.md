@@ -27,8 +27,9 @@ Two problems follow from that size in one flat `src/`:
   control map binds to a provider field has the chat pipeline, the simulation
   engine, and the wardrobe model in scope, because everything is one program.
 
-The fix is a real boundary, not a folder rename: a workspace package the
-application depends on, which cannot depend on the application back.
+The fix is a real boundary, not a folder rename: workspace packages that the
+application may depend on, but which cannot quietly reach back into the
+application.
 
 **Owner ruling (2026-08-12): the 2026-06-16 permanent deferral of the monorepo
 split is reversed.** That ruling was correct for its question — packaging for
@@ -48,6 +49,23 @@ forces the hard architectural problem to be solved first, which is what would
 make a future repository split cheap. See [Non-goals](#non-goals) for the
 conditions that would change this.
 
+**Owner ruling (2026-08-12): packages keep one curated root import.** Consumers
+continue to import `@vesper/image-core` rather than a tree of subpaths, but the
+root stops meaning "everything in the folder is public." Only entry points the
+application actually consumes are exported; package-internal helpers stay
+internal.
+
+**Owner ruling (2026-08-12): application barrels may re-export the shared
+foundation.** Moving diagnostics and boundary parsing does not justify a
+hundreds-file import rewrite. The existing application barrels remain the
+application-facing homes and re-export only the primitives the shared package
+owns.
+
+**Owner ruling (2026-08-12): the `apps/web` move waits for the provider seam to
+prove itself.** Slice 6 starts only after the Replicate extraction lands without
+forcing a redesign of the boundary between the image core, the application, and
+the provider transport.
+
 ## What the owner gets
 
 Nothing changes on screen. This is developer-facing work, and its result is
@@ -57,13 +75,14 @@ measured in how the next image change goes.
   engine with no game in it: what a model can do, which references a render may
   carry and in what role, how a prompt is compiled for a profile, what an
   identity pack is and when it is usable, what a failure message means.
-- **A boundary a mistake cannot cross quietly.** The package may not import
-  application code at all — not by the app's alias and not by a relative path
-  climbing out of the package, because both spellings reach the same modules.
-  Either one fails `pnpm lint`, so the separation stays true without anyone
-  policing it in review.
+- **A boundary that is mechanically checked.** A package cannot reach application
+  code or another package through a relative-path escape; another package is a
+  declared dependency imported by name. The first package extraction exposed a
+  gap in the initial lint-only check, so closing that gap is the remaining work
+  in Slice 1 before more code crosses the boundary.
 - **Faster, narrower model experimentation.** Adding or characterizing a model
-  touches the package and its tests, not the app.
+  changes the provider-neutral package and, where needed, the provider package;
+  game-specific scene and persistence code stays out of the way.
 - **A cheaper future split.** If the image engine ever becomes its own product,
   the expensive part — deciding what it owns — is already done.
 
@@ -71,20 +90,21 @@ measured in how the next image change goes.
 
 ### In scope
 
-- Turning the repository into a pnpm workspace, with the Next.js application
-  staying at the repo root until the final slice.
-- Extracting `@vesper/image-core` and moving into it only code that already
-  operates without knowing there is a database or a Next.js app.
-- A lint rule that fails the build when a package imports application code.
-- Repointing every application import at the package's public API, and keeping
-  the tests that moved with the code they cover.
+- Keeping the repository as a pnpm workspace, with the Next.js application at
+  the repo root until the final slice.
+- Extracting `@vesper/image-core` and moving into it only code that operates
+  without knowing there is a database or a Next.js app.
+- Closing the remaining package-boundary enforcement gap before further
+  extraction.
+- Repointing application imports at package public APIs, and keeping tests with
+  the code they cover.
 - Moving the render kernel — the compile step every image lane goes through —
-  across the same boundary, by having callers supply what it used to look up.
-- A small shared foundation package for the two primitives both sides need: a
-  way to report degradation, and a way to read untrusted data without throwing.
-- Replicate transport behind its own package, once the seam it plugs into has
-  held still through real use.
-- The conventional `apps/web` layout, last, after the boundary has soaked.
+  across the same boundary by handing it the deployment-owned facts it needs.
+- A tiny shared foundation for diagnostics and defensive boundary parsing.
+- Replicate transport behind its own package, with environment and deployment
+  configuration still owned by the application boundary.
+- The conventional `apps/web` layout last, after the package/provider seam has
+  been proven by real use.
 
 ### Non-goals
 
@@ -94,11 +114,14 @@ measured in how the next image change goes.
   cost accounting stay in the application. Translating world state into an
   image request is application work; `renderCharacterSceneImage` is the clearest
   example and stays put.
-- **A general plugin architecture for providers.** The provider interface is
-  shaped by the providers actually in use. It gains an abstraction when a second
-  provider needs it, not in anticipation.
+- **Removing all image code from the web application.** The final shape still
+  has an application-owned image layer. It translates Vesper state into image
+  requests, persists assets, owns jobs and authorization, and calls the packages.
+- **A general plugin architecture for providers.** The provider seam is shaped
+  by the providers actually in use. A general plugin framework earns its place
+  only when a second provider needs one.
 - **Publishing any package.** Everything stays private to this workspace. No
-  versioning, no changelogs, no release cadence.
+  versioning, changelogs, or independent release cadence.
 - **A separate repository.** Deferred behind the conditions below.
 
 ### When a separate repository would be justified
@@ -113,61 +136,57 @@ it becomes useful without importing anything from the game. None hold today.
 
 ### Slice 1 — the workspace exists and the image core is a package
 
-Status: complete — 2026-08-12.
+Status: in progress — extraction landed 2026-08-12; boundary-enforcement repair remains.
 
-The repository is a pnpm workspace, `@vesper/image-core` holds the demonstrably
-pure image code, the boundary is lint-enforced against both spellings of an app
-import, and every application import points at the package's public API.
+The workspace and `@vesper/image-core` package exist and application imports
+point at its public API. Review found one important hole in the first guardrail:
+a relative import can still escape into a sibling package without matching the
+current lint pattern. Before more code moves, the boundary becomes a resolved
+path check rather than a spelling check, and package-to-package imports are
+required to name a declared workspace dependency.
 
 ### Slice 2 — the render kernel joins the package
 
-Status: next.
+Status: blocked on Slice 1's boundary-enforcement repair.
 
 Every kind of image the app makes — a portrait, a scene, a variant, a lab
 experiment — passes through one step that turns "what this render wants" into
-the exact instructions a provider is handed. That step is nearly all rules and
-arithmetic, and it is the piece a developer most often needs to reason about on
-its own, because it decides what the provider actually sees.
+the exact instructions a provider is handed. Most stateful lookups are already
+outside that step. The remaining application-owned inputs are deployment facts,
+such as the current safety setting, plus one provider-field helper that belongs
+in the core package.
 
-Two things hold it on the application side, and both are lookups rather than
-logic: it asks the database for the settings of the model being run, and it asks
-the library for the style weights a render selected. Neither is a decision the
-step makes; both are facts it is handed. When the caller does those lookups and
-passes the answers in, the whole compile step crosses — and the fingerprint that
-says whether two experiments really ran the same configuration crosses with it,
-which is what makes controlled comparisons checkable without a database.
+The caller supplies those facts explicitly. The compile step and its
+configuration fingerprint can then run with no database and no environment in
+the process, while production keeps the same output and timeout/version behavior.
 
 ### Slice 3 — the shared foundation becomes `@vesper/contracts`
 
-Status: queued — unblocks slice 4.
+Status: queued behind Slice 2 — unblocks Slice 4.
 
-Two small things are needed on both sides of the boundary: a way for code to
-report that it degraded rather than failed, and a way to read data from an
-untrusted source without crashing the request. Today the image package carries
-its own copy of the first and does without the second entirely, kept honest by a
-test that fails if the two copies ever drift.
+The image package currently carries a temporary copy of the diagnostic shapes it
+needs to report degradation. A tiny shared package gives diagnostics one owner
+and also houses the existing defensive boundary parser for packages that need to
+read untrusted data. The parser is deliberately pre-positioned shared
+infrastructure; moving it does not mean `image-core` must start parsing data it
+does not own.
 
-That works, and it does not scale to a second package. A small shared foundation
-gives both one home, and the duplicate copy and its drift test are deleted in
-the same change. It is deliberately tiny — these two primitives and nothing
-else — because a foundation package that starts collecting whatever is
-convenient becomes the thing the boundary was built to prevent.
+The application keeps its existing diagnostics and parse import paths as narrow
+re-export barrels, avoiding a mechanical rewrite across hundreds of files.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: blocked on slices 2 and 3.
+Status: blocked on Slices 2 and 3.
 
-The code that actually talks to Replicate — starting a prediction, waiting for
-it, reading the result back, handling that provider's particular errors and
-version pinning — is the last large piece of the engine still mixed in with the
-app's own server code. Behind its own package, adding or characterizing a model
-stops teaching the rest of the app that provider's vocabulary.
+The code that talks to Replicate — probing model schemas, starting predictions,
+uploading references, polling, downloading results and handling Replicate's
+errors — moves behind its own package. The application keeps ownership of secrets
+and deployment settings and creates one configured Replicate runtime for the
+process, so the safety value recorded during planning is the value used when the
+provider call is made.
 
-It waits on the two slices above for a concrete reason rather than tidiness: it
-needs the shared foundation to report degradation, and it should be written
-against a provider seam that has already held still while the render kernel
-moved through it. Writing the adapter first would mean fitting it to a seam that
-is about to change.
+This package is server-only from the application's point of view. UI and other
+client-importable layers are mechanically prevented from importing it.
 
 ### Slice 5 — the vision path
 
@@ -175,76 +194,73 @@ Status: blocked — nothing provider-neutral to move yet.
 
 "Images" now means two directions: making a picture, and a model looking at one.
 The second path is live — it reads a portrait into character attributes, and it
-describes photos a player attaches to a chat — and the target architecture names
-a package for it.
+describes photos a player attaches to a chat — but both consumers are still
+mostly game concepts. What they share underneath is the general model-call layer
+the narrator also uses, which is not an image concern.
 
-An inventory says it is not time. Both consumers are almost entirely game
-concepts (the attribute vocabulary; a chat message's attachments), and what they
-share underneath is the general model-call layer the narrator also uses, which is
-not an image concern at all. A package extracted today would hold a system prompt
-and a fallback string. It becomes real work when a third consumer arrives, or
-when the two existing ones are found to share a genuine contract; until then the
-honest answer is that the target shape has a slot with nothing in it. The
-inventory is recorded so nobody has to redo it.
+A vision package starts only when a third consumer arrives, or the existing two
+are found to share a genuine contract such as a common reading vocabulary,
+grounding step, or degradation policy. Until then, an empty package would make
+the diagram prettier without making the code easier to own.
 
 ### Slice 6 — the application moves to `apps/web`
 
-Status: queued behind a deliberate soak.
+Status: blocked on Slice 4 completing without a core/app/provider seam redesign.
 
-The conventional monorepo shape, taken only after the package boundary has run
-long enough to prove it was drawn in the right place. This is the slice with the
-most disruption and the least architectural content — it moves files and
-rewrites configuration without changing a single decision about what belongs
-where — so it is deliberately last, and it is worth nothing until the boundary
-above it has been tested by real work.
+Only after the provider extraction proves the package boundary does the Next.js
+application move under `apps/web`. This is a path and workspace migration, not a
+new architecture pass. The move explicitly preserves the things a green web
+build can miss: root operational scripts, package typechecking, test discovery,
+CI path classification, local environment loading, the Fly release command, and
+the existing image-storage location.
+
+The repository root remains the operational workspace root. `scripts/`,
+`drizzle/`, deployment files and shared tooling stay there; only the web
+application moves.
 
 ## Where the work stands
 
 Technical detail lives in [monorepo-image-core.spec.md](monorepo-image-core.spec.md),
 which indexes one spec per remaining slice and owns their implementation status.
-The package's own contract with the application is
+The package's current contract with the application is
 [packages/image-core/README.md](../../packages/image-core/README.md) §Boundary.
 
-| Spec                                                               | Covers           | State  |
-| ------------------------------------------------------------------ | ---------------- | ------ |
-| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics | living |
-| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2          | ready  |
-| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3          | ready  |
-| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4          | ready  |
-| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6          | ready  |
+| Spec                                                               | Covers           | State   |
+| ------------------------------------------------------------------ | ---------------- | ------- |
+| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics | revised |
+| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2          | revised |
+| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3          | revised |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4          | revised |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6          | revised |
 
 Slice 5 has no spec by design — the hub spec carries its inventory and the
 condition that would start it.
 
 ## Success criteria
 
-- `pnpm lint` fails on an app import added anywhere under `packages/`, whether
-  it is written as `@/server/db` or as `../../../src/server/db`.
-- The application's image behavior is unchanged at every slice: the same suites
-  cover the same rules, moved next to the code they test, and CI's `verify` is
+- A package-relative import that resolves outside its own package fails the
+  repository gate, including sibling-package and repo-root escapes.
+- Every `@vesper/*` package import is by package name and is declared in the
+  importing package's manifest.
+- Client-importable application code cannot import the Replicate transport
+  package.
+- The application's image behavior is unchanged at every extraction slice: the
+  same rules and refusal paths remain covered, and the production build remains
   green.
-- A developer can read `packages/image-core` start to finish and never need to
-  know what a chat is.
+- A developer can read and exercise `packages/image-core` without importing
+  application code or depending on application test setup.
 - The compile step that decides what a provider is sent can be exercised, and
-  its configuration fingerprint checked, with no database in the process.
-- Exactly one definition of a diagnostic exists in the repository.
+  its configuration fingerprint checked, with no database or environment read
+  inside the package.
+- Exactly one definition of the diagnostic contract exists in the repository.
+- After the Replicate extraction, one real render and one real model probe both
+  succeed using the configured package.
+- Moving to `apps/web` does not change the persistent image path, break root DB
+  or eval scripts, narrow CI by accident, or leave package source outside
+  TypeScript/test coverage.
 
 ## Open questions
 
-- **Does the package publish a curated surface or a wide barrel?** Its root
-  barrel currently re-exports every domain, which is why the application's
-  import churn was mechanical. Whether some domains should stay behind subpath
-  exports is worth deciding before a second package copies the pattern, since
-  whatever slice 3 does will be the precedent.
-  Detail: [spec.md](monorepo-image-core.spec.md) §"Export surface policy".
-- **Does the app's contracts barrel re-export the foundation, or do 230 files
-  change their imports?** Re-exporting keeps the diff small and matches what the
-  barrel already is; repointing is the only way the old path stops existing.
-  This is a one-time decision that sets how every later extraction is done.
-  Detail: [spec.foundation.md](monorepo-image-core.spec.foundation.md)
-  §"The import-churn decision".
-- **What soak does slice 6 wait on?** "Long enough to prove the boundary" is not
-  a condition anyone can check. It needs a nameable event — a model added
-  entirely within the package, or the Replicate extraction completing without
-  the seam moving.
-  Detail: [spec.apps-web.md](monorepo-image-core.spec.apps-web.md) §"The gate".
+None. The remaining choices are implementation mechanics owned by the companion
+specs; the package surface, foundation re-export policy, and Slice 6 gate are
+settled above.

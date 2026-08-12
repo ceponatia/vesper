@@ -2,125 +2,223 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 3
 
-Give the two primitives both sides of the boundary need — diagnostics and
-boundary parsing — one home, and delete the duplicate copy the image package
-carries today. Shared mechanics are in
+Implementation state: not started — queued behind Slice 2 by delivery order.
+
+Give the small primitives that genuinely cross package boundaries one home, and
+delete the temporary diagnostic copy in `image-core`. Shared mechanics are in
 [monorepo-image-core.spec.md](monorepo-image-core.spec.md).
 
 ## Why this package, and why now
 
 `packages/image-core/src/diagnostics.ts` re-declares `Diagnostic`,
 `DiagnosticSeverity` and `DiagnosticSink` because the package must report
-degradation without importing the app. Its own module comment calls the
-duplication "deliberate and temporary" and names this slice as the resolution.
+degradation without importing the app. That duplication was intentionally
+temporary.
 
-Two facts make it worth doing before slice 4 rather than after:
+A second package makes it time to remove it:
 
-- **`diag` is a function, not a type.** The structural-interface trick that makes
-  the duplicated `DiagnosticSink` work has no equivalent for a constructor. Any
-  package that needs to *build* a diagnostic — which `image-replicate` does
-  throughout — cannot use the current arrangement at all.
-- **A second copy would be a third definition.** The drift test holds two
-  declarations honest. It does not scale, and the failure mode is an inscrutable
-  assignability error deep in a render path.
+- **`diag` is executable behavior, not only a structural type.** A transport
+  package that builds diagnostics needs one canonical function.
+- **Three copies would defeat the point.** A compatibility test can hold two
+  structural declarations honest; it is not a package architecture.
 
-## Scope: exactly two primitives
+The existing `parseOr` / `parseOrNull` helpers also belong in the shared
+foundation because they are generic trust-boundary behavior rather than game
+domain vocabulary. `image-core` does not need them today. Moving them is a
+deliberate pre-positioning decision for shared package boundaries, not a reason
+to make the core parse application-owned data.
 
-**In:**
+## Scope: exactly two primitive groups
 
-| From                           | Moves                                                    |
-| ------------------------------ | -------------------------------------------------------- |
-| `src/contracts/diagnostics.ts` | `Diagnostic`, `DiagnosticSeverity`, `DiagnosticSink`     |
-| `src/contracts/diagnostics.ts` | The zod schema, `diag`, `DiagnosticCollector`, `teeSink` |
-| `src/lib/parse.ts`             | `parseOr`, `parseOrNull`                                 |
+### Diagnostics
 
-**Out — and the discipline is the point.** This package does not become the
-place things go when they are hard to place. It takes `zod` as its only
-dependency and nothing that knows what a character, a chat, an image or a model
-is. A foundation package that starts collecting whatever is convenient becomes
-the coupling the boundary was built to prevent, with a friendlier name.
+Move from `src/contracts/diagnostics.ts`:
 
-The name is `@vesper/contracts` per the target architecture. It does **not**
-absorb `src/contracts/` wholesale — that folder holds Vesper's domain contracts
-(attributes, meters, fact kinds, body locations), which are the game's core
-vocabulary and belong to the application.
+- `diagnosticSeveritySchema`;
+- `DiagnosticSeverity`;
+- `diagnosticSchema`;
+- `Diagnostic`;
+- `DiagnosticSink`;
+- `DiagnosticCollector`;
+- `teeSink`;
+- `diag`.
+
+### Defensive boundary parsing
+
+Move from `src/lib/parse.ts`:
+
+- `parseOr`;
+- `parseOrNull`;
+- the private issue-summary helper they require.
+
+The package takes `zod` as its only third-party runtime dependency.
+
+## What this package does not become
+
+`@vesper/contracts` is **not** the new location for `src/contracts/` as a whole.
+The application's contracts folder contains Vesper's game vocabulary —
+attributes, meters, body locations, item visibility, species, facts and other
+domain contracts. Those remain application-owned.
+
+A rule of thumb:
+
+- if a primitive can describe a chat, character or simulation concept, it
+  probably stays in the application;
+- if it is generic infrastructure for package/application boundaries, it may
+  belong here;
+- convenience alone is never a reason to move something into the foundation.
 
 ## Deletions this slice must make
 
-An extraction that leaves the old definitions standing has added a package and
-fixed nothing.
+An extraction that leaves the duplicate definitions in place has not completed
+the job.
 
-- `packages/image-core/src/diagnostics.ts` — deleted outright. `image-core`
-  declares `@vesper/contracts` as a dependency and imports the three shapes.
-- The `describe("diagnostic sink compatibility")` block in
-  `src/contracts/images/identity-pack-boundary.test.ts` — deleted. It asserts
-  two declarations stay assignable; after this slice there is one. The two
-  boundary-parsing cases in that file stay and still pass.
-- The stale `diagnostics.compat.test.ts` pointers in
-  `packages/image-core/README.md` and the deleted module's comment go with them
-  (hub spec §"Where diagnostics and boundary parsing live today").
+- Delete `packages/image-core/src/diagnostics.ts`.
+- Delete the diagnostic assignability/compatibility test that exists only to
+  keep two declarations synchronized.
+- Remove stale comments pointing at the deleted compatibility arrangement.
+- Replace application implementation files for diagnostics/parsing with narrow
+  re-export barrels, not copied implementations.
 
-## The import-churn decision
+## Import-churn ruling
 
-**Open question, owned by the plan.** It must be settled before the slice starts,
-because it decides the shape of the diff and sets the precedent for every later
-extraction.
+**Ruling (2026-08-12): keep the application's existing import paths as narrow
+re-export barrels.** Do not rewrite hundreds of application imports solely to
+advertise the package move.
 
-The numbers: 230 files import `@/contracts` or `@/contracts/diagnostics`; 94
-reference `parseOr`. Two options.
+After the extraction:
 
-**Option A — the app's barrel re-exports the package.** `src/contracts/diagnostics.ts`
-becomes `export * from "@vesper/contracts"`, and `src/lib/parse.ts` likewise.
-No application file changes. The extraction diff is the package plus two
-one-line files.
+```ts
+// src/contracts/diagnostics.ts
+export {
+  DiagnosticCollector,
+  diagnosticSchema,
+  diagnosticSeveritySchema,
+  diag,
+  teeSink,
+  type Diagnostic,
+  type DiagnosticSeverity,
+  type DiagnosticSink,
+} from "@vesper/contracts";
+```
 
-**Option B — repoint every importer.** The old paths stop existing. Roughly 300
-files change their import lines.
+and:
 
-**Recommended: Option A.** The root `CLAUDE.md` rule is against *compatibility
-wrappers preserving legacy functionality* — code kept alive so callers need not
-be updated. This is not that: `src/contracts/` is already the application's
-barrel layer (`src/contracts/index.ts` exists and is how most of these 230 files
-reach diagnostics at all), and a barrel re-exporting a package is publishing a
-new home, not preserving an old API. Option B's 300-file diff carries real
-review risk — a mechanical rewrite across the whole codebase is where an
-unrelated change hides — for a benefit that is stylistic.
+```ts
+// src/lib/parse.ts
+export { parseOr, parseOrNull } from "@vesper/contracts";
+```
 
-The condition that would make Option A wrong: if the re-export lets application
-code keep importing things the package does not own, the barrel has become a
-grab bag. Keep both re-export files to exactly the moved surface.
+Use explicit exports rather than `export *`. These files are application-facing
+barrels and should publish exactly the surfaces they owned before the move. They
+must contain no implementation.
 
-## Boundary parsing in the package
+This is not a compatibility implementation shim: the application barrels remain
+valid architectural entry points while the implementation gains a shared owner.
 
-Once `parseOr` is available, `image-core` *may* own boundary parsing — but this
-slice does not go looking for places to add it. The current arrangement (the
-package owns schemas; the application parses at the trust boundary) is correct
-for the identity-pack case and stays. The slice makes the primitive reachable;
-a later change uses it where a package genuinely sits on a trust boundary.
+Package code imports `@vesper/contracts` directly. It never imports the
+application barrels.
 
-`parseOr` pushes a `parse.boundary_failed` diagnostic with the caller's path,
-and both existing cases in `identity-pack-boundary.test.ts` assert that code and
-path. That behavior moves unchanged.
+## Public export surface
+
+`@vesper/contracts` follows the monorepo's curated-root ruling:
+
+- one public root import path;
+- explicit exports for diagnostics and parsing;
+- no deep public subpaths;
+- no app-domain contract re-exports.
+
+The small surface is intentional. A caller should be able to read
+`packages/contracts/src/index.ts` and know the complete shared foundation.
+
+## Boundary parsing behavior stays unchanged
+
+`parseOr` and `parseOrNull` keep their existing semantics:
+
+- accept an already-parsed unknown value or a JSON-looking string;
+- attempt JSON decoding only for object/array-looking strings;
+- never throw on schema rejection;
+- return the supplied fallback / `null`;
+- report `parse.boundary_failed` through the optional diagnostic sink;
+- summarize rather than persist an entire zod error object.
+
+Moving these functions must not widen where parsing happens. The application
+continues to parse database/request/LLM boundaries where it already does. A
+package adopts `parseOr` only when that package itself owns the trust boundary.
 
 ## Registration
 
-Five files per the hub spec §"Adding a package": the manifest, `tsconfig.json`,
-`vitest.config.ts`, `next.config.ts` `transpilePackages`, and the Dockerfile
-manifest COPY. `pnpm-workspace.yaml` and `eslint.config.mjs` need no edit.
+Before Slice 6, use the shared registration points from the hub spec:
 
-`packages/image-core/package.json` gains `"@vesper/contracts": "workspace:*"` as
-a dependency, and imports it by name — never by path (hub spec
-§"Package-to-package imports").
+- `packages/contracts/package.json`;
+- root `tsconfig.json` package mapping;
+- root `vitest.config.ts` package mapping;
+- `next.config.ts` `transpilePackages`;
+- Dockerfile manifest copy.
 
-Update the root `CLAUDE.md` package inventory in the same change: it currently
-reads "Today there is one package".
+`packages/contracts/package.json` declares:
+
+- `"name": "@vesper/contracts"`;
+- `"version": "0.0.0"`;
+- `"private": true`;
+- `"type": "module"`;
+- `zod` as its runtime dependency.
+
+`packages/image-core/package.json` gains
+`"@vesper/contracts": "workspace:*"` and imports diagnostics by package name.
+
+The Slice 1 package-boundary checker must already be active before this package
+is added, so a relative import from `image-core` into `packages/contracts` fails
+rather than becoming the precedent.
+
+Update the root package inventory documentation in the implementation PR to say
+there are two packages.
+
+## Tests
+
+### Diagnostics
+
+Move or recreate the diagnostics unit coverage beside the package implementation.
+The application should not maintain a second behavioral test suite for the same
+functions merely because it re-exports them.
+
+Delete the old bidirectional structural-assignability test; with one declaration
+there is nothing left to compare.
+
+### Boundary parsing
+
+Move the parser unit coverage to `@vesper/contracts`. The existing
+identity-pack-boundary cases that prove an application trust boundary emits
+`parse.boundary_failed` remain application tests and continue importing through
+the application barrel.
+
+### Package independence
+
+Foundation tests have no application setup, DB, env or Next dependency. They run
+under the shared repository test command but are fully package-contained.
+
+## Invariants
+
+1. There is exactly one diagnostic contract definition.
+2. `image-core` and future packages import diagnostics from
+   `@vesper/contracts`, never from `src/contracts`.
+3. Application code may keep the existing diagnostics/parse paths only because
+   those files are explicit re-export barrels with no implementation.
+4. `@vesper/contracts` contains no Vesper domain vocabulary.
+5. Parser behavior and diagnostic codes do not change during extraction.
+6. `parseOr` is not introduced into new call sites merely because it became
+   available to packages.
+7. Package-to-package imports are by declared workspace dependency name.
 
 ## Verification
 
-- CI `verify` green.
-- `grep -rn "interface Diagnostic\b" packages/ src/` returns exactly one hit.
-- The two boundary-parsing cases in `identity-pack-boundary.test.ts` still pass;
-  the compatibility case is gone rather than skipped.
-- Nothing under `packages/` imports `@/` or climbs out with a relative path —
-  the lint rule already proves this, and it is the reason a package can take the
-  foundation as a dependency without weakening the boundary.
+- CI `verify` is green for the Slice 3 PR.
+- `grep`/symbol search finds one implementation of `diag`,
+  `DiagnosticCollector`, `parseOr` and `parseOrNull`.
+- The old diagnostic compatibility test is deleted, not skipped.
+- Existing application boundary-parsing tests still assert their fallback and
+  diagnostic code.
+- `lint:package-boundaries` proves `image-core -> contracts` is a declared
+  package dependency rather than a relative escape.
+- No file under `packages/contracts` imports the application or reads
+  `process.env`.
