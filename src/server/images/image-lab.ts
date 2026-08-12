@@ -449,6 +449,11 @@ export type CreateImageLabExperimentResult =
  * chat and have the runner read its look anchor, or name a stranger's character
  * on an identity input and have the runner read their name into the prompt.
  *
+ * A fourth check is not authorization but feedback: a two-character scene whose
+ * two subjects answer to one name (or to none) is refused here as well as by the
+ * runner, because the fix is a rename the admin makes in another screen and a
+ * settled `failed` row is a poor way to ask for one.
+ *
  * Deliberately NOT checked: that a probe carries any particular inputs, that it
  * names a control at all, or that the control it names is a real fixture. Those
  * are the runner's recorded refusals (spec §Algorithms steps 1 and 3) — a 400
@@ -481,6 +486,30 @@ export async function createImageLabExperiment(
         ok: false,
         refusal: labRefusal("character_not_found", "character not found", sink, { characterId: input.characterId }),
       };
+    }
+  }
+
+  // The one cast rule the request schema cannot reach: two DIFFERENT character
+  // ids can carry one NAME (or a blank one), and the numbered bindings that tell
+  // the model which face is whose would then say the same words twice. Checked
+  // here as well as in the runner because the admin can act on it — rename one
+  // character — and a form that took the row would answer with a failed
+  // experiment they have to go and read the reason off instead.
+  //
+  // ASSETS are deliberately not checked here (whether each identity image is a
+  // render of the character it is bound to): a create-time asset check would go
+  // stale between the queue and the render, and the runner is authoritative for
+  // rows that arrive around this path at all. One refusal code covers the blank
+  // and the colliding pair, the way `control_invalid` covers a family — the
+  // MESSAGE names which of them happened.
+  if (request.kind === "two_character_scene") {
+    const subjectIds = request.inputs.flatMap((entry) => (entry.characterId === undefined ? [] : [entry.characterId]));
+    // `null` means a character went away between the ownership check above and
+    // this read — nothing to rule on, and the runner refuses the row anyway.
+    const cast = subjectIds.length === 0 ? null : await labCharacterNames(subjectIds, ownerId);
+    const named = cast === null ? null : twoCharacterCast(subjectIds, cast);
+    if (named !== null && !named.ok) {
+      return { ok: false, refusal: labRefusal("characters_share_name", named.message, sink, { subjectIds }) };
     }
   }
 
@@ -1300,7 +1329,10 @@ const HALF_CONTROL_POINTER =
  *   a numbered image ("Image 1: the identity reference for Sabrina"). Without
  *   that the request is two anonymous portraits and a hope, and every failure the
  *   stage measures — swapping above all — becomes unattributable between the
- *   model and a prompt that never distinguished them.
+ *   model and a prompt that never distinguished them. Two refusals guard the
+ *   binding rather than the reference (`subject_invalid`, both pre-spend): a name
+ *   that cannot tell the two apart, and an image that is not a render of the
+ *   character it is bound to.
  * - **The control is optional.** "Do two people survive?" and "can one skeleton
  *   guide both of them?" are separate questions, and the first is asked by a run
  *   that sends no fixture. A declared control still passes every Stage 0 gate
@@ -1335,6 +1367,13 @@ async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Diagnosti
       "an identity input names a character this owner does not have, so the render has no name to bind that face to",
       sink,
     );
+  }
+  // Checked here, beside the ownership read and BEFORE the version resolution,
+  // for the same reason: whether two names can tell two faces apart is a fact
+  // about these rows, and no amount of provider work would change it.
+  const named = twoCharacterCast(subjectIds, cast);
+  if (!named.ok) {
+    return await settleFailed(row, labFailure("subject_invalid"), named.message, sink);
   }
 
   const resolved = await resolvePinnedLabModel(row.modelSlug, "a two-character scene", sink);
@@ -1406,6 +1445,13 @@ async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Diagnosti
   if (!read.ok) {
     return await settleFailed(row, labFailure("input_missing"), read.message, sink, { columns });
   }
+  // The bytes are readable and this owner's; whose FACE they are is a separate
+  // question, and the one the numbered bindings answer out loud. Asked after the
+  // read so an unreadable image keeps reporting as the missing input it is.
+  const misbound = await identityImageSubjectRefusal(identities, row.ownerId);
+  if (misbound) {
+    return await settleFailed(row, labFailure("subject_invalid"), misbound, sink, { columns });
+  }
   // EVERY reference is required, unlike a controlled run's optional content
   // roles: the recipe allows nothing but the two identities and the one control,
   // so there is nothing here a render could go without and still be the
@@ -1417,7 +1463,7 @@ async function runTwoCharacterScene(row: ImageLabExperimentRow, sink?: Diagnosti
     buffer,
     sourceImageId: input.imageId,
     required: true,
-    ...(input.characterId === undefined ? {} : { subject: cast.get(input.characterId) ?? input.characterId }),
+    ...(input.characterId === undefined ? {} : { subject: named.names.get(input.characterId) ?? input.characterId }),
   }));
 
   return await runRecipeIntent(row, {
@@ -1455,6 +1501,101 @@ async function labCharacterNames(characterIds: readonly string[], ownerId: strin
     .where(and(inArray(characters.id, [...characterIds]), eq(characters.ownerId, ownerId)));
   const names = new Map(rows.map((row) => [row.id, row.name]));
   return characterIds.every((characterId) => names.has(characterId)) ? names : null;
+}
+
+/** A cast this kind can name, or why prompt text cannot carry these two. */
+type TwoCharacterCast = { ok: true; names: Map<string, string> } | { ok: false; message: string };
+
+/**
+ * The two names a scene binds its faces to, trimmed — or the refusal, when the
+ * pair cannot be spoken as two people.
+ *
+ * `characters.name` is neither unique nor guaranteed non-blank, so two REAL,
+ * distinct subjects can arrive wearing one label. That matters here and nowhere
+ * else in the lab: the compose strategy binds a face to a NAME ("Image 1: the
+ * identity reference for Sabrina") and dedupes its subjects by string, so an
+ * identical pair yields no cast clause at all and two byte-identical bindings —
+ * the kind's entire disambiguation mechanism silently off, on a paid render whose
+ * `identities_swapped` verdict would then be a fact about the prompt. A blank
+ * name binds nothing whatsoever.
+ *
+ * There is no wording that fixes it, because prompt text cannot attach two
+ * different faces to one name at any length, so the honest answer is a refusal
+ * naming something the admin can do — rename one character — rather than a
+ * modified clause. The COMPILER is deliberately left alone: its distinct-subject
+ * trigger is correct for what labels can express.
+ *
+ * Compared case-insensitively because the model reads both bindings as prose,
+ * where "sabrina vale" and "Sabrina Vale" are one person.
+ */
+function twoCharacterCast(subjectIds: readonly string[], cast: Map<string, string>): TwoCharacterCast {
+  const names = new Map(subjectIds.map((characterId) => [characterId, (cast.get(characterId) ?? "").trim()]));
+  const blank = [...names].find(([, name]) => name === "");
+  if (blank) {
+    return {
+      ok: false,
+      message: `character ${blank[0]} has no name, and a two-character scene binds each face to one; name that character before running this scene`,
+    };
+  }
+  const spellings = [...names.values()];
+  if (new Set(spellings.map((name) => name.toLowerCase())).size !== spellings.length) {
+    return {
+      ok: false,
+      message: `both characters in this scene are called "${spellings[0] ?? ""}", and a prompt cannot bind two different faces to one name; rename one of them and run it again`,
+    };
+  }
+  return { ok: true, names };
+}
+
+/**
+ * Why an identity input's IMAGE cannot stand for the character it is bound to —
+ * or `null` when every one of them can.
+ *
+ * The bindings are what make this kind's evidence readable: the send claims
+ * "Image 1 is Sabrina", and a verdict of `identities_swapped` is a statement
+ * about the MODEL only if that claim held when the bytes went out. Nothing
+ * upstream establishes it — the create path checks that the caller owns the
+ * character, the byte read checks that they own the image, and neither asks
+ * whether those pixels depict that person. A direct API caller can pair
+ * character B's id with character A's portrait, and the run would send A's face
+ * under B's name and record the swap it manufactured as the model's doing.
+ *
+ * `images.entityKind`/`entityId` is the association the app already keeps, and
+ * the portrait listing the lab's picker reads (`listOwnedPortraits`) selects on
+ * exactly those two columns, so every image a form can offer for a slot passes
+ * here. It also closes the one-portrait-for-both case for free: an image is filed
+ * against at most one entity, so two different characters — which this kind
+ * requires — can never both be satisfied by a single image.
+ *
+ * One query for both ids, like {@link labCharacterNames}, and no byte is read
+ * again: the question is which row the image is filed under, which its pixels
+ * cannot answer.
+ */
+async function identityImageSubjectRefusal(inputs: readonly ImageLabInput[], ownerId: string): Promise<string | null> {
+  const bound = inputs.flatMap((input) =>
+    input.characterId === undefined ? [] : [{ ...input, characterId: input.characterId }],
+  );
+  if (bound.length === 0) return null;
+  const rows = await db()
+    .select({ id: images.id, entityKind: images.entityKind, entityId: images.entityId })
+    .from(images)
+    .where(
+      and(
+        inArray(
+          images.id,
+          bound.map((input) => input.imageId),
+        ),
+        eq(images.ownerId, ownerId),
+      ),
+    );
+  const filed = new Map(rows.map((row) => [row.id, row]));
+  for (const input of bound) {
+    const image = filed.get(input.imageId);
+    if (image?.entityKind !== "character" || image.entityId !== input.characterId) {
+      return `the identity image at position ${String(input.position)} is not a render of character ${input.characterId}, so this scene would send one person's face under another's name and every verdict about swapping would be about the request`;
+    }
+  }
+  return null;
 }
 
 // --- finishing pass --------------------------------------------------------

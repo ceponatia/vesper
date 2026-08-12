@@ -267,6 +267,8 @@ function labFailureCopy(code: ImageLabFailureCode): string {
       return "The experiment orders more reference images than this model accepts. Refused rather than trimmed: a record claiming a control was sent that the provider never received is evidence about nothing.";
     case "source_invalid":
       return "The experiment this pass would refine is gone, is not a kind that can be finished, or never produced a result image. A finishing pass edits that render, so there was nothing to edit. Pick another source and run it again.";
+    case "subject_invalid":
+      return "This scene cannot say which face is whose. Either both characters answer to one name (or to none), or an identity image is not a render of the character it is bound to. Refused before any spend — the render would have looked exactly like a model that swapped or duplicated a person. Rename one character, or pick that character's own portrait, then run it again.";
     case "identity_unavailable":
       return "No identity reference could be drawn from this character's identity pack, so there was nothing to improve the face toward. Refused before any spend — the pack's own reason is recorded on this row. Give the character a clear canonical portrait, then run it again.";
     case "settings_unsupported":

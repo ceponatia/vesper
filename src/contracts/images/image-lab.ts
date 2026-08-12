@@ -431,6 +431,15 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   an owned, succeeded run holding a result image of a finishable kind. The
  *   pass edits that render, so without it there is nothing to finish; refused
  *   before any provider spend.
+ * - `subject_invalid` — a `two_character_scene`'s subject bindings cannot support
+ *   its claim: the two characters resolve to one indistinguishable (or blank)
+ *   name, or an identity input names an image that is not a render of the
+ *   character it is bound to. Names are not unique and an image's subject is not
+ *   implied by the id beside it, so both are reachable with perfectly valid rows
+ *   — and either one turns the numbered bindings that say which face is whose
+ *   into a statement the send does not honour, which is the one thing this kind's
+ *   evidence rests on. Refused before any provider spend, because the resulting
+ *   render would look exactly like a model that swapped or duplicated a person.
  * - `identity_unavailable` — no identity reference could be drawn for the
  *   subject: the finishing pass has nothing to improve the face TOWARD, and a
  *   run without one would be an unconstrained re-edit wearing the name of an
@@ -453,6 +462,7 @@ export const imageLabFailureCodes = [
   "control_source_sent",
   "capacity_exceeded",
   "source_invalid",
+  "subject_invalid",
   "identity_unavailable",
   "settings_unsupported",
   "preprocessor_output_invalid",

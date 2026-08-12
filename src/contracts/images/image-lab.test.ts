@@ -967,6 +967,15 @@ describe("imageLabDiagnosticCode", () => {
     expect(imageLabDiagnosticCode("settings_unsupported")).toBe("image_lab.settings_unsupported");
     expect(imageLabFailureCodeFromDiagnostic("image_lab.settings_unsupported")).toBe("settings_unsupported");
   });
+
+  // The two-character kind's whole claim is that each numbered binding names the
+  // right person, so the refusal that fires when it cannot has to survive the
+  // round trip through the row it is stored on.
+  it("owns the two-character subject refusal in both spellings", () => {
+    expect(imageLabFailureCodes).toContain("subject_invalid");
+    expect(imageLabDiagnosticCode("subject_invalid")).toBe("image_lab.subject_invalid");
+    expect(imageLabFailureCodeFromDiagnostic("image_lab.subject_invalid")).toBe("subject_invalid");
+  });
 });
 
 describe("imageLabFailureCodeFromDiagnostic", () => {

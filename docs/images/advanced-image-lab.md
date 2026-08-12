@@ -57,9 +57,14 @@ contract: its spec.
   model's capacity, because the generic planner checks required roles by
   presence and would otherwise drop one character silently; an undeclared
   control-class input and half a control pointer both refuse as
-  `image_lab.control_invalid`. A two-character result is not a valid
-  finishing-pass source — a finishing pass refines one face toward one
-  identity pack.
+  `image_lab.control_invalid`. The subject bindings themselves are verified
+  pre-spend (`image_lab.subject_invalid`): a cast whose two names are blank or
+  case-insensitively identical is refused — prompt text cannot bind two faces
+  to one name, and the create route refuses the same pair immediately — and
+  each identity image must be filed under the character it is bound to, which
+  also makes one portrait serving both slots impossible. A two-character
+  result is not a valid finishing-pass source — a finishing pass refines one
+  face toward one identity pack.
 - A **finishing pass** re-edits another experiment's result to correct identity
   and nothing else. It names its source experiment by id — a succeeded baseline
   or controlled run holding a result image; a probe and another finishing pass

@@ -597,6 +597,21 @@ distinguishable; everything else rides the Stage 1–5 machinery unchanged.
   recorded in `verdictNote`. A render that obeyed the skeleton and merged both
   faces is a failure; one that held both faces and ignored the pose is a result
   worth having.
+- **Subject bindings are verified, not trusted** (added 2026-08-12 from the
+  PR #91 review). Two refusals guard the binding itself, both settling
+  `image_lab.subject_invalid` pre-spend: a cast whose two names are blank or
+  case-insensitively identical (character names are not unique, and prompt
+  text cannot bind two different faces to one name at any length — the honest
+  answer is a refusal naming the remedy, renaming one character, and the
+  compiler's distinct-subject trigger stays untouched), and an identity input
+  whose image row is not filed under its bound character
+  (`images.entityKind = "character"`, `entityId` equal — the columns the
+  portrait picker's own listing selects on, so every form-pickable image
+  passes by construction; it also closes one-portrait-for-both, since an
+  image files under at most one entity). The name collision is additionally
+  refused at create (`characters_share_name`) so the form answers immediately;
+  the image association is deliberately runner-only, since assets can change
+  between the queue and the render.
 - **Subjects are any two distinct owned characters, not the chat's members.**
   The chat says where the evidence is filed, exactly as `controlled_scene`'s
   identity reference is any portrait of its character rather than the chat's
@@ -959,6 +974,8 @@ Stage 6 additions (2026-08-12):
   build ruling above records why it could not stay).
 - `imageLabTwoCharacterVerdicts` + the widened `imageLabVerdicts` union; the
   kind in `imageLabVerdictKinds` and `imageLabVerdictOptions`.
+- The `subject_invalid` failure code (subject-binding refusals, from the PR #91
+  review) and the create route's `characters_share_name` refusal.
 - In `image-lab-recipes.ts`: `imageLabTwoCharacterRecipeKey`,
   `imageLabTwoCharacterRecipeProfile` (both arms, `/none` included).
 - Outside the lab's contracts, consumed from the capabilities vocabulary:
@@ -1152,6 +1169,10 @@ asserting fallback **and** code:
 - Two-character row carrying half a control pointer, or a control-class role
   among its ordered inputs when it declares no fixture →
   `image_lab.control_invalid`, refused before any provider spend.
+- Two-character cast whose names are blank or case-insensitively identical, or
+  an identity input whose image is not filed under its bound character →
+  `image_lab.subject_invalid`, refused before any provider spend (the name
+  collision also refuses at create as `characters_share_name`).
 - Controlled run OR finishing pass carrying a raw `controlInput` bag →
   `image_lab.settings_unsupported`, refused before any provider spend.
 - Finishing pass whose source experiment is missing, of an unfinishable kind, or
