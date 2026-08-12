@@ -4,6 +4,7 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   imageLabControlSchema,
   imageLabDiagnosticCode,
+  IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY,
   IMAGE_LAB_FINISHING_RECIPE_KEY,
   REPLICATE_VERSION_UNDISCLOSED,
   type ImageLabControlKind,
@@ -28,7 +29,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { characters, db, imageLabExperiments, imageModels, images, jobs } from "../db";
+import { characters, db, imageLabExperiments, imageLoras, imageModels, images, jobs } from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import {
   createImageLabExperiment,
@@ -80,13 +81,19 @@ const PINNED_MODEL_ID = "imgmdlimagelabpinnedaaaa";
 const UNPINNED_MODEL_ID = "imgmdlimagelabfloataaaaa";
 const CAPPED_MODEL_ID = "imgmdlimagelabcappedaaaa";
 const THREE_REF_MODEL_ID = "imgmdlimagelabthreerefaa";
-const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID, THREE_REF_MODEL_ID];
+const LORA_MODEL_ID = "imgmdlimagelabloraaaaaaa";
+const FIXTURE_MODEL_IDS = [PINNED_MODEL_ID, UNPINNED_MODEL_ID, CAPPED_MODEL_ID, THREE_REF_MODEL_ID, LORA_MODEL_ID];
 
 const PINNED_SLUG = "vesper-test/image-lab-pinned";
 const UNPINNED_SLUG = "vesper-test/image-lab-floating";
 const CAPPED_SLUG = "vesper-test/image-lab-one-reference";
 const THREE_REF_SLUG = "vesper-test/image-lab-three-reference";
+const LORA_SLUG = "vesper-test/image-lab-lora";
 const PINNED_VERSION = "imagelabversionaaaaaaaaa";
+
+/** The curated library row the LoRA-only arm measures — global, like the registry. */
+const FIXTURE_LORA_ID = "imgloraimagelabfixtureaa";
+const FIXTURE_LORA_SCALE = 1;
 /** What the provider "echoes back" — deliberately the pinned one, so a test that
  * asserts both columns proves the runner recorded each from its own source. */
 const EXECUTED_VERSION = PINNED_VERSION;
@@ -147,11 +154,53 @@ beforeAll(async () => {
         maxReferences: 3,
         probedVersionId: PINNED_VERSION,
       },
+      {
+        // Pinned, and the only fixture whose probed version declares the two
+        // LoRA inputs. `evaluateImageLoraForRender` refuses a model that exposes
+        // neither, so the LoRA arms are unrunnable without a registration shaped
+        // like the live `qwen/qwen-image-edit-plus-lora` one.
+        id: LORA_MODEL_ID,
+        slug: LORA_SLUG,
+        label: "Image Lab LoRA Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 3,
+        probedVersionId: PINNED_VERSION,
+        advancedCapabilities: {
+          controls: {
+            loraWeights: { field: "lora_weights", type: "string" },
+            loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+          },
+        },
+      },
     ]);
+
+  await db().delete(imageLoras).where(eq(imageLoras.id, FIXTURE_LORA_ID));
+  await db()
+    .insert(imageLoras)
+    .values({
+      id: FIXTURE_LORA_ID,
+      label: "Image Lab Character LoRA Fixture",
+      locatorType: "huggingface_repo",
+      locator: "vesper-test/image-lab-character-lora",
+      compatibleModelSlugs: [LORA_SLUG],
+      // Empty means any version of a compatible slug — the row is not making a
+      // claim about version drift, so the arm under test is the arm, not the pin.
+      compatibleVersionIds: [],
+      defaultScale: FIXTURE_LORA_SCALE,
+      minimumScale: 0.5,
+      maximumScale: 1.5,
+      triggerWords: [],
+      allowedTasks: ["variant"],
+      enabled: true,
+    });
 });
 
 afterAll(async () => {
-  if (ready) await db().delete(imageModels).where(inArray(imageModels.id, FIXTURE_MODEL_IDS));
+  if (ready) {
+    await db().delete(imageModels).where(inArray(imageModels.id, FIXTURE_MODEL_IDS));
+    await db().delete(imageLoras).where(eq(imageLoras.id, FIXTURE_LORA_ID));
+  }
   await temp?.cleanup();
   await purgeOwnerRows([ownerId]);
   await endTestPool();
@@ -1268,6 +1317,94 @@ describe.skipIf(!ready)("image lab finishing passes", () => {
     expect(codes(sink)).toContain("image_lora.unreachable_configuration");
     expect(captured).toHaveLength(0);
     expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("runs the LoRA-only arm on the base render alone, and never asks the identity pack", async () => {
+    stubSuccessfulRenderer();
+    // A character with NO canonical portrait — the exact fixture that settles
+    // `identity_unavailable` on the identity arm above. Succeeding here is the
+    // assertion that the pack was never consulted: there is nothing it could have
+    // answered with, so a run that asked it could not have got this far.
+    const source = await seedFinishedSource(await seedOwnedCharacter());
+    const { id, sink } = await createFinishingPass(source.id, {
+      modelSlug: LORA_SLUG,
+      finishingVariant: "lora_only",
+      settings: { controls: { lora: { id: FIXTURE_LORA_ID, scale: FIXTURE_LORA_SCALE } }, controlInput: {} },
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    // Both create-time meta keys survived the settle, the whole reason meta
+    // writes merge rather than assign.
+    expect(experiment?.sourceExperimentId).toBe(source.id);
+    expect(experiment?.finishingVariant).toBe("lora_only");
+    // ONE ordered input, written back by the runner: the source's render, and
+    // nothing beside it.
+    expect(experiment?.inputs.map((input) => input.role)).toEqual(["before"]);
+    expect(experiment?.inputs[0]?.imageId).toBe(source.resultImageId);
+    // The record cites the arm's own recipe, so a verdict written weeks later
+    // cannot mistake this for a pass that also sent the pack.
+    expect(experiment?.outcome?.recipeKey).toBe(IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY);
+    expect(experiment?.outcome?.sentRoles).toEqual(["before"]);
+    expect(experiment?.outcome?.dropped).toEqual([]);
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    // The prompt cannot name a slot this arm did not fill.
+    expect(experiment?.finalPrompt).toContain("No identity reference image is supplied");
+    expect(experiment?.finalPrompt).not.toContain("Image 2:");
+
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.references.map((reference) => reference.role)).toEqual(["before"]);
+      expect(request.intent.versionId).toBe(PINNED_VERSION);
+      // Pre-resolved by the shared recipe runner, exactly as on the identity arm.
+      expect(request.intent.resolvedLora?.id).toBe(FIXTURE_LORA_ID);
+      expect(request.intent.resolvedLora?.scale).toBe(FIXTURE_LORA_SCALE);
+    }
+    expect(codes(sink)).not.toContain(imageLabDiagnosticCode("identity_unavailable"));
+  });
+
+  it("refuses a LoRA-only pass whose row names no LoRA, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // Inserted directly, because the create request refuses this pair outright:
+    // the only ways a row reaches the runner in this state are predating that
+    // rule, or a caller that went around the request schema.
+    //
+    // The subject DOES have a usable pack, so a runner that quietly fell back to
+    // the identity arm would succeed here rather than fail — which is what makes
+    // the refusal below evidence about the arm and not about the character.
+    const characterId = await seedCharacterWithPortrait();
+    const source = await seedFinishedSource(characterId);
+    const [row] = await db()
+      .insert(imageLabExperiments)
+      .values({
+        ownerId,
+        kind: "finishing_pass",
+        modelSlug: LORA_SLUG,
+        characterId,
+        instruction: "",
+        inputs: [],
+        settings: {},
+        meta: { sourceExperimentId: source.id, finishingVariant: "lora_only" },
+        status: "pending",
+      })
+      .returning({ id: imageLabExperiments.id });
+    if (!row) throw new Error("failed to seed a LoRA-only pass with no LoRA");
+    const sink = new DiagnosticCollector();
+
+    await runImageLabExperiment(row.id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(row.id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("input_missing"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    // Not "the pack had nothing": the arm's identity is that it never asks.
+    expect(codes(sink)).not.toContain(imageLabDiagnosticCode("identity_unavailable"));
   });
 
   it("records a finishing ruling and refuses one from the control vocabulary", async () => {

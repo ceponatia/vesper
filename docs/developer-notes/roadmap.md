@@ -44,9 +44,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   control-mapped Qwen edits against ordinary output; Stages 0–3 are complete —
   depth and edge controls proved reliable in both lanes, pose is stochastic,
   Plus stays unregistered, and identity finishing is conditionally viable, only
-  earning its cost when its instruction carries appearance text — Stage 4's LoRA
-  library, connector, refusal checks and style-LoRA smoke arms are all run with
-  owner verdicts pending, and Stages 5–7 wait on their gates.
+  earning its cost when its instruction carries appearance text — Stage 4 is run
+  with owner verdicts pending, Stage 5's comparison machinery is built and its
+  Sabrina training pilot is underway, and Stages 6–7 wait on their gates.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

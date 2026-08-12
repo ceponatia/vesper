@@ -219,7 +219,7 @@ export function imageLabDropReasonExplanation(reason: ImageLabOutcomeDrop["reaso
 function labFailureCopy(code: ImageLabFailureCode): string {
   switch (code) {
     case "input_missing":
-      return "The experiment's ordered inputs were missing or unreadable, so nothing was sent to the provider.";
+      return "The experiment's ordered inputs were missing or unreadable, so nothing was sent to the provider. A LoRA-only finishing pass reads this way too when the row names no LoRA: with no weights and no identity reference, the pass has nothing to change the face toward.";
     case "version_unpinned":
       return "The model's exact provider version could not be identified. The run was refused before any spend — evidence rendered against an unknown version answers nothing.";
     case "control_invalid":

@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { imageLabControlKinds, imageLabExperimentKinds } from "./image-lab";
 import {
   IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
+  IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY,
   IMAGE_LAB_FINISHING_RECIPE_KEY,
   IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX,
   imageLabControlledKinds,
   imageLabFinishableKinds,
+  imageLabFinishingRecipeKey,
   imageLabFinishingRecipeProfile,
   imageLabRecipeKey,
   imageLabRecipeProfile,
@@ -144,21 +146,21 @@ describe("imageLabRecipeProfile", () => {
 
 describe("imageLabFinishingRecipeProfile", () => {
   it("names itself under the recipe id prefix, keyed by its one stable key", () => {
-    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    const profile = imageLabFinishingRecipeProfile("mdl_x", "identity");
     expect(profile.key).toBe(IMAGE_LAB_FINISHING_RECIPE_KEY);
     expect(profile.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}${IMAGE_LAB_FINISHING_RECIPE_KEY}`);
     expect(profile.imageModelId).toBe("mdl_x");
   });
 
   it("requires the base render and the identity reference, in that order", () => {
-    const policy = imageLabFinishingRecipeProfile("mdl_x").referencePolicy;
+    const policy = imageLabFinishingRecipeProfile("mdl_x", "identity").referencePolicy;
     expect(policy.requiredRoles).toEqual(["before", "identity"]);
     expect(policy.allowedRoles).toEqual(["before", "identity"]);
     expect(policy.roleOrder).toEqual(["before", "identity"]);
   });
 
   it("sends no control map at all — the pass changes nothing structural", () => {
-    const policy = imageLabFinishingRecipeProfile("mdl_x").referencePolicy;
+    const policy = imageLabFinishingRecipeProfile("mdl_x", "identity").referencePolicy;
     for (const role of ["pose", "depth", "edge", "control"] as const) {
       expect(policy.allowedRoles).not.toContain(role);
     }
@@ -169,28 +171,75 @@ describe("imageLabFinishingRecipeProfile", () => {
     // watched every three-reference send collapse identity, so the third slot
     // stays unspent until an arm says otherwise.
     expect(IMAGE_LAB_FINISHING_IDENTITY_STRATEGY).toBe("canonical_only");
-    expect(imageLabFinishingRecipeProfile("mdl_x").referencePolicy.maxPerRole).toEqual({ before: 1, identity: 2 });
+    expect(imageLabFinishingRecipeProfile("mdl_x", "identity").referencePolicy.maxPerRole).toEqual({ before: 1, identity: 2 });
   });
 
   it("screens as an identity task whatever the source rendered", () => {
-    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    const profile = imageLabFinishingRecipeProfile("mdl_x", "identity");
     expect(profile.task).toBe("variant");
     expect(profile.operation).toBe("edit");
     expect(profile.promptStrategy).toBe("multi_reference_compose");
   });
 
   it("is a valid profile row in every way but storage", () => {
-    const profile = imageLabFinishingRecipeProfile("mdl_x");
+    const profile = imageLabFinishingRecipeProfile("mdl_x", "identity");
     expect(imageModelProfileSchema.parse(profile)).toEqual(profile);
   });
 
   it("passes eligibility on the plan's model and refuses one that would render a stranger", () => {
     const model = qwen2511();
-    expect(profileEligibility(imageLabFinishingRecipeProfile(model.id), model)).toEqual({ ok: true });
-    expect(profileEligibility(imageLabFinishingRecipeProfile("mdl_x"), qwen2511({ identityPreservation: "weak" }))).toEqual({
+    expect(profileEligibility(imageLabFinishingRecipeProfile(model.id, "identity"), model)).toEqual({ ok: true });
+    expect(profileEligibility(imageLabFinishingRecipeProfile("mdl_x", "identity"), qwen2511({ identityPreservation: "weak" }))).toEqual({
       ok: false,
       reason: "identity_too_weak",
     });
+  });
+});
+
+describe("imageLabFinishingRecipeProfile — the LoRA-only arm", () => {
+  it("names itself under its own key, so a recorded outcome says which arm ran", () => {
+    const profile = imageLabFinishingRecipeProfile("mdl_x", "lora_only");
+    expect(profile.key).toBe(IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY);
+    expect(profile.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}${IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY}`);
+    // The two arms are two recipes, and a reader of the record must be able to
+    // tell them apart — "this face improved" means different things in each.
+    expect(profile.key).not.toBe(IMAGE_LAB_FINISHING_RECIPE_KEY);
+    expect(imageLabFinishingRecipeKey("identity")).toBe(IMAGE_LAB_FINISHING_RECIPE_KEY);
+    expect(imageLabFinishingRecipeKey("lora_only")).toBe(IMAGE_LAB_FINISHING_LORA_ONLY_RECIPE_KEY);
+  });
+
+  it("sends the base render and nothing else, and cannot be handed an identity reference", () => {
+    const policy = imageLabFinishingRecipeProfile("mdl_x", "lora_only").referencePolicy;
+    expect(policy.requiredRoles).toEqual(["before"]);
+    expect(policy.roleOrder).toEqual(["before"]);
+    expect(policy.maxPerRole).toEqual({ before: 1 });
+    // ALLOWED, not merely unsent: the isolation is the measurement, so no caller
+    // and no later edit can smuggle a pack reference into this arm.
+    expect(policy.allowedRoles).toEqual(["before"]);
+    expect(policy.allowedRoles).not.toContain("identity");
+  });
+
+  it("changes nothing but key, label and policy — everything a comparison holds fixed", () => {
+    const identity = imageLabFinishingRecipeProfile("mdl_x", "identity");
+    const loraOnly = imageLabFinishingRecipeProfile("mdl_x", "lora_only");
+    // Same identity-critical screening, whatever the likeness arrives as.
+    expect(loraOnly.task).toBe(identity.task);
+    expect(loraOnly.operation).toBe(identity.operation);
+    expect(loraOnly.promptStrategy).toBe(identity.promptStrategy);
+    expect(loraOnly.controlDefaults).toEqual(identity.controlDefaults);
+    expect(loraOnly.providerOverrides).toEqual(identity.providerOverrides);
+    expect(loraOnly.timeoutMs).toBe(identity.timeoutMs);
+    expect(loraOnly.label).not.toBe(identity.label);
+  });
+
+  it("is a valid profile row the eligibility gate still screens as identity-critical", () => {
+    const profile = imageLabFinishingRecipeProfile("mdl_x", "lora_only");
+    expect(imageModelProfileSchema.parse(profile)).toEqual(profile);
+    const model = qwen2511();
+    expect(profileEligibility(imageLabFinishingRecipeProfile(model.id, "lora_only"), model)).toEqual({ ok: true });
+    expect(
+      profileEligibility(imageLabFinishingRecipeProfile("mdl_x", "lora_only"), qwen2511({ identityPreservation: "weak" })),
+    ).toEqual({ ok: false, reason: "identity_too_weak" });
   });
 });
 

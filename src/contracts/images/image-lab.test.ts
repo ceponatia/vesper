@@ -193,6 +193,7 @@ describe("imageLabExperimentSchema", () => {
       resultImageId: "img_result",
       outcome: null,
       sourceExperimentId: null,
+      finishingVariant: null,
       status: "succeeded",
       failureCode: null,
       verdict: "honours_control",
@@ -238,6 +239,44 @@ describe("imageLabExperimentSchema", () => {
     });
     expect(parsed.sourceExperimentId).toBe("exp_controlled");
     expect(parsed.verdict).toBe("improves_identity");
+  });
+
+  it("carries the arm a Stage 5 pass ran, and reads an undeclared one as absent", () => {
+    const loraOnly = imageLabExperimentSchema.parse({
+      id: "exp_lora_only",
+      kind: "finishing_pass",
+      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      status: "succeeded",
+      sourceExperimentId: "exp_controlled",
+      finishingVariant: "lora_only",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+    expect(loraOnly.finishingVariant).toBe("lora_only");
+
+    // Absent is a real state, not a defaulted "identity": every Stage 3 row
+    // predates the vocabulary, and the RUNNER is where absence becomes a choice.
+    const stageThree = imageLabExperimentSchema.parse({
+      id: "exp_stage_three",
+      kind: "finishing_pass",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      sourceExperimentId: "exp_controlled",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+    expect(stageThree.finishingVariant).toBeNull();
+  });
+
+  it("costs a bad finishing variant the field, never the row", () => {
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_bad_variant",
+      kind: "finishing_pass",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "succeeded",
+      finishingVariant: "identity_and_lora",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+    expect(parsed.finishingVariant).toBeNull();
+    expect(parsed.id).toBe("exp_bad_variant");
   });
 
   it("costs a bad source pointer the field, never the row", () => {
@@ -528,6 +567,68 @@ describe("imageLabCreateExperimentRequestSchema", () => {
       controlKind: "pose",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a LoRA-only finishing pass that names the LoRA it measures", () => {
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      finishingVariant: "lora_only",
+      settings: { controls: { lora: { id: "lora_sabrina", scale: 0.9 } } },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.finishingVariant).toBe("lora_only");
+  });
+
+  it("refuses a LoRA-only pass with no LoRA — it would only re-render its own source", () => {
+    // The arm withholds the identity references so the weights can be judged
+    // alone. With no weights either, there is nothing left for the pass to do.
+    const result = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      finishingVariant: "lora_only",
+    });
+    expect(result.success).toBe(false);
+
+    const emptyOverlay = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+      finishingVariant: "lora_only",
+      settings: { controls: {}, controlInput: {} },
+    });
+    expect(emptyOverlay.success).toBe(false);
+  });
+
+  it("accepts the identity arm with no LoRA, and a pass that declares no arm at all", () => {
+    expect(
+      imageLabCreateExperimentRequestSchema.safeParse({
+        kind: "finishing_pass",
+        sourceExperimentId: "exp_controlled",
+        finishingVariant: "identity",
+      }).success,
+    ).toBe(true);
+    const undeclared = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "finishing_pass",
+      sourceExperimentId: "exp_controlled",
+    });
+    expect(undeclared.success).toBe(true);
+    if (undeclared.success) expect(undeclared.data.finishingVariant).toBeUndefined();
+  });
+
+  it("refuses a variant on a kind whose runner reads none", () => {
+    // A stored variant on a controlled run would describe an arm its render
+    // never had — the same reason a source pointer is refused there.
+    for (const kind of ["control_probe", "baseline_portrait", "controlled_portrait"] as const) {
+      const result = imageLabCreateExperimentRequestSchema.safeParse({
+        kind,
+        characterId: "chr_1",
+        inputs: probeInputs,
+        controlImageId: "img_skeleton",
+        controlKind: "pose",
+        finishingVariant: "lora_only",
+      });
+      expect(result.success).toBe(false);
+    }
   });
 
   it("accepts a controlled portrait naming its character with its control declared among the inputs", () => {

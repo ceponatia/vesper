@@ -1,4 +1,4 @@
-import type { ImageLabControlKind } from "@/contracts";
+import type { ImageLabControlKind, ImageLabFinishingVariant } from "@/contracts";
 
 /**
  * The Advanced Image Lab's numbered-role instruction template
@@ -106,18 +106,19 @@ export function imageLabProbeInstruction(input: ImageLabProbeInstructionInput): 
 }
 
 /**
- * The Stage 3 finishing pass's fixed preamble — the whole product rule, written
- * as the instruction the model is given.
+ * The half of the finishing preamble that is the same in every arm — the whole
+ * product rule's "and nothing else", written as the instruction the model is
+ * given.
  *
  * The plan's promotion rule is that a finishing pass may be adopted only when it
  * "improves identity without materially changing structure, clothing, body,
  * camera, lighting, or setting". That sentence is not just how the result is
  * judged; it is what the run is asked to do, so the preamble names both halves
- * explicitly — what to correct, and the list of everything that must survive
- * untouched. Wording the second half as a list rather than as "change nothing
- * else" is deliberate: a model told only to preserve "everything else" reliably
- * re-renders the scene it thinks it is improving, and a re-rendered scene fails
- * the rule no matter what it did to the face.
+ * explicitly — what to correct ({@link finishingTargetClause}), and the list here
+ * of everything that must survive untouched. Wording this half as a list rather
+ * than as "change nothing else" is deliberate: a model told only to preserve
+ * "everything else" reliably re-renders the scene it thinks it is improving, and
+ * a re-rendered scene fails the rule no matter what it did to the face.
  *
  * Hair sits on the IDENTITY side, not the untouched side, because hair colour
  * and hairline are identity signal and a pass forbidden to touch them could not
@@ -132,18 +133,45 @@ export function imageLabProbeInstruction(input: ImageLabProbeInstructionInput): 
  * to prevent. This text says "the before image" and "the identity reference",
  * which are the words those bindings use.
  */
-const FINISHING_PREAMBLE = [
-  "Refine only the identity in the before image: correct the face so it matches the identity reference — bone " +
-    "structure, jaw and chin shape, brow, eyes, nose, mouth, skin tone, hairline and hair colour, and apparent age.",
+const FINISHING_UNCHANGED_CLAUSES = [
   "Change nothing else. Keep the pose, body proportions, hands, clothing, camera angle, framing, crop, lighting, " +
     "colour grade, and setting exactly as they are in the before image.",
   "Do not re-render the scene, do not restyle it, and do not move or reframe the subject. The before image is the " +
     "output except for the face.",
-].join(" ");
+];
 
 /**
- * The finishing pass's full base prompt: the preamble, then the admin's own
- * instruction when they wrote one.
+ * The half of the preamble that names WHAT the face is corrected toward — the one
+ * sentence the two arms cannot share.
+ *
+ * The identity arm sends an identity reference and says so. The LoRA-only arm
+ * sends no such image, and a preamble that named one anyway would point the model
+ * at a slot that does not exist: the likeness there comes from the loaded weights
+ * (and the library row's own trigger words, woven in around this text by
+ * `applyImageLoraPromptAdditions`), so the sentence says that instead, and says
+ * out loud that no reference is coming. The list of identity features is
+ * identical in both, because it is the definition of "the face" this pass is
+ * allowed to touch and that definition does not depend on where the likeness
+ * came from.
+ */
+function finishingTargetClause(variant: ImageLabFinishingVariant): string {
+  const features =
+    "bone structure, jaw and chin shape, brow, eyes, nose, mouth, skin tone, hairline and hair colour, and " +
+    "apparent age";
+  switch (variant) {
+    case "identity":
+      return `Refine only the identity in the before image: correct the face so it matches the identity reference — ${features}.`;
+    case "lora_only":
+      return (
+        `Refine only the identity in the before image: correct the face — ${features} — so it is the character ` +
+        `this prompt names. No identity reference image is supplied; do not look for one.`
+      );
+  }
+}
+
+/**
+ * The finishing pass's full base prompt: the preamble for its arm, then the
+ * admin's own instruction when they wrote one.
  *
  * The admin's text comes AFTER the rule rather than before it, and is optional
  * for the same reason the rule is fixed: the run's whole claim is that it
@@ -154,7 +182,8 @@ const FINISHING_PREAMBLE = [
  * A blank line separates the two, so an instruction written as a fragment reads
  * as its own remark rather than running into the last sentence of the rule.
  */
-export function imageLabFinishingInstruction(ownerInstruction: string): string {
+export function imageLabFinishingInstruction(ownerInstruction: string, variant: ImageLabFinishingVariant): string {
+  const preamble = [finishingTargetClause(variant), ...FINISHING_UNCHANGED_CLAUSES].join(" ");
   const extra = ownerInstruction.trim();
-  return extra === "" ? FINISHING_PREAMBLE : `${FINISHING_PREAMBLE}\n\n${extra}`;
+  return extra === "" ? preamble : `${preamble}\n\n${extra}`;
 }

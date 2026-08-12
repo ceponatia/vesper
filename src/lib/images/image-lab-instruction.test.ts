@@ -52,7 +52,7 @@ describe("imageLabProbeInstruction", () => {
 
 describe("imageLabFinishingInstruction", () => {
   it("names both halves of the promotion rule: correct the face, keep everything else", () => {
-    const text = imageLabFinishingInstruction("");
+    const text = imageLabFinishingInstruction("", "identity");
     expect(text).toContain("Refine only the identity in the before image");
     // The plan's own list — a pass that moved any of these is not promotable, so
     // the instruction has to have asked for each of them by name.
@@ -62,16 +62,48 @@ describe("imageLabFinishingInstruction", () => {
   });
 
   it("keeps hair on the identity side, where the drift it must fix lives", () => {
-    expect(imageLabFinishingInstruction("")).toContain("hairline and hair colour");
+    expect(imageLabFinishingInstruction("", "identity")).toContain("hairline and hair colour");
   });
 
   it("sends the rule alone when the admin writes nothing", () => {
-    expect(imageLabFinishingInstruction("   ")).toBe(imageLabFinishingInstruction(""));
+    expect(imageLabFinishingInstruction("   ", "identity")).toBe(imageLabFinishingInstruction("", "identity"));
   });
 
   it("appends the admin's note after the rule rather than replacing it", () => {
-    const text = imageLabFinishingInstruction("  the left eye is drifting  ");
-    expect(text.startsWith(imageLabFinishingInstruction(""))).toBe(true);
+    const text = imageLabFinishingInstruction("  the left eye is drifting  ", "identity");
+    expect(text.startsWith(imageLabFinishingInstruction("", "identity"))).toBe(true);
+    expect(text.endsWith("the left eye is drifting")).toBe(true);
+  });
+
+  it("never names an identity reference on the arm that sends none", () => {
+    // The LoRA-only arm sends the base render alone, so a preamble naming "the
+    // identity reference" would point the model at a slot that does not exist —
+    // and the arm would measure that confusion instead of the weights.
+    const text = imageLabFinishingInstruction("", "lora_only");
+    expect(text).not.toContain("the identity reference");
+    expect(text).toContain("No identity reference image is supplied");
+    expect(text).toContain("Refine only the identity in the before image");
+  });
+
+  it("holds the untouched half identical across the arms, so only the target moves", () => {
+    // The two arms are one comparison: if the "change nothing else" half differed
+    // between them, a difference in the output could be that wording's doing.
+    const identity = imageLabFinishingInstruction("", "identity");
+    const loraOnly = imageLabFinishingInstruction("", "lora_only");
+    expect(identity).not.toBe(loraOnly);
+    for (const shared of [
+      "Change nothing else.",
+      "hairline and hair colour",
+      "The before image is the output except for the face.",
+    ]) {
+      expect(identity).toContain(shared);
+      expect(loraOnly).toContain(shared);
+    }
+  });
+
+  it("appends the admin's note on the LoRA-only arm too", () => {
+    const text = imageLabFinishingInstruction("the left eye is drifting", "lora_only");
+    expect(text.startsWith(imageLabFinishingInstruction("", "lora_only"))).toBe(true);
     expect(text.endsWith("the left eye is drifting")).toBe(true);
   });
 });

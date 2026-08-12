@@ -44,6 +44,8 @@ those systems through their existing exports and adds no second copy.
 | Stage 4 connector registration + refusal checks | run 2026-08-11   |
 | Stage 4 style-LoRA smoke arms (no-LoRA / LoRA)  | run 2026-08-11   |
 | Stage 4 owner verdicts                          | pending          |
+| Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
+| Stage 5 dataset, training run, comparison arms  | pending          |
 
 Stage 5+ work (the character-LoRA pilot, two-character recipes) is deliberately
 absent from this table: Stage 5 waits on Stage 4's verdict, and Stage 6 on the
@@ -421,6 +423,139 @@ work and how the lab reaches it.
   trial section rather than through a third vocabulary. Stage 4 proves
   plumbing; Stage 5 judges value — inventing verdict values for a two-run
   plumbing trial would churn the per-kind gate for nothing.
+
+## Stage 5 build rulings (2026-08-11)
+
+Stage 5 adds one comparison arm and one piece of operator tooling; everything
+else it runs on already exists.
+
+- **A finishing pass declares which ARM it runs.** `imageLabFinishingVariants =
+  ["identity", "lora_only"]`; the create request takes an optional
+  `finishingVariant` (refused on every other kind), stored in the row's `meta`
+  beside `sourceExperimentId` and exposed on the wire as a nullable field. Null
+  means "declared none": every Stage 3 row predates the vocabulary, and
+  flattening the default into those records would erase the difference between
+  a pass that chose the identity arm and one that was never asked. The RUNNER
+  applies the default (`identity`) in one place, where the recipe is chosen.
+- **The `lora_only` arm isolates by disallowing, not by capping.** Recipe
+  `finishing_pass/lora_only`: `requiredRoles: ["before"]`, `allowedRoles:
+  ["before"]` — identity is not allowed at all, so it cannot be smuggled back
+  by a future edit (the identity recipe's `maxPerRole.identity: 2` headroom
+  made a zero-cap approach fragile). The runner skips pack resolution entirely
+  on this arm — no `identity_unavailable` path, because nothing is asked of the
+  pack.
+- **A LoRA-only pass without a LoRA is refused.** At create
+  (`finishingVariant: "lora_only"` with no `settings.controls.lora` is a 400 —
+  with no weights and no identity reference the run would only re-render its
+  source), and again pre-spend in the runner (`image_lab.input_missing`) for
+  rows that predate the rule or bypass the schema. The refusal is lab
+  vocabulary, not `image_lora.*`, because no library resolution ever ran —
+  nothing was resolved, so nothing refused.
+- **The finishing preamble forks per arm — the one substantive change to Stage
+  3 text.** The Stage 3 preamble orders the model to correct the face "so it
+  matches the identity reference"; on an arm that sends no such image that
+  sentence names a slot that does not exist, and the run would measure prompt
+  confusion rather than the LoRA. `imageLabFinishingInstruction(instruction,
+  variant)` swaps only that target sentence (`lora_only`: correct toward the
+  character the prompt names; no identity reference image is supplied); the
+  change-nothing-else half is shared verbatim between arms and a test asserts
+  the shared half is identical, so the comparison's constant stays constant.
+- **Training stays outside the application.**
+  `scripts/train-image-lora.ts` is on-demand operator tooling — the plan rules
+  automatic in-app LoRA training out of scope — that stages a dataset without
+  mutating it, writes missing caption sidecars, zips flat, uploads, starts a
+  training against the PINNED trainer version, polls, and downloads/extracts
+  the result. Trainer: `qwen/qwen-image-lora-trainer`, version
+  `f28eb39544f2c0dff4fbd9d50588fd75789f7ef26f6118456a96c2eedddddf90` (probed
+  2026-08-11). Spending is opt-in (`--yes` / TTY confirm), `--dry-run` makes no
+  network call, and the token is never printed.
+- **Trainer facts that bind the pilot** (verified against the trainer's code
+  and live schema, 2026-08-11): the dataset ZIP is FLAT (nested directories are
+  silently ignored — the script says so out loud), formats `.jpg/.jpeg/.png/
+  .webp` only; captions are same-basename `.txt` sidecars, optional, with
+  `default_caption` filling the gaps — and its `<>` placeholder is NOT
+  substituted by the trainer, so the real name must be written in. Captioning
+  doctrine is the vendor's, unambiguous: descriptive real words and a real
+  first name, never rare tokens — which settles the research record's
+  "captioning as a trial arm" as unnecessary. Only the FINAL checkpoint is
+  kept (`max_step_saves_to_keep: 1`), so the research record's
+  best-pick-from-checkpoints mitigation is unavailable; a step-count comparison
+  is two trainings. Output is `{ weights: <url> }` — a durable
+  `replicate.delivery` ZIP (training outputs are hosted indefinitely;
+  prediction outputs are the ones that expire) containing `lora.safetensors`.
+  The plus-lora endpoint's README refuses zip archives while its field
+  description claims to accept them; the protocol tests the ZIP URL empirically
+  once and re-hosts the extracted safetensors when refused.
+
+Owner rulings (2026-08-11), recorded here because the pilot runs on them:
+
+- **The pilot subject is Sabrina Vale** — the existing lab fixture character
+  with the canonical portrait, reviewed identity pack, and the Stage 1–4
+  comparison corpus. An external seven-image set originally offered for the
+  pilot is NOT used, and the ruling generalizes: **a training set is assembled
+  only from images whose generation provenance is verifiable** — the app's own
+  renders qualify by construction; external sets without generation records do
+  not.
+- **The training set is the curated existing corpus plus synthesis to ~20**:
+  the trial-verdict-faithful renders of Sabrina (the honours/improves results;
+  never the identity-collapse or wrong-hair failures) plus fresh variant
+  renders targeting the corpus's variety gaps (wardrobe, setting, framing).
+- **Hyperparameters**: rank 32, learning rate 2e-4, 1500 steps, batch 1, adamw
+  — the trainer README's recommendation reconciled against the research
+  record's lower-rank advice; a second training at different settings only if
+  the first underfits.
+- **Hosting fallback is snarebox.com S3/CloudFront** when the durable ZIP URL
+  is refused by the endpoint: a public durable `https_url` locator under
+  owner-controlled hosting, in preference to a public model-hub upload.
+
+## Stage 5 pilot protocol
+
+Owner work with agent assistance, on the Fly deploy, after the Stage 5
+machinery deploys. Fire every paid call SEQUENTIALLY (the Stage 4 throttle
+finding).
+
+1. **Assemble the dataset (~20 images).** The curated existing set (17), by
+   image id — canonical `qqtzfaz9ii1v2k4q7xfnxif6`; baseline
+   `nbvj0pqs7t30afwxudtv0hzu`; pose portraits `v1g9pqytr6rxfrznp5ci185i`,
+   `ihl4nn19vfh2d29w84gegh14`, `nqu5ph8ifltfcitixo58lh91`; depth/edge portraits
+   `g6zewqgusjg6330rlo927hih`, `qe4tldfbw8ygilawztwho2d7`; Stage 0 probe
+   results `mbeamkkgmhwdfjugvs4ylon9`, `mzra0gfsyy8qoytrcclsx21z`; honours
+   scenes `jjz3xf7pdbr75g0xh1o58lzi`, `mjpywru4xjedaad0w4rahsvv`; baseline
+   scene `jf8lvlpbx2cttazxoxouvriu`; Stage 4 no-LoRA arm
+   `f317yd8fc44tfbt046o1trwp`; improves-identity finishing results
+   `gp5aknj857hh5jzgtfxupdnp`, `avpcp0hjuqnzk5kaezvthhm5`; portrait variants
+   `ljsoaj4j19jjp2f4a86hcp5y` (outfit), `s2jt8bebuwkiy8pbsds7b9hy` (pose) —
+   plus ~5 fresh variant renders for wardrobe/setting/close-framing variety.
+   Visual dedupe before zipping; captions are short descriptive sentences
+   naming "Sabrina".
+2. **Train** via `scripts/train-image-lora.ts` (destination
+   `<replicate-user>/vesper-sabrina-qwen-lora`, created with
+   `--create-destination`; the ruling's hyperparameters are the script's
+   defaults). Record the training id, duration, cost, and the durable weights
+   URL here.
+3. **Host.** Test the ZIP URL on the connector once (~2¢). Expected refusal →
+   extract `lora.safetensors`, upload to snarebox S3/CloudFront, and use that
+   `https_url` as the locator.
+4. **Register the library row** — label "Sabrina (character)",
+   `compatibleModelSlugs: ["qwen/qwen-image-edit-plus-lora"]`, curated band
+   0.6–1.2 default 0.9 (character LoRAs overpower above ~1.2; adjust from the
+   smoke), `allowedTasks: ["variant"]`, trigger word "Sabrina" (the caption
+   name IS the trigger under the vendor doctrine).
+5. **Key-compat smoke before any judgement** (~2¢): one finishing pass with
+   the LoRA; the prediction must load the weights (the endpoint's key remapper
+   handles ai-toolkit naming, but this is the two-cent check that it did).
+6. **Comparison arms** over one controlled source and the direct-edit
+   baseline, all on the connector at one pin, all with the Stage 3 appearance
+   instruction, LoRA scale at the row default: (a) identity arm, no LoRA —
+   the pack-only baseline; (b) identity arm + LoRA — pack plus weights;
+   (c) `lora_only` arm — weights alone; (d) a controlled_portrait ± LoRA pair
+   (API-created; the form's Model box must name the connector — its default
+   2511 has no LoRA inputs and refuses pre-spend). Judge per the plan: face
+   identity, build consistency, outfit/background leakage, edit obedience,
+   structural control, latency, failure rate, overall preference — against
+   the pack-only arm, not against memory of Stage 3.
+7. **Record everything here** (ids, verdicts, notes); flip the plan's Stage 5
+   line when the owner accepts.
 
 ## Stage 4 LoRA trial protocol
 
@@ -1100,3 +1235,9 @@ Qwen-specific ablation exists; evidence is vendor-doc grade):
 - Feeds the plan's open question: the pilot should plan on the seven images
   **plus a synthesized expansion to ~20+**, with the owner's go/no-go taken at
   Stage 5 kickoff.
+
+Superseded in part (2026-08-11): the captioning and checkpoint-best-pick items
+above are settled by the verified trainer facts in §"Stage 5 build rulings"
+(vendor captioning doctrine is binding; only the final checkpoint is kept), and
+the kickoff ruling recorded there replaced the seven-image set with the curated
+Sabrina corpus.

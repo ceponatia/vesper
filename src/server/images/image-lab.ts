@@ -7,6 +7,7 @@ import {
   imageLabControlMetaSchema,
   imageLabDiagnosticCode,
   imageLabFinishingRecipeProfile,
+  imageLabFinishingVariantSchema,
   imageLabInputListSchema,
   imageLabOutcomeSchema,
   imageLabRecipeProfile,
@@ -23,6 +24,7 @@ import {
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
   type ImageLabFailureCode,
+  type ImageLabFinishingVariant,
   type ImageLabInput,
   type ImageLabInputList,
   type ImageLabOutcome,
@@ -277,6 +279,7 @@ function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSink): Im
     resultImageId: row.resultImageId,
     outcome: storedOutcome(row, sink),
     sourceExperimentId: storedSourceExperimentId(row, sink),
+    finishingVariant: storedFinishingVariant(row, sink),
     status: row.status,
     failureCode: row.failureCode,
     verdict: row.verdict,
@@ -333,6 +336,36 @@ function storedSourceExperimentId(row: ImageLabExperimentRow, sink?: DiagnosticS
   const raw = imageMeta(row.meta)["sourceExperimentId"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(sourceExperimentIdSchema, raw, sink, "image_lab_experiments.meta.sourceExperimentId");
+}
+
+/**
+ * The arm a finishing pass DECLARED, or null when it declared none — the wire
+ * field, which reports the record rather than the runner's reading of it.
+ *
+ * Absent is a real state and is reported as one: every Stage 3 row predates the
+ * vocabulary, and writing today's default into their display would claim they
+ * chose an arm nobody offered them. {@link finishingPassVariant} is where that
+ * absence becomes a decision, once, at the point the recipe is chosen.
+ */
+function storedFinishingVariant(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabFinishingVariant | null {
+  const raw = imageMeta(row.meta)["finishingVariant"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(imageLabFinishingVariantSchema, raw, sink, "image_lab_experiments.meta.finishingVariant");
+}
+
+/**
+ * The arm this pass RUNS: the declared one, or `identity` when the row declares
+ * none — which is every row written before Stage 5, and every pass created
+ * without asking for the isolating arm.
+ *
+ * An unreadable value degrades to `identity` rather than failing the run
+ * (docs/resilience.md §1), and the degradation is honest rather than silent: the
+ * recipe key recorded on the outcome is the identity arm's, so a reader of that
+ * record sees the run it actually got. `storedFinishingVariant` has already
+ * reported the unparseable value to the sink by the time the fallback applies.
+ */
+function finishingPassVariant(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabFinishingVariant {
+  return storedFinishingVariant(row, sink) ?? "identity";
 }
 
 /**
@@ -461,14 +494,36 @@ export async function createImageLabExperiment(
       controlImageId: request.controlImageId ?? null,
       controlKind: request.controlKind ?? null,
       settings: request.settings ?? emptyImageLabSettings(),
-      // The one create-time meta key: the run this pass refines. Written here
-      // and preserved by every later write through `labMeta`.
-      ...(request.sourceExperimentId === undefined ? {} : { meta: { sourceExperimentId: request.sourceExperimentId } }),
+      // The create-time meta keys, both a finishing pass's: the run it refines
+      // and the arm it runs. Written here and preserved by every later write
+      // through `labMeta`.
+      ...createMeta(request),
       status: "pending",
     })
     .returning();
   if (!row) throw new Error("image_lab_experiments insert returned no row");
   return { ok: true, experiment: toWireExperiment(row, sink) };
+}
+
+/**
+ * The `meta` column a create writes, or nothing at all.
+ *
+ * Only a finishing pass has create-time meta (the create schema refuses both keys
+ * on every other kind), so most inserts contribute no `meta` key whatsoever and
+ * take the column's own `{}` default. Spread rather than assigned for that
+ * reason: writing `meta: {}` on every kind would be an empty bag standing where
+ * "this row never had create-time facts" is the truth.
+ *
+ * The variant is stored EXACTLY as sent, including an explicit `"identity"`. A
+ * request that names its arm is a request that made a choice, and flattening the
+ * chosen default into an absence would lose the one fact distinguishing a Stage 5
+ * identity arm from a Stage 3 pass that predates the question.
+ */
+function createMeta(request: ImageLabCreateExperimentRequest): { meta?: Record<string, unknown> } {
+  const meta: Record<string, unknown> = {};
+  if (request.sourceExperimentId !== undefined) meta.sourceExperimentId = request.sourceExperimentId;
+  if (request.finishingVariant !== undefined) meta.finishingVariant = request.finishingVariant;
+  return Object.keys(meta).length === 0 ? {} : { meta };
 }
 
 /**
@@ -1187,9 +1242,9 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
 // --- finishing pass --------------------------------------------------------
 
 /**
- * The Stage 3 finishing pass: another experiment's RESULT, re-edited against the
- * subject's identity pack under an instruction that forbids every change but the
- * face (plan §"Stage 3 — optional identity finishing").
+ * The finishing pass: another experiment's RESULT, re-edited under an instruction
+ * that forbids every change but the face (plan §"Stage 3 — optional identity
+ * finishing", extended by §"Stage 5 — one character LoRA pilot").
  *
  * It is the one kind whose ordered inputs the RUNNER resolves rather than the
  * admin. Both of them are facts the client cannot supply honestly: the base is
@@ -1201,6 +1256,14 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
  * a record that only says what the runner intended is not a record of what it
  * sent.
  *
+ * TWO ARMS as of Stage 5, differing only in what accompanies the base render:
+ * the `identity` arm sends the pack's references, and the `lora_only` arm sends
+ * nothing beside it and leans on a character LoRA instead. Everything else here
+ * is shared deliberately — same source validation, same version pin, same
+ * raw-bag refusal, same LoRA pre-resolution inside `runRecipeIntent`, same
+ * recorded outcome — because a difference anywhere else would show up in the
+ * comparison as if it were the LoRA's doing.
+ *
  * The pack gate (`imageIdentityPackReferencesEnabled`) is deliberately NOT
  * consulted, on the identity-pack trial's own precedent: that flag governs
  * whether production LANES send pack references, and a bench measuring what the
@@ -1209,6 +1272,7 @@ async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeIntentRu
  * `lab_output`.
  */
 async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
+  const variant = finishingPassVariant(row, sink);
   const sourceExperimentId = storedSourceExperimentId(row, sink);
   if (sourceExperimentId === null) {
     return await settleFailed(
@@ -1251,17 +1315,19 @@ async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSin
     );
   }
 
-  const identity = await finishingIdentityReferences(row, sink);
-  if (!identity.ok) {
-    return await settleFailed(row, labFailure("identity_unavailable"), identity.message, sink, { columns });
+  const recipeProfile = imageLabFinishingRecipeProfile(model.id, variant);
+  const accompanying = await finishingAccompanyingReferences(row, variant, settings, recipeProfile, sink);
+  if (!accompanying.ok) {
+    return await settleFailed(row, labFailure(accompanying.code), accompanying.message, sink, { columns });
   }
 
   // Written down as the ordered inputs the run actually sends, so the detail
   // screen shows every reference as a thumbnail exactly as it does for a
-  // hand-ordered kind, and a verdict written weeks later can see them.
+  // hand-ordered kind, and a verdict written weeks later can see them. On the
+  // LoRA-only arm that list is one entry long, which is the arm's whole claim.
   const inputs: ImageLabInputList = [
     { position: 1, role: "before", imageId: baseImageId },
-    ...identity.references.map((reference, index) => ({
+    ...accompanying.identity.map((reference, index) => ({
       position: index + 2,
       role: "identity" as const,
       imageId: reference.imageId,
@@ -1269,7 +1335,7 @@ async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSin
   ];
   const references: ImageRenderReference[] = [
     { role: "before", buffer: base, sourceImageId: baseImageId, required: true },
-    ...identity.references.map((reference) => ({
+    ...accompanying.identity.map((reference) => ({
       role: "identity" as const,
       buffer: reference.buffer,
       sourceImageId: reference.imageId,
@@ -1280,11 +1346,13 @@ async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSin
   return await runRecipeIntent(row, {
     model,
     versionId,
-    recipeProfile: imageLabFinishingRecipeProfile(model.id),
+    recipeProfile,
     references,
     // The rule the run is judged by IS the prompt; the admin's own text narrows
-    // it and never replaces it (`imageLabFinishingInstruction`).
-    prompt: imageLabFinishingInstruction(row.instruction),
+    // it and never replaces it (`imageLabFinishingInstruction`). The arm decides
+    // one sentence of it — the one naming what the face is corrected toward,
+    // which on the LoRA-only arm cannot be a reference nothing sent.
+    prompt: imageLabFinishingInstruction(row.instruction, variant),
     controls: settings.controls,
     columns: { ...columns, inputs },
     // The base render, not the identity reference: this output is that image
@@ -1304,6 +1372,64 @@ interface FinishingIdentityReference {
 type FinishingIdentityResult =
   | { ok: true; references: FinishingIdentityReference[] }
   | { ok: false; message: string };
+
+/**
+ * What one finishing arm sends BESIDE the base render, or the reason it cannot
+ * run — the only place the two arms diverge before `runRecipeIntent`.
+ *
+ * Exhaustive over the variant, so a third arm is a compile error here rather than
+ * a silent fall-through into whichever arm happened to be written last — the
+ * failure mode that would matter most, since a mislabelled arm poisons the
+ * comparison rather than breaking the run.
+ */
+type FinishingAccompanyingResult =
+  | { ok: true; identity: FinishingIdentityReference[] }
+  | { ok: false; code: ImageLabFailureCode; message: string };
+
+/**
+ * The refusal that keeps the LoRA-only arm honest.
+ *
+ * The create schema already refuses a `lora_only` request with no LoRA, so this
+ * catches exactly two things: a row stored before that rule existed, and a caller
+ * that reached the service around the request schema. Both settle pre-spend,
+ * because a run with neither weights nor references would return the source image
+ * with a fresh id and file it as a comparison arm — the most expensive kind of
+ * nothing this bench can produce.
+ */
+const LORA_ONLY_WITHOUT_LORA =
+  "a LoRA-only pass measures the LoRA alone and this row names none; with no weights and no identity reference " +
+  "the pass would only re-render the source image";
+
+async function finishingAccompanyingReferences(
+  row: ImageLabExperimentRow,
+  variant: ImageLabFinishingVariant,
+  settings: ImageLabSettings,
+  recipeProfile: ImageModelProfile,
+  sink?: DiagnosticSink,
+): Promise<FinishingAccompanyingResult> {
+  switch (variant) {
+    case "identity": {
+      const identity = await finishingIdentityReferences(row, sink);
+      return identity.ok
+        ? { ok: true, identity: identity.references }
+        : { ok: false, code: "identity_unavailable", message: identity.message };
+    }
+    case "lora_only": {
+      // The pack is never asked — not asked and discarded, not asked and refused.
+      // `identity_unavailable` is unreachable on this arm by construction, which
+      // is what makes it a measurement of the weights instead of a measurement of
+      // whatever the pack happened to offer.
+      //
+      // The selection is read through the shared helper so the LoRA this arm
+      // checks for is the same one `runRecipeIntent` then resolves; deriving it
+      // twice is how a pass could pass this gate and resolve a different LoRA.
+      const selection = effectiveImageLoraSelection(recipeProfile.controlDefaults, settings.controls);
+      return selection === undefined
+        ? { ok: false, code: "input_missing", message: LORA_ONLY_WITHOUT_LORA }
+        : { ok: true, identity: [] };
+    }
+  }
+}
 
 /**
  * The identity references a finishing pass improves the face TOWARD, drawn from

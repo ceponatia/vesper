@@ -266,6 +266,10 @@ export function ImageLabExperimentDetail({
   // display that went and looked would describe the library as it is now rather
   // than the weights this run was configured with.
   const loraSelection = experiment.settings.controls.lora ?? null;
+  // Which ARM a finishing pass ran. Null means the pass declared none, which the
+  // runner reads as the identity arm — so only the isolating arm is worth a line,
+  // and the absence of that line means what every pass before Stage 5 meant.
+  const loraOnlyArm = experiment.finishingVariant === "lora_only";
 
   // The paired direct-edit arm: pre-fill only, submitted by the admin. The
   // instruction travels VERBATIM because the shared text is what makes the two
@@ -347,8 +351,17 @@ export function ImageLabExperimentDetail({
         <LabImage
           label="Identity reference"
           imageId={identityInput?.imageId ?? null}
-          pending={isFinishing && live}
-          emptyHint={isFinishing ? "the pack's reference is resolved when the pass runs" : "no identity reference was sent"}
+          // The LoRA-only arm never resolves one, so it is not pending — it is
+          // absent by design, and a spinner there would promise an image that is
+          // never coming.
+          pending={isFinishing && !loraOnlyArm && live}
+          emptyHint={
+            loraOnlyArm
+              ? "this arm sends none — the likeness comes from the LoRA"
+              : isFinishing
+                ? "the pack's reference is resolved when the pass runs"
+                : "no identity reference was sent"
+          }
           onEnlarge={setEnlarged}
         />
         {isFinishing ? null : (
@@ -440,6 +453,12 @@ export function ImageLabExperimentDetail({
                   ? loraSelection.id
                   : `${loraSelection.id} @ ${String(loraSelection.scale)}`}
               </code>
+            </Fact>
+          ) : null}
+          {loraOnlyArm ? (
+            <Fact label="Finishing variant">
+              {"LoRA only, no identity reference — the face was corrected from the weights alone, so an improvement " +
+                "here is attributable to them and not to the identity pack."}
             </Fact>
           ) : null}
         </dl>
