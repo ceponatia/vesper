@@ -48,8 +48,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   runs and refuses safely, and a trained character LoRA improves identity
   alongside pack references — Stages 0–5 are all closed, an in-app LoRA
   training tool and free-form image iteration are parked together in
-  `deferred.plan.md`, Stage 6's two-character machinery is built and awaits its
-  trial, and Stage 7 waits on its gate.
+  `deferred.plan.md`, Stage 6's two-character trial has run — both characters
+  held uncontrolled and under depth, one lost under a single-person pose
+  skeleton — and awaits owner acceptance, and Stage 7 waits on its gate.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
