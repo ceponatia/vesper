@@ -52,10 +52,13 @@ those systems through their existing exports and adds no second copy.
 | Stage 6 subject-aware compose bindings          | built 2026-08-12 |
 | Stage 6 create/verdict/comparison UI            | built 2026-08-12 |
 | Stage 6 two-character trial runs + verdicts     | run 2026-08-12   |
+| Stage 7 promotion assessment + owner ruling     | run 2026-08-12   |
+| Stage 7 P1 — present cast in ordinary scenes    | built 2026-08-12 |
 
-Stage 7 (the promotion decision) is deliberately absent from this table: it
-closes the plan. Stages 0–5 are all closed; Stage 6's machinery is built and its
-trial has run, with its verdicts awaiting owner acceptance. The LoRA library itself is the capabilities plan's
+Stages 0–6 are all closed and their verdicts accepted. Stage 7's promotion is
+ruled and its delivery is under way — the table tracks its promoted items
+individually, because a promotion ships into an ordinary lane rather than into
+the lab. The LoRA library itself is the capabilities plan's
 slice 6 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 §"Slice 6 implementation rulings"); this table tracks only the lab's side, and
 the subject-aware compose bindings belong to the capabilities spec
@@ -1825,7 +1828,8 @@ strategy.
 
 ### Delivery order
 
-**P1 — two characters in one chat scene image.** Build first. It has no
+**P1 — two characters in one chat scene image.** Built 2026-08-12 (PR #95) —
+awaiting a look on the deploy. Build first: it has no
 dependency on the other two, no profile migration (the seeded scene profile sets
 no `maxPerRole`, and an absent role means no per-role cap, so two identity
 references already pass), and it is the only promotion a player can see. The

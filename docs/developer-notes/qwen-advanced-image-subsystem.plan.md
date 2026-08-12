@@ -688,9 +688,11 @@ ownership, and whether one structural control can guide both people reliably.
 
 ### Stage 7 — promotion decision
 
-Status: in progress — the promotion is ruled and three items are being built;
-the assessment behind the ruling is in the
-[spec](qwen-advanced-image-subsystem.spec.md) §"Stage 7 promotion assessment".
+Status: in progress — the promotion is ruled; the first of its three items (two
+characters in one chat scene image) is built 2026-08-12 and awaiting a look on
+the deploy, and the other two each owe one design ruling. The assessment behind
+the ruling is in the [spec](qwen-advanced-image-subsystem.spec.md)
+§"Stage 7 promotion assessment".
 
 Decide which parts, if any, should graduate into ordinary Portrait Studio or scene
 controls.

@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { imageRenderRejection, jsonError, jsonOk, readBody, withUser } from "@/server/api";
+import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, images } from "@/server/db";
-import { loadOwnedChat } from "../../owned";
+import { loadOwnedChat, type OwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 
 type Params = { chatId: string };
@@ -18,7 +18,10 @@ type Params = { chatId: string };
  * (kind="scene", entityKind="character"), so they still surface in the Gallery.
  */
 
-/** POST body: no options today — character-chat scenes are single-reference (one subject). */
+/**
+ * POST body: no options today — who appears is derived, not requested. The cast
+ * is the roster filtered to `presence: "present"` (see `queueChatScene`).
+ */
 const sceneBodySchema = z.object({});
 
 /**
@@ -26,40 +29,40 @@ const sceneBodySchema = z.object({});
  * render job is live (`rendering`): the pending image row doesn't exist until the slow
  * composer step finishes, so the flag is what keeps the client polling through it.
  */
-export const GET = withUser<Params>(async (user, _req, ctx) => {
-  const { chatId } = await ctx.params;
-  const owned = await loadOwnedChat(chatId, user.id);
-  if (!owned) return jsonError("not_found", "chat not found", 404);
+export const GET = withOwnedChat<Params, OwnedChat>(
+  (user, params) => loadOwnedChat(params.chatId, user.id),
+  async (user, owned, _req, ctx) => {
+    const { chatId } = await ctx.params;
 
-  const [scenes, rendering] = await Promise.all([
-    db()
-      .select()
-      .from(images)
-      .where(
-        and(
-          eq(images.ownerId, user.id),
-          eq(images.kind, "scene"),
-          eq(images.entityKind, "character"),
-          eq(images.entityId, owned.character.id),
-          // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
-          // rows) belong to the Gallery, not here.
-          eq(images.chatId, chatId),
-        ),
-      )
-      .orderBy(desc(images.createdAt)),
-    hasLiveChatSceneJob(chatId),
-  ]);
-  return jsonOk({ scenes, rendering });
-});
+    const [scenes, rendering] = await Promise.all([
+      db()
+        .select()
+        .from(images)
+        .where(
+          and(
+            eq(images.ownerId, user.id),
+            eq(images.kind, "scene"),
+            eq(images.entityKind, "character"),
+            eq(images.entityId, owned.character.id),
+            // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
+            // rows) belong to the Gallery, not here.
+            eq(images.chatId, chatId),
+          ),
+        )
+        .orderBy(desc(images.createdAt)),
+      hasLiveChatSceneJob(chatId),
+    ]);
+    return jsonOk({ scenes, rendering });
+  },
+);
 
 /** POST /api/chats/:chatId/scene — queue a scene render from the recent chat. */
-export const POST = withUser<Params>(
-  async (user, req: NextRequest, ctx) => {
+export const POST = withOwnedChat<Params, OwnedChat>(
+  (user, params) => loadOwnedChat(params.chatId, user.id),
+  async (user, owned, req: NextRequest, ctx) => {
     const { chatId } = await ctx.params;
     const parsed = await readBody(req, sceneBodySchema);
     if (!parsed.ok) return parsed.response;
-    const owned = await loadOwnedChat(chatId, user.id);
-    if (!owned) return jsonError("not_found", "chat not found", 404);
 
     const blocked = await imageRenderRejection(user, req);
     if (blocked) return blocked;
