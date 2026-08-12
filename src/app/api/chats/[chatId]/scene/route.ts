@@ -64,7 +64,12 @@ export const POST = withUser<Params>(
     const blocked = await imageRenderRejection(user, req);
     if (blocked) return blocked;
 
-    const jobId = await queueChatScene({ userId: user.id, chatId, character: owned.character });
+    const jobId = await queueChatScene({
+      userId: user.id,
+      chatId,
+      character: owned.character,
+      roster: owned.roster.map((member) => member.character),
+    });
     if (!jobId) {
       return jsonError("scene_busy", "a scene render is already in flight; wait for it to finish", 409);
     }

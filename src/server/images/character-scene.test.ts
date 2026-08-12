@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { visualStateNote } from "./character-scene";
+import { attr, makeProfile } from "@/server/test-support";
+import { buildCharacterSceneContext, visualStateNote, type SceneCastMember } from "./character-scene";
 
 describe("visualStateNote", () => {
   it("graders intoxication into tipsy vs drunk wording", () => {
@@ -43,5 +44,79 @@ describe("visualStateNote", () => {
     expect(aroused).toMatch(/eyes|lips|breath|sweat/);
     const drunk = visualStateNote({ intoxication: 0.8 });
     expect(drunk).toMatch(/eyes|posture|unsteady/);
+  });
+});
+
+/**
+ * The Stage 7 promotion (qwen-advanced-image-subsystem.plan.md): a chat whose
+ * roster holds two PRESENT characters renders both, where it used to collapse to
+ * the primary. The cast arrives pre-filtered — `presence` is chat's only
+ * location-like state, so the queue does the co-location test — and this function
+ * only has to keep each person's facts attached to that person.
+ */
+describe("buildCharacterSceneContext", () => {
+  const member = (name: string, hair: string, overrides: Partial<SceneCastMember> = {}): SceneCastMember => ({
+    characterId: `${name.toLowerCase()}-id`,
+    name,
+    profile: makeProfile({ attributes: [attr("hair.color", hair, "base")] }),
+    avatarImageId: null,
+    outfit: `${name}'s coat`,
+    outfitExposed: false,
+    ...overrides,
+  });
+
+  const base = { room: "a rain-streaked library", recentChat: [] };
+
+  it("keeps a roster of one byte-identical to the pre-cast shape", () => {
+    const context = buildCharacterSceneContext({ ...base, cast: [member("Mira", "red")] });
+    expect(context.present).toHaveLength(1);
+    expect(context.present[0]?.name).toBe("Mira");
+    expect(context.locationDescription).toBe("a rain-streaked library");
+    expect(context.embodiedViewer).toBe(true);
+  });
+
+  it("builds one composer entry per cast member, in cast order", () => {
+    const context = buildCharacterSceneContext({ ...base, cast: [member("Mira", "red"), member("Sayed", "black")] });
+    expect(context.present.map((entry) => entry.name)).toEqual(["Mira", "Sayed"]);
+  });
+
+  // The failure this guards against is the one that makes a two-character render
+  // worthless: one person wearing another's clothes, or described with another's
+  // hair. Every per-person fact has to come off that person's own member.
+  it("never crosses one member's appearance, outfit or age anchor onto another", () => {
+    const context = buildCharacterSceneContext({ ...base, cast: [member("Mira", "red"), member("Sayed", "black")] });
+    const [mira, sayed] = context.present;
+    // Two different sheets must not compile to one description.
+    expect(mira?.appearance).not.toEqual(sayed?.appearance);
+    expect(mira?.identityAnchors).not.toEqual(sayed?.identityAnchors);
+    expect(mira?.outfitDescription).toContain("Mira's coat");
+    expect(mira?.outfitDescription).not.toContain("Sayed");
+    expect(sayed?.outfitDescription).toContain("Sayed's coat");
+    // The age anchor is a name-bound sentence — the name has to be the owner's.
+    expect(mira?.ageAnchor ?? "").not.toContain("Sayed");
+    expect(sayed?.ageAnchor ?? "").not.toContain("Mira");
+  });
+
+  it("folds each member's own garment notes into their own outfit line", () => {
+    const context = buildCharacterSceneContext({
+      ...base,
+      cast: [
+        member("Mira", "red", { garmentNotes: ["Mira's blouse hangs open"] }),
+        member("Sayed", "black", { garmentNotes: ["Sayed's coat is soaked"] }),
+      ],
+    });
+    expect(context.present[0]?.outfitDescription).toContain("Mira's blouse hangs open");
+    expect(context.present[0]?.outfitDescription).not.toContain("soaked");
+    expect(context.present[1]?.outfitDescription).toContain("Sayed's coat is soaked");
+  });
+
+  // Exposure is per-person state: one character undressing must not undress the
+  // other, and the intimate half rides the same per-member exposure.
+  it("resolves exposure per member rather than for the cast", () => {
+    const context = buildCharacterSceneContext({
+      ...base,
+      cast: [member("Mira", "red", { outfitExposed: true }), member("Sayed", "black")],
+    });
+    expect(context.present[0]?.exposure).not.toEqual(context.present[1]?.exposure);
   });
 });

@@ -946,6 +946,46 @@ describe("buildSceneRenderPrompt — multi-reference", () => {
     expect(prompt).toMatch(/Wren\b.*no reference image.*Hair color: brown/);
   });
 
+  // Stage 7 promotion (qwen-advanced-image-subsystem.spec.md): the count assertion
+  // says how many people and names them; the cast clause says what must not happen
+  // to them. Two faces in one edit can be merged, swapped or duplicated, and no
+  // per-slot binding prevents that — each of those is a statement about ONE image
+  // while the failure is about the set.
+  it("forbids merging, swapping and duplicating once two characters are referenced", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt).toContain("never merge, swap, or duplicate them");
+    expect(prompt).toContain("Render each person exactly once");
+  });
+
+  it("omits the cast clause when only one character is referenced (nothing to swap)", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "The Library", kind: "location" },
+      ],
+    });
+    expect(prompt).not.toContain("never merge, swap, or duplicate them");
+  });
+
+  // The possession binding used to degrade to "belongs to one of them" past one
+  // subject, which keeps the abstraction but drops the binding — and the binding is
+  // the half the phantom-limb A/B proved was doing the work.
+  it("names every subject in the possession binding rather than saying 'one of them'", () => {
+    const prompt = buildSceneRenderPrompt(plan, {
+      multiReferences: [
+        { name: "Mira", kind: "character" },
+        { name: "Sayed", kind: "character" },
+      ],
+    });
+    expect(prompt).not.toContain("one of them");
+    expect(prompt).toContain("Every visible body part belongs to Mira, Sayed or Wren.");
+  });
+
   it("emits intimate detail for multi-references only on the uncensored route", () => {
     const nude = {
       ...emptySceneRenderPlan(),
@@ -1114,7 +1154,7 @@ describe("buildSceneRenderPrompt", () => {
   it("asserts person count and total limb possession on the disembodied prompt", () => {
     const prompt = buildSceneRenderPrompt(plan, { referenceName: "Mira" });
     expect(prompt).toContain("Exactly two people are fully in frame: Mira and Sayed. Nobody else appears.");
-    expect(prompt).toContain("Every visible body part belongs to one of them.");
+    expect(prompt).toContain("Every visible body part belongs to Mira or Sayed.");
     const solo = buildSceneRenderPrompt({ ...plan, others: [] }, { referenceName: "Mira" });
     expect(solo).toContain("Exactly one person is fully in frame: Mira.");
     expect(solo).toContain("Every visible body part belongs to Mira.");
@@ -1267,9 +1307,15 @@ describe("sceneFramingRule (scene-pov-embodiment slices 1+2)", () => {
     expect(SCENE_POV_RULE).not.toMatch(/no hands|no body/i);
   });
 
-  it("binds limbs to 'one of them' with several subjects, and skips possession for location-only", () => {
+  // Named alternatives, not "one of them" (Stage 7): the A/B that settled this
+  // sentence proved a NAME binds possession, and the anonymous plural kept the
+  // abstraction while dropping the binding.
+  it("names the subjects in the possession binding, and skips possession for location-only", () => {
     expect(sceneFramingRule({ parts: [], subjects: ["Mira", "Sayed"] })).toContain(
-      "Every visible body part belongs to one of them.",
+      "Every visible body part belongs to Mira or Sayed.",
+    );
+    expect(sceneFramingRule({ parts: [], subjects: ["Mira", "Sayed", "Wren"] })).toContain(
+      "Every visible body part belongs to Mira, Sayed or Wren.",
     );
     expect(sceneFramingRule({ parts: [], subjects: [] })).not.toContain("belongs to");
   });

@@ -1571,10 +1571,15 @@ function countAssertion(names: readonly string[]): string {
  * hand anyway — a limb noun summons a limb even when possessively bound. Binding
  * specific limbs is the POSE text's job (`bindLimbsToOwner`), where the limb is
  * already in the shot on purpose. "" with no subjects (location-only shot).
+ *
+ * With a cast, the owners are NAMED rather than left as "one of them". The proven
+ * sentence binds possession to a name, and the anonymous form kept the abstraction
+ * while dropping the binding — which is the half doing the work. "or" rather than
+ * "and", because each part belongs to exactly one of them.
  */
 function limbPossession(names: readonly string[]): string {
-  const owner = names.length === 1 ? names[0] : names.length > 1 ? "one of them" : "";
-  return owner ? `Every visible body part belongs to ${owner}.` : "";
+  if (names.length === 0) return "";
+  return `Every visible body part belongs to ${joinPhrases(names, "or")}.`;
 }
 
 /** Small-number words; past the cap the digit reads fine and never occurs in practice. */
@@ -1583,9 +1588,9 @@ function numberWord(n: number): string {
 }
 
 /** "a, b and c" — an Oxford-less join, since these are prompt phrases and not prose. */
-function joinPhrases(items: readonly string[]): string {
+function joinPhrases(items: readonly string[], conjunction: "and" | "or" = "and"): string {
   if (items.length <= 1) return items[0] ?? "";
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  return `${items.slice(0, -1).join(", ")} ${conjunction} ${items[items.length - 1]}`;
 }
 
 /**
@@ -1823,6 +1828,19 @@ function assembleMulti(
   pieces.push(framingFor(plan, opts, featured.map((c) => c.name)));
   pieces.push(`${multi.length} reference images provided — ${describeMultiReferences(multi)}`);
   pieces.push("Compose all referenced people together into one shared scene, each keeping the exact face, hair and build of their reference image.");
+  // The cast-integrity clause (qwen-advanced-image-subsystem.spec.md, Stage 6).
+  // The count assertion above already says how many people and names them; this
+  // says what must not happen to them, which is a different failure. A render
+  // handed two faces has three ways to go wrong a viewer notices instantly —
+  // one person drawn twice, one person dropped, or both blended into a stranger
+  // — and none is prevented by correct per-slot bindings, because each of those
+  // is a statement about ONE image while the failure is about the set. Emitted
+  // on two or more CHARACTER references: a lone subject cannot be swapped.
+  if (refCharNames.size >= 2) {
+    pieces.push(
+      "Render each person exactly once, matched to their own reference image; never merge, swap, or duplicate them.",
+    );
+  }
 
   for (const c of featured) {
     const isRef = refCharNames.has(normalizeName(c.name));

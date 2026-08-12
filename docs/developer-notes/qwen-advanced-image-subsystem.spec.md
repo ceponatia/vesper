@@ -1611,6 +1611,255 @@ dressed him from nothing while Sabrina's shirt carried through exactly in all
 five. Outfit fidelity for a character is therefore untested here, and a
 two-character path that cares about wardrobe needs clothed canonical portraits.
 
+## Stage 7 promotion assessment (2026-08-12)
+
+Stage 7 decides which parts of the lab graduate into the ordinary portrait and
+scene lanes. The plan's standing rule binds it: a connector or mode may remain an
+admin tool even if another part is promoted, and promoting nothing is a valid
+outcome. This section is the evidence-to-cost analysis the decision rests on; the
+rulings themselves are the owner's and are recorded here when taken.
+
+### What the lab already drove into shared code
+
+Several pieces the lab needed were built into shared modules rather than into the
+lab, and some already sit on the path every ordinary render takes. Those are
+promotions that have, in effect, already happened.
+
+| Shared piece                                    | On an ordinary lane today?      |
+| ----------------------------------------------- | ------------------------------- |
+| Per-reference `required` flag + dropped gate     | Yes — variants and chat-look    |
+| Profile-level `requiredRoles` check              | Yes — predates the lab          |
+| Reference selection by role, priority, capacity  | Yes — every lane                |
+| Control roles in the reference vocabulary        | No lane constructs one          |
+| Control routing to a model's declared inputs     | No seeded model declares one    |
+| `subject` on a reference + the cast clause       | Lab only                        |
+| `multi_reference_compose` prompt strategy        | No seeded profile selects it    |
+| Curated LoRA resolution on the render path       | Path yes, no lane selects one   |
+| Identity-pack reference accessor                 | No — the flag is dark           |
+
+### Where the ordinary lanes stop
+
+No ordinary lane can send a control image today, and it stops at four
+independent places. Each is a separate piece of work; widening any one alone
+changes nothing.
+
+1. **No lane constructs a control reference.** The scene lane emits `character`
+   and `location` only; the variant lane emits one `identity`; avatar, entity and
+   chat-place emit none.
+2. **No seeded profile allows a control role.** `scene-standard` allows
+   identity, location, style and object; `variant-standard` and
+   `chat-look-standard` allow identity and style. A control reference is dropped
+   `role_not_allowed`, or refuses outright when marked required.
+3. **No seeded profile can say what a control is for.** Every seeded row carries
+   `instruction_edit`, whose render-intent arm returns the lane's prompt
+   unchanged. Only `multi_reference_compose` compiles the "follow this structure,
+   do not draw it" wording. A control map sent under `instruction_edit` arrives
+   as an unlabelled numbered image and is rendered rather than obeyed.
+4. **No non-lab producer of control images.** Pose and depth extraction and the
+   local edge computation live behind `withOwnerAdmin`, store hidden
+   `lab_control` rows, and refuse pre-spend until a human stamps `reviewedAt`.
+
+Two adjacent facts shape the cost of everything below. `image_model_profiles`
+has no write path — the server only ever selects from it, so any new or widened
+profile is a migration. And an absent role in a policy's `maxPerRole` means no
+per-role cap, so the seeded scene profile already accepts two identity
+references; only the model's capacity of three bounds it.
+
+### Candidate A — two characters in one chat scene image
+
+**Evidence: the strongest in the plan.** Four of four arms held both identities
+— twice uncontrolled, once under a two-person depth map, once under a
+count-matched pose skeleton — including the close-faces café arm that is the
+hardest merge test. No arm swapped, merged or duplicated a character.
+
+**What exists.** Chats already carry a roster of up to four characters. The
+scene renderer's multi-reference prompt builder already enumerates each numbered
+reference by name, asserts a person count that scales past one, and tells the
+model to compose the referenced people together while each keeps their own
+reference's face. The seeded scene profile already permits two identity
+references.
+
+**What is missing.** `buildCharacterSceneContext` returns a one-character
+`present` list built from the chat's primary character, so the lane never has a
+second cast member to send, and its `multi` mode carries character plus place
+rather than two people. The work is lane-side: build the cast from the roster,
+load a second identity reference, and carry the merge/swap/duplicate prohibition
+the lab proved. The Stage 6 name-collision refusal has to travel with it —
+character names are not unique, and prompt text cannot bind two faces to one
+name.
+
+**Untested at this shape.** Two identities plus a place reference is three
+references, which no Stage 6 arm ran. Stage 1/2 found three-reference sends
+collapsing identity, and Stage 6's depth arm found three holding, so the count
+alone does not predict the outcome and this combination needs its own arm.
+
+**Cost: lane code and a prompt clause. No migration, no new plan, no control
+map.** This is the only candidate whose blockers are all inside this repo's
+image lanes.
+
+### Candidate B — edge-controlled portrait variants
+
+**Evidence: 2/2 honours**, and edge is the one control that costs no provider
+call — it is computed in-process from an image the lane already has.
+
+**Blockers.** Extraction, storage and the review stamp exist only behind the
+lab's admin routes, so a production path needs a home for them and a decision
+about who reviews a map a player never sees. The variant lane would want to
+extract from the canonical portrait, which is exactly the shape the lab bars
+(`control_source_sent`) because it lets a render copy its own answer — the bar is
+an evidence rule rather than a quality one, but promoting past it needs saying so
+deliberately. Beyond that: a widened profile carrying the compose strategy is a
+migration, and the recorded finding that **edge maps encode clothing silhouettes**
+makes edge control actively wrong for the `outfit` variant kind and questionable
+for `pose`.
+
+### Candidate C — depth-controlled scenes
+
+**Evidence: the best of any control** — 2/2 on one character across both lanes,
+and the two-person map guided both people with the best identity fidelity of the
+five Stage 6 arms.
+
+**Blocker: there is no production source of a depth map.** Extraction needs a
+source image that already depicts the arrangement wanted, which an ordinary scene
+render does not have. That supply problem is
+[spatial-scene-images.plan.md](spatial-scene-images.plan.md)'s ground, and that
+plan is a draft with nothing built. Depth in ordinary scenes is blocked on work
+that has not started.
+
+### Candidate D — the identity-finishing pass
+
+**Evidence: conditionally viable** — 2/3 improves with appearance text, 0/3
+without it, and one run in three collapsed composition.
+
+**Three independent blockers**, each owned by a different plan:
+
+- The appearance text does not exist. Characters carry no authored facial or hair
+  attributes, and [character-schema.plan.md](character-schema.plan.md) is a draft
+  awaiting owner review of its vocabulary.
+- Pack references are dark in production. `IMAGE_IDENTITY_PACK_REFERENCES`
+  defaults off and no ordinary lane consumes a pack, which a finishing pass does
+  by definition.
+- The result screen its own acceptance condition names does not exist. The
+  collapse was not predictable from the input, so the check has to run on the
+  output; that check is
+  [image-render-quality.plan.md](image-render-quality.plan.md)'s queued advisory
+  QA slice, with nothing in code.
+
+The pass also cannot compose with candidate A: a finishing pass refines one face
+toward one pack, and `imageLabFinishableKinds` excludes two-character rows for
+that reason.
+
+### Candidate E — LoRA in ordinary lanes
+
+Splitting the candidate makes one half near-term and one half remote.
+
+**Style LoRA.** Selection, validation, refusal and reproducibility are proven
+end to end. What remains is a curated profile and a picker — the capabilities
+plan's model-specific-profiles slice, which is queued.
+
+**Character LoRA.** Training is an operator errand: a hand-run script, a
+hand-curated dataset, and hand-extracted weights re-hosted at a durable public
+address before a library row can point at them. The tool that would make it
+routine is parked in [deferred.plan.md](deferred.plan.md) with its hosting
+question unresolved.
+
+**A constraint both halves share.** The model the ordinary lanes run on takes no
+LoRA at all. LoRA work runs on the 2509-generation LoRA explorer, rated a step
+down in identity preservation. Promoting LoRA into an ordinary lane means moving
+that lane onto a weaker-identity checkpoint.
+
+### Recommendation
+
+Promote candidate A, keep everything else admin-only for now. A is the only
+candidate whose evidence is strong, whose blockers are all inside this repo's
+image lanes, and whose benefit is visible to a player: a chat with two characters
+in it currently renders scene images showing one of them.
+
+B is worth doing next and needs a ruling on which variant kinds may use an edge
+map. C and D are blocked on plans that have not started. E's style half waits on
+a curated profile; its character half waits on the parked training tool.
+
+## Stage 7 promotion delivery
+
+**Owner ruling (2026-08-12): candidates A, B and E's style half graduate;
+C and D stay admin-only.** The plan carries the ruling in product terms; this
+section carries the delivery order, the boundary decision, and the design
+rulings still owed.
+
+**Owner ruling (2026-08-12) — the two-character cast renders automatically,
+scoped to shared location.** No per-chat toggle. The cast is drawn when two
+characters are established as being in the same location; a roster member who is
+not in the current scene is not pulled into the picture. That scoping is the
+substantive half of the ruling — "the roster has two entries" is not the same
+claim as "two people are in this room".
+
+### Where this code is written
+
+The image subsystem is mid-migration into `@vesper/image-core`
+([monorepo-image-core.plan.md](monorepo-image-core.plan.md)), so each promotion
+has to say which side of the boundary it lands on.
+
+**Ruling: the promotion work is written in the application
+(`src/server/images/`), not in the package, and it does not wait for the
+migration to finish.** Three facts settle it:
+
+- The migration's own non-goals keep this exact code in the application.
+  Character scenes, lane wiring, and translating world state into an image
+  request stay put — `renderCharacterSceneImage` is named there as the clearest
+  example. Every module candidate A touches is on that list.
+- Slice 2 moves the compile step (`render-profile.ts` and the planner half of
+  `render-intent.ts`) into the package. The promotion work **consumes** that
+  step and does not edit it, so the two changes do not contend for the same
+  lines; slice 2's mechanical repoint carries the call sites with everything
+  else.
+- Waiting for the migration means waiting through slice 6, whose gate is an
+  open question with no nameable condition yet. That is an indefinite hold on
+  player-visible work in exchange for avoiding import churn a later slice
+  performs anyway.
+
+Nothing promoted is provider-neutral, so nothing promoted belongs in the
+package. The one piece of promotion vocabulary that already lives there — the
+cast clause in the compose strategy — needs no change, because the chat scene
+lane compiles its prompt through its own builder rather than through that
+strategy.
+
+### Delivery order
+
+**P1 — two characters in one chat scene image.** Build first. It has no
+dependency on the other two, no profile migration (the seeded scene profile sets
+no `maxPerRole`, and an absent role means no per-role cap, so two identity
+references already pass), and it is the only promotion a player can see. The
+work is lane-side: build the cast from the roster filtered to shared location,
+load a second identity anchor, carry the merge/swap/duplicate prohibition Stage 6
+proved, and refuse a cast whose two names collide — character names are not
+unique, and prompt text cannot bind two faces to one name.
+
+**Untested combination to settle during P1:** two identities plus a place
+reference is three references, which no Stage 6 arm ran. Stage 1/2 saw
+three-reference sends collapse identity and Stage 6 saw three hold, so the count
+alone does not predict the result. The lane must decide what to drop at capacity,
+and the two identities are what the cast ruling protects.
+
+**P2 — edge-controlled portrait variants.** Two design rulings are owed before
+coding:
+
+- **Which variant kinds may carry an edge map.** Edge maps encode clothing
+  silhouettes, a recorded Stage 1/2 finding, so the map is actively wrong for
+  `outfit` and questionable for `pose`.
+- **Where the map comes from.** Extracting it from the canonical portrait and
+  then sending both is the shape the lab bars as `control_source_sent`, and in a
+  variant it would also add little the identity image does not already carry. An
+  edge map earns its place when it comes from a *different* image — which is a
+  source-picking decision, not a wiring one.
+
+**P3 — a reviewed style LoRA in an ordinary lane.** The machinery is the
+capabilities plan's, not this one's: a curated profile is that plan's
+model-specific-profiles slice, and `image_model_profiles` has no write path
+today, so any profile is a migration. Two facts constrain the shape — the model
+the ordinary lanes run on takes no LoRA at all, so a LoRA-bearing profile moves
+that lane onto the 2509-generation endpoint and its recorded step down in
+identity preservation.
+
 ## Research record — character-LoRA dataset size (for Stage 5)
 
 Researched 2026-08-10 against trainer docs and community guides (no controlled

@@ -262,10 +262,12 @@ export const personas = pgTable(
  * the chat lane's first-class record — the transcript, rolling summary, and
  * per-participant state hang off `chat_id`, so one character can host many
  * stories (a long-running main thread beside a fresh alternate-universe
- * scenario). Built with multi-character headroom: membership is the
- * `chat_participants` join table (a roster of up to 4, sort 0 = the primary
- * participant; the exchange pipeline is still 1-on-1 with the primary until the
- * multi-character substrate ships — multi-character-chat.plan.md).
+ * scenario). Membership is the `chat_participants` join table (a roster of up to
+ * 4, sort 0 = the primary participant). The multi-character substrate shipped
+ * 2026-07-12 (finished/multi-character-chat.plan.md): the exchange runs the
+ * ensemble frame at a roster over 1 and is byte-identical at a roster of 1, and
+ * scene images render every member whose `presence` is "present". The
+ * `turn_context` layout is the piece that stays 1-on-1-only.
  * `archived_at` shelves a conversation read-only (restorable);
  * hard delete cascades transcript + summary + state (memory-group purge is
  * app-level — see `deleteChat`).

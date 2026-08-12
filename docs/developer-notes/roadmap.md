@@ -49,17 +49,11 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Qwen advanced image subsystem — controlled composition experiments** —
   [plan](qwen-advanced-image-subsystem.plan.md) ·
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
-  control-mapped Qwen edits against ordinary output; Stages 0–3 are complete —
-  depth and edge controls proved reliable in both lanes, pose is stochastic,
-  Plus stays unregistered, identity finishing is conditionally viable, only
-  earning its cost when its instruction carries appearance text, a curated LoRA
-  runs and refuses safely, and a trained character LoRA improves identity
-  alongside pack references — Stages 0–5 are all closed, an in-app LoRA
-  training tool and free-form image iteration are parked together in
-  `deferred.plan.md`, Stage 6's two-character trial has run — both characters
-  held uncontrolled, under depth, and under a two-person pose skeleton, and were
-  lost only to a control fixture describing one body — and awaits owner
-  acceptance, and Stage 7 waits on its gate.
+  control-mapped Qwen edits against ordinary output; Stages 0–6 are closed and
+  accepted, and Stage 7's promotion is ruled — two-character chat scenes,
+  edge-controlled portrait variants and a reviewed style LoRA graduate to the
+  ordinary lanes, while depth control and identity finishing stay admin tooling
+  behind plans that have not started.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
