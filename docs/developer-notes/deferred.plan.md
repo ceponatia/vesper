@@ -61,11 +61,14 @@ retention sweep) is the substrate a full account cascade composes from.
 
 ## Character-LoRA training as an in-app tool
 
-_Owner direction 2026-08-11, while the Stage 5 character-LoRA pilot ran
+_Owner direction 2026-08-11, taken when the Stage 5 character-LoRA pilot closed
 ([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)).
-Build it once a character LoRA is shown to be worth its cost and that plan
-closes — the Qwen plan lists automatic LoRA training inside Vesper as out of
-scope for its first implementation, and this is where that lands._
+The Qwen plan lists automatic LoRA training inside Vesper as out of scope for
+its first implementation, and this is where that lands. **Wanted so a more
+sophisticated LoRA can be trained** — the pilot proved a character LoRA
+improves identity alongside pack references, and found that its own training
+set was the limiting factor, so this is no longer gated on the technique
+proving itself._
 
 Today training is an **operator errand**: `scripts/train-image-lora.ts` is run
 by hand for one character, its dataset is assembled by hand, and the trained
@@ -99,10 +102,11 @@ has to own:
   training set no longer represents the character needs a mechanism here —
   staleness when the canonical portrait changes, and retraining or retirement.
 
-**Trigger:** Stage 5 showing a character LoRA beats identity-pack references on
-the fixed corpus, and the Qwen plan reaching its promotion decision. A Stage 5
-verdict that says references alone are enough retires this idea rather than
-promoting it.
+**Trigger:** owner scheduling. Stage 5 already answered the question that used
+to gate this — a character LoRA does improve identity alongside pack
+references — so what remains is deciding when the tool is worth building
+against the rest of the roadmap. The first thing it should make cheap is a
+deliberately varied training set, since that is what the pilot lacked.
 
 ## World authoring — locations, travel distances & durations
 
