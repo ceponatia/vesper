@@ -80,7 +80,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
     // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
     ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
   });
-  if (await latestChatLook(input.chatId, lookKey)) return; // already fresh (a lost race, or a no-op change)
+  // Scoped to THIS character: a chat-wide freshness read would see a roster
+  // sibling's look and skip minting one for the member whose outfit moved.
+  if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
   // The identity source: the canonical avatar's bytes (owned + ready).
   const [avatarRow] = await db()

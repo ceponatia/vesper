@@ -100,15 +100,33 @@ export async function chatHasRenders(chatId: string): Promise<boolean> {
   return row !== undefined;
 }
 
-/** The newest ready look for the chat WITH a matching key, loaded with its bytes; null ⇒ anchor on the avatar. */
+/**
+ * The newest ready look for one CHARACTER in this chat WITH a matching key,
+ * loaded with its bytes; null ⇒ anchor on that character's avatar.
+ *
+ * Scoped by `entityId`, not by chat alone: a chat's roster holds up to four
+ * characters, and a chat-wide read would hand one character's look to another —
+ * dressing the wrong face in the wrong outfit. The rows have always carried
+ * `entityId` (the mint sets it); only the read and the keep-latest purge were
+ * chat-wide, which was safe while the exchange minted a look for the primary
+ * alone and stops being safe the moment a second cast member anchors.
+ */
 export async function latestChatLook(
   chatId: string,
+  characterId: string,
   lookKey: string,
 ): Promise<{ imageId: string; buffer: Buffer } | null> {
   const [row] = await db()
     .select()
     .from(images)
-    .where(and(eq(images.chatId, chatId), eq(images.kind, "chat_look"), eq(images.status, "ready")))
+    .where(
+      and(
+        eq(images.chatId, chatId),
+        eq(images.entityId, characterId),
+        eq(images.kind, "chat_look"),
+        eq(images.status, "ready"),
+      ),
+    )
     .orderBy(desc(images.createdAt))
     .limit(1);
   if (!row) return null;
@@ -178,9 +196,19 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
       if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
       return { ok: true, image: edit.image };
     },
-    // Keep-latest (ruled): the superseded looks go with their files.
+    // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
+    // files. Scoped by `entityId` for the same reason the loader above is — a
+    // chat-wide purge makes two cast members evict each other's anchor on every
+    // mint, so neither ever has one when the scene renders.
     onReady: async (asset) => {
-      await purgeImagesWhere(and(eq(images.chatId, input.chatId), eq(images.kind, "chat_look"), ne(images.id, asset.id)));
+      await purgeImagesWhere(
+        and(
+          eq(images.chatId, input.chatId),
+          eq(images.entityId, input.characterId),
+          eq(images.kind, "chat_look"),
+          ne(images.id, asset.id),
+        ),
+      );
     },
     failureDiagnostic: { code: "images.chat_look.failed" },
     sink: input.sink,

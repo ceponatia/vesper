@@ -27,10 +27,24 @@ import { log } from "@/server/log";
 
 export const SCENE_CHAT_CONTEXT = 6;
 
+/** One roster member as the scene queue needs them (the `OwnedChatMember.character` slice). */
+export interface QueueChatSceneMember {
+  id: string;
+  name: string;
+  profile: unknown;
+  avatarImageId: string | null;
+}
+
 export interface QueueChatSceneArgs {
   userId: string;
   chatId: string;
-  character: { id: string; name: string; profile: unknown; avatarImageId: string | null };
+  /** The character the scene row is FILED against — the strip reads by this id. */
+  character: QueueChatSceneMember;
+  /**
+   * The full sort-ordered roster. Absent (or empty) ⇒ the primary alone, which is
+   * what a classic 1-on-1 chat is and what every pre-roster call site sent.
+   */
+  roster?: readonly QueueChatSceneMember[];
   anchorMessageId?: string;
   flavor?: "selfie";
 }
@@ -44,13 +58,6 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
   try {
     if (await hasLiveChatSceneJob(args.chatId)) return null;
 
-    const profile = parseOr(
-      characterProfileSchema,
-      args.character.profile ?? {},
-      emptyCharacterProfile(),
-      undefined,
-      "characters.profile",
-    );
     const recent = await db()
       .select({ id: characterChatMessages.id, content: characterChatMessages.content })
       .from(characterChatMessages)
@@ -61,18 +68,43 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const anchorMessageId = args.anchorMessageId ?? recent[0]?.id;
 
     const scenario = await loadChatScenario(args.chatId);
-    const stored = await loadChatState(args.chatId, args.character.id);
-    const wardrobe = stored
-      ? await resolveChatWardrobe(
-          {
-            ...stored,
-            ...(scenario ? { garments: scenario.garments } : {}),
-            garmentActorId: garmentActorForCharacter(args.character.id),
-          },
-          args.userId,
-          profile,
-        )
-      : null;
+
+    // Who is in the shot. Chat tracks no per-character location — `presence` is
+    // its only location-like state, so "both in the same room" and "both present"
+    // are the same claim (owner ruling, qwen-advanced-image-subsystem.plan.md
+    // Stage 7). An away member is offstage living their own life and is not drawn
+    // into the picture. A selfie is the sender's own phone camera, so it stays
+    // single-subject whoever else is in the room.
+    const roster = args.roster?.length ? args.roster : [args.character];
+    const states = await Promise.all(
+      roster.map(async (member) => ({ member, stored: await loadChatState(args.chatId, member.id) })),
+    );
+    const subject = states.find((entry) => entry.member.id === args.character.id);
+    const onlySubject = subject ? [subject] : [{ member: args.character, stored: null }];
+    const present = states.filter((entry) => (entry.stored?.presence ?? "present") === "present");
+    // Everyone away is not a reason to render an empty room here: fall back to the
+    // filing subject, which is exactly what a pre-roster queue always sent. The
+    // cast is never empty — a subject with no state row still renders.
+    const castStates = args.flavor === "selfie" ? onlySubject : present.length > 0 ? present : onlySubject;
+    // Character names are NOT unique, and every downstream binding is by name —
+    // the plan's roster map, the composer's dedupe, the prompt's reference set.
+    // Two same-named people collapse into one there, so the model cannot tie each
+    // face to its own reference and the cast clause never fires. The lab refuses
+    // this outright, which is right for an experiment; a player-facing render
+    // degrades instead (docs/resilience.md) and draws the first of the pair.
+    const castNames = new Set<string>();
+    const cleanCast = castStates.filter(({ member }) => {
+      const key = member.name.trim().toLowerCase();
+      if (key && castNames.has(key)) {
+        log.warn("chat_scene", "two present characters share a name — rendering only the first", {
+          chatId: args.chatId,
+          name: member.name,
+        });
+        return false;
+      }
+      castNames.add(key);
+      return true;
+    });
 
     const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
     const playerWardrobe = scenario
@@ -86,36 +118,76 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       ? place.sketch?.trim() || [place.name, place.details.join("; ")].filter(Boolean).join(" — ")
       : undefined;
 
-    const characterActor = garmentActorForCharacter(args.character.id);
-    const lookKey =
-      wardrobe && stored
-        ? chatLookKey({
-            wornItemIds: wardrobe.wornItemIds,
-            overlay: wardrobe.overlay,
-            exposure: wardrobe.exposure,
-            attributeOverlays: stored.attributeOverlays,
-            ...(scenario
-              ? { garmentKey: chatGarmentLookKey(scenario.garments, [characterActor], scenario.clockMinutes) }
-              : {}),
-          })
-        : undefined;
-
-    const garmentNotes =
-      scenario && chatGarmentCuesEnabled()
-        ? buildChatGarmentNarration({
-            store: scenario.garments,
-            atMinutes: scenario.clockMinutes,
-            ...(place ? { placeName: place.name } : {}),
-            actors: [
+    // Wardrobe, look key and garment notes are all per-person, so they resolve per
+    // cast member rather than once for the chat. The garment narration is called
+    // one actor at a time deliberately: its notes are possessive-labelled, and a
+    // single combined call returns one flat list that the composer would then
+    // attach to whichever character it was handed to — dressing one person in
+    // another's clothes.
+    const cast = await Promise.all(
+      cleanCast.map(async ({ member, stored }) => {
+        const profile = parseOr(
+          characterProfileSchema,
+          member.profile ?? {},
+          emptyCharacterProfile(),
+          undefined,
+          "characters.profile",
+        );
+        const actor = garmentActorForCharacter(member.id);
+        const wardrobe = stored
+          ? await resolveChatWardrobe(
               {
-                actorId: characterActor,
-                label: args.character.name,
-                possessive: `${args.character.name}'s`,
-                ...(wardrobe ? { visibility: wardrobe.partVisibility } : {}),
+                ...stored,
+                ...(scenario ? { garments: scenario.garments } : {}),
+                garmentActorId: actor,
               },
-            ],
-          }).sceneNotes
-        : undefined;
+              args.userId,
+              profile,
+            )
+          : null;
+        const lookKey =
+          wardrobe && stored
+            ? chatLookKey({
+                wornItemIds: wardrobe.wornItemIds,
+                overlay: wardrobe.overlay,
+                exposure: wardrobe.exposure,
+                attributeOverlays: stored.attributeOverlays,
+                ...(scenario
+                  ? { garmentKey: chatGarmentLookKey(scenario.garments, [actor], scenario.clockMinutes) }
+                  : {}),
+              })
+            : undefined;
+        const garmentNotes =
+          scenario && chatGarmentCuesEnabled()
+            ? buildChatGarmentNarration({
+                store: scenario.garments,
+                atMinutes: scenario.clockMinutes,
+                ...(place ? { placeName: place.name } : {}),
+                actors: [
+                  {
+                    actorId: actor,
+                    label: member.name,
+                    possessive: `${member.name}'s`,
+                    ...(wardrobe ? { visibility: wardrobe.partVisibility } : {}),
+                  },
+                ],
+              }).sceneNotes
+            : undefined;
+        return {
+          characterId: member.id,
+          name: member.name,
+          profile,
+          avatarImageId: member.avatarImageId,
+          outfit: wardrobe?.garments ?? "",
+          outfitExposed: wardrobe?.exposed ?? false,
+          exposure: wardrobe?.exposure,
+          garmentNotes,
+          meters: stored?.meters,
+          conditions: stored?.conditions,
+          lookKey,
+        };
+      }),
+    );
     if (place?.sketch && !place.imageId) {
       void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
     }
@@ -133,25 +205,16 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
         imageId: await renderCharacterSceneImage({
           characterId: args.character.id,
           userId: args.userId,
-          name: args.character.name,
-          profile,
-          avatarImageId: args.character.avatarImageId,
+          cast,
           room,
           timeOfDay: scenario ? timeOfDayFor(scenario.clockMinutes, scenario.calendarStart) : undefined,
           recentChat,
-          outfit: wardrobe?.garments ?? "",
-          outfitExposed: wardrobe?.exposed ?? false,
-          exposure: wardrobe?.exposure,
-          garmentNotes,
           playerExposure: playerWardrobe?.exposure,
           playerAttributes: playerResolved,
           playerProfile,
-          meters: stored?.meters,
-          conditions: stored?.conditions,
           chatId: args.chatId,
           anchorMessageId,
           flavor: args.flavor,
-          lookKey,
           place: place?.imageId ? { name: place.name, imageId: place.imageId } : undefined,
           sceneModel: scenario?.sceneModel,
         }),

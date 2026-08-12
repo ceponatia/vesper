@@ -15,6 +15,7 @@ import {
   type ImageProviderFailure,
   type ImageReferenceRole,
   type ProviderRenderResult,
+  referenceCapacity,
   type ResolvedImageProfile,
   routeSceneAttempts,
   type SceneAttemptId,
@@ -144,7 +145,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     ];
   });
   const primaryReference = orderedReferences[0] ?? null;
-  const multiReferences = orderedReferences.slice(0, 3);
+  // The model's own capacity, not a literal 3: a two-character cast plus a place
+  // is three references on Qwen Edit 2511 and would have been silently trimmed to
+  // the old constant on any model that takes more. Callers order people before
+  // the place, so a short capacity drops the setting rather than a character.
+  const multiCapacity = model ? referenceCapacity(model).max : 1;
+  const multiReferences = orderedReferences.slice(0, multiCapacity);
 
   const anchorRef = imageRefs[0];
   const allowIntimate = anchorRef?.allowForIntimate ?? false;
@@ -161,7 +167,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     multiReferences.length >= 2
       ? buildSceneRenderPrompt(plan, {
           allowIntimate: multiAllowIntimate,
-          multiReferences: imageRefs.slice(0, 3).map((reference) => ({
+          multiReferences: imageRefs.slice(0, multiCapacity).map((reference) => ({
             name: reference.name ?? "",
             kind: reference.kind,
           })),
