@@ -65,11 +65,16 @@ const TRAINER_NAME = "qwen-image-lora-trainer";
 const TRAINER_VERSION = "f28eb39544f2c0dff4fbd9d50588fd75789f7ef26f6118456a96c2eedddddf90";
 
 /**
- * The hardware a new destination model is created on. H200 is what the trainer
- * requires; a destination created on anything else is refused at training time,
- * which is a confusing place to learn it.
+ * The hardware a new destination model is created on.
+ *
+ * This is the SKU the destination's own PREDICTIONS would run on, and this
+ * workflow never runs one — the destination is a shelf the training pushes a
+ * version onto, nothing more. It has no bearing on the training itself, which
+ * runs on whatever the trainer runs on (H200 today). `cpu` is the cheapest
+ * inert choice, and `gpu-h200` is not even a creatable SKU here (the live
+ * endpoint refuses it; its options are cpu and the a100/h100/l40s/t4 GPUs).
  */
-const DESTINATION_HARDWARE = "gpu-h200";
+const DESTINATION_HARDWARE = "cpu";
 
 /** Vendor-stated H200 price, used only for the warning below. */
 const H200_USD_PER_SECOND = 0.001525;
@@ -653,7 +658,7 @@ function costWarning(steps: number): string {
     (minutes * scale * 60 * H200_USD_PER_SECOND).toFixed(2),
   );
   return (
-    `This spends real money: ${DESTINATION_HARDWARE} at $${String(H200_USD_PER_SECOND)}/second, ` +
+    `This spends real money: the trainer runs on gpu-h200 at $${String(H200_USD_PER_SECOND)}/second, ` +
     `and the vendor states ${String(MINUTES_PER_1000_STEPS.low)}-${String(MINUTES_PER_1000_STEPS.high)} minutes at 1000 steps. ` +
     `At ${String(steps)} steps expect roughly $${String(band[0])}-$${String(band[1])}.`
   );
@@ -813,7 +818,10 @@ async function settle(training: Training, args: Args, token: string): Promise<vo
     process.exitCode = 1;
     return;
   }
-  const outDir = resolve(args.out);
+  // One directory PER TRAINING, keyed by the training id, so a rerun with the
+  // default --out can neither overwrite an earlier run's expensive artifact nor
+  // pick a stale .safetensors out of it when reporting which file to re-host.
+  const outDir = join(resolve(args.out), training.id);
   console.log("");
   console.log("Downloading the weights …");
   const zipPath = await downloadWeights(weightsUrl, outDir, token);

@@ -47,10 +47,12 @@ those systems through their existing exports and adds no second copy.
 | Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
 | Stage 5 dataset, training run, comparison arms  | pending          |
 
-Stage 5+ work (the character-LoRA pilot, two-character recipes) is deliberately
-absent from this table: Stage 5 waits on Stage 4's verdict, and Stage 6 on the
-owner opening the two-character gate. The LoRA library itself is the
-capabilities plan's slice 6
+Stage 6+ work (two-character recipes, the promotion decision) is deliberately
+absent from this table: Stage 6 waits on the owner opening the two-character
+gate, and Stage 7 closes the plan. Stage 4's owner verdicts are still pending —
+Stage 5's machinery was built without waiting on them (owner direction at its
+kickoff), and its own paid legs are tracked above. The LoRA library itself is
+the capabilities plan's slice 6
 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 §"Slice 6 implementation rulings"); this table tracks only the lab's side.
 
