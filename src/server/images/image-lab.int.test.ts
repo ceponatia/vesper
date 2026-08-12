@@ -1296,9 +1296,10 @@ describe.skipIf(!ready)("image lab two-character scenes", () => {
   it("refuses rather than dropping a character when the required references do not fit", async () => {
     stubSuccessfulRenderer();
     // Two identities and a control need three slots; this model has two. The
-    // intent path would drop one character, find `identity` still present in its
-    // Set-based required check, and render a solo portrait under a row that says
-    // there are two people in it.
+    // intent path refuses this too now (a dropped required reference is a
+    // refusal there), so what this case pins is WHOSE refusal an admin reads: the
+    // lab's own code and its ineligibility wording, decided before eligibility
+    // and the recipe compile spend any work on a run that was never going to fit.
     const { id, sink } = await createTwoCharacterScene({ control: "pose", modelSlug: TWO_REF_SLUG });
 
     await runImageLabExperiment(id, ownerId, sink);

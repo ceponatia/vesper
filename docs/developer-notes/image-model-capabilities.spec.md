@@ -406,14 +406,19 @@ under `requiredRoles` would otherwise be unsatisfiable: the reference is dropped
 as disallowed, then the required-role gate refuses the render for the absence it
 just created.
 
-**`requiredRoles` is per-role PRESENCE, not a count.** The gate asks whether any
+**`requiredRoles` is per-role PRESENCE, not a count — and the per-reference
+`required` flag is the count-aware demand.** The role gate asks whether any
 reference of the role survived selection, so a policy cannot require two of one
-role: on a model whose capacity holds only one of them, the planner drops the
-second, finds the role present, and renders — a silent single-drop that
-satisfies the check. A caller that requires N > 1 of a role must gate the count
-itself before spending; the Qwen lab's two-character runner is the precedent
-(`image_lab.capacity_exceeded`, refusing pre-spend when its two identities plus
-a declared control exceed the model's capacity).
+role. What closes that gap is the reference's own flag: `planImageRender`
+refuses the whole plan (`image_profile.required_reference_dropped`, context
+naming each dropped role and reason) when any reference marked
+`required: true` is dropped — for capacity, a per-role cap, a disallowed role,
+or a dedicated input's ceiling. A lane needing N > 1 of a role marks each of
+the N required and the second one going missing refuses instead of rendering
+short. Every production lane sends at most one required reference per role, so
+no live render changes behavior. The Qwen lab's two-character runner keeps its
+own earlier pre-check (`image_lab.capacity_exceeded`) as the first-line
+refusal in the lab's vocabulary; the planner refusal backs every other caller.
 
 The selector returns selected and dropped references, and each drop carries WHY:
 `role_not_allowed` (the profile is configured for a different job), `role_cap`
@@ -1445,6 +1450,7 @@ reuse temporary Replicate file URLs.
 Emitted today: `image_profile.row_invalid`, `image_profile.none_offered` and
 `image_profile.pick_unavailable` from the resolver;
 `image_profile.required_reference_missing`,
+`image_profile.required_reference_dropped`,
 `image_profile.required_control_input_missing`,
 `image_profile.prompt_strategy_unsupported`, `image_profile.references_trimmed`
 and `image_profile.references_renumbered` from the render intent;

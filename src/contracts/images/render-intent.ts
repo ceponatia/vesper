@@ -32,7 +32,9 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
  *
  * `role` is the point of the whole type. `required` and `priority` feed
  * {@link planIntentReferences}, which sorts required references ahead of
- * optional ones and profile role order ahead of numeric priority.
+ * optional ones and profile role order ahead of numeric priority. Selection only
+ * ORDERS a required reference; the refusal half of the flag lives one layer up,
+ * in `planImageRender` — see the field.
  *
  * `sourceImageId` and `name` are provenance, not payload: they let a diagnostic
  * say which stored asset was dropped rather than "reference 3".
@@ -46,7 +48,24 @@ import type { ImageReferencePolicy, ImageRenderControls } from "./image-model-pr
  */
 export interface ImageRenderReferenceSpec {
   role: ImageReferenceRole;
-  /** Fail the render rather than send it without this reference. */
+  /**
+   * Fail the render rather than send it without this reference.
+   *
+   * Two layers honour it, and both are needed. Selection sorts required
+   * references ahead of optional ones, so the slots go to them first; and
+   * `planImageRender` refuses the whole plan
+   * (`image_profile.required_reference_dropped`) when one is dropped anyway —
+   * for capacity, for a per-role cap, for a role the policy never allowed, or
+   * for a dedicated input's own ceiling. Sorting alone would have made this
+   * field a preference with a promise's name.
+   *
+   * Distinct from the policy's `requiredRoles`, which is a demand about ROLES
+   * and is answered with a set: a lane sending two required identity references
+   * is asking for both FACES, and "an identity reference survived" cannot tell
+   * that apart from one of them being trimmed. This flag is per reference, so
+   * the second one going missing refuses instead of rendering a two-character
+   * scene with one character in it.
+   */
   required?: boolean;
   /** Tie-break within a role band; higher wins. Unset sorts after any set value. */
   priority?: number;
@@ -290,7 +309,9 @@ export interface PlannedImageReferences<T extends ImageRenderReferenceSpec> {
  * 3. **Sort.** Required before optional; within that, `roleOrder` position, then
  *    numeric priority descending, then the caller's own order. Roles absent from
  *    `roleOrder` sort after every role in it — an unranked role is not
- *    implicitly first.
+ *    implicitly first. BOTH contests sort, by the one comparator: a dedicated
+ *    field with a ceiling is scarce exactly as the primary array is, and a group
+ *    that skipped step 1's contest did not thereby earn different rules.
  * 4. **Apply per-role caps, then capacity.** In that order, because a cap is a
  *    profile's own decision and capacity is the model's: reporting `role_cap`
  *    for an image the profile itself would not have sent is the more useful
@@ -349,7 +370,15 @@ export function planIntentReferences<T extends ImageRenderReferenceSpec>(
     primary.push(entry);
   }
 
-  const dedicated = groupDedicated(bound, caps, drops);
+  // Sorted by the SAME comparator as the primary contest, on a copy like it: a
+  // dedicated field with a ceiling is scarce exactly as the primary array is, so
+  // the rules deciding which references survive scarcity cannot differ between
+  // the two just because this group left the primary contest early.
+  const dedicated = groupDedicated(
+    [...bound].sort((left, right) => compareReferences(left, right, policy.roleOrder)),
+    caps,
+    drops,
+  );
 
   // Dropped in CALLER order so a diagnostic reads in the order the lane thinks
   // about its references, not the order the comparator happened to visit them.
@@ -426,6 +455,15 @@ function roleRank(role: ImageReferenceRole, ranked: readonly ImageReferenceRole[
  * Group dedicated-input controls by their provider field, enforcing the field's
  * own arity and the profile's per-role cap.
  *
+ * Takes its entries ALREADY SORTED by {@link compareReferences} — the parameter
+ * name is the precondition — because this function fills a field first-come and
+ * drops the overflow. "The first one wins" is only the right rule if the order
+ * that reached it already ranked them: on a `single` field an optional control
+ * supplied ahead of a required one of the same role would otherwise take the
+ * only slot, sending the image the caller marked expendable and losing the one
+ * it could not do without. A capped field must prefer what cannot be lost, which
+ * is the same judgment the primary contest makes about capacity.
+ *
  * A `single` field takes ONE image: a second is dropped as `role_cap` rather
  * than overwriting the first or being sent as an array the schema does not
  * declare. That is the same answer `buildRegistryModelInput` gives the primary
@@ -438,14 +476,14 @@ function roleRank(role: ImageReferenceRole, ranked: readonly ImageReferenceRole[
  * change it. Only primary-array scarcity is `model_capacity`.
  */
 function groupDedicated<T extends ImageRenderReferenceSpec>(
-  bound: readonly BoundControlReference<T>[],
+  ordered: readonly BoundControlReference<T>[],
   caps: Partial<Record<ImageReferenceRole, number>>,
   drops: (DroppedImageReference<T> & { index: number })[],
 ): DedicatedControlInput<T>[] {
   const groups = new Map<string, DedicatedControlInput<T>>();
   const perRole = new Map<ImageReferenceRole, number>();
 
-  for (const entry of bound) {
+  for (const entry of ordered) {
     const cap = caps[entry.reference.role];
     const used = perRole.get(entry.reference.role) ?? 0;
     const group = groups.get(entry.field) ?? { field: entry.field, arity: entry.arity, references: [] };

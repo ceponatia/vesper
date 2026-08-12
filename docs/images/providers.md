@@ -201,7 +201,13 @@ is what keeps the seeded profiles' payloads unchanged.
 
 `requiredRoles` are checked against everything that will actually be SENT — the
 primary array and the dedicated control fields alike — and refuse the render with
-`image_profile.required_reference_missing` if any is absent. Per-render controls
+`image_profile.required_reference_missing` if any is absent. A reference the
+CALLER marked `required: true` refuses one layer finer: if selection drops it
+for any reason, the plan refuses with
+`image_profile.required_reference_dropped`, naming each dropped role and
+reason — the role gate is a set, so it alone cannot tell "an identity reference
+survived" from "the second of two required identities was trimmed". Only
+optional references are trimmed and reported. Per-render controls
 merge over the profile's stored defaults, and the profile's prompt strategy
 compiles the final text. A strategy this path has no wording for refuses with
 `image_profile.prompt_strategy_unsupported` rather than sending a lesser one.
