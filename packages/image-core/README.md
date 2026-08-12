@@ -6,27 +6,43 @@ a Next.js application.
 
 Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
 How the application uses it: [docs/images/](../../docs/images/README.md).
+Slice 1 enforcement: [monorepo-image-core.spec.guardrails.md](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md).
 
 ## Boundary
 
-**The contract is one-way: this package may not import application code.** No
-`@/contracts`, `@/lib`, `@/server`, `@/app` — no `@/` at all. Another workspace
-package is imported by its package name and declared in this package's manifest,
-never reached through a relative path.
+**The contract is one-way in dependency direction and two-way in filesystem
+encapsulation.** This package may not import application code, and consumers may
+not bypass this package's public API by importing files under `packages/image-core`
+directly.
 
-A relative import is also forbidden when it resolves outside
-`packages/image-core`, even if its spelling never contains the literal word
-`packages`. This matters for sibling-package escapes such as a path that
-normalizes into `packages/contracts`.
+No `@/contracts`, `@/lib`, `@/server`, `@/app` — no `@/` at all. Another
+workspace package is imported by its package name and declared in this package's
+manifest, never reached through a relative path.
 
-**Known enforcement gap:** the first Slice 1 ESLint rule catches `@/` and common
-relative climbs whose text names top-level directories, but it does not yet prove
-containment for every possible sibling-package relative path. The correction is
-the remaining Slice 1 work in
-[monorepo-image-core.spec.md](../../docs/developer-notes/monorepo-image-core.spec.md):
-a resolved-path package-boundary check becomes authoritative before more code is
-extracted. Until that lands, the boundary above is the required contract, but
-lint alone is not proof of every relative spelling.
+Likewise, application/root/sibling-package code must not reach a helper through a
+relative path such as `../../packages/image-core/src/...`. Cross-workspace code
+imports use the exact curated root package entry point:
+
+```ts
+import { ... } from "@vesper/image-core";
+```
+
+Code subpaths such as `@vesper/image-core/src/...` or
+`@vesper/image-core/internal` are not public APIs.
+
+A relative import is forbidden when it resolves outside the current workspace,
+even if its spelling never contains the literal word `packages`. This matters for
+sibling-package escapes such as a path that normalizes into `packages/contracts`.
+The same resolved-workspace check prevents app/root code from reaching inward by
+filesystem path.
+
+**Slice 1 enforcement is still being completed.** The first ESLint rule catches
+`@/` and common relative climbs, but review found that spelling-based lint alone
+cannot prove containment or prevent reverse deep imports. Before more extraction,
+[the guardrails spec](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md)
+adds the authoritative workspace-import checker, manifest dependency ownership,
+package graph direction/cycle checks, explicit root-export enforcement,
+package-local typechecking, package-scoped tests, and adversarial checker tests.
 
 The dependency direction is deliberate: the application depends on the package,
 never the reverse. When code here appears to need something from the application,
@@ -41,16 +57,25 @@ Practical consequences:
   `CharacterProfile`.
 - **No persistence, network IO, ambient environment, clock or randomness.** A
   registry row arrives as a parsed value; the package never fetches one and never
-  reads `process.env`. Pure Node standard-library functions such as hashing are
-  fine.
+  reads `process.env`.
+- **Browser/server portable.** Existing client-importable application contracts
+  consume runtime schemas from this package, so its public runtime graph may not
+  pull in Node-only modules or Next/server-only framework code. Pure
+  runtime-neutral utilities and deterministic arithmetic are fine; Node SHA-256
+  execution stays at the application/server boundary.
 - **Diagnostics are reported, not persisted.** The current package-local
   `DiagnosticSink` is a temporary structural copy of the application's
   diagnostic contract. Slice 3 replaces both declarations with
   `@vesper/contracts`; see
   [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
-- **Tests are package-contained.** They may run through the repository's shared
-  Vitest command, but package behavior must not depend on application DB/env/test
-  setup.
+- **Tests are package-contained.** They run through the repository's shared
+  Vitest command but must not receive application-global DB/env/test setup.
+- **Typechecking is package-contained.** Slice 1 gives this package its own
+  TypeScript project without the application's `@/*` alias or Next plugin; root
+  verification still aggregates it.
+- **Dependencies are owned here.** A third-party or workspace dependency imported
+  by package runtime source belongs in this package's manifest; reachability
+  elsewhere in pnpm's install is not ownership.
 
 ## Layout
 
@@ -68,10 +93,11 @@ Read in this order — each layer consumes the one above it.
 | `geometry/`           | Crop math                                                 |
 | `provider-interface/` | Attempt routing and failure vocabulary                    |
 
-Each folder has an `index.ts`. The package has one public root import path,
-`@vesper/image-core`. The root barrel is being treated as a **curated public
-surface**, not as a promise that every internal helper is public; the exact
-policy and migration rule are in the monorepo hub spec.
+Each folder may have an internal `index.ts` for reading/navigation. The package
+has one public code import path, `@vesper/image-core`. The **root**
+`src/index.ts` is a curated public surface and, once the Slice 1 correction
+lands, uses explicit named exports rather than wildcard export chains. Adding an
+internal helper must not publish it accidentally.
 
 ## What stays outside this package
 
@@ -83,7 +109,9 @@ The application still owns Vesper-specific image orchestration:
 - authorization and job ownership;
 - gallery/queue/lifecycle behavior;
 - runtime provider configuration;
-- crop/save behavior tied to application storage.
+- crop/save behavior tied to application storage;
+- Node-only execution that is application infrastructure rather than image
+  decision logic, such as the current SHA-256 fingerprint wrapper.
 
 Replicate network transport and schema probing are planned for a separate
 server-only `@vesper/image-replicate` package rather than being folded into this
@@ -94,11 +122,11 @@ own Vesper state or read ambient application configuration.
 
 - No production build artifact is emitted from this package; it exports
   TypeScript source and is consumed as a workspace dependency.
-- Before the final `apps/web` move, Next transpiles it, root TypeScript resolves
-  it through the workspace mapping, and the shared Vitest runner discovers its
-  tests.
-- The final monorepo layout gives packages their own TypeScript projects while
-  keeping a root repository test/typecheck entry point.
-- Tests live beside their subject.
+- Next transpiles it when consumed by the app, but package correctness is also
+  checked through the package-local TypeScript project.
+- Prefer real pnpm/package `exports` resolution over tool aliases. If a temporary
+  exact-name alias remains for a tool, CI still exercises the installed workspace
+  package by public name so the alias cannot hide broken manifest wiring.
+- Tests live beside their subject and run without application-global setup.
 - Validation is CI-only, as everywhere in this repo — code/config changes go
   through a PR and the repository gates rather than local `verify` runs.
