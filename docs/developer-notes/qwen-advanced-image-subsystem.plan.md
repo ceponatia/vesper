@@ -678,9 +678,10 @@ obedience, structural control, latency, failure rate, and overall preference.
 ### Stage 6 — two-character controlled trials
 
 Status: built 2026-08-12; trial run 2026-08-12 — awaiting owner acceptance of
-its verdicts (five arms, protocol and results in the
+its verdicts (six arms, protocol and results in the
 [spec](qwen-advanced-image-subsystem.spec.md)). Held both characters
-uncontrolled and under depth, and lost one under a single-person pose skeleton.
+uncontrolled, under depth, and under a two-person pose skeleton; lost one only
+when the control fixture described a single body.
 
 Add carefully bounded two-character tests only after the single-character path
 passes. Measure identity swapping, duplicated people, missing characters, pose
