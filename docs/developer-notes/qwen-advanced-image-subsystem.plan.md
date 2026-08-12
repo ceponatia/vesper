@@ -651,10 +651,13 @@ arm. The trial protocol and endpoint facts are in the
 
 ### Stage 5 — one character LoRA pilot
 
-Status: in progress — the LoRA-only comparison arm, the training runbook, the
-twenty-image dataset and the character-LoRA training itself are done
-2026-08-11; hosting the trained weights and running the comparison arms
-remain, and hosting is blocked on credentials for the owner's chosen host. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
+Status: complete — 2026-08-11. A character LoRA improves identity alongside
+identity-pack references (owner ruling; the verdicts and the whole pipeline
+record are in the spec). The LoRA alone drifts, which the owner attributes to a
+training set that was not varied enough rather than to the technique, so how
+good a character LoRA can get is handed to a LoRA training tool in the admin
+dashboard — parked in [deferred.plan.md](deferred.plan.md), wanted so a more
+sophisticated LoRA can be trained. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
 Vale, and the training set is her curated identity-faithful renders plus
 synthesized variants to about twenty images — a training set is assembled only
 from images whose generation provenance is verifiable, which the app's own

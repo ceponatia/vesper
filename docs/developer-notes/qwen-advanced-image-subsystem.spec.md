@@ -47,7 +47,7 @@ those systems through their existing exports and adds no second copy.
 | Stage 5 LoRA-only arm + training runbook        | built 2026-08-11 |
 | Stage 5 dataset + character-LoRA training run   | run 2026-08-11   |
 | Stage 5 hosting + comparison arms               | run 2026-08-11   |
-| Stage 5 owner verdicts                          | pending          |
+| Stage 5 owner verdicts                          | run 2026-08-11   |
 
 Stage 6+ work (two-character recipes, the promotion decision) is deliberately
 absent from this table: Stage 6 waits on the owner opening the two-character
@@ -630,16 +630,39 @@ instruction, LoRA at 0.9) — awaiting owner verdicts:**
   `["before"]`. The isolation is proven by the record: one reference, no
   identity-pack image, no pack evaluation.
 
-Observations offered to the verdicts, not substituting for them. All three arms
-recropped the full-body source to chest-up, so that framing violation is a
-property of the finishing pass on this connector rather than of the LoRA. Arm
-(c) is visibly the LoRA acting alone — smoother, warmer-lit and more idealized
-than the photographic (a) and (b), with fuller cheeks and a rounder jaw than
-either, which is the direction the appearance text asks for and also the
-direction an overfit to a studio-lit training corpus would produce. Arm (b)
-reads close to arm (a), so the LoRA's marginal contribution when pack
-references are already present is the question the owner's ruling has to
-settle. Evidence images: `screenshots/stage5-*.webp`.
+All three arms recropped the full-body source to chest-up, so that framing
+violation is a property of the finishing pass on this connector rather than of
+the LoRA. Arm (c) is visibly the LoRA acting alone — smoother, warmer-lit and
+more idealized than the photographic (a) and (b), with fuller cheeks and a
+rounder jaw than either. Evidence images: `screenshots/stage5-*.webp`.
+
+**Owner verdicts (2026-08-11):**
+
+- Arm (b), pack + LoRA — **`improves_identity`**. The LoRA earns its place when
+  identity-pack references are sent alongside it.
+- Arm (c), LoRA alone — **`inconclusive`**. The owner sees drift from the
+  original and attributes it to the training set rather than to the technique:
+  fifteen of the twenty images were the same beige shirt in the same sunlit
+  studio, because that is what the lab corpus is made of. Accepted on that
+  basis. The verdict is `inconclusive` rather than `changes_beyond_identity`
+  because the run cannot separate the LoRA from its dataset — not because the
+  render was unjudgeable.
+
+**The dataset is the limitation this pilot actually found.** The plan's own
+safeguard — vary pose, expression, lighting and clothing so the LoRA does not
+learn one costume or background as identity — was only partly satisfied: the
+five commissioned variants broke the pattern, the fifteen corpus renders did
+not. A sharper answer on what a character LoRA is worth needs a deliberately
+varied training set, which is the first thing the training tool below should
+make cheap.
+
+**Owner ruling (2026-08-11): Stage 5 closes here.** A character LoRA improves
+identity alongside pack references, its whole pipeline is proven end to end —
+dataset, training, durable hosting, curated library row, prompt additions,
+isolation arm — and the open question about how good a character LoRA can get
+is handed to a **LoRA training tool in the admin dashboard**, parked in
+[deferred.plan.md](deferred.plan.md) §"Character-LoRA training as an in-app
+tool" and wanted specifically so a more sophisticated LoRA can be trained.
 
 **Operational finding — a 500 from trainings-create may still have created the
 training.** Three consecutive script runs answered

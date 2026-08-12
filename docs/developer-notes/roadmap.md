@@ -43,10 +43,11 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
   control-mapped Qwen edits against ordinary output; Stages 0–3 are complete —
   depth and edge controls proved reliable in both lanes, pose is stochastic,
-  Plus stays unregistered, and identity finishing is conditionally viable, only
-  earning its cost when its instruction carries appearance text — Stage 4 is run
-  with owner verdicts pending, Stage 5's comparison machinery is built and its
-  Sabrina training pilot is underway, and Stages 6–7 wait on their gates.
+  Plus stays unregistered, identity finishing is conditionally viable, only
+  earning its cost when its instruction carries appearance text, and a trained
+  character LoRA improves identity alongside pack references (Stage 5 complete;
+  an in-app training tool is parked in `deferred.plan.md`) — Stage 4's owner
+  verdicts are still pending, and Stages 6–7 wait on their gates.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
