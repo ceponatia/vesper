@@ -54,7 +54,7 @@ import {
   trialCellStatuses,
   trialRunStatuses,
   trialVerdicts,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { principalKinds } from "@/contracts/simulation/envelopes";
 import { itemGoneBases } from "@/contracts/simulation/materials";
 import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { ImageLabExperiment } from "@/contracts";
+import type { ImageLabExperiment } from "@vesper/image-core";
 import { imageUrl, type ApiError } from "@/lib/client/api";
 import { cx } from "@/components/ui/cx";
 import { ErrorState } from "@/components/ui/error-state";

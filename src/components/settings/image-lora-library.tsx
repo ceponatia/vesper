@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { imageProfileTasks, type ImageProfileTask } from "@/contracts";
+import { type ImageProfileTask, imageProfileTasks } from "@vesper/image-core";
 import {
   IMAGE_LORA_MAX_SCALE,
   IMAGE_LORA_MAX_TRIGGER_WORDS,
@@ -96,7 +96,7 @@ const DEFAULT_ALLOWED_TASKS: readonly ImageProfileTask[] = ["variant", "scene"];
 
 /**
  * A slug without its `:version` pin — what `compatibleModelSlugs` is compared
- * against (the evaluator's own base-slug rule, `src/contracts/images/image-loras.ts`).
+ * against (the evaluator's own base-slug rule, `packages/image-core/src/loras/image-loras.ts`).
  * A pinned registry row must offer the bare slug here, or every row an operator
  * ticks would refuse the model they ticked it for.
  */

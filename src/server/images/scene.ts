@@ -1,23 +1,29 @@
 import { eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
-  attemptReferenceCount,
   classifyImageFailure,
   generateChecked,
   isDemoMode,
-  routeSceneAttempts,
   toolModelId,
-  type ImageProviderFailure,
-  type ProviderRenderResult,
-  type SceneAttemptId,
-  type SceneRenderRequest,
 } from "../ai";
 import { renderImageIntent, type ImageRenderReference } from "./render-intent";
 import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
-import { IMAGE_TARGET_ASPECT, type ImageReferenceRole, type ResolvedImageProfile } from "@/contracts";
-import type { SceneVisualReference, SceneVisualReferenceKind } from "@/contracts/images/scene-reference";
-import type { SceneGenState, SceneReferenceMode } from "@/contracts/state/scene-gen";
+import {
+  attemptReferenceCount,
+  IMAGE_TARGET_ASPECT,
+  type ImageProviderFailure,
+  type ImageReferenceRole,
+  type ProviderRenderResult,
+  type ResolvedImageProfile,
+  routeSceneAttempts,
+  type SceneAttemptId,
+  type SceneReferenceMode,
+  type SceneRenderRequest,
+  type SceneVisualReference,
+  type SceneVisualReferenceKind,
+} from "@vesper/image-core";
+import type { SceneGenState } from "@/contracts/state/scene-gen";
 import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {

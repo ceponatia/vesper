@@ -24,7 +24,7 @@ contract: its spec.
   scene.
 - **Controlled experiments** run a code-defined recipe through the shared
   render-intent path with the same required version pin. A recipe
-  (`contracts/images/image-lab-recipes.ts`) is a full model profile — operation
+  (`packages/image-core/src/lab/image-lab-recipes.ts`) is a full model profile — operation
   `edit`, prompt strategy `multi_reference_compose`, a reference policy
   requiring `identity` plus the control role and allowing one optional
   reference (`outfit`/`style`/`object` for portraits; `location`/`outfit`/
@@ -125,7 +125,7 @@ contract: its spec.
   publishes no versions list — is not such a difference: it is the provider
   declining to say, and the screen says so plainly, because the run's identity
   is the pin Replicate validated when it accepted the prediction. The single
-  judgment is `providerVersionsDisagree` in `contracts/images/image-models.ts`.
+  judgment is `providerVersionsDisagree` in `packages/image-core/src/models/image-models.ts`.
 - Every control-declaring kind must bind its declared fixture: `controlImageId`
   must appear exactly once among the ordered inputs under a control-class role,
   the fixture must be a reviewed `lab_control`, and its kind must match —

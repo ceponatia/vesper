@@ -1,5 +1,5 @@
 {
-  "path": ["src"],
+  "path": ["src", "packages"],
   "pattern": "**/*.{ts,tsx}",
   "minTokens": 70,
   "threshold": 3,

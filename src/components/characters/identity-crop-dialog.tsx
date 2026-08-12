@@ -2,11 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  imageIdentityPackFailureCodeSchema,
-  imageIdentityPackWarningCodeSchema,
+  clampSelection,
+  cropPreviewLayout,
+  displayScale,
+  fitDisplayBox,
+  type IdentityCropHandle,
+  identityCropHandles,
   type IdentityPackResponseWire,
   type IdentityPackSummaryStatus,
-} from "@/contracts";
+  type IdentitySquareSelection,
+  imageIdentityPackFailureCodeSchema,
+  imageIdentityPackWarningCodeSchema,
+  moveSelection,
+  resizeSelection,
+  selectionFromCrop,
+  selectionToNormalized,
+  type SourceDimensions,
+  toDisplayRect,
+  toSourceSpace,
+} from "@vesper/image-core";
 import {
   identityPackConflictSummary,
   identityPackRejectionCode,
@@ -18,22 +32,6 @@ import {
   type IdentityPackSummaryWire,
   type IdentityPackWriteGuard,
 } from "@/lib/client/api";
-import {
-  clampSelection,
-  cropPreviewLayout,
-  displayScale,
-  fitDisplayBox,
-  moveSelection,
-  resizeSelection,
-  selectionFromCrop,
-  selectionToNormalized,
-  toDisplayRect,
-  toSourceSpace,
-  identityCropHandles,
-  type IdentityCropHandle,
-  type IdentitySquareSelection,
-} from "@/lib/images/identity-crop-view";
-import type { SourceDimensions } from "@/lib/images/identity-pack-crop";
 import { identityPackCodeCopy, identityPackSummaryChip } from "./identity-pack-copy";
 import { IdentityPackInspector } from "./identity-pack-inspector";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";

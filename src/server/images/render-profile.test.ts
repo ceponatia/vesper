@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  imageModelProfileSchema,
-  imageModelSchema,
-  imagePromptStrategies,
   type IdentityReferenceRole,
   type ImageModel,
   type ImageModelProfile,
+  imageModelProfileSchema,
+  imageModelSchema,
+  imagePromptStrategies,
   type ImagePromptStrategy,
-} from "@/contracts";
+  preparePromptForImageModel,
+} from "@vesper/image-core";
 import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai/replicate";
 import { STALE_CLAIM_MS } from "./identity-pack-trial";
-import { preparePromptForImageModel } from "./quality-presets";
 import {
   compileProfileRenderPlan,
   MAX_TRIAL_PREDICTION_MS,

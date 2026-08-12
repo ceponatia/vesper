@@ -1,21 +1,19 @@
-import type {
-  EvaluateIdentityPackResult,
-  IdentityPackProfilePolicy,
-  IdentityPackPurpose,
-  IdentityReferenceCandidate,
-  IdentityReferenceProvenance,
-  IdentityReferenceRole,
-  IdentityReferenceStrategy,
-  ImageIdentityPackV1,
-  ImageIdentityPackWarningCode,
-} from "@/contracts";
-import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { PROFILE_POLICY_DEFAULTS_V1 } from "@/lib/images/identity-pack-policy";
 import {
   evaluateIdentityEffectiveSize,
+  type EvaluateIdentityPackResult,
   evaluateIdentityProfilePolicy,
+  type IdentityPackProfilePolicy,
+  type IdentityPackPurpose,
+  type IdentityReferenceCandidate,
+  type IdentityReferenceProvenance,
+  type IdentityReferenceRole,
+  type IdentityReferenceStrategy,
+  type ImageIdentityPackV1,
+  type ImageIdentityPackWarningCode,
   type PixelSize,
-} from "@/lib/images/identity-pack-quality";
+  PROFILE_POLICY_DEFAULTS_V1,
+} from "@vesper/image-core";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { ensureIdentityPack, projectIdentityPackPolicy } from "./identity-packs";
 
 /**

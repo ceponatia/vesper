@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { identityPackManualCropRequestSchema } from "@/contracts";
+import { identityPackManualCropRequestSchema } from "@vesper/image-core";
 import { readBody, withAuthorizedResource } from "@/server/api";
 import { saveManualIdentityCrop } from "@/server/images";
 import {

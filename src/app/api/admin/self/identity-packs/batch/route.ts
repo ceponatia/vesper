@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { identityPackBatchRequestSchema } from "@/contracts";
+import { identityPackBatchRequestSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { prepareIdentityPacksBatch } from "@/server/images";
 

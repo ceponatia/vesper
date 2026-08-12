@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
-import { sceneReferenceListSchema } from "../src/contracts";
+import { sceneReferenceListSchema } from "@vesper/image-core";
 import { parseOr } from "../src/lib/parse";
 import { db, imageReferences, images } from "../src/server/db";
 

@@ -5,14 +5,14 @@ import { charactersApi } from "@/lib/client/api";
 import {
   AVATAR_HEIGHT,
   AVATAR_WIDTH,
-  MAX_ZOOM,
-  MIN_ZOOM,
   canvasRect,
   centeredOffset,
   clampOffset,
   displaySize,
+  MAX_ZOOM,
+  MIN_ZOOM,
   type Offset,
-} from "@/lib/images/crop";
+} from "@vesper/image-core";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Slider } from "@/components/ui/slider";

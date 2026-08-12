@@ -280,13 +280,13 @@ limitations.
   revision. The run row's old `verdicts_json` array is gone: two simultaneous
   verdict submissions used to be a read-modify-write race that silently
   dropped one; now both land as rows.
-- Contracts in `src/contracts/images/identity-pack-trial.ts`; pure expansion,
-  pairing, and aggregation in `src/lib/images/identity-pack-trial.ts`
+- Contracts in `packages/image-core/src/identity/identity-pack-trial.ts`; pure expansion,
+  pairing, and aggregation in `packages/image-core/src/identity/identity-pack-trial-planning.ts`
   (including the six checked-in prompt fixtures — two per identity-critical
   task: `variant`, `scene`, `chat_look`); the shared multi-reference role
-  compiler in `src/lib/images/identity-reference-prompt.ts`; the profile
+  compiler in `packages/image-core/src/references/identity-reference-prompt.ts`; the profile
   compile step in `src/server/images/render-profile.ts` with control mapping
-  in `src/server/ai/image-control-mapping.ts` (both written as the
+  in `packages/image-core/src/capabilities/image-control-mapping.ts` (both written as the
   capabilities plan's slice-2/4 kernel, for the production render intent to
   adopt); service in `src/server/images/identity-pack-trial.ts`; admin UI at
   Settings → Identity trials.
@@ -320,7 +320,7 @@ limitations.
   Replicate validated at create time (owner ruling 2026-08-11,
   [qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md)).
   Both readings live in `providerVersionsDisagree`
-  (`src/contracts/images/image-models.ts`). **Operator note:** the seeded built-in models carry no
+  (`packages/image-core/src/models/image-models.ts`). **Operator note:** the seeded built-in models carry no
   probed version, so a fresh registry plans nothing until each model is
   re-probed once (the admin model page's reprobe action) — that is a
   deliberate refusal, not a bug.

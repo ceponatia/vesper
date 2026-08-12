@@ -1,7 +1,13 @@
 # Marks vesper/ as its own pnpm installation root. Keep pnpm commands scoped
 # to this folder even when a parent directory also has workspace metadata.
+#
+# "." is the Next.js application — it stays at the repo root for now. Moving it
+# to apps/web is a later, separate step (monorepo-image-core.plan.md §Sequence);
+# doing it in the same change as the first package extraction would mix a
+# path-alias/Docker/CI reshuffle into the work of finding the subsystem boundary.
 packages:
   - "."
+  - "packages/*"
 
 allowBuilds:
   sharp: true

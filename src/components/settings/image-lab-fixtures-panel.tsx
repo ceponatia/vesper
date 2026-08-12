@@ -3,10 +3,10 @@
 import { useState, type ReactNode } from "react";
 import {
   IMAGE_LAB_UPLOAD_DATA_URL_MAX_CHARS,
-  imageLabControlKinds,
   type ImageLabControl,
   type ImageLabControlKind,
-} from "@/contracts";
+  imageLabControlKinds,
+} from "@vesper/image-core";
 import { imageLabApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";

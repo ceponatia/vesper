@@ -1,13 +1,13 @@
 import { z } from "zod";
 import {
-  imageModelAdvancedCapabilitiesSchema,
-  parseAspectValue,
   type ImageAspectMode,
   type ImageInputBinding,
   type ImageModelAdvancedCapabilities,
+  imageModelAdvancedCapabilitiesSchema,
   type ImageModelControlBindings,
   type ImageReferenceArity,
-} from "@/contracts";
+  parseAspectValue,
+} from "@vesper/image-core";
 
 /**
  * The save-time capability probe (image-model-registry.spec.md §"Capability

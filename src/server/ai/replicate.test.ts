@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@/contracts";
+import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   buildRegistryModelInput,

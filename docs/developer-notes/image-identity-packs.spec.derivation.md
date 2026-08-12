@@ -165,7 +165,7 @@ chosen adapter is good enough; the pack contract does not depend on one library.
 ### V1 implementation ruling (2026-08-06)
 
 The shipped adapter is `nullIdentityFaceDetector` (`version: "null_v1"`,
-`src/server/images/identity-pack-detector.ts`): a real seam whose `detect()`
+`packages/image-core/src/identity/identity-pack-detector.ts`): a real seam whose `detect()`
 returns no observations. Automatic derivation therefore runs the labelled
 conservative heuristic only — a portrait-shaped canonical source gets the
 `heuristic_v1` crop, every other shape fails closed with `no_usable_face` — while

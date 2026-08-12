@@ -4,17 +4,17 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { diag, DiagnosticCollector } from "@/contracts/diagnostics";
 import {
-  imageIdentityPackTrialResultSchema,
-  perTrialGradeDimension,
-  REPLICATE_VERSION_UNDISCLOSED,
+  IDENTITY_PACK_POLICY_VERSION,
   type IdentityReferenceStrategy,
   type ImageIdentityPackTrialCellSpec,
   type ImageIdentityPackTrialCreateRequest,
   type ImageIdentityPackTrialResult,
+  imageIdentityPackTrialResultSchema,
+  perTrialGradeDimension,
+  REPLICATE_VERSION_UNDISCLOSED,
   type TrialPairGrades,
-} from "@/contracts";
-import { IDENTITY_PACK_POLICY_VERSION } from "@/lib/images/identity-pack-policy";
-import { trialPromptFixtureById } from "@/lib/images/identity-pack-trial";
+  trialPromptFixtureById,
+} from "@vesper/image-core";
 import {
   endTestPool,
   probeIntegrationDb,

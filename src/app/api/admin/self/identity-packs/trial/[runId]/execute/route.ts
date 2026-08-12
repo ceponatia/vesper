@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageIdentityPackTrialExecuteRequestSchema } from "@/contracts";
+import { imageIdentityPackTrialExecuteRequestSchema } from "@vesper/image-core";
 import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { executeIdentityPackTrialCells } from "@/server/images";
 

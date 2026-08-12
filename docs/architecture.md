@@ -4,7 +4,7 @@
 
 | Layer      | Choice                                          | Notes                                                                                                                                                                |
 | ---------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Framework  | Next.js 16 (App Router) + React 19              | Single app — no workspace packages                                                                                                                                   |
+| Framework  | Next.js 16 (App Router) + React 19              | One app at the repo root, plus workspace packages under `packages/`                                                                                                  |
 | Language   | TypeScript, `strict`                            | Plain `.ts`/`.tsx`, ESM                                                                                                                                              |
 | Database   | Postgres 17 + pgvector                          | Local `vesper-postgres` container (port 5435), database `vesper_dev`                                                                                                 |
 | ORM        | Drizzle ORM + drizzle-kit                       | SQL migrations generated with `drizzle-kit generate`, applied with `pnpm db:migrate` (the drizzle-orm migrator in `scripts/db-migrate.ts`); never `drizzle-kit push` |
@@ -15,7 +15,9 @@
 | Styling    | Tailwind CSS 4                                  | Design tokens in `globals.css` `@theme`                                                                                                                              |
 | Tests      | Vitest 4                                        | See [testing.md](testing.md)                                                                                                                                         |
 
-Why a single app instead of the old 12-package monorepo: every package served exactly one consumer. Module boundaries are kept as folders with barrel exports; the import graph below is enforced by an ESLint `no-restricted-imports` boundary rule (`eslint.config.mjs`) plus review, not workspace plumbing.
+Vesper is a pnpm workspace with one application and a small number of packages. The application lives at the repo root — it is not under `apps/` — and each package under `packages/` is a subsystem that operates without it.
+
+A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the first to qualify. Both kinds of boundary are enforced the same way, by the ESLint `no-restricted-imports` rules in `eslint.config.mjs`.
 
 ## Directory layout
 
@@ -24,6 +26,18 @@ vesper/
   docs/                  # this folder
   drizzle/               # generated SQL migrations (committed)
   data/                  # runtime-generated image assets (gitignored)
+  packages/              # workspace packages — no app imports (see below)
+    image-core/          #   @vesper/image-core: the provider-neutral image engine
+      src/
+        capabilities/    #     what a model declares; binding controls to real fields
+        models/          #     registry row shape, per-task profiles, reviewed presets
+        loras/           #     LoRA definitions and render bindings
+        render-intent/   #     what one render asks for, in one vocabulary
+        references/      #     reference shapes, roles, and the prompts naming them
+        identity/        #     identity packs: schema, policy, crop, quality, trials
+        lab/             #     Advanced Image Lab contracts, recipes, instructions
+        geometry/        #     crop math
+        provider-interface/ #  attempt routing, capacity, failure vocabulary
   src/
     contracts/           # pure zod registries & schemas — NO IO, NO db imports
       attributes/        #   attribute groups + central registry
@@ -45,7 +59,7 @@ vesper/
       api/               # route-handler support: request schemas, responders, library services
       engine/            # character-chat pipeline (chat-*) + the successor simulation engine (sim-* / simulation/)
       memory/            # fact supersedence, episodes, fused retrieval (chat-scoped)
-      images/            # avatar/scene/variant pipelines, asset registry
+      images/            # avatar/scene/variant pipelines, asset registry, identity-pack + lab lifecycle
       authoring/         # character forge + in-sheet fill/re-draft/portrait
       auth/              # Better Auth instance + session resolution (docs/auth.md)
       players/           # default player-character persona resolution (docs/auth.md)
@@ -57,6 +71,8 @@ vesper/
 ## Module dependency rules
 
 ```
+packages/*                   (depend on nothing in src/ — the app depends on them)
+   ↑
 contracts  ←  lib            (contracts may use lib; both are pure)
    ↑
 server/db  ←  server/*       (db is imported by all server modules)
@@ -75,6 +91,7 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
 These are the only two lanes — there is no world/session lane.
 
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current package: [packages/image-core/README.md](../packages/image-core/README.md).)
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.

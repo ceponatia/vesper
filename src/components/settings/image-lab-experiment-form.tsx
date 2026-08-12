@@ -2,20 +2,24 @@
 
 import { useState } from "react";
 import {
+  compileReferenceRolePrompt,
   IMAGE_LAB_MAX_INPUTS,
-  imageLabExperimentKinds,
-  imageLabModes,
-  isImageLabControlledKind,
-  isImageLabFinishableKind,
   type ImageLabControl,
   type ImageLabControlledKind,
+  imageLabControlRole,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
   type ImageLabExperimentKind,
+  imageLabExperimentKinds,
+  imageLabFinishingInstruction,
   type ImageLabInput,
   type ImageLabMode,
+  imageLabModes,
+  imageLabProbeInstruction,
   type ImageReferenceRole,
-} from "@/contracts";
+  isImageLabControlledKind,
+  isImageLabFinishableKind,
+} from "@vesper/image-core";
 import {
   chatsApi,
   imageLabApi,
@@ -23,12 +27,6 @@ import {
   type CharacterSummary,
   type ImageRecord,
 } from "@/lib/client/api";
-import {
-  imageLabControlRole,
-  imageLabFinishingInstruction,
-  imageLabProbeInstruction,
-} from "@/lib/images/image-lab-instruction";
-import { compileReferenceRolePrompt } from "@/lib/images/reference-role-prompt";
 import { useAsyncData, type AsyncState } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";

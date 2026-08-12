@@ -1,5 +1,6 @@
 import { and, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile, resolveAttributes, IMAGE_TARGET_ASPECT } from "@/contracts";
+import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
+import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode } from "../ai";

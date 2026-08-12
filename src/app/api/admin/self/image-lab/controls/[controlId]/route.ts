@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageLabReviewControlRequestSchema } from "@/contracts";
+import { imageLabReviewControlRequestSchema } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { deleteImageLabControl, reviewImageLabControl } from "@/server/images";
 

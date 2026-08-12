@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { imageModelSurfaces, imageModelsForSurface, type ImageModelSurface } from "@/contracts";
+import { imageModelsForSurface, type ImageModelSurface, imageModelSurfaces } from "@vesper/image-core";
 import { jsonOk, withUser } from "@/server/api";
 import { loadImageModels } from "@/server/images";
 

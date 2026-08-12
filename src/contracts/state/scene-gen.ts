@@ -1,18 +1,5 @@
+import { sceneReferenceModeSchema } from "@vesper/image-core";
 import { z } from "zod";
-
-/**
- * The scene's reference mode (scene-images.plan.md §"multi-reference toggle").
- * `single` anchors the render on ONE identity avatar (a single-reference edit) — the
- * default. `multi` feeds up to three references (the present characters' avatars
- * + the location image) to a multi-reference edit so a two-character scene
- * can identity-lock both people at once. Multi falls back to single-edit when
- * fewer than two reference images are available, so the toggle never blocks a
- * render. Extensible (forward-compatible schema preference) — a future provider
- * with >3 refs (self-hosted ComfyUI, spec §7) slots in as a new mode.
- */
-export const sceneReferenceModes = ["single", "multi"] as const;
-export const sceneReferenceModeSchema = z.enum(sceneReferenceModes);
-export type SceneReferenceMode = z.infer<typeof sceneReferenceModeSchema>;
 
 /**
  * Scene-image generation settings/progress. There is no configurable subject:

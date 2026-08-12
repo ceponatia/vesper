@@ -1,15 +1,15 @@
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  perTrialGradeDimension,
   type ImageIdentityPackTrialReviewPairWire,
   type ImageIdentityPackTrialRunDetail,
   type ImageIdentityPackTrialRunSummary,
   type ImageIdentityPackTrialSummaryWire,
+  perTrialGradeDimension,
   type TrialCellCounts,
   type TrialRunStatus,
   type TrialVerdict,
-} from "@/contracts";
+} from "@vesper/image-core";
 import { characters, db, imageModelProfiles, imageModels } from "@/server/db";
 
 const authState = vi.hoisted(() => ({
