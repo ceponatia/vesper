@@ -59,6 +59,51 @@ ten content tables reference `users.id` with default RESTRICT — deleting a
 starting inventory, and the data-lifecycle chat-sweep machinery (chat_id FKs,
 retention sweep) is the substrate a full account cascade composes from.
 
+## Character-LoRA training as an in-app tool
+
+_Owner direction 2026-08-11, while the Stage 5 character-LoRA pilot ran
+([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)).
+Build it once a character LoRA is shown to be worth its cost and that plan
+closes — the Qwen plan lists automatic LoRA training inside Vesper as out of
+scope for its first implementation, and this is where that lands._
+
+Today training is an **operator errand**: `scripts/train-image-lora.ts` is run
+by hand for one character, its dataset is assembled by hand, and the trained
+weights are extracted and re-hosted by hand before a library row can point at
+them. The tool would make that a product action — pick a character, review the
+images it proposes, press train — and the pilot already exposed most of what it
+has to own:
+
+- **Dataset assembly from the character's own gallery.** The pilot's set was
+  hand-curated from lab experiments whose verdicts said identity survived; a
+  tool needs its own answer to "which of this character's renders represent
+  her", plus per-image include/exclude review, near-duplicate detection, and a
+  way to commission the missing variety (the pilot filled wardrobe, setting and
+  framing gaps with ordinary variant renders).
+- **Captions from authored appearance.** The trainer's doctrine is descriptive
+  real words and the character's real name, never rare tokens — which is
+  exactly what a character's authored appearance attributes could generate,
+  and the same dependency
+  [character-schema.plan.md](character-schema.plan.md) already owes the
+  identity-finishing pass.
+- **A training job, not a script.** Through the existing detached-job and
+  image-cost machinery, with the provenance a comparison needs recorded on the
+  row: which images, which hyperparameters, which training id, which artifact.
+- **Hosting, which is the awkward part.** The trainer emits a zip and the
+  Qwen LoRA connector refuses archives, so something must extract the
+  safetensors and publish it at a durable public address before a library row
+  is usable. That is a deployment-shaped decision (a bucket, a lifecycle, a
+  ~600 MB artifact per character) rather than an application feature, and it is
+  the piece most likely to decide whether this is worth building.
+- **Lifecycle.** The Qwen plan's rule that a LoRA must not stay active when its
+  training set no longer represents the character needs a mechanism here —
+  staleness when the canonical portrait changes, and retraining or retirement.
+
+**Trigger:** Stage 5 showing a character LoRA beats identity-pack references on
+the fixed corpus, and the Qwen plan reaching its promotion decision. A Stage 5
+verdict that says references alone are enough retires this idea rather than
+promoting it.
+
 ## World authoring — locations, travel distances & durations
 
 _Owner direction 2026-07-23: world setup for bespoke first-party worlds and
