@@ -7,7 +7,22 @@ Implementation state: not started — blocked on Slices 2 and 3.
 Put Replicate's network transport and schema probing behind a server-only
 workspace package while keeping secrets, deployment settings and Vesper state in
 the application. Shared mechanics are in
-[monorepo-image-core.spec.md](monorepo-image-core.spec.md).
+[monorepo-image-core.spec.md](monorepo-image-core.spec.md); workspace import,
+dependency ownership, package graph and package-local tooling rules are already
+active from
+[monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
+
+## Runtime target
+
+`@vesper/image-replicate` is deliberately a **Node/server transport package**.
+Unlike `@vesper/image-core` and `@vesper/contracts`, it is not browser portable.
+Network IO, timeouts, polling, Buffer/data conversion and other server transport
+primitives are part of its job.
+
+That does not permit application coupling: the package still owns no Vesper
+state, no Next-specific framework dependency and no ambient environment reads.
+Client-importable application layers are mechanically prohibited from importing
+it.
 
 ## What moves
 
@@ -146,7 +161,8 @@ same immutable config.
 Pure helpers that are useful without credentials — for example
 `replicatePredictionTarget`, response-shape helpers worth testing directly, or
 payload construction — may remain ordinary package exports if they are genuine
-external entry points. Curate them; do not make every private helper public.
+external entry points. Curate them explicitly at the package root; do not make
+every private helper public or expose code subpaths.
 
 ## One safety value from plan to send
 
@@ -199,10 +215,14 @@ The dependency direction is:
 application ------------> all three
 ```
 
-`image-core` never imports `image-replicate`. It does not need to declare an
-invocation interface solely for this refactor; the plan/result types are the
-provider-neutral data seam. If a second provider later needs a shared invocation
-interface, design it from both real implementations.
+The Slice 1 package graph checker treats that direction as policy, not merely a
+diagram. `image-core -> image-replicate` fails even if it would not create a
+cycle.
+
+`image-core` does not need to declare an invocation interface solely for this
+refactor; the plan/result types are the provider-neutral data seam. If a second
+provider later needs a shared invocation interface, design it from both real
+implementations.
 
 ## Server-only application boundary
 
@@ -220,8 +240,10 @@ Add `@vesper/image-replicate` to prohibited imports for:
 Server routes/modules and root operational scripts may use the configured
 application adapter. Prefer that adapter over constructing a second config.
 
-Do not add `server-only` or another Next-specific dependency inside the provider
-package; repository boundaries should make the package reusable without Next.
+The workspace checker independently prevents client or server code from reaching
+`packages/image-replicate/src/...` by filesystem path or a code subpath. Do not
+add `server-only` or another Next-specific dependency inside the provider package;
+repository boundaries should make the package reusable without Next.
 
 ## Consumer inventory
 
@@ -232,7 +254,7 @@ never spell `replicate.ts`.
 Before the move, enumerate **every exported symbol** from `replicate.ts` and
 `replicate-probe.ts`, then search each symbol. Classify each consumer as one of:
 
-- package direct import of a pure type/helper;
+- package direct import of a genuine public type/helper;
 - application use of the configured Replicate runtime/client;
 - application convenience check such as `hasReplicate()`;
 - stale/dead export to delete.
@@ -264,6 +286,7 @@ A straightforward target:
 ```text
 packages/image-replicate/
   package.json
+  tsconfig.json
   src/
     index.ts
     client.ts
@@ -279,19 +302,38 @@ packages/image-replicate/
 Do not split mechanically to hit a line count. The layout is a suggested domain
 separation; keep helpers together where the transport flow is easier to read.
 
-The root export is curated per the hub spec. Private polling/parsing helpers stay
-private.
+The root export is explicit and curated per the hub spec. Private
+polling/parsing helpers stay private. Root `export *` and public code subpaths are
+not used.
 
 ## Dependencies and registration
 
-Before Slice 6, use the hub's five package registration points.
+Use the hub/guardrails registration checklist rather than a fixed count of config
+files.
 
 `packages/image-replicate/package.json` declares:
 
 - `@vesper/image-core: workspace:*`;
 - `@vesper/contracts: workspace:*` where diagnostics are imported directly;
-- `zod`;
+- `zod` if package source actually imports it;
+- every other third-party runtime dependency the transport imports;
 - no Next, Drizzle, Sharp, Better Auth or Vesper application dependency.
+
+The nearest-manifest dependency checker must reject an undeclared dependency even
+if the root/web workspace also installs it.
+
+Registration also requires:
+
+- `packages/image-replicate/tsconfig.json` with a Node/server runtime target and
+  no Next/app alias;
+- root `pnpm typecheck` includes the package project;
+- root Vitest discovers package tests without application-global setup;
+- `next.config.ts` includes the package in `transpilePackages` where the server
+  app consumes its TypeScript source;
+- Dockerfile copies its manifest before workspace install;
+- the real-workspace CI smoke check resolves `@vesper/image-replicate` through
+  its manifest/exports;
+- `lint:package-boundaries` accepts only the declared/allowed package graph edges.
 
 Node's built-in `fetch`, `FormData`, `Blob`, `URL`, `AbortSignal` and `Buffer`
 remain the transport primitives; do not add the Replicate npm SDK as part of this
@@ -320,19 +362,28 @@ Required coverage includes:
 - model/version probe parsing and capability derivation stay unchanged;
 - package source contains no `process.env`.
 
-The package tests must install/mock `fetch` at their own boundary; they must not
-rely on `src/test/setup.ts` deleting the application token.
+The package tests install/mock `fetch` at their own boundary in the package-scoped
+Vitest project. They must not rely on `src/test/setup.ts` deleting the application
+token. The package-local TypeScript project covers every transport source/test
+file independently of Next.
 
 ## Verification
 
 ### Repository gates
 
 - CI `verify` green for the Slice 4 PR.
-- `lint:package-boundaries` accepts only declared package dependencies.
-- no source under `packages/image-replicate` imports `@/` or resolves outside
-  the package through a relative path;
+- package-local typecheck and package-scoped tests are green;
+- the real-workspace smoke check imports `@vesper/image-replicate` through its
+  public package root;
+- `lint:package-boundaries` accepts only declared, correctly directed package
+  dependencies and rejects filesystem/deep-import alternatives;
+- nearest-manifest checks prove every transport dependency belongs to the
+  transport package;
+- no source under `packages/image-replicate` imports `@/` or resolves into
+  application/other-workspace implementation by relative path;
 - `grep`/AST search finds no `process.env` in `packages/image-replicate`;
-- client-importable app layers cannot import `@vesper/image-replicate`.
+- client-importable app layers cannot import `@vesper/image-replicate`;
+- package root exports are explicit rather than wildcard/deep subpaths.
 
 ### Consumer completeness
 
@@ -359,11 +410,14 @@ typecheck while every real provider call is unauthenticated.
 
 1. The package owns Replicate mechanics, not Vesper state.
 2. The package performs network IO but owns no ambient environment reads.
-3. One immutable runtime config snapshot feeds compile and send for a process.
-4. Probe and render share the same configured token/client.
-5. Existing timeout, version pin, upload cleanup and output-host security behavior
+3. The package remains Node/server-only without becoming Next-specific.
+4. One immutable runtime config snapshot feeds compile and send for a process.
+5. Probe and render share the same configured token/client.
+6. Existing timeout, version pin, upload cleanup and output-host security behavior
    stays unchanged.
-6. The application still owns cropping, persistence, jobs, authorization and
+7. The application still owns cropping, persistence, jobs, authorization and
    registry database reads.
-7. The provider package remains inaccessible to client-importable code.
-8. No general provider-plugin framework is introduced in this extraction.
+8. The provider package remains inaccessible to client-importable code and by
+   filesystem/deep package imports.
+9. All runtime dependencies are declared in the transport package's manifest.
+10. No general provider-plugin framework is introduced in this extraction.
