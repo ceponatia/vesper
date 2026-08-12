@@ -110,10 +110,10 @@ it becomes useful without importing anything from the game. None hold today.
 ## Slices
 
 - **Slice 1 — the workspace exists and the image core is a package.**
-  Status: built 2026-08-12 — awaiting CI green and owner review. The repository
-  is a pnpm workspace, `@vesper/image-core` holds the demonstrably pure image
-  code, the boundary is lint-enforced, and every application import points at
-  the package's public API.
+  Status: complete — 2026-08-12. The repository is a pnpm workspace,
+  `@vesper/image-core` holds the demonstrably pure image code, the boundary is
+  lint-enforced against both spellings of an app import, and every application
+  import points at the package's public API.
 
 - **Slice 2 — the render kernel joins the package.** Status: queued.
   `render-intent.ts` and `render-profile.ts` are the compile step every lane now
