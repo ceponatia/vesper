@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { evalEdit, evalEditModel, evalGenerate, evalGenerateModel, hasImageProvider } from "./model";
-import { buildSceneRenderPrompt } from "../../../src/server/images";
+import { buildSceneRenderPrompt } from "@/server/images";
 import { EVAL_FIXTURES } from "./fixtures";
 
 /**

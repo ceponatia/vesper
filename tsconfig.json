@@ -1,43 +1,25 @@
 {
+  // The repository/tooling project: root operational scripts (`scripts/**`) and
+  // the root-level config files. The Next application has its own project at
+  // apps/web/tsconfig.json, and each workspace package has its own — root
+  // `pnpm typecheck` runs all of them, so a package-internal file no app
+  // imports is still covered.
+  //
+  // `@/*` points at the application source because root scripts (db seed,
+  // evals, simulation errands) legitimately import application modules; that
+  // edge is the inventoried exception in
+  // monorepo-image-core.spec.apps-web.md §"Fly release command and operational
+  // scripts", and `tsx` reads these paths at runtime as well. `jsx` is set for
+  // the same reason: a script's import graph may reach a `.tsx` module.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
-    "allowJs": false,
-    "skipLibCheck": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
+    "lib": ["dom", "dom.iterable", "esnext"],
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./apps/web/src/*"]
     }
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "packages"
-  ]
+  "include": ["scripts/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", "apps", "packages"]
 }

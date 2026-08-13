@@ -1,6 +1,6 @@
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
 import type { ReplicateImageResult } from "@vesper/image-replicate";
-import { hasReplicate, replicateClient } from "../../../src/server/ai";
+import { hasReplicate, replicateClient } from "@/server/ai";
 
 /**
  * Model literals for the eval/spike scripts.

@@ -24,14 +24,14 @@ canonical technical record of that completed no-extraction decision.
 
 ## Implementation status
 
-| Slice | State                                   | Notes                                |
-| ----- | --------------------------------------- | ------------------------------------ |
-| 1     | complete — 2026-08-12                   | —                                    |
-| 2     | complete — 2026-08-12                   | —                                    |
-| 3     | complete — 2026-08-12                   | —                                    |
-| 4     | complete — 2026-08-13                   | —                                    |
-| 5     | complete — no extraction warranted      | revisit only when a shared seam earns it |
-| 6     | not started — next                      | —                                    |
+| Slice | State                              | Notes                                     |
+| ----- | ---------------------------------- | ----------------------------------------- |
+| 1     | complete — 2026-08-12              | —                                         |
+| 2     | complete — 2026-08-12              | —                                         |
+| 3     | complete — 2026-08-12              | —                                         |
+| 4     | complete — 2026-08-13              | —                                         |
+| 5     | complete — no extraction warranted | revisit only when a shared seam earns it  |
+| 6     | built 2026-08-12                   | awaiting the deployed verification        |
 
 ## Cross-slice ownership map
 

@@ -3,7 +3,7 @@
 Vesper uses [Better Auth](https://better-auth.com) — self-hosted, MIT-licensed,
 owning its tables in our own Postgres. Identity never leaves the box; it works
 fully offline on the local dev machine. The whole surface lives in
-`src/server/auth/` and the `/api/auth/*` route. Two things ship together because
+`apps/web/src/server/auth/` and the `/api/auth/*` route. Two things ship together because
 they share one authorization seam: **real accounts** and **entity visibility**
 (a `private`/`public` share scope on shareable entities).
 
@@ -11,7 +11,7 @@ See also: [streaming-api.md §Auth](streaming-api.md) (HTTP surface),
 [architecture.md](architecture.md) (module boundaries), [database.md](database.md)
 (the auth tables), [getting-started.md](getting-started.md) (env).
 
-## The module (`src/server/auth/`)
+## The module (`apps/web/src/server/auth/`)
 
 | File            | Role                                                                                                                                                                                                                       |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -21,7 +21,7 @@ See also: [streaming-api.md §Auth](streaming-api.md) (HTTP surface),
 | `dev.ts`        | Dev-only session minting: `devImpersonate`, `ensureDevCredential`, `DEV_PASSWORD`.                                                                                                                                         |
 | `index.ts`      | Barrel — the only thing the rest of the app imports.                                                                                                                                                                       |
 
-The route `src/app/api/auth/[...all]/route.ts` is just `toNextJsHandler(auth)`:
+The route `apps/web/src/app/api/auth/[...all]/route.ts` is just `toNextJsHandler(auth)`:
 Better Auth owns sign-in/up/out, OAuth callbacks, magic-link, `get-session`, and
 the admin endpoints. Our own handlers never write auth state — they only **read**
 the session.
@@ -51,7 +51,7 @@ work to close the open ones).
 2. **Password policy** — minimum length/strength beyond Better Auth's default, and
    rejection of known-breached passwords. **Not in place.**
 3. **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link
-   requests. **Not in place, by ruling**: `src/server/api/rate-limit.ts` is deliberately
+   requests. **Not in place, by ruling**: `apps/web/src/server/api/rate-limit.ts` is deliberately
    process-local
    ([finished/security-hardening.plan.md](developer-notes/finished/security-hardening.plan.md))
    while Vesper runs a single instance. A second instance re-opens it, not sign-up.
@@ -119,7 +119,7 @@ and the `/settings` page set it, and the persona editor authors the persona itse
 > the column. `StoredPlayerPersona` was deleted with it.
 
 Every consumer reads through **one resolver**, `resolveChatPersona({ownerId, chatId})`
-(`src/server/players/`). It is a three-rung ladder, each rung degrading
+(`apps/web/src/server/players/`). It is a three-rung ladder, each rung degrading
 rather than throwing, so a chat turn always has someone to address
 ([resilience.md](resilience.md)):
 
@@ -136,7 +136,7 @@ caller in the codebase has a conversation in scope and passes it.
 The persona's per-owner-unique library label is a database/UX concern that must never
 reach a model; since every prompt consumer reads this one type, its absence there —
 not a rule anyone has to remember — is what enforces that. The character-chat prompt
-threads the rest in as the addressee (`src/server/engine/prompts/character-chat.ts`):
+threads the rest in as the addressee (`apps/web/src/server/engine/prompts/character-chat.ts`):
 name, bio, what they're wearing, how their voice sounds, and what they respond to once
 things turn intimate.
 
@@ -150,7 +150,7 @@ things turn intimate.
   **both** its `_CLIENT_ID` and `_CLIENT_SECRET` exist; absent ⇒ off (never a boot crash).
 
 `GET /api/auth-config` reports the enabled methods so the sign-in UI
-(`/sign-in`, `src/components/auth/`) renders only buttons that work — including
+(`/sign-in`, `apps/web/src/components/auth/`) renders only buttons that work — including
 `magicLink`, which follows the plugin gate below. The header `AccountMenu` shows
 the user + sign-out, or a sign-in link.
 
@@ -158,7 +158,7 @@ the user + sign-out, or a sign-in link.
 
 A magic link **is a temporary password**, so it must never reach log retention
 ([security-authz.plan.md](developer-notes/security-authz.plan.md)).
-`src/server/auth/magic-link.ts` owns the whole
+`apps/web/src/server/auth/magic-link.ts` owns the whole
 policy:
 
 - **One fact gates everything: a resolved transport object**, never the presence

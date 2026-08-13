@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest";
  *    into a lane would defeat the point of building it lane-neutral first.
  */
 
-const GUIDANCE_DIR = path.join(process.cwd(), "src/contracts/affordances/guidance");
+const GUIDANCE_DIR = path.join(process.cwd(), "apps/web/src/contracts/affordances/guidance");
 
 /** Prose may name a domain; code may not. Strip comments before scanning. */
 function executableCode(source: string): string {

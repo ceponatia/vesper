@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { repoRelative, sourceFilesUnder } from "@/server/test-support";
 
-const ROOTS = [path.join(process.cwd(), "src"), path.join(process.cwd(), "scripts")];
+const ROOTS = [path.join(process.cwd(), "apps/web/src"), path.join(process.cwd(), "scripts")];
 const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteChatAssets"]);
 
 /**
@@ -48,15 +48,15 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
-    "src/server/images/identity-pack-trial.ts",
-    "src/server/images/image-lab.ts",
-    "src/server/images/identity-packs.ts",
-    "src/server/images/internal.ts",
-    "src/server/images/route-safe.ts",
-    "src/server/images/upload.ts",
+    "apps/web/src/server/images/identity-pack-trial.ts",
+    "apps/web/src/server/images/image-lab.ts",
+    "apps/web/src/server/images/identity-packs.ts",
+    "apps/web/src/server/images/internal.ts",
+    "apps/web/src/server/images/route-safe.ts",
+    "apps/web/src/server/images/upload.ts",
   ],
-  deleteChatUploads: ["src/server/engine/chat-pipeline.ts", "src/server/images/internal.ts"],
-  deleteChatAssets: ["src/server/engine/chat-pipeline.ts", "src/server/images/internal.ts"],
+  deleteChatUploads: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/internal.ts"],
+  deleteChatAssets: ["apps/web/src/server/engine/chat-pipeline.ts", "apps/web/src/server/images/internal.ts"],
 };
 
 function importedInternalNames(source: string): string[] {

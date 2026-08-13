@@ -306,7 +306,7 @@ declares it (Replicate rejects unknown inputs); its value comes from
 `REPLICATE_SAFE_MODE`.
 
 **The transport reads no environment; the application configures it once.**
-`src/server/ai/replicate-runtime.ts` is the only code in Vesper that reads
+`apps/web/src/server/ai/replicate-runtime.ts` is the only code in Vesper that reads
 `REPLICATE_API_TOKEN`, `REPLICATE_SAFE_MODE` and
 `REPLICATE_PREDICTION_TIMEOUT_MS`. It resolves them on first use — lazily,
 because Next loads server modules while building routes, when secrets are absent
@@ -325,7 +325,7 @@ retry, so classification checks billing first and `isBillingFailure` names it.
 rules — transient / content rejection / other, and what each says about provider
 health — are provider-neutral and live in
 `packages/image-core/src/provider-interface/failures.ts`, taking a plain message.
-`src/server/ai/image-providers.ts` is the four-line adapter that turns a *thrown*
+`apps/web/src/server/ai/image-providers.ts` is the four-line adapter that turns a *thrown*
 value into that message, which is the one part that has to know the AI SDK: an
 upstream moderation verdict arrives buried in `APICallError.responseBody`, not in
 `error.message`. A second image transport reuses every rule by describing its own

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { canCreateSymlinks, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
@@ -43,6 +44,30 @@ describe("dataRoot / paths", () => {
     expect(path.isAbsolute(dataRoot())).toBe(true);
     delete process.env.DATA_ROOT;
     expect(dataRoot()).toBe(path.resolve(process.cwd(), "data"));
+  });
+
+  /**
+   * The apps/web move's release blocker, asserted rather than assumed
+   * (monorepo-image-core.spec.apps-web.md §"Persistent image storage and process
+   * working directory"). The repository root is derived from this file's own
+   * location — five levels up from src/server/images — so the check is
+   * independent of where the runner happens to be started, and an unset
+   * DATA_ROOT that began resolving under apps/web (which is what a Next process
+   * whose CWD is its project directory would produce) fails here instead of
+   * silently making the deployed image library look empty.
+   */
+  it("resolves an unset DATA_ROOT to the repository's data directory, never the web project's", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const repoRoot = path.resolve(here, "../../../../..");
+    delete process.env.DATA_ROOT;
+
+    expect(dataRoot()).toBe(path.join(repoRoot, "data"));
+    expect(dataRoot().split(path.sep)).not.toContain("apps");
+
+    // An explicit root is used verbatim, whatever the working directory is —
+    // this is the invariant Fly and the Dockerfile depend on.
+    process.env.DATA_ROOT = tmp;
+    expect(dataRoot()).toBe(tmp);
   });
 
   it("derives the canonical relative path and resolves it against the root", () => {

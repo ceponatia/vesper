@@ -10,8 +10,8 @@ trades the Tailscale "private by default" posture for a public `*.fly.dev` URL
 gated by Better Auth — see Security below.)
 
 This is deliberately **not** serverless: the turn engine runs an in-process job
-worker loop (`src/server/engine/jobs.ts`) and images are written to a local
-filesystem (`DATA_ROOT`, `src/server/images/assets.ts`). Both need an always-on
+worker loop (`apps/web/src/server/engine/jobs.ts`) and images are written to a local
+filesystem (`DATA_ROOT`, `apps/web/src/server/images/assets.ts`). Both need an always-on
 Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 
 ## Files
@@ -19,7 +19,7 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 | File            | Role                                                                                      |
 | --------------- | ----------------------------------------------------------------------------------------- |
 | `Dockerfile`    | App image (build + runtime). Keeps full deps so `pnpm db:migrate` works; no `pnpm prune`. |
-| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context.                      |
+| `.dockerignore` | Keeps `node_modules`/`.next`/`.env`/`data` out of the build context, at every depth.       |
 | `fly.toml`      | Machine + service config (managed in the Fly UI / repo — see recommended version below).  |
 
 ## The Dockerfile (key choices)
@@ -29,8 +29,19 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
   which migrations need. `HUSKY=0` is set so the hook is a no-op regardless.
 - **Full dependency tree at runtime** so `pnpm db:migrate` (runs via `tsx`) works
   from the release command.
-- **Binds to `$PORT` (8080)** by calling `next` directly — the package.json
-  `start` script hardcodes `-p 3200`, which would mismatch Fly's `internal_port`.
+- **Binds to `$PORT` (8080)** by calling the root launcher (`node scripts/web.mjs
+  start`) directly — the package.json `start` script hardcodes `-p 3200`, which
+  would mismatch Fly's `internal_port`.
+- **`/app` stays the workspace root, not the Next project.** The app lives at
+  `/app/apps/web`, and the launcher runs Next there while `/app` remains the
+  process root — which is what keeps the volume at `/app/data` and the root
+  release/SSH commands working. Every workspace manifest (including
+  `apps/web/package.json`) is copied before `pnpm install`, or `workspace:*`
+  resolves against nothing.
+- **`DATA_ROOT=/app/data` is set in the runner stage**, not inferred from the
+  working directory. The fallback in `dataRoot()` is `<cwd>/data`, so stating it
+  explicitly is what stops a future change to how the app is started from
+  repointing the image library.
 - `sharp` works from its prebuilt `@img/sharp-*` binary; the "Ignored build
   scripts: sharp" pnpm warning is benign.
 - **`NODE_OPTIONS=--max-old-space-size=4096` on the build step**, inline so the
@@ -51,7 +62,8 @@ primary_region = 'iad'
 
 [deploy]
   # Applies pending drizzle migrations before the new version goes live.
-  release_command = "pnpm db:migrate"
+  # `-w` pins it to the WORKSPACE ROOT script, never an app-local one.
+  release_command = "pnpm -w run db:migrate"
 
 [http_service]
   internal_port = 8080
@@ -125,11 +137,12 @@ Fly↔GitHub integration firing; every release so far has been a hand-run
 - **This dispatch is the only build gate most changes get.** Pull requests run
   the production build only when the build surface itself moves — package
   manifests, the lockfile, `tsconfig*.json`, `next.config.*`, `Dockerfile`,
-  `src/middleware.ts`, `src/instrumentation.ts`. An app-code or package-internal
+  `apps/web/next.config.*`, `apps/web/src/proxy.ts`, `apps/web/src/instrumentation.ts`,
+  `scripts/web.mjs`. An app-code or package-internal
   change reaches `main` without ever being built, so skipping the pre-deploy
   dispatch means `fly deploy` is the first thing to compile it.
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
-  remote builder, runs the `release_command` (`pnpm db:migrate`) against Neon,
+  remote builder, runs the `release_command` (`pnpm -w run db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
 - **If the remote builder returns `unauthorized`:** build locally and push —
   `fly deploy --local-only` (needs local Docker). Re-auth with `fly auth login`

@@ -1,6 +1,6 @@
 # Memory & RAG
 
-`src/server/memory/` — memory systems share one embedding space (1536-dim, the code-default embedding model in `server/ai/provider.ts` `MODEL_DEFAULTS`, pgvector cosine). Retrieval runs in the chat lane's pre-reply parallel fan-out.
+`apps/web/src/server/memory/` — memory systems share one embedding space (1536-dim, the code-default embedding model in `server/ai/provider.ts` `MODEL_DEFAULTS`, pgvector cosine). Retrieval runs in the chat lane's pre-reply parallel fan-out.
 
 ## Memory keying — the chat memory group
 

@@ -1,6 +1,6 @@
 # UI
 
-Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading room" — ink background, warm paper accents, serif narrative type (`Source Serif 4` or similar variable font), sans UI chrome. Design tokens in `globals.css` `@theme`; no component library — small owned primitives in `src/components/ui/`.
+Next.js App Router pages + React 19 + Tailwind 4. Aesthetic: quiet dark "reading room" — ink background, warm paper accents, serif narrative type (`Source Serif 4` or similar variable font), sans UI chrome. Design tokens in `globals.css` `@theme`; no component library — small owned primitives in `apps/web/src/components/ui/`.
 
 ## Pages
 

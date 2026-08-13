@@ -1,5 +1,5 @@
 import type { SceneVisualReference } from "@vesper/image-core";
-import type { SceneCharacterSpec, SceneRenderPlan } from "../../../src/server/images";
+import type { SceneCharacterSpec, SceneRenderPlan } from "@/server/images";
 
 /**
  * Scene-image eval fixtures (scene-images.spec.md §9): ~20 fixed scenes spanning

@@ -1,0 +1,23 @@
+{
+  // Compiler options that are true of EVERY project in this workspace — the
+  // language level and the strictness contract, nothing else.
+  //
+  // Deliberately absent: `lib`, `types`, `jsx`, `paths`, and the Next plugin.
+  // Each project owns the environment it actually targets, so a package cannot
+  // acquire DOM globals, ambient `@types/*`, or the application's `@/` alias by
+  // extending this file (monorepo-image-core.spec.apps-web.md §"TypeScript
+  // project structure").
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  }
+}

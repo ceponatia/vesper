@@ -13,12 +13,13 @@ How the application drives it: [docs/images/providers.md](../../docs/images/prov
 This package is deliberately **not** browser portable — unlike `@vesper/contracts`
 and `@vesper/image-core`, network IO, byte handling and timeouts are its job. It
 is ranked `server` in the workspace layer policy, and ESLint additionally bars
-`src/components`, non-route `src/app`, `src/contracts` and `src/lib` from
+`apps/web/src/components`, non-route `apps/web/src/app`, `apps/web/src/contracts` and
+`apps/web/src/lib` from
 importing it: it carries the provider credential.
 
 Server-only is not permission to be ambient. The package **reads no
 environment**. The application resolves the deployment's settings once
-(`src/server/ai/replicate-runtime.ts` — the only code in Vesper that reads
+(`apps/web/src/server/ai/replicate-runtime.ts` — the only code in Vesper that reads
 `REPLICATE_*`), builds one client, and hands that client to every render,
 preprocessor run and schema probe in the process:
 
@@ -62,9 +63,9 @@ parsing helpers stay private; `export *` in a root barrel is rejected by
 - resolving `REPLICATE_API_TOKEN`, `REPLICATE_SAFE_MODE` and
   `REPLICATE_PREDICTION_TIMEOUT_MS`, and memoizing one configured client;
 - translating Vesper state into a render request, and `sharp` crop
-  normalization (`src/server/images/models.ts`);
+  normalization (`apps/web/src/server/images/models.ts`);
 - registry database reads, asset persistence, jobs, authorization, cost;
-- AI-SDK/OpenRouter error extraction (`src/server/ai/image-providers.ts`), which
+- AI-SDK/OpenRouter error extraction (`apps/web/src/server/ai/image-providers.ts`), which
   knows a different provider's error shape, not Replicate transport mechanics.
 
 ## Working in here

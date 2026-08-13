@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { evalEdit } from "../eval/scene-images/model";
-import { SCENE_POV_RULE } from "../../src/server/images";
+import { SCENE_POV_RULE } from "@/server/images";
 
 /**
  * SPIKE (scene-images.spec.md §6 — throwaway, manual): the direct test of
