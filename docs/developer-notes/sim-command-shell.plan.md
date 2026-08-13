@@ -149,19 +149,18 @@ what the three newly-run recorders now touch.
 
 ## Success criteria
 
-- **Every slice reaches a green `verify` check on its own pull request.**
-  Validation is CI-only (root `CLAUDE.md`) — never invoke a gate locally. Because
-  every slice touches the engine and database surfaces, CI's classifier will also
-  run the engine test job against Postgres, which covers the simulation store
-  suites plus the successor route and narrator integration tests. Note that jscpd
-  will *not* certify this work — F1 is why these clones survived the gate in the
-  first place.
+- **Every slice reaches a green `pnpm verify` run.** Validation is the local gate
+  (root `CLAUDE.md`), and `.husky/pre-push` runs it before the branch reaches
+  GitHub. Because every slice touches the engine and database surfaces, add the
+  Postgres-backed engine gate too — `pnpm db:up`, then `pnpm verify engine`, which
+  covers the simulation store suites plus the successor route and narrator
+  integration tests. Note that jscpd will *not* certify this work — F1 is why
+  these clones survived the gate in the first place.
 - **Slice 6 additionally** requires the four gate corpus suites green **before
   and after** the change. Fork parity is the engine's correctness spine, so the
   before-run is the baseline that makes the after-run mean something; a corpus
-  regression here is a stop-work, not a follow-up. Run them by pushing the
-  pre-change tree and the post-change tree as separate CI runs rather than
-  locally.
+  regression here is a stop-work, not a follow-up. Run the engine gate against the
+  pre-change tree and the post-change tree as two separate runs.
 - **Slice 1** shows one event-window query per accepted command instead of five,
   recorder outputs unchanged on a corpus run. **Slice 2** leaves no hand-written
   projection header validator and no duplicated row mapper. **Slice 6** leaves

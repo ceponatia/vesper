@@ -76,7 +76,7 @@ A chat exchange streams the reply, then finalizes state. Recovery rules:
 
 ## 6. Demo mode
 
-With no `OPENROUTER_API_KEY`, the app runs end-to-end: deterministic template narrative, heuristic post-turn results, hash-based pseudo-embeddings (1536-dim, recorded as `embedder: "pseudo"` and never compared against real vectors — see [memory.md](memory.md) §Embedder isolation). Demo mode is what CI exercises.
+With no `OPENROUTER_API_KEY`, the app runs end-to-end: deterministic template narrative, heuristic post-turn results, hash-based pseudo-embeddings (1536-dim, recorded as `embedder: "pseudo"` and never compared against real vectors — see [memory.md](memory.md) §Embedder isolation). Demo mode is what the automated test suite exercises.
 
 ## 7. API and UI
 

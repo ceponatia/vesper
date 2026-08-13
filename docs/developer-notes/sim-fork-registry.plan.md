@@ -108,13 +108,14 @@ causes would be misread as a regression from this work.
 
 ## Success criteria
 
-- **A green `verify` check on the pull request.** Validation is CI-only (root
-  `CLAUDE.md`) — never invoke a gate locally. Engine paths are touched, so CI's
-  classifier runs the Postgres-backed engine job too.
+- **A green `pnpm verify` run on the branch.** Validation is the local gate (root
+  `CLAUDE.md`), and `.husky/pre-push` runs it before the branch reaches GitHub.
+  Engine paths are touched, so run the Postgres-backed engine gate too
+  (`pnpm db:up`, then `pnpm verify engine`).
 - **The gate3/4/5/6 corpus integration suites are green before AND after.** Fork
   parity is the engine's correctness spine, so the before-run is not a formality —
-  it is the baseline that makes the after-run mean something. Capture both from
-  CI runs, not local ones.
+  it is the baseline that makes the after-run mean something. Capture both from the
+  engine gate, run once on the pre-change tree and once on the post-change tree.
 - Forking the same branch produces an identical child world before and after the
   change, compared by projection checksum rather than by eye.
 - Fork wall time and query count no worse than the baseline; the removed re-sorts
