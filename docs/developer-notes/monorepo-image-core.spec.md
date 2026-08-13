@@ -18,19 +18,20 @@ guardrails spec rather than duplicated here.
 | [spec.replicate.md](monorepo-image-core.spec.replicate.md)           | 4     | `@vesper/image-replicate`                    |
 | [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)             | 6     | The application move to `apps/web`           |
 
-Slice 5 (vision) has no detail spec because there is no package-worthy pure
-surface yet. The inventory below is its canonical technical record.
+Slice 5 (vision) has no detail spec because the architecture review concluded
+that no package-worthy pure surface exists today. The inventory below is the
+canonical technical record of that completed no-extraction decision.
 
 ## Implementation status
 
-| Slice | State                                   | Blocked by                |
-| ----- | --------------------------------------- | ------------------------- |
-| 1     | complete — 2026-08-12                   | —                         |
-| 2     | complete — 2026-08-12                   | —                         |
-| 3     | complete — 2026-08-12                   | —                         |
-| 4     | complete — 2026-08-13                   | —                         |
-| 5     | not started, not planned                | no pure surface exists    |
-| 6     | not started — next                      | —                         |
+| Slice | State                                   | Notes                                |
+| ----- | --------------------------------------- | ------------------------------------ |
+| 1     | complete — 2026-08-12                   | —                                    |
+| 2     | complete — 2026-08-12                   | —                                    |
+| 3     | complete — 2026-08-12                   | —                                    |
+| 4     | complete — 2026-08-13                   | —                                    |
+| 5     | complete — no extraction warranted      | revisit only when a shared seam earns it |
+| 6     | not started — next                      | —                                    |
 
 ## Cross-slice ownership map
 
@@ -56,10 +57,11 @@ Use the narrower spec rather than restating its rules in implementation work:
 When two specs appear to define the same contract, this map decides the owner;
 the other document should summarize and link rather than grow a second version.
 
-## The vision path: inventory
+## The vision path: extraction decision
 
 The target architecture has previously named a possible `@vesper/image-vision`.
-This inventory records why no such package is planned now.
+The architecture review found that creating it now would move names without
+moving ownership, so Slice 5 completes with no package extraction.
 
 The live path runs on **OpenRouter, not Replicate**. Its entry point is
 `generateChecked` with an `images` option, and `visionModelId()`
@@ -81,10 +83,14 @@ Neither exposes a provider-neutral image core worth a package:
   handling — is the general model-call layer the narrator also uses. A future
   extraction there would be an `@vesper/ai` concern, not an image package.
 
-**The condition that starts Slice 5:** a third vision consumer arrives, or the
-two existing consumers acquire a real shared contract such as a common reading
-vocabulary, grounding step, or degradation policy. Until then, creating the
-package would move names without moving ownership.
+**Reopen this decision only when at least two vision consumers demonstrably
+share a meaningful provider-neutral visual-understanding contract or
+implementation** — for example a common reading vocabulary, grounding or
+provenance step, uncertainty/occlusion handling, multi-image ordering, model
+capability negotiation, or degradation policy. A third consumer is neither
+required nor sufficient by itself. Until such a seam exists, creating an
+`@vesper/image-vision` package would make the diagram prettier without making
+the code easier to own.
 
 Reference doc for the live path: [docs/images/vision.md](../images/vision.md).
 
