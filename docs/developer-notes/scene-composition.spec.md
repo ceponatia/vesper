@@ -399,7 +399,7 @@ fail a render. Degradation tests assert the fallback **and** the code
 
 ## Fixtures and tests
 
-Pure suites (`pnpm test` tier — CI-run, never local):
+Pure suites (the `pnpm test` tier, run by the `test` gate of `pnpm verify`):
 
 - Registry integrity: unique ids, non-empty phrases, no bare limb nouns in
   orientation phrases, `BARE_LIMB`-clean staging templates, every staging
@@ -426,7 +426,7 @@ Fixture scenarios (extend `scripts/eval/scene-images/fixtures.ts`):
 behind-clothed, behind-nude, glance-back, kneeling-before-viewer (high angle),
 on-all-fours, lying-face-down, spooned, astride-facing, astride-away,
 wall-press-away, plus the existing frontal rows as the identity-regression
-control. Probe runs are paid and owner-gated; CI asserts nothing about
+control. Probe runs are paid and owner-gated; no gate asserts anything about
 rendered pixels.
 
 ### Acceptance scenes (owner-specified, 2026-08-10)

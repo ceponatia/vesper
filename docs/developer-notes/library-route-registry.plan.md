@@ -132,8 +132,9 @@ view, and so each slice is independently verifiable.
   dispatch, ~180 of route duplication, three duplicate maps gone.
 - **Bounded queries:** alias resolution no longer scales with library size; a
   character save with many forge suggestions issues a bounded statement count.
-- **The pull request's `verify` check is green**, including the route-authz job.
-  Validation is CI-only (root `CLAUDE.md`) — never invoke a gate locally.
+- **`pnpm verify` is green on the branch**, including the route-authz check inside
+  the static gate. Validation is the local gate (root `CLAUDE.md`) —
+  `.husky/pre-push` runs it before the branch reaches GitHub.
 
 ## Risks & coordination
 

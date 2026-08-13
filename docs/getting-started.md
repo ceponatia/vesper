@@ -100,12 +100,24 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ```bash
 pnpm dev / build / start
-pnpm test / test:watch / test:int / typecheck / lint     # see testing.md
-pnpm test:int:strict                        # release/CI form of test:int — an unreachable DB fails
+pnpm verify                                 # the gate: lint, static checks, typecheck, pure tests, jscpd
+pnpm verify:full                            # + the DB-backed engine suites and the production build
+pnpm test / test:watch / test:int / typecheck / lint     # individual runs — see testing.md
+pnpm test:int:strict                        # strict form of test:int — an unreachable DB fails
                                             #   instead of skipping (testing.md §Strict integration mode)
 pnpm db:generate                            # after editing apps/web/src/server/db/schema.ts → review drizzle/ SQL
 pnpm db:migrate
 pnpm db:studio                              # drizzle studio
 ```
+
+> **`pnpm verify` is the only verification gate — there is no hosted CI.**
+> `.husky/pre-push` (installed by `pnpm install`) runs it automatically before any
+> push that touches code, so a failing gate stops the push; documentation-only
+> pushes skip it, and `VESPER_SKIP_GATES=1 git push` opts out when you have just
+> run the gates yourself. It runs each gate serially under a memory cap and
+> refuses to start without a few GB of free RAM, so close heavy apps first. Run
+> `pnpm verify:full` before a deploy — it adds the engine suites (which need the
+> local Postgres up and migrated) and the production build.
+> See [testing.md](testing.md) and [deployment.md](deployment.md).
 
 Vesper owns its local `vesper-postgres` container and `vesper_dev` database.

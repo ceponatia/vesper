@@ -1,9 +1,14 @@
 name: Promote dev → prod
 
 # A one-click button (Actions tab → "Promote dev → prod" → Run workflow) that
-# opens a pull request from `main` (dev) into `prod`. It does NOT merge — the
-# PR still has to pass the `verify` check and be merged by you. If a promotion
+# opens a pull request from `main` (dev) into `prod`. It does NOT merge — you
+# merge it yourself, after `pnpm verify:full` has passed locally. If a promotion
 # PR is already open it just points you at it instead of creating a duplicate.
+#
+# This is the repository's only remaining workflow: CI was removed when Actions
+# minutes ran out, and verification now runs locally through `scripts/verify.sh`
+# (enforced on every push by the `.husky/pre-push` hook). Keep it that way — a
+# new workflow here is a new bill.
 on:
   workflow_dispatch:
 
@@ -40,4 +45,4 @@ jobs:
 
           gh pr create --repo "$REPO" --base prod --head main \
             --title "Promote dev → prod ($(date -u +%Y-%m-%d))" \
-            --body $'Automated promotion of `main` (dev) into `prod`.\n\nMerging requires the CI `verify` check to pass.'
+            --body $'Automated promotion of `main` (dev) into `prod`.\n\nRun `pnpm verify:full` on `main` before merging — there is no CI to check this for you.'

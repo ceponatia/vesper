@@ -9,9 +9,9 @@ Runtime verification happens against the **Fly deploy** — never a local
 `pnpm dev` + Postgres for UI work (CLAUDE.md).
 
 **Do NOT run `pnpm verify`, tests, lint, or typecheck as part of verification.**
-They are CI-style gates, not observation — and the chained `pnpm verify` run
-OOMs this machine (run gates separately, one at a time, only when asked to run
-the gate itself).
+They are code gates, not observation. `pnpm verify` belongs to landing the
+change — `.husky/pre-push` runs it automatically before a code push — and it is
+a slow serial run that tells you nothing about whether the deployed app behaves.
 
 ## Recipe
 
