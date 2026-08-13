@@ -34,7 +34,7 @@ The portrait studio has a **structural beauty bias** that no authored data can e
 its way out of:
 
 1. **Every avatar prompt ends in hardcoded beauty language.** The realistic style suffix
-   in `src/server/images/prompts.ts` appends *"Professional beauty portrait, flattering
+   in `src/server/images/prompts-*.ts` appends *"Professional beauty portrait, flattering
    soft studio lighting, photogenic composition, luminous skin rendering … magazine-
    quality"* to every realistic portrait (the stylized variant says *"Beautiful stylized
    portrait, flattering …"*), and the variant instruction builder adds *"Soft flattering

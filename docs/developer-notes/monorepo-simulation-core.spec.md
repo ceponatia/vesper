@@ -42,7 +42,17 @@ provider gateway.
   engine suite (43 files / 498 tests) and the Gate 1 benchmark verified
   against Postgres beyond the push gate. Rulings under "Slice 3 seam
   rulings".
-- **Slice 4 — image lifecycle and store splits:** in progress.
+- **Slice 4 — image lifecycle and store splits:** built 2026-08-13
+  (PR #107). Images: 4 files (10,950 lines) → 29 modules, the maintenance
+  registration now an explicit `installIdentityPackMaintenance()` call at
+  the barrel, which switched to explicit named re-exports (name set
+  unchanged). Stores: 4 files (5,951 lines) → 10 (5,728), with `body-rows`/
+  `material-rows`/`item-condition-store` leaf modules replacing ~630
+  duplicated lines; `meterViewOf` deleted for the package's
+  `buildMeterView`; `lastSleepEndedAtOf`/`collapseContextOf` joined the
+  package bodies kernel. Both barrels verified name-identical before/after;
+  engine suite + Gate 1 benchmark green against Postgres; the production
+  build gate passed on the final tree.
 
 ## Slice 1 — package-owned validation
 
@@ -190,14 +200,14 @@ Follow the split proposals in
 from read line numbers; re-verify seams before cutting, since several files
 have grown since the audit):
 
-- `apps/web/src/server/images/identity-packs.ts` → modules along its existing
+- `apps/web/src/server/images/identity-pack-*.ts` → modules along its existing
   section banners (store as the leaf; ensure/promotion/derive/read/manual/
   preparation/maintenance). The `registerIdentityPackMaintenance` module-load
   side effect must become an explicit import edge.
-- `apps/web/src/server/images/identity-pack-trial.ts` → store / plan /
+- `apps/web/src/server/images/identity-pack-trial-*.ts` → store / plan /
   execute / review.
-- `apps/web/src/server/images/image-lab.ts` and
-  `apps/web/src/server/images/prompts.ts` → per-family modules (the prompts
+- `apps/web/src/server/images/image-lab-*.ts` and
+  `apps/web/src/server/images/prompts-*.ts` → per-family modules (the prompts
   split is the audit's lowest-risk cut).
 - `apps/web/src/server/engine/simulation/`: extract the audit's R4 leaf
   modules (`body-rows`, `item-condition-store`, `material-rows`) to dissolve

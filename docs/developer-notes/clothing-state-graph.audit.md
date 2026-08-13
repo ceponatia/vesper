@@ -125,9 +125,9 @@ which is why the chat lane must not build a second one.
 | Coverage sets | `src/contracts/items/coverage.ts:28-33` `expandCoverage`, `:39-66` `toggleCoverage`      | Exploded id sets; parent implies descendants; non-`coverageRelevant` ids never stored                                          |
 | Occlusion     | `src/contracts/items/visibility.ts:30-69` `resolveWardrobeVisibility`                    | Per body location, highest `layer` wins; below ⇒ `hidden`, or `hinted` if every item above is sheer. Keyed on `instanceId`     |
 | Exposure      | `:113-118` `EXPOSURE_REGION_LOCATIONS`, `:126-147` `exposedRegions`                      | 4 regions (torso/pelvis/legs/feet) × `covered\|sheer\|bare`. `FULLY_COVERED:74`, `intimateRegionsBare:82-84`                   |
-| Worn input    | `src/server/images/prompts.ts:81-92` `AvatarWardrobeItem`, `:111-119` `toWornInputs`     | **`instanceId` is the array index** (`String(index)`); callers look views back up by index (`prompts.ts:124`, `avatar.ts:179`) |
+| Worn input    | `src/server/images/prompts-*.ts:81-92` `AvatarWardrobeItem`, `:111-119` `toWornInputs`     | **`instanceId` is the array index** (`String(index)`); callers look views back up by index (`prompts.ts:124`, `avatar.ts:179`) |
 | Phrase render | `src/server/images/avatar.ts:175-193` `wardrobeOutfitText`                               | Occlusion-filtered, subtype-led, description-primary                                                                           |
-| Image prompts | `src/server/images/prompts.ts:210-216`, `:482`, `:515-519`; `character-scene.ts:163-181` | Consume `RegionExposure` + the occlusion-filtered garment list                                                                 |
+| Image prompts | `src/server/images/prompts-*.ts:210-216`, `:482`, `:515-519`; `character-scene.ts:163-181` | Consume `RegionExposure` + the occlusion-filtered garment list                                                                 |
 | Intimacy gate | `src/contracts/turns/chat-intimacy.ts:40,63`                                             | Reads `intimateRegionsBare(exposure)`                                                                                          |
 
 Gap: coverage is **whole-garment**. There is no per-part coverage, and the

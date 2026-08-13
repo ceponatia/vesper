@@ -18,6 +18,23 @@ splits, the engine-sim and contracts and lib scaffolding clusters, and the nine
 correctness-flavored findings — has no plan and no roadmap line.** Nothing in
 this document is committed work until it does.
 
+**Update 2026-08-13:** a first tranche shipped via
+[monorepo-simulation-core.plan.md](monorepo-simulation-core.plan.md) slice 4
+(PR #107): the four image-lifecycle splits (`identity-packs`,
+`identity-pack-trial`, `image-lab`, `prompts` — note `identity-pack-trial`
+had doubled to 3,139 lines since this audit), the §Engine-sim R4 leaf-module
+extraction with the `body-store` and `household-store` splits, the R3
+`compareStableText`/`sortedUnique` strays, and the
+`meterViewOf`/`lastSleepEndedAtOf`/`collapseContextOf` dedups (the pure
+kernels now live in `@vesper/simulation-core`, which the intervening
+extraction created). One claim proved stale: the "3 import cycles" were
+latent — madge was green before and after; what the leaf modules dissolved
+was the duplication-forcing constraint. Still unowned: the `db/schema.ts`,
+`chat-pipeline.ts`, `chat-state.ts`, `prompts/character-chat.ts`,
+`chat-conversation.tsx`, `chat-contact-adapter.ts`, `sim-exchange.ts`,
+`client/api.ts` and `character-forge.ts` splits, and the remaining dedup
+clusters.
+
 ## Headline
 
 - **16 files exceed 1,500 lines; every one has a concrete split proposal below.** The worst: `db/schema.ts` (3,980), `chat-pipeline.ts` (3,617 — one 2,122-line closure), `identity-packs.ts` (3,445), `chat-state.ts` (3,415).
@@ -31,21 +48,21 @@ this document is committed work until it does.
 | --------------------------------------------- | ----- | ----------------------------------------------- | ------------------------------------------------------ |
 | `src/server/db/schema.ts`                     | 3,980 | 13-file `schema/` folder, cycle-safe            | low, but human must run `db:generate` empty-diff check |
 | `src/server/engine/chat-pipeline.ts`          | 3,617 | 5–6 files; previews first, `settle` last        | medium (`settle` closes over ~30 vars)                 |
-| `src/server/images/identity-packs.ts`         | 3,445 | 8 modules along its 16 existing banners         | low-medium (module-load side effect)                   |
+| `src/server/images/identity-pack-*.ts`         | 3,445 | 8 modules along its 16 existing banners         | low-medium (module-load side effect)                   |
 | `src/server/engine/chat-state.ts`             | 3,415 | 6 files by state family                         | medium                                                 |
 | `packages/simulation-core/src/lib/bodies.ts`                | 2,672 | 5 files (meter kernel is the reusable core)     | low                                                    |
 | `src/server/engine/prompts/character-chat.ts` | 2,624 | 6 files; snapshot tests pin it                  | low                                                    |
 | `src/components/chat/chat-conversation.tsx`   | 2,246 | 8 extractions → ~650                            | medium (`runStream`/`stickRef`)                        |
 | `src/server/engine/chat-contact-adapter.ts`   | 2,207 | 4 files; pure, 15 banners pre-drawn             | low                                                    |
 | `src/server/engine/sim-exchange.ts`           | 2,041 | 3 files                                         | low-medium                                             |
-| `src/server/images/prompts.ts`                | 1,930 | 8 prompt-family files                           | low (cleanest split in repo)                           |
+| `src/server/images/prompts-*.ts`                | 1,930 | 8 prompt-family files                           | low (cleanest split in repo)                           |
 | `src/lib/client/api.ts`                       | 1,864 | layered split + re-export barrel (66 importers) | low with barrel                                        |
 | `src/server/authoring/character-forge.ts`     | 1,569 | 5 files along its own banners                   | low                                                    |
 
 (Plus `body-store` 1,546 / `activity-store` 1,532 / `household-store` 1,465 / `material-store` 1,402 — mostly resolved by the leaf-module extraction in §Engine-sim R4 — and `identity-pack-trial.ts` 1,525, `lib/simulation/households.ts` 1,539.)
 
 **Line-count re-check, 2026-08-07.** Every row still stands; three files grew and
-none shrank. `db/schema.ts` 3,980 → **4,085**, `images/identity-packs.ts`
+none shrank. `db/schema.ts` 3,980 → **4,085**, `images/identity-pack-*.ts`
 3,445 → **3,544**, `lib/client/api.ts` 1,864 → **1,877**. The other nine are
 unchanged to the line. The two that moved most sit under the image-model registry
 and capabilities work, so treat every number here as a floor and those two as
@@ -72,7 +89,7 @@ moving targets until that work settles.
 
 ### Correctness-flavored findings (drift already happened or is one edit away)
 
-1. **`src/server/images/prompts.ts` attribute-filter loops have already diverged.** Six copies of filter→phrase; `intimateSceneAppearance` (1031–1040) checks neither `excludeFromPrompts` nor realized-body applicability, `sceneRevealAppearance` (1101–1117) skips `excludeFromPrompts` — the other four forbid exactly that, and nothing documents the omissions as intentional. A stale/prompt-excluded attribute can reach an image prompt on those two paths. **Partly resolved 2026-08-07:** both loops now check `excludeFromPrompts`, covered by a registry-driven sweep in `prompts.test.ts`. The realized-body applicability gap on `intimateSceneAppearance` stands — that function takes no profile, so closing it is a signature change, not a guard.
+1. **`src/server/images/prompts-*.ts` attribute-filter loops have already diverged.** Six copies of filter→phrase; `intimateSceneAppearance` (1031–1040) checks neither `excludeFromPrompts` nor realized-body applicability, `sceneRevealAppearance` (1101–1117) skips `excludeFromPrompts` — the other four forbid exactly that, and nothing documents the omissions as intentional. A stale/prompt-excluded attribute can reach an image prompt on those two paths. **Partly resolved 2026-08-07:** both loops now check `excludeFromPrompts`, covered by a registry-driven sweep in `prompts.test.ts`. The realized-body applicability gap on `intimateSceneAppearance` stands — that function takes no profile, so closing it is a signature change, not a guard.
 2. **Contracts projection headers split branded vs plain.** 8 of 12 `…ProjectionSchema`s validate `branchId` as `z.string().min(1)`; `materials.ts:154` and `space.ts:504` use the branded `identity.ts` schemas. `createProjectionSchema` closes the drift.
 3. **Reply-evidence geometry written twice** — `npc-scene-evidence.ts:123–222` vs `romantic-permission-decision.ts:323–501` are the same sentence-walk + exactly-once quote-location algorithm (identical private `SENTENCE_BOUNDARY_RE`). A boundary fix must currently be made twice; divergence changes what counts as admissible evidence.
 4. **Digest ref-assignment duplicated verbatim** (`buildNpcSceneDigest` 187–206 / `buildRomanticPermissionDigest` 141–160) while a comment *relies* on the two never disagreeing about `npc_N` assignment.
@@ -165,7 +182,7 @@ Placement rule verified: contracts↔lib are peers with bidirectional imports to
 
 **Reuse first — it shrinks every large file (~700–800 total):**
 
-- **R3 (easiest): delete 18 byte-identical private copies of `compareStableText` (×11) / `sortedUnique` (×7)** — `simulation/hash.ts` already exports both; two strays in `images/identity-pack-trial.ts`. Zero risk.
+- **R3 (easiest): delete 18 byte-identical private copies of `compareStableText` (×11) / `sortedUnique` (×7)** — `simulation/hash.ts` already exports both; two strays in `images/identity-pack-trial-*.ts`. Zero risk.
 - **R1 `simulationEventEnvelope`, ~250–300.** The 10-field envelope literal at ~37 sites plus four identical private `eventEnvelope` helpers (`bodies.ts:619`, `households.ts:311`, `material-condition.ts:215`, `social.ts:526`). All divergences (schemaVersion 2 ×5, 15 derivation-version constants, sequence arithmetic) verified parameterizable.
 - **R4 `simulation/kernel.ts`, ~180.** 29 `*Rejection` interfaces + 29 constructor twins, 11 `*BranchMeta` (10 byte-identical), 5 `*EventCommandContext` → generic `SimulationRejection<TCode>` + `reject<TCode>` (5 modules already prove the generic).
 - **R2 `foldProjectionHistory`, ~140.** Ten literal copies of the 18-line replay template (sort/contiguity-assert/commandId-count/fold/re-parse); `space.ts`'s pre+post invariant hook is the only divergence.

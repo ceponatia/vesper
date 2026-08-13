@@ -214,7 +214,7 @@ eval scripts wired in package.json; no illegitimate test skips.
   B12 batching fix in one place. M/low.
 - **B7 · The resolved-attribute → prompt-line filter loop appears 6× in
   `prompts/character-chat.ts`** (`:1003`, `:1401`, `:1657`, `:1947`, `:2428`,
-  `:2494`) **+ 4× in `images/prompts.ts`** (`:289`, `:804`, `:856`, `:977`) —
+  `:2494`) **+ 4× in `images/prompts-*.ts`** (`:289`, `:804`, `:856`, `:977`) —
   and the copies have **already drifted** (different guard sets). A missed
   guard leaks raw attribute ids into the narrator prompt. Fix:
   `promptableAttributes(resolved, realizedBody, {skipIds, extraSkip})` in

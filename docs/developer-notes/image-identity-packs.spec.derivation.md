@@ -277,7 +277,7 @@ only with the stored algorithm version; warning thresholds belong to policy.
 measurements against the named policy version and returns current blockers and
 warnings.
 
-Implemented as `projectIdentityPackPolicy` (`server/images/identity-packs.ts`),
+Implemented as `projectIdentityPackPolicy` (`server/images/identity-pack-*.ts`),
 one helper shared by all three read seams — `ensureIdentityPack`'s current-ready
 reuse path, `getIdentityPackForOwner`, and `evaluateIdentityPackForProfile` — so
 the ensure result, the owner summary and the render seam cannot disagree after a

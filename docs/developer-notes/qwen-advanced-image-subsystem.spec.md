@@ -1211,7 +1211,7 @@ asserting fallback **and** code:
 - `packages/image-core/src/lab/image-lab-recipes.ts` — the controlled-kind recipe
   profiles and the Stage 3 finishing recipe (pure; exported from
   `src/contracts/index.ts`).
-- `src/server/images/image-lab.ts` — experiment service (create, list, detail,
+- `src/server/images/image-lab-*.ts` — experiment service (create, list, detail,
   delete, run, record verdict); exported via `src/server/images/index.ts`.
 - `src/server/images/image-lab-controls.ts` — extraction service + edge-map
   computation + preprocessor pins.

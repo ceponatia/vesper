@@ -142,7 +142,7 @@ successor chat position, and the verdict.
   (`src/contracts/attributes/categories/movement.ts:31-58`) is a
   character-sheet resting posture whose own description defers to a "scene
   posture in participant state" that does not exist. `SceneSpec.pose`
-  (`src/server/images/prompts.ts:512`) is free text authored per image render
+  (`src/server/images/prompts-*.ts:512`) is free text authored per image render
   and never read back. Successor: no pose, posture, stance, or articulation
   state. Closest is `activityClaimSchema` `{kind:"body"}`
   (`packages/simulation-core/src/contracts/activities.ts:50-53`) — one occupancy bit.
