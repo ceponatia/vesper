@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { CurrentUser } from "@/server/auth";
+import { HIDDEN_IMAGE_KINDS, type ImageKind } from "@/server/images";
 import { recordAbuseSignal } from "./abuse-log";
 import { clientIp, hashClientIp } from "./client-ip";
 import { laneHealth, laneRetryAfterSeconds, queueSaturated, type ProviderLane } from "./backpressure";
@@ -156,11 +157,21 @@ export interface ImageRenderGuardOptions {
    * this process — where charging the floor's one unit of `provider_image_day`
    * makes that number stop meaning what it says.
    *
-   * The other two legs still run, and the storage reservation keeps its floor of
-   * one: local work writes an image too, and it must not be admitted onto a full
-   * disk or into a dead lane.
+   * The other legs still run at that count (with the storage reservation
+   * keeping its floor of one when it applies at all — see `outputKind`): local
+   * work rides the same queue, so it is still refused into a dead lane.
    */
   allowZeroCount?: boolean;
+  /**
+   * The `images.kind` this render writes. Declaring one of the
+   * `HIDDEN_IMAGE_KINDS` skips the storage-quota leg entirely: hidden rows are
+   * excluded from the quota's stored-byte sum (`checkStorageQuota`), so their
+   * admission must not spend the visible headroom either — an account sitting
+   * at its quota can still run identity trials and lab work whose bytes it can
+   * neither see nor delete. Backpressure and the daily provider budget are
+   * about spend and queue depth, not disk, and still apply.
+   */
+  outputKind?: ImageKind;
 }
 
 /**
@@ -174,7 +185,9 @@ export interface ImageRenderGuardOptions {
  *
  * A charge of zero skips that leg entirely rather than consuming 0, so a caller
  * whose provider bill really is nothing cannot be refused by a budget it is not
- * spending — and leaves no counter row claiming it did.
+ * spending — and leaves no counter row claiming it did. The storage leg is
+ * likewise skipped when `outputKind` declares a hidden kind, because the quota
+ * it guards does not count those bytes (see the option's own doc).
  */
 export async function imageRenderRejection(
   user: Pick<CurrentUser, "id">,
@@ -183,6 +196,7 @@ export async function imageRenderRejection(
 ): Promise<Response | null> {
   const requested = options.count ?? 1;
   const charged = options.allowZeroCount === true ? Math.max(0, requested) : Math.max(1, requested);
+  const hiddenOutput = options.outputKind !== undefined && HIDDEN_IMAGE_KINDS.some((kind) => kind === options.outputKind);
   // Storage keeps the floor whatever the bill is: zero-cost work still writes an
   // image, so the reservation is about bytes rather than about spend.
   const reserveBytes = (options.reserveBytes ?? ESTIMATED_RENDER_BYTES) * Math.max(1, charged);
@@ -190,8 +204,10 @@ export async function imageRenderRejection(
   const shed = await backpressureRejection("image", user, req);
   if (shed) return shed;
 
-  const overQuota = await storageQuotaRejection(user, req, reserveBytes);
-  if (overQuota) return overQuota;
+  if (!hiddenOutput) {
+    const overQuota = await storageQuotaRejection(user, req, reserveBytes);
+    if (overQuota) return overQuota;
+  }
 
   if (charged === 0) return null;
   return dailyBudgetRejection("provider_image_day", user, req, charged);

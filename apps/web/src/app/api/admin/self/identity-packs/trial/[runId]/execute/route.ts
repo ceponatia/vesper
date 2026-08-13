@@ -33,9 +33,10 @@ export const POST = withOwnerAdmin<Params>(async (user, req: NextRequest, ctx) =
     runId,
     ownerId: user.id,
     maxRenders: body.value.maxRenders,
-    // Default per-render reservation: the guard multiplies its reserve by
-    // `count` itself, so passing a pre-multiplied number would square it.
-    chargeBudget: (count) => imageRenderRejection(user, req, { count }),
+    // `outputKind`: trial renders write hidden `identity_trial_output` rows,
+    // which the storage quota excludes — so their admission skips the storage
+    // leg rather than refusing an account that sits at its visible quota.
+    chargeBudget: (count) => imageRenderRejection(user, req, { count, outputKind: "identity_trial_output" }),
   });
   if (result === null) return jsonError("not_found", "trial run not found", 404);
   if (!result.ok) {

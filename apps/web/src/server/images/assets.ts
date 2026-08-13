@@ -431,7 +431,8 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
  *   hidden crop of a PUBLIC character still stops at its owner;
  * - the per-owner storage quota (`checkStorageQuota` in `@/server/api`) — these
  *   bytes are the system's bookkeeping, not the user's stored images, so they
- *   do not count toward the ceiling.
+ *   do not count toward the ceiling; admission agrees (`imageRenderRejection`'s
+ *   `outputKind` skips the storage reservation for these kinds).
  *
  * Surfaces that filter by a POSITIVE kind list — the Gallery tabs, the chat asset
  * queries, and the portrait studio's `PORTRAIT_STUDIO_KINDS` (which backs the

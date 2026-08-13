@@ -86,7 +86,9 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
 
   // Identity sourcing lives in the render lane itself (chat-look.ts), beside the
   // profile resolution its flag-on pack path needs; an unreadable source still
-  // reserves nothing and the next change re-fires.
+  // reserves nothing and the next change re-fires. The lane drains its own
+  // diagnostics into the process log, so a flag-on pack refusal leaves a record
+  // even though this detached job has no sink to hand it.
   await renderChatLookImage({
     chatId: input.chatId,
     userId: ctx.ownerId,

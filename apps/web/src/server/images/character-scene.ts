@@ -306,7 +306,11 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       profile: imageProfile,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
-      ...(identityProvenance.length > 0 ? { identityProvenance } : {}),
+      // No provenance travels with a refusal: an earlier cast member's pack may
+      // have answered before a later member's refusal stopped the scene, and
+      // those references are never sent (renderResolvedScene would drop them
+      // from the row anyway — this keeps the lane's own output coherent).
+      ...(identityProvenance.length > 0 && identityRefusal === null ? { identityProvenance } : {}),
       failedPrecondition: identityRefusal,
       linkage: {
         ownerId: input.userId,

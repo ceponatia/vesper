@@ -53,7 +53,13 @@ vi.mock("./chat-look", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./chat-look")>();
   return { ...actual, latestChatLook: vi.fn() };
 });
+vi.mock("@/server/log", () => ({
+  log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logDiagnostics: vi.fn(),
+}));
 
+import { diag } from "@/contracts/diagnostics";
+import { logDiagnostics } from "@/server/log";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db } from "../db";
 import { readImageBytes, runImagePipeline, type ImagePipelineOptions, type ImageRow } from "./assets";
@@ -264,6 +270,22 @@ describe("chat_look lane", () => {
     expect(mockPipeline).not.toHaveBeenCalled();
     expect(mockIntent).not.toHaveBeenCalled();
   });
+
+  it("flag on: a refusal's diagnostics drain into the process log — the detached job has no other record", async () => {
+    setFlag(true);
+    mockResolve.mockResolvedValue(resolved("chat_look"));
+    mockConsume.mockImplementation(async (input) => {
+      input.sink?.push(diag("warn", "images.identity_pack.profile_ineligible", "no eligible roles"));
+      return packRefused();
+    });
+
+    expect(await run()).toBeNull();
+    expect(vi.mocked(logDiagnostics)).toHaveBeenCalledWith(
+      "images.chat_look",
+      expect.arrayContaining([expect.objectContaining({ code: "images.identity_pack.profile_ineligible" })]),
+      expect.objectContaining({ chatId: "chat1", characterId: "charaaaaaaaaaaaaaaaaaaaa" }),
+    );
+  });
 });
 
 describe("scene (chat cast) lane", () => {
@@ -330,6 +352,18 @@ describe("scene (chat cast) lane", () => {
     const input = sceneInput();
     expect(input?.failedPrecondition).toContain("Mira");
     expect(input?.failedPrecondition).toContain("identity references unavailable");
+    expect(input?.identityProvenance).toBeUndefined();
+  });
+
+  it("flag on: a LATER member's refusal sends no provenance for the earlier member either — a refused row must not claim sends", async () => {
+    setFlag(true);
+    mockResolve.mockResolvedValue(resolved("scene"));
+    mockConsume.mockResolvedValueOnce(packOk()).mockResolvedValueOnce(packRefused());
+
+    await run([member(), member({ characterId: "charbbbbbbbbbbbbbbbbbbbb", name: "Nadia" })]);
+    expect(mockConsume).toHaveBeenCalledTimes(2);
+    const input = sceneInput();
+    expect(input?.failedPrecondition).toContain("Nadia");
     expect(input?.identityProvenance).toBeUndefined();
   });
 

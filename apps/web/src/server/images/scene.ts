@@ -7,7 +7,7 @@ import {
   toolModelId,
 } from "../ai";
 import { renderImageIntent } from "./render-intent";
-import { log } from "@/server/log";
+import { logDiagnostics } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   attemptReferenceCount,
@@ -105,9 +105,13 @@ export interface RenderResolvedSceneInput {
   framing?: "pov" | "selfie";
   flavor?: string;
   /**
-   * Identity-pack provenance for the anchors actually sent, persisted on the
-   * row's `meta.identityReferences` (image-identity-packs.spec.integration.md
-   * §"Render provenance"). Only the flag-on caller supplies it.
+   * Identity-pack provenance for the anchors the caller PLANNED to send,
+   * persisted on the row's `meta.identityReferences`
+   * (image-identity-packs.spec.integration.md §"Render provenance"). Only the
+   * flag-on caller supplies it. What persists is narrowed to the references the
+   * render actually sent: a refused render (`failedPrecondition`) records none,
+   * and a fallback rung or a capacity trim drops the entries whose bytes never
+   * reached the provider.
    */
   identityProvenance?: IdentityReferenceProvenance[];
   /**
@@ -206,6 +210,26 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     );
   }
 
+  // The reference set one attempt sends — the same selection runSceneProvider
+  // makes, restated here because provenance must describe the send, not the plan.
+  const sentReferencesFor = (id: SceneAttemptId): ImageRenderReference[] => {
+    if (id === "multi_edit") return multiReferences.slice(0, attemptReferenceCount(id, model));
+    if (id === "edit" && primaryReference) return [primaryReference];
+    return [];
+  };
+  // `meta.identityReferences` holds provenance ONLY for identity references that
+  // reached the provider: nothing on a refused render (the row is failed before
+  // any send), and only the surviving attempt's subset when the chain fell back
+  // or capacity trimmed the reference list.
+  const provenanceFor = (id: SceneAttemptId | undefined): IdentityReferenceProvenance[] => {
+    const planned = input.identityProvenance ?? [];
+    // `?? null` mirrors runImagePipeline's own precondition read, empty string included.
+    if (planned.length === 0 || id === undefined || (input.failedPrecondition ?? null) !== null) return [];
+    const sent = new Set(sentReferencesFor(id).map((reference) => reference.sourceImageId));
+    return planned.filter((entry) => sent.has(entry.imageId));
+  };
+  const reservedProvenance = provenanceFor(primary);
+
   const ctx: SceneAttemptContext = {
     promptFor,
     primaryReference,
@@ -232,9 +256,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
           ...(input.flavor ? { flavor: input.flavor } : {}),
-          ...(input.identityProvenance && input.identityProvenance.length > 0
-            ? { identityReferences: input.identityProvenance }
-            : {}),
+          ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
         },
       },
       failedPrecondition: input.failedPrecondition ?? null,
@@ -243,7 +265,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
         if (!outcome) return { ok: false, error: sceneFailureMessage(collected.items) };
         if (outcome.attemptId !== primary) {
-          await correctProviderMeta(asset.id, promptFor(outcome.attemptId), modelFor(outcome.attemptId));
+          await correctProviderMeta(
+            asset.id,
+            promptFor(outcome.attemptId),
+            modelFor(outcome.attemptId),
+            provenanceFor(outcome.attemptId),
+          );
         }
         return { ok: true, image: outcome.image };
       },
@@ -253,7 +280,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     });
     return imageId;
   } finally {
-    drainSceneDiagnostics(collected.items, plan.focal?.name ?? null);
+    logDiagnostics("images.scene_render", collected.items, plan.focal?.name ? { focal: plan.focal.name } : undefined);
   }
 }
 
@@ -410,12 +437,23 @@ async function recordImageReferences(
   }
 }
 
-async function correctProviderMeta(assetId: string, prompt: string, model: string): Promise<void> {
+/**
+ * Re-stamp the row after a fallback rung won: the prompt and model that actually
+ * rendered, and the identity provenance for the references that rung actually
+ * sent — an empty set REMOVES `identityReferences`, because the reserve-time
+ * value described the primary attempt's send, not this one's.
+ */
+async function correctProviderMeta(
+  assetId: string,
+  prompt: string,
+  model: string,
+  identityReferences: IdentityReferenceProvenance[],
+): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
-  await db()
-    .update(images)
-    .set({ prompt, meta: { ...imageMeta(row?.meta), model } })
-    .where(eq(images.id, assetId));
+  const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model };
+  if (identityReferences.length > 0) meta.identityReferences = identityReferences;
+  else delete meta.identityReferences;
+  await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));
 }
 
 function sceneFailureMessage(items: readonly Diagnostic[]): string {
@@ -425,19 +463,6 @@ function sceneFailureMessage(items: readonly Diagnostic[]): string {
       diagnostic.code === "images.scene_render.all_failed" || diagnostic.code === "images.scene_render.service_outage",
     );
   return terminal?.message ?? "all scene image providers failed";
-}
-
-function drainSceneDiagnostics(items: readonly Diagnostic[], focalName: string | null): void {
-  for (const diagnostic of items) {
-    const data = {
-      code: diagnostic.code,
-      ...(focalName ? { focal: focalName } : {}),
-      ...(diagnostic.context ? { context: diagnostic.context } : {}),
-    };
-    if (diagnostic.severity === "error") log.error("images.scene_render", diagnostic.message, data);
-    else if (diagnostic.severity === "warn") log.warn("images.scene_render", diagnostic.message, data);
-    else log.info("images.scene_render", diagnostic.message, data);
-  }
 }
 
 export function shouldGenerateScene(scene: SceneGenState, turnNumber: number, directorWorthIt: boolean): boolean {

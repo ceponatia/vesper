@@ -355,13 +355,24 @@ build settled:
 - **Provenance home: `images.meta.identityReferences`** on the output row —
   the §"Render provenance" objects for exactly the references sent, validated
   through `identityReferenceProvenanceListSchema` at the consume boundary.
-  Write-side only; nothing reads it yet.
+  Write-side only; nothing reads it yet. "Exactly the references sent" is
+  enforced by the scene shell rather than assumed from the caller's plan: a
+  refused render (`failedPrecondition`) persists none — the row fails before
+  any send, including the multi-member cast where an earlier member's pack
+  answered before a later member's refusal — and the persisted set follows the
+  attempt that actually rendered: a capacity trim drops the untraveled
+  anchor's entry, and the fallback-rung meta correction rewrites the row to
+  that rung's own send set.
 - **Per-lane refusal shapes.** Variant: a returned produce failure — the
   `portrait_variant` row is reserved and failed with the reason, no provider
   call. Chat look: null before any row is reserved (this lane's precondition
   shape; the next look change re-fires). Scene: `failedPrecondition` on the
   resolved-scene input — the row is reserved and failed naming the member, and
-  the selfie retry is skipped. All three refuse rather than substitute.
+  the selfie retry is skipped. All three refuse rather than substitute. The
+  chat look/place lanes additionally drain their collected diagnostics into
+  the process log (`logDiagnostics`): their production caller is a detached
+  job with no sink, and the look lane's row-less refusal would otherwise leave
+  no record anywhere of why the look never appeared.
 - **A minted chat look stays the scene cast's identity reference** (build
   ruling): it carries current wardrobe/state and is itself downstream of the
   avatar, so only the avatar-fallback path consults the pack. A cast member
