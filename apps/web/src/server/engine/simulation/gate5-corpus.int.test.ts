@@ -983,7 +983,13 @@ describe.runIf(harness.ready)(
       expect(currencyDeltas.reduce((sum, delta) => sum + delta, 0)).toBe(
         finalCurrencyLot[0]?.quantityRaw,
       );
-    });
+      // TIMEOUT: balance checks at EVERY drain step are ~5s of serial Postgres
+      // round-trips, which sits at 100% of vitest's 5s default when the dev
+      // database runs behind Docker Desktop's port forwarding (Windows/WSL2).
+      // The test's claims are all conservation equalities, never wall time, so
+      // the harness timeout is raised rather than the per-step coverage cut
+      // (the gate6 EXIT 2 precedent).
+    }, 15_000);
 
     // -------------------------------------------------------------------------
     // 4 — Explain-why: a relationship. Promise made (destinationless) -> missed
