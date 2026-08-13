@@ -37,9 +37,12 @@ provider gateway.
   layer/runtime/dependency/cycle checks; `lint:package-resolution`
   smoke-imports every declared entry. The editor-latency ESLint ban narrowed
   to `@vesper/*/src/**`.
-- **Slice 3 — `@vesper/simulation-core` extraction:** in progress.
-- **Slice 4 — image lifecycle and store splits:** not started; runs after
-  slice 3 so the store splits land on the post-extraction import graph.
+- **Slice 3 — `@vesper/simulation-core` extraction:** built 2026-08-13
+  (PR #106). 98 renames; 63 exact subpath exports and no root barrel; the
+  engine suite (43 files / 498 tests) and the Gate 1 benchmark verified
+  against Postgres beyond the push gate. Rulings under "Slice 3 seam
+  rulings".
+- **Slice 4 — image lifecycle and store splits:** in progress.
 
 ## Slice 1 — package-owned validation
 
@@ -102,14 +105,16 @@ provider gateway.
 
 ## Slice 3 — `@vesper/simulation-core`
 
-- **Contents:** `apps/web/src/contracts/simulation/*` →
-  `packages/simulation-core/src/contracts/*`; `apps/web/src/lib/simulation/*`
-  → `packages/simulation-core/src/lib/*`. Tests move with their modules and
-  run in the package's own vitest project (they are pure).
+- **Contents:** the app's former `contracts/simulation` tree →
+  `packages/simulation-core/src/contracts/*`; its former `lib/simulation`
+  tree → `packages/simulation-core/src/lib/*` (except the three app-side
+  survivors named in the rulings). Tests move with their modules and run in
+  the package's own vitest project (they are pure).
 - **Manifest:** `@vesper/simulation-core`, universal runtime, dependencies
-  `@vesper/contracts` + `zod` only. Layer rank **20 — deliberately equal to
-  `@vesper/image-core`**, so neither image nor simulation package may import
-  the other; both sit above `contracts` and below the applications.
+  `@vesper/contracts` + `zod` + `@noble/hashes`. Layer rank **20 —
+  deliberately equal to `@vesper/image-core`**, so neither image nor
+  simulation package may import the other; both sit above `contracts` and
+  below the applications.
 - **Public surface:** per-module exact subpath exports —
   `./contracts/<module>` for each contract module, `./<module>` for each
   kernel module. The two wildcard `index.ts` barrels are deleted, not
@@ -118,13 +123,7 @@ provider gateway.
   `@vesper/simulation-core/contracts/x`, `@/lib/simulation/x` →
   `@vesper/simulation-core/x`. No compatibility re-export shims remain in the
   app.
-- **Known seams**, resolved at extraction:
-  - `lib/simulation/clock.ts` imports chat-lane clock vocabulary
-    (`@/contracts/turns/chat-clock`, `@/lib/clock`). The package must not
-    depend on the app: either the pure pieces it needs move into the package,
-    or `clock.ts` (or the bridging part of it) stays in the app as
-    orchestration. Decide by inspecting what its simulation-side consumers
-    actually use; record the outcome here.
+- **Known seams** — all resolved; the rulings are recorded below:
   - `lib/simulation/world-read.test.ts` and `world-beat.test.ts` import
     `@/lib/client/api` schemas — those are app-parity tests and stay on the
     app side rather than moving with the package.
@@ -147,7 +146,42 @@ provider gateway.
 
 ### Slice 3 seam rulings
 
-Recorded when the extraction lands.
+All 2026-08-13, settled by the extraction build (PR #106):
+
+- **Clock stays in the app.** Of the moved kernels, none consume the story
+  clock — every kernel works in raw `storySecond` integers. `clock.ts` is
+  presentation of simulation state in the chat lane's calendar vocabulary
+  (`daylightBandAtMinute`, `to12Hour`, `formatStoryMoment`), so it stays at
+  `apps/web/src/lib/simulation/`, joined by `world-beat.ts` (a chat-transcript
+  line) and `shadow-parity.ts` (a two-lane divergence report for an admin
+  route), each with its test. `world-beat.ts` imports
+  `@vesper/simulation-core/world-read` for `placeGoPhrase`.
+- **Fixtures.** `sim-envelopes` and `sim-space-fixtures` are published as
+  `./testing/*` entries (app-side engine and parity tests consume them);
+  `sim-material-fixtures` moved unpublished — only package tests use it.
+- **sha256.** Both former `node:crypto` call sites use `sha256` from
+  `@noble/hashes/sha2.js` (v2 publishes only `.js`-suffixed subpaths).
+  `packages/simulation-core/src/sha256-parity.test.ts` pins digest-byte and
+  hex/stamp equality against `node:crypto` for the exact persisted material
+  formats, including multi-byte UTF-8. `scheduler.ts` carries a local
+  `readUInt32BE(Uint8Array)` replacing `Buffer#readUInt32BE`.
+- **`@vesper/contracts` grew two determinism primitives.** `fnv1a` (from the
+  app's `lib/hash.ts`) and the fixed-point kernel (`lib/fixed-point.ts`) are
+  shared by the app, the image layer, and the simulation package, and a
+  determinism seam may have only one implementation — so both live in the
+  lowest package every consumer can reach. `@/lib/hash` and
+  `@/lib/fixed-point` remain as re-export barrels (the `lib/parse.ts` idiom);
+  the golden tests moved with the implementations. The contracts package's
+  charter is now "diagnostics, `parseOr`, and the bit-for-bit determinism
+  primitives" — CLAUDE.md and `packages/contracts/README.md` state it.
+- **The checker's single-runtime-global scan is scope-aware.** The simulation
+  domain uses `window` as a domain noun ("arrival window"); a shadowed local
+  (parameter, destructuring, declaration, import, catch, for-initializer) is
+  not the browser global. Fixture tests pin both directions.
+- **`test:engine-e*` scripts split.** Their pure halves run
+  `pnpm --filter @vesper/simulation-core exec vitest run …`, their DB halves
+  stay on the root config; the root workspace declares the package in
+  `devDependencies` (tooling-role `scripts/` imports only).
 
 ## Slice 4 — image lifecycle and simulation store splits
 

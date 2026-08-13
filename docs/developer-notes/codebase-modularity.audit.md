@@ -21,7 +21,7 @@ this document is committed work until it does.
 ## Headline
 
 - **16 files exceed 1,500 lines; every one has a concrete split proposal below.** The worst: `db/schema.ts` (3,980), `chat-pipeline.ts` (3,617 — one 2,122-line closure), `identity-packs.ts` (3,445), `chat-state.ts` (3,415).
-- **Dedup total ≈ 5,000 LOC** across ~40 opportunities. The three big clusters are all *scaffolding around already-good abstractions*: engine simulation stores (~1,830), contracts command/event envelopes (~850), and the `src/lib/simulation` kernels (~750). jscpd misses all of it — each clone is short or structurally-varied.
+- **Dedup total ≈ 5,000 LOC** across ~40 opportunities. The three big clusters are all *scaffolding around already-good abstractions*: engine simulation stores (~1,830), contracts command/event envelopes (~850), and the `packages/simulation-core/src/lib` kernels (~750). jscpd misses all of it — each clone is short or structurally-varied.
 - **Several findings are correctness drift, not just LOC** — duplicated logic that has already diverged or is one edit away from it (see "Correctness-flavored findings").
 - **Several suspected wins are already solved** — route wrappers, the client fetch helper, the image-store pipeline, `generateChecked`. Verified and listed so nobody re-proposes them.
 
@@ -33,7 +33,7 @@ this document is committed work until it does.
 | `src/server/engine/chat-pipeline.ts`          | 3,617 | 5–6 files; previews first, `settle` last        | medium (`settle` closes over ~30 vars)                 |
 | `src/server/images/identity-packs.ts`         | 3,445 | 8 modules along its 16 existing banners         | low-medium (module-load side effect)                   |
 | `src/server/engine/chat-state.ts`             | 3,415 | 6 files by state family                         | medium                                                 |
-| `src/lib/simulation/bodies.ts`                | 2,672 | 5 files (meter kernel is the reusable core)     | low                                                    |
+| `packages/simulation-core/src/lib/bodies.ts`                | 2,672 | 5 files (meter kernel is the reusable core)     | low                                                    |
 | `src/server/engine/prompts/character-chat.ts` | 2,624 | 6 files; snapshot tests pin it                  | low                                                    |
 | `src/components/chat/chat-conversation.tsx`   | 2,246 | 8 extractions → ~650                            | medium (`runStream`/`stickRef`)                        |
 | `src/server/engine/chat-contact-adapter.ts`   | 2,207 | 4 files; pure, 15 banners pre-drawn             | low                                                    |
@@ -58,7 +58,7 @@ moving targets until that work settles.
   copies import cycles forced.
 - **Contracts envelope scaffolding** (R1+R2+R6) — 600–750. 49 command families,
   64 events and 12 projection headers, all hand-typed.
-- **`src/lib/simulation` kernel** (R1–R5) — 700–800. Event envelope ×37, replay
+- **`packages/simulation-core/src/lib` kernel** (R1–R5) — 700–800. Event envelope ×37, replay
   fold ×10, `hash.ts` copies ×18, rejection/meta types ×29.
 - **Components editor shell + primitives** — ~500. Five copied editor pages
   (~90 lines each) plus chip / segmented / list-editor.

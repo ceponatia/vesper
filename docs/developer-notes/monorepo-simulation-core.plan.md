@@ -80,11 +80,11 @@ application-side splits of the image lifecycle files and simulation stores.
   subpaths pass, filesystem and undeclared deep imports still fail, and the
   resolution smoke check covers every declared entry.
 - **Slice 3 — the simulation domain becomes `@vesper/simulation-core`.**
-  Status: queued. The pure simulation contracts and kernels move out of the
+  Status: complete — 2026-08-13. The pure simulation contracts and kernels move out of the
   app into one package with per-module entry points; the app's imports are
   rewritten and its stores stay behind.
 - **Slice 4 — the giant image and simulation-store files split along their
-  seams.** Status: queued. The image lifecycle files and the four biggest
+  seams.** Status: in progress. The image lifecycle files and the four biggest
   simulation stores become focused modules inside the app, following the
   split proposals the modularity audit already drew.
 

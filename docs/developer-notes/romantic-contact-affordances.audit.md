@@ -83,9 +83,9 @@ gates nothing. `ChatCueHint.intimate` is a regex over the player's message
 
 The successor ledger is real, typed, and fail-closed —
 `consentScopeKeys = ["closeness","kiss","touch_intimate","undress","sex"]`
-(`src/contracts/simulation/social.ts:49`), `resolveConsentCoverage` returning
+(`packages/simulation-core/src/contracts/social.ts:49`), `resolveConsentCoverage` returning
 `relevant[0]?.kind === "permission_granted"` (`:437-453`), checked in
-`resolveStartActivity` (`src/lib/simulation/activities.ts:252-263`) with
+`resolveStartActivity` (`packages/simulation-core/src/lib/activities.ts:252-263`) with
 `consentCovered` defaulting to `false`
 (`src/server/engine/simulation/activity-store.ts:995-1008`) — but **no seeded
 action definition declares `consent_covered`**; both seeded worlds use only
@@ -145,7 +145,7 @@ successor chat position, and the verdict.
   (`src/server/images/prompts.ts:512`) is free text authored per image render
   and never read back. Successor: no pose, posture, stance, or articulation
   state. Closest is `activityClaimSchema` `{kind:"body"}`
-  (`src/contracts/simulation/activities.ts:50-53`) — one occupancy bit.
+  (`packages/simulation-core/src/contracts/activities.ts:50-53`) — one occupancy bit.
   Verdict: **absent**.
 - **Reach / proximity / distance.** Legacy: binary `ChatState.presence`
   (`src/server/engine/chat-state.ts:376`); `ChatCueHint.proximity` is a regex
@@ -154,7 +154,7 @@ successor chat position, and the verdict.
   (`src/server/engine/chat-recognition-adapter.ts:71`). `chat-intimacy.ts:7`:
   *"it has no proximity model and no per-sense brief."* Successor:
   zone-granular only. `physicalLocusSchema`
-  (`src/contracts/simulation/space.ts:139`); proximity is zone equality
+  (`packages/simulation-core/src/contracts/space.ts:139`); proximity is zone equality
   (`src/server/engine/simulation/body-store.ts:531`). `coordinateSchema`
   (`space.ts:60`) is stored and never computed with. Verdict: **absent** for
   body-to-body reach.
@@ -169,7 +169,7 @@ successor chat position, and the verdict.
   (`src/contracts/items/garment-instance.ts:314-331`), closures `:95-107`,
   displacement `:118-130`, condition + deposits + damage `:261-283`, store
   `:391-428`, persisted `src/server/db/schema.ts:300`. Successor: absent. Worn
-  slots are free-text strings (`src/contracts/simulation/materials.ts:51-52`);
+  slots are free-text strings (`packages/simulation-core/src/contracts/materials.ts:51-52`);
   no parts, layers, closures, or coverage; no `sim_garments` table.
   Clothing-state slice 7 adapter unshipped, verified in code. Verdict:
   **trustworthy (legacy)**, **absent (successor)**.
@@ -206,9 +206,9 @@ successor chat position, and the verdict.
   (`src/contracts/attributes/categories/intimate/vulva.ts:281-299`,
   `penis.ts:11`). No sweat meter; every `temperature` hit in `src/` is LLM
   sampling temperature. Successor: fixed-point body meters
-  (`src/contracts/simulation/bodies.ts:154-249`) with `arousal` at
+  (`packages/simulation-core/src/contracts/bodies.ts:154-249`) with `arousal` at
   `:195-206`; reads `deriveIntimacyRead` / `deriveVisibleBodySigns`
-  (`src/lib/simulation/body-reads.ts:176`, `:196`). `visibleBodySigns`
+  (`packages/simulation-core/src/lib/body-reads.ts:176`, `:196`). `visibleBodySigns`
   (`bodies.ts:499`) deliberately excludes contact/exposure-gated signs — *"the
   vocabulary having no such member is what makes leaking it impossible"*
   (`:493-498`). Verdict: **absent** for every contact-relevant physiology
@@ -219,10 +219,10 @@ successor chat position, and the verdict.
   projection (`src/contracts/mood/events.ts:59-64`); the escalation floor is a
   prompt sentence that yields to the scenario
   (`src/contracts/relationships/law.ts:356-358`). Successor: **trustworthy but
-  idle.** Typed scopes (`src/contracts/simulation/social.ts:49`), fail-closed
+  idle.** Typed scopes (`packages/simulation-core/src/contracts/social.ts:49`), fail-closed
   resolution (`:437-453`), precondition wiring
-  (`src/contracts/simulation/activities.ts:94-97`;
-  `src/lib/simulation/activities.ts:252-263`), default `false`
+  (`packages/simulation-core/src/contracts/activities.ts:94-97`;
+  `packages/simulation-core/src/lib/activities.ts:252-263`), default `false`
   (`activity-store.ts:995-1008`). Zero seeded actions declare it. Verdict:
   **absent (legacy)**, **trustworthy but unused (successor)**.
 - **Actor control / NPC puppeting.** Legacy: **absent as a gate.** Prompt text
@@ -232,16 +232,16 @@ successor chat position, and the verdict.
   unwired dead code. `inputMode` (`chat-pipeline.ts:208-212`) is a typed
   authoring **grant**, not a restraint. Successor: three layers — account
   ownership (`src/server/engine/simulation/command-authz.ts:119`),
-  `controlledActorIds` (`src/contracts/simulation/envelopes.ts:50`, enforced at
-  `src/lib/simulation/activities.ts:231`), and per-action `controllerKinds`
+  `controlledActorIds` (`packages/simulation-core/src/contracts/envelopes.ts:50`, enforced at
+  `packages/simulation-core/src/lib/activities.ts:231`), and per-action `controllerKinds`
   (`activities.ts:147`, `:236-238`). Verdict: **absent (legacy)**,
   **trustworthy (successor)**; see owner decision 2.
 - **Perception / exposure.** Legacy: wardrobe visibility
   `visible`/`hinted`/`hidden` plus a turn-level `ChatSensoryAllowance`
   (`src/server/engine/chat-intent.ts:76-84`). No per-sense proximity mask.
   Successor: `observationChannels` includes `touch` and `smell`
-  (`src/contracts/simulation/perception.ts:35`) but **no deriver emits them** —
-  `src/lib/simulation/perception.ts` emits only `embodied`, `device`, `sight`,
+  (`packages/simulation-core/src/contracts/perception.ts:35`) but **no deriver emits them** —
+  `packages/simulation-core/src/lib/perception.ts` emits only `embodied`, `device`, `sight`,
   `sound`, `social`. Detail tiers 1–3 at `perception.ts:61`. Verdict:
   **deferred** — sight/coverage usable; **tactile, olfactory and gustatory
   channels are absent in both lanes**.
@@ -261,7 +261,7 @@ successor chat position, and the verdict.
   (`src/server/engine/chat-state.ts:769-771`); three-way load result with a
   `chat_state.snapshot.missing` degrade path (`chat-pipeline.ts:674-681`).
   Successor: cut compile + re-render are pure and hash-verified
-  (`src/lib/simulation/narrative.ts:368`;
+  (`packages/simulation-core/src/lib/narrative.ts:368`;
   `src/server/engine/simulation/narrative-cut-store.ts:92`), but the
   player-facing retake is **refused** at the route
   (`src/app/api/chats/[chatId]/sim-routing.ts:74-81`). Verdict: **trustworthy

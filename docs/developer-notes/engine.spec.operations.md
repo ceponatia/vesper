@@ -67,8 +67,8 @@ The engine occupies three directories of this repository, one per authority laye
 
 | Directory                       | Contents                                              |
 | ------------------------------- | ----------------------------------------------------- |
-| `src/contracts/simulation/`     | Branded IDs, schemas, commands, events, registries    |
-| `src/lib/simulation/`           | Pure kernels — validators, resolvers, rates, policies |
+| `packages/simulation-core/src/contracts/`     | Branded IDs, schemas, commands, events, registries    |
+| `packages/simulation-core/src/lib/`           | Pure kernels — validators, resolvers, rates, policies |
 | `src/server/engine/simulation/` | Stores, transactions, sequencer, scheduler, outbox    |
 
 The first two MUST have no database, network, file, process clock, model, or global random
