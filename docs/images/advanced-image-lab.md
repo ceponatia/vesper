@@ -4,7 +4,7 @@ An admin-only experiment bench at `/settings/image-lab` (owner-admin routes
 under `/api/admin/self/image-lab`) for controlled Qwen composition experiments —
 a parallel path that never changes ordinary renders, pickers, or defaults.
 Product direction and stages:
-`developer-notes/qwen-advanced-image-subsystem.plan.md`; implementation
+`developer-notes/finished/qwen-advanced-image-subsystem.plan.md`; implementation
 contract: its spec.
 
 ## Experiments

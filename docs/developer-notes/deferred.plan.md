@@ -155,6 +155,71 @@ What it has to settle:
   separate decision about how much freedom an ordinary editing surface should
   have.
 
+## Edge-controlled portrait variants
+
+_Parked 2026-08-13, when the Qwen advanced image subsystem closed
+([finished/qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md)).
+Stage 7 ruled this promotion in (2026-08-12) — edge is the reliable control
+that costs no provider call — and the close-out ruling (2026-08-13) parked it
+unbuilt rather than holding the plan open._
+
+Portrait Studio's variant kinds would accept an edge map as a structural guide,
+the way the lab's controlled portraits do. Two design rulings are owed before
+coding, carried here from the spec's delivery section:
+
+- **Which variant kinds may carry an edge map.** Edge maps encode clothing
+  silhouettes (a recorded Stage 1/2 finding), so the map is actively wrong for
+  `outfit` and questionable for `pose`.
+- **Where the map comes from.** Extracting it from the canonical portrait and
+  then sending both is the shape the lab bars as `control_source_sent`, and in
+  a variant it would add little the identity image does not already carry. An
+  edge map earns its place when it comes from a _different_ image — a
+  source-picking decision, not a wiring one.
+
+**Trigger:** owner scheduling, with the source-picking ruling taken first.
+
+## A reviewed style LoRA in an ordinary lane
+
+_Parked 2026-08-13, when the Qwen advanced image subsystem closed
+([finished/qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md)).
+Stage 7 ruled this promotion in (2026-08-12), behind a curated profile; the
+close-out ruling (2026-08-13) parked it unbuilt._
+
+Selection, validation, refusal and reproducibility are proven end to end in the
+lab. What remains is machinery owned by
+[image-model-capabilities.plan.md](image-model-capabilities.plan.md): a curated
+LoRA-bearing profile is that plan's model-specific-profiles slice, and
+`image_model_profiles` has no write path today, so any profile is a migration.
+
+**The constraint that parked it:** the model the ordinary lanes run on takes no
+LoRA at all, so LoRA work runs on the 2509-generation LoRA explorer, rated a
+step down in identity preservation — promoting a style LoRA moves that lane
+onto a weaker-identity checkpoint. Revisit when a LoRA-capable endpoint with
+2511-grade identity exists, or when a style payoff justifies the trade.
+
+**Trigger:** owner scheduling, most naturally alongside the capabilities plan's
+model-specific-profiles slice.
+
+## Outfit control without collapsing identity
+
+_Parked 2026-08-13 from the Qwen plan's open question
+([finished/qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md);
+the trial results are in the spec beside it). Owner ruling (2026-08-11):
+identity plus one control is the proven configuration, and the wardrobe
+pipeline is future work outside the Stage 1/2 acceptance._
+
+Both wardrobe trial runs — identity plus a control map plus an outfit
+reference, the model's full three-reference capacity — produced a different
+person and ignored the pose, under two different instructions, while every
+two-reference run preserved identity at least moderately. Two parts need
+answering:
+
+- why crowding the model at capacity costs identity rather than an optional
+  role;
+- what shape outfit control should take instead — a separate pass over a
+  finished image, a wardrobe-specific recipe, or a model with more reference
+  room.
+
 ## World authoring — locations, travel distances & durations
 
 _Owner direction 2026-07-23: world setup for bespoke first-party worlds and

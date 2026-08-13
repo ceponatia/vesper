@@ -1,7 +1,13 @@
 # Qwen-family advanced image subsystem — controlled portraits and scenes
 
-Status: active (direction settled 2026-08-10; model ruled 2026-08-07 — build on
-Qwen Image Edit 2511, Qwen Image Edit Plus is the fallback)
+Status: shipped — 2026-08-13. Stages 0–6 closed with their verdicts accepted;
+Stage 7's ruling promoted three candidates, and the player-visible one — the
+whole present cast in a chat scene image — is built and accepted on the deploy.
+The two unbuilt promotions, edge-controlled portrait variants and a reviewed
+style LoRA in an ordinary lane, are parked in
+[deferred.plan.md](../deferred.plan.md) alongside the outfit-control question;
+depth-controlled scenes and the identity-finishing pass stay admin-only behind
+plans that have not started.
 
 Outcome: The owner can run a portrait or scene through a controlled experiment —
 supplying a pose or depth guide, a face reference, and an optional style — and
@@ -688,11 +694,12 @@ ownership, and whether one structural control can guide both people reliably.
 
 ### Stage 7 — promotion decision
 
-Status: in progress — the promotion is ruled; the first of its three items (two
-characters in one chat scene image) is built 2026-08-12 and awaiting a look on
-the deploy, and the other two each owe one design ruling. The assessment behind
-the ruling is in the [spec](qwen-advanced-image-subsystem.spec.md)
-§"Stage 7 promotion assessment".
+Status: complete — 2026-08-13. The promotion is ruled; its player-visible item
+(two characters in one chat scene image) is built and accepted on the deploy.
+Owner ruling (2026-08-13): the two unbuilt promotions are parked in
+[deferred.plan.md](../deferred.plan.md) rather than built under this plan. The
+assessment behind the ruling is in the
+[spec](qwen-advanced-image-subsystem.spec.md) §"Stage 7 promotion assessment".
 
 Decide which parts, if any, should graduate into ordinary Portrait Studio or scene
 controls.
@@ -719,8 +726,9 @@ Depth-controlled scenes and the identity-finishing pass stay admin-only. Both ar
 blocked on plans that have not started — a production source of control maps, and
 authored appearance attributes — and neither blocker is this plan's to remove.
 
-Delivery order and the remaining design rulings each promotion needs are in the
-spec's §"Stage 7 promotion delivery".
+Delivery order and the design rulings recorded for each promotion are in the
+spec's §"Stage 7 promotion delivery"; the rulings the parked promotions still
+owe travel with their [deferred.plan.md](../deferred.plan.md) entries.
 
 ## Trial and evidence
 
@@ -855,27 +863,12 @@ image records.
 
 ## Open questions
 
-- how to deliver outfit control, given that filling the model's three-reference
-  capacity collapses identity. Both wardrobe runs — identity plus a control map
-  plus an outfit reference, the model's full capacity — produced a different
-  person and ignored the pose, under two different instructions, while every
-  two-reference run preserved identity at least moderately (the trial results in
-  the [spec](qwen-advanced-image-subsystem.spec.md) record both). Two parts need
-  answering: why crowding at capacity costs identity rather than an optional
-  role, and what shape outfit control should take instead — a separate pass over
-  a finished image, a wardrobe-specific recipe, or a model with more reference
-  room. Owner ruling (2026-08-11): Stage 1 and Stage 2 are accepted as they
-  stand, identity plus one control is the proven configuration, and the wardrobe
-  pipeline is future work outside that acceptance.
-- where the identity-finishing pass gets its appearance text in production.
-  Stage 3 proved the pass only helps when its instruction describes the
-  character's hair, eyes, brows and face shape: with the instruction blank it
-  invented hair colour and recropped the frame in every run, and with that text
-  supplied it improved two of three (the verdicts are in the
-  [spec](qwen-advanced-image-subsystem.spec.md)). The trial text was
-  hand-derived from the canonical reference because the trial character carries
-  no authored appearance attributes at all. A promoted finishing pass therefore
-  depends on characters carrying authored facial and hair attributes, which is
-  [character-schema.plan.md](character-schema.plan.md)'s ground — the question
-  for Stage 7 is whether that plan supplies the text, whether the lab derives it
-  another way, or whether the pass stays admin-only until one of those exists.
+None. The outfit-control question — why filling the model's three-reference
+capacity collapses identity, and what shape wardrobe control should take
+instead — is parked in [deferred.plan.md](../deferred.plan.md) §"Outfit control
+without collapsing identity". The finishing-pass appearance-text question was
+answered by the Stage 7 ruling: the pass stays admin-only until authored
+appearance attributes exist, which is
+[character-schema.plan.md](../character-schema.plan.md)'s ground — the blockers
+are recorded in the [spec](qwen-advanced-image-subsystem.spec.md)
+§"Candidate D — the identity-finishing pass".

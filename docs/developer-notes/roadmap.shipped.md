@@ -16,6 +16,11 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Qwen advanced image subsystem — controlled composition experiments** —
+  [plan](finished/qwen-advanced-image-subsystem.plan.md) — 2026-08-13 — an
+  admin-only lab proved control-mapped Qwen edits stage by stage, and its one
+  player-visible promotion — the whole present cast rendered in a chat scene
+  image — shipped to the ordinary scene lane.
 - **Monorepo migration — the image engine as the first package** —
   [plan](finished/monorepo-image-core.plan.md) — 2026-08-12 — the image engine,
   its shared foundation and the Replicate transport became workspace packages

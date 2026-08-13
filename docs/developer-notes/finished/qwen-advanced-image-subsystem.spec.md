@@ -54,11 +54,15 @@ those systems through their existing exports and adds no second copy.
 | Stage 6 two-character trial runs + verdicts     | run 2026-08-12   |
 | Stage 7 promotion assessment + owner ruling     | run 2026-08-12   |
 | Stage 7 P1 — present cast in ordinary scenes    | built 2026-08-12 |
+| Stage 7 close — P1 accepted, P2/P3 parked       | run 2026-08-13   |
 
-Stages 0–6 are all closed and their verdicts accepted. Stage 7's promotion is
-ruled and its delivery is under way — the table tracks its promoted items
-individually, because a promotion ships into an ordinary lane rather than into
-the lab. The LoRA library itself is the capabilities plan's
+Stages 0–7 are all closed. Stage 7's ruling promoted three candidates: P1 — the
+present cast in ordinary chat scene images — is built and owner-accepted on the
+deploy (2026-08-13), while P2 and P3 were parked unbuilt in
+[deferred.plan.md](../deferred.plan.md) by the close-out ruling, their owed
+design rulings travelling with the deferred entries. The table tracks the
+promoted items individually because a promotion ships into an ordinary lane
+rather than into the lab. The LoRA library itself is the capabilities plan's
 slice 6 ([image-model-capabilities.spec.md](image-model-capabilities.spec.md)
 §"Slice 6 implementation rulings"); this table tracks only the lab's side, and
 the subject-aware compose bindings belong to the capabilities spec
@@ -1796,6 +1800,12 @@ not in the current scene is not pulled into the picture. That scoping is the
 substantive half of the ruling — "the roster has two entries" is not the same
 claim as "two people are in this room".
 
+**Owner ruling (2026-08-13) — the plan closes with P1 alone delivered.** P1 is
+accepted on the deploy. P2 and P3 are parked unbuilt in
+[deferred.plan.md](../deferred.plan.md) — each entry carries the design rulings
+this section records as owed — and either graduates on its own terms later,
+outside this plan.
+
 ### Where this code is written
 
 The image subsystem is mid-migration into `@vesper/image-core`
@@ -1828,8 +1838,8 @@ strategy.
 
 ### Delivery order
 
-**P1 — two characters in one chat scene image.** Built 2026-08-12 (PR #95) —
-awaiting a look on the deploy. Build first: it has no
+**P1 — two characters in one chat scene image.** Built 2026-08-12 (PR #95),
+accepted on the deploy 2026-08-13. Built first: it has no
 dependency on the other two, no profile migration (the seeded scene profile sets
 no `maxPerRole`, and an absent role means no per-role cap, so two identity
 references already pass), and it is the only promotion a player can see. The
