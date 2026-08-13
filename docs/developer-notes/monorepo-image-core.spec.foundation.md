@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 3
 
-Implementation state: built 2026-08-12 — awaiting a ready-state CI `verify`.
+Implementation state: complete — 2026-08-12 (PR #98, green `verify`).
 
 Give the small primitives that genuinely cross package boundaries one home, and
 delete the temporary diagnostic copy in `image-core`. Shared mechanics are in

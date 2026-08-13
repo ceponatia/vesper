@@ -216,7 +216,7 @@ byte-for-byte compatible. The Slice 2 spec carries the exact split.
 
 ### Slice 3 — the shared foundation becomes `@vesper/contracts`
 
-Status: built 2026-08-12 — awaiting a ready-state CI `verify`; it unblocks Slice 4.
+Status: complete — 2026-08-12 (landed in PR #98 with a green `verify`).
 
 The image package carried a temporary copy of the diagnostic shapes it needs to
 report degradation. A tiny shared package gives diagnostics one owner and also
@@ -229,7 +229,7 @@ re-export barrels, so no mechanical rewrite across hundreds of files was needed.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: next — blocked only on Slice 3 merging green.
+Status: next — its blockers are cleared.
 
 The code that talks to Replicate — probing model schemas, starting predictions,
 uploading references, polling, downloading results and handling Replicate's
@@ -289,7 +289,7 @@ The package's current contract with the application is
 | [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics   | revised             |
 | [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | complete 2026-08-12 |
 | [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | complete 2026-08-12 |
-| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | built 2026-08-12    |
+| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | complete 2026-08-12 |
 | [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised             |
 | [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised             |
 
