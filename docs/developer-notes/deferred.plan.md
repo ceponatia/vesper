@@ -439,7 +439,7 @@ What "fleshing it out" should cover (none built yet):
 
 - **Wire `natal_sex` into prompts** as the source of truth (drop `excludeFromPrompts`
   and add render logic to the attribute-iterating builders that currently skip it —
-  `characterAppearanceSummary` / `buildAvatarPrompt` in `images/prompts.ts`,
+  `characterAppearanceSummary` / `buildAvatarPrompt` in `images/prompts-*.ts`,
   `buildGlanceImpressions` in `engine/scene.ts`, the chat loop in
   `prompts/character-chat.ts`), and decide whether it then **supersedes** the gender
   born-variants (collapsing `gender` back toward `female`/`male`/`androgynous`/

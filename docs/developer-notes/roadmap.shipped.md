@@ -32,7 +32,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   facts. Pre-2026-08-07 persona rows are not backfilled (§2's `[]` is ambiguous
   by construction; the provenance flag in §1 is the prerequisite). Same change
   closed the missing `excludeFromPrompts` guard on the two scene-appearance
-  loops in `server/images/prompts.ts` (latent, not leaking) — modularity audit
+  loops in `server/images/prompts-*.ts` (latent, not leaking) — modularity audit
   finding 1.
 - **Documentation standard — the `vesper-docs` skill and a conformance pass over
   both tiers** — [skill](../../.claude/skills/vesper-docs/SKILL.md) — 2026-08-07

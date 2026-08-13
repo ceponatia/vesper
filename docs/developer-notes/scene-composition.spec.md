@@ -9,7 +9,7 @@ built.
 ## Scope
 
 Governs the chat-lane scene image composition path: the scene composer's
-schema and rules (`server/images/prompts.ts`), plan resolution
+schema and rules (`server/images/prompts-*.ts`), plan resolution
 (`resolveScenePlan`), render-prompt assembly (`buildSceneRenderPrompt`), the
 composer's context inputs (`server/images/character-scene.ts`,
 `app/api/chats/[chatId]/scene/queue.ts`), and a read-only consumption of the
@@ -390,7 +390,7 @@ fail a render. Degradation tests assert the fallback **and** the code
   resolvers; exported via the contracts barrel.
 - `src/contracts/images/scene-staging.ts` — the staging registry, its gates'
   pure halves, the contact→staging evidence table.
-- `server/images/prompts.ts` — schema fields, clamps, shot-line and staging
+- `server/images/prompts-*.ts` — schema fields, clamps, shot-line and staging
   emission, lock adaptation (existing module; no split required by this work).
 - `server/images/character-scene.ts` + `app/api/chats/[chatId]/scene/queue.ts`
   — player-message and committed-scene threading.

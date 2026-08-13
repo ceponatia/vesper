@@ -1,6 +1,9 @@
 # Monorepo follow-through — self-validating workspaces and the simulation package
 
-Status: active
+Status: awaiting acceptance — the next Fly deploy confirming the deployed app
+serves chats unchanged (every slice is built and every local gate, the engine
+suite, and the production build have passed; the first monorepo pass was
+likewise accepted on its deploy)
 
 Outcome: A developer can drop a new code package into the repository and every
 check, build, and deployment picks it up automatically — and the
@@ -84,14 +87,14 @@ application-side splits of the image lifecycle files and simulation stores.
   app into one package with per-module entry points; the app's imports are
   rewritten and its stores stay behind.
 - **Slice 4 — the giant image and simulation-store files split along their
-  seams.** Status: in progress. The image lifecycle files and the four biggest
+  seams.** Status: complete — 2026-08-13. The image lifecycle files and the four biggest
   simulation stores become focused modules inside the app, following the
   split proposals the modularity audit already drew.
 
 ## Where the work stands
 
 - **[monorepo-simulation-core.spec.md](monorepo-simulation-core.spec.md)** —
-  in progress; owns slice-level implementation status.
+  complete 2026-08-13; all four slices built, plan awaiting the deploy check.
 
 ## Success criteria
 

@@ -39,7 +39,7 @@ use the database, inspect environment variables, or call a detector service.
 Server ownership belongs in:
 
 ```text
-src/server/images/identity-packs.ts
+src/server/images/identity-pack-*.ts
 packages/image-core/src/identity/identity-pack-detector.ts
 ```
 

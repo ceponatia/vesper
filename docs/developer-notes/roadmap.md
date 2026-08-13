@@ -172,9 +172,11 @@ affordance layer to the scene owner.
   an editor-scaffold go/no-go → contracts, dead-export and tooling hygiene.
 
 - **Codebase modularity — large-file splits and shared-code consolidation** —
-  [audit](codebase-modularity.audit.md) — sixteen files over 1,500 lines and
-  ~5,000 lines of scaffolding duplication; **needs a plan**, and its
-  correctness-flavoured findings fold into whichever plan touches each file first.
+  [audit](codebase-modularity.audit.md) — the image-lifecycle and
+  simulation-store splits landed via the monorepo follow-through; the
+  chat/schema/client monsters and most dedup clusters still **need a plan**,
+  with correctness-flavoured findings folding into whichever plan touches each
+  file first.
 
 ## Someday / parking lot
 

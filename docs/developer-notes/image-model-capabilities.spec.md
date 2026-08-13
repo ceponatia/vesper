@@ -737,7 +737,7 @@ through the shared intent does not silently rewrite current images.
 
 Not started. `fitPromptToModel` does not exist, the probe records no prompt
 limits, and the reference-edit paths still use the fixed character budget
-inherited from Venice in `src/server/images/prompts.ts`.
+inherited from Venice in `src/server/images/prompts-*.ts`.
 
 The probe should record exact and recommended prompt limits when they can be
 derived reliably. Owner overrides may correct them.

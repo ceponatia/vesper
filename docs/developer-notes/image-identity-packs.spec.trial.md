@@ -288,7 +288,7 @@ limitations.
   compile step in `src/server/images/render-profile.ts` with control mapping
   in `packages/image-core/src/capabilities/image-control-mapping.ts` (both written as the
   capabilities plan's slice-2/4 kernel, for the production render intent to
-  adopt); service in `src/server/images/identity-pack-trial.ts`; admin UI at
+  adopt); service in `src/server/images/identity-pack-trial-*.ts`; admin UI at
   Settings → Identity trials.
 - Routes, all owner-admin, under `/api/admin/self/identity-packs/trial`:
   create/list at the root, then per run `GET` detail, `POST execute`,
