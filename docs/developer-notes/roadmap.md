@@ -46,15 +46,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   behind `IMAGE_IDENTITY_PACK_REFERENCES` until the paid trial runs, then
   render-lane consumption, which the shared render intent has now unblocked.
 
-- **Qwen advanced image subsystem — controlled composition experiments** —
-  [plan](qwen-advanced-image-subsystem.plan.md) ·
-  [spec](qwen-advanced-image-subsystem.spec.md) — an admin-only lab comparing
-  control-mapped Qwen edits against ordinary output; Stages 0–6 are closed and
-  accepted, and Stage 7's promotion is ruled — two-character chat scenes,
-  edge-controlled portrait variants and a reviewed style LoRA graduate to the
-  ordinary lanes, while depth control and identity finishing stay admin tooling
-  behind plans that have not started.
-
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is
