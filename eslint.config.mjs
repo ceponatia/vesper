@@ -12,14 +12,17 @@ const RESTRICT_PROVIDER = {
   message: "Build LLM providers only in the model gateway (apps/web/src/server/ai); consume them through its barrel.",
 };
 
-// A workspace package publishes ONE curated entry point, so `@vesper/x/anything`
-// is a path into someone else's internals. `pnpm lint:package-boundaries` is the
-// authoritative check (it also proves the target exists and is declared); this
-// is the same rule at editor latency.
+// A workspace package publishes the entry points its exports map declares —
+// the root barrel and any exact subpaths — and nothing else. Which subpaths are
+// declared is a manifest fact a spelling rule cannot know, so the authoritative
+// check is `pnpm lint:package-boundaries` (it proves the entry is declared, the
+// target exists, and the layer direction holds). At editor latency this rule
+// bans only the spelling that is wrong under every exports map: reaching
+// through `src/`, which is the package's internals by construction.
 const RESTRICT_PACKAGE_SUBPATH = {
-  group: ["@vesper/*/*", "@vesper/*/**"],
+  group: ["@vesper/*/src/*", "@vesper/*/src/**"],
   message:
-    "Import a workspace package by its exact name (@vesper/<name>). Code subpaths are not public API — add the symbol to the package's root barrel instead.",
+    "src/ is a workspace package's internals, never its API. Import the package's root (@vesper/<name>) or a subpath its exports map declares.",
 };
 
 // The Replicate transport is a SERVER package: it holds the provider credential

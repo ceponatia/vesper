@@ -28,12 +28,12 @@ A package is not the default shape for a boundary here. Most module boundaries a
 The two kinds of boundary are enforced differently, because they promise different things. A folder boundary is a spelling rule: the ESLint `no-restricted-imports` rules in `eslint.config.mjs` reject the import paths that would cross it. A **workspace** boundary is a containment rule, and spelling cannot decide it — `../../foundation/src/x` never mentions `packages/` and still leaves the package. So `pnpm lint:package-boundaries` (`scripts/check-workspace-imports.ts`) resolves every import and answers the questions ESLint cannot:
 
 - does this relative path stay inside the workspace that wrote it — in **either** direction, so the app cannot reach into package internals either;
-- is the package imported by its exact public name, rather than a code subpath;
+- is the package imported through an entry point it declares — its exact public name, or an exact subpath its `exports` map publishes;
 - does the importing workspace's own `package.json` declare what it imports;
 - does the `@vesper/*` graph stay acyclic **and** flow one way through its layers;
 - does a package that promises browser/server portability stay out of the Node-only graph.
 
-`pnpm lint:package-resolution` then imports each package by its public name through the installed workspace, so a broken `exports` map cannot hide behind a tool alias. Both run in the `static` gate of `pnpm verify`. The rules and the reasoning behind them: [monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md).
+A package's public surface is whatever its `exports` map enumerates: the root entry, plus any exact subpath it chooses to publish. Enumerated is the operative word — a `*` pattern is rejected, because a wildcard surface is a filesystem import wearing a package name, and every published entry file lists named exports rather than `export *`. `pnpm lint:package-resolution` then imports every declared entry through the installed workspace, by the specifier a consumer would write, so a broken or stale `exports` map cannot hide behind a tool alias. Both run in the `static` gate of `pnpm verify`. The rules and the reasoning behind them: [monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md).
 
 ## Directory layout
 
