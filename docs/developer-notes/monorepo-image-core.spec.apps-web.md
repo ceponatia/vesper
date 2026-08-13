@@ -101,6 +101,17 @@ rules resolve for an application file and that the module-boundary zones still
 match under the moved path — the failure this guards is a green lint run that
 quietly stopped applying to the app.
 
+**The route-authorization gate now ignores pure renames.** `lint:authz` reads a
+changed file's source, and a repository-wide move makes every file "changed" —
+so the move turned a per-change gate into a wall of 30 findings about routes
+nobody had touched. `changedFiles()` switched to `git diff --name-status
+--find-renames -l0` and drops `R100` entries; a rename that also edited the file
+still counts. (`-l0` matters: above git's default rename limit a large diff
+silently degrades renames into add+delete pairs, and every moved file would come
+back as new content.) Those 30 routes are pre-existing and unexamined — the gate
+has only ever inspected newly-touched routes — and auditing them is security
+work, not migration work.
+
 **One dead root-assumption file was deleted.** `dbsetup.js` — unreferenced `fly
 launch` scaffolding that ran `npx next build` against the current directory —
 was surfaced by the path audit as broken by the move. Nothing in `package.json`,
