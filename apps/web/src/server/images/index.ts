@@ -83,6 +83,7 @@ export {
   type InvalidateIdentityPackInput,
 } from "./identity-pack-maintenance";
 export * from "./identity-pack-references";
+export * from "./identity-pack-consume";
 export {
   deleteIdentityPackTrialRun,
   type DeleteIdentityPackTrialRunResult,

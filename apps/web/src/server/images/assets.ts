@@ -422,13 +422,16 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
  * (qwen-advanced-image-subsystem.spec.md §Persistence).
  * Their owner may read one — the crop editor, the trial review UI and the lab's
  * fixtures panel have to display them — but they must be absent from every
- * listing, copy and cross-owner read:
+ * listing, copy, cross-owner read and quota sum:
  *
  * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
  * - `cloneEntityImages` — a copied or published character DERIVES its own pack
  *   rather than inheriting the origin's hidden bytes (spec.lifecycle.md §Copy);
  * - the public file-serving widening in `api/images/[id]/file/route.ts`, so a
- *   hidden crop of a PUBLIC character still stops at its owner.
+ *   hidden crop of a PUBLIC character still stops at its owner;
+ * - the per-owner storage quota (`checkStorageQuota` in `@/server/api`) — these
+ *   bytes are the system's bookkeeping, not the user's stored images, so they
+ *   do not count toward the ceiling.
  *
  * Surfaces that filter by a POSITIVE kind list — the Gallery tabs, the chat asset
  * queries, and the portrait studio's `PORTRAIT_STUDIO_KINDS` (which backs the

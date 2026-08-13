@@ -59,6 +59,7 @@ export {
   imageProfileTasks,
   imagePromptStrategies,
   imageReferenceArities,
+  imageReferencePolicySchema,
   imageReferenceTransportSchema,
   imageReferenceTransports,
   isUndisclosedProviderVersion,
@@ -79,6 +80,7 @@ export type {
   ImageProfileTask,
   ImagePromptStrategy,
   ImageReferenceArity,
+  ImageReferencePolicy,
   ImageReferenceTransport,
   ImageRenderControls,
   ResolvedImageProfile,
@@ -109,6 +111,7 @@ export type {
   ImageLoraUpdateRequest,
 } from "./loras";
 export {
+  identityCandidateReferenceSpecs,
   missingRequiredControlInputs,
   missingRequiredReferenceRoles,
   planImageRender,
@@ -116,6 +119,7 @@ export {
 } from "./render-intent";
 export type {
   DroppedImageReference,
+  IdentityReferenceSpec,
   ImageRenderIntent,
   ImageRenderIntentCore,
   ImageRenderReference,
@@ -190,6 +194,8 @@ export {
   identityPackManualCropRequestSchema,
   identityPackResponseSchema,
   identityPackSummaryStatuses,
+  identityReferenceProvenanceListSchema,
+  identityReferenceProvenanceSchema,
   identityReferenceStrategies,
   identityReferenceStrategySchema,
   imageIdentityCropMethods,

@@ -160,22 +160,16 @@ image pipeline and records that no provider call was made when applicable.
 
 ## Shared render intent
 
-Shared render intent receives resolved semantic references:
-
-```ts
-export interface ImageRenderIdentityReference {
-  role: IdentityReferenceRole;
-  characterId: string;
-  imageId: string;
-  packId: string;
-  packRevision: number;
-  required: boolean;
-}
-```
-
-The profile resolver converts them into the capabilities plan's generic
-role-aware reference contract. Provider adapters receive the final ordered array
-and field mapping.
+The lane entry is `identityPackRenderReferences`
+(`apps/web/src/server/images/identity-pack-consume.ts`): it evaluates the pack
+under the resolved profile's declared strategy, reads each allowed candidate's
+bytes through an owner-scoped ready-only query, and returns generic role-aware
+references — `role: "identity"`, mapped by the pure
+`identityCandidateReferenceSpecs`
+(`packages/image-core/src/render-intent/identity-references.ts`) — together
+with the candidate-parallel provenance the lane persists. The planner and
+provider adapters see only the final ordered array and field mapping; the
+identity-pack role vocabulary never reaches a provider.
 
 No image lane may:
 
@@ -338,6 +332,52 @@ images.identity_pack.legacy_fallback_used
 A profile-ineligible result is actionable product feedback, not an unhandled
 provider error. The UI can suggest a clearer canonical portrait, manual crop, or a
 model/profile that supports the required references.
+
+## Slice 5B build record (2026-08-13)
+
+Render-lane consumption is built behind the flag, which stays off. Rulings the
+build settled:
+
+- **The strategy lives in the profile's `referencePolicy` jsonb** as
+  `identityStrategy`, zod-defaulted to `canonical_only`, so every stored
+  profile row parses unchanged and a richer strategy is a data edit after a
+  trial verdict, never a migration. Profile rows are discrete columns, so a
+  top-level zod field would have been unstorable; the policy jsonb is the one
+  home that is both declared-per-profile and editable as data. It sits
+  deliberately outside `profileRenderControlsFingerprintJson`, which names its
+  hashed fields explicitly — the trial pins the ordered roles a cell actually
+  sends, which is the fact the strategy resolves to, so no persisted
+  fingerprint can move.
+- **The eligible evaluation arm carries candidate-parallel `provenance`.** The
+  evaluation is the last moment the projected pack and its candidates coexist;
+  a lane that re-read the pack to explain its own send could see a different
+  revision.
+- **Provenance home: `images.meta.identityReferences`** on the output row —
+  the §"Render provenance" objects for exactly the references sent, validated
+  through `identityReferenceProvenanceListSchema` at the consume boundary.
+  Write-side only; nothing reads it yet.
+- **Per-lane refusal shapes.** Variant: a returned produce failure — the
+  `portrait_variant` row is reserved and failed with the reason, no provider
+  call. Chat look: null before any row is reserved (this lane's precondition
+  shape; the next look change re-fires). Scene: `failedPrecondition` on the
+  resolved-scene input — the row is reserved and failed naming the member, and
+  the selfie retry is skipped. All three refuse rather than substitute.
+- **A minted chat look stays the scene cast's identity reference** (build
+  ruling): it carries current wardrobe/state and is itself downstream of the
+  avatar, so only the avatar-fallback path consults the pack. A cast member
+  with no portrait at all still renders from text — no identity source is not
+  a blocked pack.
+- **The scene cast sends one pack reference per member** — the first required
+  candidate, else the first — because the cast structure carries one anchor
+  per member and multi-role-per-person prompt wording belongs to the
+  render-quality layer. Two-role strategies are fully expressed in the variant
+  and chat-look lanes.
+- **No lane-local face recropping existed to remove.** The removal the plan
+  anticipated was vacuous — verified across every lane; `sharp` use outside
+  the pack service is output aspect-cropping only.
+- **Required-first ordering outranks strategy order at capacity**, pinned by a
+  package test: under a one-reference cap the required canonical beats an
+  optional face crop listed first, per §"Required identities and capacity".
 
 ## Render integration tests
 

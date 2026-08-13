@@ -11,6 +11,7 @@ import { log } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   attemptReferenceCount,
+  type IdentityReferenceProvenance,
   IMAGE_TARGET_ASPECT,
   type ImageProviderFailure,
   type ImageReferenceRole,
@@ -103,6 +104,20 @@ export interface RenderResolvedSceneInput {
   profile?: ResolvedImageProfile | null;
   framing?: "pov" | "selfie";
   flavor?: string;
+  /**
+   * Identity-pack provenance for the anchors actually sent, persisted on the
+   * row's `meta.identityReferences` (image-identity-packs.spec.integration.md
+   * §"Render provenance"). Only the flag-on caller supplies it.
+   */
+  identityProvenance?: IdentityReferenceProvenance[];
+  /**
+   * Non-null refuses the render before generation: the row is reserved and
+   * failed with this text, no provider is called. The flag-on identity-pack
+   * refusal settles here — a scene may not substitute another reference for a
+   * blocked pack, and a silent no-reference render would be that substitution
+   * with extra steps.
+   */
+  failedPrecondition?: string | null;
   logResult: (imageId: string, status: string, startedMs: number) => void;
   sink?: DiagnosticSink;
 }
@@ -217,8 +232,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
           ...(input.flavor ? { flavor: input.flavor } : {}),
+          ...(input.identityProvenance && input.identityProvenance.length > 0
+            ? { identityReferences: input.identityProvenance }
+            : {}),
         },
       },
+      failedPrecondition: input.failedPrecondition ?? null,
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
         const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);

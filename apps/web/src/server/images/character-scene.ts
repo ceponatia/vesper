@@ -6,13 +6,15 @@ import { resolveImageProfileForTask } from "./model-profiles";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import type { SceneReferenceSource } from "@vesper/image-core";
+import type { IdentityReferenceProvenance, SceneReferenceSource } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag } from "@/contracts/diagnostics";
 import { classifyImageFailure, hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
 import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
+import { identityPackRenderReferences } from "./identity-pack-consume";
+import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { latestChatLook } from "./chat-look";
 import {
   apparentAgeAnchor,
@@ -203,19 +205,60 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, input.sink);
   const model = imageProfile?.model ?? null;
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
+  // Avatar-fallback anchors go through the identity-pack service when the
+  // consumer flag is on (5B ruling): a minted chat look STAYS the identity
+  // reference — it carries current wardrobe/state and is itself downstream of
+  // the avatar — so only the member with no fresh look asks the pack.
+  const packRoute = referenceRoute && imageProfile !== null && imageIdentityPackReferencesEnabled();
   // One anchor per cast member, resolved in roster order: this character's own
   // tracked look when the chat has minted one, else their canonical portrait. A
   // member with neither renders from the prompt's textual description, which the
   // multi-reference prompt already labels as such.
   const anchors = new Map<string, { imageId: string; buffer: Buffer; source: SceneReferenceSource }>();
+  const identityProvenance: IdentityReferenceProvenance[] = [];
+  let identityRefusal: string | null = null;
   if (referenceRoute) {
     for (const member of cast) {
       const look =
         input.chatId && member.lookKey ? await latestChatLook(input.chatId, member.characterId, member.lookKey) : null;
-      const anchor = look
-        ? { imageId: look.imageId, buffer: look.buffer, source: "generated" as SceneReferenceSource }
-        : await loadCharacterAvatar(input.userId, member.avatarImageId);
-      if (anchor) anchors.set(member.characterId, anchor);
+      if (look) {
+        anchors.set(member.characterId, { imageId: look.imageId, buffer: look.buffer, source: "generated" });
+        continue;
+      }
+      if (!packRoute || imageProfile === null) {
+        const anchor = await loadCharacterAvatar(input.userId, member.avatarImageId);
+        if (anchor) anchors.set(member.characterId, anchor);
+        continue;
+      }
+      // A member with no portrait at all renders from text, exactly as before —
+      // there is no identity source for the pack to measure, so nothing was
+      // substituted and nothing is refused.
+      if (!member.avatarImageId) continue;
+      const pack = await identityPackRenderReferences({
+        ownerId: input.userId,
+        characterId: member.characterId,
+        profile: imageProfile,
+        sink: input.sink,
+      });
+      if (!pack.ok) {
+        // An ineligible pack refuses the whole scene rather than dropping this
+        // member's reference or reading the avatar directly — either would be
+        // the substitution the integration spec forbids. Diagnostics are
+        // already on the sink; the row below records the reason.
+        identityRefusal = `identity references unavailable for ${member.name}: ${pack.error}`;
+        break;
+      }
+      // The cast structure carries ONE anchor per member, so the anchor is the
+      // pack's required candidate (the identity that cannot be lost), matching
+      // the capacity rule "required identities before optional face detail".
+      const chosen = pack.references.find((entry) => entry.candidate.required) ?? pack.references[0];
+      if (!chosen) continue;
+      anchors.set(member.characterId, {
+        imageId: chosen.candidate.imageId,
+        buffer: chosen.reference.buffer,
+        source: chosen.source,
+      });
+      identityProvenance.push(chosen.provenance);
     }
   }
   const referenceBuffers = new Map<string, Buffer>();
@@ -263,6 +306,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       profile: imageProfile,
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
+      ...(identityProvenance.length > 0 ? { identityProvenance } : {}),
+      failedPrecondition: identityRefusal,
       linkage: {
         ownerId: input.userId,
         entityKind: "character",
@@ -281,7 +326,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     });
 
   const first = await renderOnce(plan, true);
-  if (!selfie) return first;
+  // A refused identity render retries into the same refusal — return the record.
+  if (!selfie || identityRefusal !== null) return first;
 
   const firstError = await imageFailure(first);
   if (firstError === null) return first;

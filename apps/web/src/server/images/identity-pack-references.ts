@@ -27,16 +27,16 @@ import { projectIdentityPackPolicy } from "./identity-pack-store";
  * measurements — never bytes, never a provider payload, never a model choice. The
  * capabilities layer owns which task is identity-critical, total reference
  * capacity, transport field names and effective resize behavior; the
- * render-quality layer owns prompt wording. Those layers do not exist yet: shared
- * render intent (image-model-capabilities.plan.md slice 2) is unbuilt, so NOTHING
- * calls this in production today.
+ * render-quality layer owns prompt wording.
  *
- * **The contract for when they land.** A lane obtains identity references ONLY
- * through this module, gated by `imageIdentityPackReferencesEnabled()` from
- * `./identity-packs` (one flag, `IMAGE_IDENTITY_PACK_REFERENCES`, default off — do
- * not spell a second copy). No lane may query `identity_face_crop` by kind,
- * recompute its own face crop, substitute a Gallery image when the pack is
- * blocked, reorder roles after profile resolution, or drop the provenance.
+ * **The lane contract.** A lane obtains identity references ONLY through this
+ * module — in practice through `./identity-pack-consume`, which joins the bytes
+ * and is the render lanes' entry — gated by `imageIdentityPackReferencesEnabled()`
+ * from `./identity-pack-store` (one flag, `IMAGE_IDENTITY_PACK_REFERENCES`,
+ * default off — do not spell a second copy). No lane may query
+ * `identity_face_crop` by kind, recompute its own face crop, substitute a
+ * Gallery image when the pack is blocked, reorder roles after profile
+ * resolution, or drop the provenance.
  *
  * **The flag is checked by the CALLER, not here.** Evaluation is measurement, and
  * measurement is exactly what the trial needs while the flag is off: packs may be
@@ -226,7 +226,15 @@ export function evaluateIdentityPackContractForProfile(
   if (candidates.length === 0) {
     return ineligible("profile_ineligible", "images.identity_pack.profile_ineligible.no_roles", sink, characterId);
   }
-  return { eligible: true, candidates, warnings: [...warnings] };
+  return {
+    eligible: true,
+    candidates,
+    // Built HERE, candidate-parallel, because this is the last moment the pack
+    // the candidates were judged against is in hand — a consumer that re-read
+    // the pack to explain its own send could read a different revision.
+    provenance: candidates.map((candidate) => identityReferenceProvenanceFor(candidate, pack)),
+    warnings: [...warnings],
+  };
 }
 
 /**

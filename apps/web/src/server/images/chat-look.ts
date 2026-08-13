@@ -5,8 +5,15 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
-import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
+import {
+  IMAGE_TARGET_ASPECT,
+  type IdentityReferenceProvenance,
+  type ImageRenderReference,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
+import { identityPackRenderReferences } from "./identity-pack-consume";
+import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
@@ -139,14 +146,58 @@ export interface RenderChatLookInput {
   chatId: string;
   userId: string;
   characterId: string;
-  /** The canonical avatar's bytes — the identity source the look edit preserves. */
-  avatar: Buffer;
+  /** The canonical avatar's row id — the identity source the look edit preserves. */
+  avatarImageId: string;
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
   /** The sheet's apparent-age anchor (apparentAgeAnchor) — text-authoritative over the reference. */
   ageAnchor?: string;
   sink?: DiagnosticSink;
+}
+
+/** What one look mint sends as its identity, and what it records for having sent it. */
+interface ChatLookIdentity {
+  references: ImageRenderReference[];
+  provenance?: IdentityReferenceProvenance[];
+}
+
+/**
+ * Source the look edit's identity reference(s): the pack service when the
+ * consumer flag is on (profile-aware eligibility, provenance, one-or-more
+ * candidate roles), the direct owned avatar read when it is off — the exact
+ * read this lane's enqueue-side job performed before the seam moved here, so
+ * the flag-off payload is unchanged.
+ *
+ * Null refuses the mint with no row reserved, this lane's precondition shape:
+ * an unreadable avatar always meant "no mint, re-fire on the next change", and
+ * a flag-on ineligible pack settles the same way rather than substituting the
+ * avatar (the integration spec's prohibition). Diagnostics already sit on the
+ * sink by the time null is returned.
+ */
+async function chatLookIdentity(input: RenderChatLookInput, resolved: ResolvedImageProfile): Promise<ChatLookIdentity | null> {
+  if (imageIdentityPackReferencesEnabled()) {
+    const pack = await identityPackRenderReferences({
+      ownerId: input.userId,
+      characterId: input.characterId,
+      profile: resolved,
+      sink: input.sink,
+    });
+    if (!pack.ok) return null;
+    return { references: pack.references.map((entry) => entry.reference), provenance: pack.provenance };
+  }
+  const [row] = await db()
+    .select()
+    .from(images)
+    .where(and(eq(images.id, input.avatarImageId), eq(images.ownerId, input.userId), eq(images.status, "ready")))
+    .limit(1);
+  if (!row) return null;
+  const avatar = await readImageBytes(row);
+  if (!avatar) return null; // file lost — the sweep reconciles; the next change re-fires
+  // The avatar IS the identity the look edit must preserve, and the chat_look
+  // policy requires that role — a look rendered from anything else would dress
+  // a stranger in the tracked outfit.
+  return { references: [{ role: "identity", required: true, buffer: avatar }] };
 }
 
 /**
@@ -168,6 +219,8 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
   // having a control of its own.
   const resolved = await resolveImageProfileForTask("chat_look", null, input.sink);
   if (!resolved) return null;
+  const identity = await chatLookIdentity(input, resolved);
+  if (!identity) return null;
   const model = resolved.model;
   const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
   const { imageId, status } = await runImagePipeline({
@@ -178,17 +231,18 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
       entityId: input.characterId,
       chatId: input.chatId,
       prompt,
-      meta: { lookKey: input.lookKey, model: `replicate/${model.slug}` },
+      meta: {
+        lookKey: input.lookKey,
+        model: `replicate/${model.slug}`,
+        ...(identity.provenance ? { identityReferences: identity.provenance } : {}),
+      },
     },
     produce: async () => {
       const edit = await renderImageIntent(
         {
           profile: resolved,
           prompt,
-          // The avatar IS the identity the look edit must preserve, and the
-          // chat_look policy requires that role — a look rendered from anything
-          // else would dress a stranger in the tracked outfit.
-          references: [{ role: "identity", required: true, buffer: input.avatar }],
+          references: identity.references,
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
         },
         input.sink,

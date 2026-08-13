@@ -107,15 +107,20 @@ named trial-corpus registry, empty), per-pack `history`, and a recorded `overrid
 threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and
 the `manual_admin_override` warning). No route returns image bytes or URLs, admin included.
 
-**Evaluation exists; no render lane consumes it.** `images/identity-pack-references.ts`
-(`evaluateIdentityPackForProfile`) maps the current pack plus a profile's declared strategy (`canonical_only` ·
+**Render-lane consumption is built and flag-gated.** `images/identity-pack-references.ts`
+(`evaluateIdentityPackForProfile`) maps the current pack plus the profile's declared strategy
+(`referencePolicy.identityStrategy`: `canonical_only` — every profile's default ·
 `face_detail_only` · `canonical_then_face_detail` · `face_detail_then_canonical`) to ordered role candidates
 (`canonical_identity`, `face_detail`) carrying ids, measurements and provenance — never bytes, never a model choice —
-and refuses **before** provider reservation. Consumers gate on `IMAGE_IDENTITY_PACK_REFERENCES`
-(`imageIdentityPackReferencesEnabled()`, default off, checked by the caller so admin and trial surfaces can still
-measure), and **nothing calls it in production**: every lane
-anchors on the library avatar exactly as described in [pipelines.md](pipelines.md)
-([image-model-capabilities.plan.md](../developer-notes/image-model-capabilities.plan.md) owns the consumer).
+and refuses **before** provider reservation. `images/identity-pack-consume.ts` (`identityPackRenderReferences`) is
+the lane entry: owner-scoped ready-only byte reads for each allowed candidate, generic `identity`-role references for
+the planner, and the provenance list the lane persists on the output row's `meta.identityReferences`. With
+`IMAGE_IDENTITY_PACK_REFERENCES` on (`imageIdentityPackReferencesEnabled()`, default off, checked by the lane so
+admin and trial surfaces can still measure), the three identity-critical lanes consume it — portrait variants, chat
+looks, and the chat scene cast's avatar-fallback anchor (a minted chat look stays the anchor: it carries current
+wardrobe/state and is itself downstream of the avatar) — and a blocked pack refuses the render rather than
+substituting a Gallery image. Off — production today — every lane anchors on the library avatar exactly as described
+in [pipelines.md](pipelines.md).
 
 **The fixed-trial harness.** Admin-only infrastructure for the reference trial of
 [the trial spec](../developer-notes/image-identity-packs.spec.trial.md): four tables (migrations

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   characterProfileSchema,
@@ -12,8 +12,8 @@ import {
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
-import { characterChats, characters, db, images } from "../db";
-import { apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, readImageBytes, renderChatLookImage, renderChatPlaceImage } from "../images";
+import { characterChats, characters, db } from "../db";
+import { apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
 import { loadChatScenario, loadChatState } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
@@ -84,21 +84,14 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
   // sibling's look and skip minting one for the member whose outfit moved.
   if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
-  // The identity source: the canonical avatar's bytes (owned + ready).
-  const [avatarRow] = await db()
-    .select()
-    .from(images)
-    .where(and(eq(images.id, ctx.avatarImageId), eq(images.ownerId, ctx.ownerId), eq(images.status, "ready")))
-    .limit(1);
-  if (!avatarRow) return;
-  const avatar = await readImageBytes(avatarRow);
-  if (!avatar) return; // file lost — the sweep reconciles; the next change re-fires
-
+  // Identity sourcing lives in the render lane itself (chat-look.ts), beside the
+  // profile resolution its flag-on pack path needs; an unreadable source still
+  // reserves nothing and the next change re-fires.
   await renderChatLookImage({
     chatId: input.chatId,
     userId: ctx.ownerId,
     characterId: input.characterId,
-    avatar,
+    avatarImageId: ctx.avatarImageId,
     lookKey,
     outfit: wardrobe.garments,
     outfitExposed: wardrobe.exposed,

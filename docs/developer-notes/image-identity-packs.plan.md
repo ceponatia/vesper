@@ -1,8 +1,9 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 6's trial harness
-shipped 2026-08-06 and was hardened through 2026-08-07; slice 5B, the trial run
-itself, and slice 7 remain)
+Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 5B built 2026-08-13
+— every identity-critical lane consumes the pack behind the still-dark flag;
+slice 6's trial harness shipped 2026-08-06 and was hardened through 2026-08-07;
+the paid trial run and slice 7 remain)
 
 Outcome: A player can recognize the same character's face in every image Vesper
 makes of them, so that a newly generated picture stops looking like a different
@@ -335,32 +336,30 @@ override, and a bounded batch over the admin's own characters.
 
 ### Slice 5 — reference-role integration
 
-Status: in progress — 5A complete 2026-08-06; 5B queued, unblocked since the
-shared render intent shipped 2026-08-07.
+Status: complete — 5A 2026-08-06; 5B built 2026-08-13, rulings in the
+[integration spec](image-identity-packs.spec.integration.md)
+§"Slice 5B build record".
 
 Expose `canonical_identity` and `face_detail` candidates to shared render intent.
 The capabilities/profile layer remains responsible for ordering, capacity, and
 whether a model uses one or both.
-
-Remove any identity-critical lane's ad hoc face recropping once it consumes the
-pack.
-
-This slice is two halves with different statuses, and only the first is done:
 
 **Slice 5A — pack-side evaluation. Shipped 2026-08-06.** A pack can be evaluated
 for a model profile and answers with the candidate reference roles that profile
 may use, profile-aware eligibility, and the provenance record behind that
 answer.
 
-**Slice 5B — render-lane consumption. Queued; its blockers have landed.** The
-[image-model-capabilities.plan.md](image-model-capabilities.plan.md) work this
-half waited on now exists: the shared render intent shipped 2026-08-07, and
-policy-driven reference selection with capacity enforcement shipped 2026-08-11.
-What remains is this plan's own work — lanes evaluating the pack for their
-profile, sending its candidate roles, and dropping lane-local recropping. Until
-that is built, no production lane consumes the pack — the flag that would allow
-sending references stays off — and slice 5 as originally scoped is not
-end-to-end complete.
+**Slice 5B — render-lane consumption. Built 2026-08-13.** When the consumer
+flag is on, the three identity-critical lanes — portrait variants, chat looks,
+and the chat scene cast's avatar-fallback anchor — evaluate the pack for their
+resolved profile, send its candidate roles with recorded provenance, and refuse
+rather than substitute another image when a pack is blocked. Every profile's
+declared strategy defaults to canonical-only, so the reference a lane sends is
+the same canonical portrait it sends today — what changes is eligibility
+gating, authorization, and traceability. The flag stays off, so production
+behavior is unchanged until the slice-6 trial verdict. The recropping removal
+this slice once anticipated turned out to be vacuous: no lane ever performed
+its own face recropping.
 
 ### Slice 6 — fixed identity-reference trial
 
@@ -465,16 +464,11 @@ artifacts, and deleted with the character.
 
 ## Open questions
 
-- **Do hidden identity crops count toward the user's storage quota?** Today they
-  do: the storage quota sums every stored image byte an account owns, and the
-  hidden face crop is a stored image like any other. Whether an internal derived
-  asset the user never sees should consume user-visible quota is an owner
-  decision (flagged in PR #57's review and deliberately left unchanged since):
-  either subtract the hidden kinds from the quota or record the current behavior
-  as intended. The slice-6 trial outputs (`identity_trial_output`, another
-  hidden kind the user never sees in the gallery) are in the same boat: they
-  count toward quota today and should follow whatever ruling the face crops
-  get. Behavior stays as it is until ruled.
+None outstanding. The storage-quota question was ruled 2026-08-13 — hidden
+image kinds do not count toward the user's storage quota; the ruling and the
+exclusion it produced are recorded in
+[image-identity-packs.spec.data.md](image-identity-packs.spec.data.md)
+§"Hidden image asset".
 
 Detector library choice, crop expansion ratios, blur/occlusion thresholds, and
 profile-specific minimum effective face size are implementation/trial decisions

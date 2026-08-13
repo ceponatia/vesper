@@ -6,6 +6,7 @@
 export * from "./int-db";
 export * from "./simulation-fixtures";
 export * from "./image-fixtures";
+export * from "./identity-pack-fixtures";
 export * from "./symlink-support";
 export * from "./auth-mock";
 export * from "./route-request";
