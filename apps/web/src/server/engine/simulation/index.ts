@@ -110,16 +110,20 @@ export {
   householdRowInsert,
   materialLotRowInsert,
   meansBandRowInsert,
-  submitDurableAdjustMaterialLot,
-  submitDurableConfigureRestockRoutine,
-  submitDurableCreateHousehold,
-  submitDurablePromoteItemFromStock,
-  submitDurableRunHouseholdRestock,
-  submitDurableSetHouseholdMembership,
-  submitDurableSetMeansBand,
-  submitDurableTransferLotQuantity,
   type DurableHouseholdCrashPoint,
   type HouseholdSubmitOptions,
+} from "./household-rows";
+export {
+  submitDurableAdjustMaterialLot,
+  submitDurablePromoteItemFromStock,
+  submitDurableRunHouseholdRestock,
+  submitDurableTransferLotQuantity,
+} from "./household-lots";
+export {
+  submitDurableConfigureRestockRoutine,
+  submitDurableCreateHousehold,
+  submitDurableSetHouseholdMembership,
+  submitDurableSetMeansBand,
 } from "./household-store";
 export {
   holdsLiveBeliefInAssertion,
@@ -127,8 +131,8 @@ export {
   submitDurableMakeDisclosure,
   type KnowledgeStoreOptions,
 } from "./knowledge-store";
+export { loadActorBody } from "./body-rows";
 export {
-  loadActorBody,
   readDurableBodies,
   seedDurableBodyRhythms,
   submitDurableApplyBodySource,

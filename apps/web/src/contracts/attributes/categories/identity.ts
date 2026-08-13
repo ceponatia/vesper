@@ -80,7 +80,7 @@ export const identityGroup = defineAttributeGroup("identity", [
     // authorial/model choice, never a fallback). `eighteen` (owner ruling
     // 2026-07-29) is the youngest band IMAGE prompts can state: "teen" is
     // ambiguous (could read 15–17), so the image lane's age floor
-    // (`imageAgeWord`/`apparentAgeAnchor`, server/images/prompts.ts) emits
+    // (`imageAgeWord`/`apparentAgeAnchor`, server/images/prompts-appearance.ts) emits
     // explicit adult wording for `eighteen`+ and NO age word at all for the
     // minor bands — those stay narrator-only vocabulary.
     allowedValues: [

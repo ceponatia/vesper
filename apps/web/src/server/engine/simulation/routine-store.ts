@@ -5,6 +5,7 @@ import {
   type RunRoutinePolicyCommand,
   type RunRoutinePolicyCommandResult,
 } from "@vesper/simulation-core/contracts/routine";
+import { buildMeterView } from "@vesper/simulation-core/bodies";
 import {
   mealWindowCovering,
   resolveRunRoutinePolicyFromView,
@@ -23,10 +24,10 @@ import {
   bodyModifierRowInsert,
   loadActorBody,
   loadCoLocatedActorIds,
-  meterViewOf,
+  loadConsumptionBodyView,
   retirePendingThresholdTriggers,
   upsertMeterRow,
-} from "./body-store";
+} from "./body-rows";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -34,12 +35,8 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { loadActorBusyCounts, readEffectiveActorLod } from "./lod-store";
-import {
-  loadConsumptionBodyView,
-  loadMaterialResolutionView,
-  publishMaterialFeedObligation,
-  updateItemLocus,
-} from "./material-store";
+import { publishMaterialFeedObligation, updateItemLocus } from "./material-rows";
+import { loadMaterialResolutionView } from "./material-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
@@ -93,7 +90,7 @@ export async function submitDurableRunRoutinePolicy(
         .limit(1);
       const lod = await readEffectiveActorLod(tx, branch.id, actorId);
       const body = await loadActorBody(tx, branch.id, actorId);
-      const energyView = meterViewOf(body, "energy", branch.storySecond);
+      const energyView = buildMeterView(body, "energy", branch.storySecond);
       const busy = await loadActorBusyCounts(tx, branch.id, actorId);
       const pressureRows = await tx
         .select({ actBy: simTemporalPressures.actBy, resolvedAt: simTemporalPressures.resolvedAt })

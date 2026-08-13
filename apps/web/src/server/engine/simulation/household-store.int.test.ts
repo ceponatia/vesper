@@ -59,13 +59,15 @@ import {
 } from "@/server/test-support";
 import {
   submitDurableAdjustMaterialLot,
-  submitDurableConfigureRestockRoutine,
-  submitDurableCreateHousehold,
   submitDurablePromoteItemFromStock,
   submitDurableRunHouseholdRestock,
+  submitDurableTransferLotQuantity,
+} from "./household-lots";
+import {
+  submitDurableConfigureRestockRoutine,
+  submitDurableCreateHousehold,
   submitDurableSetHouseholdMembership,
   submitDurableSetMeansBand,
-  submitDurableTransferLotQuantity,
 } from "./household-store";
 import { InjectedSimulationCrash, submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";

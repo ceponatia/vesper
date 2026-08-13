@@ -69,7 +69,7 @@ import {
  * reuses the SAME representation the in-game narrator gets — resolved attribute
  * values via the registry, plus each attribute's `promptHints` as phrasing
  * guidance (the narrator keeps hints; only the image prompt strips them,
- * images/prompts.ts) — and carries the chat lane's own layers: the tracked state
+ * images/prompts-*.ts) — and carries the chat lane's own layers: the tracked state
  * (meters/conditions/regard, enacted per docs/prompts.md §Character-chat state
  * as a narration system), the rolling-summary recap, and the RAG "Your memory"
  * block. What it still deliberately drops is the session's world machinery:
@@ -1568,7 +1568,7 @@ export interface CharacterChatPromptParts {
  * Build the system prompt embodying `name` from their saved profile, split into the
  * §9 stable prefix + volatile tail. Attribute applicability is checked against the
  * realized body (`realizeBody`) so a stale attribute (e.g. wings left on a character
- * after a species change) never leaks, mirroring images/prompts.ts and engine/scene.ts.
+ * after a species change) never leaks, mirroring images/prompts-*.ts and engine/scene.ts.
  */
 export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): CharacterChatPromptParts {
   const { name, profile } = input;

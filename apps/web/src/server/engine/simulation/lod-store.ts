@@ -13,7 +13,11 @@ import {
   type AssignActorLodCommandResult,
 } from "@vesper/simulation-core/contracts/lod";
 import { routinePolicyUniquenessKeyPrefix } from "@vesper/simulation-core/contracts/routine";
-import { BODY_THRESHOLD_HORIZON_SECONDS } from "@vesper/simulation-core/bodies";
+import {
+  BODY_THRESHOLD_HORIZON_SECONDS,
+  buildMeterView,
+  collapseContextOf,
+} from "@vesper/simulation-core/bodies";
 import {
   buildDependencyWakeTrain,
   effectiveActorLod,
@@ -30,12 +34,10 @@ import {
   type Db,
 } from "@/server/db";
 import {
-  collapseContextOf,
   loadActorBody,
-  meterViewOf,
   retirePendingCollapseTriggers,
   retirePendingThresholdTriggers,
-} from "./body-store";
+} from "./body-rows";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -217,7 +219,7 @@ export async function submitDurableAssignActorLod(
       // extend through the solve horizon (the loadConsumptionBodyView idiom).
       const solveHorizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
       const meterViews = body.meters
-        .map((meter) => meterViewOf(body, meter.meterKey, solveHorizon))
+        .map((meter) => buildMeterView(body, meter.meterKey, solveHorizon))
         .filter((view): view is NonNullable<typeof view> => view !== undefined);
 
       const resolution = resolveAssignActorLodFromView(
@@ -371,7 +373,7 @@ export async function prepareDependencyWakes(
     const bodyInitialized = body.meters.length > 0;
     const solveHorizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
     const meterViews = body.meters
-      .map((meter) => meterViewOf(body, meter.meterKey, solveHorizon))
+      .map((meter) => buildMeterView(body, meter.meterKey, solveHorizon))
       .filter((view): view is NonNullable<typeof view> => view !== undefined);
     const train = buildDependencyWakeTrain({
       view: {

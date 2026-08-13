@@ -32,16 +32,15 @@ import {
 } from "@/server/test-support";
 import { characterChats, characters, db, imageLabExperiments, imageLoras, imageModels, images, jobs } from "../db";
 import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
+import { createImageLabExperiment } from "./image-lab-create";
+import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
+import { runImageLabExperiment } from "./image-lab-run";
 import {
-  createImageLabExperiment,
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
   listImageLabExperiments,
   recordImageLabVerdict,
-  runImageLabExperiment,
-  setImageLabRendererForTesting,
-  type ImageLabRenderRequest,
-} from "./image-lab";
+} from "./image-lab-store";
 import {
   deleteImageLabControl,
   IMAGE_LAB_DEPTH_PREPROCESSOR,

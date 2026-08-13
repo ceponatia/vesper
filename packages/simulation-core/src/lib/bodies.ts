@@ -2078,6 +2078,39 @@ export interface CollapseContext {
   lastSleepEndedAtStorySecond?: number;
 }
 
+/** The most recent second the actor actually finished sleeping, if any. */
+export function lastSleepEndedAtOf(conditions: readonly BodyCondition[]): number | undefined {
+  return conditions
+    .filter(
+      (condition) =>
+        condition.key === "asleep" &&
+        condition.status === "ended" &&
+        condition.endedAtStorySecond !== undefined,
+    )
+    .reduce<number | undefined>(
+      (latest, condition) =>
+        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
+          ? condition.endedAtStorySecond
+          : latest,
+      undefined,
+    );
+}
+
+/**
+ * The collapse solver's context over one actor's loaded condition and rhythm
+ * rows — the companion of `buildMeterView` for the collapse half of §25.
+ */
+export function collapseContextOf(rows: {
+  conditions: readonly BodyCondition[];
+  rhythms: readonly BodyRhythmRow[];
+}): CollapseContext {
+  const lastSleepEndedAt = lastSleepEndedAtOf(rows.conditions);
+  return {
+    rhythmRows: rows.rhythms,
+    ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
+  };
+}
+
 export interface CollapseCrossing {
   crossesAtStorySecond: number;
   reserveFixedPoint: number;

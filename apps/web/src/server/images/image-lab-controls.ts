@@ -16,7 +16,7 @@ import type { ReplicateImageResult, ReplicatePreprocessorRequest } from "@vesper
 import { classifyImageFailure, replicateClient } from "../ai";
 import { db, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
-import type { ImageLabProviderOutcome, ImageLabRefusal, ImageLabRunPayload } from "./image-lab";
+import type { ImageLabProviderOutcome, ImageLabRefusal, ImageLabRunPayload } from "./image-lab-store";
 import { saveOwnedImageBuffer } from "./route-safe";
 
 /**

@@ -24,7 +24,7 @@ import type { ImageReferenceDropReason } from "../render-intent/render-intent";
  * spelling of guidance and steps.
  *
  * Everything is pure data and shape. Persistence lives in
- * `src/server/images/image-lab.ts`, extraction in `image-lab-controls.ts`.
+ * `src/server/images/image-lab-*.ts`, extraction in `image-lab-controls.ts`.
  */
 
 /**

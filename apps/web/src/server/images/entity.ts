@@ -9,7 +9,7 @@ import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { monogramSvg } from "./monogram";
-import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts";
+import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts-entity";
 
 export type EntityImageKind = "item" | "location";
 

@@ -38,26 +38,33 @@ import {
   images,
 } from "../db";
 import { absoluteImagePath, createImageAsset, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./assets";
-import { ensureIdentityPack, saveManualIdentityCrop } from "./identity-packs";
+import { ensureIdentityPack } from "./identity-pack-ensure";
+import { saveManualIdentityCrop } from "./identity-pack-manual";
 import {
-  createIdentityPackTrialRun,
-  deleteIdentityPackTrialRun,
   executeIdentityPackTrialCells,
-  getIdentityPackTrialRunDetail,
-  identityPackTrialSummary,
-  listIdentityPackTrialRuns,
-  nextUnreviewedTrialPair,
-  recordTrialVerdict,
   runTrialExecutionPassForTesting,
-  setTrialRendererForTesting,
   STALE_CLAIM_MS,
-  submitTrialPairGrade,
-  trialPairLeftIsA,
-  type IdentityPackTrialCellRow,
-  type RecordTrialVerdictInput,
+} from "./identity-pack-trial-execute";
+import { createIdentityPackTrialRun } from "./identity-pack-trial-plan";
+import {
+  setTrialRendererForTesting,
   type TrialCellRenderer,
   type TrialCellRenderInput,
-} from "./identity-pack-trial";
+} from "./identity-pack-trial-render";
+import {
+  identityPackTrialSummary,
+  nextUnreviewedTrialPair,
+  recordTrialVerdict,
+  submitTrialPairGrade,
+  type RecordTrialVerdictInput,
+} from "./identity-pack-trial-review";
+import {
+  deleteIdentityPackTrialRun,
+  getIdentityPackTrialRunDetail,
+  listIdentityPackTrialRuns,
+  trialPairLeftIsA,
+  type IdentityPackTrialCellRow,
+} from "./identity-pack-trial-store";
 
 /**
  * The trial service end to end against DATABASE_URL and a sandboxed DATA_ROOT

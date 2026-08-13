@@ -14,17 +14,16 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
-import { queueIdentityPackPreparation } from "./identity-packs";
+import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import {
+  type AvatarStyle,
+  type AvatarWardrobeItem,
   buildAvatarPrompt,
   toWornInputs,
   wardrobeGarmentKey,
-  wardrobeOutfitSummary,
-  type AvatarWardrobeItem,
-  type AvatarStyle,
-  type SceneWornItem,
-} from "./prompts";
+} from "./prompts-avatar";
+import { type SceneWornItem, wardrobeOutfitSummary } from "./prompts-scene-composer";
 
 export interface GenerateAvatarInput {
   characterId: string;
