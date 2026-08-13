@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 6
 
-Implementation state: built 2026-08-12 — awaiting the deployed verification below (existing image loads, new render writes to the same volume, root commands over `fly ssh`).
+Implementation state: complete — 2026-08-12 (deployed and verified against `vesper.fly.dev`).
 
 Move the Next.js application from the repository root into `apps/web` without
 changing application behavior, package ownership, persistent storage, or the
@@ -626,7 +626,30 @@ harder to review than a rebased path rewrite.
 
 ## Verification
 
-### What passed (2026-08-12, PR #101)
+### The deployed checks (2026-08-12, `vesper.fly.dev`)
+
+All ran against the deployed build, through the application's own modules rather
+than a re-implementation of them, so each exercises the production code path:
+
+| Check                     | Result                                                       |
+| ------------------------- | ------------------------------------------------------------ |
+| Process root              | cwd `/app`, not the Next project directory                   |
+| Data root                 | `DATA_ROOT=/app/data`; `dataRoot()` returns `/app/data`      |
+| Existing images readable  | 3 stored rows resolved by `absoluteImagePath()` and stat'd   |
+| Real render               | Avatar, `demo: false`, 1136×1472 webp, 144 KB                |
+| Provenance                | `images.meta.model` = `replicate/qwen/qwen-image-2512`       |
+| Where it landed           | `/app/data/images/<owner>/…webp`, beside the existing 51     |
+| Real probe                | `qwen/qwen-image-2512` returned version `47c060e8…`, 7 aspects |
+| Release migration         | `pnpm -w run db:migrate` succeeded as the Fly release command |
+| Root seed over `fly ssh`  | `pnpm -w run db:seed` succeeded                              |
+| App serves                | `GET /` → 200 (redirect to `/sign-in`)                       |
+
+The render is the load-bearing one: an unchanged provider seam plus a repointed
+data root would still have produced a picture, but into `/app/apps/web/data`
+where nothing else lives. It landed in the same owner directory as the images
+that predate the move.
+
+### What passed in CI (2026-08-12, PR #101)
 
 Aggregate `verify` green on the ready-state run: lint, static checks
 (cycles, authz, package boundaries, package resolution, typecheck across all

@@ -16,6 +16,10 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Monorepo migration — the image engine as the first package** —
+  [plan](finished/monorepo-image-core.plan.md) — 2026-08-12 — the image engine,
+  its shared foundation and the Replicate transport became workspace packages
+  with a mechanically enforced boundary, and the app moved to `apps/web`.
 - **Persona body-config seeding — a new persona is born with anatomy** —
   [intimate-defaulting.md](intimate-defaulting.md) §3b — 2026-08-07 — personas
   were created with `intimateRegions: []` and stayed that way forever, so the

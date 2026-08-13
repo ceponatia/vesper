@@ -10,7 +10,7 @@ Vitest 4, one root config (`vitest.config.ts`) declaring one **project** per wor
 | `image-core`      | `packages/image-core/src/**`                                | none — by design             |
 | `image-replicate` | `packages/image-replicate/src/**`                           | none — by design             |
 
-`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
+`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
 
 `scripts/**` tests run in the `app` project on purpose. They are the repository's tripwire tests — they scan application source and import `@/server/test-support` — so they need the application alias and the same demo-mode setup as the code they inspect.
 
