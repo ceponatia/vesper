@@ -1,0 +1,87 @@
+# @vesper/image-replicate
+
+The Replicate transport. Everything here is about talking to
+`api.replicate.com`; nothing here knows that Vesper has characters, chats, a
+database, or a Next.js application.
+
+Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
+What moved and why: [spec.replicate.md](../../docs/developer-notes/monorepo-image-core.spec.replicate.md).
+How the application drives it: [docs/images/providers.md](../../docs/images/providers.md).
+
+## Server-only, and configured from outside
+
+This package is deliberately **not** browser portable — unlike `@vesper/contracts`
+and `@vesper/image-core`, network IO, byte handling and timeouts are its job. It
+is ranked `server` in the workspace layer policy, and ESLint additionally bars
+`src/components`, non-route `src/app`, `src/contracts` and `src/lib` from
+importing it: it carries the provider credential.
+
+Server-only is not permission to be ambient. The package **reads no
+environment**. The application resolves the deployment's settings once
+(`src/server/ai/replicate-runtime.ts` — the only code in Vesper that reads
+`REPLICATE_*`), builds one client, and hands that client to every render,
+preprocessor run and schema probe in the process:
+
+```ts
+const client = createReplicateClient({
+  apiToken,
+  safetyCheckerDisabled,
+  predictionTimeoutMs,
+});
+```
+
+That single snapshot is what keeps the safety posture single-source. A render's
+plan is fingerprinted with `client.safetyCheckerDisabled` and the payload builder
+writes the same value, so a process cannot hash one posture and send another.
+Probing shares the client too — it used to read the token independently.
+
+## Layout
+
+Read in this order — the flow runs top to bottom.
+
+| Module            | Owns                                                        |
+| ----------------- | ------------------------------------------------------------ |
+| `config.ts`       | `ReplicateConfig`, fixed budgets, per-request timeout clamp |
+| `http.ts`         | The credentialed fetch surface; error text                  |
+| `payload.ts`      | The render request, provider input, control overlay         |
+| `files.ts`        | Reference upload/delete, data URLs, the inline byte budget  |
+| `prediction.ts`   | Prediction targets, create, poll, cancel, provenance        |
+| `outputs.ts`      | Which member is the image; the output-host allow-list       |
+| `render.ts`       | `runRegistryImageModel` — the registry render entry point   |
+| `preprocessor.ts` | One image-in, image-out lab tool run                        |
+| `probe.ts`        | Reading a model/version's published input schema            |
+| `client.ts`       | `createReplicateClient` — binds the config to all of it     |
+
+The package has one public code import path, `@vesper/image-replicate`, and the
+root `src/index.ts` lists every public name explicitly. Private polling and
+parsing helpers stay private; `export *` in a root barrel is rejected by
+`pnpm lint:package-boundaries`.
+
+## What stays in the application
+
+- resolving `REPLICATE_API_TOKEN`, `REPLICATE_SAFE_MODE` and
+  `REPLICATE_PREDICTION_TIMEOUT_MS`, and memoizing one configured client;
+- translating Vesper state into a render request, and `sharp` crop
+  normalization (`src/server/images/models.ts`);
+- registry database reads, asset persistence, jobs, authorization, cost;
+- AI-SDK/OpenRouter error extraction (`src/server/ai/image-providers.ts`), which
+  knows a different provider's error shape, not Replicate transport mechanics.
+
+## Working in here
+
+- No build artifact: the package exports TypeScript source and is consumed as a
+  workspace dependency; Next transpiles it for the server bundle.
+- Tests run through the repository's shared Vitest command, as the
+  `image-replicate` project, with no application setup and no `@/` alias. They
+  install their own `fetch` stub and construct a `ReplicateConfig` per case —
+  there is no environment to manipulate.
+- Dependencies this package imports belong in **its** `package.json`, including
+  test-only ones.
+- Node's built-in `fetch`, `FormData`, `Blob`, `URL`, `AbortSignal` and `Buffer`
+  are the transport primitives. The Replicate npm SDK is deliberately not a
+  dependency.
+- Validation follows the repository milestone-gate policy: code work is proven by
+  a ready-state CI `verify`. A green build is not sufficient for provider
+  wiring — a config mistake typechecks perfectly while every real call is
+  unauthenticated, so this package's changes also get a real render and a real
+  probe against the deploy.

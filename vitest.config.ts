@@ -66,6 +66,14 @@ export default defineConfig({
           include: ["src/**/*.test.ts"],
         },
       },
+      {
+        test: {
+          name: "image-replicate",
+          root: path.resolve(__dirname, "./packages/image-replicate"),
+          environment: "node",
+          include: ["src/**/*.test.ts"],
+        },
+      },
     ],
   },
 });

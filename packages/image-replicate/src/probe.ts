@@ -8,6 +8,8 @@ import {
   type ImageReferenceArity,
   parseAspectValue,
 } from "@vesper/image-core";
+import { PROBE_TIMEOUT_MS } from "./config";
+import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 
 /**
  * The save-time capability probe (image-model-registry.spec.md §"Capability
@@ -26,9 +28,6 @@ import {
  * third-party data, so everything is optional and unknown shapes fall through
  * to a conservative default rather than throwing.
  */
-
-const REPLICATE_BASE = "https://api.replicate.com/v1";
-const PROBE_TIMEOUT_MS = 20_000;
 
 /**
  * Field names checked first, in order, so a model with several image-ish inputs
@@ -167,9 +166,12 @@ export interface ReplicateModelProbe {
 
 export type ProbeResult = { ok: true; probe: ReplicateModelProbe } | { ok: false; error: string };
 
-export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
-  const token = process.env.REPLICATE_API_TOKEN;
-  if (!token) return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
+export async function probeReplicateModel(http: ReplicateHttp, slug: string): Promise<ProbeResult> {
+  // The SAME configured client rendering uses. Probing used to read the token
+  // independently, which meant a process could probe with one credential and
+  // render with another (monorepo-image-core.spec.replicate.md §"Environment
+  // inversion").
+  if (!http.configured) return { ok: false, error: NOT_CONFIGURED_ERROR };
 
   const [path, pinnedVersion, ...rest] = slug.split(":");
   const parts = path?.split("/") ?? [];
@@ -184,15 +186,13 @@ export async function probeReplicateModel(slug: string): Promise<ProbeResult> {
   // exists to prevent, and it would surface as every render failing on invalid
   // inputs while the save looked fine.
   const modelPath = `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-  const url = pinnedVersion
-    ? `${REPLICATE_BASE}/models/${modelPath}/versions/${encodeURIComponent(pinnedVersion)}`
-    : `${REPLICATE_BASE}/models/${modelPath}`;
+  const probePath = pinnedVersion
+    ? `/models/${modelPath}/versions/${encodeURIComponent(pinnedVersion)}`
+    : `/models/${modelPath}`;
 
   let raw: unknown;
   try {
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+    const response = await http.apiFetch(probePath, {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (response.status === 404) {

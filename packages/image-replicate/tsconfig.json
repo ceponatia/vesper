@@ -1,0 +1,28 @@
+{
+  // The package's own TypeScript project. Like the other packages it does NOT
+  // extend the root config — the point is to prove the transport typechecks on
+  // its own terms rather than because the Next application lends it aliases or
+  // ambient generated types. Root `pnpm typecheck` runs it alongside the others.
+  "compilerOptions": {
+    "target": "ES2022",
+    // ES2022 + DOM, and here DOM is load-bearing rather than a concession: the
+    // transport IS the web platform — `fetch`, `Response`, `FormData`, `Blob`,
+    // `RequestInit`, `AbortSignal`, `URL`. This package is deliberately
+    // server-only (`@vesper/image-replicate` is ranked `server` in the workspace
+    // layer policy), so unlike image-core and contracts it may also evaluate
+    // Node globals; `Buffer` is the one it does.
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
+}

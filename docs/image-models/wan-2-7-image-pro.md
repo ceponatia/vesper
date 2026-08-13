@@ -34,7 +34,7 @@ constant:
 Note the upload URL *does* end in `.webp` — the extension is lost somewhere
 between Replicate's file store and the model container, so no amount of naming
 the upload fixes it. Vesper therefore stores `reference_transport = 'data_url'`
-for this row and inlines the bytes (`server/ai/replicate.ts`). Every other model
+for this row and inlines the bytes (`@vesper/image-replicate`). Every other model
 in the set resolves the upload URL fine and keeps the smaller payload.
 
 ## Moderation cannot be disabled

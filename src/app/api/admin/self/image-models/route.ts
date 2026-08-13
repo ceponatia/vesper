@@ -4,7 +4,7 @@ import { z } from "zod";
 import { imageModelSurfaces } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
-import { probeReplicateModel } from "@/server/ai";
+import { replicateClient } from "@/server/ai";
 import { imageModelProbeFields, loadImageModels } from "@/server/images";
 import { newId } from "@/lib/ids";
 
@@ -42,7 +42,7 @@ export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {
   // The one place this feature fails loudly instead of degrading: writing a row
   // we cannot render with would move the failure to render time, where it costs
   // a player-visible image instead of a form error.
-  const probed = await probeReplicateModel(slug);
+  const probed = await replicateClient().probeReplicateModel(slug);
   if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
   const probe = probed.probe;
 

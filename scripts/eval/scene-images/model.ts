@@ -1,5 +1,6 @@
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
-import { runRegistryImageModel, type ReplicateImageResult } from "../../../src/server/ai";
+import type { ReplicateImageResult } from "@vesper/image-replicate";
+import { hasReplicate, replicateClient } from "../../../src/server/ai";
 
 /**
  * Model literals for the eval/spike scripts.
@@ -64,16 +65,21 @@ export function evalGenerateModel(): ImageModel {
   };
 }
 
+/**
+ * Whether these scripts can reach the provider. It asks the application's
+ * configured runtime rather than reading the token itself, so an eval run and a
+ * real render agree on what "configured" means.
+ */
 export function hasImageProvider(): boolean {
-  return Boolean(process.env.REPLICATE_API_TOKEN);
+  return hasReplicate();
 }
 
 /** Single- or multi-reference edit at 3:4. */
 export function evalEdit(prompt: string, references: Buffer[]): Promise<ReplicateImageResult> {
-  return runRegistryImageModel(evalEditModel(), { prompt, references, aspect: "3:4" });
+  return replicateClient().runRegistryImageModel(evalEditModel(), { prompt, references, aspect: "3:4" });
 }
 
 /** Text-to-image at 3:4. */
 export function evalGenerate(prompt: string, aspect = "3:4"): Promise<ReplicateImageResult> {
-  return runRegistryImageModel(evalGenerateModel(), { prompt, aspect });
+  return replicateClient().runRegistryImageModel(evalGenerateModel(), { prompt, aspect });
 }

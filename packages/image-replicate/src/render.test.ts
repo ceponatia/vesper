@@ -1,37 +1,30 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
-import {
-  buildRegistryModelInput,
-  DATA_URL_BUDGET_BYTES,
-  disableSafetyChecker,
-  overlayControlInput,
-  OUTPUT_TIMEOUT_MS,
-  referenceDataUrl,
-  replicatePredictionTarget,
-  REQUEST_TIMEOUT_MS,
-  runRegistryImageModel,
-  unwrapReplicateImage,
-  withinDataUrlBudget,
-  type RegistryModelRequest,
-  type ReplicateImageResult,
-} from "./replicate";
+import { DiagnosticCollector } from "@vesper/contracts";
+import { createReplicateClient, type ReplicateClient } from "./client";
+import { DEFAULT_PREDICTION_TIMEOUT_MS, OUTPUT_TIMEOUT_MS, type ReplicateConfig, REQUEST_TIMEOUT_MS } from "./config";
+import { DATA_URL_BUDGET_BYTES, referenceDataUrl, withinDataUrlBudget } from "./files";
+import { buildRegistryModelInput, overlayControlInput, type RegistryModelRequest } from "./payload";
+import { replicatePredictionTarget, type ReplicateImageResult } from "./prediction";
 
-const originalToken = process.env.REPLICATE_API_TOKEN;
-
-beforeEach(() => {
-  process.env.REPLICATE_API_TOKEN = "test-token";
-  delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
-  delete process.env.REPLICATE_SAFE_MODE;
-});
+/**
+ * The transport's cases, as CONFIG cases rather than environment cases: the
+ * package reads no `process.env`, so a deployment posture is something a test
+ * constructs and hands to `createReplicateClient` (spec.replicate.md §Tests).
+ */
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.REPLICATE_PREDICTION_TIMEOUT_MS;
-  delete process.env.REPLICATE_SAFE_MODE;
-  if (originalToken === undefined) delete process.env.REPLICATE_API_TOKEN;
-  else process.env.REPLICATE_API_TOKEN = originalToken;
 });
+
+const config = (over: Partial<ReplicateConfig> = {}): ReplicateConfig => ({
+  apiToken: "test-token",
+  safetyCheckerDisabled: true,
+  predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+  ...over,
+});
+
+const client = (over: Partial<ReplicateConfig> = {}): ReplicateClient => createReplicateClient(config(over));
 
 const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   id: "m1",
@@ -62,9 +55,23 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   ...overrides,
 });
 
+/**
+ * The payload builder with the deployment's safety posture spelled out. It is
+ * an argument now rather than an environment read, so the cases that do not
+ * care about it say so once here.
+ */
+const buildInput = (
+  target: ImageModel,
+  prompt: string,
+  references: readonly string[],
+  aspect: string | null,
+  safetyCheckerDisabled = true,
+): Record<string, unknown> => buildRegistryModelInput(target, prompt, references, aspect, safetyCheckerDisabled);
+
 /** Capture the prediction POST (url + init) for one succeeded-immediately generation. */
 async function predictionCall(
   over: Partial<RegistryModelRequest> = {},
+  configOver: Partial<ReplicateConfig> = {},
 ): Promise<{ url: string; init?: RequestInit } | undefined> {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   vi.stubGlobal(
@@ -78,12 +85,15 @@ async function predictionCall(
       return new Response(Buffer.from("image-bytes"), { status: 200 });
     }),
   );
-  await runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4", ...over });
+  await client(configOver).runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4", ...over });
   return calls[0];
 }
 
-async function predictionRequest(over: Partial<RegistryModelRequest> = {}): Promise<RequestInit | undefined> {
-  return (await predictionCall(over))?.init;
+async function predictionRequest(
+  over: Partial<RegistryModelRequest> = {},
+  configOver: Partial<ReplicateConfig> = {},
+): Promise<RequestInit | undefined> {
+  return (await predictionCall(over, configOver))?.init;
 }
 
 /** Run one generation against a scripted prediction body — the seam for asserting
@@ -102,24 +112,24 @@ async function runWithPrediction(prediction: Record<string, unknown>): Promise<R
       return new Response(Buffer.from("image-bytes"), { status: 200 });
     }),
   );
-  return runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
+  return client().runRegistryImageModel(model(), { prompt: "portrait", aspect: "3:4" });
 }
 
 describe("buildRegistryModelInput", () => {
   it("omits the reference key entirely when there are no references", () => {
     // An absent key and an empty array are not the same to every backend, and a
     // model whose reference input is optional should see the former.
-    const input = buildRegistryModelInput(model(), "a portrait", [], "3:4");
+    const input = buildInput(model(), "a portrait", [], "3:4");
     expect("image" in input).toBe(false);
     expect(input).toMatchObject({ prompt: "a portrait", aspect_ratio: "3:4", output_format: "webp" });
   });
 
   it("writes a single-arity reference as a bare string and an array-arity one as a list", () => {
-    const single = buildRegistryModelInput(model(), "p", ["u1"], "3:4");
+    const single = buildInput(model(), "p", ["u1"], "3:4");
     expect(single.image).toBe("u1");
 
     // Same field NAME, different arity — the two Qwen models really do differ here.
-    const array = buildRegistryModelInput(
+    const array = buildInput(
       model({ slug: "qwen/qwen-image-edit-2511", referenceArity: "array", maxReferences: 3 }),
       "p",
       ["u1", "u2"],
@@ -129,54 +139,46 @@ describe("buildRegistryModelInput", () => {
   });
 
   it("honours each model's own reference field name", () => {
-    expect(buildRegistryModelInput(model({ referenceField: "image_input", referenceArity: "array" }), "p", ["u"], null))
+    expect(buildInput(model({ referenceField: "image_input", referenceArity: "array" }), "p", ["u"], null))
       .toHaveProperty("image_input", ["u"]);
-    expect(buildRegistryModelInput(model({ referenceField: "images", referenceArity: "array" }), "p", ["u"], null))
+    expect(buildInput(model({ referenceField: "images", referenceArity: "array" }), "p", ["u"], null))
       .toHaveProperty("images", ["u"]);
   });
 
   it("writes the shape to `size` for a size-mode model and `aspect_ratio` otherwise", () => {
-    const sized = buildRegistryModelInput(model({ aspectMode: "size" }), "p", [], "1536*2048");
+    const sized = buildInput(model({ aspectMode: "size" }), "p", [], "1536*2048");
     expect(sized).toMatchObject({ size: "1536*2048" });
     expect("aspect_ratio" in sized).toBe(false);
 
-    const ratio = buildRegistryModelInput(model(), "p", [], "3:4");
+    const ratio = buildInput(model(), "p", [], "3:4");
     expect(ratio).toMatchObject({ aspect_ratio: "3:4" });
     expect("size" in ratio).toBe(false);
   });
 
   it("omits the aspect key when no shape was chosen", () => {
-    const input = buildRegistryModelInput(model(), "p", [], null);
+    const input = buildInput(model(), "p", [], null);
     expect("aspect_ratio" in input).toBe(false);
     expect("size" in input).toBe(false);
   });
 
   it("omits output_format for a model that has no such input", () => {
-    expect("output_format" in buildRegistryModelInput(model({ outputFormat: null }), "p", [], "3:4")).toBe(false);
+    expect("output_format" in buildInput(model({ outputFormat: null }), "p", [], "3:4")).toBe(false);
   });
 
   it("overrides the value of a declared safety toggle but never introduces the key", () => {
     // Replicate rejects unknown inputs, so a model without the field must not
     // receive it — this is why the key lives in extraInput rather than being
     // added unconditionally.
-    const withToggle = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
-    expect(withToggle.disable_safety_checker).toBe(true);
-    // The exported resolver is the SAME answer the builder writes. Anything that
-    // fingerprints what a render sends has to be able to ask it, or the
-    // fingerprint describes the stored placeholder instead of the env's value.
-    expect(withToggle.disable_safety_checker).toBe(disableSafetyChecker());
+    const declared = model({ extraInput: { disable_safety_checker: true } });
+    expect(buildInput(declared, "p", [], null, true).disable_safety_checker).toBe(true);
+    expect(buildInput(declared, "p", [], null, false).disable_safety_checker).toBe(false);
 
-    process.env.REPLICATE_SAFE_MODE = "true";
-    const safe = buildRegistryModelInput(model({ extraInput: { disable_safety_checker: true } }), "p", [], null);
-    expect(safe.disable_safety_checker).toBe(false);
-    expect(disableSafetyChecker()).toBe(false);
-
-    const without = buildRegistryModelInput(model({ extraInput: {} }), "p", [], null);
+    const without = buildInput(model({ extraInput: {} }), "p", [], null, false);
     expect("disable_safety_checker" in without).toBe(false);
   });
 
   it("passes other per-model constants through untouched", () => {
-    const input = buildRegistryModelInput(
+    const input = buildInput(
       model({ extraInput: { size: "2K", max_images: 1, sequential_image_generation: "disabled" } }),
       "p",
       [],
@@ -200,7 +202,7 @@ describe("control input overlay", () => {
   it("merges mapped fields over the built payload, later winning", () => {
     // The capabilities spec's merge order: model `extraInput` first, the
     // profile's resolved controls after it.
-    const built = buildRegistryModelInput(model({ extraInput: { guidance_scale: 3 } }), "p", [], "3:4");
+    const built = buildInput(model({ extraInput: { guidance_scale: 3 } }), "p", [], "3:4");
     const merged = overlayControlInput(built, { guidance_scale: 7, negative_prompt: "blurry" }, model());
     expect(merged).toMatchObject({ prompt: "p", aspect_ratio: "3:4", guidance_scale: 7, negative_prompt: "blurry" });
   });
@@ -208,7 +210,7 @@ describe("control input overlay", () => {
   it("refuses to let control input rewrite the prompt, reference, or aspect field", () => {
     // A stored profile row must not be able to redirect where the prompt goes.
     const target = model({ referenceField: "image_input", referenceArity: "array" });
-    const built = buildRegistryModelInput(target, "the real prompt", ["u1"], "3:4");
+    const built = buildInput(target, "the real prompt", ["u1"], "3:4");
     const sink = new DiagnosticCollector();
     const merged = overlayControlInput(
       built,
@@ -221,7 +223,7 @@ describe("control input overlay", () => {
   });
 
   it("returns the built payload untouched when there is no control input", () => {
-    const built = buildRegistryModelInput(model(), "p", [], null);
+    const built = buildInput(model(), "p", [], null);
     expect(overlayControlInput(built, undefined, model())).toBe(built);
   });
 });
@@ -292,17 +294,24 @@ describe("replicatePredictionTarget", () => {
 });
 
 describe("runRegistryImageModel", () => {
-  it("fails clearly when the token is absent", async () => {
-    delete process.env.REPLICATE_API_TOKEN;
-    expect(await runRegistryImageModel(model(), { prompt: "portrait" })).toEqual({
+  it("reports itself unconfigured and fails before any network work when no token was given", async () => {
+    const unconfigured = client({ apiToken: null });
+    expect(unconfigured.configured).toBe(false);
+    const network = vi.fn();
+    vi.stubGlobal("fetch", network);
+
+    expect(await unconfigured.runRegistryImageModel(model(), { prompt: "portrait" })).toEqual({
       ok: false,
       error: "REPLICATE_API_TOKEN not configured",
     });
+    // The whole point of resolving credentials once: an unconfigured deployment
+    // does not discover that fact by watching a request fail.
+    expect(network).not.toHaveBeenCalled();
   });
 
   it("refuses to run an edit-only model with no reference", async () => {
     const editOnly = model({ slug: "qwen/qwen-image-edit-2511", canGenerate: false });
-    expect(await runRegistryImageModel(editOnly, { prompt: "portrait" })).toEqual({
+    expect(await client().runRegistryImageModel(editOnly, { prompt: "portrait" })).toEqual({
       ok: false,
       error: "qwen/qwen-image-edit-2511 requires at least one reference image",
     });
@@ -329,7 +338,7 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    const result = await runRegistryImageModel(model(), { prompt: "a portrait", aspect: "3:4" });
+    const result = await client().runRegistryImageModel(model(), { prompt: "a portrait", aspect: "3:4" });
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("image-bytes");
 
@@ -382,7 +391,7 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    const result = await runRegistryImageModel(
+    const result = await client().runRegistryImageModel(
       model({ slug: "qwen/qwen-image-edit-2511", referenceArity: "array", maxReferences: 3 }),
       { prompt: "keep both people recognizable", references: [Buffer.from("one"), Buffer.from("two")] },
     );
@@ -413,7 +422,7 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    const result = await runRegistryImageModel(
+    const result = await client().runRegistryImageModel(
       model({
         slug: "wan-video/wan-2.7-image-pro",
         referenceField: "images",
@@ -455,35 +464,82 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    await runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
+    await client().runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
       prompt: "p",
       references: [Buffer.from("a"), Buffer.from("b"), Buffer.from("c")],
     });
     expect(uploads).toBe(1);
   });
 
-  it("sends the configured prediction deadline as Replicate's Cancel-After", async () => {
-    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "900000";
-    expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "900s" } });
-  });
-
-  it("clamps an out-of-range deadline before it reaches the header", async () => {
-    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "9999999999";
-    expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "1800s" } });
-
-    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "not-a-number";
+  it("sends the client's configured prediction deadline as Replicate's Cancel-After", async () => {
+    // The budget arrives already resolved: deciding what an unset or nonsense
+    // environment variable means is the application's job now
+    // (src/server/ai/replicate-runtime.ts owns that, and pins it in its tests).
+    expect(await predictionRequest({}, { predictionTimeoutMs: 900_000 })).toMatchObject({
+      headers: { "Cancel-After": "900s" },
+    });
     expect(await predictionRequest()).toMatchObject({ headers: { "Cancel-After": "300s" } });
   });
 
-  it("prefers the request's own prediction budget over the env value", async () => {
-    // The capabilities spec's order: profile timeout, then env, then default.
-    process.env.REPLICATE_PREDICTION_TIMEOUT_MS = "600000";
-    expect(await predictionRequest({ timeoutMs: 90_000 })).toMatchObject({ headers: { "Cancel-After": "90s" } });
+  it("prefers the request's own prediction budget over the configured default", async () => {
+    // The capabilities spec's order: profile timeout, then the deployment's.
+    expect(await predictionRequest({ timeoutMs: 90_000 }, { predictionTimeoutMs: 600_000 })).toMatchObject({
+      headers: { "Cancel-After": "90s" },
+    });
   });
 
   it("clamps a request budget outside the sane band", async () => {
     expect(await predictionRequest({ timeoutMs: 1_000 })).toMatchObject({ headers: { "Cancel-After": "30s" } });
     expect(await predictionRequest({ timeoutMs: 99_999_999 })).toMatchObject({ headers: { "Cancel-After": "1800s" } });
+  });
+
+  it("does not let a per-request budget leak into the client that ran it", async () => {
+    const settings = config({ predictionTimeoutMs: 600_000 });
+    const shared = createReplicateClient(settings);
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/predictions")) {
+          const header = (init?.headers ?? {}) as Record<string, string>;
+          seen.push(header["Cancel-After"] ?? "");
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+
+    await shared.runRegistryImageModel(model(), { prompt: "p", timeoutMs: 90_000 });
+    await shared.runRegistryImageModel(model(), { prompt: "p" });
+
+    expect(seen).toEqual(["90s", "600s"]);
+    expect(settings.predictionTimeoutMs).toBe(600_000);
+  });
+
+  it("keeps the deployment's safety posture out of a model that does not declare the field", async () => {
+    const declared = model({ extraInput: { disable_safety_checker: true } });
+    const posted = async (safetyCheckerDisabled: boolean, target = declared): Promise<Record<string, unknown>> => {
+      let input: Record<string, unknown> = {};
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (source: string | URL | Request, init?: RequestInit) => {
+          if (String(source).includes("/predictions")) {
+            input = (JSON.parse(String(init?.body)) as { input: Record<string, unknown> }).input;
+            return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+          }
+          return new Response(Buffer.from("bytes"), { status: 200 });
+        }),
+      );
+      await client({ safetyCheckerDisabled }).runRegistryImageModel(target, { prompt: "p" });
+      return input;
+    };
+
+    expect((await posted(true)).disable_safety_checker).toBe(true);
+    expect((await posted(false)).disable_safety_checker).toBe(false);
+    // A model with no such input never receives the key, whatever the posture:
+    // Replicate rejects unknown inputs outright.
+    expect("disable_safety_checker" in (await posted(false, model()))).toBe(false);
   });
 
   it("posts an explicitly pinned version to /predictions even for a bare slug", async () => {
@@ -520,11 +576,39 @@ describe("runRegistryImageModel", () => {
     const failed = await runWithPrediction({ id: "pred-f", status: "failed", output: null, version: "version-bad" });
     expect(failed).toMatchObject({ ok: false, predictionId: "pred-f", executedVersionId: "version-bad" });
   });
+});
 
-  it("unwraps bytes and preserves provider error text", () => {
-    const image = Buffer.from("image");
-    expect(unwrapReplicateImage({ ok: true, image }, "fallback")).toBe(image);
-    expect(() => unwrapReplicateImage({ ok: false, error: "replicate 429" }, "fallback")).toThrow("replicate 429");
+describe("output download", () => {
+  it("refuses to fetch an output URL from a host outside the allow-list", async () => {
+    // A provider that echoed an attacker-supplied URL would otherwise have this
+    // process fetch it, with the Replicate credential attached on one host.
+    const result = await runWithPrediction({
+      id: "pred-evil",
+      status: "succeeded",
+      output: ["https://evil.example.com/payload.webp"],
+    });
+    expect(result).toMatchObject({ ok: false, predictionId: "pred-evil" });
+    expect(result.error).toContain("untrusted output URL: evil.example.com");
+  });
+
+  it("refuses a plaintext output URL even on an allowed host", async () => {
+    const result = await runWithPrediction({
+      id: "pred-http",
+      status: "succeeded",
+      output: ["http://replicate.delivery/o.webp"],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("untrusted output URL");
+  });
+
+  it("decodes an inline data URL without any network fetch", async () => {
+    const result = await runWithPrediction({
+      id: "pred-inline",
+      status: "succeeded",
+      output: [`data:image/webp;base64,${Buffer.from("inline-bytes").toString("base64")}`],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.image?.toString()).toBe("inline-bytes");
   });
 });
 
@@ -556,7 +640,7 @@ describe("bound control images", () => {
         return new Response(Buffer.from("bytes"), { status: 200 });
       }),
     );
-    await runRegistryImageModel(model(over), request);
+    await client().runRegistryImageModel(model(over), request);
     return input;
   }
 
@@ -639,7 +723,7 @@ describe("bound control images", () => {
         return new Response(Buffer.from("bytes"), { status: 200 });
       }),
     );
-    await runRegistryImageModel(
+    await client().runRegistryImageModel(
       model(),
       { prompt: "portrait", controlReferences: [{ field: "prompt", arity: "single", buffers: [Buffer.from("x")] }] },
       sink,

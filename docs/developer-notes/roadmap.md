@@ -26,8 +26,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [plan](monorepo-image-core.plan.md) · [spec index](monorepo-image-core.spec.md)
   — `@vesper/image-core` is extracted, its boundary is mechanically enforced in
   both directions, the render kernel every image lane compiles through now lives
-  inside it, and diagnostics and boundary parsing have one shared owner in
-  `@vesper/contracts`; the Replicate transport is next.
+  inside it, diagnostics and boundary parsing have one shared owner in
+  `@vesper/contracts`, and the Replicate transport is a server-only package that
+  reads no environment; the move to `apps/web` is what remains.
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·

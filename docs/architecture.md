@@ -21,6 +21,8 @@ A package is not the default shape for a boundary here. Most module boundaries a
 
 `@vesper/contracts` is there for the other reason: a primitive that several workspaces must **agree on** has to live below all of them. It holds the diagnostic contract and the boundary parser, and nothing else — the application's own `src/contracts/` is Vesper's game vocabulary and stays put. `src/contracts/diagnostics.ts` and `src/lib/parse.ts` remain the application's entry points as re-export barrels, so the app's import paths did not move when the implementation gained a shared owner.
 
+`@vesper/image-replicate` is there for a third reason: a package's **runtime target** is part of its contract, and this one is deliberately server-only. It performs network IO and carries the provider credential, so client-importable layers are barred from importing it. Being server-only is not permission to be ambient, though — it reads no environment. `src/server/ai/replicate-runtime.ts` is the only code that reads `REPLICATE_*`; it builds one configured client per process and everything else asks that client.
+
 The two kinds of boundary are enforced differently, because they promise different things. A folder boundary is a spelling rule: the ESLint `no-restricted-imports` rules in `eslint.config.mjs` reject the import paths that would cross it. A **workspace** boundary is a containment rule, and spelling cannot decide it — `../../foundation/src/x` never mentions `packages/` and still leaves the package. So `pnpm lint:package-boundaries` (`scripts/check-workspace-imports.ts`) resolves every import and answers the questions ESLint cannot:
 
 - does this relative path stay inside the workspace that wrote it — in **either** direction, so the app cannot reach into package internals either;
@@ -40,6 +42,7 @@ vesper/
   data/                  # runtime-generated image assets (gitignored)
   packages/              # workspace packages — no app imports (see below)
     contracts/           #   @vesper/contracts: the diagnostic contract + parseOr
+    image-replicate/     #   @vesper/image-replicate: server-only Replicate transport
     image-core/          #   @vesper/image-core: the provider-neutral image engine
       src/
         capabilities/    #     what a model declares; binding controls to real fields
@@ -105,7 +108,7 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
 These are the only two lanes — there is no world/session lane.
 
-- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md).)
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md), [packages/image-replicate/README.md](../packages/image-replicate/README.md).)
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.
