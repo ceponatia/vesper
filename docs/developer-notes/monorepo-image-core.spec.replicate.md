@@ -2,7 +2,8 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 4
 
-Implementation state: not started — next; its blockers are cleared.
+Implementation state: built 2026-08-13 — awaiting a ready-state CI `verify` and
+the two live smoke checks below.
 
 Put Replicate's network transport and schema probing behind a server-only
 workspace package while keeping secrets, deployment settings and Vesper state in
@@ -11,6 +12,58 @@ the application. Shared mechanics are in
 dependency ownership, package graph and package-local tooling rules are already
 active from
 [monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
+
+## What is built
+
+| Piece                        | Lives in                                 |
+| ---------------------------- | ---------------------------------------- |
+| Transport package            | `packages/image-replicate/src/`          |
+| Configured client            | `packages/image-replicate/src/client.ts` |
+| Application runtime adapter  | `src/server/ai/replicate-runtime.ts`     |
+| Package contract for readers | `packages/image-replicate/README.md`     |
+
+The package splits into `config` / `http` / `payload` / `files` / `prediction` /
+`outputs` / `render` / `preprocessor` / `probe` / `client`, close to the layout
+suggested below. `createReplicateClient` binds one immutable config to all of it;
+every credentialed call goes through `ReplicateHttp`, which is the only place a
+token is spelled, so "no ambient environment reads" is structural rather than a
+convention. All five environment reads are gone from transport source — the
+application adapter is now the only code in the repository that reads
+`REPLICATE_*`, and probing shares the render client's credential.
+
+Registration is complete: manifest, package TypeScript project, an
+`image-replicate` Vitest project, a line in root `pnpm typecheck`,
+`transpilePackages`, the Dockerfile manifest `COPY`, and the root dependency. The
+layer rank (30) and `server` runtime target were pre-declared by Slice 1.
+`lint:package-boundaries` and `lint:package-resolution` both pass.
+
+### Rulings this build settled
+
+- **Two dead exports were deleted rather than moved.** `unwrapReplicateImage`
+  had a unit test and no production caller, and `REPLICATE_DEFAULT_IMAGE_MODEL`
+  had neither. `REPLICATE_DEFAULT_EDIT_MODEL` stays — the lab still defaults to
+  it — and stays in the package, because it names a Replicate slug.
+- **`buildRegistryModelInput` takes the safety posture as a parameter.** It used
+  to resolve it, which is exactly what let a fingerprint describe a stored
+  placeholder while the provider received the environment's answer. The
+  application passes `client.safetyCheckerDisabled` to the planner and the same
+  client's config reaches the builder.
+- **The environment RULES are the application's, the CLAMP is the package's.**
+  `MIN_/MAX_/DEFAULT_PREDICTION_TIMEOUT_MS` are exported so both halves use the
+  same numbers instead of two hand-copied copies; what an unset or nonsense
+  variable means is decided in `replicate-runtime.ts` and pinned by
+  `replicate-runtime.test.ts`. Per-request overrides are still clamped inside
+  the package, and a per-request budget cannot mutate the client's config.
+- **The runtime memoizes lazily and exposes a test reset.**
+  `resetReplicateRuntimeForTesting()` exists because the environment rules are
+  tested in the application, where one process runs every case. Production never
+  calls it: one process, one snapshot.
+- **`quality-preset-input.test.ts` moved too.** Its subject is the payload
+  builder and it has no application dependency, so it moved with the code it
+  covers rather than staying behind as an app test of a package function.
+- **Output-host allow-list coverage is new.** The rule existed and was
+  uncovered; the moved suite now pins the untrusted-host refusal, the
+  plaintext-URL refusal, and inline data-URL decoding.
 
 ## Runtime target
 

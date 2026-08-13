@@ -229,7 +229,8 @@ re-export barrels, so no mechanical rewrite across hundreds of files was needed.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: next — its blockers are cleared.
+Status: built 2026-08-13 — awaiting a ready-state CI `verify`, then the real
+render and real probe the plan's success criteria name.
 
 The code that talks to Replicate — probing model schemas, starting predictions,
 uploading references, polling, downloading results and handling Replicate's
@@ -258,7 +259,10 @@ the diagram prettier without making the code easier to own.
 
 ### Slice 6 — the application moves to `apps/web`
 
-Status: blocked on Slice 4 completing without a core/app/provider seam redesign.
+Status: blocked on Slice 4 being accepted. Its gate — that the extraction lands
+without forcing a redesign of the core/app/provider seam — is met by the build:
+the provider-neutral plan and result types were the seam, and nothing in
+`image-core` had to change to support the transport package.
 
 Only after the provider extraction proves the package boundary does the Next.js
 application move under `apps/web`. This is a path and workspace migration, not a
@@ -290,7 +294,7 @@ The package's current contract with the application is
 | [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | complete 2026-08-12 |
 | [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | complete 2026-08-12 |
 | [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | complete 2026-08-12 |
-| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised             |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | built 2026-08-13    |
 | [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised             |
 
 Slice 5 has no spec by design — the hub spec carries its inventory and the

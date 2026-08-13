@@ -50,7 +50,8 @@ import {
 } from "@vesper/image-core";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { newId } from "@/lib/ids";
-import { classifyImageFailure, disableSafetyChecker, OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai";
+import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "@vesper/image-replicate";
+import { classifyImageFailure, disableSafetyChecker } from "../ai";
 import {
   db,
   imageIdentityPackTrialCells,

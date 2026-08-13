@@ -1215,10 +1215,10 @@ asserting fallback **and** code:
   delete, run, record verdict); exported via `src/server/images/index.ts`.
 - `src/server/images/image-lab-controls.ts` — extraction service + edge-map
   computation + preprocessor pins.
-- `src/server/ai/replicate.ts` — adds `runReplicatePreprocessor` (create
-  prediction with pinned version, poll, download validated output; no retry
-  loop, same timeout regime as image runs); exported via `src/server/ai`
-  barrel.
+- `packages/image-replicate/src/preprocessor.ts` — `runReplicatePreprocessor`
+  (create prediction with pinned version, poll, download validated output; no
+  retry loop, same timeout regime as image runs); reached through the configured
+  client from `src/server/ai`.
 - `src/app/api/admin/self/image-lab/experiments/route.ts` (GET list, POST
   create+run), `experiments/[experimentId]/route.ts` (GET detail, DELETE,
   PATCH verdict), `controls/route.ts` (GET list, POST upload),

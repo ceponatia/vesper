@@ -9,9 +9,10 @@ import {
   preparePromptForImageModel,
   withReviewedImageQuality,
 } from "@vesper/image-core";
+import type { RenderControlReference } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
-import { runRegistryImageModel, type RenderControlReference } from "../ai";
+import { replicateClient } from "../ai";
 
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).
@@ -182,7 +183,7 @@ export async function renderWithModel(
   const model = withReviewedImageQuality(input.model);
   const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
   const aspect = chooseAspect(model, targetRatio);
-  const result = await runRegistryImageModel(
+  const result = await replicateClient().runRegistryImageModel(
     model,
     {
       prompt,

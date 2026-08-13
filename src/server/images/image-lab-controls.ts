@@ -12,12 +12,8 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import {
-  classifyImageFailure,
-  runReplicatePreprocessor,
-  type ReplicateImageResult,
-  type ReplicatePreprocessorRequest,
-} from "../ai";
+import type { ReplicateImageResult, ReplicatePreprocessorRequest } from "@vesper/image-replicate";
+import { classifyImageFailure, replicateClient } from "../ai";
 import { db, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
 import type { ImageLabProviderOutcome, ImageLabRefusal, ImageLabRunPayload } from "./image-lab";
@@ -175,7 +171,7 @@ export function setImageLabPreprocessorForTesting(
 }
 
 function preprocessor(): (request: ReplicatePreprocessorRequest) => Promise<ReplicateImageResult> {
-  return injectedPreprocessor ?? runReplicatePreprocessor;
+  return injectedPreprocessor ?? ((request) => replicateClient().runReplicatePreprocessor(request));
 }
 
 /**

@@ -21,6 +21,18 @@ const RESTRICT_PACKAGE_SUBPATH = {
     "Import a workspace package by its exact name (@vesper/<name>). Code subpaths are not public API — add the symbol to the package's root barrel instead.",
 };
 
+// The Replicate transport is a SERVER package: it holds the provider credential
+// and performs network IO. While it lived under `src/server/**` the path name
+// was the protection; now that it is a package, the ban has to be stated. Server
+// modules, route handlers and root scripts reach it through the configured
+// application runtime (`src/server/ai/replicate-runtime.ts`).
+// (monorepo-image-core.spec.replicate.md §"Server-only application boundary".)
+const RESTRICT_TRANSPORT_PACKAGE = {
+  group: ["@vesper/image-replicate"],
+  message:
+    "@vesper/image-replicate is server-only — it carries the provider credential. Client-importable layers must not import it; reach the provider through a route handler and @/server/ai.",
+};
+
 const NAMING_CONVENTION = [
   "error",
   { selector: "default", format: ["camelCase"], leadingUnderscore: "allowDouble", trailingUnderscore: "allow" },
@@ -137,6 +149,7 @@ export default defineConfig([
         },
         RESTRICT_PROVIDER,
         RESTRICT_PACKAGE_SUBPATH,
+        RESTRICT_TRANSPORT_PACKAGE,
       ] }],
     },
   },
@@ -152,6 +165,7 @@ export default defineConfig([
         },
         RESTRICT_PROVIDER,
         RESTRICT_PACKAGE_SUBPATH,
+        RESTRICT_TRANSPORT_PACKAGE,
       ] }],
     },
   },

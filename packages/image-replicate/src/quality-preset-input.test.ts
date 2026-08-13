@@ -1,6 +1,6 @@
 import { type ImageModel, imageModelSchema, withReviewedImageQuality } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import { buildRegistryModelInput } from "./replicate";
+import { buildRegistryModelInput } from "./payload";
 
 /**
  * The seam between the reviewed quality presets (`@vesper/image-core`) and the
@@ -34,7 +34,7 @@ describe("reviewed quality presets reaching the provider payload", () => {
         apply_watermark: false,
       }),
     );
-    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
+    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
   });
 
   it("keeps RealVis's generic negative boilerplate cleared", () => {
@@ -45,13 +45,13 @@ describe("reviewed quality presets reaching the provider payload", () => {
         negative_prompt: "bad anatomy, extra limbs, text",
       }),
     );
-    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
+    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
   });
 
   it("keeps the Pony wrapper's `nsfw, naked` negative default cleared", () => {
     const prepared = withReviewedImageQuality(
       model("aisha-ai-official/likereality-pony-v1:version", { negative_prompt: "nsfw, naked" }),
     );
-    expect(buildRegistryModelInput(prepared, "portrait", [], null).negative_prompt).toBe("");
+    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
   });
 });
