@@ -26,18 +26,16 @@ import {
 import { characters, db, imageIdentityPacks, images } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageKind, type ImageRow } from "./assets";
 import { evaluateIdentityPackForProfile, identityReferenceProvenanceFor } from "./identity-pack-references";
+import { ensureIdentityPack } from "./identity-pack-ensure";
 import {
   cleanupIdentityPackRevisions,
   deleteCharacterIdentityAssets,
-  ensureIdentityPack,
-  getIdentityPackForOwner,
   IDENTITY_PACK_REVISION_RETENTION_MS,
-  prepareIdentityPacksBatch,
-  resetIdentityPackToAutomatic,
-  saveManualIdentityCrop,
-  setIdentityIntrinsicPolicyForTesting,
-  type IdentityPackRow,
-} from "./identity-packs";
+} from "./identity-pack-maintenance";
+import { resetIdentityPackToAutomatic, saveManualIdentityCrop } from "./identity-pack-manual";
+import { prepareIdentityPacksBatch } from "./identity-pack-preparation";
+import { getIdentityPackForOwner } from "./identity-pack-read";
+import { setIdentityIntrinsicPolicyForTesting, type IdentityPackRow } from "./identity-pack-store";
 
 /**
  * The deletion cases below drive the REAL route handlers, so the mocked identity

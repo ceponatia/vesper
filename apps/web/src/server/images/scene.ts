@@ -30,15 +30,13 @@ import { imageMeta, runImagePipeline, type ImageEntityKind } from "./assets";
 import { monogramSvg } from "./monogram";
 import {
   buildSceneComposerPrompt,
-  buildSceneRenderPrompt,
-  heuristicFocalName,
-  resolveScenePlan,
-  sceneComposerSystem,
-  sceneSpecSchema,
   type SceneComposerContext,
-  type SceneRenderPlan,
+  sceneComposerSystem,
   type SceneSpec,
-} from "./prompts";
+  sceneSpecSchema,
+} from "./prompts-scene-composer";
+import { heuristicFocalName, resolveScenePlan, type SceneRenderPlan } from "./prompts-scene-plan";
+import { buildSceneRenderPrompt } from "./prompts-scene-render";
 
 export type SceneComposeInput = SceneComposerContext & { sink?: DiagnosticSink };
 

@@ -8,7 +8,7 @@ import { commandPrincipalSchema } from "@vesper/simulation-core/contracts/envelo
 import { itemIdSchema, worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import { db, simCommands, simItemHoldings, simTriggers, type Db } from "@/server/db";
 import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
-import { itemLocusFromHoldingRow } from "./material-store";
+import { itemLocusFromHoldingRow } from "./material-rows";
 
 export interface ExplainOptions {
   database?: Db;

@@ -15,7 +15,7 @@ import {
  * the resting anatomy; live state (flaccid/erect) is the `arousal` meter +
  * conditions, not an attribute (Decision 2). Clinical values; prose promptHints.
  * Enum scales are ordered low→high; visual detail renders in an image only when the
- * region reads exposed on the uncensored route (server/images/prompts.ts).
+ * region reads exposed on the uncensored route (server/images/prompts-*.ts).
  */
 export const penisGroup = defineAttributeGroup("penis", [
   {

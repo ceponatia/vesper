@@ -9,7 +9,7 @@ import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
-import { PORTRAIT_IDENTITY_LOCK } from "./prompts";
+import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
  * Chat reference images (chat-scene-references.plan.md): the two cached anchors

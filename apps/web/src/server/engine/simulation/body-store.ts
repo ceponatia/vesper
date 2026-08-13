@@ -8,11 +8,7 @@ import {
   applyBodySourceCommandResultSchema,
   applyBodySourceCommandSchema,
   bodiesProjectionSchema,
-  bodyConditionSchema,
   bodyMeterRegistryByVersion,
-  bodyMeterStateSchema,
-  bodyModifierSchema,
-  bodyRegistryVersionSchema,
   endBodyConditionCommandResultSchema,
   endBodyConditionCommandSchema,
   initializeActorBodyCommandResultSchema,
@@ -25,10 +21,6 @@ import {
   type ApplyBodyModifierCommandResult,
   type ApplyBodySourceCommandResult,
   type BodiesProjection,
-  type BodyCondition,
-  type BodyMeterState,
-  type BodyModifier,
-  type BodyRhythmRow,
   bodyRhythmRowSchema,
   type EndBodyConditionCommandResult,
   type InitializeActorBodyCommandResult,
@@ -42,12 +34,9 @@ import { effectiveActorLod } from "@vesper/simulation-core/lod";
 import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "@vesper/simulation-core/routine";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
-  bodyCollapseUniquenessKeyPrefix,
-  bodyConditionExpiryUniquenessKey,
-  bodyThresholdUniquenessKeyPrefix,
+  buildMeterView,
+  collapseContextOf,
   resolveBodyCollapse,
-  type CollapseContext,
-  integrateMeterValue,
   normalizeConditionModifierSpecs,
   selfCareAdjustmentsBetween,
   resolveApplyBodyCondition,
@@ -58,14 +47,6 @@ import {
   resolveInitializeActorBody,
   type MeterIntegrationView,
 } from "@vesper/simulation-core/bodies";
-import {
-  deriveCircadianPressure,
-  deriveEnergyRead,
-  deriveIntimacyRead,
-  deriveVisibleBodySigns,
-  type EnergyRead,
-} from "@vesper/simulation-core/body-reads";
-import { cutBodilyReadsSchema, type CutBodilyReads } from "@vesper/simulation-core/contracts/narrative";
 import { claimHoldingActivityPhases } from "@vesper/simulation-core/contracts/activities";
 import { activityCompletionUniquenessKey } from "@vesper/simulation-core/activities";
 import {
@@ -83,7 +64,6 @@ import {
   simBranches,
   simCharacters,
   simEngagements,
-  simPhysicalLoci,
   simTriggers,
   type Db,
 } from "@/server/db";
@@ -94,9 +74,22 @@ import {
   type LockedBranchView,
 } from "./command-runner";
 import { activityFromRow } from "./activity-store";
-import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
-
-type DbExecutor = Db | SimTx;
+import {
+  bodyConditionFromRow,
+  bodyConditionRowInsert,
+  bodyMeterFromRow,
+  bodyMeterRowInsert,
+  bodyModifierFromRow,
+  bodyModifierRowInsert,
+  bodyRhythmFromRow,
+  bodyRhythmRowInsert,
+  loadActorBody,
+  loadCoLocatedActorIds,
+  retirePendingExpiryTrigger,
+  retirePendingThresholdTriggers,
+  upsertMeterRow,
+} from "./body-rows";
+import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
  * E5.1 durable body authority. Meter rows persist only at MATERIAL boundaries
@@ -111,128 +104,6 @@ type DbExecutor = Db | SimTx;
 export interface BodyStoreOptions {
   database?: Db;
   admitAtLockedVersion?: boolean;
-}
-
-export function bodyMeterFromRow(row: typeof simBodyMeters.$inferSelect): BodyMeterState {
-  return bodyMeterStateSchema.parse({
-    actorId: row.actorId,
-    meterKey: row.meterKey,
-    valueFixedPoint: row.valueFixedPoint,
-    baselineFixedPoint: row.baselineFixedPoint,
-    lastIntegratedAtStorySecond: row.lastIntegratedAt,
-    registryVersion: row.registryVersion,
-  });
-}
-
-export function bodyMeterRowInsert(
-  branchId: string,
-  meter: BodyMeterState,
-  updatedSequence: number,
-): typeof simBodyMeters.$inferInsert {
-  return {
-    branchId,
-    actorId: meter.actorId,
-    meterKey: meter.meterKey,
-    valueFixedPoint: meter.valueFixedPoint,
-    baselineFixedPoint: meter.baselineFixedPoint,
-    lastIntegratedAt: meter.lastIntegratedAtStorySecond,
-    registryVersion: meter.registryVersion,
-    updatedSequence,
-  };
-}
-
-export function bodyConditionFromRow(row: typeof simBodyConditions.$inferSelect): BodyCondition {
-  return bodyConditionSchema.parse({
-    id: row.conditionId,
-    actorId: row.actorId,
-    key: row.key,
-    onsetAtStorySecond: row.onsetAt,
-    ...(row.expiresAt === null ? {} : { expiresAtStorySecond: row.expiresAt }),
-    status: row.status,
-    ...(row.endBasis === null ? {} : { endBasis: row.endBasis }),
-    ...(row.endedAt === null ? {} : { endedAtStorySecond: row.endedAt }),
-    sourceEventId: row.sourceEventId,
-  });
-}
-
-export function bodyConditionRowInsert(
-  branchId: string,
-  condition: BodyCondition,
-  updatedSequence: number,
-): typeof simBodyConditions.$inferInsert {
-  return {
-    branchId,
-    conditionId: condition.id,
-    actorId: condition.actorId,
-    key: condition.key,
-    onsetAt: condition.onsetAtStorySecond,
-    expiresAt: condition.expiresAtStorySecond ?? null,
-    status: condition.status,
-    endBasis: condition.endBasis ?? null,
-    endedAt: condition.endedAtStorySecond ?? null,
-    sourceEventId: condition.sourceEventId,
-    updatedSequence,
-  };
-}
-
-export function bodyModifierFromRow(row: typeof simBodyModifiers.$inferSelect): BodyModifier {
-  return bodyModifierSchema.parse({
-    id: row.modifierId,
-    actorId: row.actorId,
-    meterKey: row.meterKey,
-    operation: row.operation,
-    stackingGroup: row.stackingGroup,
-    priority: row.priority,
-    validFromStorySecond: row.validFrom,
-    ...(row.validUntil === null ? {} : { validUntilStorySecond: row.validUntil }),
-    visibility: row.visibility,
-    ...(row.conditionId === null ? {} : { conditionId: row.conditionId }),
-    sourceEventId: row.sourceEventId,
-  });
-}
-
-export function bodyModifierRowInsert(
-  branchId: string,
-  modifier: BodyModifier,
-  updatedSequence: number,
-): typeof simBodyModifiers.$inferInsert {
-  return {
-    branchId,
-    modifierId: modifier.id,
-    actorId: modifier.actorId,
-    meterKey: modifier.meterKey,
-    operation: modifier.operation,
-    stackingGroup: modifier.stackingGroup,
-    priority: modifier.priority,
-    validFrom: modifier.validFromStorySecond,
-    validUntil: modifier.validUntilStorySecond ?? null,
-    visibility: modifier.visibility,
-    conditionId: modifier.conditionId ?? null,
-    sourceEventId: modifier.sourceEventId,
-    updatedSequence,
-  };
-}
-
-export function bodyRhythmFromRow(row: typeof simBodyRhythms.$inferSelect): BodyRhythmRow {
-  return bodyRhythmRowSchema.parse({
-    actorId: row.actorId,
-    kind: row.kind,
-    startMinuteOfDay: row.startMinuteOfDay,
-    endMinuteOfDay: row.endMinuteOfDay,
-  });
-}
-
-export function bodyRhythmRowInsert(
-  branchId: string,
-  row: BodyRhythmRow,
-): typeof simBodyRhythms.$inferInsert {
-  return {
-    branchId,
-    actorId: row.actorId,
-    kind: row.kind,
-    startMinuteOfDay: row.startMinuteOfDay,
-    endMinuteOfDay: row.endMinuteOfDay,
-  };
 }
 
 const bodyRhythmSeedSchema = z
@@ -320,235 +191,6 @@ function rejectedResult<TCode extends string>(commandId: string, code: TCode, pu
     publicReason,
     legalAlternativeCommandTypes: [],
   };
-}
-
-export interface ActorBodyRows {
-  meters: BodyMeterState[];
-  conditions: BodyCondition[];
-  modifiers: BodyModifier[];
-  rhythms: BodyRhythmRow[];
-}
-
-/** Exported for the E6.2 routine controller (routine-store.ts). */
-export async function loadActorBody(tx: DbExecutor, branchId: string, actorId: string): Promise<ActorBodyRows> {
-  const [meterRows, conditionRows, modifierRows, rhythmRows] = await Promise.all([
-    tx
-      .select()
-      .from(simBodyMeters)
-      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.actorId, actorId)))
-      .orderBy(asc(simBodyMeters.meterKey)),
-    tx
-      .select()
-      .from(simBodyConditions)
-      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.actorId, actorId)))
-      .orderBy(asc(simBodyConditions.conditionId)),
-    tx
-      .select()
-      .from(simBodyModifiers)
-      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.actorId, actorId)))
-      .orderBy(asc(simBodyModifiers.modifierId)),
-    tx
-      .select()
-      .from(simBodyRhythms)
-      .where(and(eq(simBodyRhythms.branchId, branchId), eq(simBodyRhythms.actorId, actorId)))
-      .orderBy(asc(simBodyRhythms.kind), asc(simBodyRhythms.startMinuteOfDay)),
-  ]);
-  return {
-    meters: meterRows.map(bodyMeterFromRow),
-    conditions: conditionRows.map(bodyConditionFromRow),
-    modifiers: modifierRows.map(bodyModifierFromRow),
-    rhythms: rhythmRows.map(bodyRhythmFromRow),
-  };
-}
-
-/**
- * The kernel's per-meter integration view over one actor's loaded rows.
- * Rhythm self-care crossings enter as scheduled adjustments through the
- * solve horizon, so every material integration folds the §25.5 window law.
- */
-export function meterViewOf(
-  body: ActorBodyRows,
-  meterKey: string,
-  throughStorySecond: number,
-): MeterIntegrationView | undefined {
-  const state = body.meters.find((meter) => meter.meterKey === meterKey);
-  if (!state) return undefined;
-  const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
-  if (!parsedVersion.success) return undefined;
-  const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
-    (candidate) => candidate.key === meterKey,
-  );
-  if (!definition) return undefined;
-  return {
-    definition,
-    state,
-    modifiers: body.modifiers.filter((modifier) => modifier.meterKey === meterKey),
-    scheduledAdjustments: selfCareAdjustmentsBetween(
-      body.rhythms,
-      meterKey,
-      state.lastIntegratedAtStorySecond,
-      throughStorySecond,
-    ),
-  };
-}
-
-/** Retire this meter's pending alarm so it can never fire against stale state. */
-export async function retirePendingThresholdTriggers(
-  tx: SimTx,
-  branch: LockedBranchView,
-  commandId: string,
-  submittedAtWallClock: string,
-  actorId: string,
-  meterKey: string,
-): Promise<void> {
-  const prefix = bodyThresholdUniquenessKeyPrefix(actorId, meterKey);
-  await tx
-    .update(simTriggers)
-    .set({
-      state: "completed",
-      resultCommandId: commandId,
-      completedAt: new Date(submittedAtWallClock),
-    })
-    .where(
-      and(
-        eq(simTriggers.branchId, branch.id),
-        eq(simTriggers.state, "pending"),
-        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
-      ),
-    );
-  // Any material energy change also invalidates the actor's collapse alarm
-  // (E5.2) — the same command re-arms the live one, mirroring replay.
-  if (meterKey === "energy") {
-    await retirePendingCollapseTriggers(tx, branch, commandId, submittedAtWallClock, actorId);
-  }
-}
-
-async function retirePendingExpiryTrigger(
-  tx: SimTx,
-  branch: LockedBranchView,
-  commandId: string,
-  submittedAtWallClock: string,
-  conditionId: string,
-): Promise<void> {
-  await tx
-    .update(simTriggers)
-    .set({
-      state: "completed",
-      resultCommandId: commandId,
-      completedAt: new Date(submittedAtWallClock),
-    })
-    .where(
-      and(
-        eq(simTriggers.branchId, branch.id),
-        eq(simTriggers.uniquenessKey, bodyConditionExpiryUniquenessKey(conditionId)),
-        eq(simTriggers.state, "pending"),
-      ),
-    );
-}
-
-/** The most recent second the actor actually finished sleeping, if any. */
-function lastSleepEndedAtOf(conditions: readonly BodyCondition[]): number | undefined {
-  return conditions
-    .filter(
-      (condition) =>
-        condition.key === "asleep" &&
-        condition.status === "ended" &&
-        condition.endedAtStorySecond !== undefined,
-    )
-    .reduce<number | undefined>(
-      (latest, condition) =>
-        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
-          ? condition.endedAtStorySecond
-          : latest,
-      undefined,
-    );
-}
-
-/** Exported for the E6.3 LOD-assignment body-alarm re-arm (lod-store.ts). */
-export function collapseContextOf(body: ActorBodyRows): CollapseContext {
-  const lastSleepEndedAt = lastSleepEndedAtOf(body.conditions);
-  return {
-    rhythmRows: body.rhythms,
-    ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
-  };
-}
-
-/** Retire the actor's pending collapse alarm (any arming attempt). */
-export async function retirePendingCollapseTriggers(
-  tx: SimTx,
-  branch: LockedBranchView,
-  commandId: string,
-  submittedAtWallClock: string,
-  actorId: string,
-): Promise<void> {
-  const prefix = bodyCollapseUniquenessKeyPrefix(actorId);
-  await tx
-    .update(simTriggers)
-    .set({
-      state: "completed",
-      resultCommandId: commandId,
-      completedAt: new Date(submittedAtWallClock),
-    })
-    .where(
-      and(
-        eq(simTriggers.branchId, branch.id),
-        eq(simTriggers.state, "pending"),
-        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
-      ),
-    );
-}
-
-export async function upsertMeterRow(
-  tx: SimTx,
-  branchId: string,
-  meter: BodyMeterState,
-  updatedSequence: number,
-): Promise<void> {
-  const [updated] = await tx
-    .update(simBodyMeters)
-    .set({
-      valueFixedPoint: meter.valueFixedPoint,
-      baselineFixedPoint: meter.baselineFixedPoint,
-      lastIntegratedAt: meter.lastIntegratedAtStorySecond,
-      updatedSequence,
-    })
-    .where(
-      and(
-        eq(simBodyMeters.branchId, branchId),
-        eq(simBodyMeters.actorId, meter.actorId),
-        eq(simBodyMeters.meterKey, meter.meterKey),
-      ),
-    )
-    .returning({ meterKey: simBodyMeters.meterKey });
-  if (!updated) throw new Error("Locked body meter changed before its material update");
-}
-
-/**
- * Co-located same-zone actors (excluding the subject) for witness capture.
- * Exported: material-store.ts's item-condition commands (E5.3 slice 3, §26.7)
- * reuse this same zone join for their own noticeable-threshold witnessing —
- * an item condition command's acting actor is always co-located with the
- * item's root zone (the `root_not_colocated` check enforces it), so this is
- * exactly "co-located with the item" for that case.
- */
-export async function loadCoLocatedActorIds(tx: SimTx, branchId: string, actorId: string): Promise<string[]> {
-  const [subject] = await tx
-    .select({ kind: simPhysicalLoci.kind, zoneId: simPhysicalLoci.zoneId })
-    .from(simPhysicalLoci)
-    .where(and(eq(simPhysicalLoci.branchId, branchId), eq(simPhysicalLoci.actorId, actorId)))
-    .limit(1);
-  if (!subject || subject.kind !== "at" || subject.zoneId === null) return [];
-  const rows = await tx
-    .select({ actorId: simPhysicalLoci.actorId })
-    .from(simPhysicalLoci)
-    .where(
-      and(
-        eq(simPhysicalLoci.branchId, branchId),
-        eq(simPhysicalLoci.kind, "at"),
-        eq(simPhysicalLoci.zoneId, subject.zoneId),
-      ),
-    );
-  return rows.map((row) => row.actorId).filter((candidate) => candidate !== actorId);
 }
 
 /** Seed one actor's body from the registry: rows + initial alarms, atomically. */
@@ -727,12 +369,12 @@ export async function submitDurableApplyBodySource(
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
       const horizon = branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
-      const meterView = meterViewOf(body, command.payload.meterKey, horizon);
+      const meterView = buildMeterView(body, command.payload.meterKey, horizon);
       // §25.4 coupling inputs: the hygiene view for exertion-on-energy, and
       // whether an afterglow already holds for climax-on-arousal.
       const coupledHygiene =
         command.payload.sourceKind === "exertion" && command.payload.meterKey === "energy"
-          ? meterViewOf(body, "hygiene", horizon)
+          ? buildMeterView(body, "hygiene", horizon)
           : undefined;
       const resolution = resolveApplyBodySource(
         {
@@ -830,7 +472,7 @@ export async function submitDurableApplyBodyModifier(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+      const meterView = buildMeterView(body, command.payload.modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const resolution = resolveApplyBodyModifier(
         {
           worldId: branch.worldId,
@@ -913,7 +555,7 @@ export async function submitDurableApplyBodyCondition(
         command.payload.conditionKey,
         command.payload.modifiers,
       )) {
-        const view = meterViewOf(body, spec.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+        const view = buildMeterView(body, spec.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
         if (view) meterViews.set(spec.meterKey, view);
       }
       const resolution = resolveApplyBodyCondition(
@@ -1019,7 +661,7 @@ export async function submitDurableEndBodyCondition(
       );
       const meterViews = new Map<string, MeterIntegrationView>();
       for (const modifier of ownedModifiers) {
-        const view = meterViewOf(body, modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+        const view = buildMeterView(body, modifier.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
         if (view) meterViews.set(modifier.meterKey, view);
       }
       const resolution = resolveEndBodyCondition(
@@ -1136,7 +778,7 @@ export async function submitDurableResolveBodyThreshold(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, command.payload.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+      const meterView = buildMeterView(body, command.payload.meterKey, branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const definition = meterView?.definition;
       const threshold = definition?.thresholds.find(
         (candidate) => candidate.key === command.payload.thresholdKey,
@@ -1209,159 +851,6 @@ export async function submitDurableResolveBodyThreshold(
   });
 }
 
-// ---------------------------------------------------------------------------
-// E5.2 — the durable read surface (engine.spec §25.1 layer 3)
-// ---------------------------------------------------------------------------
-
-export interface DurableEnergyRead {
-  actorId: string;
-  reserveFixedPoint: number;
-  pressureFixedPoint: number;
-  read: EnergyRead;
-}
-
-/**
- * Per-actor energy reads at the branch's current story second: reserve
- * integrated purely (nothing persists), circadian pressure derived from the
- * actor's own rhythm and last real sleep, the signed axis clamped at its
- * saturating poles. Layer-3 only — the raw meters never leave this seam.
- */
-export async function readDurableBodyReads(
-  rawBranchId: string,
-  database: Db = db(),
-): Promise<{ branchId: string; storySecond: number; energy: DurableEnergyRead[] }> {
-  const branchId = worldBranchIdSchema.parse(rawBranchId);
-  const [branch] = await database
-    .select({ storySecond: simBranches.storySecond })
-    .from(simBranches)
-    .where(eq(simBranches.id, branchId))
-    .limit(1);
-  if (!branch) throw new Error("Simulation branch not found");
-  const [meterRows, modifierRows, rhythmRows, conditionRows] = await Promise.all([
-    database
-      .select()
-      .from(simBodyMeters)
-      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.meterKey, "energy")))
-      .orderBy(asc(simBodyMeters.actorId)),
-    database
-      .select()
-      .from(simBodyModifiers)
-      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.meterKey, "energy"))),
-    database.select().from(simBodyRhythms).where(eq(simBodyRhythms.branchId, branchId)),
-    database
-      .select()
-      .from(simBodyConditions)
-      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.key, "asleep"))),
-  ]);
-  const energy: DurableEnergyRead[] = [];
-  for (const meterRow of meterRows) {
-    const state = bodyMeterFromRow(meterRow);
-    const parsedVersion = bodyRegistryVersionSchema.safeParse(state.registryVersion);
-    if (!parsedVersion.success) continue;
-    const definition = bodyMeterRegistryByVersion[parsedVersion.data].find(
-      (candidate) => candidate.key === "energy",
-    );
-    if (!definition) continue;
-    const reserveFixedPoint = integrateMeterValue(
-      {
-        definition,
-        state,
-        modifiers: modifierRows
-          .filter((row) => row.actorId === state.actorId)
-          .map(bodyModifierFromRow),
-      },
-      branch.storySecond,
-    );
-    const lastSleepEndedAt = conditionRows
-      .filter((row) => row.actorId === state.actorId && row.status === "ended" && row.endedAt !== null)
-      .reduce<number | undefined>(
-        (latest, row) => (latest === undefined || (row.endedAt ?? 0) > latest ? (row.endedAt ?? 0) : latest),
-        undefined,
-      );
-    const pressureFixedPoint = deriveCircadianPressure({
-      atStorySecond: branch.storySecond,
-      rhythmRows: rhythmRows.filter((row) => row.actorId === state.actorId).map(bodyRhythmFromRow),
-      ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
-    });
-    energy.push({
-      actorId: state.actorId,
-      reserveFixedPoint,
-      pressureFixedPoint,
-      read: deriveEnergyRead({ reserveFixedPoint, pressureFixedPoint }),
-    });
-  }
-  return { branchId, storySecond: branch.storySecond, energy };
-}
-
-/**
- * E5.2 — the cut's body surface (§22.1 `bodilyReads`): the viewpoint's own
- * energy read and intimacy pulse, plus each co-present actor's perceivable
- * signs at engaged-attention tier. Pure over loaded rows; empty when bodies
- * are uninitialized, so pre-Gate-5 worlds compile identical cuts.
- */
-export async function computeEngagementBodilyReads(
-  executor: DbExecutor,
-  input: {
-    branchId: string;
-    storySecond: number;
-    viewpointActorId: string;
-    coPresentActorIds: readonly string[];
-  },
-): Promise<CutBodilyReads> {
-  const actorIds = [...new Set([input.viewpointActorId, ...input.coPresentActorIds])];
-  const bodies = new Map(
-    await Promise.all(
-      actorIds.map(
-        async (actorId) => [actorId, await loadActorBody(executor, input.branchId, actorId)] as const,
-      ),
-    ),
-  );
-
-  const readOf = (actorId: string) => {
-    const body = bodies.get(actorId);
-    if (!body) return undefined;
-    const energyView = meterViewOf(body, "energy", input.storySecond);
-    if (!energyView) return undefined;
-    const reserveFixedPoint = integrateMeterValue(energyView, input.storySecond);
-    const lastSleepEndedAt = lastSleepEndedAtOf(body.conditions);
-    const pressureFixedPoint = deriveCircadianPressure({
-      atStorySecond: input.storySecond,
-      rhythmRows: body.rhythms,
-      ...(lastSleepEndedAt === undefined ? {} : { lastSleepEndedAtStorySecond: lastSleepEndedAt }),
-    });
-    const arousalView = meterViewOf(body, "arousal", input.storySecond);
-    return {
-      energyRead: deriveEnergyRead({ reserveFixedPoint, pressureFixedPoint }),
-      arousalFixedPoint: arousalView ? integrateMeterValue(arousalView, input.storySecond) : 0,
-      afterglowActive: body.conditions.some(
-        (condition) => condition.status === "active" && condition.key === "afterglow",
-      ),
-    };
-  };
-
-  const selfRead = readOf(input.viewpointActorId);
-  const observed: { actorId: string; signs: ReturnType<typeof deriveVisibleBodySigns> }[] = [];
-  for (const actorId of input.coPresentActorIds) {
-    if (actorId === input.viewpointActorId) continue;
-    const read = readOf(actorId);
-    if (!read) continue;
-    const signs = deriveVisibleBodySigns({ ...read, detailTier: 3 });
-    if (signs.length > 0) observed.push({ actorId, signs });
-  }
-  return cutBodilyReadsSchema.parse({
-    ...(selfRead === undefined
-      ? {}
-      : {
-          self: {
-            energySignedFixedPoint: selfRead.energyRead.signedFixedPoint,
-            energyBand: selfRead.energyRead.band,
-            intimacyPhase: deriveIntimacyRead(selfRead),
-          },
-        }),
-    observed,
-  });
-}
-
 /** Resolve one due collapse (trigger-dispatched; the read floor re-validated). */
 export async function submitDurableResolveBodyCollapse(
   rawCommand: unknown,
@@ -1387,7 +876,7 @@ export async function submitDurableResolveBodyCollapse(
     admitAtLockedVersion: options.admitAtLockedVersion,
     execute: async (tx, branch: LockedBranchView, command) => {
       const body = await loadActorBody(tx, branch.id, command.payload.actorId);
-      const meterView = meterViewOf(body, "energy", branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
+      const meterView = buildMeterView(body, "energy", branch.storySecond + BODY_THRESHOLD_HORIZON_SECONDS);
       const coLocatedActorIds = await loadCoLocatedActorIds(tx, branch.id, command.payload.actorId);
       const activityRows = await tx
         .select()

@@ -19,10 +19,9 @@ import {
   characterAppearanceSummary,
   identityAnchorSummary,
   sceneRevealAppearance,
-  type SceneComposerContext,
-  type ScenePresentCharacter,
-  type SceneRenderPlan,
-} from "./prompts";
+} from "./prompts-appearance";
+import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
+import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 
 export const DEFAULT_CHAT_ROOM =

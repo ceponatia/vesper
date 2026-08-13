@@ -10,9 +10,10 @@ import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { HIDDEN_IMAGE_KINDS, readImageBytes, runImagePipeline, type ImageKind, type ImageRow } from "./assets";
-import { queueIdentityPackPreparation } from "./identity-packs";
+import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
-import { apparentAgeAnchor, buildVariantInstruction, type VariantKind } from "./prompts";
+import { apparentAgeAnchor } from "./prompts-appearance";
+import { buildVariantInstruction, type VariantKind } from "./prompts-variant";
 
 export interface GenerateVariantInput {
   characterId: string;

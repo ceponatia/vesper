@@ -4,6 +4,7 @@ import {
   memoryRecallResponseSchema,
   type MemoryRecallResponse,
 } from "@vesper/simulation-core/contracts/memory";
+import { compareStableText } from "@vesper/simulation-core/hash";
 import { rankMemoryDocuments, type MemoryRankCandidate } from "@vesper/simulation-core/memory";
 import {
   db,
@@ -32,12 +33,6 @@ import { softCanonEntryFromRow } from "./soft-canon-recorder";
  */
 
 const liveBeliefStatuses = ["active", "doubted"] as const;
-
-function compareStableText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
 
 /**
  * Relational validity for ledger-backed documents (§24.1 steps 2–3): a

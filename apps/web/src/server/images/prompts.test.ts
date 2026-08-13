@@ -13,41 +13,44 @@ import { viewerBodyPartById } from "@/contracts/images/viewer-body";
 import { attr, makeProfile } from "@/server/test-support";
 import {
   apparentAgeAnchor,
-  bindLimbsToOwner,
-  buildAvatarPrompt,
-  buildItemImagePrompt,
-  buildLocationImagePrompt,
-  buildSceneComposerPrompt,
-  buildSceneRenderPrompt,
-  buildVariantInstruction,
   characterAppearanceSummary,
-  emptySceneRenderPlan,
-  emptySceneSpec,
-  formatExposure,
-  heuristicFocalName,
   identityAnchorSummary,
   imageAgeWord,
   intimateSceneAppearance,
-  PORTRAIT_IDENTITY_LOCK,
+  sceneRevealAppearance,
+} from "./prompts-appearance";
+import { buildAvatarPrompt, visibleAvatarOutfit } from "./prompts-avatar";
+import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts-entity";
+import {
+  buildSceneComposerPrompt,
+  emptySceneSpec,
+  formatExposure,
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
-  resolveScenePlan,
+  SCENE_COMPOSER_SYSTEM,
+  type SceneComposerContext,
   sceneComposerSystem,
-  sceneFramingRule,
-  sceneRevealAppearance,
+  type ScenePresentCharacter,
+  sceneSpecSchema,
+  wardrobeOutfitSummary,
+} from "./prompts-scene-composer";
+import {
+  bindLimbsToOwner,
+  emptySceneRenderPlan,
+  heuristicFocalName,
+  resolveScenePlan,
+  type SceneRenderPlan,
   scrubBlush,
   scrubPlayerFromAction,
-  SCENE_COMPOSER_SYSTEM,
-  SCENE_POV_RULE,
-  SELFIE_FRAMING,
-  sceneSpecSchema,
+} from "./prompts-scene-plan";
+import {
+  buildSceneRenderPrompt,
   EDIT_RENDER_PROMPT_LIMIT,
-  visibleAvatarOutfit,
-  wardrobeOutfitSummary,
-  type SceneComposerContext,
-  type ScenePresentCharacter,
-  type SceneRenderPlan,
-} from "./prompts";
+  SCENE_POV_RULE,
+  sceneFramingRule,
+  SELFIE_FRAMING,
+} from "./prompts-scene-render";
+import { buildVariantInstruction, PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
  * A character-SHEET attribute: every fixture in this file is `source: "base"`,

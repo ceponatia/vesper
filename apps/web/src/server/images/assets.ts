@@ -448,13 +448,18 @@ export const HIDDEN_IMAGE_KINDS = [
  * (image-identity-packs.spec.lifecycle.md §"Image sweep integration").
  *
  * A registry rather than an import because the dependency only runs one way:
- * `identity-packs.ts` imports this module for `createImageAsset`,
+ * the pack service imports this module for `createImageAsset`,
  * `saveImageBuffer` and `purgeImagesWhere`, so an import back would close a
  * cycle and fail `pnpm lint:cycles`. A dynamic `await import()` would not help —
- * madge counts async imports as edges too. So the pack service registers itself
- * on load (it is imported by `avatar.ts`, `variants.ts` and the barrel, i.e. by
- * everything that can reach a sweep), and the two call sites below stay
- * pack-agnostic.
+ * madge counts async imports as edges too. So the hooks are handed over from the
+ * outside, and the two call sites below stay pack-agnostic.
+ *
+ * The hand-over is one explicit call — `installIdentityPackMaintenance()` in
+ * `identity-pack-maintenance.ts`, invoked by this folder's `index.ts` — and not a
+ * side effect of loading a pack module. Every consumer of the folder enters
+ * through that barrel, so the registration happens for anything that can reach a
+ * delete or a sweep, and it is visible in the barrel rather than inferred from an
+ * import somebody could remove.
  *
  * Both hooks must contain their own failures: pointer clearing and the
  * scheduled sweep are maintenance, and neither may fail the delete or the render
@@ -477,7 +482,7 @@ export interface IdentityPackMaintenanceHooks {
 
 let identityPackMaintenance: IdentityPackMaintenanceHooks | null = null;
 
-/** Called once, at `identity-packs.ts` module load. `null` restores the no-op (tests). */
+/** Called once, from the folder barrel (`./index.ts`). `null` restores the no-op (tests). */
 export function registerIdentityPackMaintenance(hooks: IdentityPackMaintenanceHooks | null): void {
   identityPackMaintenance = hooks;
 }

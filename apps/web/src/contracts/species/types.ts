@@ -80,7 +80,7 @@ export const speciesDefinitionSchema = z.object({
    * Generic, image-safe visual description of the species' default morphology —
    * what *any* member looks like (pointed ears, a greenish skin cast, wings /
    * horns / tail, broad stature), NOT one character's specific attribute values.
-   * Surfaced to the image models (images/prompts.ts) and the character forge
+   * Surfaced to the image models (images/prompts-*.ts) and the character forge
    * (authoring/character-forge.ts) via `speciesAppearancePhrase`; the forge turns
    * this generic look into concrete per-character attribute values. Keep it to a
    * sentence — it shares the image prompt's length budget. Empty ⇒ only the label

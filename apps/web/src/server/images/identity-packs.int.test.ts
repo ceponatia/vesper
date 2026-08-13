@@ -25,21 +25,24 @@ import {
 import { characters, db, imageIdentityPacks, images, jobs, JOB_STALE_MS } from "../db";
 import { absoluteImagePath, createImageAsset, saveImageBuffer, type ImageRow } from "./assets";
 import {
-  cleanupIdentityPackRevisions,
   deriveIdentityPackWithoutProcessLockForTesting,
   ensureIdentityPack,
-  getIdentityPackForOwner,
-  IDENTITY_PACK_REVISION_RETENTION_MS,
-  identityPackLockKey,
-  MAX_IDENTITY_PACK_PREPARATION_PASSES,
-  packRowToContract,
   RESERVATION_JOIN_MS,
-  resetIdentityPackToAutomatic,
+} from "./identity-pack-ensure";
+import { cleanupIdentityPackRevisions, IDENTITY_PACK_REVISION_RETENTION_MS } from "./identity-pack-maintenance";
+import { resetIdentityPackToAutomatic } from "./identity-pack-manual";
+import {
+  MAX_IDENTITY_PACK_PREPARATION_PASSES,
   runIdentityPackPreparationForTesting,
+} from "./identity-pack-preparation";
+import { getIdentityPackForOwner } from "./identity-pack-read";
+import {
+  identityPackLockKey,
+  packRowToContract,
   setIdentityIntrinsicPolicyForTesting,
   sourceContentHashOf,
   type IdentityPackRow,
-} from "./identity-packs";
+} from "./identity-pack-store";
 
 /**
  * `ensureIdentityPack` end to end against DATABASE_URL and a sandboxed
