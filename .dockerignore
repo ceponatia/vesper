@@ -1,5 +1,13 @@
 # Dependencies & build output — reinstalled / rebuilt inside the image
-node_modules/
+#
+# `**/` is load-bearing, not tidiness: a .dockerignore pattern with no `**` is
+# anchored at the context root, so a bare `node_modules/` left every
+# `packages/*/node_modules` in the build context. pnpm fills those with symlinks
+# — on Windows, junctions — and the remote builder's tar cannot classify one:
+# `archive/tar: unknown file mode ?rwxr-xr-x`, and the deploy dies at ~36 MB of
+# context transfer with nothing pointing at the cause (2026-08-13). Nested
+# installs only appeared once the repo grew workspace packages.
+**/node_modules/
 .next/
 *.tsbuildinfo
 next-env.d.ts
@@ -15,9 +23,9 @@ data/
 # Agent-session state; worktrees under here carry full checkouts + pnpm
 # junctions that break the remote builder's tar (deploy failure 2026-07-27)
 .claude/
-.turbo/
-.vitest-cache/
-coverage/
+**/.turbo/
+**/.vitest-cache/
+**/coverage/
 .vscode
 .idea
 scratchpad/
