@@ -9,14 +9,14 @@ import {
   type AccessGrant,
   type AttemptEntryCommandResult,
   type StorytellerRelocateActorCommandResult,
-} from "@/contracts/simulation/access";
+} from "@vesper/simulation-core/contracts/access";
 import {
   activityClaimSchema,
   claimHoldingActivityPhases,
-} from "@/contracts/simulation/activities";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { resolveAttemptEntry, resolveStorytellerRelocation } from "@/lib/simulation/access";
-import { journeyArrivalUniquenessKey } from "@/lib/simulation/space";
+} from "@vesper/simulation-core/contracts/activities";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
+import { resolveAttemptEntry, resolveStorytellerRelocation } from "@vesper/simulation-core/access";
+import { journeyArrivalUniquenessKey } from "@vesper/simulation-core/space";
 import {
   db,
   simAccessGrants,

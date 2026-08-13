@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { deriveEngagementId } from "@/lib/simulation";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
 import {
   ROLLOUT_ACTORS,
   ROLLOUT_BRANCH_ID,

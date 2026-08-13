@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ChatEngineAuthorityState } from "@/contracts/simulation";
+import type { ChatEngineAuthorityState } from "@vesper/simulation-core/contracts/authority";
 import { log } from "@/server/log";
 
 // sim-read-seam-guards.plan.md slice 1: each of the four state-read seams must

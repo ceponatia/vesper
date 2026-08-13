@@ -3,8 +3,8 @@ import {
   CUT_COMPILER_VERSION,
   narrativeCutSchema,
   type NarrativeCut,
-} from "@/contracts/simulation/narrative";
-import { simulationHash } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/contracts/narrative";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { db, simNarrativeCuts, type Db } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 

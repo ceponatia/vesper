@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
+import { METER_FIXED_POINT_ONE } from "@vesper/simulation-core/contracts/bodies";
 import { characterChats, db, simBodyMeters, simBranches, users } from "@/server/db";
 import {
   ROLLOUT_ACTORS,

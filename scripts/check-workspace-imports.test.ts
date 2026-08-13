@@ -348,6 +348,46 @@ describe("workspace import integrity", () => {
     expect(check({ "packages/core/src/thing.test.ts": 'export const dir = process.cwd();\n' })).toEqual([]);
   });
 
+  it("does not mistake a local named after a global for the global", () => {
+    // A domain word that collides with a single-runtime global — `window` is an
+    // ordinary noun in scheduling code. A parameter, a destructured binding, an
+    // import and a hoisted declaration all shadow the global.
+    expect(
+      check({
+        "packages/core/src/thing.ts": [
+          'import { window } from "./vocabulary";',
+          "",
+          "export function opens(window: { start: number }): number {",
+          "  return window.start;",
+          "}",
+          "",
+          "export function closes({ document }: { document: { end: number } }): number {",
+          "  return document.end;",
+          "}",
+          "",
+          "export const late = (): number => process();",
+          "",
+          "function process(): number {",
+          "  return window.start;",
+          "}",
+          "",
+          "export const other = window;",
+          "",
+        ].join("\n"),
+        "packages/core/src/vocabulary.ts": "export const window = { start: 0 };\n",
+      }),
+    ).toEqual([]);
+    // Shadowing inside one function does not license the real global elsewhere.
+    expect(
+      rules(
+        check({
+          "packages/core/src/thing.ts":
+            "export function inner(window: number): number {\n  return window;\n}\n\nexport const outer = window.name;\n",
+        }),
+      ),
+    ).toEqual(["universal-runtime-global"]);
+  });
+
   it("allows the application to use Node built-ins and its own alias", () => {
     expect(
       check({

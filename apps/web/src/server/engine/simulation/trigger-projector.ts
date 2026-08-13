@@ -4,7 +4,7 @@ import {
   simulationTriggerSchema,
   type SimulationTrigger,
   type TriggerScheduledEvent,
-} from "@/contracts/simulation/scheduler";
+} from "@vesper/simulation-core/contracts/scheduler";
 import { simTriggers, type Db } from "@/server/db";
 
 /** The query surface shared by `db()` transactions; the projector runs inside one. */

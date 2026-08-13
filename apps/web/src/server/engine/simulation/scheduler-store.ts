@@ -25,16 +25,16 @@ import {
   type ScheduleTransferTriggerCommand,
   type ScheduleTriggerCommandResult,
   type SimulationTrigger,
-} from "@/contracts/simulation/scheduler";
+} from "@vesper/simulation-core/contracts/scheduler";
 import {
   branchVersionSchema,
   storySecondSchema,
   worldBranchIdSchema,
   worldIdSchema,
-} from "@/contracts/simulation/identity";
-import { completeActivityCommandSchema } from "@/contracts/simulation/activities";
-import { transferItemCommandSchema } from "@/contracts/simulation/materials";
-import { arriveJourneyCommandSchema } from "@/contracts/simulation/space";
+} from "@vesper/simulation-core/contracts/identity";
+import { completeActivityCommandSchema } from "@vesper/simulation-core/contracts/activities";
+import { transferItemCommandSchema } from "@vesper/simulation-core/contracts/materials";
+import { arriveJourneyCommandSchema } from "@vesper/simulation-core/contracts/space";
 import { db, simBranches, simCommands, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { submitDurableCompleteActivity } from "./activity-store";
 import { authorizeSimulationCommand } from "./command-authz";

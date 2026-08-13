@@ -4,7 +4,7 @@ import type {
   DeliberatorAdmission,
   DeliberatorAdmissionInput,
   DeliberatorRequest,
-} from "@/contracts/simulation/deliberation";
+} from "@vesper/simulation-core/contracts/deliberation";
 import {
   CONSENT_ESCALATION_SCORE_GAP_THRESHOLD_FIXED_POINT,
   attemptConsentEscalationCommandResultSchema,
@@ -22,25 +22,38 @@ import {
   type RecordRelationshipEntryCommand,
   type RecordRelationshipEntryCommandResult,
   type RelationshipLedgerEntry,
-} from "@/contracts/simulation/social";
-import { composeSimulationId } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/social";
+import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
 import {
   admitDeliberator,
   buildDeliberatorRequest,
   resolveDeliberationOutcome,
-} from "@/lib/simulation/deliberation";
-import { sortedUnique } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/deliberation";
+import { sortedUnique } from "@vesper/simulation-core/hash";
 import {
   deriveConsentEscalationCandidates,
   deriveRelationshipRead,
   resolveRecordRelationshipChangeFromView,
   resolveRecordRelationshipEntryFromView,
   type RelationshipReadWeightOverride,
-} from "@/lib/simulation/social";
-import { db, simBranches, simCharacters, simCommands, simEvents, simRelationshipLedger, type Db } from "@/server/db";
+} from "@vesper/simulation-core/social";
+import {
+  db,
+  simBranches,
+  simCharacters,
+  simCommands,
+  simEvents,
+  simRelationshipLedger,
+  type Db,
+} from "@/server/db";
 import { loadCoLocatedActorIds } from "./body-store";
 import { readEffectiveActorLod } from "./lod-store";
-import { advanceLockedBranch, appendSimulationEvent, runSimulationCommand, type LockedBranchView } from "./command-runner";
+import {
+  advanceLockedBranch,
+  appendSimulationEvent,
+  runSimulationCommand,
+  type LockedBranchView,
+} from "./command-runner";
 import { InjectedSimulationCrash } from "./material-store";
 import { relationshipLedgerEntryFromRow } from "./social-recorder";
 import type { SimTx } from "./trigger-projector";

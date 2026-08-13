@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { narrativeCutSchema, type NarrativeCut } from "@/contracts/simulation/narrative";
+import { narrativeCutSchema, type NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
 import {
   buildConfirmCommand,
   renderCommittedCut,

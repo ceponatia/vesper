@@ -1,20 +1,20 @@
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import type { PublicFailurePresentation } from "@/contracts/simulation/narrative";
-import { admitPlayerCommand, type AdmittedCommand } from "@/lib/simulation/input-admission";
-import { planDepartureChoreography, type SoloDeparture } from "@/lib/simulation/departure";
-import { computeMoveArrivalTarget, planStrandedSettlement } from "@/lib/simulation/travel-settle";
-import { placeGoPhrase } from "@/lib/simulation/world-read";
-import { simulationHash } from "@/lib/simulation/hash";
-import { deriveEngagementId, isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
-import { humanizeId } from "@/lib/simulation/humanize";
+import type { PublicFailurePresentation } from "@vesper/simulation-core/contracts/narrative";
+import { admitPlayerCommand, type AdmittedCommand } from "@vesper/simulation-core/input-admission";
+import { planDepartureChoreography, type SoloDeparture } from "@vesper/simulation-core/departure";
+import { computeMoveArrivalTarget, planStrandedSettlement } from "@vesper/simulation-core/travel-settle";
+import { placeGoPhrase } from "@vesper/simulation-core/world-read";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { deriveEngagementId, isStandingCoPresentEngagement } from "@vesper/simulation-core/engagements";
+import { humanizeId } from "@vesper/simulation-core/humanize";
 import {
   buildSoloFallbackProse,
   buildSoloPlayerSide,
   buildSoloVignette,
   type SoloCutContext,
   type SoloVignette,
-} from "@/lib/simulation/solo-cut";
+} from "@vesper/simulation-core/solo-cut";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { z } from "zod";
@@ -34,8 +34,11 @@ import { embedText, embedTexts } from "@/server/ai";
 import { resolveChatPersona } from "../players";
 import { readChatEngineAuthority } from "./chat-authority";
 import { isWorldBeatMeta, readBranchClock, writeWorldBeat, type SimChatClock } from "./sim-beats";
-import type { CompositionFallbackCode, CompositionFallbackSite } from "@/contracts/turns/composition-fallback";
-import type { SpaceProjection } from "@/contracts/simulation/space";
+import type {
+  CompositionFallbackCode,
+  CompositionFallbackSite,
+} from "@/contracts/turns/composition-fallback";
+import type { SpaceProjection } from "@vesper/simulation-core/contracts/space";
 import { CompositionFallbackCollector } from "./composition-diagnostics";
 import { escalateToTimeJob } from "./sim-time-jobs";
 import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
@@ -44,7 +47,13 @@ import { log } from "../log";
 import { narrationShapeId, type NarrationShapeId } from "./prompts/constants";
 import { buildSimSoloRenderPrompt } from "./prompts/sim-solo-render";
 import { buildLiveDeliberation, renderCommittedCut, renderSoloNarration } from "./sim-narrator";
-import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, zoneLabelFromKind, type SimChatRelationship } from "./sim-surfaces";
+import {
+  readSimChatOutfit,
+  readSimChatRelationship,
+  zoneDisplayNoun,
+  zoneLabelFromKind,
+  type SimChatRelationship,
+} from "./sim-surfaces";
 import {
   advanceBranchStoryTime,
   drainMemoryIndexOutbox,

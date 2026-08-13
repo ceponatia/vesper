@@ -6,8 +6,8 @@ import {
   type Belief,
   type MakeDisclosureCommandResult,
   type MakeDisclosureRejectionCode,
-} from "@/contracts/simulation/knowledge";
-import { resolveMakeDisclosure } from "@/lib/simulation/knowledge";
+} from "@vesper/simulation-core/contracts/knowledge";
+import { resolveMakeDisclosure } from "@vesper/simulation-core/knowledge";
 import { simAssertions, simBeliefs, simPhysicalLoci, type Db } from "@/server/db";
 import {
   advanceLockedBranch,

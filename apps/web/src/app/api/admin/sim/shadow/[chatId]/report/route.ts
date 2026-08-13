@@ -1,5 +1,5 @@
 import { desc, eq } from "drizzle-orm";
-import { analyzeShadowParity } from "@/lib/simulation";
+import { analyzeShadowParity } from "@/lib/simulation/shadow-parity";
 import { jsonOk } from "@/server/api";
 import { db, simShadowDivergences } from "@/server/db";
 import { withSelfOwnedSimChat } from "../../../owned";

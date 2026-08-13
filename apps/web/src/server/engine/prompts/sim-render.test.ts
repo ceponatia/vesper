@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { narrativeCutSchema, type NarrativeCut } from "@/contracts/simulation/narrative";
+import { narrativeCutSchema, type NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
-import { beatHandlesForCut, buildSimHandleMap, buildSimRenderPrompt, type SimRenderContext } from "./sim-render";
+import {
+  beatHandlesForCut,
+  buildSimHandleMap,
+  buildSimRenderPrompt,
+  type SimRenderContext,
+} from "./sim-render";
 
 /**
  * Snapshot + behavioural tests for the successor narrator prompt builder

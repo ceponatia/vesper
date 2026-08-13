@@ -3,23 +3,22 @@ import { describe, expect, it } from "vitest";
 import {
   RESERVED_CURRENCY_MATERIAL_KIND,
   lotLocusSchema,
-} from "@/contracts/simulation/households";
-import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
-import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
-import type { SimulationTriggerKind } from "@/contracts/simulation/scheduler";
-import { relationshipLedgerWeightRegistryV1 } from "@/contracts/simulation/social";
+} from "@vesper/simulation-core/contracts/households";
+import type { MaterialBranchSeedInput } from "@vesper/simulation-core/contracts/materials";
+import { proposedArmedEffectSchema } from "@vesper/simulation-core/contracts/narrative";
+import type { SimulationTriggerKind } from "@vesper/simulation-core/contracts/scheduler";
+import { relationshipLedgerWeightRegistryV1 } from "@vesper/simulation-core/contracts/social";
 import { newId } from "@/lib/ids";
+import { deriveEnergyRead } from "@vesper/simulation-core/body-reads";
+import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import {
-  deriveCommitmentId,
-  deriveEngagementId,
-  deriveEnergyRead,
   deriveMaterialLotRowKey,
-  deriveRelationshipRead,
   emptyHouseholdsSeed,
   replayHouseholdsHistory,
-  replaySocialLedgerHistory,
-  simulationHash,
-} from "@/lib/simulation";
+} from "@vesper/simulation-core/households";
+import { deriveRelationshipRead, replaySocialLedgerHistory } from "@vesper/simulation-core/social";
 import {
   db,
   simBodyMeters,

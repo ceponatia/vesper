@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterProfileSchema } from "@/contracts";
 import { newId } from "@/lib/ids";
-import { deriveProvisioningStamp, provisioningPayloadHash } from "@/lib/simulation/provisioning";
+import { deriveProvisioningStamp, provisioningPayloadHash } from "@vesper/simulation-core/provisioning";
 import {
   characterChats,
   chatParticipants,

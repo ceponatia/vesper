@@ -1,7 +1,10 @@
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
-import { relationshipLedgerEntrySchema, type RelationshipLedgerEntry } from "@/contracts/simulation/social";
-import { deriveRelationshipLedgerEntries } from "@/lib/simulation/social";
-import { sortedUnique } from "@/lib/simulation/hash";
+import {
+  relationshipLedgerEntrySchema,
+  type RelationshipLedgerEntry,
+} from "@vesper/simulation-core/contracts/social";
+import { deriveRelationshipLedgerEntries } from "@vesper/simulation-core/social";
+import { sortedUnique } from "@vesper/simulation-core/hash";
 import { db, simCommitments, simEvents, simRelationshipLedger, type Db } from "@/server/db";
 import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";

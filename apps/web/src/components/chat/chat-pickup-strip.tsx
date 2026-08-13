@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { CHAT_SKIP_MINUTES, formatChatMoment, type ChatSkipAmount } from "@/contracts";
 import type { CalendarStart } from "@/lib/clock";
-import { formatStoryClockShort, storyCalendarParams, storyClockAt } from "@/lib/simulation";
+import { formatStoryClockShort, storyCalendarParams, storyClockAt } from "@/lib/simulation/clock";
 
 /**
  * The reopen strip's four choices (character-chat-standalone.spec.md §8.1, D14):

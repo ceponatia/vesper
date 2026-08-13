@@ -1,12 +1,12 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
-import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
-import type { PhysicalLocus } from "@/contracts/simulation/space";
-import { buildMeterView, integrateMeterValue } from "@/lib/simulation/bodies";
-import { isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
-import { humanizeId } from "@/lib/simulation/humanize";
+import { simulationActionDefinitionSchema } from "@vesper/simulation-core/contracts/activities";
+import { METER_FIXED_POINT_ONE } from "@vesper/simulation-core/contracts/bodies";
+import type { PhysicalLocus } from "@vesper/simulation-core/contracts/space";
+import { buildMeterView, integrateMeterValue } from "@vesper/simulation-core/bodies";
+import { isStandingCoPresentEngagement } from "@vesper/simulation-core/engagements";
+import { humanizeId } from "@vesper/simulation-core/humanize";
 import { parseOr } from "@/lib/parse";
-import { deriveRelationshipRead } from "@/lib/simulation/social";
+import { deriveRelationshipRead } from "@vesper/simulation-core/social";
 import {
   actorWhereabouts,
   buildWorldActions,
@@ -16,7 +16,7 @@ import {
   type SimWorldCastMember,
   type WhereaboutsLocus,
   type WorldActionCandidate,
-} from "@/lib/simulation/world-read";
+} from "@vesper/simulation-core/world-read";
 import {
   db,
   simActionDefinitions,

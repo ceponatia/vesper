@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkSchema, type SimulationLink } from "@/contracts/simulation/space";
+import { linkSchema, type SimulationLink } from "@vesper/simulation-core/contracts/space";
 import { chatWorldSchema, simTravelResultSchema } from "@/lib/client/api";
 import {
   atLocus,
@@ -9,7 +9,7 @@ import {
   SPACE_NOW,
   SPACE_PLAYER,
   SPACE_SQUARE_ZONE,
-} from "@/test/sim-space-fixtures";
+} from "@vesper/simulation-core/testing/sim-space-fixtures";
 import {
   actionChipLabel,
   actorWhereabouts,
@@ -22,7 +22,7 @@ import {
   goChipLabel,
   placeGoPhrase,
   type WorldActionCandidate,
-} from "./world-read";
+} from "@vesper/simulation-core/world-read";
 
 /**
  * Pure world-read shaping tests (world-ui.plan.md slice 1). No IO — every

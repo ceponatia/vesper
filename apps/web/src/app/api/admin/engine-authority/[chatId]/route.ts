@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { engineAuthoritySchema } from "@/contracts/simulation";
+import { engineAuthoritySchema } from "@vesper/simulation-core/contracts/authority";
 import { jsonError, jsonOk, readBody, withOwnerAdminOwnedChat } from "@/server/api";
 import { readChatEngineAuthority, setChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat } from "@/app/api/chats/owned";

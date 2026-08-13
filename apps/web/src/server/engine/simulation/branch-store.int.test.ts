@@ -1,13 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { isMaterialEvent } from "@/contracts/simulation/branching";
-import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
-import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
+import { isMaterialEvent } from "@vesper/simulation-core/contracts/branching";
+import { itemConditionRegistryV1 } from "@vesper/simulation-core/contracts/material-condition";
+import {
+  transferItemCommandSchema,
+  type TransferItemCommand,
+} from "@vesper/simulation-core/contracts/materials";
 import {
   deriveScheduleCommandId,
   deriveTriggerCommandId,
   deriveTriggerId,
-} from "@/contracts/simulation/scheduler";
+} from "@vesper/simulation-core/contracts/scheduler";
 import { newId } from "@/lib/ids";
 import {
   db,

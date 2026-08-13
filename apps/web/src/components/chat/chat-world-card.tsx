@@ -1,14 +1,14 @@
 "use client";
 
 import { useId, useState } from "react";
-import { placeAtPhrase } from "@/lib/simulation/solo-cut";
+import { placeAtPhrase } from "@vesper/simulation-core/solo-cut";
 import {
   approxActivityMinutes,
   approxWalkMinutes,
   capitalizeFirst,
   goChipLabel,
   placeGoPhrase,
-} from "@/lib/simulation/world-read";
+} from "@vesper/simulation-core/world-read";
 import { chatsApi, type ChatWorld } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";

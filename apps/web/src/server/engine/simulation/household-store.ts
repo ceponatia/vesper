@@ -49,7 +49,7 @@ import {
   type SimulationHousehold,
   type TransferLotQuantityCommand,
   type TransferLotQuantityCommandResult,
-} from "@/contracts/simulation/households";
+} from "@vesper/simulation-core/contracts/households";
 import {
   buildMaterialLotInitializedEvent,
   deriveMaterialLotRowKey,
@@ -67,7 +67,7 @@ import {
   resolveSetMeansBandFromView,
   resolveTransferLotQuantityFromView,
   type HouseholdsResolutionView,
-} from "@/lib/simulation/households";
+} from "@vesper/simulation-core/households";
 import {
   simCharacters,
   simHouseholdMembers,

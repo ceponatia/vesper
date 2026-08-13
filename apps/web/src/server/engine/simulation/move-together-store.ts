@@ -1,13 +1,13 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
+import { claimHoldingEngagementStates } from "@vesper/simulation-core/contracts/engagements";
 import {
   moveTogetherCommandResultSchema,
   moveTogetherCommandSchema,
   type MoveTogetherCommandResult,
   type MoveTogetherRejectionCode,
-} from "@/contracts/simulation/space";
-import { isStandingCoPresentEngagement } from "@/lib/simulation/engagements";
-import { resolveMoveTogether } from "@/lib/simulation/move-together";
+} from "@vesper/simulation-core/contracts/space";
+import { isStandingCoPresentEngagement } from "@vesper/simulation-core/engagements";
+import { resolveMoveTogether } from "@vesper/simulation-core/move-together";
 import {
   simCharacters,
   simCommitments,

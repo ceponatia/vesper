@@ -13,7 +13,7 @@ import {
   type ChatActionId,
 } from "@/contracts";
 import type { ChatStateSnapshot } from "@/lib/client/api";
-import { formatStoryTime, storyCalendarParams, storyClockAt } from "@/lib/simulation";
+import { formatStoryTime, storyCalendarParams, storyClockAt } from "@/lib/simulation/clock";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { MoodChip } from "@/components/ui/mood-chip";

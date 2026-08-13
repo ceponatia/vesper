@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { emptyCharacterProfile, regardBandForValue } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { resolveChatModelId } from "@/lib/narrative-models";
-import { analyzeShadowParity } from "@/lib/simulation";
+import { analyzeShadowParity } from "@/lib/simulation/shadow-parity";
 import {
   characterChats,
   characters,

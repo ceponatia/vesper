@@ -1,14 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
+import type { SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
+import { proposedArmedEffectSchema } from "@vesper/simulation-core/contracts/narrative";
 import { newId } from "@/lib/ids";
-import {
-  compileNarrativeCut,
-  deriveCommitmentId,
-  deriveEngagementId,
-  journeyArrivalUniquenessKey,
-} from "@/lib/simulation";
+import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
+import { compileNarrativeCut } from "@vesper/simulation-core/narrative";
+import { journeyArrivalUniquenessKey } from "@vesper/simulation-core/space";
 import { db, simTriggers } from "@/server/db";
 import {
   seedDurableAccessGrants,

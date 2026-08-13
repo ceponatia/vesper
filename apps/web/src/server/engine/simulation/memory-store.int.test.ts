@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import type { MemoryRecallResponse } from "@/contracts/simulation/memory";
-import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
+import type { MemoryRecallResponse } from "@vesper/simulation-core/contracts/memory";
+import { proposedArmedEffectSchema } from "@vesper/simulation-core/contracts/narrative";
 import { newId } from "@/lib/ids";
-import { deriveEngagementId } from "@/lib/simulation";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
 import { db, simSoftCanon } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,

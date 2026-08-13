@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { deriveCommitmentId } from "@/lib/simulation";
+import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
 import { db, simTriggers } from "@/server/db";
 import { forkBranch } from "./branch-store";
 import {

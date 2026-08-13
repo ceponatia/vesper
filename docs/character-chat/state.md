@@ -216,7 +216,7 @@ snapshotted place name across scene moves, promotion ruling R3), typed **present
 (closures, rolls, tucks, displacement; 0 = fastened → 1 = open), and a **condition** state
 (fixed-point wetness/cleanliness/crease/wear base vector + per-part regional overrides +
 located deposits and damage marks, integrated lazily to story minutes — only wetness moves
-autonomously, drying at a material-scaled rate via the shared `lib/fixed-point.ts` kernel).
+autonomously, drying at a material-scaled rate via the shared fixed-point kernel (`@/lib/fixed-point`, a barrel over `@vesper/contracts`)).
 
 - **One dispatcher.** Every mutation is a typed `GarmentOperation` through
   `applyGarmentOperations` (contracts) — transfers, five presentation ops, five condition

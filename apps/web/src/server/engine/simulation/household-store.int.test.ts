@@ -19,17 +19,17 @@ import {
   type MeansSubject,
   type PromotionFunding,
   type SimulationHousehold,
-} from "@/contracts/simulation/households";
+} from "@vesper/simulation-core/contracts/households";
 import { newId } from "@/lib/ids";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import {
   deriveMaterialLotRowKey,
   deriveMeansRead,
   deriveMeansSubjectRowKey,
   emptyHouseholdsSeed,
   replayHouseholdsHistory,
-  simulationHash,
   sortHouseholdsProjection,
-} from "@/lib/simulation";
+} from "@vesper/simulation-core/households";
 import {
   db,
   simBranches,

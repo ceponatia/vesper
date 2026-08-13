@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { bodyMeterRegistryV1 } from "@/contracts/simulation/bodies";
+import { bodyMeterRegistryV1 } from "@vesper/simulation-core/contracts/bodies";
 import { newId } from "@/lib/ids";
 import {
   db,

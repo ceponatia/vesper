@@ -4,12 +4,12 @@ import {
   runRoutinePolicyCommandSchema,
   type RunRoutinePolicyCommand,
   type RunRoutinePolicyCommandResult,
-} from "@/contracts/simulation";
+} from "@vesper/simulation-core/contracts/routine";
 import {
   mealWindowCovering,
   resolveRunRoutinePolicyFromView,
   type RunRoutinePolicyResolutionView,
-} from "@/lib/simulation/routine";
+} from "@vesper/simulation-core/routine";
 import {
   simBodyConditions,
   simBodyModifiers,

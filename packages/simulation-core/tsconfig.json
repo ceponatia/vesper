@@ -1,0 +1,31 @@
+{
+  // The package's own TypeScript project. It extends only tsconfig.base.json —
+  // the language level and strictness contract — and never the application
+  // project: the point is to prove this package typechecks on its own terms
+  // rather than because the Next application lends it aliases, ambient
+  // generated types, or its TypeScript plugin. The base deliberately carries no
+  // `lib`, `types`, `jsx`, `paths` or plugins, so extending it grants nothing.
+  // `pnpm typecheck` in this package runs it; the root's recursive typecheck
+  // reaches it without naming the package.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // ES2022 + DOM, matching the other universal packages: DOM is the only
+    // library declaring the web-standard globals a universal package may use.
+    // It is NOT permission to touch `document`/`window` — `pnpm
+    // lint:package-boundaries` rejects evaluating those along with the
+    // Node-only globals.
+    "lib": ["ES2022", "DOM"],
+    // No ambient type packages at all. The simulation domain names no platform
+    // type: its one hashing seam runs on `@noble/hashes`, whose digests are
+    // `Uint8Array` rather than `Buffer`, so the honest set is empty — and an
+    // empty set is what stops the root install's `@types/*` from quietly
+    // establishing this package. The `node:crypto` equivalence test declares
+    // its own reference to the Node types it needs.
+    "types": []
+  },
+  // `vitest.config.ts` is listed so the package's own test config is covered by
+  // a project: type-aware ESLint parses only files a tsconfig claims, and an
+  // unclaimed config file fails the lint gate rather than going unchecked.
+  "include": ["src/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules"]
+}

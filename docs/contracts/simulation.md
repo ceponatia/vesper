@@ -9,25 +9,26 @@ The successor engine begins with the executable authority seam described by
 perspective-safe NarrativeCut. Gate 2 target E2.1 promotes the causal primitives into
 reusable production contracts.
 
-The implementation lives in:
+The implementation is split by statefulness. Everything pure — identities,
+envelopes, projection contracts and the replay kernels — is the
+`@vesper/simulation-core` package, which knows nothing about a database, a route
+or a request; the durable stores that read and write those projections stay in
+the application under `server/engine/simulation/`. The package publishes one
+exact subpath per module (`@vesper/simulation-core/contracts/<module>` for the
+contracts, `@vesper/simulation-core/<module>` for the kernels) and no root
+barrel, so every import names the module it depends on.
 
-- `apps/web/src/contracts/simulation/identity.ts` — opaque branded identities and safe integer
+- `packages/simulation-core/src/contracts/identity.ts` — opaque branded identities and safe integer
   causal primitives;
-- `apps/web/src/contracts/simulation/envelopes.ts` — principals and strict command, event, and
+- `packages/simulation-core/src/contracts/envelopes.ts` — principals and strict command, event, and
   exhaustive-result schema factories;
-- `apps/web/src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
-  observation, and NarrativeCut family;
-- `apps/web/src/contracts/simulation/scheduler.ts` — the E2.4 trigger contract, derived trigger
+- `packages/simulation-core/src/contracts/scheduler.ts` — the E2.4 trigger contract, derived trigger
   identity, named deterministic draw streams, capped retry backoff, and the E2.5
   `schedule_transfer_item` command / `trigger_scheduled` event family;
-- `apps/web/src/contracts/simulation/branching.ts` — the E2.5 branch-event union, fork input/result,
+- `packages/simulation-core/src/contracts/branching.ts` — the E2.5 branch-event union, fork input/result,
   snapshot, rebuild-comparison, and causal-explanation contracts;
-- `apps/web/src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
-  projector, replay, cut compiler, prompt formatter, and the temporary in-memory runtime;
-- `apps/web/src/lib/simulation/replay.ts` — pure E2.5 ancestry-bound math, seed reverse-derivation,
+- `packages/simulation-core/src/lib/replay.ts` — pure E2.5 ancestry-bound math, seed reverse-derivation,
   and the deterministic branch replay driver with its trigger ledger;
-- `apps/web/src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
-  transaction and typed read/bootstrap adapter;
 - `apps/web/src/server/engine/simulation/scheduler-store.ts` — the E2.4 durable trigger queue,
   lease/claim semantics, the bounded story-time advance seam, and the E2.5 durable
   schedule-command transaction;
@@ -36,9 +37,7 @@ The implementation lives in:
 - `apps/web/src/server/engine/simulation/snapshot-store.ts` (E2.5) — snapshot capture/discard and
   rebuild-from-zero / rebuild-from-snapshot hash comparison;
 - `apps/web/src/server/engine/simulation/audit-store.ts` (E2.5) — the read-only
-  `explainItemPlacement` causal chain;
-- `apps/web/src/server/engine/world-engine.ts` — the adapter into the existing character-chat
-  narrator.
+  `explainItemPlacement` causal chain.
 
 ## Identity and causal primitives
 
@@ -169,7 +168,7 @@ and treats any refusal as "no affordance":
   jsonb field — no migration; unlabeled definitions fall back to an id-derived label) — never
   a raw id. The read is fail-open: a malformed projection degrades to `null` (a 503 the
   client reads as "no card"), never a throw (docs/resilience.md). Pure shaping lives in
-  `apps/web/src/lib/simulation/world-read.ts`.
+  `packages/simulation-core/src/lib/world-read.ts`.
 - **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
   (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`** ·
   **`move_together`** · **`do_activity`**). Each is the ordinary durable command under the
@@ -193,16 +192,16 @@ and treats any refusal as "no affordance":
   runs the SAME choreography (end-as-choice → move → drain → one parted beat) and then
   renders the farewell + walk + arrival through the **solo cut** (a departure context on the
   dual-block solo prompt), satisfying ruling 20's parity clause. The pure decision
-  (`planDepartureChoreography`, `lib/simulation/departure.ts`) is scene-stands × admitted-kind
+  (`planDepartureChoreography`, `@vesper/simulation-core/departure`) is scene-stands × admitted-kind
   → steps; give/rest/none keep the co-present flow.
   **`move_together {toZoneId}`** (command-integrity A4) is
   **walk-with-me**, **ONE atomic branch-locked command**: the player invites the
   CO-PRESENT primary to travel together. The primary's acceptance is **NPC agency via a
-  bounded deterministic policy** (`decideAccompany`, `lib/simulation/accompany.ts` — no model
+  bounded deterministic policy** (`decideAccompany`, `@vesper/simulation-core/accompany` — no model
   call, no §21.4 consent-ledger touch per §39 ruling 16): **accept unless** (a) a claim-holding
   activity occupies the primary's **body**, or (b) a **`firm`/`hard`** open commitment falls
   due before the walk's arrival + a 300 s buffer. `decideAccompany` re-runs **inside the locked
-  authority view** (`resolveMoveTogether`, `lib/simulation/move-together.ts`), so there is no
+  authority view** (`resolveMoveTogether`, `@vesper/simulation-core/move-together`), so there is no
   read-vs-commit agency race (§14.2). A decline returns an
   honest §14.4 PUBLIC face — the SAME reason whether (a) or (b) blocks her, so the private cause
   never leaks. On **acceptance** the durable store (`submitDurableMoveTogether`) commits, in ONE

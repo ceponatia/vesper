@@ -36,6 +36,9 @@ importers:
       '@vesper/contracts':
         specifier: workspace:*
         version: link:packages/contracts
+      '@vesper/simulation-core':
+        specifier: workspace:*
+        version: link:packages/simulation-core
       dotenv:
         specifier: ^17.0.0
         version: 17.4.2
@@ -90,6 +93,9 @@ importers:
       '@vesper/image-replicate':
         specifier: workspace:*
         version: link:../../packages/image-replicate
+      '@vesper/simulation-core':
+        specifier: workspace:*
+        version: link:../../packages/simulation-core
       ai:
         specifier: ^6.0.201
         version: 6.0.201(zod@4.4.3)
@@ -180,6 +186,25 @@ importers:
       '@vesper/image-core':
         specifier: workspace:*
         version: link:../image-core
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/simulation-core:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^2.3.0
+        version: 2.3.0
+      '@vesper/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1260,6 +1285,10 @@ packages:
 
   '@noble/hashes@2.2.0':
     resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
+
+  '@noble/hashes@2.3.0':
+    resolution: {integrity: sha512-oN+QwyX7VSHotibwubG3kpzbwKrfnyR6OOO+3Nk/53ADL7FmgHHz4TgrbaYKvvOw09u6QTx0oiH1cNCIOuN0CQ==}
     engines: {node: '>= 20.19.0'}
 
   '@nodelib/fs.scandir@2.1.5':
@@ -4078,7 +4107,7 @@ snapshots:
 
   '@better-auth/utils@0.4.2':
     dependencies:
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.3.0
 
   '@better-fetch/fetch@1.3.1': {}
 
@@ -4675,6 +4704,8 @@ snapshots:
   '@noble/hashes@1.8.0': {}
 
   '@noble/hashes@2.2.0': {}
+
+  '@noble/hashes@2.3.0': {}
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
