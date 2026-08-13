@@ -4,7 +4,7 @@ The prime directive: **an error may degrade a turn, it must never disrupt the ga
 
 ## 1. Boundary parsing: `parseOr`
 
-Every value crossing a trust boundary — JSONB columns, LLM output, API request bodies, file payloads — goes through `src/lib/parse.ts`:
+Every value crossing a trust boundary — JSONB columns, LLM output, API request bodies, file payloads — goes through `src/lib/parse.ts`, the application's barrel over the shared implementation in `@vesper/contracts`:
 
 ```ts
 parseOr<T>(schema: ZodType<T>, raw: unknown, fallback: T, sink?: DiagnosticSink, path?: string): T
@@ -17,7 +17,7 @@ parseOrNull<T>(schema: ZodType<T>, raw: unknown, sink?: DiagnosticSink, path?: s
 
 ## 2. Diagnostics
 
-`src/contracts/diagnostics.ts`:
+`src/contracts/diagnostics.ts`, likewise a barrel over `@vesper/contracts` — the diagnostic contract is defined once for the whole workspace, so a package reports degradation through the same shape the app persists:
 
 ```ts
 type Diagnostic = {

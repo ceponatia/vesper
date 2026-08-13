@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DiagnosticSink } from "../diagnostics";
+import type { DiagnosticSink } from "@vesper/contracts";
 
 /**
  * The identity-pack vocabulary and contracts

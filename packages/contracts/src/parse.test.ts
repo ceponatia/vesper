@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { DiagnosticCollector } from "./diagnostics";
 import { parseOr, parseOrNull } from "./parse";
-import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { expectCleanSink, expectDiagnostics } from "@/test/diagnostics";
+
+/**
+ * The application's `expectDiagnostics`/`expectCleanSink` helpers live in
+ * `src/test/`, which this package may not reach into. The assertion they make
+ * is one line of `.map`, so the vocabulary is restated here rather than the
+ * boundary being bent for it.
+ */
+const codes = (sink: DiagnosticCollector): string[] => sink.items.map((item) => item.code);
 
 const shape = z.object({ name: z.string(), count: z.number().default(0) });
 const fallback = { name: "fallback", count: -1 };
@@ -31,13 +38,13 @@ describe("parseOr", () => {
   it("returns the fallback on schema mismatch, with a diagnostic", () => {
     const sink = new DiagnosticCollector();
     expect(parseOr(shape, { name: 42 }, fallback, sink)).toEqual(fallback);
-    expectDiagnostics(sink, ["parse.boundary_failed"]);
+    expect(codes(sink)).toEqual(["parse.boundary_failed"]);
   });
 
   it("does not record diagnostics on success", () => {
     const sink = new DiagnosticCollector();
     parseOr(shape, '{"name":"ok"}', fallback, sink);
-    expectCleanSink(sink);
+    expect(codes(sink)).toEqual([]);
   });
 
   it("lets a brace-shaped string through to a string schema when JSON.parse fails", () => {
@@ -51,7 +58,21 @@ describe("parseOr", () => {
     expect(parseOr(shape, Symbol("boom"), fallback, sink)).toEqual(fallback);
     // One record per hostile input — exact, where `.every` also passed on an
     // empty sink.
-    expectDiagnostics(sink, ["parse.boundary_failed", "parse.boundary_failed", "parse.boundary_failed"]);
+    expect(codes(sink)).toEqual(["parse.boundary_failed", "parse.boundary_failed", "parse.boundary_failed"]);
+  });
+
+  it("summarizes the first few issues rather than persisting the whole zod error", () => {
+    const sink = new DiagnosticCollector();
+    const wide = z.object({ alpha: z.string(), bravo: z.string(), charlie: z.string(), delta: z.string() });
+    const empty = { alpha: "", bravo: "", charlie: "", delta: "" };
+    parseOr(wide, {}, empty, sink, "api.body");
+    const recorded = sink.items[0];
+    expect(recorded?.message).toContain("alpha:");
+    expect(recorded?.message).toContain("charlie:");
+    // Truncated, with the real count kept in context — a persisted diagnostic
+    // stays a summary however wide the failing row is.
+    expect(recorded?.message).not.toContain("delta:");
+    expect(recorded?.context).toEqual({ issueCount: 4 });
   });
 });
 

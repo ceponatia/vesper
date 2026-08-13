@@ -54,9 +54,9 @@ Both new checks run in CI's static gate and in `pnpm verify`.
   deliberately, to assert that the package's diagnostic shape and the
   application's stay assignable in both directions. Dropping `DiagnosticSink`
   broke typecheck and the production build, and PR #96 was merged with that
-  `verify` red. The root exports `Diagnostic`, `DiagnosticSeverity` and
-  `DiagnosticSink` again, and Slice 3 removes them along with the temporary copy.
-  The lesson for the next curation: a public surface is proven by typecheck, not
+  `verify` red. The root exported `Diagnostic`, `DiagnosticSeverity` and
+  `DiagnosticSink` again until Slice 3 removed them along with the temporary copy
+  and the test that named them. The lesson for the next curation: a public surface is proven by typecheck, not
   by a regex over import statements — trim it, then run the gate before merging.
 - **Package tests own their own tooling.** `vitest` is a devDependency of
   `packages/image-core` — reachability through the root install is not ownership,
@@ -223,10 +223,10 @@ barrel cannot become public accidentally through a chain of wildcards: ESLint
 rejects `ExportAllDeclaration` in `packages/*/src/index.ts`, and the boundary
 checker rejects it independently from the `exports` map's `"."` target.
 
-`packages/image-core/src/index.ts` now lists 311 explicit exports, derived from
-the names application source actually imports; no live export was renamed. Names
-the application never imported — the package's internal `DiagnosticSink` among
-them — are no longer public.
+`packages/image-core/src/index.ts` lists every public name explicitly, derived
+from the names application source actually imports; no live export was renamed.
+Names the application never imported are no longer public. (A count is not
+recorded here — it moves with every slice, and the diff is the honest record.)
 
 ## Package-local TypeScript projects start now
 

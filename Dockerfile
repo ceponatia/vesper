@@ -26,6 +26,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Workspace package manifests must exist before install, or pnpm resolves the
 # `workspace:*` dependencies against nothing. Only the manifests are copied here
 # so editing package SOURCE doesn't bust the install layer.
+COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/image-core/package.json ./packages/image-core/
 RUN pnpm install --frozen-lockfile
 COPY . .

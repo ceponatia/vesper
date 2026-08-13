@@ -8,9 +8,9 @@ import { configDefaults, defineConfig } from "vitest/config";
  * workspace's test environment: `src/test/setup.ts` forces the application into
  * demo mode (fake AI, no provider keys), and a package test that quietly
  * depended on it would be proving something about Vesper's configuration rather
- * than about the package. `@vesper/image-core` therefore runs with no setup file
- * and no `@/` alias, and it resolves its own name through the installed
- * workspace rather than through an alias pointing at its source
+ * than about the package. Every package project therefore runs with no setup
+ * file and no `@/` alias, and resolves package names through the installed
+ * workspace rather than through an alias pointing at source
  * (monorepo-image-core.spec.guardrails.md).
  *
  * `app` and `app-int` are the same application suite split by cost: integration
@@ -48,6 +48,14 @@ export default defineConfig({
           environment: "node",
           include: ["src/**/*.int.test.ts", "scripts/**/*.int.test.ts"],
           setupFiles: applicationSetup,
+        },
+      },
+      {
+        test: {
+          name: "contracts",
+          root: path.resolve(__dirname, "./packages/contracts"),
+          environment: "node",
+          include: ["src/**/*.test.ts"],
         },
       },
       {

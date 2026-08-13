@@ -26,9 +26,9 @@ surface yet. The inventory below is its canonical technical record.
 | Slice | State                                   | Blocked by                |
 | ----- | --------------------------------------- | ------------------------- |
 | 1     | complete — 2026-08-12                   | —                         |
-| 2     | built 2026-08-12 — awaiting CI `verify` | —                         |
-| 3     | next                                    | —                         |
-| 4     | not started                             | Slice 3                   |
+| 2     | complete — 2026-08-12                   | —                         |
+| 3     | built 2026-08-12 — awaiting CI `verify` | —                         |
+| 4     | not started                             | Slice 3 merging green     |
 | 5     | not started, not planned                | no pure surface exists    |
 | 6     | not started                             | Slice 4 seam-proving gate |
 
@@ -55,29 +55,6 @@ Use the narrower spec rather than restating its rules in implementation work:
 
 When two specs appear to define the same contract, this map decides the owner;
 the other document should summarize and link rather than grow a second version.
-
-## Diagnostics and boundary parsing before Slice 3
-
-This section owns the **current temporary state only**. Slice 3 owns the target
-state and the migration.
-
-- `src/contracts/diagnostics.ts` is the application's canonical implementation
-  today. It carries `Diagnostic`, `DiagnosticSink`, the zod schema,
-  `DiagnosticCollector`, `teeSink`, and `diag`.
-- `packages/image-core/src/diagnostics.ts` temporarily re-declares
-  `Diagnostic`, `DiagnosticSeverity` and `DiagnosticSink` structurally — the
-  shapes the package currently needs to report degradation without importing the
-  application.
-- `parseOr` / `parseOrNull` live in `src/lib/parse.ts`.
-
-Because `DiagnosticSink` is structural, the application's collector satisfies
-the package sink without an adapter. The compatibility coverage keeps the two
-declarations assignable until Slice 3 replaces them with the one
-`@vesper/contracts` implementation.
-
-`parseOr` is not currently needed by `image-core`; moving it is a deliberate
-shared-foundation decision, not evidence that the core should start parsing
-application boundaries.
 
 ## The vision path: inventory
 

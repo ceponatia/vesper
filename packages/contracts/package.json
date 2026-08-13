@@ -1,15 +1,14 @@
 {
-  "name": "@vesper/image-core",
+  "name": "@vesper/contracts",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Provider-neutral image engine: model capabilities, profiles, render intent, references, identity packs, lab recipes, failure classification.",
+  "description": "Shared foundation: the diagnostic contract every workspace reports through, and the defensive parser trust boundaries read with.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@vesper/contracts": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
