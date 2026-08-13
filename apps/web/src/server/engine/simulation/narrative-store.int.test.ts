@@ -1,8 +1,9 @@
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { narrativeCutSchema } from "@/contracts/simulation/narrative";
+import { narrativeCutSchema } from "@vesper/simulation-core/contracts/narrative";
 import { newId } from "@/lib/ids";
-import { deriveCommitmentId, deriveEngagementId } from "@/lib/simulation";
+import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
 import { db, simBeliefs, simEvents, simNarrativeCuts, simTemporalPressures } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,

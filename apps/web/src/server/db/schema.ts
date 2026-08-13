@@ -21,15 +21,22 @@ import type {
   SimulationCommandEnvelope,
   SimulationCommandResultRecord,
   SimulationSnapshot,
-} from "@/contracts/simulation/branching";
-import type { ActivityClaim, SimulationActionDefinition } from "@/contracts/simulation/activities";
-import type { BodyModifierOperation } from "@/contracts/simulation/bodies";
-import type { CohortPresenceWindow } from "@/contracts/simulation/cohorts";
-import type { CommitmentKnowledgeSource } from "@/contracts/simulation/commitments";
-import type { ContainerAccessPolicy, ItemConsumptionEffect, ItemLocus } from "@/contracts/simulation/materials";
-import { simulationTriggerKinds, type SimulationTrigger } from "@/contracts/simulation/scheduler";
-import type { HouseholdStockAccessPolicy, RestockFunding } from "@/contracts/simulation/households";
-import type { RelationshipLedgerPayload } from "@/contracts/simulation/social";
+} from "@vesper/simulation-core/contracts/branching";
+import type { ActivityClaim, SimulationActionDefinition } from "@vesper/simulation-core/contracts/activities";
+import type { BodyModifierOperation } from "@vesper/simulation-core/contracts/bodies";
+import type { CohortPresenceWindow } from "@vesper/simulation-core/contracts/cohorts";
+import type { CommitmentKnowledgeSource } from "@vesper/simulation-core/contracts/commitments";
+import type {
+  ContainerAccessPolicy,
+  ItemConsumptionEffect,
+  ItemLocus,
+} from "@vesper/simulation-core/contracts/materials";
+import { simulationTriggerKinds, type SimulationTrigger } from "@vesper/simulation-core/contracts/scheduler";
+import type {
+  HouseholdStockAccessPolicy,
+  RestockFunding,
+} from "@vesper/simulation-core/contracts/households";
+import type { RelationshipLedgerPayload } from "@vesper/simulation-core/contracts/social";
 import {
   identityReferenceStrategies,
   imageAspectModes,
@@ -54,18 +61,21 @@ import {
   trialRunStatuses,
   trialVerdicts,
 } from "@vesper/image-core";
-import { principalKinds } from "@/contracts/simulation/envelopes";
-import { itemGoneBases } from "@/contracts/simulation/materials";
-import { itemMaterialFeedEventKinds } from "@/contracts/simulation/outbox";
+import { principalKinds } from "@vesper/simulation-core/contracts/envelopes";
+import { itemGoneBases } from "@vesper/simulation-core/contracts/materials";
+import { itemMaterialFeedEventKinds } from "@vesper/simulation-core/contracts/outbox";
 import {
   householdMemberRoles,
   householdMembershipStatuses,
   materialQuantityKinds,
   meansBandKeys,
-} from "@/contracts/simulation/households";
-import { relationshipLedgerKinds, relationshipLedgerProvenances } from "@/contracts/simulation/social";
-import { inferenceLods } from "@/contracts/simulation/deliberation";
-import { simulationLods } from "@/contracts/simulation/lod";
+} from "@vesper/simulation-core/contracts/households";
+import {
+  relationshipLedgerKinds,
+  relationshipLedgerProvenances,
+} from "@vesper/simulation-core/contracts/social";
+import { inferenceLods } from "@vesper/simulation-core/contracts/deliberation";
+import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);

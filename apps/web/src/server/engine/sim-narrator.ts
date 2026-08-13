@@ -1,15 +1,21 @@
-import { deliberatorResponseSchema } from "@/contracts/simulation/deliberation";
+import { deliberatorResponseSchema } from "@vesper/simulation-core/contracts/deliberation";
 import {
   narratorResultSchema,
   soloNarrationSchema,
   type NarrativeCut,
   type NarratorResult,
   type PresentationAudit,
-} from "@/contracts/simulation/narrative";
-import type { SoftCanonProposal } from "@/contracts/simulation/soft-canon";
+} from "@vesper/simulation-core/contracts/narrative";
+import type { SoftCanonProposal } from "@vesper/simulation-core/contracts/soft-canon";
 import { resolveChatModelId } from "@/lib/narrative-models";
-import { auditPresentation, parseNarratorResult, simulationHash } from "@/lib/simulation";
-import { collapseRepeatedBlocks, generateChecked, narrativeProviderOptions, stripNarratorArtifacts } from "@/server/ai";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { auditPresentation, parseNarratorResult } from "@vesper/simulation-core/presentation";
+import {
+  collapseRepeatedBlocks,
+  generateChecked,
+  narrativeProviderOptions,
+  stripNarratorArtifacts,
+} from "@/server/ai";
 import { db, type Db } from "@/server/db";
 import { NARRATIVE_TEMPERATURE } from "./constants";
 import {

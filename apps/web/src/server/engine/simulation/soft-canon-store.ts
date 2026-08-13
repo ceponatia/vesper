@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { composeSimulationId } from "@/contracts/simulation/identity";
+import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
 import {
   demoteSoftCanonCommandResultSchema,
   demoteSoftCanonCommandSchema,
@@ -7,8 +7,8 @@ import {
   softCanonDemotedEventSchema,
   type DemoteSoftCanonCommandResult,
   type DemoteSoftCanonRejectionCode,
-} from "@/contracts/simulation/soft-canon";
-import { resolveDemoteSoftCanon } from "@/lib/simulation/soft-canon";
+} from "@vesper/simulation-core/contracts/soft-canon";
+import { resolveDemoteSoftCanon } from "@vesper/simulation-core/soft-canon";
 import { simSoftCanon, type Db } from "@/server/db";
 import {
   advanceLockedBranch,

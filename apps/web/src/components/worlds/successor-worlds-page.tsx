@@ -13,7 +13,7 @@ import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { newId } from "@/lib/ids";
 import { charactersApi, chatsApi, successorChatsApi, type SuccessorChatSummary } from "@/lib/client/api";
-import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
+import { formatStoryClockShort, storyClockAt } from "@/lib/simulation/clock";
 
 /**
  * The Worlds page, repurposed (owner ruling 2026-07-22): the successor

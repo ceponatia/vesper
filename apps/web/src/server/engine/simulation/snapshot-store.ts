@@ -7,10 +7,11 @@ import {
   simulationSnapshotSchema,
   type ProjectionRebuildResult,
   type SimulationSnapshot,
-} from "@/contracts/simulation/branching";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { materialsProjectionSchema } from "@/contracts/simulation/materials";
-import { replayBranchHistory, simulationHash } from "@/lib/simulation";
+} from "@vesper/simulation-core/contracts/branching";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
+import { materialsProjectionSchema } from "@vesper/simulation-core/contracts/materials";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { replayBranchHistory } from "@vesper/simulation-core/replay";
 import { db, simSnapshots, type Db } from "@/server/db";
 import {
   assembleBranchState,

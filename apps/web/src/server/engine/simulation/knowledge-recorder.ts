@@ -6,13 +6,13 @@ import {
   type Assertion,
   type Belief,
   type KnowledgeProjection,
-} from "@/contracts/simulation/knowledge";
-import { observationSchema, type Observation } from "@/contracts/simulation/perception";
+} from "@vesper/simulation-core/contracts/knowledge";
+import { observationSchema, type Observation } from "@vesper/simulation-core/contracts/perception";
 import {
   applyDisclosureEvent,
   type KnowledgeReplayResult,
   type KnowledgeState,
-} from "@/lib/simulation/knowledge";
+} from "@vesper/simulation-core/knowledge";
 import { db, simAssertions, simBeliefs, simEvents, simObservations, type Db } from "@/server/db";
 import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";

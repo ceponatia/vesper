@@ -34,12 +34,12 @@ import {
   type InitializeActorBodyCommandResult,
   type ResolveBodyCollapseCommandResult,
   type ResolveBodyThresholdCommandResult,
-} from "@/contracts/simulation/bodies";
-import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { actorLodStateSchema, isBelowEventLod } from "@/contracts/simulation/lod";
-import { effectiveActorLod } from "@/lib/simulation/lod";
-import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "@/lib/simulation/routine";
+} from "@vesper/simulation-core/contracts/bodies";
+import type { SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
+import { actorLodStateSchema, isBelowEventLod } from "@vesper/simulation-core/contracts/lod";
+import { effectiveActorLod } from "@vesper/simulation-core/lod";
+import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "@vesper/simulation-core/routine";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   bodyCollapseUniquenessKeyPrefix,
@@ -57,18 +57,21 @@ import {
   resolveEndBodyCondition,
   resolveInitializeActorBody,
   type MeterIntegrationView,
-} from "@/lib/simulation/bodies";
+} from "@vesper/simulation-core/bodies";
 import {
   deriveCircadianPressure,
   deriveEnergyRead,
   deriveIntimacyRead,
   deriveVisibleBodySigns,
   type EnergyRead,
-} from "@/lib/simulation/body-reads";
-import { cutBodilyReadsSchema, type CutBodilyReads } from "@/contracts/simulation/narrative";
-import { claimHoldingActivityPhases } from "@/contracts/simulation/activities";
-import { activityCompletionUniquenessKey } from "@/lib/simulation/activities";
-import { claimHoldingEngagementStates, engagementSchema } from "@/contracts/simulation/engagements";
+} from "@vesper/simulation-core/body-reads";
+import { cutBodilyReadsSchema, type CutBodilyReads } from "@vesper/simulation-core/contracts/narrative";
+import { claimHoldingActivityPhases } from "@vesper/simulation-core/contracts/activities";
+import { activityCompletionUniquenessKey } from "@vesper/simulation-core/activities";
+import {
+  claimHoldingEngagementStates,
+  engagementSchema,
+} from "@vesper/simulation-core/contracts/engagements";
 import {
   db,
   simActivities,

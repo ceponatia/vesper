@@ -1,4 +1,4 @@
-import type { BodyRhythmKind } from "@/contracts/simulation/bodies";
+import type { BodyRhythmKind } from "@vesper/simulation-core/contracts/bodies";
 import { seedDurableBodyRhythms } from "@/server/engine";
 
 /**

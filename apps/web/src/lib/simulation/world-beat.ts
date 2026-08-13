@@ -1,5 +1,5 @@
 import { formatSimLanding, type SimCalendarStart } from "./clock";
-import { placeGoPhrase } from "./world-read";
+import { placeGoPhrase } from "@vesper/simulation-core/world-read";
 
 /**
  * World-beat phrasing (world-ui.plan.md slice 2) — PURE. A world beat is the

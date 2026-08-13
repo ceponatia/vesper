@@ -2,13 +2,13 @@ import { and, asc, eq, gt, lte } from "drizzle-orm";
 import {
   simulationBranchEventSchema,
   type SimulationBranchEvent,
-} from "@/contracts/simulation/branching";
-import { observationSchema, type Observation } from "@/contracts/simulation/perception";
-import { physicalLocusSchema } from "@/contracts/simulation/space";
+} from "@vesper/simulation-core/contracts/branching";
+import { observationSchema, type Observation } from "@vesper/simulation-core/contracts/perception";
+import { physicalLocusSchema } from "@vesper/simulation-core/contracts/space";
 import {
   deriveCommandObservations,
   type PerceptionSpaceView,
-} from "@/lib/simulation/perception";
+} from "@vesper/simulation-core/perception";
 import { db, simEvents, simObservations, simPhysicalLoci, simZones, type Db } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 

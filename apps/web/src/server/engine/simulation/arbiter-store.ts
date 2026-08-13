@@ -1,14 +1,14 @@
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { temporalPressureSchema } from "@/contracts/simulation/commitments";
-import type { DeliberationOutcome, DeliberatorRequest } from "@/contracts/simulation/deliberation";
-import { claimHoldingEngagementStates } from "@/contracts/simulation/engagements";
-import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
+import { temporalPressureSchema } from "@vesper/simulation-core/contracts/commitments";
+import type { DeliberationOutcome, DeliberatorRequest } from "@vesper/simulation-core/contracts/deliberation";
+import { claimHoldingEngagementStates } from "@vesper/simulation-core/contracts/engagements";
+import { composeSimulationId, worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import {
   KNOWLEDGE_DERIVATION_VERSION,
   disclosureMadeEventSchema,
   type Assertion,
   type Belief,
-} from "@/contracts/simulation/knowledge";
+} from "@vesper/simulation-core/contracts/knowledge";
 import {
   confirmNarratorResultCommandResultSchema,
   confirmNarratorResultCommandSchema,
@@ -18,23 +18,23 @@ import {
   type NarrativeCut,
   type ProposedArmedEffect,
   type PublicFailurePresentation,
-} from "@/contracts/simulation/narrative";
+} from "@vesper/simulation-core/contracts/narrative";
 import {
   SOFT_CANON_DERIVATION_VERSION,
   resolveSoftCanonRules,
   softCanonPromotedEventSchema,
   softCanonRecordedEventSchema,
-} from "@/contracts/simulation/soft-canon";
-import { runDeliberation } from "@/lib/simulation/deliberation";
-import { deriveDisclosureCapture } from "@/lib/simulation/knowledge";
-import { simulationHash } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/contracts/soft-canon";
+import { runDeliberation } from "@vesper/simulation-core/deliberation";
+import { deriveDisclosureCapture } from "@vesper/simulation-core/knowledge";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import {
   compileNarrativeCut,
   decideDepartures,
   departureCandidates,
   type PolicyDeparture,
-} from "@/lib/simulation/narrative";
-import { resolveSoftCanonProposals } from "@/lib/simulation/soft-canon";
+} from "@vesper/simulation-core/narrative";
+import { resolveSoftCanonProposals } from "@vesper/simulation-core/soft-canon";
 import {
   db,
   simActivities,

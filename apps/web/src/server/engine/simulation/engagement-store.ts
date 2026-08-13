@@ -14,17 +14,17 @@ import {
   type Engagement,
   type EngagementsProjection,
   type OpenEngagementCommandResult,
-} from "@/contracts/simulation/engagements";
-import { temporalPressureSchema } from "@/contracts/simulation/commitments";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { heldClaimsForActor } from "@/lib/simulation/activities";
+} from "@vesper/simulation-core/contracts/engagements";
+import { temporalPressureSchema } from "@vesper/simulation-core/contracts/commitments";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
+import { heldClaimsForActor } from "@vesper/simulation-core/activities";
 import {
   engagementClaimsForActor,
   resolveAcknowledgePressure,
   resolveEndEngagement,
   resolveOpenEngagement,
-} from "@/lib/simulation/engagements";
-import { sortedUnique } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/engagements";
+import { sortedUnique } from "@vesper/simulation-core/hash";
 import { loadClaimHoldingActivities } from "./activity-store";
 import {
   db,

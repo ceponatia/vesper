@@ -3,8 +3,8 @@ import {
   memoryQueryInputSchema,
   memoryRecallResponseSchema,
   type MemoryRecallResponse,
-} from "@/contracts/simulation/memory";
-import { rankMemoryDocuments, type MemoryRankCandidate } from "@/lib/simulation/memory";
+} from "@vesper/simulation-core/contracts/memory";
+import { rankMemoryDocuments, type MemoryRankCandidate } from "@vesper/simulation-core/memory";
 import {
   db,
   simAssertions,

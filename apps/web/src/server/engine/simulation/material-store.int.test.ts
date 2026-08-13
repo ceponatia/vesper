@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
-import type { ItemLocusInput } from "@/contracts/simulation/materials";
+import { itemConditionRegistryV1 } from "@vesper/simulation-core/contracts/material-condition";
+import type { ItemLocusInput } from "@vesper/simulation-core/contracts/materials";
 import { newId } from "@/lib/ids";
 import {
   db,

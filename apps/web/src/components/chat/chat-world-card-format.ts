@@ -1,5 +1,5 @@
-import { humanizeId } from "@/lib/simulation/humanize";
-import { capitalizeFirst } from "@/lib/simulation/world-read";
+import { humanizeId } from "@vesper/simulation-core/humanize";
+import { capitalizeFirst } from "@vesper/simulation-core/world-read";
 
 const WORLD_COMMAND_LABELS: Readonly<Record<string, string>> = {
   advance_time: "Wait a while",

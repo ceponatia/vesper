@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import type { z } from "zod";
-import type { CreateCommitmentCommandInput } from "@/contracts/simulation/commitments";
-import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
-import type { authoredLoreSeedSchema } from "@/contracts/simulation/memory";
+import type { CreateCommitmentCommandInput } from "@vesper/simulation-core/contracts/commitments";
+import type { MaterialBranchSeedInput } from "@vesper/simulation-core/contracts/materials";
+import type { authoredLoreSeedSchema } from "@vesper/simulation-core/contracts/memory";
 import type { SimCalendarStart } from "@/lib/simulation/clock";
-import { sortedUnique } from "@/lib/simulation/hash";
+import { sortedUnique } from "@vesper/simulation-core/hash";
 import {
   db,
   simActionDefinitions,

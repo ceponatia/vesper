@@ -1,8 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { spaceProjectionSchema, type SpaceProjection } from "@/contracts/simulation/space";
+import { spaceProjectionSchema, type SpaceProjection } from "@vesper/simulation-core/contracts/space";
 import { newId } from "@/lib/ids";
-import { replayObservationsHistory } from "@/lib/simulation";
+import { replayObservationsHistory } from "@vesper/simulation-core/perception";
 import { db, simEvents, simObservations } from "@/server/db";
 import {
   expectAccepted,

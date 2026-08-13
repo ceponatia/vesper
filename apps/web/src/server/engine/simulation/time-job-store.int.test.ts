@@ -1,6 +1,9 @@
 import { and, eq, or } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
+import {
+  transferItemCommandSchema,
+  type TransferItemCommand,
+} from "@vesper/simulation-core/contracts/materials";
 import { newId } from "@/lib/ids";
 import { escalateToTimeJob, runDueTimeJobs, runSkipWithEscalation } from "@/server/engine";
 import { db, simTimeJobs } from "@/server/db";

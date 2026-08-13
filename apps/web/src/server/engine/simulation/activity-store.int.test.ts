@@ -1,18 +1,18 @@
 import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { itemConditionRegistryV1 } from "@/contracts/simulation/material-condition";
-import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
-import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
+import { itemConditionRegistryV1 } from "@vesper/simulation-core/contracts/material-condition";
+import type { MaterialBranchSeedInput } from "@vesper/simulation-core/contracts/materials";
+import { itemTransferFeedConsumerKind } from "@vesper/simulation-core/contracts/outbox";
 import { newId } from "@/lib/ids";
 import {
   activityCompletionUniquenessKey,
   deriveActivityId,
   emptyActivitiesSeed,
   replayActivitiesHistory,
-  simulationHash,
-} from "@/lib/simulation";
-import { bodyThresholdUniquenessKeyPrefix } from "@/lib/simulation/bodies";
+} from "@vesper/simulation-core/activities";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { bodyThresholdUniquenessKeyPrefix } from "@vesper/simulation-core/bodies";
 import {
   db,
   simActivities,

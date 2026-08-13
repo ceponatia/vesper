@@ -1,12 +1,17 @@
 import { formatStoryMoment } from "@/contracts/turns/chat-clock";
 import { dispositionBands, effectiveTraitValue, traitRegistry } from "@/contracts/personality/traits";
 import { regardBandForValue, familiarityBandForValue } from "@/contracts/relationships/bands";
-import { formatStoryClock, storyCalendarParams, storyClockAt, type SimCalendarStart } from "@/lib/simulation/clock";
-import { humanizeActivity, humanizeId } from "@/lib/simulation/humanize";
+import {
+  formatStoryClock,
+  storyCalendarParams,
+  storyClockAt,
+  type SimCalendarStart,
+} from "@/lib/simulation/clock";
+import { humanizeActivity, humanizeId } from "@vesper/simulation-core/humanize";
 import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { speciesLorePhrase } from "@/contracts/species";
-import type { NarrativeCut } from "@/contracts/simulation/narrative";
+import type { NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
 import { DEFAULT_NARRATION_SHAPE, type NarrationShapeId } from "./constants";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 import {

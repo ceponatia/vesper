@@ -1,7 +1,7 @@
 import { and, asc, count, eq, gt, inArray, sql } from "drizzle-orm";
 import type { z } from "zod";
-import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
-import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
+import type { SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
+import { composeSimulationId, worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import {
   authoredLoreSeedSchema,
   MEMORY_DOCUMENT_SCHEMA_VERSION,
@@ -9,8 +9,8 @@ import {
   memoryDocumentSchema,
   memoryIndexOutboxPayloadSchema,
   type MemoryDocument,
-} from "@/contracts/simulation/memory";
-import { observationSchema, type Observation } from "@/contracts/simulation/perception";
+} from "@vesper/simulation-core/contracts/memory";
+import { observationSchema, type Observation } from "@vesper/simulation-core/contracts/perception";
 import {
   projectAssertionDocument,
   projectAuthoredLoreDocument,
@@ -18,7 +18,7 @@ import {
   projectObservationDocument,
   projectSoftCanonDocument,
   projectSpeechActDocument,
-} from "@/lib/simulation/memory";
+} from "@vesper/simulation-core/memory";
 import {
   db,
   simAssertions,

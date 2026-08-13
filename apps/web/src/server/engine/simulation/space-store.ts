@@ -3,12 +3,12 @@ import { z } from "zod";
 import {
   activityClaimSchema,
   claimHoldingActivityPhases,
-} from "@/contracts/simulation/activities";
+} from "@vesper/simulation-core/contracts/activities";
 import {
   claimHoldingEngagementStates,
   engagementSchema,
-} from "@/contracts/simulation/engagements";
-import { buildDepartureInterruptEvent } from "@/lib/simulation/engagements";
+} from "@vesper/simulation-core/contracts/engagements";
+import { buildDepartureInterruptEvent } from "@vesper/simulation-core/engagements";
 import {
   branchHeadSequenceSchema,
   branchVersionSchema,
@@ -16,7 +16,7 @@ import {
   storySecondSchema,
   worldBranchIdSchema,
   worldIdSchema,
-} from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/identity";
 import {
   arriveJourneyCommandResultSchema,
   arriveJourneyCommandSchema,
@@ -35,13 +35,13 @@ import {
   type MoveActorCommandResult,
   type PhysicalLocus,
   type SpaceProjection,
-} from "@/contracts/simulation/space";
+} from "@vesper/simulation-core/contracts/space";
 import {
   assertSpaceInvariants,
   resolveJourneyArrival,
   resolveMoveActor,
   sortSpaceProjection,
-} from "@/lib/simulation/space";
+} from "@vesper/simulation-core/space";
 import {
   db,
   simActivities,

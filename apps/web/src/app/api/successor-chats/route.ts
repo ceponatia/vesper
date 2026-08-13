@@ -8,7 +8,7 @@ import {
   deriveProvisioningStamp,
   provisioningPayloadHash,
   provisioningRequestIdSchema,
-} from "@/lib/simulation/provisioning";
+} from "@vesper/simulation-core/provisioning";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
   characterChats,

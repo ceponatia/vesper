@@ -1,38 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { actorLodReadSchema } from "@/contracts/simulation/lod";
+import { actorLodReadSchema } from "@vesper/simulation-core/contracts/lod";
 import {
   bodyDerivationVersion,
   bodyMeterRegistryByVersion,
   bodyMeterStateSchema,
   bodyRhythmRowSchema,
   type BodyRhythmRow,
-} from "@/contracts/simulation/bodies";
+} from "@vesper/simulation-core/contracts/bodies";
 import {
   createCommitmentCommandSchema,
   type CreateCommitmentCommand,
-} from "@/contracts/simulation/commitments";
+} from "@vesper/simulation-core/contracts/commitments";
 import {
   materialBranchSeedSchema,
   simulationMaterialItemSchema,
   type SimulationMaterialItem,
-} from "@/contracts/simulation/materials";
-import { authoredLoreSeedSchema } from "@/contracts/simulation/memory";
-import { runRoutinePolicyCommandSchema } from "@/contracts/simulation/routine";
-import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
-import { linkSchema, locationSchema, zoneSchema } from "@/contracts/simulation/space";
-import { resolveCreateCommitment } from "@/lib/simulation/commitments";
-import { materialsSeedProjection } from "@/lib/simulation/materials";
-import { projectAuthoredLoreDocument } from "@/lib/simulation/memory";
-import type { MaterialResolutionView } from "@/lib/simulation/material-locus";
-import type { MeterIntegrationView } from "@/lib/simulation/bodies";
+} from "@vesper/simulation-core/contracts/materials";
+import { authoredLoreSeedSchema } from "@vesper/simulation-core/contracts/memory";
+import { runRoutinePolicyCommandSchema } from "@vesper/simulation-core/contracts/routine";
+import { simulationActionDefinitionSchema } from "@vesper/simulation-core/contracts/activities";
+import { linkSchema, locationSchema, zoneSchema } from "@vesper/simulation-core/contracts/space";
+import { resolveCreateCommitment } from "@vesper/simulation-core/commitments";
+import { materialsSeedProjection } from "@vesper/simulation-core/materials";
+import { projectAuthoredLoreDocument } from "@vesper/simulation-core/memory";
+import type { MaterialResolutionView } from "@vesper/simulation-core/material-locus";
+import type { MeterIntegrationView } from "@vesper/simulation-core/bodies";
 import {
   mealWindowCovering,
   resolveRunRoutinePolicyFromView,
   selectRoutineMealItem,
   type RunRoutinePolicyResolutionView,
-} from "@/lib/simulation/routine";
-import { planRoute, type SpaceTopology } from "@/lib/simulation/space";
-import { bindSimEnvelopes } from "@/test/sim-envelopes";
+} from "@vesper/simulation-core/routine";
+import { planRoute, type SpaceTopology } from "@vesper/simulation-core/space";
+import { bindSimEnvelopes } from "@vesper/simulation-core/testing/sim-envelopes";
 import {
   STARTER_ORIGIN_STORY_SECOND,
   STARTER_RULESET_VERSION,

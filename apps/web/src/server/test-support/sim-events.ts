@@ -1,9 +1,14 @@
 import { asc, eq } from "drizzle-orm";
-import type { BranchForkResult, SimulationBranchEvent } from "@/contracts/simulation/branching";
-import type { PrincipalKind } from "@/contracts/simulation/envelopes";
+import type { BranchForkResult, SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
+import type { PrincipalKind } from "@vesper/simulation-core/contracts/envelopes";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents } from "@/server/db";
-import { branchEventFromRow, forkBranch, loadBranchAncestry, readBranchAncestryEvents } from "@/server/engine";
+import {
+  branchEventFromRow,
+  forkBranch,
+  loadBranchAncestry,
+  readBranchAncestryEvents,
+} from "@/server/engine";
 
 /**
  * Event read-back and fork-at-head for the durable-simulation suites.

@@ -1,12 +1,14 @@
 # @vesper/contracts
 
-The shared foundation — the bottom of the workspace package graph. Two primitive
-groups live here and nothing else:
+The shared foundation — the bottom of the workspace package graph. Four
+primitive groups live here and nothing else:
 
-| Module           | Owns                                                             |
-| ---------------- | ---------------------------------------------------------------- |
-| `diagnostics.ts` | The diagnostic contract: severity, shape, schema, collector, tee |
-| `parse.ts`       | `parseOr` / `parseOrNull`, the defensive boundary parser         |
+| Module            | Owns                                                              |
+| ----------------- | ----------------------------------------------------------------- |
+| `diagnostics.ts`  | The diagnostic contract: severity, shape, schema, collector, tee   |
+| `parse.ts`        | `parseOr` / `parseOrNull`, the defensive boundary parser           |
+| `hash.ts`         | FNV-1a, the one non-cryptographic string hash, golden-pinned       |
+| `fixed-point.ts`  | The fixed-point integration kernel both lanes drift meters with    |
 
 Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
 What belongs here: [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
@@ -22,6 +24,15 @@ question.
 
 `diag` is the other half of that: a transport or planner that builds a
 diagnostic needs the function, not only the shape.
+
+The determinism pair is the same argument in a harsher form. `fnv1aHex` decides
+image cache keys and character-forge reproducibility in the application, and the
+`simulationHash` checksum inside `@vesper/simulation-core`; the fixed-point
+kernel drifts the chat lane's garment gradients and the successor's meters. A
+second implementation of either would not throw when it drifted — it would
+quietly stop agreeing with identifiers already in the database. So the owner is
+the LOWEST workspace every consumer can reach, which is this one: putting either
+in a lane package would make the other lane import it by that lane's name.
 
 ## What this is NOT
 
@@ -65,9 +76,11 @@ that in CI's static gate.
 
 ## The application still imports its own paths
 
-`apps/web/src/contracts/diagnostics.ts` and `apps/web/src/lib/parse.ts` remain the application's
-entry points; they are now **re-export barrels with no implementation**. That is
-deliberate: rewriting several hundred application imports to advertise a package
-move buys nothing, and those barrels are still genuine application-facing APIs.
+`apps/web/src/contracts/diagnostics.ts`, `apps/web/src/lib/parse.ts`,
+`apps/web/src/lib/hash.ts` and `apps/web/src/lib/fixed-point.ts` remain the
+application's entry points; they are now **re-export barrels with no
+implementation**. That is deliberate: rewriting several hundred application
+imports to advertise a package move buys nothing, and those barrels are still
+genuine application-facing APIs.
 
 Package code imports `@vesper/contracts` directly — never an application barrel.

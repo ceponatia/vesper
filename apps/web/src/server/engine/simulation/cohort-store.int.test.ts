@@ -1,7 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { cohortPresenceAt, emptyCohortsSeed, replayCohortHistory, zonePresenceAt } from "@/lib/simulation";
+import {
+  cohortPresenceAt,
+  emptyCohortsSeed,
+  replayCohortHistory,
+  zonePresenceAt,
+} from "@vesper/simulation-core/cohorts";
 import { db, simCohorts, simMeansBands, simTriggers } from "@/server/db";
 import { loadBranchCohorts, submitDurableAdjustCohort, submitDurableCreateCohort } from "./cohort-store";
 import { submitDurableSetMeansBand } from "./household-store";

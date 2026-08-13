@@ -8,8 +8,8 @@ import {
   itemTransferOutboxPayloadSchema,
   outboxRetryDelaySeconds,
   projectMaterialFeedRow,
-} from "@/contracts/simulation/outbox";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/outbox";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import {
   db,
   simBranches,

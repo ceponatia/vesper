@@ -28,9 +28,17 @@ Each layer names its file glob, what it covers, and the IO it needs.
   parse). No IO.
 - **lib** (`apps/web/src/lib/**/*.test.ts`) — parseOr/parseOrNull, game-clock math, client API error
   envelope, chat SSE-stream parsing, **speaker segmenter edge cases** (`segmenter.ts` —
-  dialogue tags + the chat lane's standalone-quote attribution), the successor
-  `lib/simulation/*` pure rules (space, activities, commitments, engagements, perception,
-  knowledge, bodies, LOD, …). No IO.
+  dialogue tags + the chat lane's standalone-quote attribution), and the story-clock and
+  world-beat presentation the successor lane renders through. No IO.
+- **simulation-core** (`packages/simulation-core/src/**/*.test.ts`, the package's own project) —
+  the successor's pure contracts and kernels (space, activities, commitments, engagements,
+  perception, knowledge, bodies, LOD, …), plus the `node:crypto` equivalence pins on the two
+  persisted sha256 identities. Runs with **no `@/` alias and no demo-mode setup**, so a test
+  here proves something about the simulation rather than about Vesper's configuration. No IO.
+  Two app-parity tests deliberately stay on the app side instead
+  (`apps/web/src/lib/simulation/world-read.test.ts` and `world-beat.test.ts`): they check the
+  package's output against the client API schemas in `@/lib/client/api`, which is an
+  application fact.
 - **engine unit** (`apps/web/src/server/engine/**/*.test.ts`) — demo-mode generators, chat prompt
   builders (structural assertions, not snapshots of full text), the chat extraction field
   library, chat one-turn reads (`chat-intent.ts` — scene movement, sense-targeted focus,
@@ -74,8 +82,8 @@ Each layer names its file glob, what it covers, and the IO it needs.
 
 ## Shared test utilities
 
-Two homes, split by the purity fence (`eslint.config.mjs` bans `@/server/**`
-imports from contracts/lib, tests included):
+Three homes, split by the purity fence (`eslint.config.mjs` bans `@/server/**`
+imports from contracts/lib, tests included) and by the workspace boundary:
 
 - **`apps/web/src/server/test-support/`** (import via the `@/server/test-support`
   barrel — lint-enforced) — for server-side suites. Auth mock
@@ -100,11 +108,17 @@ imports from contracts/lib, tests included):
 - **`apps/web/src/test/`** (import via `@/test/...`) — pure helpers importable from
   contracts/lib tests: registry invariants (`expectUniqueIds`,
   `expectAllValidate`, `expectRefsResolve`, `expectCaseInsensitiveLookup`,
-  `expectContiguousBands`), sim command/event envelope builders
-  (`commandEnvelope`/`eventEnvelope`/`bindSimEnvelopes`/`testPrincipal`),
-  space/material/meter fixtures, diagnostics assertions
+  `expectContiguousBands`) and diagnostics assertions
   (`codes`/`expectDiagnostics`/`expectDiagnostic`/`expectCleanSink`). These
   modules import only contracts/lib/vitest/zod — never `@/server`.
+- **`packages/simulation-core/src/test-support/`** — the simulation fixtures, which
+  live beside the kernels they build inputs for: command/event envelope builders
+  (`commandEnvelope`/`eventEnvelope`/`bindSimEnvelopes`/`testPrincipal`) and the
+  space/material/meter fixtures. Package tests import them relatively. The two an
+  application suite also needs are published as exact subpaths —
+  `@vesper/simulation-core/testing/sim-envelopes` and `…/testing/sim-space-fixtures`
+  — so a shared fixture crosses the workspace boundary as declared public API rather
+  than by filesystem path.
 - Garment blueprint fixtures are colocated at
   `apps/web/src/contracts/items/garment-test-fixtures.ts` (contracts-only imports).
 
@@ -194,8 +208,11 @@ pnpm lint
 
 The `test:engine*` scripts pass file paths, which Vitest applies as filters
 across the root config's projects — so they keep working without naming one.
-They all name paths under `apps/web/src`, so they run against the application
-projects regardless of how many packages exist.
+That only holds for paths under `apps/web/src`: a package's tests belong to the
+package's own Vitest project, which the root config cannot see. So each
+per-gate `test:engine-eN-M` script runs its pure half through the package
+(`pnpm --filter @vesper/simulation-core exec vitest run …`) and then its
+database half through the root config, joined by `&&`.
 
 ## Strict integration mode (the release form)
 

@@ -1,7 +1,10 @@
 import { and, eq, sql } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { transferItemCommandSchema, type TransferItemCommand } from "@/contracts/simulation/materials";
-import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
+import {
+  transferItemCommandSchema,
+  type TransferItemCommand,
+} from "@vesper/simulation-core/contracts/materials";
+import { schedulerDerivationVersion } from "@vesper/simulation-core/contracts/scheduler";
 import { newId } from "@/lib/ids";
 import { db, simBranches, simEvents, simTriggers } from "@/server/db";
 import {

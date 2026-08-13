@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { simulationHash } from "@/lib/simulation/hash";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { garmentMaterialProfileIdSchema, GARMENT_MATERIAL_UNKNOWN } from "./garment-material";
 
 /**
