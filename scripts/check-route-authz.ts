@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  * resource-ID route mentioning none of them while using bare `withUser` is the
  * shape this gate rejects.
  *
- * Exported so `apps/web/src/server/api/ownership-guardrail.test.ts` can cross-check it
+ * Exported so `scripts/ownership-guardrail.test.ts` can cross-check it
  * against its own hand-maintained OWNER_ASSERTING_HELPERS list — see the
  * "keeps the two route-authz allow-lists distinct and live" test there for the
  * relationship between the two (they name different mechanisms and must stay
@@ -41,15 +41,19 @@ const resourceRoute = /^apps\/web\/src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
  * did (2026-08-12), turning a per-change gate into a 30-route wall of findings
  * about code nobody had touched.
  *
- * A rename WITH edits (`R087`) still counts, under its destination path.
+ * A rename WITH edits (`R087`) still counts, under its destination path. So
+ * does a copy of any score: `C100` puts existing content at a NEW path, and a
+ * new route is exactly what this gate exists to read.
  */
 export function contentChangedPaths(nameStatus: string): string[] {
   const files: string[] = [];
   for (const line of nameStatus.split("\n")) {
     if (line.trim() === "") continue;
+    // Renames and copies are `<status>\t<source>\t<destination>`; everything
+    // else is `<status>\t<path>`.
     const fields = line.split("\t");
     const status = fields[0] ?? "";
-    if (status.startsWith("R")) {
+    if (status.startsWith("R") || status.startsWith("C")) {
       const destination = fields[2]?.trim();
       if (destination !== undefined && destination !== "" && status !== "R100") files.push(destination);
       continue;

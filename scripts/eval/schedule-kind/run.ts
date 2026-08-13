@@ -1,9 +1,9 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { characterProfileSchema, emptyCharacterProfile } from "../../../src/contracts";
-import { parseOr } from "../../../src/lib/parse";
-import { characters, db } from "../../../src/server/db";
+import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { parseOr } from "@/lib/parse";
+import { characters, db } from "@/server/db";
 import {
   HARD_EFFECT_SCHEDULE_KINDS,
   hasHardEffectCandidate,

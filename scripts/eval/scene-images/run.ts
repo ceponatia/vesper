@@ -2,7 +2,7 @@ import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { routeSceneAttempts } from "@vesper/image-core";
-import { buildSceneRenderPrompt } from "../../../src/server/images";
+import { buildSceneRenderPrompt } from "@/server/images";
 import { EVAL_FIXTURES } from "./fixtures";
 import { evalEditModel } from "./model";
 

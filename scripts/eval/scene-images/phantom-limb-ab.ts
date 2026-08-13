@@ -8,7 +8,7 @@ import {
   sceneFramingRule,
   sceneSpecSchema,
   type SceneComposerContext,
-} from "../../../src/server/images";
+} from "@/server/images";
 
 /**
  * Phantom-limb A/B (owner report 2026-07-29, NOT a test gate): the character's

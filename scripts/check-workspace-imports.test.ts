@@ -128,6 +128,27 @@ describe("workspace import integrity", () => {
     expect(rules(violations)).toEqual(["cross-workspace-path"]);
   });
 
+  it("rejects a relative path that resolves to nothing", () => {
+    // The shape a directory move leaves behind: the path still points inside
+    // its own workspace, so no boundary rule fires, and without this the break
+    // surfaces only in typecheck.
+    expect(
+      rules(check({ "src/app.ts": 'import { gone } from "./moved/away";\n\nexport const used = gone;\n' })),
+    ).toEqual(["unresolved-relative-path"]);
+  });
+
+  it("accepts the shapes a bundler resolves: extensionless, index, assets, query suffixes", () => {
+    expect(
+      check({
+        "src/app.ts":
+          'import "./styles.css?inline";\nimport { one } from "./folder";\nimport { two } from "./sibling.js";\n\nexport const used = [one, two];\n',
+        "src/styles.css": ".a{}\n",
+        "src/folder/index.ts": "export const one = 1;\n",
+        "src/sibling.ts": "export const two = 2;\n",
+      }),
+    ).toEqual([]);
+  });
+
   it("rejects an escape laundered through a symlink that points out of the package", () => {
     const root = tree({ "packages/core/src/thing.ts": 'import { used } from "./outside/app";\n\nexport const thing = used;\n' });
     symlinkSync(join(root, "src"), join(root, "packages/core/src/outside"));

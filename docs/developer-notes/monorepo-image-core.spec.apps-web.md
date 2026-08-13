@@ -101,6 +101,31 @@ rules resolve for an application file and that the module-boundary zones still
 match under the moved path — the failure this guards is a green lint run that
 quietly stopped applying to the app.
 
+**The boundary checker gained `unresolved-relative-path`, because it had a blind
+spot this move walked straight into — twice.** A relative import that still
+points *inside its own workspace* but at nothing — `../src/server/db` from a
+root script, `../../../scripts/check-route-authz` from an app test — triggered no
+boundary rule, so `lint:package-boundaries` was green while 14 root scripts and
+one app test were broken. That is precisely the residue a directory move leaves,
+and the checker is the tool that runs first and cheapest, so it now reports it.
+Resolution is deliberately generous (extensionless, `/index`, assets, `?query`
+suffixes, TypeScript's `./x.js` → `./x.ts` rewrite): the question is only whether
+an import points at something, so a gap costs a missed report, never a false
+failure.
+
+**One app test crossed the boundary the wrong way.** `ownership-guardrail.test.ts`
+imported the wrapper list from `scripts/check-route-authz.ts` by relative path.
+It is a repository tripwire rather than an application unit test — it imports no
+application runtime, walks `apps/web/src/app/api` from the repository root, and
+cross-checks a root-tooling constant — so it moved to `scripts/`, beside
+`image-internal-callers.test.ts` and `next-eslint-scope.test.ts`, where both of
+its imports are legal. Inverting the edge instead would have pulled the whole
+`@/server/api` barrel into a lint script.
+
+**Fourteen root scripts reached the application by relative path**, not through
+the alias, and were rewritten to `@/…`. The alias was already the convention for
+the other 34 files that do this; the relative spelling was the exception.
+
 **The route-authorization gate now ignores pure renames.** `lint:authz` reads a
 changed file's source, and a repository-wide move makes every file "changed" —
 so the move turned a per-change gate into a wall of 30 findings about routes

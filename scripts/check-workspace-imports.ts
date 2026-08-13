@@ -13,6 +13,7 @@ import ts from "typescript";
  * import RESOLVES and who is allowed to own it, which is what the boundary
  * actually means:
  *
+ *   0. a relative path resolves to a file that exists;
  *   1. a relative path may not cross a workspace root, in either direction;
  *   2. a workspace package is imported by its exact name, never by code subpath;
  *   3. every bare import is declared in the importing workspace's own manifest;
@@ -84,6 +85,7 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
 
 export type BoundaryRule =
   | "cross-workspace-path"
+  | "unresolved-relative-path"
   | "package-application-alias"
   | "package-code-subpath"
   | "package-missing-root-export"
@@ -133,6 +135,41 @@ interface ImportRef {
 }
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
+
+/**
+ * How a bundler completes a relative specifier. Broad on purpose: this list
+ * decides only whether an import points at SOMETHING, and a missing entry would
+ * turn a legal import into a false failure.
+ */
+const RESOLUTION_SUFFIXES = [
+  "",
+  ".ts",
+  ".tsx",
+  ".d.ts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".css",
+  "/index.ts",
+  "/index.tsx",
+  "/index.js",
+  "/index.jsx",
+];
+
+/**
+ * Does this resolved path name a file anything could load? TypeScript also lets
+ * an ESM-style `./x.js` specifier mean `./x.ts`, so that rewrite is tried too —
+ * this answers "does the import point at something", and being generous here
+ * only ever costs a missed report, never a false failure.
+ */
+function resolvesToFile(target: string): boolean {
+  const candidates = [target];
+  const tsRewrite = target.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  if (tsRewrite !== target) candidates.push(tsRewrite);
+  return candidates.some((candidate) => RESOLUTION_SUFFIXES.some((suffix) => existsSync(`${candidate}${suffix}`)));
+}
 
 /**
  * Directories that never hold workspace source. `drizzle` and `docs` are
@@ -617,7 +654,8 @@ export function checkWorkspaceImports(
 
         // --- relative / absolute paths -----------------------------------
         if (isRelative(specifier) || isAbsolute(specifier)) {
-          const target = canonicalize(isAbsolute(specifier) ? specifier : resolve(dirname(file), specifier));
+          const bare = specifier.replace(/[?#].*$/, "");
+          const target = canonicalize(isAbsolute(bare) ? bare : resolve(dirname(file), bare));
           const targetWorkspace = workspaceOf(target);
           if (targetWorkspace?.dir !== workspace.dir) {
             const targetName = targetWorkspace?.manifest.name ?? "outside every workspace";
@@ -627,6 +665,19 @@ export function checkWorkspaceImports(
               "cross-workspace-path",
               specifier,
               `A filesystem path is not an API between workspaces: this resolves into ${targetName}. Import the target workspace by its package name and declare the dependency.`,
+            );
+          } else if (!resolvesToFile(target)) {
+            // A relative path that lands nowhere. This is the shape a directory
+            // move leaves behind — `../src/server/db` still points inside its
+            // own workspace after the app moves to apps/web, so no boundary
+            // rule fires and the break only surfaces in typecheck (which is
+            // exactly what the 2026-08-12 move produced, in both directions).
+            report(
+              file,
+              ref.line,
+              "unresolved-relative-path",
+              specifier,
+              `"${specifier}" resolves to nothing. If the target moved to another workspace, import it by package name (or, for the application, through its alias) rather than repairing the path.`,
             );
           }
           continue;

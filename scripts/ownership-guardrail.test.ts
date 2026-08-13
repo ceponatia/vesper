@@ -9,7 +9,17 @@ import {
   sourceFilesUnder,
   stripComments,
 } from "@/server/test-support";
-import { APPROVED_ROUTE_AUTHZ_WRAPPERS } from "../../../scripts/check-route-authz";
+import { APPROVED_ROUTE_AUTHZ_WRAPPERS } from "./check-route-authz";
+
+/**
+ * Lives in `scripts/` rather than beside the code it guards, because that is
+ * what it is: a repository tripwire, like `image-internal-callers.test.ts` and
+ * `next-eslint-scope.test.ts` next to it. It imports no application runtime —
+ * it walks `apps/web/src/app/api` from the repository root and reads text — and
+ * it cross-checks the wrapper list owned by `check-route-authz.ts`, which is
+ * root tooling. A filesystem path from the app into the root workspace is a
+ * boundary violation; from here both imports are legal.
+ */
 
 /**
  * S4's architectural tripwire (security-authz.plan.md slice 6). Ownership in
