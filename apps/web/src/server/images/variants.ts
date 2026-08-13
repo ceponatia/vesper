@@ -10,7 +10,9 @@ import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { HIDDEN_IMAGE_KINDS, readImageBytes, runImagePipeline, type ImageKind, type ImageRow } from "./assets";
+import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
+import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { monogramSvg } from "./monogram";
 import { apparentAgeAnchor } from "./prompts-appearance";
 import { buildVariantInstruction, type VariantKind } from "./prompts-variant";
@@ -31,9 +33,12 @@ export interface GenerateVariantInput {
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
  * "preserve apparent age" alone preserves the model's over-read and each
  * generation drifts older). Always re-rolls from the canonical portrait — never
- * chains edits (drift compounds). Runs on the shared reserve → generate →
- * save-or-fail → log shell (`runImagePipeline`); failures mark the row failed
- * and return its id.
+ * chains edits (drift compounds). Identity-critical, so under
+ * `IMAGE_IDENTITY_PACK_REFERENCES` the reference comes from the identity-pack
+ * service (`identityPackRenderReferences`) with provenance on the row's meta;
+ * off, the legacy direct avatar read below. Runs on the shared reserve →
+ * generate → save-or-fail → log shell (`runImagePipeline`); failures mark the
+ * row failed and return its id.
  *
  * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
@@ -58,7 +63,22 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   );
   const ageAnchor = apparentAgeAnchor(character?.name ?? "", resolveAttributes(profile.attributes, []));
   const prompt = buildVariantInstruction(input.kind, input.instruction, ageAnchor);
-  const reference = character ? await loadReference(character.avatarImageId) : null;
+  // The consumer flag decides where the identity reference comes from
+  // (image-identity-packs.spec.integration.md §"Rollout flag"): off, the legacy
+  // direct avatar read; on, the pack service — profile-aware eligibility,
+  // candidate roles, owned byte reads, recorded provenance. Never both.
+  const packRoute = !demo && resolved !== null && imageIdentityPackReferencesEnabled();
+  const reference = character && !packRoute ? await loadReference(character.avatarImageId) : null;
+  const packIdentity: IdentityPackRenderReferencesResult | null =
+    packRoute && character && resolved
+      ? await identityPackRenderReferences({
+          ownerId: input.userId,
+          characterId: input.characterId,
+          profile: resolved,
+          sink: input.sink,
+        })
+      : null;
+  const packSelection = packIdentity?.ok ? packIdentity : null;
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -67,11 +87,12 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       entityKind: "character",
       entityId: input.characterId,
       prompt,
-      sourceImageId: reference?.row.id,
+      sourceImageId: packSelection?.references[0]?.reference.sourceImageId ?? reference?.row.id,
       meta: {
         variantKind: input.kind,
         demo,
         model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
+        ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
       },
     },
     // The row is on record for a missing character too — failed, unlogged.
@@ -79,18 +100,25 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
+      // The pack refusal: an ineligible pack REFUSES the render rather than
+      // falling back to a direct avatar read — the substitution the integration
+      // spec forbids. The evaluation already pushed its diagnostic.
+      if (packIdentity && !packIdentity.ok) return { ok: false, error: packIdentity.error };
       // Preconditions this lane can't satisfy, not generations that failed: no diagnostic.
-      if (!reference) return { ok: false, error: "no ready canonical avatar to use as reference" };
+      if (!packSelection && !reference) return { ok: false, error: "no ready canonical avatar to use as reference" };
       if (!resolved) return { ok: false, error: "no image model is registered for portrait variants" };
       const edit = await renderImageIntent(
         {
           profile: resolved,
           prompt,
-          // The canonical portrait, which this lane always re-rolls from rather
-          // than chaining edits — the identity the variant instruction modifies.
-          references: [
-            { role: "identity", required: true, buffer: reference.buffer, sourceImageId: reference.row.id },
-          ],
+          // The identity the variant instruction modifies, which this lane
+          // always re-rolls from rather than chaining edits: the pack's
+          // candidates when the flag is on, else the canonical portrait direct.
+          references: packSelection
+            ? packSelection.references.map((entry) => entry.reference)
+            : reference
+              ? [{ role: "identity", required: true, buffer: reference.buffer, sourceImageId: reference.row.id }]
+              : [],
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
         },
         input.sink,

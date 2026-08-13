@@ -399,11 +399,18 @@ export interface IdentityReferenceCandidate {
  * Profile-aware eligibility. `profile_ineligible` is not a pack failure — the pack
  * may be perfect and this model still unable to carry it — so it sits alongside the
  * pack failure codes rather than inside them.
+ *
+ * `provenance` is candidate-parallel: entry N records candidate N (spec
+ * §"Render provenance"). It rides the eligible arm because the pack the
+ * candidates were judged against is gone by the time a lane needs the record —
+ * the evaluation is the last moment both are in one place, and a lane that had
+ * to re-read the pack to explain its own send could read a different revision.
  */
 export type EvaluateIdentityPackResult =
   | {
       eligible: true;
       candidates: IdentityReferenceCandidate[];
+      provenance: IdentityReferenceProvenance[];
       warnings: ImageIdentityPackWarningCode[];
     }
   | {
@@ -411,21 +418,6 @@ export type EvaluateIdentityPackResult =
       code: ImageIdentityPackFailureCode | "profile_ineligible";
       messageKey: string;
     };
-
-/**
- * A selected reference as shared render intent receives it — semantic role plus
- * ids. The profile resolver converts these into the capabilities layer's generic
- * role-aware reference contract; provider adapters only ever see the final ordered
- * array and field mapping.
- */
-export interface ImageRenderIdentityReference {
-  role: IdentityReferenceRole;
-  characterId: string;
-  imageId: string;
-  packId: string;
-  packRevision: number;
-  required: boolean;
-}
 
 /**
  * What is recorded ON the render attempt for every identity reference actually

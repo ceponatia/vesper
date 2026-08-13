@@ -6,6 +6,7 @@ import {
   imageModelProfileSchema,
   imageProfileCandidates,
   imageProfileOffered,
+  imageReferencePolicySchema,
   isImageIdentityCriticalTask,
   legacySurfaceForImageTask,
   profileEligibility,
@@ -81,16 +82,38 @@ describe("imageModelProfileSchema", () => {
   });
 
   it("keeps a per-role cap partial, so an allowed role without a cap is not capped at zero", () => {
+    // Through the policy schema so the fixture stays a STORED shape — one that
+    // predates `identityStrategy` and relies on its default.
     const parsed = profile({
-      referencePolicy: {
+      referencePolicy: imageReferencePolicySchema.parse({
         allowedRoles: ["identity", "location", "style"],
         requiredRoles: ["identity"],
         roleOrder: ["identity", "location", "style"],
         maxPerRole: { location: 1 },
-      },
+      }),
     });
     expect(parsed.referencePolicy.maxPerRole).toEqual({ location: 1 });
     expect(parsed.referencePolicy.maxPerRole?.style).toBeUndefined();
+  });
+
+  it("defaults every stored policy's identity strategy to canonical-only (5B)", () => {
+    // All seeded rows predate the field: `{}` and the identity-critical shapes
+    // written by migration 0100 both carry no `identityStrategy` key, and both
+    // must keep sending exactly the single canonical reference they send today.
+    expect(imageReferencePolicySchema.parse({}).identityStrategy).toBe("canonical_only");
+    expect(
+      imageReferencePolicySchema.parse({
+        allowedRoles: ["identity", "style"],
+        requiredRoles: ["identity"],
+        roleOrder: ["identity", "style"],
+      }).identityStrategy,
+    ).toBe("canonical_only");
+    // A declared strategy round-trips; an unknown one refuses the row rather
+    // than degrading to a strategy nobody reviewed.
+    expect(
+      imageReferencePolicySchema.parse({ identityStrategy: "canonical_then_face_detail" }).identityStrategy,
+    ).toBe("canonical_then_face_detail");
+    expect(imageReferencePolicySchema.safeParse({ identityStrategy: "both_faces" }).success).toBe(false);
   });
 
   it("refuses a timeout outside the table's 30s-to-15min bounds", () => {

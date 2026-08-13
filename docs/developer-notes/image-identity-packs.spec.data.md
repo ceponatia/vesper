@@ -269,7 +269,15 @@ The kind is excluded from:
 - character image pickers;
 - public-library copy surfaces;
 - social cards;
-- normal delete-retention exceptions intended for user-visible images.
+- normal delete-retention exceptions intended for user-visible images;
+- the per-owner storage quota. Owner ruling (2026-08-13): hidden image kinds
+  are operational bookkeeping the user never sees and cannot delete, so they do
+  not consume user-visible storage. `checkStorageQuota` excludes every
+  `HIDDEN_IMAGE_KINDS` member — the face crop, `identity_trial_output`, and the
+  lab kinds alike. Admission agrees: `imageRenderRejection` skips its
+  storage-reservation leg when the route declares a hidden `outputKind`, so an
+  account at its visible quota is not refused trial or lab work whose bytes
+  would never have counted against it.
 
 The pack row is authoritative. `images.meta` is diagnostic provenance and may not
 be used to discover the current crop.

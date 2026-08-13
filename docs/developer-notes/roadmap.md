@@ -42,9 +42,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Image identity packs — durable owner-scoped face references** —
   [plan](image-identity-packs.plan.md) · [spec](image-identity-packs.spec.md) —
-  each character's canonical portrait compiled into a revisioned pack; dark
-  behind `IMAGE_IDENTITY_PACK_REFERENCES` until the paid trial runs, then
-  render-lane consumption, which the shared render intent has now unblocked.
+  each character's canonical portrait compiled into a revisioned pack, with
+  render-lane consumption now built behind the still-dark
+  `IMAGE_IDENTITY_PACK_REFERENCES` flag; next is the paid identity trial
+  (harness ready), then the production close-out.
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·

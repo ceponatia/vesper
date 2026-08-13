@@ -1,5 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { db, images, usageCounters } from "@/server/db";
+import { HIDDEN_IMAGE_KINDS } from "@/server/images";
 import { log } from "@/server/log";
 import { errorText } from "./respond";
 
@@ -193,6 +194,10 @@ export interface StorageQuotaDecision {
  * cleanup, orphan sweep, cascade), and a counter would need every one of them to
  * remember to decrement. A sum cannot drift, and freeing space works by itself.
  *
+ * Hidden internal kinds (`HIDDEN_IMAGE_KINDS`) are excluded: those bytes are the
+ * system's own bookkeeping, invisible to their owner and not theirs to delete,
+ * so they must not eat into the space the user can actually see and manage.
+ *
  * Degrades open on a query failure, for the same reason budgets do.
  */
 export async function checkStorageQuota(ownerId: string, addBytes = 0): Promise<StorageQuotaDecision> {
@@ -201,7 +206,7 @@ export async function checkStorageQuota(ownerId: string, addBytes = 0): Promise<
     const [row] = await db()
       .select({ used: sql<number>`COALESCE(SUM(${images.bytes}), 0)::bigint` })
       .from(images)
-      .where(eq(images.ownerId, ownerId));
+      .where(and(eq(images.ownerId, ownerId), notInArray(images.kind, [...HIDDEN_IMAGE_KINDS])));
     const used = Number(row?.used ?? 0);
     return {
       allowed: used + addBytes <= limit,
