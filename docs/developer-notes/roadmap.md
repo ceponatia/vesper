@@ -36,9 +36,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   now reached by every render through the shared intent (slice 2), choosing which
   references survive by role rather than by position and routing control images
   to the inputs a model declares (slices 3 and 9), with the curated LoRA library
-  built and awaiting its first style trial (slice 6); remaining are reference
-  preparation and parallel uploads, reproducibility, version promotion, curated
-  profiles and image sets.
+  proven end to end through the Qwen lab's style trial (slice 6 complete);
+  remaining are reference preparation and parallel uploads, reproducibility,
+  version promotion, curated profiles and image sets.
 
 - **Image identity packs — durable owner-scoped face references** —
   [plan](image-identity-packs.plan.md) · [spec](image-identity-packs.spec.md) —
