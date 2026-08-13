@@ -195,7 +195,7 @@ guardrail itself was wrong, and the fix rides with Slice 2; the detail is in
 
 ### Slice 2 — the render kernel joins the package
 
-Status: built 2026-08-12 — awaiting a ready-state CI `verify`.
+Status: complete — 2026-08-12 (landed in PR #97 with a green `verify`).
 
 Every kind of image the app makes — a portrait, a scene, a variant, a lab
 experiment — passes through one step that turns "what this render wants" into
@@ -216,21 +216,20 @@ byte-for-byte compatible. The Slice 2 spec carries the exact split.
 
 ### Slice 3 — the shared foundation becomes `@vesper/contracts`
 
-Status: next — Slice 2's build cleared its blocker; it unblocks Slice 4.
+Status: built 2026-08-12 — awaiting a ready-state CI `verify`; it unblocks Slice 4.
 
-The image package currently carries a temporary copy of the diagnostic shapes it
-needs to report degradation. A tiny shared package gives diagnostics one owner
-and also houses the existing defensive boundary parser for packages that need to
-read untrusted data. The parser is deliberately pre-positioned shared
-infrastructure; moving it does not mean `image-core` must start parsing data it
-does not own.
+The image package carried a temporary copy of the diagnostic shapes it needs to
+report degradation. A tiny shared package gives diagnostics one owner and also
+houses the defensive boundary parser, for packages that need to read untrusted
+data. That parser is deliberately pre-positioned shared infrastructure; its being
+available does not mean `image-core` starts parsing data it does not own.
 
 The application keeps its existing diagnostics and parse import paths as narrow
-re-export barrels, avoiding a mechanical rewrite across hundreds of files.
+re-export barrels, so no mechanical rewrite across hundreds of files was needed.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: blocked on Slices 2 and 3.
+Status: next — blocked only on Slice 3 merging green.
 
 The code that talks to Replicate — probing model schemas, starting predictions,
 uploading references, polling, downloading results and handling Replicate's
@@ -285,14 +284,14 @@ which indexes one spec per remaining slice and owns their implementation status.
 The package's current contract with the application is
 [packages/image-core/README.md](../../packages/image-core/README.md) §Boundary.
 
-| Spec                                                               | Covers             | State            |
-| ------------------------------------------------------------------ | ------------------ | ---------------- |
-| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics   | revised          |
-| [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | built 2026-08-12 |
-| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | built 2026-08-12 |
-| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | revised          |
-| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised          |
-| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised          |
+| Spec                                                               | Covers             | State               |
+| ------------------------------------------------------------------ | ------------------ | ------------------- |
+| [spec.md](monorepo-image-core.spec.md)                             | Shared mechanics   | revised             |
+| [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | complete 2026-08-12 |
+| [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | complete 2026-08-12 |
+| [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | built 2026-08-12    |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | revised             |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised             |
 
 Slice 5 has no spec by design — the hub spec carries its inventory and the
 condition that would start it.

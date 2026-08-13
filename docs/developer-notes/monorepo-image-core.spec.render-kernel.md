@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 2
 
-Implementation state: built 2026-08-12 — awaiting a ready-state CI `verify`.
+Implementation state: complete — 2026-08-12 (PR #97, green `verify`).
 
 Move the profile compile step and the pure render planner into
 `@vesper/image-core` by inverting the remaining application-owned facts rather
@@ -60,9 +60,9 @@ deleted rather than left as a re-export shim.
   export curation scanned `import { … } from "@vesper/image-core"` statements and
   missed an inline `import("@vesper/image-core").DiagnosticSink` type reference in
   `src/contracts/images/identity-pack-boundary.test.ts`, so the curated root
-  stopped exporting a name that was in use. This slice's PR carries the fix — the
-  package root exports its diagnostic types again, with a note that Slice 3
-  removes them along with the temporary copy. It corrects the guardrails spec's
+  stopped exporting a name that was in use. This slice's PR carried the fix — the
+  package root exported its diagnostic types again until Slice 3 removed both the
+  temporary copy and the test that named them. It corrects the guardrails spec's
   ruling that "`diagnostics.ts` is not public".
 
 ## What moves

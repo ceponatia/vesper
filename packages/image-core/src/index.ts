@@ -22,12 +22,6 @@
  * one.
  */
 
-// The package's temporary structural copy of the application's diagnostic
-// contract. It is public for one reason: `src/contracts/images/identity-pack-boundary.test.ts`
-// asserts that the two declarations stay assignable in BOTH directions, and it
-// can only do that if it can name this one. Slice 3 replaces both with
-// `@vesper/contracts` and this export goes away with them.
-export type { Diagnostic, DiagnosticSeverity, DiagnosticSink } from "./diagnostics";
 export {
   emptyImageModelAdvancedCapabilities,
   filterReservedInputFields,

@@ -25,8 +25,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Monorepo migration — the image engine as the first package** —
   [plan](monorepo-image-core.plan.md) · [spec index](monorepo-image-core.spec.md)
   — `@vesper/image-core` is extracted, its boundary is mechanically enforced in
-  both directions, and the render kernel every image lane compiles through now
-  lives inside it; the shared diagnostics/parsing foundation is next.
+  both directions, the render kernel every image lane compiles through now lives
+  inside it, and diagnostics and boundary parsing have one shared owner in
+  `@vesper/contracts`; the Replicate transport is next.
 
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
