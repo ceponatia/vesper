@@ -2,9 +2,8 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 4
 
-Implementation state: built 2026-08-13 (PR #99, green `verify`) — awaiting the
-two live smoke checks under [Verification](#live-verification): one real render
-and one real probe against the deploy.
+Implementation state: complete — 2026-08-13 (PR #99, green `verify`; both live
+provider checks passed on the deploy — see [Live verification](#live-verification)).
 
 Put Replicate's network transport and schema probing behind a server-only
 workspace package while keeping secrets, deployment settings and Vesper state in
@@ -459,6 +458,20 @@ separate credential reads before the extraction:
 
 A green unit/build suite is not enough for this slice. A config-wiring mistake can
 typecheck while every real provider call is unauthenticated.
+
+**Both ran on 2026-08-13 against `vesper.fly.dev` and passed.**
+
+| Check       | What the deploy did                                          |
+| ----------- | ------------------------------------------------------------- |
+| Real render | Sabrina Vale avatar, 1136×1472 webp, 166 KB, `demo: false`   |
+| Provenance  | `images.meta.model` = `replicate/qwen/qwen-image-2512`        |
+| Real probe  | Re-probe of the same slug returned 200 with a fresh schema    |
+| Probe data  | `probedVersionId` `47c060e8…`, 7 aspects, derived extraInput  |
+
+The probe result matters most: it is the read that used to carry its own
+credential, and it now runs on the render client's. An unconfigured client would
+have refused before touching the network, and a wrong one would have surfaced as
+a provider error rather than a refreshed version id.
 
 ## Invariants
 
