@@ -1,9 +1,9 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 5B built 2026-08-13
-— every identity-critical lane consumes the pack behind the still-dark flag;
-slice 6's trial harness shipped 2026-08-06 and was hardened through 2026-08-07;
-the paid trial run and slice 7 remain)
+Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 5B merged and
+deployed dark 2026-08-13 — every identity-critical lane consumes the pack
+behind the still-off flag; slice 6's trial harness shipped 2026-08-06 and was
+hardened through 2026-08-07; the paid trial run and slice 7 remain)
 
 Outcome: A player can recognize the same character's face in every image Vesper
 makes of them, so that a newly generated picture stops looking like a different
@@ -336,7 +336,8 @@ override, and a bounded batch over the admin's own characters.
 
 ### Slice 5 — reference-role integration
 
-Status: complete — 5A 2026-08-06; 5B built 2026-08-13, rulings in the
+Status: complete — 5A 2026-08-06; 5B merged and deployed dark 2026-08-13,
+awaiting the slice-6 trial verdict to light the flag; rulings in the
 [integration spec](image-identity-packs.spec.integration.md)
 §"Slice 5B build record".
 
