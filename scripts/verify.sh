@@ -49,6 +49,13 @@ done
 # RAM headroom
 
 available_mib=$(awk '/MemAvailable/ {printf "%d", $2 / 1024}' /proc/meminfo)
+if [ -z "$available_mib" ]; then
+  # MSYS2/Git Bash (Windows) exposes MemFree but no MemAvailable line. MemFree
+  # understates true headroom (no reclaimable cache), so it is a conservative
+  # stand-in; an empty probe still refuses below rather than passing silently.
+  available_mib=$(awk '/MemFree/ {printf "%d", $2 / 1024; exit}' /proc/meminfo)
+fi
+: "${available_mib:=0}"
 if ((available_mib < MIN_AVAILABLE_MIB)); then
   echo "verify: only ${available_mib} MiB available (need ${MIN_AVAILABLE_MIB}). Close apps and retry." >&2
   exit 1

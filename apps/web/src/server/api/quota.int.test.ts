@@ -137,6 +137,16 @@ describe.skipIf(!ready)("storage quota", () => {
     expect((await checkStorageQuota(ownerB)).used).toBe(700);
   });
 
+  it("excludes hidden internal kinds from the sum", async () => {
+    // HIDDEN_IMAGE_KINDS rows are the system's bookkeeping, not the user's
+    // stored images — their bytes must not consume the visible quota.
+    const hidden = (kind: "identity_face_crop" | "lab_output", bytes: number) =>
+      canonicalImageRow({ ownerId: ownerA, kind, bytes, status: "ready" as const });
+    await db().insert(images).values([hidden("identity_face_crop", 9000), hidden("lab_output", 4000)]);
+    // The avatar rows above still count in full; the hidden bytes never do.
+    expect((await checkStorageQuota(ownerA)).used).toBe(3500);
+  });
+
   it("refuses a write that would cross the ceiling", async () => {
     const { limit, used } = await checkStorageQuota(ownerA);
     expect((await checkStorageQuota(ownerA, limit - used)).allowed).toBe(true);

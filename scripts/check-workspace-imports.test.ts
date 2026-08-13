@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { canCreateSymlinks } from "@/server/test-support";
 import {
   type BoundaryRule,
   type BoundaryViolation,
@@ -149,7 +150,10 @@ describe("workspace import integrity", () => {
     ).toEqual([]);
   });
 
-  it("rejects an escape laundered through a symlink that points out of the package", () => {
+  // Same skip rule as the other symlink-escape suites: the fixture PLANTS a
+  // symlink, which Windows only allows with Developer Mode or elevation; the
+  // containment logic under test is never weakened, only the setup is impossible.
+  it.skipIf(!canCreateSymlinks())("rejects an escape laundered through a symlink that points out of the package", () => {
     const root = tree({ "packages/core/src/thing.ts": 'import { used } from "./outside/app";\n\nexport const thing = used;\n' });
     symlinkSync(join(root, "src"), join(root, "packages/core/src/outside"));
     expect(rules(checkWorkspaceImports(root, POLICY))).toEqual(["cross-workspace-path"]);

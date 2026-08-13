@@ -21,11 +21,13 @@ import { imageLabPreprocessorFor, runImageLabControlExtraction } from "@/server/
  * it says. An edge-only batch therefore charges a count of zero, which is why
  * the guard is asked to `allowZeroCount` — its default floor of one exists to
  * catch a caller that forgot to size its batch, and would otherwise bill a unit
- * of `provider_image_day` for work no provider runs. The other two legs still
- * run at that count: local work writes an image and rides the same queue, so it
- * is still refused on a full disk or a dead lane. Which kinds are paid is not
- * restated here — `imageLabPreprocessorFor` already answers it, and a kind with
- * no pin is by definition the one nobody is billed for.
+ * of `provider_image_day` for work no provider runs. Backpressure still runs at
+ * that count — local work rides the same queue, so it is still refused into a
+ * dead lane — but the storage leg does not: `outputKind` declares the hidden
+ * `lab_control` rows this batch writes, which the storage quota excludes, so an
+ * account at its visible quota keeps its lab workflow. Which kinds are paid is
+ * not restated here — `imageLabPreprocessorFor` already answers it, and a kind
+ * with no pin is by definition the one nobody is billed for.
  *
  * The jobs are started by the ROUTE rather than the service: `@/server/api`
  * imports `@/server/images`, so a `startJob` call from the extraction service
@@ -49,6 +51,7 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const blocked = await imageRenderRejection(user, req, {
     count: sourceImageIds.length * paidKinds.length,
     allowZeroCount: true,
+    outputKind: "lab_control",
   });
   if (blocked) return blocked;
 

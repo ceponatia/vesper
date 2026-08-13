@@ -1,12 +1,20 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import type { AttributeValue } from "@/contracts/attributes/value";
 import type { RegionExposure } from "@/contracts/items/visibility";
-import type { DiagnosticSink } from "@/contracts/diagnostics";
+import { DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
+import { logDiagnostics } from "@/server/log";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
-import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
+import {
+  IMAGE_TARGET_ASPECT,
+  type IdentityReferenceProvenance,
+  type ImageRenderReference,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
+import { identityPackRenderReferences } from "./identity-pack-consume";
+import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
@@ -139,14 +147,62 @@ export interface RenderChatLookInput {
   chatId: string;
   userId: string;
   characterId: string;
-  /** The canonical avatar's bytes — the identity source the look edit preserves. */
-  avatar: Buffer;
+  /** The canonical avatar's row id — the identity source the look edit preserves. */
+  avatarImageId: string;
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
   /** The sheet's apparent-age anchor (apparentAgeAnchor) — text-authoritative over the reference. */
   ageAnchor?: string;
   sink?: DiagnosticSink;
+}
+
+/** What one look mint sends as its identity, and what it records for having sent it. */
+interface ChatLookIdentity {
+  references: ImageRenderReference[];
+  provenance?: IdentityReferenceProvenance[];
+}
+
+/**
+ * Source the look edit's identity reference(s): the pack service when the
+ * consumer flag is on (profile-aware eligibility, provenance, one-or-more
+ * candidate roles), the direct owned avatar read when it is off — the exact
+ * read this lane's enqueue-side job performed before the seam moved here, so
+ * the flag-off payload is unchanged.
+ *
+ * Null refuses the mint with no row reserved, this lane's precondition shape:
+ * an unreadable avatar always meant "no mint, re-fire on the next change", and
+ * a flag-on ineligible pack settles the same way rather than substituting the
+ * avatar (the integration spec's prohibition). Diagnostics already sit on the
+ * sink by the time null is returned.
+ */
+async function chatLookIdentity(
+  input: RenderChatLookInput,
+  resolved: ResolvedImageProfile,
+  sink: DiagnosticSink,
+): Promise<ChatLookIdentity | null> {
+  if (imageIdentityPackReferencesEnabled()) {
+    const pack = await identityPackRenderReferences({
+      ownerId: input.userId,
+      characterId: input.characterId,
+      profile: resolved,
+      sink,
+    });
+    if (!pack.ok) return null;
+    return { references: pack.references.map((entry) => entry.reference), provenance: pack.provenance };
+  }
+  const [row] = await db()
+    .select()
+    .from(images)
+    .where(and(eq(images.id, input.avatarImageId), eq(images.ownerId, input.userId), eq(images.status, "ready")))
+    .limit(1);
+  if (!row) return null;
+  const avatar = await readImageBytes(row);
+  if (!avatar) return null; // file lost — the sweep reconciles; the next change re-fires
+  // The avatar IS the identity the look edit must preserve, and the chat_look
+  // policy requires that role — a look rendered from anything else would dress
+  // a stranger in the tracked outfit.
+  return { references: [{ role: "identity", required: true, buffer: avatar }] };
 }
 
 /**
@@ -160,61 +216,76 @@ export interface RenderChatLookInput {
  * Both anchor lanes check their preconditions BEFORE reserving anything (a
  * keyless or demo chat leaves no row at all) and log no event — the two
  * differences from the avatar/entity shape, both deliberate.
+ *
+ * Both lanes also DRAIN their diagnostics into the process log (the scene
+ * lane's collector pattern): the production caller is a detached job with no
+ * sink, and a flag-on pack refusal returns null with no row reserved — without
+ * the drain that refusal would be a look that silently never appears, with no
+ * record anywhere of why.
  */
 export async function renderChatLookImage(input: RenderChatLookInput): Promise<string | null> {
   if (isDemoMode() || !hasReplicate()) return null;
-  // The look anchor is an identity edit of the avatar, so its task's default
-  // profile sits on the same model the scene picker defaults to rather than
-  // having a control of its own.
-  const resolved = await resolveImageProfileForTask("chat_look", null, input.sink);
-  if (!resolved) return null;
-  const model = resolved.model;
-  const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
-  const { imageId, status } = await runImagePipeline({
-    asset: {
-      ownerId: input.userId,
-      kind: "chat_look",
-      entityKind: "character",
-      entityId: input.characterId,
-      chatId: input.chatId,
-      prompt,
-      meta: { lookKey: input.lookKey, model: `replicate/${model.slug}` },
-    },
-    produce: async () => {
-      const edit = await renderImageIntent(
-        {
-          profile: resolved,
-          prompt,
-          // The avatar IS the identity the look edit must preserve, and the
-          // chat_look policy requires that role — a look rendered from anything
-          // else would dress a stranger in the tracked outfit.
-          references: [{ role: "identity", required: true, buffer: input.avatar }],
-          target: { aspectRatio: IMAGE_TARGET_ASPECT },
+  const collected = new DiagnosticCollector();
+  const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
+  try {
+    // The look anchor is an identity edit of the avatar, so its task's default
+    // profile sits on the same model the scene picker defaults to rather than
+    // having a control of its own.
+    const resolved = await resolveImageProfileForTask("chat_look", null, sink);
+    if (!resolved) return null;
+    const identity = await chatLookIdentity(input, resolved, sink);
+    if (!identity) return null;
+    const model = resolved.model;
+    const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
+    const { imageId, status } = await runImagePipeline({
+      asset: {
+        ownerId: input.userId,
+        kind: "chat_look",
+        entityKind: "character",
+        entityId: input.characterId,
+        chatId: input.chatId,
+        prompt,
+        meta: {
+          lookKey: input.lookKey,
+          model: `replicate/${model.slug}`,
+          ...(identity.provenance ? { identityReferences: identity.provenance } : {}),
         },
-        input.sink,
-      );
-      if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
-      return { ok: true, image: edit.image };
-    },
-    // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
-    // files. Scoped by `entityId` for the same reason the loader above is — a
-    // chat-wide purge makes two cast members evict each other's anchor on every
-    // mint, so neither ever has one when the scene renders.
-    onReady: async (asset) => {
-      await purgeImagesWhere(
-        and(
-          eq(images.chatId, input.chatId),
-          eq(images.entityId, input.characterId),
-          eq(images.kind, "chat_look"),
-          ne(images.id, asset.id),
-        ),
-      );
-    },
-    failureDiagnostic: { code: "images.chat_look.failed" },
-    sink: input.sink,
-  });
-  // A save that never reached `ready` already pushed its own diagnostic.
-  return status === "ready" ? imageId : null;
+      },
+      produce: async () => {
+        const edit = await renderImageIntent(
+          {
+            profile: resolved,
+            prompt,
+            references: identity.references,
+            target: { aspectRatio: IMAGE_TARGET_ASPECT },
+          },
+          sink,
+        );
+        if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
+        return { ok: true, image: edit.image };
+      },
+      // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
+      // files. Scoped by `entityId` for the same reason the loader above is — a
+      // chat-wide purge makes two cast members evict each other's anchor on every
+      // mint, so neither ever has one when the scene renders.
+      onReady: async (asset) => {
+        await purgeImagesWhere(
+          and(
+            eq(images.chatId, input.chatId),
+            eq(images.entityId, input.characterId),
+            eq(images.kind, "chat_look"),
+            ne(images.id, asset.id),
+          ),
+        );
+      },
+      failureDiagnostic: { code: "images.chat_look.failed" },
+      sink,
+    });
+    // A save that never reached `ready` already pushed its own diagnostic.
+    return status === "ready" ? imageId : null;
+  } finally {
+    logDiagnostics("images.chat_look", collected.items, { chatId: input.chatId, characterId: input.characterId });
+  }
 }
 
 export interface RenderChatPlaceInput {
@@ -239,32 +310,38 @@ export function buildChatPlacePrompt(input: { placeName: string; sketch: string 
  */
 export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise<string | null> {
   if (isDemoMode() || !hasReplicate() || !input.sketch.trim()) return null;
-  // A place shot is text-to-image with no subject to preserve, so its task's
-  // default profile sits on the general-purpose model the way the item/location
-  // lanes' do.
-  const resolved = await resolveImageProfileForTask("chat_place", null, input.sink);
-  if (!resolved) return null;
-  const model = resolved.model;
-  const prompt = buildChatPlacePrompt(input);
-  const { imageId, status } = await runImagePipeline({
-    asset: {
-      ownerId: input.userId,
-      kind: "chat_place",
-      chatId: input.chatId,
-      prompt,
-      meta: { placeName: input.placeName, model: `replicate/${model.slug}` },
-    },
-    produce: async () => {
-      // 3:2 landscape — an establishing shot, not a portrait.
-      const shot = await renderImageIntent(
-        { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
-        input.sink,
-      );
-      if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
-      return { ok: true, image: shot.image };
-    },
-    failureDiagnostic: { code: "images.chat_place.failed" },
-    sink: input.sink,
-  });
-  return status === "ready" ? imageId : null;
+  const collected = new DiagnosticCollector();
+  const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
+  try {
+    // A place shot is text-to-image with no subject to preserve, so its task's
+    // default profile sits on the general-purpose model the way the item/location
+    // lanes' do.
+    const resolved = await resolveImageProfileForTask("chat_place", null, sink);
+    if (!resolved) return null;
+    const model = resolved.model;
+    const prompt = buildChatPlacePrompt(input);
+    const { imageId, status } = await runImagePipeline({
+      asset: {
+        ownerId: input.userId,
+        kind: "chat_place",
+        chatId: input.chatId,
+        prompt,
+        meta: { placeName: input.placeName, model: `replicate/${model.slug}` },
+      },
+      produce: async () => {
+        // 3:2 landscape — an establishing shot, not a portrait.
+        const shot = await renderImageIntent(
+          { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
+          sink,
+        );
+        if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
+        return { ok: true, image: shot.image };
+      },
+      failureDiagnostic: { code: "images.chat_place.failed" },
+      sink,
+    });
+    return status === "ready" ? imageId : null;
+  } finally {
+    logDiagnostics("images.chat_place", collected.items, { chatId: input.chatId, placeName: input.placeName });
+  }
 }

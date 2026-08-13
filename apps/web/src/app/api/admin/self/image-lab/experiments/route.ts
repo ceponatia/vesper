@@ -53,7 +53,9 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const body = await readBody(req, imageLabCreateExperimentRequestSchema);
   if (!body.ok) return body.response;
 
-  const blocked = await imageRenderRejection(user, req);
+  // `outputKind`: experiment renders write hidden `lab_output` rows, excluded
+  // from the storage quota — admission must not charge the visible headroom.
+  const blocked = await imageRenderRejection(user, req, { outputKind: "lab_output" });
   if (blocked) return blocked;
 
   const created = await createImageLabExperiment({ ownerId: user.id, request: body.value });

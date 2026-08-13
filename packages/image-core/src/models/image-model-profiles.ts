@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { imageReferenceRoleSchema, type ImageReferenceRole } from "../capabilities/image-model-capabilities";
+import { identityReferenceStrategySchema } from "../identity/identity-pack";
 import { imageModelOffersSurface, type ImageModel, type ImageModelSurface } from "./image-models";
 
 /**
@@ -133,12 +134,27 @@ export const imageReferencePolicySchema = z.object({
   requiredRoles: z.array(imageReferenceRoleSchema).default((): ImageReferenceRole[] => []),
   roleOrder: z.array(imageReferenceRoleSchema).default((): ImageReferenceRole[] => []),
   maxPerRole: z.partialRecord(imageReferenceRoleSchema, z.number().int().min(0)).optional(),
+  /**
+   * Which identity-pack roles this profile sends and in what order
+   * (image-identity-packs.spec.integration.md §"Profile identity strategies").
+   * A reviewed judgment about the model, never inferred from its provider
+   * schema. Defaults to canonical-only so every stored row — all of which
+   * predate the field — keeps sending exactly the reference it sends today; a
+   * richer strategy is a trial promotion, not a parse-time surprise.
+   *
+   * This lives inside the policy jsonb rather than as its own column so a
+   * strategy change is a data edit, and it is deliberately NOT part of the
+   * render-controls fingerprint (`profileRenderControlsFingerprintJson` names
+   * its fields explicitly): the trial pins the ORDERED ROLES a cell actually
+   * sends, which is the fact the strategy resolves to.
+   */
+  identityStrategy: identityReferenceStrategySchema.default("canonical_only"),
 });
 export type ImageReferencePolicy = z.infer<typeof imageReferencePolicySchema>;
 
 /** The empty policy: nothing allowed, nothing required — what a generate task wants. */
 export function emptyImageReferencePolicy(): ImageReferencePolicy {
-  return { allowedRoles: [], requiredRoles: [], roleOrder: [] };
+  return { allowedRoles: [], requiredRoles: [], roleOrder: [], identityStrategy: "canonical_only" };
 }
 
 /** One curated LoRA selection. Singular by design: the Qwen Image Edit binding

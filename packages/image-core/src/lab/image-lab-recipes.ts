@@ -124,7 +124,13 @@ function imageLabRecipePolicy(kind: ImageLabControlledKind, controlKind: ImageLa
   for (const role of ordered) maxPerRole[role] = 1;
   // Each field gets its own array: the policy type is mutable, and two fields
   // sharing one instance would let an edit to either silently rewrite both.
-  return { requiredRoles: ["identity", controlRole], allowedRoles: [...ordered], roleOrder: [...ordered], maxPerRole };
+  return {
+    requiredRoles: ["identity", controlRole],
+    allowedRoles: [...ordered],
+    roleOrder: [...ordered],
+    maxPerRole,
+    identityStrategy: "canonical_only",
+  };
 }
 
 /** What a fixture of each kind is, in the label's words. */
@@ -246,7 +252,13 @@ function imageLabTwoCharacterPolicy(controlKind: ImageLabControlKind | null): Im
   // Each field gets its own array, for the reason the controlled policy gives:
   // the policy type is mutable, and two fields sharing one instance would let an
   // edit to either silently rewrite both.
-  return { requiredRoles: [...ordered], allowedRoles: [...ordered], roleOrder: [...ordered], maxPerRole };
+  return {
+    requiredRoles: [...ordered],
+    allowedRoles: [...ordered],
+    roleOrder: [...ordered],
+    maxPerRole,
+    identityStrategy: "canonical_only",
+  };
 }
 
 /**
@@ -402,7 +414,13 @@ function imageLabFinishingPolicy(variant: ImageLabFinishingVariant): ImageRefere
   // Each field gets its own array, for the reason the controlled policy gives:
   // the policy type is mutable, and two fields sharing one instance would let an
   // edit to either silently rewrite both.
-  return { requiredRoles: [...ordered], allowedRoles: [...ordered], roleOrder: [...ordered], maxPerRole };
+  return {
+    requiredRoles: [...ordered],
+    allowedRoles: [...ordered],
+    roleOrder: [...ordered],
+    maxPerRole,
+    identityStrategy: IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,
+  };
 }
 
 /** The label's leading noun — which arm the reader is looking at. */
