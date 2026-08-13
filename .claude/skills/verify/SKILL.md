@@ -23,9 +23,13 @@ a slow serial run that tells you nothing about whether the deployed app behaves.
    read it off the machine: `fly ssh console -a vesper -C "printenv DEV_PASSWORD"`.
    (`/api/dev/impersonate` 404s on Fly — production build.)
 3. **Drive it with Playwright MCP** (`browser_navigate`, `browser_snapshot`,
-   `browser_click`, `browser_resize` for mobile widths). The QA account owns
-   the Tsukikage Onsen world/cast and the Lysandra Vane character with existing
-   chats under `/chat`.
+   `browser_click`, `browser_resize` for mobile widths). The account's fixtures
+   are the _Sabrina Vale_ character plus a small set of image-lab controls —
+   CLAUDE.md's "Dedicated UI/QA dev account" bullet owns that list, so read it
+   there rather than assuming a character or chat exists. If the account's rows
+   are missing entirely, seed over SSH:
+   `fly ssh console -a vesper -C "pnpm db:seed"` (a bare `users` insert is not
+   enough — the seed also provisions the credential).
 4. **Screenshots** go in the untracked `screenshots/` folder at the repo root —
    never the repo root or `docs/`.
 
