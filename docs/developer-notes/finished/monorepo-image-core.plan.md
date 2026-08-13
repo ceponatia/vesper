@@ -1,8 +1,17 @@
 # Monorepo migration — the image engine as the first package
 
-Status: awaiting acceptance — the deployed `apps/web` verification: an existing
-stored image still loads from the Fly volume, a new render writes beside it, and
-the root database commands still run over `fly ssh`.
+Status: shipped — 2026-08-12. Every slice is delivered and accepted. The
+deployed verification passed on `vesper.fly.dev`: the existing image library
+still reads from the Fly volume, a real render (`demo: false`, Replicate) wrote
+beside it, a real model probe returned a fresh schema, and the root database
+commands still run from the workspace root over `fly ssh`.
+
+Nothing was left over. Slice 5 closed as a decision rather than a package — no
+provider-neutral vision surface exists to extract, and the condition that would
+reopen it is recorded in the spec index. Two follow-ups the move surfaced are
+tracked outside this plan: 30 pre-existing resource-ID routes that the
+incremental route-authorization gate has never inspected, and the root/`apps/web`
+dependency duplication the migration deliberately left in place.
 
 Outcome: A developer can open the image engine on its own — read it, test it,
 and change how a model is driven — without the rest of the app in front of them,
@@ -264,7 +273,7 @@ exists, an image-vision package would move names without moving ownership.
 
 ### Slice 6 — the application moves to `apps/web`
 
-Status: built 2026-08-12 — awaiting the deployed verification. Its gate was met:
+Status: complete — 2026-08-12. Its gate was met:
 Slice 4 landed and was accepted without forcing a redesign of the
 core/app/provider seam — the provider-neutral plan and result types were the
 seam, and nothing in `image-core` had to change to support the transport
@@ -306,7 +315,7 @@ The package's current contract with the application is
 | [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | complete 2026-08-12 |
 | [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | complete 2026-08-12 |
 | [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | complete 2026-08-13 |
-| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | built 2026-08-12    |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | complete 2026-08-12 |
 
 Slice 5 has no detail spec by design — the hub spec records the completed
 no-extraction decision and the evidence that would justify reopening it.

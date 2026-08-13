@@ -31,7 +31,7 @@ canonical technical record of that completed no-extraction decision.
 | 3     | complete — 2026-08-12              | —                                         |
 | 4     | complete — 2026-08-13              | —                                         |
 | 5     | complete — no extraction warranted | revisit only when a shared seam earns it  |
-| 6     | built 2026-08-12                   | awaiting the deployed verification        |
+| 6     | complete — 2026-08-12              | —                                         |
 
 ## Cross-slice ownership map
 

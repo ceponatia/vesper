@@ -33,7 +33,7 @@ The two kinds of boundary are enforced differently, because they promise differe
 - does the `@vesper/*` graph stay acyclic **and** flow one way through its layers;
 - does a package that promises browser/server portability stay out of the Node-only graph.
 
-`pnpm lint:package-resolution` then imports each package by its public name through the installed workspace, so a broken `exports` map cannot hide behind a tool alias. Both run in CI's static gate. The rules and the reasoning behind them: [monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md).
+`pnpm lint:package-resolution` then imports each package by its public name through the installed workspace, so a broken `exports` map cannot hide behind a tool alias. Both run in CI's static gate. The rules and the reasoning behind them: [monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md).
 
 ## Directory layout
 
