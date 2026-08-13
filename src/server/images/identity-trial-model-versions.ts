@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { type ImageModel, type ImageModelProfile, pinnedImageModelVersion } from "@vesper/image-core";
+import type { ProbeResult } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { probeReplicateModel } from "../ai";
+import { replicateClient } from "../ai";
 import { db, imageModels } from "../db";
 import { loadImageModelProfiles } from "./model-profiles";
 import { loadImageModels } from "./models";
@@ -25,7 +26,7 @@ import { loadImageModels } from "./models";
  * weakening the evidence contract.
  */
 
-type SuccessfulProbe = Extract<Awaited<ReturnType<typeof probeReplicateModel>>, { ok: true }>["probe"];
+type SuccessfulProbe = Extract<ProbeResult, { ok: true }>["probe"];
 
 export interface IdentityTrialVersionProbeFailure {
   modelId: string;
@@ -43,7 +44,7 @@ export interface IdentityTrialVersionPreparation {
 export interface IdentityTrialVersionDependencies {
   loadModels: (sink?: DiagnosticSink) => Promise<ImageModel[]>;
   loadProfiles: (sink?: DiagnosticSink) => Promise<ImageModelProfile[]>;
-  probe: typeof probeReplicateModel;
+  probe: (slug: string) => Promise<ProbeResult>;
   persist: (modelId: string, probe: SuccessfulProbe) => Promise<void>;
 }
 
@@ -76,7 +77,7 @@ export function imageModelProbeFields(probe: SuccessfulProbe) {
 const defaultDependencies: IdentityTrialVersionDependencies = {
   loadModels: loadImageModels,
   loadProfiles: loadImageModelProfiles,
-  probe: probeReplicateModel,
+  probe: (slug) => replicateClient().probeReplicateModel(slug),
   persist: async (modelId, probe) => {
     await db().update(imageModels).set(imageModelProbeFields(probe)).where(eq(imageModels.id, modelId));
   },

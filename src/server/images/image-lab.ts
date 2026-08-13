@@ -53,12 +53,8 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import {
-  classifyImageFailure,
-  disableSafetyChecker,
-  REPLICATE_DEFAULT_EDIT_MODEL,
-  runRegistryImageModel,
-} from "../ai";
+import { REPLICATE_DEFAULT_EDIT_MODEL } from "@vesper/image-replicate";
+import { classifyImageFailure, disableSafetyChecker, replicateClient } from "../ai";
 import { characterChats, characters, chatParticipants, db, imageLabExperiments, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer, type ImageRow } from "./assets";
 import { evaluateIdentityPackForProfile } from "./identity-pack-references";
@@ -245,7 +241,7 @@ export function setImageLabRendererForTesting(renderer: ImageLabRenderer | null)
 function runRealLabRender(request: ImageLabRenderRequest, sink?: DiagnosticSink): Promise<RenderWithModelResult> {
   switch (request.mode) {
     case "direct":
-      return runRegistryImageModel(
+      return replicateClient().runRegistryImageModel(
         request.model,
         {
           prompt: request.prompt,

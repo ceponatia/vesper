@@ -9,7 +9,7 @@ import {
   MAX_TRIAL_PREDICTION_MS,
   type ProfileRenderPlan,
 } from "@vesper/image-core";
-import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "../ai/replicate";
+import { OUTPUT_TIMEOUT_MS, REQUEST_TIMEOUT_MS } from "@vesper/image-replicate";
 import { STALE_CLAIM_MS } from "./identity-pack-trial";
 import { profileRenderControlsHash, sha256Hex } from "./render-fingerprint";
 

@@ -8,7 +8,7 @@ import {
 } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
-import { probeReplicateModel } from "@/server/ai";
+import { replicateClient } from "@/server/ai";
 import { imageModelProbeFields, loadImageModel } from "@/server/images";
 
 type Params = { modelId: string };
@@ -102,7 +102,7 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   // between versions.
   let probedFields = {};
   if (reprobe) {
-    const probed = await probeReplicateModel(existing.slug);
+    const probed = await replicateClient().probeReplicateModel(existing.slug);
     if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
     probedFields = imageModelProbeFields(probed.probe);
   }

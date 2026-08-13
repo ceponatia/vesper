@@ -20,7 +20,8 @@ capability booleans drive every picker: `canGenerate` (can run from a bare
 prompt) and `canEdit` (has a reference input at all).
 
 **Capabilities are probed, not typed by hand.** `probeReplicateModel`
-(`server/ai/replicate-probe.ts`) reads the model's published OpenAPI input schema
+(`packages/image-replicate/src/probe.ts`, reached through the configured client)
+reads the model's published OpenAPI input schema
 on save and derives all of the above. `canGenerate` is false exactly when the
 reference field is in the schema's `required` list — which is what keeps
 `qwen/qwen-image-edit-2511` out of the new-portrait picker without anyone
@@ -288,13 +289,12 @@ retryable rather than silently painting a different-looking person (owner ruling
 with no reference yields an empty chain and a visible refusal. The
 `replicate/<slug>` actually used is recorded on `images.meta.model`.
 
-**Transport** (`server/ai/replicate.ts`): the model prediction endpoint (`POST
+**Transport** (`@vesper/image-replicate`): the model prediction endpoint (`POST
 /models/{owner}/{name}/predictions`) with `Prefer: wait=60`, then poll — or
 `POST /predictions` carrying a version id when the slug is pinned
 `owner/name:version`. `REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default
-5m) is parsed **once per prediction** and drives both deadlines — Replicate's
-`Cancel-After` header and the client's own poll cutoff — so raising it can't leave
-the provider cancelling at a stale bound. Edit references are uploaded as
+5m) drives both deadlines — Replicate's `Cancel-After` header and the client's own
+poll cutoff — so raising it can't leave the provider cancelling at a stale bound. Edit references are uploaded as
 **private Replicate files** (Vesper's images are not publicly addressable and
 exceed the data-URL guidance), trimmed to the model's capacity by `fitReferences`
 *before* the upload cost is paid, and deleted best-effort as soon as the
@@ -304,6 +304,18 @@ Nothing throws — a failure degrades to an error string the caller turns into a
 failed row. `disable_safety_checker` is only ever sent to models whose schema
 declares it (Replicate rejects unknown inputs); its value comes from
 `REPLICATE_SAFE_MODE`.
+
+**The transport reads no environment; the application configures it once.**
+`src/server/ai/replicate-runtime.ts` is the only code in Vesper that reads
+`REPLICATE_API_TOKEN`, `REPLICATE_SAFE_MODE` and
+`REPLICATE_PREDICTION_TIMEOUT_MS`. It resolves them on first use — lazily,
+because Next loads server modules while building routes, when secrets are absent
+— and memoizes one configured client for the process; `hasReplicate()` and
+`disableSafetyChecker()` are views onto that one snapshot, and rendering,
+preprocessing and probing all run through it. That is what keeps the safety
+posture single-source: the value a render's plan is fingerprinted with is the
+same immutable value the payload builder writes, so a process cannot hash one
+posture and send another.
 
 **Billing failures are their own class.** `replicate 402: Insufficient credit`
 would otherwise match the transient status-code pattern and earn a pointless

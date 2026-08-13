@@ -61,9 +61,10 @@ The implementation is spread across these seams:
   vocabulary and the advanced-capability contract;
 - `packages/image-core/src/models/image-model-profiles.ts` — profile record, normalized
   controls, eligibility, and the pure resolver;
-- `src/server/ai/replicate-probe.ts` — save-time OpenAPI probe;
-- `src/server/ai/replicate.ts` — input construction, the reserved-field set,
-  reference transport, prediction polling, output download, and file cleanup;
+- `packages/image-replicate/src/probe.ts` — save-time OpenAPI probe;
+- `packages/image-replicate/src/` — input construction, reference transport,
+  prediction polling, output download, and file cleanup;
+- `packages/image-core/src/capabilities/` — the reserved-field set;
 - `packages/image-core/src/capabilities/image-control-mapping.ts` — normalized controls onto one
   version's declared fields, plus provider-override validation;
 - `packages/image-core/src/provider-interface/` — scene attempt ordering and capability
@@ -906,9 +907,9 @@ A later layer wins. `providerOverrides` may only use `knownInputFields`, and an
 empty `knownInputFields` fails **closed** — it means the probe recorded nothing,
 not that everything is permitted. It may not override prompt, reference fields,
 the aspect key, version, safety enforcement, or the single-image path's forced
-output count of one; `reservedImageInputFields` in `src/server/ai/replicate.ts`
-is the single spelling of that set, shared by the override validator and the
-payload overlay.
+output count of one; `reservedImageInputFields` in `@vesper/image-core` is the
+single spelling of that set, shared by the override validator and the payload
+overlay.
 
 In the built path the merge is build-then-overlay rather than a six-layer merge:
 `buildRegistryModelInput` writes the prompt, references, aspect and `extraInput`,

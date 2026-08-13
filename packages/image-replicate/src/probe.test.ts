@@ -1,17 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { probeReplicateModel } from "./replicate-probe";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createReplicateClient } from "./client";
+import { DEFAULT_PREDICTION_TIMEOUT_MS } from "./config";
+import type { ProbeResult } from "./probe";
 
-const originalToken = process.env.REPLICATE_API_TOKEN;
-
-beforeEach(() => {
-  process.env.REPLICATE_API_TOKEN = "test-token";
-});
+/**
+ * The probe runs on the SAME configured client rendering uses — it used to read
+ * `REPLICATE_API_TOKEN` independently, which meant one process could probe with
+ * one credential and render with another.
+ */
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  if (originalToken === undefined) delete process.env.REPLICATE_API_TOKEN;
-  else process.env.REPLICATE_API_TOKEN = originalToken;
 });
+
+const client = (apiToken: string | null = "test-token") =>
+  createReplicateClient({ apiToken, safetyCheckerDisabled: true, predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS });
+
+const probeReplicateModel = (slug: string): Promise<ProbeResult> => client().probeReplicateModel(slug);
 
 /** Build an OpenAPI blob shaped like Replicate's, with enums resolved via $ref. */
 function openapi(input: {
@@ -421,12 +426,27 @@ describe("probeReplicateModel", () => {
       expect(result.error).toContain("no model called acme/ghost");
     });
 
-    it("fails clearly with no token", async () => {
-      delete process.env.REPLICATE_API_TOKEN;
-      const result = await probeReplicateModel("acme/anything");
+    it("fails clearly on an unconfigured client, without asking the network", async () => {
+      const network = vi.fn();
+      vi.stubGlobal("fetch", network);
+      const result = await client(null).probeReplicateModel("acme/anything");
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toContain("REPLICATE_API_TOKEN not configured");
+      expect(network).not.toHaveBeenCalled();
+    });
+
+    it("sends the configured client's credential rather than reading one", async () => {
+      const headers: Array<Record<string, string> | undefined> = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+          headers.push(init?.headers as Record<string, string> | undefined);
+          return Promise.resolve(new Response(null, { status: 404 }));
+        }),
+      );
+      await client("probe-credential").probeReplicateModel("acme/anything");
+      expect(headers[0]).toMatchObject({ Authorization: "Bearer probe-credential" });
     });
   });
 });

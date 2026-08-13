@@ -1,0 +1,20 @@
+{
+  "name": "@vesper/image-replicate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-only Replicate transport: predictions, file uploads, output download, schema probing.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@vesper/contracts": "workspace:*",
+    "@vesper/image-core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
+  }
+}

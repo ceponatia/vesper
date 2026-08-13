@@ -8,6 +8,5 @@ export * from "./generate-checked";
 export * from "./generate-timeout";
 export * from "./embeddings";
 export * from "./errors";
-export * from "./replicate";
-export * from "./replicate-probe";
+export * from "./replicate-runtime";
 export * from "./image-providers";
