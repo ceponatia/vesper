@@ -11,8 +11,8 @@ never sees a meter, only a derived, perception-gated read of one.**
 
 This file is a **living reference, not a chat-lane-only design note.** The successor
 engine's Gate 5 (`engine.spec` §25, ruling 15) names it the normative semantics source for
-its body meters, and `src/contracts/simulation/bodies.ts` and
-`src/lib/simulation/body-reads.ts` cite its sections in code comments. Section headings
+its body meters, and `packages/simulation-core/src/contracts/bodies.ts` and
+`packages/simulation-core/src/lib/body-reads.ts` cite its sections in code comments. Section headings
 here are load-bearing — rename them and those citations rot.
 
 ## The law: substrate vs. read
@@ -58,9 +58,9 @@ Built and running, engine-side:
 
 - **Meter classes with a drift law per class** — `bodyMeterClassSchema`
   (`reserve` / `load` / `valence` / `rate` / `phase`) plus a per-meter `driftLaw` of
-  `none`, `linear`, or `proportional_decay`, in `src/contracts/simulation/bodies.ts`. This
+  `none`, `linear`, or `proportional_decay`, in `packages/simulation-core/src/contracts/bodies.ts`. This
   is the taxonomy below, made mechanical.
-- **The read seam** — `src/lib/simulation/body-reads.ts`: `deriveCircadianPressure`,
+- **The read seam** — `packages/simulation-core/src/lib/body-reads.ts`: `deriveCircadianPressure`,
   `deriveDeficitRead` (the generalized signed shape), `deriveEnergyRead`,
   `deriveIntimacyRead`, `deriveVisibleBodySigns`, `resolveSleepWindow`.
 - **Energy exactly as ruled in OQ1** — reserve on `proportional_decay` with

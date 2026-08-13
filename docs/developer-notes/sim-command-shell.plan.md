@@ -50,7 +50,7 @@ pass unremarked (**F1**, a separate tooling batch).
 ## Scope
 
 Audit batch 2. Everything here is inside `src/server/engine/simulation`,
-`src/lib/simulation`, and `src/contracts/simulation`.
+`packages/simulation-core/src/lib`, and `packages/simulation-core/src/contracts`.
 
 - **Call-site ceremony** — A1 (46 sites, ~1,100 lines the shell can synthesize
   from the result schema plus one noun), A8 (13 identically-shaped option

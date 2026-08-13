@@ -173,7 +173,7 @@ Each is independently shippable, on its own pull request with its own green
   consolidation sequence for the rest.
 - **Do not absorb the simulation contracts.** The
   [modularity audit](codebase-modularity.audit.md) proposes a large
-  `src/contracts/simulation` scaffolding pass (one command factory, one event
+  `packages/simulation-core/src/contracts` scaffolding pass (one command factory, one event
   envelope, one projection-schema factory). Its projection-schema item is the same
   branded-vs-plain drift the efficiency audit filed as **A9**, which
   [sim-command-shell.plan.md](sim-command-shell.plan.md) owns — this plan's §E

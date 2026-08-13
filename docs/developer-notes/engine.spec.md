@@ -16,7 +16,7 @@ must not hide it inside prompt wording or a parser heuristic.
 
 The contract is split across six files (2026-07-21). Section numbering is GLOBAL and
 stable — cite sections as "engine.spec §N" exactly as before, the way `src/contracts/`
-and `src/lib/simulation/` already do; this index maps every section to its file. A new
+and `packages/simulation-core/src/lib/` already do; this index maps every section to its file. A new
 section joins the file that owns its range; a genuinely new domain gets a new
 `engine.spec.<cluster>.md` and an entry here.
 
