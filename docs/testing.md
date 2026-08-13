@@ -1,20 +1,19 @@
 # Testing
 
-Vitest 4, one root config (`vitest.config.ts`) declaring one **project** per workspace that owns tests:
+Vitest 4, split by ownership. The root config (`vitest.config.ts`) declares the two **application** projects and nothing else; every workspace package owns its own `vitest.config.ts` and its own `test` script.
 
-| Project           | Covers                                                      | Setup                        |
-| ----------------- | ----------------------------------------------------------- | ---------------------------- |
-| `app`             | `apps/web/src/**` + `scripts/**`, minus `*.int.test.ts`     | `apps/web/src/test/setup.ts` |
-| `app-int`         | `apps/web/src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `apps/web/src/test/setup.ts` |
-| `contracts`       | `packages/contracts/src/**`                                 | none — by design             |
-| `image-core`      | `packages/image-core/src/**`                                | none — by design             |
-| `image-replicate` | `packages/image-replicate/src/**`                           | none — by design             |
+| Project   | Covers                                                      | Setup                        |
+| --------- | ----------------------------------------------------------- | ---------------------------- |
+| `app`     | `apps/web/src/**` + `scripts/**`, minus `*.int.test.ts`     | `apps/web/src/test/setup.ts` |
+| `app-int` | `apps/web/src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `apps/web/src/test/setup.ts` |
 
-`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
+`pnpm test` runs the `app` project and then `pnpm -r --workspace-concurrency=1 run test`, which walks the workspace and runs each package's suite from that package's own directory, one at a time. A package joins the run by owning a `test` script — no root script names it, and none has to be edited to add one.
 
-`scripts/**` tests run in the `app` project on purpose. They are the repository's tripwire tests — they scan application source and import `@/server/test-support` — so they need the application alias and the same demo-mode setup as the code they inspect.
+`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Package configs declare **no** setup file and **no** `@/` alias — a package test must prove something about the package, not about Vesper's configuration, and its workspace dependencies resolve through the installed workspace link rather than an alias pointing at source ([monorepo-image-core.spec.guardrails.md](developer-notes/finished/monorepo-image-core.spec.guardrails.md)).
 
-**The runner's working directory is the repository root**, and several tripwire tests rely on it: they locate source with `process.cwd()` plus a repo-relative path such as `apps/web/src/app/api`. A test that needs to name a file uses that form, never a path relative to the app.
+The application suite is the one exception to package-owned configs, and two repository-level properties force it. **The runner's working directory must be the repository root**: several tripwire tests locate source with `process.cwd()` plus a repo-relative path such as `apps/web/src/app/api`, so a config rooted at `apps/web` would resolve them one directory too deep. And the suite spans two workspaces — `scripts/**` tests run in the `app` project on purpose, because they scan application source and import `@/server/test-support`, so they need the application alias and the same demo-mode setup as the code they inspect. `apps/web` therefore defines a `typecheck` script but **no** `test` script; a workspace without one is skipped by the recursive run, which is what keeps the application suite from being collected twice.
+
+Among those tripwires, `scripts/workspace-registration.test.ts` guards the two workspace registration points nothing can discover on its own: the Dockerfile's manifest COPY lines and `next.config.ts`'s `transpilePackages`. Both fail late — in a Fly build or a production build — and neither names its cause.
 
 `pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
 
@@ -144,7 +143,7 @@ non-zero naming every gate that failed.
 | `full`      | `all` + `engine` + `build` — the pre-deploy gate                 |
 | `lint`      | type-aware ESLint at `--max-warnings 0`                          |
 | `static`    | `lint:cycles`, `lint:authz`, package boundaries + resolution     |
-| `typecheck` | `tsc` across the root, the app, and every package                |
+| `typecheck` | `tsc` at the root, then each workspace's own `typecheck`         |
 | `test`      | the pure Vitest suite (no database)                              |
 | `jscpd`     | the copy-paste threshold                                         |
 | `engine`    | `pnpm test:engine` (strict) + the Gate 1 benchmark — needs a DB  |
@@ -179,8 +178,9 @@ the point.
 ```
 pnpm verify             # the push gate (target `all`): lint, static checks, typecheck, pure tests, jscpd
 pnpm verify:full        # the pre-deploy gate: `all` + the engine suites + the production build
-pnpm test               # the app + image-core projects: everything that needs no DB
-pnpm test:watch         # same two projects, watch mode
+pnpm test               # the app project + every package's own suite: everything that needs no DB
+pnpm test:watch         # the app project in watch mode (a package watches through
+                        #   `pnpm --filter @vesper/image-core exec vitest`)
 pnpm test:int           # the app-int project: DB suites only (file parallelism off — they share one DB)
 pnpm test:int:strict    # the SAME run as a release gate: REQUIRE_INTEGRATION_DB=true, so an unreachable
                         #   or unmigrated database FAILS the converted suites instead of skipping them
@@ -193,7 +193,9 @@ pnpm lint
 ```
 
 The `test:engine*` scripts pass file paths, which Vitest applies as filters
-across every project — so they keep working without naming one.
+across the root config's projects — so they keep working without naming one.
+They all name paths under `apps/web/src`, so they run against the application
+projects regardless of how many packages exist.
 
 ## Strict integration mode (the release form)
 

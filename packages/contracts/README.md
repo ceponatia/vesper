@@ -56,7 +56,9 @@ and `packages/image-core/README.md` §Boundary for the full statement. In short:
 - dependencies are declared in this package's own manifest, including test-only
   ones;
 - its TypeScript project is its own — no `@/*` alias, no Next plugin, and
-  `"types": []`, so no ambient `@types/*` from the root install can establish it.
+  `"types": []`, so no ambient `@types/*` from the root install can establish it;
+- its Vitest project is its own too, with no application setup and no alias, and
+  the root `typecheck`/`test` scripts reach both by recursing over the workspace.
 
 `pnpm lint:package-boundaries` and `pnpm lint:package-resolution` enforce all of
 that in CI's static gate.

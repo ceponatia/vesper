@@ -79,12 +79,13 @@ Practical consequences:
 - **Boundary parsing is not this package's job.** `@vesper/contracts` also owns
   `parseOr`, but nothing here parses untrusted data: a registry row or an
   identity pack arrives already parsed, at the application boundary that owns it.
-- **Tests are package-contained.** They run through the repository's shared
-  Vitest command, as the `image-core` project, and receive no application-global
-  DB/env/test setup and no `@/` alias.
+- **Tests are package-contained.** `vitest.config.ts` here is the package's own
+  project — no application-global DB/env/test setup and no `@/` alias — and root
+  `pnpm test` reaches it by recursing over the workspace, without naming this
+  package.
 - **Typechecking is package-contained.** `tsconfig.json` here is the package's
   own project — no `@/*` alias, no Next plugin, `ES2022 + DOM` libraries — and
-  root `pnpm typecheck` runs it alongside the app project.
+  root `pnpm typecheck` reaches it the same recursive way.
 - **Dependencies are owned here.** A third-party or workspace dependency imported
   by package runtime source belongs in this package's manifest; reachability
   elsewhere in pnpm's install is not ownership.
