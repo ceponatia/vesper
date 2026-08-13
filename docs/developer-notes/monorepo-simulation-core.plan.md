@@ -76,7 +76,7 @@ application-side splits of the image lifecycle files and simulation stores.
   recursively instead of naming packages; an invariant test guards the
   registration points that stay explicit.
 - **Slice 2 — the boundary checker understands declared entry points.**
-  Status: in progress. A package may declare public subpaths; imports of declared
+  Status: complete — 2026-08-13. A package may declare public subpaths; imports of declared
   subpaths pass, filesystem and undeclared deep imports still fail, and the
   resolution smoke check covers every declared entry.
 - **Slice 3 — the simulation domain becomes `@vesper/simulation-core`.**

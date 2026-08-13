@@ -28,9 +28,16 @@ provider gateway.
   `transpilePackages`. `apps/web` owns `typecheck` but deliberately no `test`
   script — the `app`/`app-int` projects stay root-owned (repo-root cwd,
   `scripts/**` tripwires).
-- **Slice 2 — declared subpath exports:** in progress.
-- **Slice 3 — `@vesper/simulation-core` extraction:** not started; depends on
-  slices 1–2.
+- **Slice 2 — declared subpath exports:** built 2026-08-13 (PR #105). Final
+  rule vocabulary: `package-code-subpath` (undeclared subpath, message names
+  the fix), `package-wildcard-export` (a `*` in an exports key or target),
+  `package-export-unresolved` (declared entry with no string/existing
+  target), `published-entry-wildcard` (renamed from `root-barrel-wildcard`;
+  `export *` in any published entry file). Declared subpaths flow through the
+  layer/runtime/dependency/cycle checks; `lint:package-resolution`
+  smoke-imports every declared entry. The editor-latency ESLint ban narrowed
+  to `@vesper/*/src/**`.
+- **Slice 3 — `@vesper/simulation-core` extraction:** in progress.
 - **Slice 4 — image lifecycle and store splits:** not started; runs after
   slice 3 so the store splits land on the post-extraction import graph.
 
@@ -125,6 +132,14 @@ provider gateway.
     package (`src/test-support/`); if app-side tests also consume them, they
     are published as curated exact subpaths (e.g. `./testing/<fixture>`), and
     the test-support path keeps its test file-role classification.
+  - `contracts/simulation/scheduler.ts` and `lib/simulation/provisioning.ts`
+    hash with `node:crypto`'s `createHash("sha256")`, which a universal
+    package's runtime source may not import — and `scheduler.ts` is imported
+    by half the domain, so it must move. Ruling (2026-08-13): both call sites
+    switch to `sha256` from `@noble/hashes` (pure, audited, dependency-free,
+    bit-identical output), declared as a package dependency, with tests
+    pinning byte equality against `node:crypto` for the exact material
+    formats used — the digests are persisted identifiers and must not change.
 - **Registration:** layer rank + runtime in the checker policy,
   `transpilePackages`, Dockerfile manifest `COPY`, package
   tsconfig/vitest/scripts per slice 1. `pnpm install` re-links the workspace
