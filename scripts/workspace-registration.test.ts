@@ -32,8 +32,10 @@ import { listWorkspacePackages } from "./check-workspace-imports";
  *     `check-workspace-imports.ts` — `pnpm lint:package-boundaries` reports
  *     `package-layer-unknown` for any package the policy does not mention.
  *   - the `exports` map and the workspace link — `pnpm lint:package-resolution`
- *     imports every package by its public name and fails on a missing or dead
- *     `"."` export.
+ *     imports every declared entry of every package by its public specifier
+ *     (a `"."` root export is not required — simulation-core publishes only
+ *     subpaths) and fails on a dead target, an unresolvable entry, or a
+ *     package that declares no entries at all.
  *
  * This suite reads the files as text on purpose. Executing `next.config.ts`
  * would drag Next's config machinery into the pure test project, and the
