@@ -87,9 +87,10 @@ The matching plan delivers the system in seven slices:
 
 [The plan](image-identity-packs.plan.md) owns which of those have shipped. Two
 facts frame everything below: migrations 0101 (packs) and 0102–0103 (trial) are
-applied, and **no production render lane consumes a pack** —
-`IMAGE_IDENTITY_PACK_REFERENCES` is default off, so the integration spec
-describes a contract the trial exercises and production does not yet use.
+applied, and **every identity-critical render lane consumes the pack
+unconditionally** — the `IMAGE_IDENTITY_PACK_REFERENCES` rollout flag and the
+legacy direct-avatar reads were removed in the slice-7 close-out (2026-08-13),
+so the integration spec describes the contract production runs on.
 
 ## Completion boundary
 

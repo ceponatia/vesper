@@ -107,20 +107,21 @@ named trial-corpus registry, empty), per-pack `history`, and a recorded `overrid
 threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and
 the `manual_admin_override` warning). No route returns image bytes or URLs, admin included.
 
-**Render-lane consumption is built and flag-gated.** `images/identity-pack-references.ts`
+**Render-lane consumption is unconditional — the pack is the only identity source.**
+`images/identity-pack-references.ts`
 (`evaluateIdentityPackForProfile`) maps the current pack plus the profile's declared strategy
 (`referencePolicy.identityStrategy`: `canonical_only` — every profile's default ·
 `face_detail_only` · `canonical_then_face_detail` · `face_detail_then_canonical`) to ordered role candidates
 (`canonical_identity`, `face_detail`) carrying ids, measurements and provenance — never bytes, never a model choice —
 and refuses **before** provider reservation. `images/identity-pack-consume.ts` (`identityPackRenderReferences`) is
 the lane entry: owner-scoped ready-only byte reads for each allowed candidate, generic `identity`-role references for
-the planner, and the provenance list the lane persists on the output row's `meta.identityReferences`. With
-`IMAGE_IDENTITY_PACK_REFERENCES` on (`imageIdentityPackReferencesEnabled()`, default off, checked by the lane so
-admin and trial surfaces can still measure), the three identity-critical lanes consume it — portrait variants, chat
-looks, and the chat scene cast's avatar-fallback anchor (a minted chat look stays the anchor: it carries current
-wardrobe/state and is itself downstream of the avatar) — and a blocked pack refuses the render rather than
-substituting a Gallery image. Off — production today — every lane anchors on the library avatar exactly as described
-in [pipelines.md](pipelines.md).
+the planner, and the provenance list the lane persists on the output row's `meta.identityReferences`. The three
+identity-critical lanes consume it — portrait variants, chat looks, and the chat scene cast's look-less-member anchor
+(a minted chat look stays the anchor: it carries current wardrobe/state and is itself downstream of the avatar) — and
+a blocked pack refuses the render, with the actionable correction in the refusal, rather than substituting a Gallery
+image or reading the avatar row directly. A character whose pack cannot be prepared (no canonical portrait, an
+ambiguous source, an undersized crop) gets its identity-critical renders refused until the portrait or crop is fixed;
+a character with no portrait at all still renders scenes from text, since there is no identity to preserve.
 
 **The fixed-trial harness.** Admin-only infrastructure for the reference trial of
 [the trial spec](../developer-notes/image-identity-packs.spec.trial.md): four tables (migrations
@@ -137,8 +138,8 @@ version, pack revision and controls hash before rendering, refusing on drift; ou
 `identity_trial_output` — in `HIDDEN_IMAGE_KINDS` beside the face crop, owner-viewable for review, deleted with the run
 and swept with the character. Review is blinded pairwise (left/right from sha256 parity of run + pair id, persisted on
 the grade row; grades stored unblinded), aggregated per profile/strategy pair, and closed by a recorded verdict with
-actor, reason and policy version. All of it runs with `IMAGE_IDENTITY_PACK_REFERENCES` still off — the flag gates
-render-lane consumption, not the trial. Detail lives in the spec's Implementation section, not here.
+actor, reason and policy version. The harness measures packs through the same evaluation the lanes consume, and runs
+independently of any render. Detail lives in the spec's Implementation section, not here.
 
 **A new warning or failure code requires copy.** The server reasons about stable codes only;
 `components/characters/identity-pack-copy.ts` is the single exhaustive code → English map, so adding a code without

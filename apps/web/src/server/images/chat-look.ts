@@ -14,7 +14,6 @@ import {
 } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { identityPackRenderReferences } from "./identity-pack-consume";
-import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
@@ -147,8 +146,6 @@ export interface RenderChatLookInput {
   chatId: string;
   userId: string;
   characterId: string;
-  /** The canonical avatar's row id — the identity source the look edit preserves. */
-  avatarImageId: string;
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
@@ -160,49 +157,33 @@ export interface RenderChatLookInput {
 /** What one look mint sends as its identity, and what it records for having sent it. */
 interface ChatLookIdentity {
   references: ImageRenderReference[];
-  provenance?: IdentityReferenceProvenance[];
+  provenance: IdentityReferenceProvenance[];
 }
 
 /**
- * Source the look edit's identity reference(s): the pack service when the
- * consumer flag is on (profile-aware eligibility, provenance, one-or-more
- * candidate roles), the direct owned avatar read when it is off — the exact
- * read this lane's enqueue-side job performed before the seam moved here, so
- * the flag-off payload is unchanged.
+ * Source the look edit's identity reference(s) through the pack service:
+ * profile-aware eligibility, one-or-more candidate roles, owned byte reads,
+ * and the provenance the row records for having sent them.
  *
  * Null refuses the mint with no row reserved, this lane's precondition shape:
- * an unreadable avatar always meant "no mint, re-fire on the next change", and
- * a flag-on ineligible pack settles the same way rather than substituting the
- * avatar (the integration spec's prohibition). Diagnostics already sit on the
- * sink by the time null is returned.
+ * an unusable or unreadable identity source means "no mint, re-fire on the
+ * next change" rather than substituting another image (the integration spec's
+ * prohibition). Diagnostics already sit on the sink by the time null is
+ * returned.
  */
 async function chatLookIdentity(
   input: RenderChatLookInput,
   resolved: ResolvedImageProfile,
   sink: DiagnosticSink,
 ): Promise<ChatLookIdentity | null> {
-  if (imageIdentityPackReferencesEnabled()) {
-    const pack = await identityPackRenderReferences({
-      ownerId: input.userId,
-      characterId: input.characterId,
-      profile: resolved,
-      sink,
-    });
-    if (!pack.ok) return null;
-    return { references: pack.references.map((entry) => entry.reference), provenance: pack.provenance };
-  }
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(and(eq(images.id, input.avatarImageId), eq(images.ownerId, input.userId), eq(images.status, "ready")))
-    .limit(1);
-  if (!row) return null;
-  const avatar = await readImageBytes(row);
-  if (!avatar) return null; // file lost — the sweep reconciles; the next change re-fires
-  // The avatar IS the identity the look edit must preserve, and the chat_look
-  // policy requires that role — a look rendered from anything else would dress
-  // a stranger in the tracked outfit.
-  return { references: [{ role: "identity", required: true, buffer: avatar }] };
+  const pack = await identityPackRenderReferences({
+    ownerId: input.userId,
+    characterId: input.characterId,
+    profile: resolved,
+    sink,
+  });
+  if (!pack.ok) return null;
+  return { references: pack.references.map((entry) => entry.reference), provenance: pack.provenance };
 }
 
 /**
@@ -248,7 +229,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
         meta: {
           lookKey: input.lookKey,
           model: `replicate/${model.slug}`,
-          ...(identity.provenance ? { identityReferences: identity.provenance } : {}),
+          identityReferences: identity.provenance,
         },
       },
       produce: async () => {

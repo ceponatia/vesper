@@ -67,18 +67,6 @@ import type { ImageRow } from "./assets";
 
 export type IdentityPackRow = typeof imageIdentityPacks.$inferSelect;
 
-/**
- * Whether render lanes may actually SEND identity references
- * (image-identity-packs.spec.integration.md §"Rollout flag"). Fail-closed, the
- * house convention for feature predicates: anything but the literal `on` is off.
- *
- * Deriving and storing packs is not gated — measurements are what the trial
- * needs, and a pack nobody sends costs a provider nothing.
- */
-export function imageIdentityPackReferencesEnabled(): boolean {
-  return process.env.IMAGE_IDENTITY_PACK_REFERENCES === "on";
-}
-
 /* ------------------------------------------------------------------------ *
  * Source identity                                                           *
  * ------------------------------------------------------------------------ */
