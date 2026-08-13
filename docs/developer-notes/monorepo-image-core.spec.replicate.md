@@ -2,8 +2,9 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 4
 
-Implementation state: built 2026-08-13 — awaiting a ready-state CI `verify` and
-the two live smoke checks below.
+Implementation state: built 2026-08-13 (PR #99, green `verify`) — awaiting the
+two live smoke checks under [Verification](#live-verification): one real render
+and one real probe against the deploy.
 
 Put Replicate's network transport and schema probing behind a server-only
 workspace package while keeping secrets, deployment settings and Vesper state in
