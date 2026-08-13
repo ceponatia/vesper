@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { listWorkspacePackages } from "./check-workspace-imports";
+import { type PackageExport, type WorkspacePackage, listWorkspacePackages } from "./check-workspace-imports";
 
 /**
  * Real-workspace resolution smoke check
@@ -15,9 +15,12 @@ import { listWorkspacePackages } from "./check-workspace-imports";
  * never updated. A tool alias would resolve all four of them anyway, and the
  * break would surface in the Docker build instead.
  *
- * So this check does what a consumer does: import each package BY NAME through
- * the installed workspace, with no alias in the picture, and confirm that the
- * module it gets back is the package source and actually exports something.
+ * So this check does what a consumer does: import each declared entry BY ITS
+ * PUBLIC SPECIFIER through the installed workspace, with no alias in the
+ * picture, and confirm that the module it gets back is the package source and
+ * actually exports something. Every entry is exercised, not only `"."` — a
+ * package that publishes exact subpaths has as many public front doors as it
+ * declares, and an entry nobody loads is where a stale target hides.
  *
  * It runs from the repository root, which is why the root manifest declares
  * every `@vesper/*` package even when no root script imports one directly:
@@ -26,35 +29,32 @@ import { listWorkspacePackages } from "./check-workspace-imports";
  */
 
 interface ResolutionFailure {
-  readonly packageName: string;
+  /** The public specifier that failed — `@vesper/x`, or `@vesper/x/sub`. */
+  readonly specifier: string;
   readonly problem: string;
 }
 
-async function checkPackage(
-  repoRoot: string,
-  pkg: { name: string; dir: string; rootExport: string | null },
-): Promise<ResolutionFailure | null> {
-  if (pkg.rootExport === null) {
-    return { packageName: pkg.name, problem: 'package.json declares no "." export, so consumers have no entry point.' };
-  }
-  if (!existsSync(join(pkg.dir, pkg.rootExport))) {
-    return { packageName: pkg.name, problem: `the "." export points at ${pkg.rootExport}, which does not exist.` };
+async function checkEntry(repoRoot: string, pkg: WorkspacePackage, entry: PackageExport): Promise<ResolutionFailure | null> {
+  const specifier = `${pkg.name}${entry.subpath}`;
+
+  if (!existsSync(join(pkg.dir, entry.target))) {
+    return { specifier, problem: `the "${entry.key}" export points at ${entry.target}, which does not exist.` };
   }
 
   let resolved: Record<string, unknown>;
   try {
-    resolved = (await import(pkg.name)) as Record<string, unknown>;
+    resolved = (await import(specifier)) as Record<string, unknown>;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    return { packageName: pkg.name, problem: `importing it by name failed: ${detail}` };
+    return { specifier, problem: `importing it by name failed: ${detail}` };
   }
 
   const exported = Object.keys(resolved).filter((key) => key !== "default" && key !== "__esModule");
   if (exported.length === 0) {
-    return { packageName: pkg.name, problem: "it resolved but exports nothing, so the entry point is not wired to the source." };
+    return { specifier, problem: `it resolved but exports nothing, so the "${entry.key}" entry is not wired to the source.` };
   }
 
-  console.log(`  ${pkg.name} → ${relative(repoRoot, join(pkg.dir, pkg.rootExport))} (${exported.length} exports)`);
+  console.log(`  ${specifier} → ${relative(repoRoot, join(pkg.dir, entry.target))} (${exported.length} exports)`);
   return null;
 }
 
@@ -66,16 +66,22 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("Resolving workspace packages by public name:");
+  console.log("Resolving every declared workspace package entry by its public specifier:");
   const failures: ResolutionFailure[] = [];
   for (const pkg of packages) {
-    const failure = await checkPackage(repoRoot, pkg);
-    if (failure !== null) failures.push(failure);
+    if (pkg.entries.length === 0) {
+      failures.push({ specifier: pkg.name, problem: "package.json declares no code exports, so consumers have no entry point." });
+      continue;
+    }
+    for (const entry of pkg.entries) {
+      const failure = await checkEntry(repoRoot, pkg, entry);
+      if (failure !== null) failures.push(failure);
+    }
   }
 
   if (failures.length > 0) {
     console.error("\nWorkspace package resolution failed:");
-    for (const failure of failures) console.error(`  - ${failure.packageName}: ${failure.problem}`);
+    for (const failure of failures) console.error(`  - ${failure.specifier}: ${failure.problem}`);
     console.error("\nRun `pnpm install` and check the package's exports map; a tool alias must not be the reason imports work.");
     process.exit(1);
   }

@@ -238,7 +238,7 @@ describe("workspace import integrity", () => {
   });
 
   it("rejects a wildcard export in a package root barrel but allows one internally", () => {
-    expect(rules(check({ "packages/core/src/index.ts": 'export * from "./thing";\n' }))).toEqual(["root-barrel-wildcard"]);
+    expect(rules(check({ "packages/core/src/index.ts": 'export * from "./thing";\n' }))).toEqual(["published-entry-wildcard"]);
     expect(
       check({
         "packages/core/src/index.ts": 'export { thing } from "./domain";\n',
@@ -360,6 +360,146 @@ describe("workspace import integrity", () => {
   it("lists the workspace packages a consumer may import by name", () => {
     const root = tree();
     expect(listWorkspacePackages(root, POLICY).map((pkg) => pkg.name)).toEqual(["@vesper/core", "@vesper/foundation"]);
+  });
+});
+
+/**
+ * Declared subpath exports.
+ *
+ * What makes `@vesper/core/thing` public is the MANIFEST declaring `"./thing"`.
+ * A file existing at that path is not the question and never was — that is the
+ * filesystem import the whole boundary exists to reject — so these cases pin
+ * both halves: an exact declared entry is ordinary public API, and everything
+ * around it (undeclared subpaths, wildcards, dead targets, metadata) still
+ * fails.
+ */
+describe("declared subpath exports", () => {
+  /** The BASE core package with a different `exports` map. */
+  function coreManifest(exportsMap: Record<string, unknown>): Record<string, string> {
+    return {
+      "packages/core/package.json": json({
+        name: "@vesper/core",
+        exports: exportsMap,
+        dependencies: { zod: "^4.4.3" },
+        devDependencies: { vitest: "^4.1.8" },
+      }),
+    };
+  }
+
+  const SUBPATH = coreManifest({ ".": "./src/index.ts", "./thing": "./src/thing.ts", "./package.json": "./package.json" });
+
+  it("accepts an import of a declared subpath", () => {
+    expect(
+      check({ ...SUBPATH, "src/app.ts": 'import { thing } from "@vesper/core/thing";\n\nexport const used = thing;\n' }),
+    ).toEqual([]);
+  });
+
+  it("reads an entry declared through import/default conditions", () => {
+    expect(
+      check({
+        ...coreManifest({
+          ".": { import: "./src/index.ts" },
+          "./thing": { types: "./src/thing.ts", default: "./src/thing.ts" },
+        }),
+        "src/app.ts": 'import { thing } from "@vesper/core/thing";\n\nexport const used = thing;\n',
+      }),
+    ).toEqual([]);
+  });
+
+  it("puts a subpath edge through the layer rules like any other package edge", () => {
+    // The proof that a legal subpath import still RECORDS its package edge: the
+    // checker used to bail out of this branch before the rank comparison, so a
+    // subpath would have been the one import shape that escaped the layers.
+    const violations = check({
+      ...SUBPATH,
+      "packages/foundation/package.json": json({
+        name: "@vesper/foundation",
+        exports: { ".": "./src/index.ts" },
+        dependencies: { "@vesper/core": "workspace:*" },
+      }),
+      "packages/foundation/src/index.ts": 'import { thing } from "@vesper/core/thing";\n\nexport const base = thing;\n',
+    });
+    expect(rules(violations)).toContain("package-layer-direction");
+    expect(rules(violations)).not.toContain("package-code-subpath");
+  });
+
+  it("still demands dependency ownership for a subpath import", () => {
+    const violations = check({
+      "packages/foundation/package.json": json({
+        name: "@vesper/foundation",
+        exports: { ".": "./src/index.ts", "./base": "./src/base.ts" },
+      }),
+      "packages/foundation/src/base.ts": "export const base = 1;\n",
+      "packages/core/src/thing.ts": 'import { base } from "@vesper/foundation/base";\n\nexport const thing = base;\n',
+    });
+    expect(rules(violations)).toEqual(["undeclared-dependency"]);
+  });
+
+  it("rejects a subpath the package does not declare", () => {
+    const violations = check({
+      ...SUBPATH,
+      "src/app.ts": 'import { other } from "@vesper/core/internal";\n\nexport const used = other;\n',
+    });
+    expect(rules(violations)).toEqual(["package-code-subpath"]);
+    expect(violations[0]?.message).toContain("not a declared export");
+  });
+
+  it("never treats ./package.json as a code entry", () => {
+    const violations = check({
+      ...SUBPATH,
+      "src/app.ts": 'import meta from "@vesper/core/package.json";\n\nexport const used = meta;\n',
+    });
+    expect(rules(violations)).toEqual(["package-code-subpath"]);
+  });
+
+  it("rejects a wildcard in an exports key or in an entry target", () => {
+    const wildcardKey = check(coreManifest({ ".": "./src/index.ts", "./*": "./src/*.ts" }));
+    expect(rules(wildcardKey)).toEqual(["package-wildcard-export"]);
+    expect(wildcardKey[0]?.file).toBe("packages/core/package.json");
+
+    const wildcardTarget = check(coreManifest({ ".": "./src/index.ts", "./thing": "./src/*.ts" }));
+    expect(rules(wildcardTarget)).toEqual(["package-wildcard-export"]);
+  });
+
+  it("rejects a declared entry whose target does not exist", () => {
+    const violations = check(coreManifest({ ".": "./src/index.ts", "./gone": "./src/gone.ts" }));
+    expect(rules(violations)).toEqual(["package-export-unresolved"]);
+    expect(violations[0]?.file).toBe("packages/core/package.json");
+  });
+
+  it("holds every published entry to named exports, not only the root", () => {
+    const violations = check({
+      ...coreManifest({ ".": "./src/index.ts", "./domain": "./src/domain/index.ts" }),
+      "packages/core/src/domain/index.ts": 'export * from "./helper";\n',
+      "packages/core/src/domain/helper.ts": "export const helper = 1;\n",
+    });
+    expect(rules(violations)).toEqual(["published-entry-wildcard"]);
+    expect(violations[0]?.file).toBe("packages/core/src/domain/index.ts");
+  });
+
+  it("lets a package publish subpaths without publishing a root export", () => {
+    const noRoot = coreManifest({ "./thing": "./src/thing.ts" });
+    // BASE's application imports the package by bare name, which is now nothing.
+    expect(rules(check(noRoot))).toEqual(["package-missing-root-export"]);
+    expect(
+      check({ ...noRoot, "src/app.ts": 'import { thing } from "@vesper/core/thing";\n\nexport const used = thing;\n' }),
+    ).toEqual([]);
+  });
+
+  it("rejects a subpath self-import", () => {
+    const violations = check({
+      ...SUBPATH,
+      "packages/core/src/thing.ts": 'import { self } from "@vesper/core/thing";\n\nexport const thing = self;\n',
+    });
+    expect(rules(violations)).toEqual(["workspace-self-import"]);
+  });
+
+  it("reports every declared entry, so the resolution check smoke-imports them all", () => {
+    const core = listWorkspacePackages(tree(SUBPATH), POLICY).find((pkg) => pkg.name === "@vesper/core");
+    expect(core?.entries).toEqual([
+      { key: ".", subpath: "", target: "./src/index.ts" },
+      { key: "./thing", subpath: "/thing", target: "./src/thing.ts" },
+    ]);
   });
 });
 

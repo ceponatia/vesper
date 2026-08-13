@@ -15,10 +15,12 @@ import ts from "typescript";
  *
  *   0. a relative path resolves to a file that exists;
  *   1. a relative path may not cross a workspace root, in either direction;
- *   2. a workspace package is imported by its exact name, never by code subpath;
+ *   2. a workspace package is imported through an entry point it declares — its
+ *      exact name, or an exact subpath in its `exports` map;
  *   3. every bare import is declared in the importing workspace's own manifest;
  *   4. the `@vesper/*` graph is acyclic AND flows one way through the layers;
- *   5. a package root barrel publishes named exports, never a wildcard;
+ *   5. every published entry file publishes named exports, never a wildcard, and
+ *      the entries themselves are exact — no `*` pattern, no dead target;
  *   6. a universal package's runtime source stays out of the Node-only graph.
  *
  * It is deliberately dependency-free apart from the TypeScript parser, and it
@@ -89,6 +91,8 @@ export type BoundaryRule =
   | "package-application-alias"
   | "package-code-subpath"
   | "package-missing-root-export"
+  | "package-wildcard-export"
+  | "package-export-unresolved"
   | "unknown-workspace-package"
   | "workspace-self-import"
   | "undeclared-dependency"
@@ -96,7 +100,7 @@ export type BoundaryRule =
   | "package-layer-unknown"
   | "package-layer-direction"
   | "package-graph-cycle"
-  | "root-barrel-wildcard"
+  | "published-entry-wildcard"
   | "package-dynamic-import"
   | "universal-runtime-dependency"
   | "universal-runtime-global";
@@ -110,11 +114,34 @@ export interface BoundaryViolation {
   readonly message: string;
 }
 
+/**
+ * One code entry point a package publishes: an exact `exports` key and the
+ * package-relative file behind it.
+ */
+export interface PackageExport {
+  /** The `exports` key — `"."` for the root entry, `"./lab/recipes"` for a subpath. */
+  readonly key: string;
+  /** What a consumer appends to the package name — `""` for the root, `"/lab/recipes"`. */
+  readonly subpath: string;
+  /** Package-relative target, exactly as the manifest spells it. */
+  readonly target: string;
+}
+
+/** An `exports` entry that cannot be honoured as public API, and why. */
+interface ExportDefect {
+  readonly key: string;
+  readonly rule: Extract<BoundaryRule, "package-wildcard-export" | "package-export-unresolved">;
+  readonly message: string;
+}
+
 interface Manifest {
   readonly name: string;
   readonly dependencies: ReadonlyMap<string, string>;
   readonly devDependencies: ReadonlyMap<string, string>;
-  readonly rootExport: string | null;
+  /** Every declared code entry, in manifest order. */
+  readonly exports: readonly PackageExport[];
+  /** Entries rejected while parsing the map — reported against the manifest itself. */
+  readonly exportDefects: readonly ExportDefect[];
 }
 
 interface Workspace {
@@ -172,6 +199,19 @@ function resolvesToFile(target: string): boolean {
 }
 
 /**
+ * The exact counterpart, for `exports` targets. A resolver performs no extension
+ * search or directory-index lookup behind an exports entry, so being generous
+ * here would let a manifest that no consumer can actually load pass the check.
+ */
+function isExistingFile(target: string): boolean {
+  try {
+    return statSync(target).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Directories that never hold workspace source. `drizzle` and `docs` are
  * generated/prose, `.next` and `coverage` are build output, and `node_modules`
  * is where the workspace links itself — walking into it would compare a package
@@ -211,22 +251,85 @@ function asDependencyMap(value: unknown): Map<string, string> {
   return out;
 }
 
+/** Metadata, not code: tooling reads this file, no module imports it. */
+const METADATA_EXPORT_KEY = "./package.json";
+
 /**
- * The one code entry point a package publishes. Only the `"."` condition counts:
- * `./package.json` exists so tooling can read metadata and is deliberately not a
- * precedent for code subpaths.
+ * An entry may name its target directly or through conditions. Only these are
+ * read, and only one level deep: the checker needs the file a consumer lands on,
+ * and a package that needs more conditional machinery than this has outgrown
+ * "ship TypeScript source, resolve by name".
  */
-function readRootExport(exportsField: unknown): string | null {
-  if (typeof exportsField === "string") return exportsField;
-  const record = asRecord(exportsField);
-  const root: unknown = record["."];
-  if (typeof root === "string") return root;
-  const conditions = asRecord(root);
-  for (const condition of ["import", "default", "require"]) {
+const EXPORT_CONDITIONS = ["import", "default", "require"];
+
+function readExportTarget(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  const conditions = asRecord(value);
+  for (const condition of EXPORT_CONDITIONS) {
     const target: unknown = conditions[condition];
     if (typeof target === "string") return target;
   }
   return null;
+}
+
+/**
+ * Every code entry point a package publishes. The WHOLE `exports` map counts,
+ * not only `"."`: a package may enumerate public subpaths, and each exact entry
+ * it declares is public API on the same terms as the root.
+ *
+ * Two shapes are deliberately not entries. `./package.json` is metadata — it
+ * exists so tooling can read the manifest, and it is not a precedent for code
+ * subpaths. A `*` pattern, in the key or in the target, publishes whatever the
+ * filesystem happens to hold behind it, which is a filesystem import wearing a
+ * package name; the public surface has to be enumerable in a diff, so a wildcard
+ * comes back as a defect reported against the manifest rather than as an entry.
+ */
+function readExports(exportsField: unknown): { entries: PackageExport[]; defects: ExportDefect[] } {
+  // A bare string is the root export, the same as `{ ".": "…" }`.
+  if (typeof exportsField === "string") {
+    return { entries: [{ key: ".", subpath: "", target: exportsField }], defects: [] };
+  }
+
+  const entries: PackageExport[] = [];
+  const defects: ExportDefect[] = [];
+
+  for (const [key, value] of Object.entries(asRecord(exportsField))) {
+    // A key that is not a subpath is a top-level CONDITION for the root entry,
+    // not an entry of its own.
+    if (key !== "." && !key.startsWith("./")) continue;
+
+    if (key.includes("*")) {
+      defects.push({
+        key,
+        rule: "package-wildcard-export",
+        message: `The exports key "${key}" is a wildcard pattern. A package's public surface is enumerated one entry at a time — a wildcard subpath surface is filesystem imports wearing a package name. Declare each published subpath explicitly.`,
+      });
+      continue;
+    }
+    if (key === METADATA_EXPORT_KEY) continue;
+
+    const target = readExportTarget(value);
+    if (target === null) {
+      defects.push({
+        key,
+        rule: "package-export-unresolved",
+        message: `The exports entry "${key}" has no string target. Give it a path, or an "import"/"default"/"require" condition whose value is one.`,
+      });
+      continue;
+    }
+    if (target.includes("*")) {
+      defects.push({
+        key,
+        rule: "package-wildcard-export",
+        message: `The exports entry "${key}" targets "${target}", and a "*" in a target publishes whatever the pattern happens to match. Declare each published subpath explicitly, with an exact target.`,
+      });
+      continue;
+    }
+
+    entries.push({ key, subpath: key === "." ? "" : key.slice(1), target });
+  }
+
+  return { entries, defects };
 }
 
 function readManifest(dir: string): Manifest | null {
@@ -235,11 +338,13 @@ function readManifest(dir: string): Manifest | null {
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
   const record = asRecord(parsed);
   const name = record.name;
+  const { entries, defects } = readExports(record.exports);
   return {
     name: typeof name === "string" ? name : "",
     dependencies: asDependencyMap(record.dependencies),
     devDependencies: asDependencyMap(record.devDependencies),
-    rootExport: readRootExport(record.exports),
+    exports: entries,
+    exportDefects: defects,
   };
 }
 
@@ -327,20 +432,29 @@ function isApplicationWorkspace(workspace: Workspace, policy: WorkspacePolicy): 
   return workspace.isRoot || policy.applicationWorkspaces.includes(workspace.manifest.name);
 }
 
+export interface WorkspacePackage {
+  readonly name: string;
+  /** Absolute, symlink-resolved. */
+  readonly dir: string;
+  /** Every declared code entry — `"."` when the package publishes one, plus each subpath. */
+  readonly entries: readonly PackageExport[];
+}
+
 /**
- * The workspace packages a consumer may import by name. `scripts/check-package-resolution.ts`
- * uses this so the resolution smoke check covers every package automatically.
+ * The workspace packages a consumer may import by name, each with the entry
+ * points it publishes. `scripts/check-package-resolution.ts` uses this so the
+ * resolution smoke check covers every package's every entry automatically.
  */
 export function listWorkspacePackages(
   repoRoot: string,
   policy: WorkspacePolicy = VESPER_WORKSPACE_POLICY,
-): Array<{ name: string; dir: string; rootExport: string | null }> {
+): WorkspacePackage[] {
   return loadWorkspaces(realpathSync(repoRoot))
     .filter((workspace) => !isApplicationWorkspace(workspace, policy) && workspace.manifest.name.startsWith(`${policy.scope}/`))
     .map((workspace) => ({
       name: workspace.manifest.name,
       dir: workspace.dir,
-      rootExport: workspace.manifest.rootExport,
+      entries: workspace.manifest.exports,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -575,20 +689,45 @@ export function checkWorkspaceImports(
       );
     }
 
-    // The curated root export is the whole public surface, so it may not be a
-    // wildcard: a helper added to an internal barrel would become public
-    // without appearing in the diff.
-    if (isPackageWorkspace(workspace) && workspace.manifest.rootExport !== null) {
-      const barrel = join(workspace.dir, workspace.manifest.rootExport);
-      if (existsSync(barrel) && SOURCE_EXTENSIONS.some((extension) => barrel.endsWith(extension))) {
-        for (const ref of collectImports(barrel, readFileSync(barrel, "utf8"))) {
+    // The declared entries ARE the public surface, so each one is audited: the
+    // map may not name a surface nobody can enumerate (a `*` pattern), may not
+    // point at a file that is gone, and no published entry file may re-export a
+    // wildcard — a helper added to an internal barrel would otherwise become
+    // public without appearing in the diff.
+    if (isPackageWorkspace(workspace)) {
+      const manifestFile = join(workspace.dir, "package.json");
+      for (const defect of workspace.manifest.exportDefects) {
+        report(manifestFile, 1, defect.rule, defect.key, defect.message);
+      }
+
+      // One file may back several entries; audit each file once.
+      const audited = new Set<string>();
+      for (const entry of workspace.manifest.exports) {
+        const entryFile = join(workspace.dir, entry.target);
+        if (!isExistingFile(entryFile)) {
+          // A stale exports map is a broken package, and waiting for the
+          // resolution smoke check to load it means the manifest is the last
+          // place anyone looks.
+          report(
+            manifestFile,
+            1,
+            "package-export-unresolved",
+            entry.key,
+            `The exports entry "${entry.key}" points at ${entry.target}, which does not exist. Fix the target or drop the entry — consumers resolve it exactly as written.`,
+          );
+          continue;
+        }
+        if (!SOURCE_EXTENSIONS.some((extension) => entryFile.endsWith(extension)) || audited.has(entryFile)) continue;
+        audited.add(entryFile);
+
+        for (const ref of collectImports(entryFile, readFileSync(entryFile, "utf8"))) {
           if (ref.wildcardExport) {
             report(
-              barrel,
+              entryFile,
               ref.line,
-              "root-barrel-wildcard",
+              "published-entry-wildcard",
               ref.specifier,
-              `A package root barrel lists its public API explicitly. Replace "export * from ${JSON.stringify(ref.specifier ?? "")}" with named exports (internal folder barrels may still use export *).`,
+              `A published package entry lists its public API explicitly. Replace "export * from ${JSON.stringify(ref.specifier ?? "")}" in the "${entry.key}" entry with named exports (internal folder barrels may still use export *).`,
             );
           }
         }
@@ -701,16 +840,9 @@ export function checkWorkspaceImports(
 
         // --- workspace packages -------------------------------------------
         if (packageName.startsWith(`${policy.scope}/`)) {
-          if (specifier !== packageName) {
-            report(
-              file,
-              ref.line,
-              "package-code-subpath",
-              specifier,
-              `${packageName} publishes one curated entry point. Import "${packageName}" itself — code subpaths are not public API.`,
-            );
-            continue;
-          }
+          // Self-import first, at every entry point: telling a package that its
+          // own file is "not a declared export" would send the reader to the
+          // manifest when the fix is the relative import beside it.
           if (packageName === name) {
             report(
               file,
@@ -726,14 +858,36 @@ export function checkWorkspaceImports(
             report(file, ref.line, "unknown-workspace-package", specifier, `No workspace publishes ${packageName}.`);
             continue;
           }
-          if (target.manifest.rootExport === null) {
-            report(
-              file,
-              ref.line,
-              "package-missing-root-export",
-              specifier,
-              `${packageName} declares no "." export, so it has no public entry point to import.`,
-            );
+
+          // Which entry point this specifier asks for. A subpath is legal
+          // exactly when the package declares that exact key and the file
+          // behind it exists: what makes a subpath public is the manifest
+          // saying so, never the filesystem happening to hold a module there.
+          const subpath = specifier.slice(packageName.length);
+          const entryKey = subpath === "" ? "." : `.${subpath}`;
+          const entry = target.manifest.exports.find((declared) => declared.key === entryKey);
+          if (entry === undefined || !isExistingFile(join(target.dir, entry.target))) {
+            const detail =
+              entry === undefined
+                ? `does not declare "${entryKey}"`
+                : `declares "${entryKey}", but its target ${entry.target} does not exist`;
+            if (subpath === "") {
+              report(
+                file,
+                ref.line,
+                "package-missing-root-export",
+                specifier,
+                `${packageName} ${detail}, so it has no public entry point to import.`,
+              );
+            } else {
+              report(
+                file,
+                ref.line,
+                "package-code-subpath",
+                specifier,
+                `"${specifier}" is not a declared export: ${packageName} ${detail}. Declare that exact subpath in the package's exports map, or import an entry it already publishes.`,
+              );
+            }
             continue;
           }
           const targetRank = policy.layers[packageName];
