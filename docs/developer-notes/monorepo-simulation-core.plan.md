@@ -71,12 +71,12 @@ application-side splits of the image lifecycle files and simulation stores.
 
 ## Slices
 
-- **Slice 1 — every workspace validates itself.** Status: in progress. Each
+- **Slice 1 — every workspace validates itself.** Status: complete — 2026-08-13. Each
   workspace owns its typecheck and test scripts; the root orchestrates them
   recursively instead of naming packages; an invariant test guards the
   registration points that stay explicit.
 - **Slice 2 — the boundary checker understands declared entry points.**
-  Status: queued. A package may declare public subpaths; imports of declared
+  Status: in progress. A package may declare public subpaths; imports of declared
   subpaths pass, filesystem and undeclared deep imports still fail, and the
   resolution smoke check covers every declared entry.
 - **Slice 3 — the simulation domain becomes `@vesper/simulation-core`.**

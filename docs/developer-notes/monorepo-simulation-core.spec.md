@@ -22,8 +22,13 @@ provider gateway.
 
 ## Implementation status
 
-- **Slice 1 — package-owned validation:** in progress.
-- **Slice 2 — declared subpath exports:** not started.
+- **Slice 1 — package-owned validation:** built 2026-08-13 (PR #104). Root
+  `typecheck`/`test` recurse; packages own their configs and scripts;
+  `scripts/workspace-registration.test.ts` guards the Dockerfile COPYs and
+  `transpilePackages`. `apps/web` owns `typecheck` but deliberately no `test`
+  script — the `app`/`app-int` projects stay root-owned (repo-root cwd,
+  `scripts/**` tripwires).
+- **Slice 2 — declared subpath exports:** in progress.
 - **Slice 3 — `@vesper/simulation-core` extraction:** not started; depends on
   slices 1–2.
 - **Slice 4 — image lifecycle and store splits:** not started; runs after
