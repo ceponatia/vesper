@@ -33,6 +33,15 @@ export interface WorkspacePolicy {
   /** Import prefix the application uses for its own source (`@/…`). */
   readonly applicationAlias: string;
   /**
+   * Workspaces that ARE the application rather than a package it consumes.
+   * The repository root is always one of them (it owns the operational
+   * scripts); `apps/web` joined it when the Next app moved out of the root.
+   * An application workspace may spell `@/…`, sits at `applicationLayer`, and
+   * is never judged as a package — so it needs no layer rank and publishes no
+   * curated root export.
+   */
+  readonly applicationWorkspaces: readonly string[];
+  /**
    * Layer rank per workspace package. An import is legal only from a HIGHER
    * rank to a LOWER one, so `image-core -> image-replicate` fails even though
    * it would be acyclic. Packages that do not exist yet are listed on purpose:
@@ -57,6 +66,7 @@ export interface WorkspacePolicy {
 export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
   scope: "@vesper",
   applicationAlias: "@/",
+  applicationWorkspaces: ["@vesper/web"],
   layers: {
     "@vesper/contracts": 10,
     "@vesper/image-core": 20,
@@ -271,6 +281,16 @@ function loadWorkspaces(repoRoot: string): Workspace[] {
 }
 
 /**
+ * An application workspace owns Vesper itself rather than a library Vesper
+ * consumes: the repository root (operational scripts, repository tooling) and
+ * `apps/web` (the Next application). They share the `@vesper` scope with the
+ * packages, so membership is declared by name, not inferred from it.
+ */
+function isApplicationWorkspace(workspace: Workspace, policy: WorkspacePolicy): boolean {
+  return workspace.isRoot || policy.applicationWorkspaces.includes(workspace.manifest.name);
+}
+
+/**
  * The workspace packages a consumer may import by name. `scripts/check-package-resolution.ts`
  * uses this so the resolution smoke check covers every package automatically.
  */
@@ -279,7 +299,7 @@ export function listWorkspacePackages(
   policy: WorkspacePolicy = VESPER_WORKSPACE_POLICY,
 ): Array<{ name: string; dir: string; rootExport: string | null }> {
   return loadWorkspaces(realpathSync(repoRoot))
-    .filter((workspace) => !workspace.isRoot && workspace.manifest.name.startsWith(`${policy.scope}/`))
+    .filter((workspace) => !isApplicationWorkspace(workspace, policy) && workspace.manifest.name.startsWith(`${policy.scope}/`))
     .map((workspace) => ({
       name: workspace.manifest.name,
       dir: workspace.dir,
@@ -492,11 +512,13 @@ export function checkWorkspaceImports(
   const workspaceOf = (path: string): Workspace | null =>
     workspaces.find((workspace) => contains(workspace.dir, path)) ?? null;
 
+  const isApplication = (workspace: Workspace): boolean => isApplicationWorkspace(workspace, policy);
+
   const isPackageWorkspace = (workspace: Workspace): boolean =>
-    !workspace.isRoot && workspace.manifest.name.startsWith(`${policy.scope}/`);
+    !isApplication(workspace) && workspace.manifest.name.startsWith(`${policy.scope}/`);
 
   const rankOf = (workspace: Workspace): number | null => {
-    if (workspace.isRoot) return policy.applicationLayer;
+    if (isApplication(workspace)) return policy.applicationLayer;
     const rank = policy.layers[workspace.manifest.name];
     return rank ?? null;
   };
@@ -542,7 +564,7 @@ export function checkWorkspaceImports(
       }
     }
 
-    const runtime = workspace.isRoot ? "server" : (policy.runtimes[name] ?? "server");
+    const runtime = isApplication(workspace) ? "server" : (policy.runtimes[name] ?? "server");
 
     for (const file of collectSourceFiles(workspace, workspaces)) {
       const role = classifyFile(workspace, file);
@@ -567,7 +589,7 @@ export function checkWorkspaceImports(
         if (specifier === null) {
           // A computed dynamic import inside a package is an edge nothing can
           // inspect — neither this checker nor a reader.
-          if (!workspace.isRoot) {
+          if (!isApplication(workspace)) {
             report(
               file,
               ref.line,
@@ -581,7 +603,7 @@ export function checkWorkspaceImports(
 
         // --- application alias -------------------------------------------
         if (specifier.startsWith(policy.applicationAlias)) {
-          if (!workspace.isRoot) {
+          if (!isApplication(workspace)) {
             report(
               file,
               ref.line,

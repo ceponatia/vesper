@@ -35,14 +35,14 @@ not rewrite NPC agency. A state-aware regenerate/rerun path performs the explici
 permission and contact rollback instead.
 
 **The `/self/` mirror.** The handlers live at `/api/admin/chat-inspector/:chatId/…`
-but the inspector client (`src/lib/api-inspector.ts`) requests every panel through
+but the inspector client (`apps/web/src/lib/api-inspector.ts`) requests every panel through
 `/api/admin/self/chat-inspector/:chatId/…`. Each mirrored path is a one-line
 re-export twin (`export { GET } from "@/app/api/admin/chat-inspector/[chatId]/<name>/route"`)
-under `src/app/api/admin/self/chat-inspector/[chatId]/`, so authorization lives in
+under `apps/web/src/app/api/admin/self/chat-inspector/[chatId]/`, so authorization lives in
 exactly one place — the canonical handler's `withSelfOwnedChat`. **A new inspector
 panel needs both files**: the canonical route alone type-checks, lints, and passes
 its own tests while 404ing in the running app, which is how the physical-guidance
-panel first shipped. `src/app/api/admin/self/chat-inspector/parity.test.ts` walks
+panel first shipped. `apps/web/src/app/api/admin/self/chat-inspector/parity.test.ts` walks
 both trees and fails on a canonical route without a twin, a twin without a
 canonical route, or a twin that re-exports fewer verbs than the handler declares.
 

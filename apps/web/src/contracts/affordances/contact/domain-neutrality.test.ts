@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
  *    regenerated reply resolve a different physical moment.
  */
 
-const CONTACT_DIR = path.join(process.cwd(), "src/contracts/affordances/contact");
+const CONTACT_DIR = path.join(process.cwd(), "apps/web/src/contracts/affordances/contact");
 
 /**
  * Vocabulary that would mean a domain had leaked in. Deliberately includes BOTH

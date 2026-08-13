@@ -25,7 +25,7 @@ diagnostic needs the function, not only the shape.
 
 ## What this is NOT
 
-**Not the new home for `src/contracts/`.** The application's contracts folder is
+**Not the new home for `apps/web/src/contracts/`.** The application's contracts folder is
 Vesper's game vocabulary — attributes, meters, body locations, item visibility,
 species, facts — and it stays in the application. The rule of thumb:
 
@@ -63,7 +63,7 @@ that in CI's static gate.
 
 ## The application still imports its own paths
 
-`src/contracts/diagnostics.ts` and `src/lib/parse.ts` remain the application's
+`apps/web/src/contracts/diagnostics.ts` and `apps/web/src/lib/parse.ts` remain the application's
 entry points; they are now **re-export barrels with no implementation**. That is
 deliberate: rewriting several hundred application imports to advertise a package
 move buys nothing, and those barrels are still genuine application-facing APIs.

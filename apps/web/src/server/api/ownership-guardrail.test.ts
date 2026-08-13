@@ -47,10 +47,10 @@ import { APPROVED_ROUTE_AUTHZ_WRAPPERS } from "../../../scripts/check-route-auth
  */
 
 /** Route files live under this directory; vitest runs with CWD at the pnpm root. */
-const API_DIR = path.join(process.cwd(), "src/app/api");
+const API_DIR = path.join(process.cwd(), "apps/web/src/app/api");
 
 /** The successor lane's write surface — every branch mutation funnels through here. */
-const SIM_DIR = path.join(process.cwd(), "src/server/engine/simulation");
+const SIM_DIR = path.join(process.cwd(), "apps/web/src/server/engine/simulation");
 
 /**
  * Ownership evidence accepted *inside the mutation's own `where` argument* —
@@ -88,25 +88,25 @@ const OWNER_ASSERTING_HELPERS = [
  */
 const ALLOW_LIST: readonly { file: string; table: string; reason: string }[] = [
   {
-    file: "src/app/api/admin/sim/shadow/[chatId]/route.ts",
+    file: "apps/web/src/app/api/admin/sim/shadow/[chatId]/route.ts",
     table: "simShadowDivergences",
     reason:
       "admin-gated: the handler 404s unless user.role === 'admin', and a divergence verdict is operator triage data, not user-owned content",
   },
   {
-    file: "src/app/api/chats/[chatId]/sim-command/route.ts",
+    file: "apps/web/src/app/api/chats/[chatId]/sim-command/route.ts",
     table: "simCommandRequests",
     reason:
       "private module helpers (markRequestFailed / runIdempotent) writing the idempotency ledger for a chatId the sole caller (POST) already gated through requireSimChat(chatId, user.id)",
   },
   {
-    file: "src/app/api/successor-chats/[chatId]/route.ts",
+    file: "apps/web/src/app/api/successor-chats/[chatId]/route.ts",
     table: "simWorlds",
     reason:
       "world id is derived from the owner-checked chat (characterChats.ownerId = user.id) via its engine authority's branch, so the row is reached only through an owner-verified parent",
   },
   {
-    file: "src/app/api/admin/self/image-models/[modelId]/route.ts",
+    file: "apps/web/src/app/api/admin/self/image-models/[modelId]/route.ts",
     table: "imageModels",
     reason:
       "admin-gated operator config: withOwnerAdmin 404s unless user.role === 'admin' AND the path is under /api/admin/self; the image-model registry is app-wide deployment configuration with no owner column, not user-owned content",
@@ -596,7 +596,7 @@ describe("route-layer ownership guardrail (security-authz S4)", () => {
     // nothing complains. (The opposite direction — a NEW wrapper missing from
     // the script — already fails loudly, because routes adopting it get
     // reported as unsafe.)
-    const authz = stripComments(fs.readFileSync(path.join(process.cwd(), "src/server/api/authz.ts"), "utf8"));
+    const authz = stripComments(fs.readFileSync(path.join(process.cwd(), "apps/web/src/server/api/authz.ts"), "utf8"));
     const missing = APPROVED_ROUTE_AUTHZ_WRAPPERS.filter(
       (wrapper) => !new RegExp(String.raw`export\s+function\s+${wrapper}\b`).test(authz),
     );

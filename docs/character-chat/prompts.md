@@ -2,7 +2,7 @@
 
 # Character-chat prompt architecture
 
-`src/server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`, `prompts/chat-extractors.ts`) — all chat prompt assembly is code-reviewed text in one place. Builders are pure functions of typed inputs (snapshot-testable); no inline prompt strings elsewhere in the engine. Anything tunable (history depth, fact cap, narration shape) is a named constant in `prompts/constants.ts`.
+`apps/web/src/server/engine/prompts/character-chat.ts` (+ `prompts/chat-archivist.ts`, `prompts/chat-state.ts`, `prompts/chat-summary.ts`, `prompts/chat-extractors.ts`) — all chat prompt assembly is code-reviewed text in one place. Builders are pure functions of typed inputs (snapshot-testable); no inline prompt strings elsewhere in the engine. Anything tunable (history depth, fact cap, narration shape) is a named constant in `prompts/constants.ts`.
 
 This doc is the chat lane's prompt reference. The lifecycle that assembles and streams these prompts is [pipeline.md](pipeline.md); the tracked state they render is [state.md](state.md).
 

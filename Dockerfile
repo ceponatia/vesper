@@ -4,6 +4,9 @@ ARG NODE_VERSION=22
 # ---- base: pnpm via Corepack ----
 FROM node:${NODE_VERSION}-slim AS base
 LABEL fly_launch_runtime="Next.js"
+# /app is the WORKSPACE root, not the Next project — the Next app lives at
+# /app/apps/web. Keeping the operational root here is what preserves the Fly
+# volume mount at /app/data and the root release/SSH commands.
 WORKDIR /app
 # HUSKY=0 stops the `prepare` git-hook script (package.json: "prepare":"husky")
 # from running during install/prune — there is no .git in the image.
@@ -23,9 +26,12 @@ RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 # scripts: sharp" warning is benign — the @img/sharp-* optional dep provides it).
 FROM base AS build
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Workspace package manifests must exist before install, or pnpm resolves the
+# Every workspace manifest must exist before install, or pnpm resolves the
 # `workspace:*` dependencies against nothing. Only the manifests are copied here
-# so editing package SOURCE doesn't bust the install layer.
+# so editing source doesn't bust the install layer. The web app is a workspace
+# now too, and it owns next/react/drizzle — omitting it would install nothing
+# the application actually runs on.
+COPY apps/web/package.json ./apps/web/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/image-core/package.json ./packages/image-core/
 COPY packages/image-replicate/package.json ./packages/image-replicate/
@@ -36,6 +42,9 @@ COPY . .
 # `FatalProcessOutOfMemory` — V8's own heap limit, not the kernel's OOM killer
 # (that would exit 137) — which is what the default cap does once the route and
 # type graph passes a certain size.
+#
+# `pnpm run build` is the root launcher (scripts/web.mjs): it runs Next with
+# apps/web as the project directory while the repository root stays the CWD.
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 
 # ---- runner ----
@@ -44,11 +53,18 @@ RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 #      failure ("husky: not found"). HUSKY=0 + no prune avoids it entirely.
 #   2. `pnpm db:migrate` runs via tsx (a devDependency) at release time.
 FROM base AS runner
-ENV NODE_ENV=production
+# DATA_ROOT is set EXPLICITLY rather than inherited from the process working
+# directory. The Fly volume is mounted at /app/data, and `dataRoot()` falls back
+# to `<cwd>/data` — so any future change to how the app is started could
+# silently repoint the image library. Stating it here makes that impossible.
+ENV NODE_ENV=production \
+    DATA_ROOT=/app/data
 COPY --from=build /app /app
 RUN mkdir -p /app/data
 EXPOSE 8080
-# Run next via node directly — NOT through pnpm — so boot never invokes Corepack
-# (no pnpm download, no npm-registry dependency at startup) and is instant.
+# Boot through the root launcher with plain node — NOT through pnpm — so boot
+# never invokes Corepack (no pnpm download, no npm-registry dependency at
+# startup) and is instant. The launcher resolves Next from the apps/web
+# workspace, since the repository root no longer depends on next itself.
 # Binds to Fly's $PORT (8080), bypassing the package.json start script's -p 3200.
-CMD ["sh", "-c", "node node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT:-8080}"]
+CMD ["sh", "-c", "node scripts/web.mjs start -H 0.0.0.0 -p ${PORT:-8080}"]

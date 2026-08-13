@@ -18,6 +18,11 @@ import { listWorkspacePackages } from "./check-workspace-imports";
  * So this check does what a consumer does: import each package BY NAME through
  * the installed workspace, with no alias in the picture, and confirm that the
  * module it gets back is the package source and actually exports something.
+ *
+ * It runs from the repository root, which is why the root manifest declares
+ * every `@vesper/*` package even when no root script imports one directly:
+ * being resolvable from here is the thing under test, and a package the root
+ * cannot resolve is a failure this check must report rather than skip.
  */
 
 interface ResolutionFailure {

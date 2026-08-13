@@ -25,6 +25,7 @@ import {
 const POLICY: WorkspacePolicy = {
   scope: "@vesper",
   applicationAlias: "@/",
+  applicationWorkspaces: ["@vesper/web"],
   layers: { "@vesper/foundation": 10, "@vesper/core": 20, "@vesper/corex": 20, "@vesper/transport": 30 },
   applicationLayer: 100,
   runtimes: {
@@ -338,6 +339,77 @@ describe("workspace import integrity", () => {
   it("lists the workspace packages a consumer may import by name", () => {
     const root = tree();
     expect(listWorkspacePackages(root, POLICY).map((pkg) => pkg.name)).toEqual(["@vesper/core", "@vesper/foundation"]);
+  });
+});
+
+/**
+ * A non-root APPLICATION workspace — `apps/web` after the slice 6 move. It
+ * carries the `@vesper` scope like every package, so nothing but the policy's
+ * `applicationWorkspaces` list distinguishes them, and getting that wrong is
+ * silent in both directions: judged as a package it would fail on every `@/`
+ * import it has, and judged as an application a real package would escape the
+ * layer and runtime rules entirely.
+ */
+describe("a non-root application workspace", () => {
+  const APP: Record<string, string> = {
+    "pnpm-workspace.yaml": 'packages:\n  - "."\n  - "apps/*"\n  - "packages/*"\n',
+    "package.json": json({ name: "root", devDependencies: { vitest: "^4.1.8" } }),
+    "apps/web/package.json": json({
+      name: "@vesper/web",
+      dependencies: { "@vesper/core": "workspace:*", zod: "^4.4.3" },
+      devDependencies: { vitest: "^4.1.8" },
+    }),
+    "apps/web/src/app.ts":
+      'import { createHash } from "node:crypto";\nimport { thing } from "@vesper/core";\nimport { local } from "@/lib/local";\n\nexport const used = [createHash, thing, local];\n',
+    "apps/web/src/lib/local.ts": "export const local = 1;\n",
+  };
+
+  it("may use its own alias, Node built-ins and the packages it declares", () => {
+    expect(checkWorkspaceImports(tree(APP, ["src/app.ts", "src/app.test.ts"]), POLICY)).toEqual([]);
+  });
+
+  it("is still held to dependency ownership and package entry points", () => {
+    const violations = checkWorkspaceImports(
+      tree(
+        {
+          ...APP,
+          "apps/web/package.json": json({ name: "@vesper/web", devDependencies: { vitest: "^4.1.8" } }),
+          "apps/web/src/app.ts": 'import { thing } from "@vesper/core/src/thing";\n\nexport const used = thing;\n',
+        },
+        ["src/app.ts", "src/app.test.ts"],
+      ),
+      POLICY,
+    );
+    expect(rules(violations)).toEqual(["package-code-subpath"]);
+  });
+
+  it("may not be reached from a package, in either spelling", () => {
+    const alias = checkWorkspaceImports(
+      tree(
+        { ...APP, "packages/core/src/thing.ts": 'import { local } from "@/lib/local";\n\nexport const thing = local;\n' },
+        ["src/app.ts", "src/app.test.ts"],
+      ),
+      POLICY,
+    );
+    expect(rules(alias)).toEqual(["package-application-alias"]);
+
+    const path = checkWorkspaceImports(
+      tree(
+        {
+          ...APP,
+          "packages/core/src/thing.ts": 'import { local } from "../../../apps/web/src/lib/local";\n\nexport const thing = local;\n',
+        },
+        ["src/app.ts", "src/app.test.ts"],
+      ),
+      POLICY,
+    );
+    expect(rules(path)).toEqual(["cross-workspace-path"]);
+  });
+
+  it("is not treated as a package: no layer rank, no curated root export", () => {
+    const root = tree(APP, ["src/app.ts", "src/app.test.ts"]);
+    expect(listWorkspacePackages(root, POLICY).map((pkg) => pkg.name)).toEqual(["@vesper/core", "@vesper/foundation"]);
+    expect(rules(checkWorkspaceImports(root, POLICY))).not.toContain("package-layer-unknown");
   });
 });
 

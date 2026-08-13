@@ -3,7 +3,7 @@ import path from "node:path";
 import { ESLint } from "eslint";
 import { afterAll, describe, expect, it } from "vitest";
 
-const fixtureDir = path.join(process.cwd(), "src/app/api/__image_internal_lint_fixture__");
+const fixtureDir = path.join(process.cwd(), "apps/web/src/app/api/__image_internal_lint_fixture__");
 const fixturePath = path.join(fixtureDir, "route.ts");
 const eslint = new ESLint({ overrideConfigFile: path.join(process.cwd(), "eslint.config.mjs") });
 

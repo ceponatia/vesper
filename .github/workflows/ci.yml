@@ -111,6 +111,12 @@ jobs:
                 ;;
             esac
 
+            # Application paths are rooted at `apps/web/` since the Next app
+            # moved out of the repository root. A stale glob here fails OPEN —
+            # the job simply skips and aggregate `verify` stays green — so
+            # these patterns are verified by deliberately touching a file of
+            # each class, not by a green workflow run.
+            #
             # `scripts/eval/engine-gate1/*` is listed here as well as under the
             # engine patterns below so that `engine` is a strict subset of
             # `integration` — the Gate 1 benchmark now runs as a step of the
@@ -120,13 +126,13 @@ jobs:
             # eslint.config.mjs or next.config.ts edit spun up Postgres and the
             # eval. Only the configs that actually shape those runs are listed.
             case "$path" in
-              src/server/*|src/app/api/*|src/contracts/*|src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|vitest.config.*|drizzle.config.*)
+              apps/web/src/server/*|apps/web/src/app/api/*|apps/web/src/contracts/*|apps/web/src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/tsconfig.json|vitest.config.*|drizzle.config.*)
                 integration=true
                 ;;
             esac
 
             case "$path" in
-              src/server/engine/*|src/lib/simulation/*|src/contracts/simulation/*|scripts/eval/engine-gate1/*)
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|scripts/eval/engine-gate1/*)
                 engine=true
                 ;;
             esac
@@ -136,7 +142,7 @@ jobs:
             # lint/static/unit still cover it; the pre-deploy dispatch is what
             # exercises every job end to end.
             case "$path" in
-              package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|packages/*/package.json|packages/*/tsconfig.json|next.config.*|Dockerfile|src/middleware.ts|src/instrumentation.ts)
+              package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/package.json|apps/web/tsconfig.json|packages/*/package.json|packages/*/tsconfig.json|apps/web/next.config.*|Dockerfile|scripts/web.mjs|apps/web/src/proxy.ts|apps/web/src/instrumentation.ts)
                 build=true
                 ;;
             esac

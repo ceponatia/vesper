@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The route-handler wrappers that carry the ownership (or admin/support) check
- * themselves, all exported from `src/server/api/authz.ts`. A resource-ID route
- * mentioning none of them while using bare `withUser` is the shape this gate
- * rejects.
+ * themselves, all exported from `apps/web/src/server/api/authz.ts`. A
+ * resource-ID route mentioning none of them while using bare `withUser` is the
+ * shape this gate rejects.
  *
- * Exported so `src/server/api/ownership-guardrail.test.ts` can cross-check it
+ * Exported so `apps/web/src/server/api/ownership-guardrail.test.ts` can cross-check it
  * against its own hand-maintained OWNER_ASSERTING_HELPERS list — see the
  * "keeps the two route-authz allow-lists distinct and live" test there for the
  * relationship between the two (they name different mechanisms and must stay
@@ -26,7 +26,10 @@ export const APPROVED_ROUTE_AUTHZ_WRAPPERS = [
 ] as const;
 
 const approvedWrappers = new RegExp(String.raw`\b(${APPROVED_ROUTE_AUTHZ_WRAPPERS.join("|")})\b`);
-const resourceRoute = /src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
+// Anchored at the application workspace, not merely at `src/`: after the app
+// moved to apps/web an unanchored pattern would still match by coincidence, and
+// this gate has to fail loudly rather than keep working by accident.
+const resourceRoute = /^apps\/web\/src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
 
 function changedFiles(): string[] {
   const explicitBase = process.env.ROUTE_AUTHZ_BASE;

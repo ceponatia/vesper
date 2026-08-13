@@ -1,6 +1,8 @@
 # Monorepo migration — the image engine as the first package
 
-Status: active (started 2026-08-12)
+Status: awaiting acceptance — the deployed `apps/web` verification: an existing
+stored image still loads from the Fly volume, a new render writes beside it, and
+the root database commands still run over `fly ssh`.
 
 Outcome: A developer can open the image engine on its own — read it, test it,
 and change how a model is driven — without the rest of the app in front of them,
@@ -262,10 +264,11 @@ exists, an image-vision package would move names without moving ownership.
 
 ### Slice 6 — the application moves to `apps/web`
 
-Status: next — its gate is met. Slice 4 landed and was accepted without forcing a
-redesign of the core/app/provider seam: the provider-neutral plan and result
-types were the seam, and nothing in `image-core` had to change to support the
-transport package.
+Status: built 2026-08-12 — awaiting the deployed verification. Its gate was met:
+Slice 4 landed and was accepted without forcing a redesign of the
+core/app/provider seam — the provider-neutral plan and result types were the
+seam, and nothing in `image-core` had to change to support the transport
+package.
 
 Only after the provider extraction proves the package boundary does the Next.js
 application move under `apps/web`. This is a path and workspace migration, not a
@@ -275,14 +278,19 @@ CI path classification, local environment loading, the Fly release command, and
 the existing image-storage location.
 
 The repository root remains the operational workspace root. `scripts/`,
-`drizzle/`, deployment files and shared tooling stay there; only the web
-application moves.
+`drizzle/`, deployment files and shared tooling stayed there; only the web
+application moved.
 
-The Slice 6 path audit includes more than literal `src/` strings: CWD-dependent
+The path audit covered more than literal `src/` strings: CWD-dependent
 filesystem paths, `import.meta.url`/relative resource lookup, ignore files,
-generated-output locations and other repository-root assumptions are explicitly
-classified. Next/ESLint is also configured with `apps/web` as the Next root after
-the move.
+generated-output locations and other repository-root assumptions were each
+classified. Two of them mattered enough to change how the app starts. The
+persistent image directory is resolved from the repository, not from wherever
+Next happens to be running, so the existing image library cannot appear empty
+after the move; and the repository's `.env` is still the one environment file,
+loaded before Next starts rather than discovered by it. Both live in a single
+root launcher that every way of starting the app goes through. Next-aware ESLint
+is pinned to `apps/web` and a test fails if that pin drifts.
 
 ## Where the work stands
 
@@ -297,8 +305,8 @@ The package's current contract with the application is
 | [spec.guardrails.md](monorepo-image-core.spec.guardrails.md)       | Slice 1 completion | complete 2026-08-12 |
 | [spec.render-kernel.md](monorepo-image-core.spec.render-kernel.md) | Slice 2            | complete 2026-08-12 |
 | [spec.foundation.md](monorepo-image-core.spec.foundation.md)       | Slice 3            | complete 2026-08-12 |
-| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | built 2026-08-13    |
-| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised             |
+| [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | complete 2026-08-13 |
+| [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | built 2026-08-12    |
 
 Slice 5 has no detail spec by design — the hub spec records the completed
 no-extraction decision and the evidence that would justify reopening it.

@@ -53,7 +53,7 @@ Mood is surfaced not as raw threshold hints but as a **derived descriptor**: `de
 - the social-reaction curve reads mood as its `μ` factor (`moodMeterToFactor`), and
 - a reaction nudges mood back (`moodNudge`).
 
-#### The mood module — labeled emotion + event→mood (`src/contracts/mood/`)
+#### The mood module — labeled emotion + event→mood (`apps/web/src/contracts/mood/`)
 
 A second, discrete read sits beside the prose descriptor (see `docs/developer-notes/mood.spec.md`):
 

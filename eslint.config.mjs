@@ -3,12 +3,13 @@ import nextPlugin from "eslint-config-next";
 import tseslint from "typescript-eslint";
 
 // LLM provider construction (createOpenRouter) belongs only in the model gateway
-// (src/server/ai). `streamText`/`generateImage` from the `ai` SDK are used at the
-// call sites that need them (engine narration, image pipelines) by design, so the
-// `ai` package itself is NOT restricted — only provider wiring is centralized.
+// (apps/web/src/server/ai). `streamText`/`generateImage` from the `ai` SDK are
+// used at the call sites that need them (engine narration, image pipelines) by
+// design, so the `ai` package itself is NOT restricted — only provider wiring is
+// centralized.
 const RESTRICT_PROVIDER = {
   group: ["@openrouter/ai-sdk-provider"],
-  message: "Build LLM providers only in the model gateway (src/server/ai); consume them through its barrel.",
+  message: "Build LLM providers only in the model gateway (apps/web/src/server/ai); consume them through its barrel.",
 };
 
 // A workspace package publishes ONE curated entry point, so `@vesper/x/anything`
@@ -22,10 +23,10 @@ const RESTRICT_PACKAGE_SUBPATH = {
 };
 
 // The Replicate transport is a SERVER package: it holds the provider credential
-// and performs network IO. While it lived under `src/server/**` the path name
+// and performs network IO. While it lived under `apps/web/src/server/**` the path name
 // was the protection; now that it is a package, the ban has to be stated. Server
 // modules, route handlers and root scripts reach it through the configured
-// application runtime (`src/server/ai/replicate-runtime.ts`).
+// application runtime (`apps/web/src/server/ai/replicate-runtime.ts`).
 // (monorepo-image-core.spec.replicate.md §"Server-only application boundary".)
 const RESTRICT_TRANSPORT_PACKAGE = {
   group: ["@vesper/image-replicate"],
@@ -47,8 +48,18 @@ const NAMING_CONVENTION = [
 ];
 
 export default defineConfig([
-  globalIgnores([".next/**", "**/node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs", ".claude/**"]),
+  globalIgnores(["**/.next/**", "**/node_modules/**", "drizzle/**", "coverage/**", "eslint.config.mjs", ".claude/**"]),
   ...nextPlugin,
+
+  // The Next application is no longer the repository root, so eslint-config-next
+  // has to be TOLD where it lives — its rules resolve pages/app directories and
+  // Next-specific conventions from `settings.next.rootDir`, and without this they
+  // quietly stop applying to the moved application while the run stays green
+  // (monorepo-image-core.spec.apps-web.md §"Tell Next-aware ESLint where the app
+  // moved"). `scripts/next-eslint-scope.test.ts` fails if this drifts.
+  {
+    settings: { next: { rootDir: "apps/web" } },
+  },
 
   // ---------------------------------------------------------------------------
   // Type-aware guardrails (whole repo). These encode the failure modes agents
@@ -99,7 +110,7 @@ export default defineConfig([
   // Module-boundary enforcement (docs/architecture.md "Module dependency rules").
   // Disjoint file globs → each file resolves to exactly one no-restricted-imports
   // config (flat config is last-match-wins, so overlapping blocks would clobber).
-  // Each zone carries the provider-gateway ban except src/server/ai itself.
+  // Each zone carries the provider-gateway ban except apps/web/src/server/ai itself.
   // ---------------------------------------------------------------------------
 
   // 0. Workspace packages: the one-way boundary. `@vesper/image-core` is the
@@ -112,7 +123,7 @@ export default defineConfig([
   //    TWO patterns, because there are two ways to name the app. `@/*` is its
   //    alias, and banning the alias bans the database, routes, characters, chats
   //    and the simulation engine in one line. But an alias ban alone is not a
-  //    boundary: `../../../src/server/db` reaches exactly the same module and
+  //    boundary: `../../apps/web/src/server/db` reaches exactly the same module and
   //    matches no `@/` glob, so the escape is spelled as a path instead. The
   //    second pattern closes it by rejecting any relative climb that lands in a
   //    top-level app directory — a package file never needs one, since
@@ -127,9 +138,10 @@ export default defineConfig([
             "Workspace packages are standalone: no @/ imports. If a package needs something from the app, invert it — take the value as an argument, or leave the code in the app (monorepo-image-core.plan.md).",
         },
         {
-          // `../src/…`, `../../src/…`, `../../../scripts/…`, `../../packages/…` —
-          // any number of climbs landing on a top-level directory of the repo.
-          regex: "^\\.\\.(/\\.\\.)*/(src|scripts|drizzle|packages)(/|$)",
+          // `../apps/…`, `../../apps/web/src/…`, `../../../scripts/…`,
+          // `../../packages/…` — any number of climbs landing on a top-level
+          // directory of the repo.
+          regex: "^\\.\\.(/\\.\\.)*/(apps|src|scripts|drizzle|packages)(/|$)",
           message:
             "Workspace packages are standalone: a relative path that climbs out of the package is the same boundary violation as an @/ import. Import another package by its name (@vesper/…), never by path.",
         },
@@ -140,12 +152,12 @@ export default defineConfig([
   },
   // 1. Purity: contracts + lib stay client-importable — no server/app/components.
   {
-    files: ["src/contracts/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
+    files: ["apps/web/src/contracts/**/*.{ts,tsx}", "apps/web/src/lib/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         {
           group: ["@/server", "@/server/**", "@/app", "@/app/**", "@/components", "@/components/**"],
-          message: "src/contracts and src/lib are pure and client-importable: no @/server, @/app, or @/components imports.",
+          message: "apps/web/src/contracts and apps/web/src/lib are pure and client-importable: no @/server, @/app, or @/components imports.",
         },
         RESTRICT_PROVIDER,
         RESTRICT_PACKAGE_SUBPATH,
@@ -153,15 +165,15 @@ export default defineConfig([
       ] }],
     },
   },
-  // 2. Client→server: UI reaches the server only via route handlers (src/app/api).
+  // 2. Client→server: UI reaches the server only via route handlers (apps/web/src/app/api).
   {
-    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}"],
-    ignores: ["src/app/api/**"],
+    files: ["apps/web/src/components/**/*.{ts,tsx}", "apps/web/src/app/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/app/api/**"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         {
           group: ["@/server", "@/server/**"],
-          message: "Client code must not import @/server; reach the server through a route handler in src/app/api.",
+          message: "Client code must not import @/server; reach the server through a route handler in apps/web/src/app/api.",
         },
         RESTRICT_PROVIDER,
         RESTRICT_PACKAGE_SUBPATH,
@@ -171,7 +183,7 @@ export default defineConfig([
   },
   // 3. Route handlers: barrel discipline + provider gateway + owner-safe image mutations.
   {
-    files: ["src/app/api/**/*.{ts,tsx}"],
+    files: ["apps/web/src/app/api/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", {
         paths: [
@@ -204,8 +216,8 @@ export default defineConfig([
   },
   // 4. Server (except the AI gateway) + scripts: barrel discipline + provider gateway.
   {
-    files: ["src/server/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
-    ignores: ["src/server/ai/**"],
+    files: ["apps/web/src/server/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/server/ai/**"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
@@ -216,7 +228,7 @@ export default defineConfig([
   },
   // 5. The AI gateway: barrel discipline only (it owns provider construction).
   {
-    files: ["src/server/ai/**/*.{ts,tsx}"],
+    files: ["apps/web/src/server/ai/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { patterns: [
         { group: ["@/server/*/*"], message: "Import a server module through its barrel (@/server/<module>), not a deep path." },
@@ -244,15 +256,15 @@ export default defineConfig([
     },
   },
 
-  // Raw fetch is forbidden in pure/UI layers — data goes through src/lib/client
-  // (browser) or src/server/ai (external APIs), the only sanctioned fetch sites.
+  // Raw fetch is forbidden in pure/UI layers — data goes through apps/web/src/lib/client
+  // (browser) or apps/web/src/server/ai (external APIs), the only sanctioned fetch sites.
   {
-    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}", "src/contracts/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}"],
-    ignores: ["src/lib/client/**", "src/app/api/**"],
+    files: ["apps/web/src/components/**/*.{ts,tsx}", "apps/web/src/app/**/*.{ts,tsx}", "apps/web/src/contracts/**/*.{ts,tsx}", "apps/web/src/lib/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/lib/client/**", "apps/web/src/app/api/**"],
     rules: {
       "no-restricted-syntax": ["error", {
         selector: "CallExpression[callee.name='fetch']",
-        message: "Don't call fetch directly here; use the client data layer (src/lib/client).",
+        message: "Don't call fetch directly here; use the client data layer (apps/web/src/lib/client).",
       }],
     },
   },
@@ -265,8 +277,8 @@ export default defineConfig([
   // live, so it's exempt. Two selectors: writes THROUGH `.state` (e.g.
   // `p.state.meters =`) and writes to the placement scalars on a working row.
   {
-    files: ["src/server/engine/merge/**/*.{ts,tsx}"],
-    ignores: ["src/server/engine/merge/working-state.ts"],
+    files: ["apps/web/src/server/engine/merge/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/server/engine/merge/working-state.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",

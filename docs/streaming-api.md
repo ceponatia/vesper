@@ -1,6 +1,6 @@
 # API surface & streaming protocol
 
-Route handlers in `src/app/api/`. Handlers are thin: resolve user → zod-validate input → call a `server/*` function → shape the response. Errors use the envelope `{ error: { code, message } }` with a correct HTTP status.
+Route handlers in `apps/web/src/app/api/`. Handlers are thin: resolve user → zod-validate input → call a `server/*` function → shape the response. Errors use the envelope `{ error: { code, message } }` with a correct HTTP status.
 
 ## Routes
 

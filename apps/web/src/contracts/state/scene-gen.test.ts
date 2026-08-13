@@ -20,7 +20,7 @@ import { sceneGenStateSchema } from "@/contracts/state/scene-gen";
  * guarantee, not just a line.
  */
 
-const SCENE_GEN_SOURCE = join(process.cwd(), "src/contracts/state/scene-gen.ts");
+const SCENE_GEN_SOURCE = join(process.cwd(), "apps/web/src/contracts/state/scene-gen.ts");
 
 describe("scene-gen as the image-core portability fixture", () => {
   it("imports a runtime symbol from the package, not just a type", () => {

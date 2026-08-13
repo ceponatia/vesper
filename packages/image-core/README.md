@@ -69,7 +69,7 @@ Practical consequences:
   execution stays at the application/server boundary. The rule is about what
   runs: naming a platform type at a provider seam (`Buffer` on
   `ProviderRenderResult.image`) is allowed, evaluating one (`Buffer.from`,
-  `process.env`, `document`) is not. `src/contracts/state/scene-gen.ts` is the
+  `process.env`, `document`) is not. `apps/web/src/contracts/state/scene-gen.ts` is the
   designated client-side fixture that keeps the production build honest about it.
 - **Diagnostics are reported, not persisted.** `DiagnosticSink` comes from
   `@vesper/contracts`, the one definition the whole repository shares; this

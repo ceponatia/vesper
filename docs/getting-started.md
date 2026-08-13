@@ -29,6 +29,15 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ## Environment
 
+> **`.env` lives at the repository root, and every command reads it from there.**
+> The Next app is a workspace under `apps/web`, so Next would otherwise look for
+> `.env` in its own project folder and find nothing. There is exactly one loader:
+> the root launcher `scripts/web.mjs`, which `pnpm dev` / `build` / `start` all go
+> through. It reads the root `.env` (existing environment variables always win)
+> and then starts Next with `apps/web` as the project directory. Root scripts
+> (`db:*`, `sim:*`, `eval:*`) read the same file through `dotenv` directly. Do not
+> add a second `.env` under `apps/web`.
+
 > **Models are not env-configurable.** The chat narrator model is chosen in
 > code (`lib/narrative-models.ts`) or per-character in the UI; the post-turn agent
 > models (`lib/agent-models.ts`), the scene-composer/tool model, and the embedding
@@ -84,7 +93,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > **dev-only**: locally the link is written to the server console (grep
 > `auth.magic_link`) and that is how you complete the sign-in, while a production
 > build drops the plugin entirely rather than log a live sign-in URL. Production
-> turns on only when a real sender is registered in `src/server/auth/magic-link.ts`
+> turns on only when a real sender is registered in `apps/web/src/server/auth/magic-link.ts`
 > — never by setting an env var ([auth.md](auth.md) §Magic link).
 
 ## Day-to-day
@@ -94,7 +103,7 @@ pnpm dev / build / start
 pnpm test / test:watch / test:int / typecheck / lint     # see testing.md
 pnpm test:int:strict                        # release/CI form of test:int — an unreachable DB fails
                                             #   instead of skipping (testing.md §Strict integration mode)
-pnpm db:generate                            # after editing src/server/db/schema.ts → review drizzle/ SQL
+pnpm db:generate                            # after editing apps/web/src/server/db/schema.ts → review drizzle/ SQL
 pnpm db:migrate
 pnpm db:studio                              # drizzle studio
 ```

@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 6
 
-Implementation state: not started — blocked on Slice 4 completing without a core/app/provider seam redesign.
+Implementation state: built 2026-08-12 — awaiting the deployed verification below (existing image loads, new render writes to the same volume, root commands over `fly ssh`).
 
 Move the Next.js application from the repository root into `apps/web` without
 changing application behavior, package ownership, persistent storage, or the
@@ -30,6 +30,88 @@ Specifically, the gate is satisfied when:
 
 A new model being added entirely within the package layer is useful evidence but
 is not required once this stronger provider-extraction gate has been met.
+
+## Implementation record
+
+The move landed on 2026-08-12. The layout, manifests, TypeScript projects,
+Vitest projects, ESLint zones, jscpd roots, CI classifier, Docker/Fly wiring and
+reference documentation are all as described below, with the differences and
+rulings recorded here rather than by rewriting the sections they came from.
+
+**`@vesper/web` is an application workspace, not a package.** It carries the
+`@vesper` scope like every package, so the boundary checker cannot tell them
+apart by name. `WorkspacePolicy` gained `applicationWorkspaces`, and the checker
+now asks "is this an application?" everywhere it previously asked "is this the
+repository root?" — for the `@/` alias, the layer rank, the runtime target, the
+computed-dynamic-import ban and the package listing. Getting this wrong is silent
+in both directions, so `scripts/check-workspace-imports.test.ts` gained a
+fixture repository with a non-root application workspace that asserts all four
+behaviours.
+
+**Root scripts keep `@/` and gain nothing else.** Root `tsconfig.json` maps
+`@/*` to `./apps/web/src/*`, which is what `tsx` reads at runtime, so the
+existing root-script → application edge is unchanged in kind and still the only
+one. A relative path into `apps/web` remains a `cross-workspace-path` violation.
+
+**The root manifest declares every `@vesper/*` package.** `lint:package-resolution`
+imports each package by name *from the repository root*, so a package the root
+cannot resolve is exactly the failure the check exists to report.
+`@vesper/contracts` is therefore a root devDependency even though no root script
+imports it.
+
+**One launcher owns the two repository-level facts.** `scripts/web.mjs` is the
+only way the app starts (`pnpm dev` / `build` / `start`, and the Docker `CMD`).
+It sets `DATA_ROOT` to the repository's `data/` when unset, loads the
+repository-root `.env` (existing variables win), resolves Next from the
+`apps/web` workspace, and runs it with `apps/web` as the project directory.
+
+The env loader is deliberately NOT in `next.config.ts`: `next start` reads the
+build's `required-server-files.json` rather than executing the config, so a
+config-file loader would cover dev and silently miss production. The spec's
+"added here or through the one root launcher path" is resolved to the launcher.
+
+**`scripts/**` tests stay in the `app` Vitest project.** The spec anticipated a
+separate script project with only root/tooling setup. In practice those tests are
+the repository's tripwire tests — they scan application source and import
+`@/server/test-support` — so they need the application alias and the same
+demo-mode setup as the code they inspect. Package isolation, which is what that
+rule exists to protect, is unaffected.
+
+**The Vitest run root stays the repository root.** Several tripwire tests locate
+source as `process.cwd()` plus a repo-relative path, and keeping the run root
+where it was is what preserves their meaning; their literal paths were re-rooted
+at `apps/web/src/…`, including the `repoRelative()` allow-lists in
+`image-internal-callers.test.ts` and `ownership-guardrail.test.ts`.
+
+**`.dockerignore` needed `**/` on three more patterns.** `.next/`,
+`*.tsbuildinfo` and `next-env.d.ts` are anchored at the context root, so all
+three stopped matching the moment the Next project moved — a local dev build
+would have shipped into the image.
+
+**Root dependency ownership moved with the code.** `next`, `react`, `react-dom`,
+`better-auth`, `ai`, `@openrouter/ai-sdk-provider`, `@paralleldrive/cuid2`,
+Tailwind and the React types are now owned by `apps/web`; the root keeps what its
+scripts import (`drizzle-orm`, `pg`, `sharp`, `zod`, the workspace packages) plus
+its tooling. Root `node_modules/next` no longer exists, which is why the Docker
+`CMD` boots through the launcher rather than a root binary path.
+
+**Next-aware ESLint is pinned explicitly.** `settings.next.rootDir` is
+`apps/web`, and `scripts/next-eslint-scope.test.ts` asserts both that the Next
+rules resolve for an application file and that the module-boundary zones still
+match under the moved path — the failure this guards is a green lint run that
+quietly stopped applying to the app.
+
+**One dead root-assumption file was deleted.** `dbsetup.js` — unreferenced `fly
+launch` scaffolding that ran `npx next build` against the current directory —
+was surfaced by the path audit as broken by the move. Nothing in `package.json`,
+`Dockerfile` or `fly.toml` calls it, so it was removed rather than re-rooted.
+
+**Documentation scope.** The reference tier (`docs/` outside
+`developer-notes/`), the root `CLAUDE.md`, the package READMEs and this topic
+family were re-rooted. Other working docs keep the paths they were written with,
+for the same reason `finished/` does: they record work as it stood, `grep`
+still finds them, and rewriting a year of plans buys tidiness at the cost of a
+very large diff.
 
 ## Target layout
 
@@ -205,11 +287,14 @@ Update:
 - app test includes from `src/**` to `apps/web/src/**`;
 - the application `@` alias to `apps/web/src`;
 - the app project's setup path to `apps/web/src/test/setup.ts`;
-- package test discovery under `packages/*/src/**` without application setup;
-- script test discovery under `scripts/**` with only root/tooling setup.
+- package test discovery under `packages/*/src/**` without application setup.
+
+`scripts/**` tests stay in the `app` project — they are application tripwires and
+need its alias and setup (see [Implementation record](#implementation-record)).
 
 Do not collapse the projects back into one global setup simply because the path
-move makes a single configuration shorter.
+move makes a single configuration shorter, and do not move the runner's root off
+the repository root: tripwire tests locate source through `process.cwd()`.
 
 ## ESLint and package boundaries
 
@@ -457,8 +542,10 @@ to the web app.
 - allowed dev origins;
 - Turbopack cache choice.
 
-Any root-env loading needed by the new project location is added here or through
-the one root launcher path described above; do not create competing env loaders.
+Root-env loading is NOT added here. It lives in the one root launcher, because
+`next start` reads the build's `required-server-files.json` instead of executing
+this file — a loader here would cover dev and silently miss production. Do not
+create a competing env loader.
 
 Keep the Next project root explicit everywhere that tool resolution depends on
 it: launcher/build command, ESLint Next settings, generated types, and any build
