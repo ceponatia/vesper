@@ -229,8 +229,8 @@ re-export barrels, so no mechanical rewrite across hundreds of files was needed.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: built 2026-08-13 (PR #99, green `verify`) — awaiting the real render and
-real probe the success criteria name, which need a deploy.
+Status: complete — 2026-08-13 (PR #99; a real render and a real model probe both
+succeeded on the deploy).
 
 The code that talks to Replicate — probing model schemas, starting predictions,
 uploading references, polling, downloading results and handling Replicate's
@@ -259,10 +259,10 @@ the diagram prettier without making the code easier to own.
 
 ### Slice 6 — the application moves to `apps/web`
 
-Status: blocked on Slice 4 being accepted. Its gate — that the extraction lands
-without forcing a redesign of the core/app/provider seam — is met by the build:
-the provider-neutral plan and result types were the seam, and nothing in
-`image-core` had to change to support the transport package.
+Status: next — its gate is met. Slice 4 landed and was accepted without forcing a
+redesign of the core/app/provider seam: the provider-neutral plan and result
+types were the seam, and nothing in `image-core` had to change to support the
+transport package.
 
 Only after the provider extraction proves the package boundary does the Next.js
 application move under `apps/web`. This is a path and workspace migration, not a
