@@ -11,33 +11,33 @@ reusable production contracts.
 
 The implementation lives in:
 
-- `src/contracts/simulation/identity.ts` — opaque branded identities and safe integer
+- `apps/web/src/contracts/simulation/identity.ts` — opaque branded identities and safe integer
   causal primitives;
-- `src/contracts/simulation/envelopes.ts` — principals and strict command, event, and
+- `apps/web/src/contracts/simulation/envelopes.ts` — principals and strict command, event, and
   exhaustive-result schema factories;
-- `src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
+- `apps/web/src/contracts/simulation/item-transfer.ts` — the first command/event/projection,
   observation, and NarrativeCut family;
-- `src/contracts/simulation/scheduler.ts` — the E2.4 trigger contract, derived trigger
+- `apps/web/src/contracts/simulation/scheduler.ts` — the E2.4 trigger contract, derived trigger
   identity, named deterministic draw streams, capped retry backoff, and the E2.5
   `schedule_transfer_item` command / `trigger_scheduled` event family;
-- `src/contracts/simulation/branching.ts` — the E2.5 branch-event union, fork input/result,
+- `apps/web/src/contracts/simulation/branching.ts` — the E2.5 branch-event union, fork input/result,
   snapshot, rebuild-comparison, and causal-explanation contracts;
-- `src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
+- `apps/web/src/lib/simulation/item-transfer.ts` — pure resolver over a minimum authority view,
   projector, replay, cut compiler, prompt formatter, and the temporary in-memory runtime;
-- `src/lib/simulation/replay.ts` — pure E2.5 ancestry-bound math, seed reverse-derivation,
+- `apps/web/src/lib/simulation/replay.ts` — pure E2.5 ancestry-bound math, seed reverse-derivation,
   and the deterministic branch replay driver with its trigger ledger;
-- `src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
+- `apps/web/src/server/engine/simulation/item-transfer-store.ts` — the E2.2 PostgreSQL branch
   transaction and typed read/bootstrap adapter;
-- `src/server/engine/simulation/scheduler-store.ts` — the E2.4 durable trigger queue,
+- `apps/web/src/server/engine/simulation/scheduler-store.ts` — the E2.4 durable trigger queue,
   lease/claim semantics, the bounded story-time advance seam, and the E2.5 durable
   schedule-command transaction;
-- `src/server/engine/simulation/branch-store.ts` (E2.5) — ancestry loading, the
+- `apps/web/src/server/engine/simulation/branch-store.ts` (E2.5) — ancestry loading, the
   R4-bounded event read, live-state assembly, and `forkBranch`;
-- `src/server/engine/simulation/snapshot-store.ts` (E2.5) — snapshot capture/discard and
+- `apps/web/src/server/engine/simulation/snapshot-store.ts` (E2.5) — snapshot capture/discard and
   rebuild-from-zero / rebuild-from-snapshot hash comparison;
-- `src/server/engine/simulation/audit-store.ts` (E2.5) — the read-only
+- `apps/web/src/server/engine/simulation/audit-store.ts` (E2.5) — the read-only
   `explainItemPlacement` causal chain;
-- `src/server/engine/world-engine.ts` — the adapter into the existing character-chat
+- `apps/web/src/server/engine/world-engine.ts` — the adapter into the existing character-chat
   narrator.
 
 ## Identity and causal primitives
@@ -169,7 +169,7 @@ and treats any refusal as "no affordance":
   jsonb field — no migration; unlabeled definitions fall back to an id-derived label) — never
   a raw id. The read is fail-open: a malformed projection degrades to `null` (a 503 the
   client reads as "no card"), never a throw (docs/resilience.md). Pure shaping lives in
-  `src/lib/simulation/world-read.ts`.
+  `apps/web/src/lib/simulation/world-read.ts`.
 - **`POST /api/chats/[chatId]/sim-command`** carries the typed player commands
   (`move` · `end_scene` · `give_item` · `start_activity` · `advance_time` · **`travel`** ·
   **`move_together`** · **`do_activity`**). Each is the ordinary durable command under the

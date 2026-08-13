@@ -3,7 +3,7 @@ import path from "node:path";
 
 /**
  * The "parse just enough" text primitives the architectural tripwire tests are
- * built on (`src/server/api/ownership-guardrail.test.ts`,
+ * built on (`scripts/ownership-guardrail.test.ts`,
  * `scripts/image-internal-callers.test.ts`), extracted so the two files stop
  * carrying their own copies of comment stripping, delimiter matching and
  * directory walking.

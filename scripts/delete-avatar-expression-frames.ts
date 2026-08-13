@@ -1,8 +1,8 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import { eq, isNotNull, sql } from "drizzle-orm";
-import { characters, db, images, jobs } from "../src/server/db";
-import { absoluteImagePath } from "../src/server/images";
+import { characters, db, images, jobs } from "@/server/db";
+import { absoluteImagePath } from "@/server/images";
 
 /**
  * One-off cleanup for the mood-reactive-avatar rollback (avatar-3d.plan.md): delete every

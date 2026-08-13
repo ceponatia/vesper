@@ -81,7 +81,7 @@ type SceneGenState = {                        // no subject field: the composer 
 
 ## Game time
 
-`src/lib/clock.ts` (pure) derives `GameTime` from a story clock's `clock_minutes` + calendar-start anchor
+`apps/web/src/lib/clock.ts` (pure) derives `GameTime` from a story clock's `clock_minutes` + calendar-start anchor
 (the chat scenario carries `clock_minutes` + `calendar_start`; see
 [../character-chat/state.md](../character-chat/state.md) §Story clock). It provides:
 

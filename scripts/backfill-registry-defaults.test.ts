@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { registryDefaultSourceId } from "../src/contracts";
+import { registryDefaultSourceId } from "@/contracts";
 import { planProfileBackfill } from "./backfill-registry-defaults";
 
 const FOOT_FACTS = ["feet.arch", "feet.nails", "feet.size", "feet.toes"];

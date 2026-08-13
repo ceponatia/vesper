@@ -1,12 +1,14 @@
 {
-  // The package's own TypeScript project. It deliberately does NOT extend the
-  // root config: the point is to prove that this package typechecks on its own
+  // The package's own TypeScript project. It extends only tsconfig.base.json —
+  // the language level and strictness contract — and never the application
+  // project: the point is to prove that this package typechecks on its own
   // terms rather than because the Next application lends it aliases, ambient
-  // generated types, or its TypeScript plugin. Root `pnpm typecheck` runs this
-  // project alongside the app project, so package-internal files that no
-  // application file imports are still covered.
+  // generated types, or its TypeScript plugin. The base deliberately carries no
+  // `lib`, `types`, `jsx`, `paths` or plugins, so extending it grants nothing.
+  // Root `pnpm typecheck` runs this project alongside the app project, so
+  // package-internal files that no application file imports are still covered.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     // ES2022 + DOM, not the Next lib set. DOM is the only library that declares
     // the web-standard globals a universal package may use (`URL` is the one in
     // play today); it is NOT permission to touch `document`/`window`, which
@@ -16,16 +18,7 @@
     // `Buffer` where image bytes cross it. Evaluating a Node-only global is a
     // boundary violation the import checker fails on, so this cannot quietly
     // become a Node dependency.
-    "types": ["node"],
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "skipLibCheck": true
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules"]

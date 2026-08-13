@@ -2,7 +2,7 @@
 
 # Contracts
 
-`src/contracts/` is the pure, IO-free heart of the domain — the registries and validation schemas that everything else checks itself against. Each core system below has its own focused doc, while some modules are covered as sections within a related doc (e.g. mood under meters, personality under relationships, species under body, world under state). Start with whichever part you're touching; every doc links back here.
+`apps/web/src/contracts/` is the pure, IO-free heart of the domain — the registries and validation schemas that everything else checks itself against. Each core system below has its own focused doc, while some modules are covered as sections within a related doc (e.g. mood under meters, personality under relationships, species under body, world under state). Start with whichever part you're touching; every doc links back here.
 
 ## Reading order
 

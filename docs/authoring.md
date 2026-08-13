@@ -1,6 +1,6 @@
 # Authoring (AI-first, human-final)
 
-`src/server/authoring/` + the forge pages. Principle: **the AI drafts, the human owns.** Every field an agent fills is editable before and after save; nothing is locked behind generation.
+`apps/web/src/server/authoring/` + the forge pages. Principle: **the AI drafts, the human owns.** Every field an agent fills is editable before and after save; nothing is locked behind generation.
 
 ## Character forge
 
@@ -89,7 +89,7 @@ A forge **draft** and a create endpoint's **input** are different shapes by desi
 
 ## Social cards
 
-A **social-reaction card** is importable taboo / social-rule content (`socialReactionCardSchema`, `src/contracts/personality/cards.ts` — pure, no IO). Fields: `id`, `label`, `description`, `kind` (`social_rule | taboo` — authoring label only), `triggers` (interaction-concept ids, **not** free keywords), `severity` (0–100), an optional `defaultReaction`, and `reactionOverrides` (per-tag flips). A card carries **no raw affinity/mood delta** (the companion-app shape): one `severity` → a tier → a base intensity via a fixed ramp, and the §6 response curve (`reactions.ts`: affinity + mood + trait scale, clamped by the reaction step) does the rest — one curve shared with bespoke preferences.
+A **social-reaction card** is importable taboo / social-rule content (`socialReactionCardSchema`, `apps/web/src/contracts/personality/cards.ts` — pure, no IO). Fields: `id`, `label`, `description`, `kind` (`social_rule | taboo` — authoring label only), `triggers` (interaction-concept ids, **not** free keywords), `severity` (0–100), an optional `defaultReaction`, and `reactionOverrides` (per-tag flips). A card carries **no raw affinity/mood delta** (the companion-app shape): one `severity` → a tier → a base intensity via a fixed ramp, and the §6 response curve (`reactions.ts`: affinity + mood + trait scale, clamped by the reaction step) does the rest — one curve shared with bespoke preferences.
 
 - **Severity → tier → intensity** (helpers in `cards.ts`): `severityToTier` (thresholds 26/51/76 → `odd | disapproval | shunning | ostracized`), `tierIntensity` (the fixed `2/5/8/10` ramp), `tierDefaultKind` (the kind a tier defaults to when the card authors none). `ReactionKind` (`revulsion | disapproval | shunning | fear | accepting | enjoy | kindred_spirit | indifferent`) maps to a curve valence via `reactionKindToValence`; **`indifferent` ⇒ null** — a real "doesn't mind" verdict, not a fall-through.
 - **Triggers** are ids from the interaction-concept vocabulary (`contracts/personality/interactions.ts` — `flirt`, `proposition`, `public_display`, `boundary_push`, …), the same controlled vocabulary the reaction classifier maps prose onto. **Tag overrides** (`reactionOverrides`) key on disposition tags — canonical ids (`contracts/personality/tags.ts`) or free-form; matching runs both sides through `normalizeTag`, so case/spacing/underscore variants still hit. `resolveCardForTags` resolves **tag override (first match) › card default › tier default**; an override whose tag no character carries is a silent no-op at runtime.

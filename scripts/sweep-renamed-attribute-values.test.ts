@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attributeRegistry } from "../src/contracts/attributes";
+import { attributeRegistry } from "@/contracts/attributes";
 import {
   ID_REMOVALS,
   ID_RENAMES,

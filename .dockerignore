@@ -8,9 +8,13 @@
 # context transfer with nothing pointing at the cause (2026-08-13). Nested
 # installs only appeared once the repo grew workspace packages.
 **/node_modules/
-.next/
-*.tsbuildinfo
-next-env.d.ts
+# `**/` again, for the same reason and one more: a .dockerignore pattern with no
+# `**` is anchored at the context root, so the bare forms below stopped matching
+# the moment the Next project moved to apps/web — `.next/` would have shipped a
+# local dev build into the image (2026-08-12).
+**/.next/
+**/*.tsbuildinfo
+**/next-env.d.ts
 
 # Secrets & runtime data — never bake into the image
 .env

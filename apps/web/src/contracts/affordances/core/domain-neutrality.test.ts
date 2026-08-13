@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
  * domain compile a profile without the core learning the word "garment".
  */
 
-const CORE_DIR = path.join(process.cwd(), "src/contracts/affordances/core");
+const CORE_DIR = path.join(process.cwd(), "apps/web/src/contracts/affordances/core");
 
 /**
  * Words that would mean a domain had leaked in. Deliberately includes the

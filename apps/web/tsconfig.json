@@ -1,0 +1,29 @@
+{
+  // The Next.js application project. It owns everything environment-specific:
+  // the Next TypeScript plugin, JSX, the DOM libraries, Next's generated types,
+  // and the `@/` alias. None of that is in tsconfig.base.json, so no workspace
+  // package can inherit it.
+  //
+  // `types` is deliberately left unset, which keeps TypeScript's default
+  // behaviour of including every `@types/*` package visible to this workspace —
+  // the same ambient set the application had while it lived at the repo root.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "next.config.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

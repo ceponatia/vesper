@@ -1,14 +1,20 @@
 # Testing
 
-Vitest 4, one root config (`vitest.config.ts`) declaring three **projects**:
+Vitest 4, one root config (`vitest.config.ts`) declaring one **project** per workspace that owns tests:
 
-| Project      | Covers                                             | Setup               |
-| ------------ | -------------------------------------------------- | ------------------- |
-| `app`        | `src/**` + `scripts/**`, minus `*.int.test.ts`     | `src/test/setup.ts` |
-| `app-int`    | `src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `src/test/setup.ts` |
-| `image-core` | `packages/image-core/src/**`                       | none — by design    |
+| Project           | Covers                                                      | Setup                        |
+| ----------------- | ----------------------------------------------------------- | ---------------------------- |
+| `app`             | `apps/web/src/**` + `scripts/**`, minus `*.int.test.ts`     | `apps/web/src/test/setup.ts` |
+| `app-int`         | `apps/web/src/**` + `scripts/**` `*.int.test.ts` (needs DB) | `apps/web/src/test/setup.ts` |
+| `contracts`       | `packages/contracts/src/**`                                 | none — by design             |
+| `image-core`      | `packages/image-core/src/**`                                | none — by design             |
+| `image-replicate` | `packages/image-replicate/src/**`                           | none — by design             |
 
-`src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
+`apps/web/src/test/setup.ts` forces demo mode for the two application projects: it sets `AI_FAKE=1` and deletes `OPENROUTER_API_KEY` / `REPLICATE_API_TOKEN`, so no application test can hit a real provider. Workspace packages get **no** application setup and no `@/` alias — a package test must prove something about the package, not about Vesper's configuration ([monorepo-image-core.spec.guardrails.md](developer-notes/monorepo-image-core.spec.guardrails.md)). They still run from the repository root, in the same commands as everything else.
+
+`scripts/**` tests run in the `app` project on purpose. They are the repository's tripwire tests — they scan application source and import `@/server/test-support` — so they need the application alias and the same demo-mode setup as the code they inspect.
+
+**The runner's working directory is the repository root**, and several tripwire tests rely on it: they locate source with `process.cwd()` plus a repo-relative path such as `apps/web/src/app/api`. A test that needs to name a file uses that form, never a path relative to the app.
 
 `pnpm test` runs everything that needs no network; DB-backed suites need the dev Postgres up.
 
@@ -16,40 +22,40 @@ Vitest 4, one root config (`vitest.config.ts`) declaring three **projects**:
 
 Each layer names its file glob, what it covers, and the IO it needs.
 
-- **contracts** (`src/contracts/**/*.test.ts`) — registry invariants (unique ids, valid
+- **contracts** (`apps/web/src/contracts/**/*.test.ts`) — registry invariants (unique ids, valid
   enums, alias fan-out — one alias may resolve to several attributes), parse/resolve
   round-trips, attribute precedence, condition logic, wardrobe visibility, chat
   scene-memory merge/switch (caps, dedupe oldest-out, current-place protection, degraded
   parse). No IO.
-- **lib** (`src/lib/**/*.test.ts`) — parseOr/parseOrNull, game-clock math, client API error
+- **lib** (`apps/web/src/lib/**/*.test.ts`) — parseOr/parseOrNull, game-clock math, client API error
   envelope, chat SSE-stream parsing, **speaker segmenter edge cases** (`segmenter.ts` —
   dialogue tags + the chat lane's standalone-quote attribution), the successor
   `lib/simulation/*` pure rules (space, activities, commitments, engagements, perception,
   knowledge, bodies, LOD, …). No IO.
-- **engine unit** (`src/server/engine/**/*.test.ts`) — demo-mode generators, chat prompt
+- **engine unit** (`apps/web/src/server/engine/**/*.test.ts`) — demo-mode generators, chat prompt
   builders (structural assertions, not snapshots of full text), the chat extraction field
   library, chat one-turn reads (`chat-intent.ts` — scene movement, sense-targeted focus,
   reply-discipline gates: hook cadence + intimate check-in), the reply-stream watchdog
   (`withStreamTimeouts` — first-token/overall trip aborts + passes tokens through) and the
   bounded lock-wait (`acquireKeyedLockWithin` — acquires/waits/times-out, re-issuing its
   stop) behind the atomic rerun. No IO (fake rows).
-- **memory unit** (`src/server/memory/**/*.test.ts`) — supersedence gating, fact lifecycle,
+- **memory unit** (`apps/web/src/server/memory/**/*.test.ts`) — supersedence gating, fact lifecycle,
   fused retrieval merge/dedup, witness-eligibility filtering. IO: mocked embeddings
   (deterministic vectors).
-- **server unit** (`src/server/{api,authoring,images}/**/*.test.ts`) — rate limiting, error
+- **server unit** (`apps/web/src/server/{api,authoring,images}/**/*.test.ts`) — rate limiting, error
   envelopes, body schemas; character-forge grounding (attributes, traits, outfits, drives,
   social cards) plus demo-mode forge runs; image prompt builders, monogram SVG, atomic webp
   writes. No IO.
-- **api unit** (`src/app/api/**/_shared/*.test.ts`) — SSE framing, engine-error → HTTP
+- **api unit** (`apps/web/src/app/api/**/_shared/*.test.ts`) — SSE framing, engine-error → HTTP
   status mapping, turn event streaming, status payloads. No IO.
-- **components** (`src/components/**/*.test.ts`) — pure logic extracted from components
+- **components** (`apps/web/src/components/**/*.test.ts`) — pure logic extracted from components
   (draft merge/seed, attribute editor helpers, inline markup, message-markup span display +
   `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap
   targeting, monogram initials) — no DOM rendering. No IO.
 - **fixtures** (`scripts/fixtures/harbor-house.test.ts`) — the seed fixture validates
   against the contracts registries, so a vocabulary change that breaks the seed fails in
   tests, not at seed time. No IO.
-- **db integration** (`src/**/*.int.test.ts` — engine, memory, images) — the **successor
+- **db integration** (`apps/web/src/**/*.int.test.ts` — engine, memory, images) — the **successor
   simulation engine** (`server/engine/simulation/*.int.test.ts` — branch/command/event
   durability, idempotency, typed holdings, injected-crash atomicity, the scheduler, and the
   gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe,
@@ -58,7 +64,7 @@ Each layer names its file glob, what it covers, and the IO it needs.
   probe at collection and self-skip locally with a stderr warning if unreachable; CI applies
   migrations, runs the gate targets explicitly, and treats an unavailable or unmigrated
   database as failure.
-- **api** (`src/app/api/**/*.int.test.ts`) — route handlers called directly with mocked auth
+- **api** (`apps/web/src/app/api/**/*.int.test.ts`) — route handlers called directly with mocked auth
   (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo
   mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the
   guard row; stops an in-flight reply then succeeds; byte-identical transcript + 409 when the
@@ -71,7 +77,7 @@ Each layer names its file glob, what it covers, and the IO it needs.
 Two homes, split by the purity fence (`eslint.config.mjs` bans `@/server/**`
 imports from contracts/lib, tests included):
 
-- **`src/server/test-support/`** (import via the `@/server/test-support`
+- **`apps/web/src/server/test-support/`** (import via the `@/server/test-support`
   barrel — lint-enforced) — for server-side suites. Auth mock
   (`routeAuthModule`/`bindAuthUser`/`withAuthUser` — restore-safe role swaps),
   request builders (`apiRequest`/`routeCtx`), response assertions
@@ -91,7 +97,7 @@ imports from contracts/lib, tests included):
   **No production code may import this barrel** — several modules import vitest.
   The one production consumer (the authorization seam's legacy-mode read) lives
   in the engine (`simulation/legacy-test-mode.ts`) and is re-exported here.
-- **`src/test/`** (import via `@/test/...`) — pure helpers importable from
+- **`apps/web/src/test/`** (import via `@/test/...`) — pure helpers importable from
   contracts/lib tests: registry invariants (`expectUniqueIds`,
   `expectAllValidate`, `expectRefsResolve`, `expectCaseInsensitiveLookup`,
   `expectContiguousBands`), sim command/event envelope builders
@@ -100,7 +106,7 @@ imports from contracts/lib, tests included):
   (`codes`/`expectDiagnostics`/`expectDiagnostic`/`expectCleanSink`). These
   modules import only contracts/lib/vitest/zod — never `@/server`.
 - Garment blueprint fixtures are colocated at
-  `src/contracts/items/garment-test-fixtures.ts` (contracts-only imports).
+  `apps/web/src/contracts/items/garment-test-fixtures.ts` (contracts-only imports).
 
 Prefer deriving expectations from the registry/schema under test over
 hand-enumerating entries (the pattern in `attributes/registry.test.ts` and
@@ -110,7 +116,7 @@ force test edits, while broken production logic and crossed policy tripwires
 
 ## Rules
 
-- LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `src/test/setup.ts` — don't re-set it per file) returning canned typed results; tests exercise real parsing/degradation paths.
+- LLM calls are **never** mocked at the fetch layer — `server/ai` exposes a fake provider (`AI_FAKE=1` / demo mode, forced globally by `apps/web/src/test/setup.ts` — don't re-set it per file) returning canned typed results; tests exercise real parsing/degradation paths.
 - Degradation tests assert the fallback **and** the diagnostic code ([resilience.md](resilience.md) §8) — via `@/test/diagnostics` so the idiom stays uniform.
 - Every bug fix lands with the regression test that would have caught it.
 - `pnpm jscpd` covers test files too (threshold 3; they were excluded until
@@ -178,4 +184,4 @@ Fixtures inserting `images` rows must go through **`canonicalImageRow`**
 path to be exactly `images/<owner_id>/<id>.webp`, and the helper derives the id
 and the path together so a suite cannot pick one without the other.
 
-The probe lives in one place, `src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it as of 2026-07-28** — the last 51 inline copies were converted, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.
+The probe lives in one place, `apps/web/src/server/test-support/int-db.ts` (`probeIntegrationDb(suite, table)`), imported through the `@/server/test-support` barrel (the simulation suites get it via `simulationSuiteHarness`). **Every `.int.test.ts` suite uses it as of 2026-07-28** — the last 51 inline copies were converted, so strict mode genuinely gates the whole integration surface. A new suite must use the helper (or the harness) from day one; an inline probe silently opts the suite out of the release gate.

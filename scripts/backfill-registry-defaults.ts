@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { and, eq, isNull } from "drizzle-orm";
-import { materializeBodyDefaults, registryDefaultSourceId, type AttributeValue } from "../src/contracts";
-import { characters, db, personas } from "../src/server/db";
+import { materializeBodyDefaults, registryDefaultSourceId, type AttributeValue } from "@/contracts";
+import { characters, db, personas } from "@/server/db";
 
 /**
  * Idempotent backfill for persisted-baseline registry defaults

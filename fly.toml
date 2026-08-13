@@ -9,7 +9,12 @@ primary_region = 'iad'
 [build]
 
 [deploy]
-  release_command = 'pnpm db:migrate'
+  # `-w` pins this to the WORKSPACE ROOT script. The repository root and
+  # apps/web are both pnpm workspaces now, so an unqualified `pnpm db:migrate`
+  # would become ambiguous the moment the app ever defines a script of the same
+  # name — and a release command that silently ran the wrong migration is not a
+  # failure you find quickly.
+  release_command = 'pnpm -w run db:migrate'
 
 [[mounts]]
   source = 'vesper_data'

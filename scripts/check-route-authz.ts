@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The route-handler wrappers that carry the ownership (or admin/support) check
- * themselves, all exported from `src/server/api/authz.ts`. A resource-ID route
- * mentioning none of them while using bare `withUser` is the shape this gate
- * rejects.
+ * themselves, all exported from `apps/web/src/server/api/authz.ts`. A
+ * resource-ID route mentioning none of them while using bare `withUser` is the
+ * shape this gate rejects.
  *
- * Exported so `src/server/api/ownership-guardrail.test.ts` can cross-check it
+ * Exported so `scripts/ownership-guardrail.test.ts` can cross-check it
  * against its own hand-maintained OWNER_ASSERTING_HELPERS list — see the
  * "keeps the two route-authz allow-lists distinct and live" test there for the
  * relationship between the two (they name different mechanisms and must stay
@@ -26,7 +26,43 @@ export const APPROVED_ROUTE_AUTHZ_WRAPPERS = [
 ] as const;
 
 const approvedWrappers = new RegExp(String.raw`\b(${APPROVED_ROUTE_AUTHZ_WRAPPERS.join("|")})\b`);
-const resourceRoute = /src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
+// Anchored at the application workspace, not merely at `src/`: after the app
+// moved to apps/web an unanchored pattern would still match by coincidence, and
+// this gate has to fail loudly rather than keep working by accident.
+const resourceRoute = /^apps\/web\/src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
+
+/**
+ * Paths whose CONTENT a range changed, from `git diff --name-status`.
+ *
+ * A pure rename (`R100`) is excluded, and that exclusion is the point: this gate
+ * reads a file's source, so a file that only moved has already been judged
+ * wherever it used to live. Without it, one repository-wide directory move
+ * re-audits every route in the tree at once — which is what the `apps/web` move
+ * did (2026-08-12), turning a per-change gate into a 30-route wall of findings
+ * about code nobody had touched.
+ *
+ * A rename WITH edits (`R087`) still counts, under its destination path. So
+ * does a copy of any score: `C100` puts existing content at a NEW path, and a
+ * new route is exactly what this gate exists to read.
+ */
+export function contentChangedPaths(nameStatus: string): string[] {
+  const files: string[] = [];
+  for (const line of nameStatus.split("\n")) {
+    if (line.trim() === "") continue;
+    // Renames and copies are `<status>\t<source>\t<destination>`; everything
+    // else is `<status>\t<path>`.
+    const fields = line.split("\t");
+    const status = fields[0] ?? "";
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const destination = fields[2]?.trim();
+      if (destination !== undefined && destination !== "" && status !== "R100") files.push(destination);
+      continue;
+    }
+    const path = fields[1]?.trim();
+    if (path !== undefined && path !== "") files.push(path);
+  }
+  return files;
+}
 
 function changedFiles(): string[] {
   const explicitBase = process.env.ROUTE_AUTHZ_BASE;
@@ -36,10 +72,15 @@ function changedFiles(): string[] {
 
   for (const range of candidates) {
     try {
-      return execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMR", range], { encoding: "utf8" })
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+      // `-l0` lifts git's rename-detection limit. With it off, a diff larger
+      // than the limit silently degrades renames into add+delete pairs, and
+      // every moved file would come back as new content.
+      const nameStatus = execFileSync(
+        "git",
+        ["diff", "--name-status", "--find-renames", "-l0", "--diff-filter=ACMR", range],
+        { encoding: "utf8" },
+      );
+      return contentChangedPaths(nameStatus);
     } catch {
       // Try the next locally available base.
     }

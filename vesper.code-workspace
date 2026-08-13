@@ -34,7 +34,7 @@
     // ── Noise control ─────────────────────────────────────────────────────
     "files.exclude": {
       "**/.next": true,
-      "tsconfig.tsbuildinfo": true
+      "**/tsconfig.tsbuildinfo": true
     },
     "search.exclude": {
       "**/.next": true,
@@ -83,7 +83,7 @@
         "type": "chrome",
         "request": "launch",
         "url": "http://localhost:3200",
-        "webRoot": "${workspaceFolder}"
+        "webRoot": "${workspaceFolder}/apps/web"
       },
       {
         // Debug the test file open in the editor (unit or .int.test —

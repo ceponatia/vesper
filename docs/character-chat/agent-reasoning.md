@@ -13,7 +13,7 @@ The setting is operational experiment configuration, not fiction state. It is st
 | `synthesis` — Synthesis             | Continuity profile plus the detached meanwhile pass and location-sketch agent.     |
 | `broad_post_turn` — Broad post-turn | Synthesis profile plus long-term memory extraction and the reaction pulse.         |
 
-The matrix is an allow-list in `src/lib/agent-reasoning.ts`. New or unknown helper legs fail closed to reasoning disabled. Intake, romantic-permission decisions, NPC scene decisions, and contact/authority-sensitive classifiers are deliberately outside the matrix and remain reasoning-off under every profile.
+The matrix is an allow-list in `apps/web/src/lib/agent-reasoning.ts`. New or unknown helper legs fail closed to reasoning disabled. Intake, romantic-permission decisions, NPC scene decisions, and contact/authority-sensitive classifiers are deliberately outside the matrix and remain reasoning-off under every profile.
 
 ## Provider and budget behavior
 
@@ -28,7 +28,7 @@ The UI reads and writes through the self-scoped admin route:
 - `GET /api/admin/self/agent-reasoning/:chatId`
 - `PATCH /api/admin/self/agent-reasoning/:chatId` with `{ "profile": "off" | "continuity" | "synthesis" | "broad_post_turn" }`
 
-The canonical implementation is `src/app/api/admin/agent-reasoning/[chatId]/route.ts`; the `/self/` route re-exports it. Both the wrapper and the update statement enforce owner-admin access. Unknown stored values heal to `off`; invalid PATCH values are rejected.
+The canonical implementation is `apps/web/src/app/api/admin/agent-reasoning/[chatId]/route.ts`; the `/self/` route re-exports it. Both the wrapper and the update statement enforce owner-admin access. Unknown stored values heal to `off`; invalid PATCH values are rejected.
 
 ## Telemetry and comparison
 
@@ -40,11 +40,11 @@ This distinction matters because a profile can be selected while a particular le
 
 | Concern                                                            | File                                                                                             |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Profile IDs, allow-list, provider options, token and timeout rules | `src/lib/agent-reasoning.ts`                                                                     |
-| Persisted column                                                   | `src/server/db/schema.ts` / `drizzle/0097_agent_reasoning_profiles.sql`                          |
-| Server-side profile lookup                                         | `src/server/ai/agent-reasoning.ts`                                                               |
-| Owner-admin API                                                    | `src/app/api/admin/agent-reasoning/[chatId]/route.ts`                                            |
-| Conversation-menu selector                                         | `src/components/chat/agent-reasoning-select.tsx`                                                 |
-| Covered post-turn and detached agents                              | `src/server/engine/chat-memory.ts`, `chat-state.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
-| Success/failure attribution                                        | `src/server/ai/agent-failures.ts`, `generate-checked.ts`, `generate-timeout.ts`                  |
-| Inspector display                                                  | `src/components/chat/chat-inspector-agent-health.tsx`                                            |
+| Profile IDs, allow-list, provider options, token and timeout rules | `apps/web/src/lib/agent-reasoning.ts`                                                                     |
+| Persisted column                                                   | `apps/web/src/server/db/schema.ts` / `drizzle/0097_agent_reasoning_profiles.sql`                          |
+| Server-side profile lookup                                         | `apps/web/src/server/ai/agent-reasoning.ts`                                                               |
+| Owner-admin API                                                    | `apps/web/src/app/api/admin/agent-reasoning/[chatId]/route.ts`                                            |
+| Conversation-menu selector                                         | `apps/web/src/components/chat/agent-reasoning-select.tsx`                                                 |
+| Covered post-turn and detached agents                              | `apps/web/src/server/engine/chat-memory.ts`, `chat-state.ts`, `chat-meanwhile.ts`, `chat-scene-sketch.ts` |
+| Success/failure attribution                                        | `apps/web/src/server/ai/agent-failures.ts`, `generate-checked.ts`, `generate-timeout.ts`                  |
+| Inspector display                                                  | `apps/web/src/components/chat/chat-inspector-agent-health.tsx`                                            |

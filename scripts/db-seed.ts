@@ -1,11 +1,11 @@
 import "dotenv/config";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { characterProfileSchema, itemDefinitionSchema, type CharacterProfile } from "../src/contracts";
-import { DiagnosticCollector } from "../src/contracts/diagnostics";
-import { newId } from "../src/lib/ids";
-import { characters, db, items, locations, users, type Db } from "../src/server/db";
-import { refreshSearchEmbedding } from "../src/server/memory";
-import { DEV_PASSWORD, ensureDevCredential } from "../src/server/auth";
+import { characterProfileSchema, itemDefinitionSchema, type CharacterProfile } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { newId } from "@/lib/ids";
+import { characters, db, items, locations, users, type Db } from "@/server/db";
+import { refreshSearchEmbedding } from "@/server/memory";
+import { DEV_PASSWORD, ensureDevCredential } from "@/server/auth";
 import { harborHouse, SEED_TAG, type SeedWorldFixture } from "./fixtures/harbor-house";
 
 /**

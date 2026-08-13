@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { and, eq } from "drizzle-orm";
-import { characterChatState, characters, db, personas } from "../src/server/db";
+import { characterChatState, characters, db, personas } from "@/server/db";
 
 /**
  * One-off, idempotent stored-value sweep for registry vocabulary changes —

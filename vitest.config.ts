@@ -5,13 +5,23 @@ import { configDefaults, defineConfig } from "vitest/config";
  * Test projects, one per workspace that owns tests.
  *
  * The split exists so a package's behavior is never established by another
- * workspace's test environment: `src/test/setup.ts` forces the application into
- * demo mode (fake AI, no provider keys), and a package test that quietly
- * depended on it would be proving something about Vesper's configuration rather
- * than about the package. Every package project therefore runs with no setup
- * file and no `@/` alias, and resolves package names through the installed
- * workspace rather than through an alias pointing at source
+ * workspace's test environment: `apps/web/src/test/setup.ts` forces the
+ * application into demo mode (fake AI, no provider keys), and a package test
+ * that quietly depended on it would be proving something about Vesper's
+ * configuration rather than about the package. Every package project therefore
+ * runs with no setup file and no `@/` alias, and resolves package names through
+ * the installed workspace rather than through an alias pointing at source
  * (monorepo-image-core.spec.guardrails.md).
+ *
+ * This config stays at the repository root, and so does the runner's working
+ * directory: several application and script tests locate source through
+ * `process.cwd()`, and keeping the root as the run root is what makes those
+ * paths mean the repository rather than one workspace inside it.
+ *
+ * `scripts/**` tests run in the `app` project on purpose. They are the
+ * repository's tripwire tests — they scan application source and import
+ * `@/server/test-support` — so they need the application alias and the same
+ * demo-mode setup the code they inspect runs under.
  *
  * `app` and `app-int` are the same application suite split by cost: integration
  * tests need Postgres, unit tests do not. The split is expressed HERE rather
@@ -20,8 +30,8 @@ import { configDefaults, defineConfig } from "vitest/config";
  * command-line filter would silently stop applying.
  */
 
-const applicationAliases = { "@": path.resolve(__dirname, "./src") };
-const applicationSetup = ["./src/test/setup.ts"];
+const applicationAliases = { "@": path.resolve(__dirname, "./apps/web/src") };
+const applicationSetup = ["./apps/web/src/test/setup.ts"];
 
 export default defineConfig({
   test: {
@@ -36,7 +46,7 @@ export default defineConfig({
         test: {
           name: "app",
           environment: "node",
-          include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
+          include: ["apps/web/src/**/*.test.ts", "scripts/**/*.test.ts"],
           exclude: [...configDefaults.exclude, "**/*.int.test.ts"],
           setupFiles: applicationSetup,
         },
@@ -46,7 +56,7 @@ export default defineConfig({
         test: {
           name: "app-int",
           environment: "node",
-          include: ["src/**/*.int.test.ts", "scripts/**/*.int.test.ts"],
+          include: ["apps/web/src/**/*.int.test.ts", "scripts/**/*.int.test.ts"],
           setupFiles: applicationSetup,
         },
       },

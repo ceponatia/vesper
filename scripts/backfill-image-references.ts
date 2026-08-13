@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { sceneReferenceListSchema } from "@vesper/image-core";
-import { parseOr } from "../src/lib/parse";
-import { db, imageReferences, images } from "../src/server/db";
+import { parseOr } from "@/lib/parse";
+import { db, imageReferences, images } from "@/server/db";
 
 /**
  * One-time, idempotent backfill: copy each scene image's legacy
