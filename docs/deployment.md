@@ -194,6 +194,13 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
 
 - **`husky: not found` during `pnpm prune --prod`** — the original build failure;
   fixed by dropping the prune + `HUSKY=0` (see Dockerfile).
+- **`archive/tar: unknown file mode ?rwxr-xr-x` while transferring build
+  context** — a Windows junction reached the tar. `.dockerignore` patterns are
+  anchored at the context root unless they start with `**/`, so a bare
+  `node_modules/` excluded only the top-level install and left every
+  `packages/*/node_modules` — which pnpm fills with junctions — in the context.
+  The patterns are `**/`-prefixed for that reason; a new ignore entry for
+  anything that can exist per-package needs the same prefix.
 - **`unauthorized` before the build starts** — auth, not the Dockerfile:
   `fly auth login`; confirm org/app ownership; or `fly deploy --local-only`.
 - **Build-time `[Better Auth] Base URL is not set` / `default secret`** — benign
