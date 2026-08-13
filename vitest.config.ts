@@ -2,26 +2,42 @@ import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 
 /**
- * Test projects, one per workspace that owns tests.
+ * The APPLICATION test projects — and only those.
  *
- * The split exists so a package's behavior is never established by another
- * workspace's test environment: `apps/web/src/test/setup.ts` forces the
- * application into demo mode (fake AI, no provider keys), and a package test
- * that quietly depended on it would be proving something about Vesper's
- * configuration rather than about the package. Every package project therefore
- * runs with no setup file and no `@/` alias, and resolves package names through
- * the installed workspace rather than through an alias pointing at source
+ * Every workspace package owns its own `vitest.config.ts` and its own `test`
+ * script, so `pnpm test` at the root runs this config's `app` project and then
+ * `pnpm -r run test`, which discovers the packages by walking the workspace.
+ * Adding a package therefore adds no project here and no name to any root
+ * script; forgetting to register one is no longer a way to lose a suite.
+ *
+ * `app` and `app-int` stay ROOT-OWNED on purpose — the documented exception.
+ * Two properties force it, and both are properties of the repository rather
+ * than of `apps/web`:
+ *
+ *   - the run root must be the REPOSITORY root. Several application and script
+ *     tests locate source through `process.cwd()` plus a repo-relative path
+ *     (`apps/web/src/app/api`, the Dockerfile, `eslint.config.mjs`), so a
+ *     config rooted at `apps/web` would resolve them one directory too deep.
+ *   - the suite spans TWO workspaces. `scripts/**` tests are the repository's
+ *     tripwire tests — they scan application source and import
+ *     `@/server/test-support` — so they need the application alias and the same
+ *     demo-mode setup (`apps/web/src/test/setup.ts`, which forces fake AI and
+ *     strips provider keys) as the code they inspect. A config inside
+ *     `apps/web` could not claim them.
+ *
+ * `apps/web` consequently defines NO `test` script: its suite is already this
+ * config's `app`/`app-int` projects, and a delegating script would either run
+ * the same tests twice or hand them a working directory that breaks them.
+ * `pnpm -r run test` simply skips a workspace without the script, so the
+ * absence is the whole mechanism. (`typecheck` has no such constraint, so
+ * `apps/web` owns that one like every package.)
+ *
+ * Package projects are gone from here, and the properties they were given
+ * survive in each package's own config: no setup file and no `@/` alias, so a
+ * package test proves something about the package rather than about Vesper's
+ * configuration, and workspace dependencies resolve through the installed
+ * workspace link rather than an alias pointing at source
  * (monorepo-image-core.spec.guardrails.md).
- *
- * This config stays at the repository root, and so does the runner's working
- * directory: several application and script tests locate source through
- * `process.cwd()`, and keeping the root as the run root is what makes those
- * paths mean the repository rather than one workspace inside it.
- *
- * `scripts/**` tests run in the `app` project on purpose. They are the
- * repository's tripwire tests — they scan application source and import
- * `@/server/test-support` — so they need the application alias and the same
- * demo-mode setup the code they inspect runs under.
  *
  * `app` and `app-int` are the same application suite split by cost: integration
  * tests need Postgres, unit tests do not. The split is expressed HERE rather
@@ -58,30 +74,6 @@ export default defineConfig({
           environment: "node",
           include: ["apps/web/src/**/*.int.test.ts", "scripts/**/*.int.test.ts"],
           setupFiles: applicationSetup,
-        },
-      },
-      {
-        test: {
-          name: "contracts",
-          root: path.resolve(__dirname, "./packages/contracts"),
-          environment: "node",
-          include: ["src/**/*.test.ts"],
-        },
-      },
-      {
-        test: {
-          name: "image-core",
-          root: path.resolve(__dirname, "./packages/image-core"),
-          environment: "node",
-          include: ["src/**/*.test.ts"],
-        },
-      },
-      {
-        test: {
-          name: "image-replicate",
-          root: path.resolve(__dirname, "./packages/image-replicate"),
-          environment: "node",
-          include: ["src/**/*.test.ts"],
         },
       },
     ],

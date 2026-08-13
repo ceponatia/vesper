@@ -3,8 +3,9 @@
   // only tsconfig.base.json — the language level and strictness contract — and
   // never the application project: the point is to prove the transport
   // typechecks on its own terms rather than because the Next application lends
-  // it aliases or ambient generated types. Root `pnpm typecheck` runs it
-  // alongside the others.
+  // it aliases or ambient generated types. `pnpm typecheck` in this package
+  // runs it; the root's recursive typecheck reaches it without naming the
+  // package.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     // ES2022 + DOM, and here DOM is load-bearing rather than a concession: the
@@ -16,6 +17,9 @@
     "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  // `vitest.config.ts` is listed so the package's own test config is covered by
+  // a project: type-aware ESLint parses only files a tsconfig claims, and an
+  // unclaimed config file fails the lint gate rather than going unchecked.
+  "include": ["src/**/*.ts", "vitest.config.ts"],
   "exclude": ["node_modules"]
 }
