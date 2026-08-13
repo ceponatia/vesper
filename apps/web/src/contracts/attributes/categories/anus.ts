@@ -24,7 +24,7 @@ import {
  * image-prompt re-evaluation, owner ruling 2026-07-23): today all renders view
  * the character from the front, where anal detail never shows and would only
  * confuse the model, so the anus category is deliberately absent from the image
- * exposure maps (server/images/prompts.ts). Revisit when rear/exposure framing
+ * exposure maps (server/images/prompts-*.ts). Revisit when rear/exposure framing
  * lands.
  */
 export const anusGroup = defineAttributeGroup("anus", [

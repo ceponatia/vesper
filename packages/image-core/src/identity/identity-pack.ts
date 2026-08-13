@@ -10,7 +10,7 @@ import type { DiagnosticSink } from "@vesper/contracts";
  * derived from, HOW it was cropped, and WHAT was measured about it. Everything
  * here is data and vocabulary: no geometry (that is `packages/image-core/src/identity/identity-pack-crop.ts`),
  * no thresholds (`packages/image-core/src/identity/identity-pack-policy.ts`), no persistence
- * (`src/server/images/identity-packs.ts`).
+ * (`src/server/images/identity-pack-*.ts`).
  *
  * Two rules shape every schema below:
  *

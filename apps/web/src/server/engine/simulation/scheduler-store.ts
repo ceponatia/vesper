@@ -47,7 +47,7 @@ import {
   submitDurableRaisePressure,
   submitDurableResolveCommitmentDeadline,
 } from "./commitment-store";
-import { submitDurableRunHouseholdRestock } from "./household-store";
+import { submitDurableRunHouseholdRestock } from "./household-lots";
 import { submitDurableResolveItemConditionThreshold, submitDurableTransferItem } from "./material-store";
 import { submitDurableRunRoutinePolicy } from "./routine-store";
 import { submitDurableJourneyArrival } from "./space-store";

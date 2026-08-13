@@ -3878,7 +3878,7 @@ export const simItemConditionMeters = pgTable(
  * `@/contracts/simulation/material-condition`) — so the column is dropped
  * and the pure `ItemConditionModifier.visibility` field is reconstructed as
  * the literal `"obvious"` at read time instead of persisted (mirrors
- * `activity-store.ts`'s `itemConditionModifierFromRow`/
+ * `item-condition-store.ts`'s `itemConditionModifierFromRow`/
  * `itemConditionModifierRowInsert`, the canonical row mappers). The
  * `(branch_id, item_id)` FK is DEFERRABLE INITIALLY DEFERRED — drizzle
  * cannot express deferrability (hand-edited in the migration, the 0069

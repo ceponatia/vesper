@@ -14,7 +14,8 @@ import {
   PROFILE_POLICY_DEFAULTS_V1,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { ensureIdentityPack, projectIdentityPackPolicy } from "./identity-packs";
+import { ensureIdentityPack } from "./identity-pack-ensure";
+import { projectIdentityPackPolicy } from "./identity-pack-store";
 
 /**
  * Profile-aware identity reference evaluation — the pack system's whole surface

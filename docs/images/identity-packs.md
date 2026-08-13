@@ -4,7 +4,7 @@ measured about it ([developer-notes/image-identity-packs.plan.md](../developer-n
 [spec](../developer-notes/image-identity-packs.spec.md)). One **current** pack per character, derived from that
 character's **current canonical portrait** — never a gallery image, never an old avatar — keyed by a **SHA-256 over
 the stored normalized WebP bytes**, so bytes that merely *look* the same are a different source. Revisions are **rows**
-in `image_identity_packs` (migration 0101, `images/identity-packs.ts`): a partial unique index enforces one `current`
+in `image_identity_packs` (migration 0101, the `images/identity-pack-*` service modules): a partial unique index enforces one `current`
 row per character, and each revision carries its status (`pending`/`ready`/`unusable`/`failed`/`stale`/`superseded`),
 crop method (`detector`/`heuristic`/`manual`), geometry, measurements, warning codes and review actor. The **pack row,
 not the crop's `images.meta`, is the authority** for which crop is current.
@@ -31,7 +31,7 @@ crop moved" is always deliberate. The v1 values are conservative placeholders; b
 thresholds are `null` — defined, not armed.
 
 **A stored verdict is not eternal truth.** Rows persist *measurements*, never `quality.accepted`, so a revision stamped
-with an older `policyVersion` is **re-judged on read** by `projectIdentityPackPolicy` (`images/identity-packs.ts`) —
+with an older `policyVersion` is **re-judged on read** by `projectIdentityPackPolicy` (`images/identity-pack-store.ts`) —
 one helper shared by all three read seams (`ensureIdentityPack`'s reuse path, `getIdentityPackForOwner`,
 `evaluateIdentityPackForProfile`), so a policy bump can never leave one of them quoting a verdict the others dropped.
 It is a **projection, not a repair**: the row keeps the status and warnings it was finalized with (a revision is a
@@ -121,7 +121,7 @@ anchors on the library avatar exactly as described in [pipelines.md](pipelines.m
 [the trial spec](../developer-notes/image-identity-packs.spec.trial.md): four tables (migrations
 0102/0103 — `image_identity_pack_trial_runs`/`_cells`/`_grades`/`_verdicts`; one verdict row per
 profile/strategy slot, upserted so a concurrent ruling can never clobber another), a service
-(`images/identity-pack-trial.ts`), owner-admin routes under `/api/admin/self/identity-packs/trial`, and a Settings →
+(the `images/identity-pack-trial-*` modules: store, plan, execute, render, review), owner-admin routes under `/api/admin/self/identity-packs/trial`, and a Settings →
 Identity trials page. A run expands characters × profiles × strategies × six checked-in prompt fixtures (two per
 identity-critical task) into at most 96 cells, resolves each through `ensureIdentityPack` (purpose `admin_trial`) +
 `evaluateIdentityPackForProfile`, and **refuses — never trims** — blocked packs, over-capacity reference sets, and

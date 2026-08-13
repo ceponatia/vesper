@@ -19,7 +19,7 @@ import { imageProfileOperationSchema, imageProfileTaskSchema } from "../models/i
  * all) — and never both at once, or the grade could not be attributed to either.
  * Everything here is data and vocabulary: the pure expansion, pairing, and
  * aggregation logic lives in `packages/image-core/src/identity/identity-pack-trial-planning.ts`,
- * persistence and rendering in `src/server/images/identity-pack-trial.ts`.
+ * persistence and rendering in `src/server/images/identity-pack-trial-*.ts`.
  *
  * The identity vocabulary (strategies, roles, crop methods, crop rectangles) is
  * imported from `./identity-pack` rather than restated — a strategy the trial can

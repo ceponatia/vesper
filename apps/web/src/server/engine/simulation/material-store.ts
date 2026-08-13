@@ -1,24 +1,19 @@
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
-import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { claimHoldingActivityPhases } from "@vesper/simulation-core/contracts/activities";
 import {
   consumeItemCommandResultSchema,
   consumeItemCommandSchema,
   destroyItemCommandResultSchema,
   destroyItemCommandSchema,
-  itemLocusSchema,
   materialBranchSeedSchema,
   setItemOwnershipCommandResultSchema,
   setItemOwnershipCommandSchema,
-  simulationMaterialItemSchema,
   transferItemCommandResultSchema,
   transferItemCommandSchema,
   type ConsumeItemCommand,
   type ConsumeItemCommandResult,
   type DestroyItemCommand,
   type DestroyItemCommandResult,
-  type ItemGoneBasis,
-  type ItemLocus,
   type SetItemOwnershipCommand,
   type SetItemOwnershipCommandResult,
   type SimulationMaterialItem,
@@ -28,31 +23,13 @@ import {
 import {
   applyItemConditionSourceCommandResultSchema,
   applyItemConditionSourceCommandSchema,
-  itemConditionMeterStateSchema,
-  itemConditionModifierSchema,
-  itemConditionRegistryVersion,
-  itemConditionRegistryVersionSchema,
   resolveItemConditionThresholdCommandResultSchema,
   resolveItemConditionThresholdCommandSchema,
   type ApplyItemConditionSourceCommand,
   type ApplyItemConditionSourceCommandResult,
-  type ItemConditionInitializedEvent,
-  type ItemConditionMeterState,
-  type ItemConditionModifier,
-  type ItemConditionModifierAppliedEvent,
-  type ItemConditionModifierEndedEvent,
-  type ItemConditionThresholdCrossedEvent,
   type ResolveItemConditionThresholdCommand,
   type ResolveItemConditionThresholdCommandResult,
 } from "@vesper/simulation-core/contracts/material-condition";
-import {
-  itemTransferFeedConsumerKind,
-  itemTransferFeedProjectionSchemaVersion,
-} from "@vesper/simulation-core/contracts/outbox";
-import {
-  itemConditionThresholdTriggerKind,
-  type TriggerScheduledEvent,
-} from "@vesper/simulation-core/contracts/scheduler";
 import {
   materialsSeedProjection,
   resolveConsumeItemFromView,
@@ -60,40 +37,21 @@ import {
   resolveRootLocus,
   resolveSetItemOwnershipFromView,
   resolveTransferItemFromView,
-  type ConsumptionBodyView,
   type MaterialResolutionView,
 } from "@vesper/simulation-core/materials";
 import {
-  buildItemConditionInitializedEvent,
-  initialConditionMetersFor,
-  itemConditionThresholdUniquenessKeyPrefix,
   meterViewOfItem,
   resolveApplyItemConditionSource,
   resolveItemConditionThreshold,
-  type ItemConditionView,
 } from "@vesper/simulation-core/material-condition";
-import {
-  BODY_THRESHOLD_HORIZON_SECONDS,
-  buildMeterView,
-  type BodyEventCommandContext,
-  type MeterIntegrationView,
-} from "@vesper/simulation-core/bodies";
 import {
   db,
   simActivities,
-  simBodyConditions,
-  simBodyMeters,
-  simBodyModifiers,
-  simBodyRhythms,
   simBranches,
   simCharacters,
-  simItemConditionMeters,
-  simItemConditionModifiers,
   simItemHoldings,
   simItems,
-  simOutbox,
   simPhysicalLoci,
-  simTriggers,
   simWorlds,
   type Db,
 } from "@/server/db";
@@ -103,16 +61,27 @@ import {
   runSimulationCommand,
   type LockedBranchView,
 } from "./command-runner";
-import { itemConditionMeterRowInsert, itemConditionModifierRowInsert } from "./activity-store";
 import {
-  bodyConditionFromRow,
-  bodyMeterFromRow,
-  bodyModifierFromRow,
-  bodyRhythmFromRow,
   loadCoLocatedActorIds,
+  loadConsumptionBodyView,
   retirePendingThresholdTriggers,
   upsertMeterRow,
-} from "./body-store";
+} from "./body-rows";
+import {
+  applyDurableItemConditionTrailingEvent,
+  commitItemConditionInit,
+  loadItemConditionView,
+  loadOrInitializeItemConditionView,
+  retirePendingItemConditionThresholdTriggers,
+  upsertItemConditionMeterRow,
+} from "./item-condition-store";
+import {
+  holdingRowFieldsForLocus,
+  materialItemFromRow,
+  materialItemSelection,
+  publishMaterialFeedObligation,
+  updateItemLocus,
+} from "./material-rows";
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
@@ -182,53 +151,6 @@ export interface MaterialSubmitOptions {
 export interface ItemConditionSubmitOptions {
   database?: Db;
   admitAtLockedVersion?: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Locus <-> row mapping
-// ---------------------------------------------------------------------------
-
-/** The flat `sim_item_holdings` column shape both directions convert against (§26.1). */
-export interface ItemHoldingRowFields {
-  locusKind: "held" | "worn" | "container" | "zone" | "gone";
-  actorId: string | null;
-  slotKey: string | null;
-  containerItemId: string | null;
-  zoneId: string | null;
-  goneBasis: ItemGoneBasis | null;
-}
-
-/** Reconstruct a typed locus from a holdings row; the parse re-brands and validates. */
-export function itemLocusFromHoldingRow(row: ItemHoldingRowFields): ItemLocus {
-  switch (row.locusKind) {
-    case "held":
-      return itemLocusSchema.parse({ kind: "held", actorId: row.actorId });
-    case "worn":
-      return itemLocusSchema.parse({ kind: "worn", actorId: row.actorId, slotKey: row.slotKey });
-    case "container":
-      return itemLocusSchema.parse({ kind: "container", containerItemId: row.containerItemId });
-    case "zone":
-      return itemLocusSchema.parse({ kind: "zone", zoneId: row.zoneId });
-    case "gone":
-      return itemLocusSchema.parse({ kind: "gone", basis: row.goneBasis });
-  }
-}
-
-/** The holdings-row column patch for one locus — shared by seed inserts, live updates, and fork materialization. */
-export function holdingRowFieldsForLocus(locus: ItemLocus): ItemHoldingRowFields {
-  const empty = { actorId: null, slotKey: null, containerItemId: null, zoneId: null, goneBasis: null };
-  switch (locus.kind) {
-    case "held":
-      return { ...empty, locusKind: "held", actorId: locus.actorId };
-    case "worn":
-      return { ...empty, locusKind: "worn", actorId: locus.actorId, slotKey: locus.slotKey };
-    case "container":
-      return { ...empty, locusKind: "container", containerItemId: locus.containerItemId };
-    case "zone":
-      return { ...empty, locusKind: "zone", zoneId: locus.zoneId };
-    case "gone":
-      return { ...empty, locusKind: "gone", goneBasis: locus.basis };
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -389,22 +311,7 @@ export async function loadMaterialResolutionView(
   const lociByActor = new Map(locusRows.map((row) => [row.actorId, row]));
 
   const itemRows = await tx
-    .select({
-      itemId: simItems.itemId,
-      name: simItems.name,
-      materialKindKey: simItems.materialKindKey,
-      consumptionEffects: simItems.consumptionEffects,
-      ownerActorId: simItems.ownerActorId,
-      containerCapacityCount: simItems.containerCapacityCount,
-      containerAccess: simItems.containerAccess,
-      conditionTracked: simItems.conditionTracked,
-      locusKind: simItemHoldings.locusKind,
-      holdingActorId: simItemHoldings.actorId,
-      slotKey: simItemHoldings.slotKey,
-      containerItemId: simItemHoldings.containerItemId,
-      zoneId: simItemHoldings.zoneId,
-      goneBasis: simItemHoldings.goneBasis,
-    })
+    .select(materialItemSelection)
     .from(simItems)
     .innerJoin(
       simItemHoldings,
@@ -415,29 +322,13 @@ export async function loadMaterialResolutionView(
   const itemsById = new Map<string, SimulationMaterialItem>();
   const containerOccupantCounts = new Map<string, number>();
   for (const row of itemRows) {
-    const locus = itemLocusFromHoldingRow({
-      locusKind: row.locusKind,
-      actorId: row.holdingActorId,
-      slotKey: row.slotKey,
-      containerItemId: row.containerItemId,
-      zoneId: row.zoneId,
-      goneBasis: row.goneBasis,
-    });
-    const item = simulationMaterialItemSchema.parse({
-      id: row.itemId,
-      name: row.name,
-      ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
-      ...(row.consumptionEffects ? { consumptionEffects: row.consumptionEffects } : {}),
-      ownerActorId: row.ownerActorId,
-      ...(row.containerCapacityCount !== null && row.containerAccess !== null
-        ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
-        : {}),
-      conditionTracked: row.conditionTracked,
-      locus,
-    });
+    const item = materialItemFromRow(row);
     itemsById.set(item.id, item);
-    if (locus.kind === "container") {
-      containerOccupantCounts.set(locus.containerItemId, (containerOccupantCounts.get(locus.containerItemId) ?? 0) + 1);
+    if (item.locus.kind === "container") {
+      containerOccupantCounts.set(
+        item.locus.containerItemId,
+        (containerOccupantCounts.get(item.locus.containerItemId) ?? 0) + 1,
+      );
     }
   }
 
@@ -495,144 +386,6 @@ export async function loadMaterialResolutionView(
   };
 }
 
-// ---------------------------------------------------------------------------
-// E5.3 slice 3 — item condition authority (engine.spec §26.7), mirroring
-// body-store.ts's threshold-alarm choreography over item-scoped tables.
-// ---------------------------------------------------------------------------
-
-export function itemConditionMeterFromRow(
-  row: typeof simItemConditionMeters.$inferSelect,
-): ItemConditionMeterState {
-  return itemConditionMeterStateSchema.parse({
-    itemId: row.itemId,
-    meterKey: row.meterKey,
-    valueFixedPoint: row.valueFixedPoint,
-    baselineFixedPoint: row.baselineFixedPoint,
-    lastIntegratedAtStorySecond: row.lastIntegratedAt,
-    registryVersion: row.registryVersion,
-  });
-}
-
-/**
- * The row-shaping INSERT direction (`itemConditionMeterRowInsert`/
- * `itemConditionModifierRowInsert`) is NOT duplicated here — it lives in
- * activity-store.ts and is imported below. activity-store.ts needs its own
- * copy regardless (it writes these tables directly for its §26.5 completion-
- * time use-delta path without routing through this module, to avoid a
- * material-store.ts → body-store.ts → activity-store.ts → material-store.ts
- * cycle), and branch-store.ts's fork materialization already imports THAT
- * copy — so reusing it here, rather than growing a second one, is the one
- * canonical implementation instead of two that could drift apart.
- */
-
-/**
- * Item-condition modifier rows never persist `visibility` (see
- * `activity-store.ts`'s `itemConditionModifierFromRow`, the canonical
- * mirror of this same parse): every modifier this substrate ever creates
- * (the worn-window transition) is hard-coded "obvious" — see the registry
- * doc comment in `@/contracts/simulation/material-condition`.
- */
-export function itemConditionModifierFromRow(
-  row: typeof simItemConditionModifiers.$inferSelect,
-): ItemConditionModifier {
-  return itemConditionModifierSchema.parse({
-    id: row.modifierId,
-    itemId: row.itemId,
-    meterKey: row.meterKey,
-    operation: row.operation,
-    stackingGroup: row.stackingGroup,
-    priority: row.priority,
-    validFromStorySecond: row.validFrom,
-    ...(row.validUntil === null ? {} : { validUntilStorySecond: row.validUntil }),
-    visibility: "obvious",
-    sourceEventId: row.sourceEventId,
-  });
-}
-
-/** One item's full condition state, or undefined when it has never been initialized. */
-async function loadItemConditionView(
-  tx: SimTx,
-  branchId: string,
-  itemId: string,
-): Promise<ItemConditionView | undefined> {
-  const meterRows = await tx
-    .select()
-    .from(simItemConditionMeters)
-    .where(and(eq(simItemConditionMeters.branchId, branchId), eq(simItemConditionMeters.itemId, itemId)))
-    .orderBy(asc(simItemConditionMeters.meterKey));
-  const [firstMeterRow] = meterRows;
-  if (!firstMeterRow) return undefined;
-  const modifierRows = await tx
-    .select()
-    .from(simItemConditionModifiers)
-    .where(and(eq(simItemConditionModifiers.branchId, branchId), eq(simItemConditionModifiers.itemId, itemId)))
-    .orderBy(asc(simItemConditionModifiers.modifierId));
-  return {
-    itemId,
-    registryVersion: itemConditionRegistryVersionSchema.parse(firstMeterRow.registryVersion),
-    meters: meterRows.map(itemConditionMeterFromRow),
-    modifiers: modifierRows.map(itemConditionModifierFromRow),
-  };
-}
-
-interface ItemConditionLazyInit {
-  /** The condition view a causing resolver should see: loaded, or freshly initialized in memory. */
-  condition: ItemConditionView;
-  /** Present only on first touch — the caller must append it and insert its meter rows before resolving. */
-  initEvent?: ItemConditionInitializedEvent;
-  /** The headSequence a causing resolver's OWN view must carry (post-init when initEvent is present). */
-  headSequence: number;
-}
-
-/**
- * Lazy item-condition initialization (engine.spec §26.7 — "there is no
- * dedicated command"): loaded if rows already exist, otherwise built purely
- * in memory (registry defaults at the branch's current story second) with an
- * `item_condition_initialized` event at `branch.headSequence + 1` for the
- * caller to persist BEFORE calling its own causing resolver at the returned
- * (post-init) headSequence — mirrors the composition
- * `material-condition.test.ts`'s projector-parity fixture demonstrates.
- */
-async function loadOrInitializeItemConditionView(
-  tx: SimTx,
-  branch: LockedBranchView,
-  command: BodyEventCommandContext,
-  itemId: string,
-): Promise<ItemConditionLazyInit> {
-  const existing = await loadItemConditionView(tx, branch.id, itemId);
-  if (existing) return { condition: existing, headSequence: branch.headSequence };
-
-  const meters = initialConditionMetersFor({ itemId, atStorySecond: branch.storySecond });
-  const initEvent = buildItemConditionInitializedEvent({
-    view: {
-      worldId: branch.worldId,
-      branchId: branch.id,
-      rulesetVersion: branch.rulesetVersion,
-      headSequence: branch.headSequence,
-      storySecond: branch.storySecond,
-    },
-    command,
-    itemId,
-    meters,
-    sequence: branch.headSequence + 1,
-  });
-  return {
-    condition: { itemId, registryVersion: itemConditionRegistryVersion, meters, modifiers: [] },
-    initEvent,
-    headSequence: initEvent.sequence,
-  };
-}
-
-/** Persist a just-built lazy-init event: the event row, then its meter rows. */
-async function commitItemConditionInit(tx: SimTx, branch: LockedBranchView, lazy: ItemConditionLazyInit): Promise<void> {
-  const initEvent = lazy.initEvent;
-  if (!initEvent) return;
-  await appendSimulationEvent(tx, initEvent);
-  await tx
-    .insert(simItemConditionMeters)
-    .values(lazy.condition.meters.map((meter) => itemConditionMeterRowInsert(branch.id, meter, initEvent.sequence)));
-}
-
 /** All actors physically at `zoneId` — the item-condition witness set (§26.7: co-location with the item's root locus). */
 async function loadCoLocatedActorIdsForZone(tx: SimTx, branchId: string, zoneId: string): Promise<string[]> {
   const rows = await tx
@@ -646,224 +399,6 @@ async function loadCoLocatedActorIdsForZone(tx: SimTx, branchId: string, zoneId:
       ),
     );
   return rows.map((row) => row.actorId);
-}
-
-/** Analogous to body-store.ts's `upsertMeterRow`, item-scoped. */
-async function upsertItemConditionMeterRow(
-  tx: SimTx,
-  branchId: string,
-  meter: ItemConditionMeterState,
-  updatedSequence: number,
-): Promise<void> {
-  const [updated] = await tx
-    .update(simItemConditionMeters)
-    .set({
-      valueFixedPoint: meter.valueFixedPoint,
-      baselineFixedPoint: meter.baselineFixedPoint,
-      lastIntegratedAt: meter.lastIntegratedAtStorySecond,
-      updatedSequence,
-    })
-    .where(
-      and(
-        eq(simItemConditionMeters.branchId, branchId),
-        eq(simItemConditionMeters.itemId, meter.itemId),
-        eq(simItemConditionMeters.meterKey, meter.meterKey),
-      ),
-    )
-    .returning({ meterKey: simItemConditionMeters.meterKey });
-  if (!updated) throw new Error("Locked item condition meter changed before its material update");
-}
-
-/** Analogous to body-store.ts's `retirePendingThresholdTriggers`, item-scoped. */
-async function retirePendingItemConditionThresholdTriggers(
-  tx: SimTx,
-  branch: LockedBranchView,
-  commandId: string,
-  submittedAtWallClock: string,
-  itemId: string,
-  meterKey: string,
-): Promise<void> {
-  const prefix = itemConditionThresholdUniquenessKeyPrefix(itemId, meterKey);
-  await tx
-    .update(simTriggers)
-    .set({
-      state: "completed",
-      resultCommandId: commandId,
-      completedAt: new Date(submittedAtWallClock),
-    })
-    .where(
-      and(
-        eq(simTriggers.branchId, branch.id),
-        eq(simTriggers.state, "pending"),
-        sql`starts_with(${simTriggers.uniquenessKey}, ${prefix})`,
-      ),
-    );
-}
-
-type ItemConditionTrailingEvent =
-  | ItemConditionModifierAppliedEvent
-  | ItemConditionModifierEndedEvent
-  | ItemConditionThresholdCrossedEvent
-  | TriggerScheduledEvent;
-
-/**
- * The shared item-condition per-event write, for every event past a command's
- * own primary/meter-carrying event (which each `submitDurableXxx` below
- * handles itself, matching body-store.ts's `[primary, ...trailing]` shape).
- */
-async function applyDurableItemConditionTrailingEvent(
-  tx: SimTx,
-  branch: LockedBranchView,
-  commandId: string,
-  submittedAtWallClock: string,
-  event: ItemConditionTrailingEvent,
-): Promise<void> {
-  switch (event.type) {
-    case "item_condition_modifier_applied":
-      await tx
-        .insert(simItemConditionModifiers)
-        .values(itemConditionModifierRowInsert(branch.id, event.payload.modifier, event.sequence));
-      return;
-    case "item_condition_modifier_ended": {
-      const [updated] = await tx
-        .update(simItemConditionModifiers)
-        .set({
-          // Mirror the pure projector's clamp exactly (applyItemConditionEvent).
-          validUntil: sql`greatest(${event.storySecond}, ${simItemConditionModifiers.validFrom} + 1)`,
-          updatedSequence: event.sequence,
-        })
-        .where(
-          and(
-            eq(simItemConditionModifiers.branchId, branch.id),
-            eq(simItemConditionModifiers.modifierId, event.payload.modifierId),
-          ),
-        )
-        .returning({ modifierId: simItemConditionModifiers.modifierId });
-      if (!updated) throw new Error("Locked item condition modifier changed before its ending update");
-      return;
-    }
-    case "item_condition_threshold_crossed":
-      // Nothing beyond the event append: an instant crossing carries the SAME
-      // value the causing write already persisted to the meter row.
-      return;
-    case "trigger_scheduled":
-      if (event.payload.kind === itemConditionThresholdTriggerKind) {
-        await retirePendingItemConditionThresholdTriggers(
-          tx,
-          branch,
-          commandId,
-          submittedAtWallClock,
-          event.payload.command.payload.itemId,
-          event.payload.command.payload.meterKey,
-        );
-      }
-      await applyTriggerScheduledEvent(tx, event, { branchId: branch.id, worldId: branch.worldId });
-      return;
-  }
-}
-
-/**
- * Build the actor's §26.6 `ConsumptionBodyView` the same way body-store.ts
- * loads one actor's body for its own resolvers — `loadActorBody` /
- * `meterViewOf` / `collapseContextOf` there are private to that module, so
- * this is the material lane's own copy of the same shape (meters, modifiers,
- * rhythms, and the collapse context's last-real-sleep fact), reusing every
- * row mapper body-store.ts exports rather than re-deriving them. Exported
- * for the E6.2 routine controller's `eat_meal` consumption train.
- */
-export async function loadConsumptionBodyView(
-  tx: SimTx,
-  branchId: string,
-  actorId: string,
-  storySecond: number,
-): Promise<ConsumptionBodyView> {
-  const [meterRows, modifierRows, rhythmRows, conditionRows] = await Promise.all([
-    tx
-      .select()
-      .from(simBodyMeters)
-      .where(and(eq(simBodyMeters.branchId, branchId), eq(simBodyMeters.actorId, actorId))),
-    tx
-      .select()
-      .from(simBodyModifiers)
-      .where(and(eq(simBodyModifiers.branchId, branchId), eq(simBodyModifiers.actorId, actorId))),
-    tx
-      .select()
-      .from(simBodyRhythms)
-      .where(and(eq(simBodyRhythms.branchId, branchId), eq(simBodyRhythms.actorId, actorId))),
-    tx
-      .select()
-      .from(simBodyConditions)
-      .where(and(eq(simBodyConditions.branchId, branchId), eq(simBodyConditions.actorId, actorId))),
-  ]);
-  const meters = meterRows.map(bodyMeterFromRow);
-  const modifiers = modifierRows.map(bodyModifierFromRow);
-  const rhythms = rhythmRows.map(bodyRhythmFromRow);
-  const conditions = conditionRows.map(bodyConditionFromRow);
-  const horizon = storySecond + BODY_THRESHOLD_HORIZON_SECONDS;
-
-  const lastSleepEndedAtStorySecond = conditions
-    .filter(
-      (condition) =>
-        condition.key === "asleep" && condition.status === "ended" && condition.endedAtStorySecond !== undefined,
-    )
-    .reduce<number | undefined>(
-      (latest, condition) =>
-        latest === undefined || (condition.endedAtStorySecond ?? 0) > latest
-          ? condition.endedAtStorySecond
-          : latest,
-      undefined,
-    );
-
-  const meterView = (meterKey: string): MeterIntegrationView | undefined =>
-    buildMeterView({ meters, modifiers, rhythms }, meterKey, horizon);
-
-  return {
-    bodyInitialized: meters.length > 0,
-    meterView,
-    collapseContext: {
-      rhythmRows: rhythms,
-      ...(lastSleepEndedAtStorySecond === undefined ? {} : { lastSleepEndedAtStorySecond }),
-    },
-  };
-}
-
-/** Exported for the E6.2 routine controller's `eat_meal` consumption train. */
-export async function updateItemLocus(
-  tx: SimTx,
-  branchId: string,
-  itemId: string,
-  locus: ItemLocus,
-  updatedSequence: number,
-): Promise<void> {
-  const updated = await tx
-    .update(simItemHoldings)
-    .set({ ...holdingRowFieldsForLocus(locus), updatedSequence })
-    .where(and(eq(simItemHoldings.branchId, branchId), eq(simItemHoldings.itemId, itemId)))
-    .returning({ itemId: simItemHoldings.itemId });
-  if (updated.length !== 1) throw new Error("Locked item holding changed before its locus update");
-}
-
-/**
- * Insert one material feed delivery obligation. Exported: the sibling §26.5
- * completion-time consume-disposition path (`activity-store.ts`) publishes
- * the same obligation for each `item_consumed` its own transaction emits, so
- * this is the one place that row shape is built.
- */
-export async function publishMaterialFeedObligation(
-  tx: SimTx,
-  event: { id: string; worldId: string; branchId: string; sequence: number },
-): Promise<void> {
-  await tx.insert(simOutbox).values({
-    id: composeSimulationId("outbox", [itemTransferFeedConsumerKind, event.id]),
-    worldId: event.worldId,
-    branchId: event.branchId,
-    sourceEventId: event.id,
-    firstSequence: event.sequence,
-    lastSequence: event.sequence,
-    consumerKind: itemTransferFeedConsumerKind,
-    schemaVersion: itemTransferFeedProjectionSchemaVersion,
-    payload: { sourceEventId: event.id },
-  });
 }
 
 function rejectedResult<TCode extends string>(commandId: string, code: TCode, publicReason: string) {

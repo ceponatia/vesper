@@ -45,12 +45,17 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * The lab's FIXTURE module (`image-lab-controls.ts`) is deliberately NOT here:
  * it is the module a route's upload body reaches, so both of its write paths go
  * through the owner-scoped `saveOwnedImageBuffer` adapter instead.
+ *
+ * Re-reviewed 2026-08-13 (image-lifecycle module split): the same three reviewed
+ * services, at their new paths. Each write path moved into the module that owns
+ * the bytes it stores — the pack service's crop derivation, the trial's per-cell
+ * render, the lab's render kernel — and nothing about who may call, or why, changed.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
-    "apps/web/src/server/images/identity-pack-trial.ts",
-    "apps/web/src/server/images/image-lab.ts",
-    "apps/web/src/server/images/identity-packs.ts",
+    "apps/web/src/server/images/identity-pack-trial-render.ts",
+    "apps/web/src/server/images/image-lab-render.ts",
+    "apps/web/src/server/images/identity-pack-derive.ts",
     "apps/web/src/server/images/internal.ts",
     "apps/web/src/server/images/route-safe.ts",
     "apps/web/src/server/images/upload.ts",

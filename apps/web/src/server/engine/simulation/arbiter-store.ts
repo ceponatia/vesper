@@ -27,7 +27,7 @@ import {
 } from "@vesper/simulation-core/contracts/soft-canon";
 import { runDeliberation } from "@vesper/simulation-core/deliberation";
 import { deriveDisclosureCapture } from "@vesper/simulation-core/knowledge";
-import { simulationHash } from "@vesper/simulation-core/hash";
+import { compareStableText, simulationHash, sortedUnique } from "@vesper/simulation-core/hash";
 import {
   compileNarrativeCut,
   decideDepartures,
@@ -49,7 +49,7 @@ import {
   type Db,
 } from "@/server/db";
 import { activityFromRow } from "./activity-store";
-import { computeEngagementBodilyReads } from "./body-store";
+import { computeEngagementBodilyReads } from "./body-reads";
 import {
   advanceLockedBranch,
   appendSimulationEvent,
@@ -76,16 +76,6 @@ import { loadSpaceRows, spaceProjectionFromRows, submitDurableMoveActor } from "
  */
 
 const MAX_BELIEF_ROWS = 64;
-
-function compareStableText(left: string, right: string): number {
-  if (left < right) return -1;
-  if (left > right) return 1;
-  return 0;
-}
-
-function sortedUnique(values: readonly string[]): string[] {
-  return [...new Set(values)].sort(compareStableText);
-}
 
 export interface PrepareTurnDeliberation {
   scoreGapThresholdFixedPoint: number;

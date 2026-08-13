@@ -46,7 +46,7 @@ import {
   simRelationshipLedger,
   type Db,
 } from "@/server/db";
-import { loadCoLocatedActorIds } from "./body-store";
+import { loadCoLocatedActorIds } from "./body-rows";
 import { readEffectiveActorLod } from "./lod-store";
 import {
   advanceLockedBranch,

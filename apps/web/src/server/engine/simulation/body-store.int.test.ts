@@ -12,10 +12,9 @@ import {
   simEvents,
   simTriggers,
 } from "@/server/db";
+import { computeEngagementBodilyReads, readDurableBodyReads } from "./body-reads";
 import {
-  computeEngagementBodilyReads,
   readDurableBodies,
-  readDurableBodyReads,
   submitDurableApplyBodyCondition,
   submitDurableApplyBodySource,
   submitDurableInitializeActorBody,
