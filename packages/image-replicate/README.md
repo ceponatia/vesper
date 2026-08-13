@@ -72,10 +72,10 @@ parsing helpers stay private; `export *` in a root barrel is rejected by
 
 - No build artifact: the package exports TypeScript source and is consumed as a
   workspace dependency; Next transpiles it for the server bundle.
-- Tests run through the repository's shared Vitest command, as the
-  `image-replicate` project, with no application setup and no `@/` alias. They
-  install their own `fetch` stub and construct a `ReplicateConfig` per case —
-  there is no environment to manipulate.
+- Tests run through this package's own `vitest.config.ts`, with no application
+  setup and no `@/` alias; root `pnpm test` reaches them by recursing over the
+  workspace. They install their own `fetch` stub and construct a
+  `ReplicateConfig` per case — there is no environment to manipulate.
 - Dependencies this package imports belong in **its** `package.json`, including
   test-only ones.
 - Node's built-in `fetch`, `FormData`, `Blob`, `URL`, `AbortSignal` and `Buffer`

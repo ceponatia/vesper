@@ -5,8 +5,9 @@
   // terms rather than because the Next application lends it aliases, ambient
   // generated types, or its TypeScript plugin. The base deliberately carries no
   // `lib`, `types`, `jsx`, `paths` or plugins, so extending it grants nothing.
-  // Root `pnpm typecheck` runs this project alongside the app project, so
-  // package-internal files that no application file imports are still covered.
+  // `pnpm typecheck` in this package runs it — the root's recursive typecheck
+  // reaches it without naming the package — so package-internal files that no
+  // application file imports are still covered.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     // ES2022 + DOM, not the Next lib set. DOM is the only library that declares
@@ -20,6 +21,9 @@
     // become a Node dependency.
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  // `vitest.config.ts` is listed so the package's own test config is covered by
+  // a project: type-aware ESLint parses only files a tsconfig claims, and an
+  // unclaimed config file fails the lint gate rather than going unchecked.
+  "include": ["src/**/*.ts", "vitest.config.ts"],
   "exclude": ["node_modules"]
 }
