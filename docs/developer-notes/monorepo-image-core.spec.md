@@ -27,8 +27,8 @@ surface yet. The inventory below is its canonical technical record.
 | ----- | --------------------------------------- | ------------------------- |
 | 1     | complete — 2026-08-12                   | —                         |
 | 2     | complete — 2026-08-12                   | —                         |
-| 3     | built 2026-08-12 — awaiting CI `verify` | —                         |
-| 4     | not started                             | Slice 3 merging green     |
+| 3     | complete — 2026-08-12                   | —                         |
+| 4     | not started — next                      | —                         |
 | 5     | not started, not planned                | no pure surface exists    |
 | 6     | not started                             | Slice 4 seam-proving gate |
 

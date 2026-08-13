@@ -2,7 +2,7 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 4
 
-Implementation state: not started — next, once Slice 3 merges green.
+Implementation state: not started — next; its blockers are cleared.
 
 Put Replicate's network transport and schema probing behind a server-only
 workspace package while keeping secrets, deployment settings and Vesper state in
