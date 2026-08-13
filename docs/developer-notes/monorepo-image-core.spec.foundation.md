@@ -2,13 +2,58 @@
 
 Status: detail for [monorepo-image-core.plan.md](monorepo-image-core.plan.md) slice 3
 
-Implementation state: not started — next, now that Slice 2 has been built.
+Implementation state: built 2026-08-12 — awaiting a ready-state CI `verify`.
 
 Give the small primitives that genuinely cross package boundaries one home, and
 delete the temporary diagnostic copy in `image-core`. Shared mechanics are in
 [monorepo-image-core.spec.md](monorepo-image-core.spec.md); package registration,
 import integrity and runtime-target guardrails are already active from
 [monorepo-image-core.spec.guardrails.md](monorepo-image-core.spec.guardrails.md).
+
+## What is built
+
+| Piece                        | Lives in                                           |
+| ---------------------------- | -------------------------------------------------- |
+| Diagnostic contract          | `packages/contracts/src/diagnostics.ts`            |
+| Boundary parser              | `packages/contracts/src/parse.ts`                  |
+| Curated public surface       | `packages/contracts/src/index.ts`                  |
+| Package contract for readers | `packages/contracts/README.md`                     |
+| Application entry points     | `src/contracts/diagnostics.ts`, `src/lib/parse.ts` |
+
+Both application files are re-export barrels with no implementation, so no
+application import moved. `packages/image-core/src/diagnostics.ts` and the
+assignability test that kept it honest are deleted; `identity-pack.ts` takes its
+`DiagnosticSink` from `@vesper/contracts`, and `image-core`'s root no longer
+exports the diagnostic types.
+
+Registration is complete: the package manifest, its own TypeScript project, a
+`contracts` Vitest project, a line in root `pnpm typecheck`, `transpilePackages`,
+the Dockerfile manifest `COPY`, and the root dependency. The layer rank and
+`universal` runtime target were already pre-declared by Slice 1, so nothing in
+the checker policy needed inventing. `pnpm lint:package-boundaries` and
+`pnpm lint:package-resolution` both pass, the latter resolving
+`@vesper/contracts` by public name through the installed workspace.
+
+### Rulings this build settled
+
+- **The package's TypeScript project carries `"types": []`.** `image-core` needs
+  `["node"]` because a provider seam names `Buffer` in a type position; nothing
+  here names a platform type, and an empty set is what stops the root install's
+  ambient `@types/*` from quietly establishing the package. `lib` stays
+  `["ES2022", "DOM"]`, matching `image-core` for the same reason it does there.
+- **`image-core` stopped exporting `Diagnostic`, `DiagnosticSeverity` and
+  `DiagnosticSink`.** Their only consumer was the compatibility test that proved
+  the two declarations were assignable, and with one declaration there is nothing
+  to prove. A consumer that needs the type imports `@vesper/contracts` (the
+  application, through its own barrel).
+- **The moved parser test restates its assertion instead of reaching for the app
+  helper.** `expectDiagnostics`/`expectCleanSink` live in `src/test/`, which a
+  package may not import; the assertion they wrap is one `.map`, so it is spelled
+  out in the package test rather than the boundary being bent to keep a helper.
+- **Diagnostics coverage was written, not moved.** The application had no unit
+  test for `diag`, `DiagnosticCollector`, `teeSink` or the schema — the behavior
+  was only ever exercised incidentally by the suites that collect diagnostics.
+  The package now pins it directly.
 
 ## Why this package, and why now
 

@@ -17,7 +17,9 @@
 
 Vesper is a pnpm workspace with one application and a small number of packages. The application lives at the repo root — it is not under `apps/` — and each package under `packages/` is a subsystem that operates without it.
 
-A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the first to qualify.
+A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the one that qualifies that way.
+
+`@vesper/contracts` is there for the other reason: a primitive that several workspaces must **agree on** has to live below all of them. It holds the diagnostic contract and the boundary parser, and nothing else — the application's own `src/contracts/` is Vesper's game vocabulary and stays put. `src/contracts/diagnostics.ts` and `src/lib/parse.ts` remain the application's entry points as re-export barrels, so the app's import paths did not move when the implementation gained a shared owner.
 
 The two kinds of boundary are enforced differently, because they promise different things. A folder boundary is a spelling rule: the ESLint `no-restricted-imports` rules in `eslint.config.mjs` reject the import paths that would cross it. A **workspace** boundary is a containment rule, and spelling cannot decide it — `../../foundation/src/x` never mentions `packages/` and still leaves the package. So `pnpm lint:package-boundaries` (`scripts/check-workspace-imports.ts`) resolves every import and answers the questions ESLint cannot:
 
@@ -37,6 +39,7 @@ vesper/
   drizzle/               # generated SQL migrations (committed)
   data/                  # runtime-generated image assets (gitignored)
   packages/              # workspace packages — no app imports (see below)
+    contracts/           #   @vesper/contracts: the diagnostic contract + parseOr
     image-core/          #   @vesper/image-core: the provider-neutral image engine
       src/
         capabilities/    #     what a model declares; binding controls to real fields
@@ -102,7 +105,7 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
 These are the only two lanes — there is no world/session lane.
 
-- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current package: [packages/image-core/README.md](../packages/image-core/README.md).)
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md).)
 - `src/contracts` and `src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.

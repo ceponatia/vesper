@@ -32,8 +32,9 @@ Code subpaths such as `@vesper/image-core/src/...` or
 
 A relative import is forbidden when it resolves outside the current workspace,
 even if its spelling never contains the literal word `packages`. This matters for
-sibling-package escapes such as a path that normalizes into `packages/contracts`.
-The same resolved-workspace check prevents app/root code from reaching inward by
+the sibling package this one depends on: `@vesper/contracts` is reached by its
+package name, never through a path that normalizes into `packages/contracts`. The
+same resolved-workspace check prevents app/root code from reaching inward by
 filesystem path.
 
 **These rules are mechanically enforced, not conventions.** ESLint catches `@/`
@@ -70,11 +71,14 @@ Practical consequences:
   `ProviderRenderResult.image`) is allowed, evaluating one (`Buffer.from`,
   `process.env`, `document`) is not. `src/contracts/state/scene-gen.ts` is the
   designated client-side fixture that keeps the production build honest about it.
-- **Diagnostics are reported, not persisted.** The current package-local
-  `DiagnosticSink` is a temporary structural copy of the application's
-  diagnostic contract. Slice 3 replaces both declarations with
-  `@vesper/contracts`; see
+- **Diagnostics are reported, not persisted.** `DiagnosticSink` comes from
+  `@vesper/contracts`, the one definition the whole repository shares; this
+  package reports degradation through it and never decides what becomes of the
+  record. See
   [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
+- **Boundary parsing is not this package's job.** `@vesper/contracts` also owns
+  `parseOr`, but nothing here parses untrusted data: a registry row or an
+  identity pack arrives already parsed, at the application boundary that owns it.
 - **Tests are package-contained.** They run through the repository's shared
   Vitest command, as the `image-core` project, and receive no application-global
   DB/env/test setup and no `@/` alias.
