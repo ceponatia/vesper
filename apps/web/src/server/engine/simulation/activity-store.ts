@@ -21,8 +21,8 @@ import {
   type ResumeActivityCommandResult,
   type CompleteActivityCommandResult,
   type StartActivityCommandResult,
-} from "@/contracts/simulation/activities";
-import { composeSimulationId, worldBranchIdSchema } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/activities";
+import { composeSimulationId, worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import {
   activityCompletionUniquenessKey,
   resolveResumeActivity,
@@ -31,7 +31,7 @@ import {
   resolveCompleteActivity,
   resolveStartActivity,
   type CompleteResolution,
-} from "@/lib/simulation/activities";
+} from "@vesper/simulation-core/activities";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   bodyCollapseUniquenessKeyPrefix,
@@ -39,27 +39,27 @@ import {
   buildMeterView,
   type CollapseContext,
   type MeterIntegrationView,
-} from "@/lib/simulation/bodies";
-import { engagementClaimsForActor } from "@/lib/simulation/engagements";
-import { compareStableText } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/bodies";
+import { engagementClaimsForActor } from "@vesper/simulation-core/engagements";
+import { compareStableText } from "@vesper/simulation-core/hash";
 import {
   buildItemConditionInitializedEvent,
   initialConditionMetersFor,
   itemConditionThresholdUniquenessKeyPrefix,
   type ItemConditionView,
-} from "@/lib/simulation/material-condition";
-import type { ConsumptionBodyView } from "@/lib/simulation/materials";
+} from "@vesper/simulation-core/material-condition";
+import type { ConsumptionBodyView } from "@vesper/simulation-core/materials";
 import {
   bodyConditionSchema,
   bodyMeterStateSchema,
   bodyModifierSchema,
   bodyRhythmRowSchema,
   type BodyMeterState,
-} from "@/contracts/simulation/bodies";
+} from "@vesper/simulation-core/contracts/bodies";
 import {
   claimHoldingEngagementStates,
   engagementSchema,
-} from "@/contracts/simulation/engagements";
+} from "@vesper/simulation-core/contracts/engagements";
 import {
   itemConditionMeterStateSchema,
   itemConditionModifierSchema,
@@ -67,7 +67,7 @@ import {
   type ItemConditionInitializedEvent,
   type ItemConditionMeterState,
   type ItemConditionModifier,
-} from "@/contracts/simulation/material-condition";
+} from "@vesper/simulation-core/contracts/material-condition";
 import {
   itemLocusSchema,
   simulationMaterialItemSchema,
@@ -76,14 +76,14 @@ import {
   type ItemGoneBasis,
   type ItemLocus,
   type SimulationMaterialItem,
-} from "@/contracts/simulation/materials";
+} from "@vesper/simulation-core/contracts/materials";
 import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
-} from "@/contracts/simulation/outbox";
-import { itemConditionThresholdTriggerKind } from "@/contracts/simulation/scheduler";
-import { resolveConsentCoverage } from "@/lib/simulation/social";
-import type { RelationshipLedgerEntry } from "@/contracts/simulation/social";
+} from "@vesper/simulation-core/contracts/outbox";
+import { itemConditionThresholdTriggerKind } from "@vesper/simulation-core/contracts/scheduler";
+import { resolveConsentCoverage } from "@vesper/simulation-core/social";
+import type { RelationshipLedgerEntry } from "@vesper/simulation-core/contracts/social";
 import {
   db,
   simActionDefinitions,

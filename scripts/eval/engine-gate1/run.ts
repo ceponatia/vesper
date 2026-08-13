@@ -2,13 +2,13 @@ import { performance } from "node:perf_hooks";
 import {
   transferItemCommandSchema,
   type TransferItemCommand,
-} from "@/contracts/simulation/materials";
+} from "@vesper/simulation-core/contracts/materials";
+import type { MaterialResolutionView } from "@vesper/simulation-core/material-locus";
 import {
   applyMaterialEvent,
   materialsSeedProjection,
   resolveTransferItemFromView,
-  type MaterialResolutionView,
-} from "@/lib/simulation";
+} from "@vesper/simulation-core/materials";
 
 const WARMUP_RUNS = 500;
 const SAMPLE_RUNS = 4_000;

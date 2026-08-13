@@ -3,9 +3,9 @@ import {
   itemPlacementExplanationSchema,
   type ItemPlacementExplanation,
   type SimulationBranchEvent,
-} from "@/contracts/simulation/branching";
-import { commandPrincipalSchema } from "@/contracts/simulation/envelopes";
-import { itemIdSchema, worldBranchIdSchema } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/branching";
+import { commandPrincipalSchema } from "@vesper/simulation-core/contracts/envelopes";
+import { itemIdSchema, worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import { db, simCommands, simItemHoldings, simTriggers, type Db } from "@/server/db";
 import { loadBranchAncestry, readBranchAncestryEvents } from "./branch-store";
 import { itemLocusFromHoldingRow } from "./material-store";

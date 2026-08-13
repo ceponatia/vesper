@@ -4,11 +4,11 @@ import {
   promoteActorFromCohortCommandSchema,
   type PromoteActorFromCohortCommand,
   type PromoteActorFromCohortCommandResult,
-} from "@/contracts/simulation";
+} from "@vesper/simulation-core/contracts/promotion";
 import {
   derivedPromotedActorId,
   resolvePromoteActorFromCohortFromView,
-} from "@/lib/simulation/promotion";
+} from "@vesper/simulation-core/promotion";
 import {
   simActorLods,
   simCharacters,

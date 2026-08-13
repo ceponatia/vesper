@@ -1,11 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import {
-  replaySpaceHistory,
-  simulationHash,
-  spaceSeedForReplay,
-} from "@/lib/simulation";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { replaySpaceHistory, spaceSeedForReplay } from "@vesper/simulation-core/space";
 import { db, simEvents, simJourneys, simPhysicalLoci, simTimeJobs, simTriggers } from "@/server/db";
 import { moveArrivalTarget, settleStrandedInTransit } from "@/server/engine";
 import {

@@ -19,9 +19,9 @@ Vesper is a pnpm workspace with one application and a small number of packages. 
 
 The application is started only through the root launcher, `scripts/web.mjs` (`pnpm dev` / `build` / `start`). It runs Next with `apps/web` as the project directory while establishing two repository-level facts first: `DATA_ROOT`, which defaults to the repository's `data/` directory rather than the Next project's, and the repository-root `.env`, which Next would otherwise not see from its own project folder.
 
-A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` is the one that qualifies that way.
+A package is not the default shape for a boundary here. Most module boundaries are folders with barrel exports, because the old 12-package monorepo collapsed for a good reason: every package served exactly one consumer, and the packaging bought nothing. A folder graduates to a package only when it has grown into a subsystem worth reading on its own AND already runs without knowing there is a database, a route, or a game — `@vesper/image-core` and `@vesper/simulation-core` are the two that qualify that way. They sit at the **same layer rank**, which is the architectural statement that neither may import the other: a render must not reach into world state, and the simulation must not learn what a provider can draw. The application is the only workspace above both, so it is where the two ever meet.
 
-`@vesper/contracts` is there for the other reason: a primitive that several workspaces must **agree on** has to live below all of them. It holds the diagnostic contract and the boundary parser, and nothing else — the application's own `apps/web/src/contracts/` is Vesper's game vocabulary and stays put. `apps/web/src/contracts/diagnostics.ts` and `apps/web/src/lib/parse.ts` remain the application's entry points as re-export barrels, so the app's import paths did not move when the implementation gained a shared owner.
+`@vesper/contracts` is there for the other reason: a primitive that several workspaces must **agree on** has to live below all of them. It holds the diagnostic contract, the boundary parser, and the two determinism primitives more than one workspace has to reproduce bit for bit — the FNV-1a string hash and the fixed-point integration kernel. Nothing else: the application's own `apps/web/src/contracts/` is Vesper's game vocabulary and stays put. `apps/web/src/contracts/diagnostics.ts`, `apps/web/src/lib/parse.ts`, `apps/web/src/lib/hash.ts` and `apps/web/src/lib/fixed-point.ts` remain the application's entry points as re-export barrels, so the app's import paths did not move when an implementation gained a shared owner.
 
 `@vesper/image-replicate` is there for a third reason: a package's **runtime target** is part of its contract, and this one is deliberately server-only. It performs network IO and carries the provider credential, so client-importable layers are barred from importing it. Being server-only is not permission to be ambient, though — it reads no environment. `apps/web/src/server/ai/replicate-runtime.ts` is the only code that reads `REPLICATE_*`; it builds one configured client per process and everything else asks that client.
 
@@ -44,8 +44,13 @@ vesper/                  # the workspace root: operational scripts + repo toolin
   drizzle/               # generated SQL migrations (committed)
   data/                  # runtime-generated image assets (gitignored)
   packages/              # workspace packages — no app imports (see below)
-    contracts/           #   @vesper/contracts: the diagnostic contract + parseOr
+    contracts/           #   @vesper/contracts: diagnostics, parseOr, determinism primitives
     image-replicate/     #   @vesper/image-replicate: server-only Replicate transport
+    simulation-core/     #   @vesper/simulation-core: the simulation domain
+      src/
+        contracts/       #     identities, command/event envelopes, projection contracts
+        lib/             #     the pure kernels every projector and store replays through
+        test-support/    #     shared envelope/space/material fixtures for both sides
     image-core/          #   @vesper/image-core: the provider-neutral image engine
       src/
         capabilities/    #     what a model declares; binding controls to real fields
@@ -70,7 +75,6 @@ vesper/                  # the workspace root: operational scripts + repo toolin
           items/             #   item definitions, instances, placement
           facts/             #   fact taxonomy + fact schema
           world/             #   life-stage, location, and character-profile schemas
-          simulation/        #   successor-engine identity/envelope/projection contracts
           state/             #   scene-gen state
           turns/             #   chat turn contracts (archivist, pulse, clock, plans, …)
           diagnostics.ts     #   Diagnostic record + helpers
@@ -112,9 +116,12 @@ Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` file
 [character-chat/](character-chat/README.md)) and the **successor simulation engine**
 (`sim-*` files + `simulation/`, an event-sourced world model — contracts in
 [contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
-These are the only two lanes — there is no world/session lane.
+These are the only two lanes — there is no world/session lane. The simulation lane's
+pure half — its identities, envelopes, projection contracts and replay kernels — is
+the `@vesper/simulation-core` package; `server/engine/simulation/` keeps everything
+stateful, which is the durable stores that read and write those projections.
 
-- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md), [packages/image-replicate/README.md](../packages/image-replicate/README.md).)
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/simulation-core/README.md](../packages/simulation-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md), [packages/image-replicate/README.md](../packages/image-replicate/README.md).)
 - `apps/web/src/contracts` and `apps/web/src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.

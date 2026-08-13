@@ -1,25 +1,25 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { claimHoldingActivityPhases } from "@vesper/simulation-core/contracts/activities";
+import type { SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
+import { claimHoldingEngagementStates } from "@vesper/simulation-core/contracts/engagements";
 import {
+  actorLodStateSchema,
   assignActorLodCommandResultSchema,
   assignActorLodCommandSchema,
-  actorLodStateSchema,
-  claimHoldingActivityPhases,
-  claimHoldingEngagementStates,
   isBelowEventLod,
-  routinePolicyUniquenessKeyPrefix,
   type ActorLodRead,
   type ActorLodState,
   type AssignActorLodCommand,
   type AssignActorLodCommandResult,
-  type SimulationBranchEvent,
-} from "@/contracts/simulation";
-import { BODY_THRESHOLD_HORIZON_SECONDS } from "@/lib/simulation/bodies";
+} from "@vesper/simulation-core/contracts/lod";
+import { routinePolicyUniquenessKeyPrefix } from "@vesper/simulation-core/contracts/routine";
+import { BODY_THRESHOLD_HORIZON_SECONDS } from "@vesper/simulation-core/bodies";
 import {
   buildDependencyWakeTrain,
   effectiveActorLod,
   resolveAssignActorLodFromView,
   type LodEventCommandContext,
-} from "@/lib/simulation/lod";
+} from "@vesper/simulation-core/lod";
 import {
   simActivities,
   simActorLods,

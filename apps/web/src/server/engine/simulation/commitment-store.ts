@@ -18,14 +18,14 @@ import {
   type RaisePressureCommandResult,
   type ResolveCommitmentDeadlineCommandResult,
   type TemporalPressure,
-} from "@/contracts/simulation/commitments";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/commitments";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
 import {
   resolveCommitmentDeadline,
   resolveCreateCommitment,
   resolveFulfillCommitment,
   resolveRaisePressure,
-} from "@/lib/simulation/commitments";
+} from "@vesper/simulation-core/commitments";
 import {
   db,
   simBranches,

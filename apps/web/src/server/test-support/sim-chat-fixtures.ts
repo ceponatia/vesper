@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
-import type { EngineAuthority } from "@/contracts/simulation";
+import type { EngineAuthority } from "@vesper/simulation-core/contracts/authority";
 import { characters, db, simWorlds } from "@/server/db";
 import {
   ROLLOUT_ACTORS,

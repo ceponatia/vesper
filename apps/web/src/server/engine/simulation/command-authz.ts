@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { PrincipalKind } from "@/contracts/simulation/envelopes";
+import type { PrincipalKind } from "@vesper/simulation-core/contracts/envelopes";
 import { characterChats, type Db, users } from "@/server/db";
 import { log } from "@/server/log";
 import { legacyUnanchoredEngineTestMode } from "./legacy-test-mode";

@@ -72,13 +72,21 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
   applicationWorkspaces: ["@vesper/web"],
   layers: {
     "@vesper/contracts": 10,
+    // 20 twice, deliberately: the image engine and the simulation domain are
+    // PEERS. Equal rank means neither may import the other (the rule is
+    // strictly higher-to-lower), which is the architectural statement — a
+    // render must not reach into world state, and the simulation must not learn
+    // what a provider can draw. If the two ever need to meet, the application
+    // joins them; it is the only workspace above both.
     "@vesper/image-core": 20,
+    "@vesper/simulation-core": 20,
     "@vesper/image-replicate": 30,
   },
   applicationLayer: 100,
   runtimes: {
     "@vesper/contracts": "universal",
     "@vesper/image-core": "universal",
+    "@vesper/simulation-core": "universal",
     "@vesper/image-replicate": "server",
   },
   serverOnlyModules: ["next", "sharp", "pg", "drizzle-orm", "better-auth", "replicate", "server-only"],
@@ -599,14 +607,96 @@ function isEvaluatedReference(node: ts.Identifier): boolean {
   return !typeContext;
 }
 
+/** Every name a binding pattern introduces (`{ a, b: { c } }`, `[d, ...e]`). */
+function bindingNames(name: ts.BindingName, into: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    into.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) bindingNames(element.name, into);
+  }
+}
+
+/**
+ * The names a single scope introduces. Declarations are read from the scope
+ * node itself rather than from a walk, so a use-before-declaration (a hoisted
+ * `function`, or a `const` referenced by a closure defined above it) still
+ * counts as bound.
+ */
+function scopeDeclarations(scope: ts.Node): Set<string> {
+  const names = new Set<string>();
+
+  const addStatement = (statement: ts.Statement): void => {
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) bindingNames(declaration.name, names);
+    } else if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) {
+      if (statement.name !== undefined) names.add(statement.name.text);
+    } else if (ts.isImportDeclaration(statement)) {
+      const clause = statement.importClause;
+      if (clause === undefined) return;
+      if (clause.name !== undefined) names.add(clause.name.text);
+      const bindings = clause.namedBindings;
+      if (bindings === undefined) return;
+      if (ts.isNamespaceImport(bindings)) names.add(bindings.name.text);
+      else for (const element of bindings.elements) names.add(element.name.text);
+    }
+  };
+
+  if (ts.isSourceFile(scope) || ts.isBlock(scope) || ts.isModuleBlock(scope) || ts.isCaseBlock(scope)) {
+    const statements = ts.isCaseBlock(scope) ? scope.clauses.flatMap((clause) => [...clause.statements]) : scope.statements;
+    for (const statement of statements) addStatement(statement);
+  }
+  if (ts.isFunctionLike(scope)) {
+    for (const parameter of scope.parameters) bindingNames(parameter.name, names);
+    const named = scope as { name?: ts.Node };
+    if (named.name !== undefined && ts.isIdentifier(named.name as ts.Node)) names.add((named.name as ts.Identifier).text);
+  }
+  if (ts.isCatchClause(scope) && scope.variableDeclaration !== undefined) {
+    bindingNames(scope.variableDeclaration.name, names);
+  }
+  if (ts.isForStatement(scope) || ts.isForOfStatement(scope) || ts.isForInStatement(scope)) {
+    const initializer = ts.isForStatement(scope) ? scope.initializer : scope.initializer;
+    if (initializer !== undefined && ts.isVariableDeclarationList(initializer)) {
+      for (const declaration of initializer.declarations) bindingNames(declaration.name, names);
+    }
+  }
+  return names;
+}
+
+/**
+ * Is this identifier a LOCAL binding rather than the global of the same name?
+ *
+ * Without it, any domain word that collides with a single-runtime global is a
+ * false positive — and `window` is an ordinary noun in scheduling code ("the
+ * arrival window"), `process` in workflow code. A shadowed name never reaches
+ * the global object, so reporting one would push a package into renaming its
+ * domain vocabulary to satisfy a checker.
+ *
+ * Scopes are read by walking ancestors, so no binder or type checker is needed
+ * — this file deliberately parses rather than type-checks.
+ */
+function isLocallyBound(node: ts.Identifier, cache: Map<ts.Node, Set<string>>): boolean {
+  for (let scope: ts.Node | undefined = node.parent; scope !== undefined; scope = scope.parent) {
+    let declared = cache.get(scope);
+    if (declared === undefined) {
+      declared = scopeDeclarations(scope);
+      cache.set(scope, declared);
+    }
+    if (declared.has(node.text)) return true;
+  }
+  return false;
+}
+
 function collectGlobalReferences(file: string, source: string, names: readonly string[]): Array<{ name: string; line: number }> {
   const banned = new Set(names);
   const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
   const found: Array<{ name: string; line: number }> = [];
+  const scopes = new Map<ts.Node, Set<string>>();
 
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && banned.has(node.text) && isEvaluatedReference(node)) {
+    if (ts.isIdentifier(node) && banned.has(node.text) && isEvaluatedReference(node) && !isLocallyBound(node, scopes)) {
       found.push({ name: node.text, line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1 });
     }
     ts.forEachChild(node, visit);

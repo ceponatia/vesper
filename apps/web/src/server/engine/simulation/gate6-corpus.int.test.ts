@@ -1,7 +1,7 @@
 import { and, asc, count, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { cohortPresenceAt, emptyCohortsSeed, replayCohortHistory } from "@/lib/simulation";
+import { cohortPresenceAt, emptyCohortsSeed, replayCohortHistory } from "@vesper/simulation-core/cohorts";
 import { db, simActorLods, simCohorts, simEvents, simPhysicalLoci, simTriggers } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,

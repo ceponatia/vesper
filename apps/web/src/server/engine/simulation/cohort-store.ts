@@ -10,8 +10,8 @@ import {
   type CreateCohortCommand,
   type CreateCohortCommandResult,
   type SimulationCohort,
-} from "@/contracts/simulation";
-import { resolveAdjustCohortFromView, resolveCreateCohortFromView } from "@/lib/simulation/cohorts";
+} from "@vesper/simulation-core/contracts/cohorts";
+import { resolveAdjustCohortFromView, resolveCreateCohortFromView } from "@vesper/simulation-core/cohorts";
 import { simCohorts, simZones, type Db } from "@/server/db";
 import {
   advanceLockedBranch,

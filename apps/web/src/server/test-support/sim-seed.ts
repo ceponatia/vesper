@@ -1,4 +1,7 @@
-import { materialBranchSeedSchema, type MaterialBranchSeedInput } from "@/contracts/simulation/materials";
+import {
+  materialBranchSeedSchema,
+  type MaterialBranchSeedInput,
+} from "@vesper/simulation-core/contracts/materials";
 import { newId } from "@/lib/ids";
 import { seedDurableMaterialBranch, seedDurableSpaceTopology, type SpaceTopologySeed } from "@/server/engine";
 

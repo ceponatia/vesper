@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { composeSimulationId } from "@/contracts/simulation/identity";
-import { simulationHash } from "@/lib/simulation";
+import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { characterChatMessages, db, simBranches, simCommandRequests } from "@/server/db";
 import { log } from "@/server/log";
 

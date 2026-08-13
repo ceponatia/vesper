@@ -11,7 +11,12 @@ import {
   type ChatSkipAmount,
 } from "@/contracts";
 import { minuteOfDay, type CalendarStart } from "@/lib/clock";
-import { formatStoryClockShort, formatStoryTime, storyCalendarParams, storyClockAt } from "@/lib/simulation";
+import {
+  formatStoryClockShort,
+  formatStoryTime,
+  storyCalendarParams,
+  storyClockAt,
+} from "@/lib/simulation/clock";
 import { successorChatsApi, type ChatStateSnapshot } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";

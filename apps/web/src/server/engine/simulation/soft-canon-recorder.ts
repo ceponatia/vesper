@@ -4,7 +4,7 @@ import {
   softCanonProjectionSchema,
   type SoftCanonEntry,
   type SoftCanonProjection,
-} from "@/contracts/simulation/soft-canon";
+} from "@vesper/simulation-core/contracts/soft-canon";
 import { db, simEvents, simSoftCanon, type Db } from "@/server/db";
 import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";

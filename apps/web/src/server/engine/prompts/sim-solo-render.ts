@@ -1,7 +1,7 @@
 import { effectiveTraitValue } from "@/contracts/personality/traits";
 import { lifeStageForAge } from "@/contracts/world/life-stage";
-import { buildSoloDepartureLine, type SoloDeparture } from "@/lib/simulation/departure";
-import { placeAtPhrase, type SoloCutContext } from "@/lib/simulation/solo-cut";
+import { buildSoloDepartureLine, type SoloDeparture } from "@vesper/simulation-core/departure";
+import { placeAtPhrase, type SoloCutContext } from "@vesper/simulation-core/solo-cut";
 import { DEFAULT_NARRATION_SHAPE } from "./constants";
 import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
 import {

@@ -9,14 +9,17 @@ import {
   simulationSnapshotSchema,
   type BranchForkResult,
   type SimulationBranchEvent,
-} from "@/contracts/simulation/branching";
-import { worldBranchIdSchema } from "@/contracts/simulation/identity";
-import { materialsProjectionSchema, type MaterialsProjection } from "@/contracts/simulation/materials";
+} from "@vesper/simulation-core/contracts/branching";
+import { worldBranchIdSchema } from "@vesper/simulation-core/contracts/identity";
+import {
+  materialsProjectionSchema,
+  type MaterialsProjection,
+} from "@vesper/simulation-core/contracts/materials";
 import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
-} from "@/contracts/simulation/outbox";
-import { schedulerDerivationVersion } from "@/contracts/simulation/scheduler";
+} from "@vesper/simulation-core/contracts/outbox";
+import { schedulerDerivationVersion } from "@vesper/simulation-core/contracts/scheduler";
 import {
   isAccessEvent,
   isActivityEvent,
@@ -26,40 +29,37 @@ import {
   isHouseholdEvent,
   isItemConditionEvent,
   isMovementEvent,
-} from "@/contracts/simulation/branching";
+} from "@vesper/simulation-core/contracts/branching";
+import { emptyActivitiesSeed, replayActivitiesHistory } from "@vesper/simulation-core/activities";
+import { emptyBodiesSeed, replayBodiesHistory } from "@vesper/simulation-core/bodies";
+import { emptyCohortsSeed, replayCohortHistory } from "@vesper/simulation-core/cohorts";
+import { emptyCommitmentsSeed, replayCommitmentsHistory } from "@vesper/simulation-core/commitments";
+import { emptyEngagementsSeed, replayEngagementsHistory } from "@vesper/simulation-core/engagements";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import {
-  composeAncestryEventBounds,
   deriveMaterialLotRowKey,
   deriveMeansSubjectRowKey,
-  emptyActivitiesSeed,
-  emptyActorLodsSeed,
-  emptyCohortsSeed,
-  emptyBodiesSeed,
-  emptyCommitmentsSeed,
-  emptyEngagementsSeed,
   emptyHouseholdsSeed,
-  emptyItemConditionSeed,
-  itemHoldingsAtSequence,
-  replayActivitiesHistory,
-  replayActorLodHistory,
-  replayCohortHistory,
-  replayBodiesHistory,
-  replayBranchHistory,
-  replayCommitmentsHistory,
-  replayEngagementsHistory,
   replayHouseholdsHistory,
+} from "@vesper/simulation-core/households";
+import { replayKnowledgeHistory } from "@vesper/simulation-core/knowledge";
+import { emptyActorLodsSeed, replayActorLodHistory } from "@vesper/simulation-core/lod";
+import {
+  emptyItemConditionSeed,
   replayItemConditionHistory,
-  replayKnowledgeHistory,
-  replayObservationsHistory,
-  replaySocialLedgerHistory,
-  replaySoftCanonHistory,
-  replaySpaceHistory,
-  simulationHash,
-  sortMaterialsProjection,
-  spaceSeedForReplay,
+} from "@vesper/simulation-core/material-condition";
+import { sortMaterialsProjection } from "@vesper/simulation-core/materials";
+import { replayObservationsHistory } from "@vesper/simulation-core/perception";
+import {
+  composeAncestryEventBounds,
+  itemHoldingsAtSequence,
+  replayBranchHistory,
   type BranchAncestryNode,
   type BranchEventRange,
-} from "@/lib/simulation";
+} from "@vesper/simulation-core/replay";
+import { replaySocialLedgerHistory } from "@vesper/simulation-core/social";
+import { replaySoftCanonHistory } from "@vesper/simulation-core/soft-canon";
+import { replaySpaceHistory, spaceSeedForReplay } from "@vesper/simulation-core/space";
 import {
   db,
   simActionDefinitions,
@@ -91,7 +91,11 @@ import {
   simWorlds,
   type Db,
 } from "@/server/db";
-import { activityRowInsert, itemConditionMeterRowInsert, itemConditionModifierRowInsert } from "./activity-store";
+import {
+  activityRowInsert,
+  itemConditionMeterRowInsert,
+  itemConditionModifierRowInsert,
+} from "./activity-store";
 import { bodyConditionRowInsert, bodyMeterRowInsert, bodyModifierRowInsert } from "./body-store";
 import { commitmentRowInsert, pressureRowInsert } from "./commitment-store";
 import { engagementRowInsert } from "./engagement-store";

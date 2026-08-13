@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import type { MaterialBranchSeedInput } from "@/contracts/simulation/materials";
-import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
+import type { MaterialBranchSeedInput } from "@vesper/simulation-core/contracts/materials";
+import { itemTransferFeedConsumerKind } from "@vesper/simulation-core/contracts/outbox";
 import { newId } from "@/lib/ids";
 import {
   db,

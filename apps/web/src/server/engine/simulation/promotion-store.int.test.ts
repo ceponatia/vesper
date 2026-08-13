@@ -1,8 +1,16 @@
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { derivedPromotedActorId } from "@/lib/simulation";
-import { db, simActorLods, simBranches, simCharacters, simCohorts, simPhysicalLoci, simTriggers } from "@/server/db";
+import { derivedPromotedActorId } from "@vesper/simulation-core/promotion";
+import {
+  db,
+  simActorLods,
+  simBranches,
+  simCharacters,
+  simCohorts,
+  simPhysicalLoci,
+  simTriggers,
+} from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,
   expectAccepted,

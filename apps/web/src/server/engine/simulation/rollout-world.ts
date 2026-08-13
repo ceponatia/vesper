@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
-import { bodyMeterRegistryV1 } from "@/contracts/simulation/bodies";
+import { bodyMeterRegistryV1 } from "@vesper/simulation-core/contracts/bodies";
 import { newId } from "@/lib/ids";
-import { simulationHash } from "@/lib/simulation/hash";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { db, simBranches, simEvents, simTriggers, simWorlds, type Db } from "@/server/db";
 import { seedDurableActionDefinitions } from "./activity-store";
 import { seedDurableBodyRhythms, submitDurableInitializeActorBody } from "./body-store";

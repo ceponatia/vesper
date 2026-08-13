@@ -1,20 +1,20 @@
 import { performance } from "node:perf_hooks";
 import { and, count, eq, gt, inArray, isNull, max } from "drizzle-orm";
-import type { SimulationBranchEvent } from "@/contracts/simulation/branching";
+import type { SimulationBranchEvent } from "@vesper/simulation-core/contracts/branching";
 import {
   itemLocusSchema,
   transferItemCommandSchema,
   type ItemLocus,
   type TransferItemCommand,
   type TransferItemCommandResult,
-} from "@/contracts/simulation/materials";
+} from "@vesper/simulation-core/contracts/materials";
 import {
   deriveTriggerCommandId,
   deriveTriggerId,
   deterministicDrawUnit,
-} from "@/contracts/simulation/scheduler";
-import { itemTransferFeedConsumerKind } from "@/contracts/simulation/outbox";
-import { simulationHash } from "@/lib/simulation/hash";
+} from "@vesper/simulation-core/contracts/scheduler";
+import { itemTransferFeedConsumerKind } from "@vesper/simulation-core/contracts/outbox";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { newId } from "@/lib/ids";
 import {
   db,

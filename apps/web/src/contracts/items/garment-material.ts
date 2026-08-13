@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { METER_FIXED_POINT_ONE, meterFixedPointSchema } from "../simulation/bodies";
+import { METER_FIXED_POINT_ONE, meterFixedPointSchema } from "@vesper/simulation-core/contracts/bodies";
 
 /**
  * Garment material profiles (clothing-state-graph.plan.md §Material profiles;

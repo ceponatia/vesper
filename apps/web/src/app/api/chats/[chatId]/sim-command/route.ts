@@ -1,12 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { composeSimulationId } from "@/contracts/simulation/identity";
+import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
-import { simulationHash } from "@/lib/simulation";
-import { simulationActionDefinitionSchema } from "@/contracts/simulation/activities";
-import { deriveActivityId } from "@/lib/simulation/activities";
-import { actionChipLabel } from "@/lib/simulation/world-read";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { simulationActionDefinitionSchema } from "@vesper/simulation-core/contracts/activities";
+import { deriveActivityId } from "@vesper/simulation-core/activities";
+import { actionChipLabel } from "@vesper/simulation-core/world-read";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import { log } from "@/server/log";
 import {
@@ -40,7 +40,13 @@ import {
   writeWorldBeat,
   zoneLabelFromKind,
 } from "@/server/engine";
-import { chatBusyBounce, chatExchangeLockKey, requireSimChat, simPlayerEnvelope, type SimChatContext } from "../sim-shared";
+import {
+  chatBusyBounce,
+  chatExchangeLockKey,
+  requireSimChat,
+  simPlayerEnvelope,
+  type SimChatContext,
+} from "../sim-shared";
 
 type Params = { chatId: string };
 

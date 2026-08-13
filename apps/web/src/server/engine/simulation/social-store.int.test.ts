@@ -1,21 +1,21 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { proposedArmedEffectSchema, type ProposedArmedEffect } from "@/contracts/simulation/narrative";
+import {
+  proposedArmedEffectSchema,
+  type ProposedArmedEffect,
+} from "@vesper/simulation-core/contracts/narrative";
 import {
   recordRelationshipChangeCommandSchema,
   recordRelationshipEntryCommandSchema,
   relationshipLedgerWeightRegistryV1,
   type RecordRelationshipChangeCommand,
   type RecordRelationshipEntryCommand,
-} from "@/contracts/simulation/social";
+} from "@vesper/simulation-core/contracts/social";
 import { newId } from "@/lib/ids";
-import {
-  deriveCommitmentId,
-  deriveEngagementId,
-  deriveRelationshipRead,
-  replaySocialLedgerHistory,
-  simulationHash,
-} from "@/lib/simulation";
+import { deriveCommitmentId } from "@vesper/simulation-core/commitments";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
+import { simulationHash } from "@vesper/simulation-core/hash";
+import { deriveRelationshipRead, replaySocialLedgerHistory } from "@vesper/simulation-core/social";
 import { db, simBranches, simEvents, simRelationshipLedger, simTemporalPressures } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,

@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
-import { composeSimulationId } from "@/contracts/simulation/identity";
-import { claimHoldingActivityPhases } from "@/contracts/simulation/activities";
+import { composeSimulationId } from "@vesper/simulation-core/contracts/identity";
+import { claimHoldingActivityPhases } from "@vesper/simulation-core/contracts/activities";
 import {
   consumeItemCommandResultSchema,
   consumeItemCommandSchema,
@@ -24,7 +24,7 @@ import {
   type SimulationMaterialItem,
   type TransferItemCommand,
   type TransferItemCommandResult,
-} from "@/contracts/simulation/materials";
+} from "@vesper/simulation-core/contracts/materials";
 import {
   applyItemConditionSourceCommandResultSchema,
   applyItemConditionSourceCommandSchema,
@@ -44,12 +44,15 @@ import {
   type ItemConditionThresholdCrossedEvent,
   type ResolveItemConditionThresholdCommand,
   type ResolveItemConditionThresholdCommandResult,
-} from "@/contracts/simulation/material-condition";
+} from "@vesper/simulation-core/contracts/material-condition";
 import {
   itemTransferFeedConsumerKind,
   itemTransferFeedProjectionSchemaVersion,
-} from "@/contracts/simulation/outbox";
-import { itemConditionThresholdTriggerKind, type TriggerScheduledEvent } from "@/contracts/simulation/scheduler";
+} from "@vesper/simulation-core/contracts/outbox";
+import {
+  itemConditionThresholdTriggerKind,
+  type TriggerScheduledEvent,
+} from "@vesper/simulation-core/contracts/scheduler";
 import {
   materialsSeedProjection,
   resolveConsumeItemFromView,
@@ -59,7 +62,7 @@ import {
   resolveTransferItemFromView,
   type ConsumptionBodyView,
   type MaterialResolutionView,
-} from "@/lib/simulation/materials";
+} from "@vesper/simulation-core/materials";
 import {
   buildItemConditionInitializedEvent,
   initialConditionMetersFor,
@@ -68,13 +71,13 @@ import {
   resolveApplyItemConditionSource,
   resolveItemConditionThreshold,
   type ItemConditionView,
-} from "@/lib/simulation/material-condition";
+} from "@vesper/simulation-core/material-condition";
 import {
   BODY_THRESHOLD_HORIZON_SECONDS,
   buildMeterView,
   type BodyEventCommandContext,
   type MeterIntegrationView,
-} from "@/lib/simulation/bodies";
+} from "@vesper/simulation-core/bodies";
 import {
   db,
   simActivities,

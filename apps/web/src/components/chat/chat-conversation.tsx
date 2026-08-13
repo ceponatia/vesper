@@ -31,7 +31,7 @@ import {
 } from "@/lib/client/api";
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { NARRATIVE_MODELS, resolveChatModelId } from "@/lib/narrative-models";
-import { formatStoryClockShort, storyClockAt } from "@/lib/simulation";
+import { formatStoryClockShort, storyClockAt } from "@/lib/simulation/clock";
 import { isPinnedToBottom, prependRestoreTop, type PrependAnchor } from "@/lib/scroll-pin";
 import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";

@@ -1,7 +1,11 @@
 import { inArray } from "drizzle-orm";
 import { afterAll, afterEach } from "vitest";
 import { z } from "zod";
-import { commandPrincipalSchema, wallClockInstantSchema, type PrincipalKind } from "@/contracts/simulation/envelopes";
+import {
+  commandPrincipalSchema,
+  wallClockInstantSchema,
+  type PrincipalKind,
+} from "@vesper/simulation-core/contracts/envelopes";
 import {
   branchVersionSchema,
   commandIdSchema,
@@ -9,7 +13,7 @@ import {
   idempotencyKeySchema,
   schemaVersionSchema,
   worldBranchIdSchema,
-} from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/identity";
 import { db, simHouseholdMembers, simWorlds } from "@/server/db";
 import { endTestPool } from "./db-fixtures";
 import { probeIntegrationDb } from "./int-db";

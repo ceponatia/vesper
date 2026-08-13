@@ -4,8 +4,8 @@ import {
   deriveEngagementId,
   emptyEngagementsSeed,
   replayEngagementsHistory,
-  simulationHash,
-} from "@/lib/simulation";
+} from "@vesper/simulation-core/engagements";
+import { simulationHash } from "@vesper/simulation-core/hash";
 import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { forkBranch } from "./branch-store";
 import {

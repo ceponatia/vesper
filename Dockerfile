@@ -35,6 +35,7 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/image-core/package.json ./packages/image-core/
 COPY packages/image-replicate/package.json ./packages/image-replicate/
+COPY packages/simulation-core/package.json ./packages/simulation-core/
 RUN pnpm install --frozen-lockfile
 COPY . .
 # NODE_OPTIONS raises V8's old-space ceiling for the build only (inline, so the

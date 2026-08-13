@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
-import type { SoloCutContext } from "@/lib/simulation/solo-cut";
+import type { SoloCutContext } from "@vesper/simulation-core/solo-cut";
 import { buildSimSoloRenderPrompt, type SimSoloRenderContext } from "./sim-solo-render";
 
 /**

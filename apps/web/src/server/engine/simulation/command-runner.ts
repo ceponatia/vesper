@@ -3,9 +3,9 @@ import type { z } from "zod";
 import type {
   SimulationCommandEnvelope,
   SimulationCommandResultRecord,
-} from "@/contracts/simulation/branching";
-import type { PrincipalKind } from "@/contracts/simulation/envelopes";
-import { branchVersionSchema } from "@/contracts/simulation/identity";
+} from "@vesper/simulation-core/contracts/branching";
+import type { PrincipalKind } from "@vesper/simulation-core/contracts/envelopes";
+import { branchVersionSchema } from "@vesper/simulation-core/contracts/identity";
 import { db, simBranches, simCommands, simEvents, simWorlds, type Db } from "@/server/db";
 import { authorizeSimulationCommand } from "./command-authz";
 import { recordCommandKnowledge } from "./knowledge-recorder";

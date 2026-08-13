@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { proposedArmedEffectSchema } from "@/contracts/simulation/narrative";
-import { deriveEngagementId } from "@/lib/simulation";
+import { proposedArmedEffectSchema } from "@vesper/simulation-core/contracts/narrative";
+import { deriveEngagementId } from "@vesper/simulation-core/engagements";
 import { db, simEvents, simWorlds } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,

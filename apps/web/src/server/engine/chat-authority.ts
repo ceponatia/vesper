@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import {
-  chatEngineAuthorityStateSchema,
   DEFAULT_ENGINE_AUTHORITY,
+  chatEngineAuthorityStateSchema,
   type ChatEngineAuthorityState,
   type EngineAuthority,
-} from "@/contracts/simulation";
+} from "@vesper/simulation-core/contracts/authority";
 import { parseOr } from "@/lib/parse";
 import { characterChats, events, db, type Db } from "@/server/db";
 

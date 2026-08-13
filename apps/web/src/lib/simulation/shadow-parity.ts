@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseOr } from "@/lib/parse";
-import { METER_FIXED_POINT_ONE } from "@/contracts/simulation/bodies";
+import { METER_FIXED_POINT_ONE } from "@vesper/simulation-core/contracts/bodies";
 import { formatStoryClockShort, storyClockAt } from "./clock";
 
 /**

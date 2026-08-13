@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { newId } from "@/lib/ids";
-import { emptyActorLodsSeed, replayActorLodHistory } from "@/lib/simulation";
+import { emptyActorLodsSeed, replayActorLodHistory } from "@vesper/simulation-core/lod";
 import {
   db,
   simActorLods,
