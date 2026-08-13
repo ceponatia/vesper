@@ -626,6 +626,43 @@ harder to review than a rebased path rewrite.
 
 ## Verification
 
+### What passed (2026-08-12, PR #101)
+
+Aggregate `verify` green on the ready-state run: lint, static checks
+(cycles, authz, package boundaries, package resolution, typecheck across all
+four TypeScript projects, jscpd), the pure suite (6034 tests), engine
+integration against Postgres with migrations applied from zero plus the Gate 1
+benchmark, and the production build.
+
+The classifier was checked class by class rather than inferred from a green run,
+because a stale glob there fails open. Each re-rooted pattern was evaluated
+against a representative path:
+
+| Changed path                                | Classes                        |
+| ------------------------------------------- | ------------------------------ |
+| `apps/web/src/components/ui/button.tsx`     | code                           |
+| `apps/web/src/server/images/assets.ts`      | code, integration              |
+| `apps/web/src/server/engine/chat-pipeline.ts` | code, integration, engine    |
+| `apps/web/src/lib/simulation/lod.ts`        | code, integration, engine      |
+| `apps/web/src/contracts/simulation/space.ts` | code, integration, engine     |
+| `packages/image-core/src/index.ts`          | code, integration              |
+| `apps/web/package.json`                     | code, integration, build       |
+| `apps/web/next.config.ts`                   | code, build                    |
+| `apps/web/src/proxy.ts`                     | code, build                    |
+| `scripts/web.mjs`                           | code, build                    |
+| `docs/testing.md`                           | docs-only                      |
+
+`engine` remains a strict subset of `integration`, so the Gate 1 benchmark step
+can never be stranded in a skipped job. `engine` is also the decisive evidence:
+no pre-move pattern would match those paths, so it firing proves the re-rooted
+globs rather than a surviving catch-all.
+
+Also verified outside CI: the launcher starts Next from an arbitrary working
+directory; a root script resolves `@/…` under `tsx` and reports the repository
+`data/` as its data root; `eslint --print-config` returns the expected
+`no-restricted-imports` zone for a file in each module boundary, with
+`next.rootDir` = `apps/web`.
+
 ### CI
 
 - aggregate `verify` green;
