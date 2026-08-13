@@ -229,8 +229,8 @@ re-export barrels, so no mechanical rewrite across hundreds of files was needed.
 
 ### Slice 4 — Replicate transport becomes `@vesper/image-replicate`
 
-Status: built 2026-08-13 — awaiting a ready-state CI `verify`, then the real
-render and real probe the plan's success criteria name.
+Status: built 2026-08-13 (PR #99, green `verify`) — awaiting the real render and
+real probe the success criteria name, which need a deploy.
 
 The code that talks to Replicate — probing model schemas, starting predictions,
 uploading references, polling, downloading results and handling Replicate's
