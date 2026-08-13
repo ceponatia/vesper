@@ -242,9 +242,9 @@ provider call is made.
 This package is server-only from the application's point of view. UI and other
 client-importable layers are mechanically prevented from importing it.
 
-### Slice 5 — the vision path
+### Slice 5 — vision extraction decision
 
-Status: blocked — nothing provider-neutral to move yet.
+Status: complete — evaluated 2026-08-12; no extraction warranted.
 
 "Images" now means two directions: making a picture, and a model looking at one.
 The second path is live — it reads a portrait into character attributes, and it
@@ -252,10 +252,13 @@ describes photos a player attaches to a chat — but both consumers are still
 mostly game concepts. What they share underneath is the general model-call layer
 the narrator also uses, which is not an image concern.
 
-A vision package starts only when a third consumer arrives, or the existing two
-are found to share a genuine contract such as a common reading vocabulary,
-grounding step, or degradation policy. Until then, an empty package would make
-the diagram prettier without making the code easier to own.
+No `@vesper/image-vision` package is created. Reconsider that package only when
+at least two vision consumers demonstrably share a meaningful provider-neutral
+visual-understanding contract or implementation — for example a common reading
+vocabulary, grounding or provenance step, uncertainty/occlusion handling,
+multi-image ordering, model capability negotiation, or degradation policy. A
+third consumer is neither required nor sufficient by itself. Until such a seam
+exists, an image-vision package would move names without moving ownership.
 
 ### Slice 6 — the application moves to `apps/web`
 
@@ -297,8 +300,8 @@ The package's current contract with the application is
 | [spec.replicate.md](monorepo-image-core.spec.replicate.md)         | Slice 4            | built 2026-08-13    |
 | [spec.apps-web.md](monorepo-image-core.spec.apps-web.md)           | Slice 6            | revised             |
 
-Slice 5 has no spec by design — the hub spec carries its inventory and the
-condition that would start it.
+Slice 5 has no detail spec by design — the hub spec records the completed
+no-extraction decision and the evidence that would justify reopening it.
 
 ## Success criteria
 
