@@ -219,7 +219,7 @@ ancestor events ≤ N through the same projectors that ran live — an alarm who
 already inherited history is recorded `completed`, not re-armed — then checkpoints the fork
 point in `sim_snapshots` and starts the child's outbox lane at N via
 `sim_consumer_checkpoints`. Rebuild-from-zero (`rebuildDurableBranchProjection`) and
-rebuild-from-snapshot must both hash-match the live projection; CI's `test:engine-e2-5`
+rebuild-from-snapshot must both hash-match the live projection; the `test:engine-e2-5` suite
 enforces it so a wrong snapshot cannot hide a replay defect.
 
 Domain identities are supplied explicitly instead of replaced by cuid2 row identities.

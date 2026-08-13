@@ -61,9 +61,10 @@ Each layer names its file glob, what it covers, and the IO it needs.
   gate corpora E2–E6), the chat lane (`chat-*.int.test.ts` — extraction legs, wardrobe,
   state fidelity, memory-failure), the successor narrator (`sim-narrator.int.test.ts`), plus
   memory vector queries and image asset lifecycle. IO: a `DATABASE_URL` database — suites
-  probe at collection and self-skip locally with a stderr warning if unreachable; CI applies
-  migrations, runs the gate targets explicitly, and treats an unavailable or unmigrated
-  database as failure.
+  probe at collection and self-skip with a stderr warning if unreachable, which keeps
+  day-to-day runs usable; the `engine` gate target refuses to start without the dev Postgres
+  and runs strict, so an unavailable or unmigrated database fails the gate instead of
+  disappearing from it.
 - **api** (`apps/web/src/app/api/**/*.int.test.ts`) — route handlers called directly with mocked auth
   (`vi.mock` of `server/auth`): validation, envelopes, the chat SSE event sequence in demo
   mode, the atomic chat **rerun** (stop→wait→acquire→transact: snips successors + reuses the
@@ -123,11 +124,61 @@ force test edits, while broken production logic and crossed policy tripwires
   2026-07-28, which is how ~3.2k duplicated test lines accumulated) — reuse the
   shared utilities instead of copy-pasting scaffolding.
 - Embedding-dependent logic tests use `pseudoEmbed` (deterministic, from `server/ai/embeddings`) so similarity thresholds are exact.
-- The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. On CI (`CI=true`) a failed probe **throws** — the escape tests are a security gate and must never silently vanish there. The containment logic itself is never weakened by the skip.
+- The symlink-escape containment cases (`server/images/paths.test.ts`, `server/images/assets.test.ts`) gate on `canCreateSymlinks()` (`@/server/test-support`), which probes once by planting a symlink in a temp dir: on Windows without Developer Mode or elevation `fs.symlink` fails with EPERM, so those cases self-skip with a stderr note rather than failing on fixture setup. `CI=true` is honored as a strict signal: with it set, a failed probe **throws** instead — the escape tests are a security gate and must never silently vanish from a run that claims to have verified them. The containment logic itself is never weakened by the skip.
+
+## The verification gate
+
+`scripts/verify.sh` is the repository's only verification gate — there is no
+hosted CI, so nothing else checks the code before it reaches GitHub.
+
+It runs each gate **serially**, one at a time, inside its own memory-capped
+`systemd-run --user --scope` cgroup and niced, because this is a 16 GB machine
+and a parallel gate chain tips it into OOM territory. It refuses to start below
+~4500 MiB available RAM and warns below ~6500 MiB. It does not stop at the first
+failure: it runs the whole requested set, prints per-gate durations, and exits
+non-zero naming every gate that failed.
+
+| Target      | Runs                                                             |
+| ----------- | ---------------------------------------------------------------- |
+| `all`       | lint → static → typecheck → `pnpm test` → jscpd — the push gate  |
+| `full`      | `all` + `engine` + `build` — the pre-deploy gate                 |
+| `lint`      | type-aware ESLint at `--max-warnings 0`                          |
+| `static`    | `lint:cycles`, `lint:authz`, package boundaries + resolution     |
+| `typecheck` | `tsc` across the root, the app, and every package                |
+| `test`      | the pure Vitest suite (no database)                              |
+| `jscpd`     | the copy-paste threshold                                         |
+| `engine`    | `pnpm test:engine` (strict) + the Gate 1 benchmark — needs a DB  |
+| `build`     | the Next production build, heap-pinned to 4096 MB                |
+
+`pnpm verify` runs `all`; `pnpm verify:full` runs `full`; any subset runs as
+`bash scripts/verify.sh <target>...`.
+
+The **`engine` target** needs the dev Postgres (`pnpm db:up && pnpm db:migrate`)
+and hard-fails when the container is not running rather than letting the suites
+self-skip — a gate must never report green for a suite it never ran. It exports
+`VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and `REQUIRE_INTEGRATION_DB=true` for
+that run. The **`build` target** pins the heap to 4096 MB to match the
+Dockerfile's build stage, so a build that would exhaust the Fly builder fails
+here instead of during a deploy ([deployment.md](deployment.md)).
+
+`.husky/pre-push` runs `scripts/verify.sh all` automatically before every push,
+so nothing reaches the remote unverified. It skips branch deletions and
+documentation-only pushes (every changed path under `docs/` or ending `.md`), and
+fails loudly with instructions when `node_modules` is missing rather than passing
+a push it could not verify. To opt out — usually because you just ran the gates
+yourself — use `VESPER_SKIP_GATES=1 git push` or `git push --no-verify`.
+`.husky/pre-commit` is the narrower one: `pnpm lint-staged`, ESLint over staged
+`*.ts`/`*.tsx` only.
+
+Run the gates through `pnpm verify` rather than chaining `pnpm lint && pnpm
+typecheck && pnpm test` by hand — the serial, capped, RAM-checked execution is
+the point.
 
 ## Commands
 
 ```
+pnpm verify             # the push gate (target `all`): lint, static checks, typecheck, pure tests, jscpd
+pnpm verify:full        # the pre-deploy gate: `all` + the engine suites + the production build
 pnpm test               # the app + image-core projects: everything that needs no DB
 pnpm test:watch         # same two projects, watch mode
 pnpm test:int           # the app-int project: DB suites only (file parallelism off — they share one DB)
@@ -135,7 +186,8 @@ pnpm test:int:strict    # the SAME run as a release gate: REQUIRE_INTEGRATION_DB
                         #   or unmigrated database FAILS the converted suites instead of skipping them
 pnpm test:engine        # the successor engine's authority + narrator + sim-route int suites
 pnpm test:engine-e2-5   # focused successor branch transaction + crash/concurrency proof (gate-specific
-                        #   scripts run e2-4 … e6-5; run `pnpm db:migrate` first; local runs self-skip if unreachable, CI fails)
+                        #   scripts run e2-4 … e6-5; run `pnpm db:migrate` first; a bare run self-skips if
+                        #   the database is unreachable, the `engine` gate target fails)
 pnpm typecheck
 pnpm lint
 ```
@@ -147,7 +199,7 @@ across every project — so they keep working without naming one.
 
 Every `.int.test.ts` suite probes the database at collection and **self-skips** when it is unreachable or unmigrated — right for ordinary dev, wrong for a claimed release gate, where a broken database would silently skip (for instance) the entire authorization matrix and still report green.
 
-`pnpm test:int:strict` is the same run with `REQUIRE_INTEGRATION_DB=true`: the shared probe **throws** instead of returning "skip", so the suite fails loudly and names what was unreachable. Use it before a release or in CI; plain `pnpm test:int` stays skip-tolerant for local work. (`CI=true` and `VESPER_REQUIRE_TEST_DB=1` are honored as strict signals too — they predate the flag.)
+`pnpm test:int:strict` is the same run with `REQUIRE_INTEGRATION_DB=true`: the shared probe **throws** instead of returning "skip", so the suite fails loudly and names what was unreachable. Use it before a deploy, or any time a green run is meant to mean something; plain `pnpm test:int` stays skip-tolerant for day-to-day work. The `engine` gate target sets the same flag around its `pnpm test:engine` run, which is why that gate cannot report a suite it never executed. (`CI=true` and `VESPER_REQUIRE_TEST_DB=1` are honored as strict signals too — they predate the flag.)
 
 ### Running the whole integration suite locally
 
@@ -160,7 +212,8 @@ VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 pnpm test:int
 The low-level engine suites seed bare branches and submit the shared synthetic
 player fixture, which the simulation authorization seam refuses without this
 opt-in (deliberately — authorization tests leave it unset and keep proving that
-ordinary unanchored players fail). CI exports it for the `pnpm test:engine` step.
+ordinary unanchored players fail). The `engine` gate target exports it for its
+`pnpm test:engine` run.
 
 A flagless run **fails fast at collection** instead of drowning you in denials:
 each player-principal suite calls `requireLegacyUnanchoredEngineTestMode(suite)`
@@ -174,10 +227,11 @@ submits `kind: "player"` commands against directly-seeded branches must call
 this guard; suites using only `npc_policy`/`system` principals (material,
 scheduler, time-job stores) don't need it.
 
-Note also that CI runs `test:engine`'s curated glob rather than the whole
-suite, so the route-level suites (`gallery`, `chat`, `library-routes`,
-`authz-matrix`, `public-dto`, `variants`) are **not** gated on merge — see
-`rate-limits.plan.md` OQ3.
+Note also that the `engine` gate target runs `test:engine`'s curated glob rather
+than the whole suite, so the route-level suites (`gallery`, `chat`,
+`library-routes`, `authz-matrix`, `public-dto`, `variants`) are covered by **no**
+gate — run `pnpm test:int` yourself to exercise them. See `rate-limits.plan.md`
+OQ3.
 
 Fixtures inserting `images` rows must go through **`canonicalImageRow`**
 (`@/server/test-support`): the `images_path_canonical` CHECK requires the stored

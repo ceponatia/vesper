@@ -376,8 +376,9 @@ and leave the plan where it is.
 
 ## Validation
 
-There is no automated docs checker in this repo, and documentation-only changes
-do not need CI (root `CLAUDE.md`). Validate by hand before finishing:
+There is no automated docs checker in this repo, and a documentation-only change
+runs no code gates — the pre-push hook skips a push whose paths are all under
+`docs/` or end `.md` (root `CLAUDE.md`). Validate by hand before finishing:
 
 - Every relative link resolves — check the ones you touched **and** the ones
   pointing at files you moved.
@@ -402,7 +403,7 @@ do not need CI (root `CLAUDE.md`). Validate by hand before finishing:
   per `docs/README.md`. **The line guideline does not apply to
   `docs/developer-notes/`** — see [Document length](#document-length).
 
-If the change also touches code, the normal PR + CI rule applies; the docs
+If the change also touches code, the normal `pnpm verify` gate applies; the docs
 checks above are additional, not a substitute.
 
 ## Templates

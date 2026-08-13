@@ -127,20 +127,27 @@ Deploys are **manual** — pushing to GitHub does **not** auto-deploy (there is 
 Fly↔GitHub integration firing; every release so far has been a hand-run
 `fly deploy`). So a `git push` ships nothing on its own — run the deploy after.
 
-- **First, verify `main`.** CI is milestone-gated (draft PRs skip it, and `main`
-  has no push CI), so the accumulated state of `main` is validated now, as the
-  release candidate: `gh workflow run CI --ref main`, then watch it
-  (`gh run watch`, or `gh run list --workflow CI` for the id). A manual dispatch
-  deliberately runs **every** gate — lint, static checks, unit, engine
-  integration (which carries the Gate 1 benchmark as its final step), production
-  build. Deploy only on a green `verify`.
-- **This dispatch is the only build gate most changes get.** Pull requests run
-  the production build only when the build surface itself moves — package
-  manifests, the lockfile, `tsconfig*.json`, `next.config.*`, `Dockerfile`,
-  `apps/web/next.config.*`, `apps/web/src/proxy.ts`, `apps/web/src/instrumentation.ts`,
-  `scripts/web.mjs`. An app-code or package-internal
-  change reaches `main` without ever being built, so skipping the pre-deploy
-  dispatch means `fly deploy` is the first thing to compile it.
+- **First, verify `main` — locally.** There is no CI on GitHub, so the release
+  candidate is validated on your machine: bring the dev database up
+  (`pnpm db:up && pnpm db:migrate`), then run **`pnpm verify:full`** on a clean
+  `main`. That is the widest target of `scripts/verify.sh` — the push gate (lint,
+  static checks, typecheck, the pure test suite, jscpd) plus the two gates too
+  slow to pay for on every push: the DB-backed engine suite, which carries the
+  Gate 1 benchmark as its final step, and the production build. The engine gate
+  **hard-fails when the database container isn't running** rather than skipping
+  itself — a gate that reports success must actually have run. Gates run one at a
+  time in memory-capped cgroups, and a failure doesn't abort the run: it finishes
+  the set, prints per-gate durations, and names every gate that failed. Deploy
+  only when it exits clean.
+- **This run is the only thing that compiles the app before Fly does.** The
+  `.husky/pre-push` hook gates every code push, but it runs the `all` target,
+  which deliberately leaves the build out — the build is minutes long, and
+  charging it to every push would make pushing unusable. App-code and
+  package-internal changes therefore reach `main` linted, typechecked and tested
+  but never built, so skipping `pnpm verify:full` means `fly deploy` is the first
+  thing to compile them. The build gate pins the heap to 4096 MB to match the
+  Dockerfile's build stage, so a build that would exhaust the Fly builder fails
+  on your machine first (see Troubleshooting).
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
   remote builder, runs the `release_command` (`pnpm -w run db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
@@ -161,28 +168,31 @@ there is no second remote:
 | Branch | Role              | How it updates                                                                                                                                             |
 | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main` | **dev** (default) | Your normal workflow. Push here as always; deploying dev is a separate **manual** `fly deploy` after testing — pushing to GitHub does **not** auto-deploy. |
-| `prod` | **production**    | **Protected.** No direct pushes — only fast-tested code arrives via a pull request from `main`.                                                            |
+| `prod` | **production**    | **Protected.** No direct pushes — code arrives only via a pull request from `main`, gated on a green `pnpm verify:full`.                                   |
 
 Day-to-day is unchanged: keep committing to and pushing `main`. `prod` only ever
 moves through a **promotion PR**.
 
 **To promote dev → prod:**
 
-1. **Open the PR.** Either Actions tab → **"Promote dev → prod"** → *Run
+1. **Verify `main` first.** The same gate as the pre-deploy run above — dev
+   database up, then `pnpm verify:full`. Nothing on GitHub inspects a promotion
+   PR, so verification happens *before* the PR exists rather than inside it.
+2. **Open the PR.** Either Actions tab → **"Promote dev → prod"** → *Run
    workflow* (opens a `main → prod` PR for you), or locally:
    `gh pr create --base prod --head main`.
-2. **Wait for the `verify` check** (CI runs `pnpm verify`). Protection blocks the
-   merge until it's green.
 3. **Merge** the PR. That's the only way commits reach `prod`.
 
 **Protection on `prod`** (set via `gh api .../branches/prod/protection`):
 
 - Pull request required before merging (0 required approvals — solo repo; GitHub
   won't let you approve your own PR, so requiring one would lock you out).
-- Required status check: **`verify`**, strict (branch must be up to date with
-  `prod` before merge).
+- **No required status check.** Nothing on GitHub produces one any more, and a
+  check that never reports blocks every merge permanently. Verification moved
+  earlier: `.husky/pre-push` gates code on its way to `main`, and
+  `pnpm verify:full` gates the promotion itself.
 - Force-pushes and branch deletion blocked.
-- **Enforced for admins too** — even the owner merges via a green PR. For a
+- **Enforced for admins too** — even the owner merges via a PR. For a
   genuine emergency, toggle protection off in the GitHub UI
   (Settings → Branches), merge, and turn it back on; it's a deliberate act, not
   an accident.

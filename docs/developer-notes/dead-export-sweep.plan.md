@@ -98,8 +98,8 @@ sets the rules.
 
 ## Delivery slices
 
-Each lands on its own pull request, reaches a green `verify` check, and reviews
-on its own.
+Each lands on its own pull request, reaches a green `pnpm verify` run, and
+reviews on its own.
 
 - **Slice 0 — the retain list.** Before deleting anything, write down what is
   deliberately callerless and comment each such export with the plan that keeps
@@ -124,9 +124,9 @@ on its own.
   folder, and the engine barrel no longer re-exports simulation internals.
 - The retain-list items (guardrails 1 and 2) survive, now annotated, so the next
   reader need not re-derive their status.
-- **A green `verify` check at each slice boundary**, plus the gate corpus
-  integration suites on the simulation slice. Validation is CI-only (root
-  `CLAUDE.md`) — never invoke a gate locally.
+- **A green `pnpm verify` run at each slice boundary**, plus the gate corpus
+  integration suites on the simulation slice. Validation is the local gate (root
+  `CLAUDE.md`) — `.husky/pre-push` runs it before the branch reaches GitHub.
 - No user-visible change other than the corrected site description.
 
 ## Risks & coordination

@@ -143,8 +143,8 @@ Ordered so each stands alone and can ship on its own.
   a 400 in front of a player.
 - A streaming reply parses each settled message once, not once per token chunk;
   verified against a long transcript on the Fly deploy.
-- **The pull request's `verify` check is green.** Validation is CI-only (root
-  `CLAUDE.md`) — never invoke a gate locally.
+- **`pnpm verify` is green on the branch.** Validation is the local gate (root
+  `CLAUDE.md`) — `.husky/pre-push` runs it before the branch reaches GitHub.
 
 ## Risks & coordination
 

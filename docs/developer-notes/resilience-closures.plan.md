@@ -136,9 +136,9 @@ other.
 
 ## Success criteria
 
-- **The pull request's `verify` check is green.** Validation is CI-only (root
-  `CLAUDE.md`): push the branch, open the pull request, and let the
-  classifier-scoped jobs run. Never invoke a gate locally.
+- **`pnpm verify` is green on the branch.** Validation is the local gate (root
+  `CLAUDE.md`): run it yourself, or let `.husky/pre-push` run it before the
+  branch reaches GitHub.
 - **Every model call reachable from a request goes through the harness.** Verified
   by a census check, not by eyeball — the audit found this class of gap by
   grepping, and the same grep should come back empty afterwards.

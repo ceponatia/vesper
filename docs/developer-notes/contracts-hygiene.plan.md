@@ -106,7 +106,7 @@ recording that the v1 judge is gone and what a future version would rebuild.
 ## Delivery slices
 
 Each is independently shippable, on its own pull request with its own green
-`verify` check.
+`pnpm verify` run.
 
 1. **Orphan deletion** — E1, E2, E4, E6 plus the relationships doc. Smallest
    slice, biggest legibility gain. Two things survive and must not be caught in
@@ -145,9 +145,9 @@ Each is independently shippable, on its own pull request with its own green
   degradation tests still assert both the fallback and the diagnostic code.
 - The public contracts surface no longer exports test fixtures, and the shared
   affordance helpers exist once, in the domain-neutral core.
-- **A green `verify` check on each slice's pull request**, duplication no worse
-  than before. Validation is CI-only (root `CLAUDE.md`) — never invoke a gate
-  locally.
+- **A green `pnpm verify` run on each slice**, duplication no worse than before.
+  Validation is the local gate (root `CLAUDE.md`) — `.husky/pre-push` runs it
+  before the branch reaches GitHub.
 
 ## Risks & coordination
 

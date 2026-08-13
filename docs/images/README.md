@@ -22,7 +22,7 @@ The rule for new code: if it would still make sense with no game attached, it be
 
 ## Demo mode
 
-No keys → SVG monogram placeholder (deterministic gradient from the entity name) saved through the same registry path, flagged `meta.demo: true`. Every pipeline is exercisable in CI.
+No keys → SVG monogram placeholder (deterministic gradient from the entity name) saved through the same registry path, flagged `meta.demo: true`. Every pipeline is exercisable in the automated test suite.
 
 ## Adding a pipeline
 
