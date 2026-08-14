@@ -75,9 +75,11 @@ export async function runBaseline(
   };
   // Planned first purely to CAPTURE the compiled prompt: `renderImageIntent`
   // does not report it, and a baseline whose recorded text is the admin's raw
-  // instruction would claim parity it cannot show. The compile is pure and its
-  // prompt preparation is idempotent, so the plan built here is byte-identical
-  // to the one the render builds a line later.
+  // instruction would claim parity it cannot show. The render's own plan is NOT
+  // byte-identical to this one: `renderImageIntent` may resolve a drawn seed
+  // into the plan it executes (a `random` seed policy). Everything this
+  // baseline STORES from the plan — `finalPrompt`, the `planOutcome` reference
+  // record — is seed-independent, which is what keeps the capture honest.
   const planned = planImageRender(intent, labRuntimeFacts());
   if (!planned.ok) return await settleFailed(row, LAB_PROFILE_UNAVAILABLE, planned.refusal.message, sink);
 

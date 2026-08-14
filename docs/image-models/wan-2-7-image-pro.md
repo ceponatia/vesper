@@ -98,8 +98,8 @@ Reviewed by hand, never probed, and never overwritten by a re-probe:
 
 ## Seeded profiles
 
-Three, none of them a default, all with empty control defaults and no timeout
-override:
+Four, none of them a default. The three standard rows carry empty control
+defaults and no timeout override:
 
 - `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
   `text_to_image_description`, no references.
@@ -108,12 +108,19 @@ override:
 - `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
   identity → location → style → object with nothing required.
 
+One curated profile extends the standard set and runs only when picked:
+
+- `multi-reference-edit-2k` (Multi-Reference Edit 2K) — task `scene`, the
+  explicit multi-reference edit pick. Same strategy and role order as
+  `scene-standard`, plus `resolution: "2K"`. Unlike the tier controls on other
+  models, this one is **effective immediately when picked**: Wan has no
+  aspect-ratio input, so shape resolves through size-pair dimension negotiation
+  to the `1536*2048` pair above — no probed control binding involved.
+
 The seeded profiles carry **no** `provider_overrides` and no separate
 generate-versus-edit settings: today both paths share one payload shape, and the
-`reference_transport = 'data_url'` fact stays on the model row where the transport
-layer already reads it. **Nothing calls the profile layer yet** — the split
-thinking-mode generation, 4K, and coherent-image-set profiles the plan describes are
-later work, and no profile will ever claim to bypass moderation.
+`reference_transport = 'data_url'` fact stays on the model row where the
+transport layer already reads it. No profile claims to bypass moderation.
 
 ## Behaviour that changes when references are present
 

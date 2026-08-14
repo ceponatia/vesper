@@ -22,16 +22,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Active (building now)
 
-- **Image model capabilities — profiles, shared controls, and richer workflows** —
-  [plan](image-model-capabilities.plan.md) ·
-  [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
-  now reached by every render through the shared intent (slice 2), choosing which
-  references survive by role rather than by position and routing control images
-  to the inputs a model declares (slices 3 and 9), with the curated LoRA library
-  proven end to end through the Qwen lab's style trial (slice 6 complete);
-  remaining are reference preparation and parallel uploads, reproducibility,
-  version promotion, curated profiles and image sets.
-
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is
@@ -46,10 +36,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Next (queued, in dependency order)
 
-**Unblocked today — only scheduling gates these:** data lifecycle, capabilities
-slice 3, visual state, scene composition slices 1–2, the shadow-measurement
-enable, resilience closures, `ConfirmDialog`, clothing slice 7, and wiring the
-affordance layer to the scene owner.
+**Unblocked today — only scheduling gates these:** data lifecycle, visual
+state, scene composition slices 1–2, the shadow-measurement enable, resilience
+closures, `ConfirmDialog`, clothing slice 7, and wiring the affordance layer to
+the scene owner.
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
@@ -72,8 +62,8 @@ affordance layer to the scene owner.
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
   [spec](image-render-quality.spec.md) — the content and tuning companion to the
-  capabilities plan; past slice 1 it needs the control transports of capabilities
-  slices 3–4, a paid tuning trial, and the face-repair model decision.
+  shipped capabilities plan; its control transports now exist, so past slice 1
+  it needs a paid tuning trial and the face-repair model decision.
 
 - **Body-attribute visual affordances — remainder** —
   [plan](body-attribute-affordances.plan.md) — `chat-affordances.ts` still

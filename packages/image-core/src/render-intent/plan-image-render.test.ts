@@ -537,6 +537,14 @@ describe("target shape", () => {
     expect(planned(intent({ target: { aspectRatio: 1 } })).targetRatio).toBe(1);
     expect(planned(intent({ target: { aspectRatio: 3 / 2 } })).targetRatio).toBe(3 / 2);
   });
+
+  it("hands the compile step's dimension facts to the transport wrapper", () => {
+    // The plan carries the resolver's INPUTS, not a choice — the shape itself is
+    // negotiated in `renderWithModel`, where the target ratio meets the model.
+    expect(planned(intent()).dimensionFacts).toEqual({ operation: "edit", mappedCustomSize: null });
+    const withTier = planned(intent({ profile: resolved({}, { controlDefaults: { resolution: "2K" } }) }));
+    expect(withTier.dimensionFacts).toEqual({ operation: "edit", resolution: "2K", mappedCustomSize: null });
+  });
 });
 
 describe("control-image roles", () => {

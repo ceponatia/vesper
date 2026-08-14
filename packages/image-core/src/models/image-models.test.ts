@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyImageModelAdvancedCapabilities } from "../capabilities/image-model-capabilities";
 import {
   chooseAspect,
+  chooseDimensions,
   fitReferences,
   imageModelOffersSurface,
   imageModelSchema,
@@ -132,6 +133,164 @@ describe("chooseAspect", () => {
   it("asks for nothing when the model offers no parseable shape", () => {
     expect(chooseAspect(model({ supportedAspects: [] }))).toEqual({ value: null, needsCrop: false });
     expect(chooseAspect(model({ supportedAspects: ["2K", "custom"] }))).toEqual({ value: null, needsCrop: false });
+  });
+});
+
+describe("chooseDimensions", () => {
+  /** Wan's real menu: three pixel pairs, all exactly 3:4. */
+  const wan = (overrides: Partial<ImageModel> = {}) =>
+    model({ aspectMode: "size", supportedAspects: ["768*1024", "1536*2048", "3072*4096"], ...overrides });
+
+  it("answers a factless request exactly as chooseAspect, in both modes", () => {
+    expect(chooseDimensions(model(), { targetRatio: 3 / 4 })).toEqual({
+      input: { aspect_ratio: "3:4" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+    });
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4 })).toEqual({
+      input: { size: "3072*4096" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+    });
+    // Absent facts leave no requestedResolution echo behind either.
+    expect("requestedResolution" in chooseDimensions(wan(), { targetRatio: 3 / 4 })).toBe(false);
+  });
+
+  it("delegates the aspect_ratio shape to chooseAspect even when a tier rides along", () => {
+    // On an aspect_ratio model the tier is an ordinary mapped control — it must
+    // not move the shape, only be echoed as what was asked.
+    const sd = model({ supportedAspects: ["1:1", "4:5"] });
+    expect(chooseDimensions(sd, { targetRatio: 3 / 4, operation: "generate", resolution: "2K" })).toEqual({
+      input: { aspect_ratio: "4:5" },
+      expectedAspect: 4 / 5,
+      needsCrop: true,
+      requestedResolution: "2K",
+    });
+  });
+
+  it("picks the same-ratio size nearest each tier's pixel area", () => {
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "1K" }).input).toEqual({ size: "768*1024" });
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "2K" })).toEqual({
+      input: { size: "1536*2048" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+      requestedResolution: "2K",
+    });
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "4K" }).input).toEqual({ size: "3072*4096" });
+  });
+
+  it("keeps the largest-area choice when no tier is set", () => {
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, operation: "generate" })).toEqual({
+      input: { size: "3072*4096" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+    });
+  });
+
+  it("still runs the ratio contest first when the tier has no same-ratio candidate", () => {
+    // Nothing 3:4 on offer: the closest ratio wins as it always did, and the
+    // tier only picks the area WITHIN that ratio. A tier must never move a
+    // render to a worse shape to hit a pixel count.
+    const wide = wan({ supportedAspects: ["1024*576", "2048*1152"] });
+    expect(chooseDimensions(wide, { targetRatio: 3 / 4, resolution: "2K" })).toEqual({
+      input: { size: "2048*1152" },
+      expectedAspect: 2048 / 1152,
+      needsCrop: true,
+      requestedResolution: "2K",
+    });
+  });
+
+  it("honors an explicit pair only when the schema offers it verbatim", () => {
+    const exact = chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "custom", width: 1536, height: 2048 });
+    expect(exact).toEqual({
+      input: { size: "1536*2048" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+      requestedResolution: "custom",
+    });
+    // A pair the enum does not offer is ignored — a size-mode model accepts
+    // nothing but its enum — so the choice falls back to the default answer.
+    const invented = chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "custom", width: 1500, height: 2000 });
+    expect(invented.input).toEqual({ size: "3072*4096" });
+  });
+
+  it("crops an offered pair whose shape misses the lane's target", () => {
+    // The pair is sent (it is a real enum entry), but the lane's ratio still
+    // wins downstream: the mismatch is declared so the caller crops.
+    expect(chooseDimensions(wan(), { targetRatio: 1, resolution: "custom", width: 768, height: 1024 })).toEqual({
+      input: { size: "768*1024" },
+      expectedAspect: 3 / 4,
+      needsCrop: true,
+      requestedResolution: "custom",
+    });
+  });
+
+  it("never lets a leftover pair outrank a stored tier — the pair needs `custom`", () => {
+    // Width/height are a request only when the resolution says so. Ungated, a
+    // profile that stored a tier beside leftover dimension defaults would render
+    // the pair's size under the tier's name.
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "2K", width: 768, height: 1024 })).toEqual({
+      input: { size: "1536*2048" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+      requestedResolution: "2K",
+    });
+    // No resolution at all reads the same way: the pair is ignored and the
+    // default largest-exact-match answer stands.
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, width: 768, height: 1024 }).input).toEqual({
+      size: "3072*4096",
+    });
+  });
+
+  it("judges the expected shape by a mapped custom pair on an aspect_ratio model", () => {
+    // The pair rides the mapped controlInput, not this choice — but the model
+    // will RETURN the pair's shape, so the crop expectation follows it.
+    const sd = model({ supportedAspects: ["1:1", "4:5"] });
+    const matched = chooseDimensions(sd, {
+      targetRatio: 3 / 4,
+      resolution: "custom",
+      width: 1200,
+      height: 1600,
+      mappedCustomSize: { width: 1200, height: 1600 },
+    });
+    expect(matched).toEqual({
+      input: { aspect_ratio: "4:5" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+      requestedResolution: "custom",
+    });
+    const sideways = chooseDimensions(sd, {
+      targetRatio: 3 / 4,
+      resolution: "custom",
+      mappedCustomSize: { width: 1600, height: 1200 },
+    });
+    expect(sideways.expectedAspect).toBe(1600 / 1200);
+    expect(sideways.needsCrop).toBe(true);
+  });
+
+  it("ignores a custom pair that never mapped", () => {
+    // Width and height that dropped at the mapper reach the provider nowhere,
+    // so expecting their shape would expect a render nobody requested.
+    const sd = model({ supportedAspects: ["1:1", "4:5"] });
+    expect(chooseDimensions(sd, { targetRatio: 3 / 4, resolution: "custom", width: 1200, height: 1600 })).toEqual({
+      input: { aspect_ratio: "4:5" },
+      expectedAspect: 4 / 5,
+      needsCrop: true,
+      requestedResolution: "custom",
+    });
+  });
+
+  it("returns the null choice for a shapeless model, whatever was asked", () => {
+    expect(chooseDimensions(model({ supportedAspects: [] }), { targetRatio: 3 / 4, resolution: "2K" })).toEqual({
+      input: {},
+      expectedAspect: null,
+      needsCrop: false,
+      requestedResolution: "2K",
+    });
+    // Tier names in the enum carry no shape, exactly as chooseAspect reads them.
+    expect(
+      chooseDimensions(wan({ supportedAspects: ["2K", "custom"] }), { targetRatio: 3 / 4, resolution: "2K" }).input,
+    ).toEqual({});
   });
 });
 

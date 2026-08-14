@@ -6,9 +6,9 @@ import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
 import { outfitItems } from "@/contracts";
-import { IMAGE_TARGET_ASPECT, type ResolvedImageProfile } from "@vesper/image-core";
+import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { renderImageIntent } from "./render-intent";
+import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
@@ -73,11 +73,20 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
         ? null
         : "no image model is registered for portraits"
       : `character ${input.characterId} not found`,
-    produce: async () => ({
-      ok: true,
-      image:
-        demo || !resolved ? monogramSvg(character?.name ?? "") : await generateAvatarBuffer(prompt, resolved, input.sink),
-    }),
+    // Text-to-image at Vesper's 3:4, with no references — the simplest intent
+    // there is. A failure still THROWS (this lane's ruled failure shape: the
+    // shell's warn diagnostic plus the error-carrying event line), which is why
+    // its provenance is recorded only on success — a thrown produce has no meta
+    // channel.
+    produce: async () => {
+      if (demo || !resolved) return { ok: true, image: monogramSvg(character?.name ?? "") };
+      const result = await renderImageIntent(
+        { profile: resolved, prompt, references: [], target: { aspectRatio: IMAGE_TARGET_ASPECT } },
+        input.sink,
+      );
+      if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
+      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
+    },
     onReady: async (asset) => {
       await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
       // Strictly AFTER the canonical pointer commits, and strictly best-effort:
@@ -197,20 +206,6 @@ export async function defaultOutfitPhrase(
 ): Promise<string> {
   if (itemIds.length === 0) return "";
   return wardrobeOutfitText(await loadDefaultWardrobe(ownerId, itemIds, sink));
-}
-
-/** Text-to-image at Vesper's 3:4, with no references — the simplest intent there is. */
-async function generateAvatarBuffer(
-  prompt: string,
-  profile: ResolvedImageProfile,
-  sink?: DiagnosticSink,
-): Promise<Buffer> {
-  const result = await renderImageIntent(
-    { profile, prompt, references: [], target: { aspectRatio: IMAGE_TARGET_ASPECT } },
-    sink,
-  );
-  if (!result.ok || !result.image) throw new Error(result.error ?? `${profile.model.slug} returned no image`);
-  return result.image;
 }
 
 const AVATAR_BATCH_SIZE = 5;

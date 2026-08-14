@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
  * The curated LoRA library, on the image-models settings page
@@ -71,20 +72,6 @@ function locatorPlaceholder(locatorType: ImageLoraLocatorType): string {
       return "https://huggingface.co/owner/repo/resolve/main/weights.safetensors";
   }
 }
-
-/** What each profile task is, in the operator's words rather than the enum's. */
-const TASK_LABELS: Record<ImageProfileTask, string> = {
-  portrait: "portrait",
-  variant: "variant (and every lab finishing pass)",
-  scene: "scene",
-  item: "item art",
-  location: "location art",
-  chat_look: "chat look",
-  chat_place: "chat place",
-  text_repair: "text repair",
-  example_transform: "example transform",
-  image_set: "image set",
-};
 
 /**
  * What a new row is offered: the two jobs this library exists for today — a
@@ -296,71 +283,6 @@ function ImageLoraRow({
   );
 }
 
-/** Label + single-line text control — the four one-line fields, spelled once. */
-function TextField({
-  label,
-  hint,
-  value,
-  placeholder,
-  maxLength,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-  placeholder?: string;
-  maxLength: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <Input
-          id={id}
-          value={value}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          spellCheck={false}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  );
-}
-
-/**
- * One end of the curated band, or the value inside it. Bounded by the absolute
- * rails the contract declares rather than by numbers typed here, so a widened
- * provider ceiling moves one constant and this control follows.
- */
-function ScaleField({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <Input
-          id={id}
-          type="number"
-          step={0.05}
-          min={IMAGE_LORA_MIN_SCALE}
-          max={IMAGE_LORA_MAX_SCALE}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  );
-}
-
 /** An optional prompt addition. Blank means none, never "an addition saying nothing". */
 function PromptField({
   label,
@@ -379,26 +301,6 @@ function PromptField({
         <Textarea id={id} rows={2} value={value} maxLength={2000} onChange={(e) => onChange(e.target.value)} />
       )}
     </Field>
-  );
-}
-
-/** One tick box in a group — the model list, the task list, and the row's own switch. */
-function CheckOption({
-  label,
-  checked,
-  title,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  title?: string;
-  onToggle: () => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-paper-300" title={title}>
-      <input type="checkbox" checked={checked} onChange={onToggle} className="accent-accent-500" />
-      {label}
-    </label>
   );
 }
 
@@ -605,22 +507,34 @@ function ImageLoraForm({
           onChange={setVersionText}
         />
 
+        {/* The scale band, bounded by the absolute rails the contract declares
+            rather than by numbers typed here, so a widened provider ceiling
+            moves one constant and all three controls follow. */}
         <div className="grid gap-4 sm:grid-cols-3">
-          <ScaleField
+          <NumberField
             label="Minimum scale"
             hint="The weakest blend a render may ask for."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={minimumScale}
             onChange={setMinimumScale}
           />
-          <ScaleField
+          <NumberField
             label="Default scale"
             hint="Used when a render names no scale."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={defaultScale}
             onChange={setDefaultScale}
           />
-          <ScaleField
+          <NumberField
             label="Maximum scale"
             hint="Anything past this is refused, never clamped."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={maximumScale}
             onChange={setMaximumScale}
           />

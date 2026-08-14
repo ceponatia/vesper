@@ -125,22 +125,47 @@ describe("mapImageRenderControls", () => {
     expect(unlisted.dropped).toEqual([{ control: "resolution", reason: "invalid" }]);
   });
 
-  it("reports seed, coherent sets, and an UNRESOLVED LoRA as unsupported rather than unbound", () => {
+  it("reports coherent sets and an UNRESOLVED LoRA as unsupported rather than unbound", () => {
     // "Vesper does not send this yet" is a different fact from "this version has
     // no field for it", and a reader of the drop list must be able to tell them apart.
     // A bare `controls.lora` is a REQUEST for a library row, and this module has no
     // library — sending its id, or guessing a locator from it, is the fabrication
-    // the drop exists to prevent.
+    // the drop exists to prevent. A seed is neither: it left the unsupported list
+    // with its transport and now drops like any other unbound control.
     const mapped = mapImageRenderControls({
       controls: { seed: 42, coherentSet: true, lora: { id: "lora-1", scale: 0.8 } },
       capabilities: capabilities(),
     });
     expect(mapped.input).toEqual({});
     expect(mapped.dropped).toEqual([
-      { control: "seed", reason: "unsupported" },
       { control: "coherentSet", reason: "unsupported" },
       { control: "lora", reason: "unsupported" },
+      { control: "seed", reason: "no_binding" },
     ]);
+  });
+
+  it("maps a seed through the version's seed binding and validates its range", () => {
+    const caps = capabilities({
+      controls: { seed: { field: "seed", type: "integer", minimum: 0, maximum: 100 } },
+    });
+    const inRange = mapImageRenderControls({ controls: { seed: 42 }, capabilities: caps });
+    expect(inRange.input).toEqual({ seed: 42 });
+    expect(inRange.applied).toEqual({ seed: 42 });
+    expect(inRange.dropped).toEqual([]);
+
+    // Out of range is a drop, never a clamp — same rule as every numeric control.
+    const outOfRange = mapImageRenderControls({ controls: { seed: 101 }, capabilities: caps });
+    expect(outOfRange.input).toEqual({});
+    expect(outOfRange.dropped).toEqual([{ control: "seed", reason: "invalid" }]);
+  });
+
+  it("drops a seed as no_binding on an unprobed capability set", () => {
+    const mapped = mapImageRenderControls({
+      controls: { seed: 7 },
+      capabilities: emptyImageModelAdvancedCapabilities(),
+    });
+    expect(mapped.input).toEqual({});
+    expect(mapped.dropped).toEqual([{ control: "seed", reason: "no_binding" }]);
   });
 
   it("sends a RESOLVED LoRA's locator and scale, and records neither the locator nor a second entry", () => {
@@ -191,7 +216,24 @@ describe("mapImageRenderControls", () => {
 
   it("sends nothing for an empty control set", () => {
     const mapped = mapImageRenderControls({ controls: {}, capabilities: capabilities() });
-    expect(mapped).toEqual({ input: {}, applied: {}, dropped: [] });
+    expect(mapped).toEqual({ input: {}, applied: {}, appliedFields: {}, dropped: [] });
+  });
+
+  it("records the provider field each applied control was written to", () => {
+    // `appliedFields` is what lets the compile step's reserved filter remove the
+    // matching normalized entry without a second copy of the alias table.
+    const mapped = mapImageRenderControls({
+      controls: { guidance: 5, resolution: "2K" },
+      capabilities: capabilities(),
+    });
+    expect(mapped.appliedFields).toEqual({ guidance: ["guidance_scale"], resolution: ["size"] });
+
+    const lora = mapImageRenderControls({
+      controls: {},
+      capabilities: loraCapabilities(),
+      resolvedLora: { id: "lora-1", locator: "owner/style-lora", scale: 0.8 },
+    });
+    expect(lora.appliedFields).toEqual({ lora: ["lora_weights", "lora_scale"] });
   });
 });
 

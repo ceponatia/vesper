@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { chatsApi, galleryApi, imageModelsApi, type ImageRecord } from "@/lib/client/api";
+import { chatsApi, galleryApi, imageProfilesApi, type ImageRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
-import { ImageModelSelect } from "./image-model-select";
+import { ImageProfileSelect } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -45,10 +45,10 @@ export function SceneStrip({
   rendering: boolean;
   /** Silent refetch of the shared list (after queueing). */
   onRefresh: () => void;
-  /** The chat's stored scene-model pick (a registry model id). */
+  /** The chat's stored scene pick — a profile id, or a legacy model id. */
   sceneModel: string;
   /** Save-on-select (no save button) — the page persists via the state PATCH. */
-  onSceneModelChange: (modelId: string) => void;
+  onSceneModelChange: (profileId: string) => void;
   /**
    * True while a reply is streaming. The model save goes through the chat-state
    * PATCH, which 409s for the whole exchange (`chatBusyResponse`), so the
@@ -59,7 +59,7 @@ export function SceneStrip({
   sending: boolean;
 }) {
   const toast = useToast();
-  const sceneModels = useAsyncData(() => imageModelsApi.list("scene"), []);
+  const sceneProfiles = useAsyncData(() => imageProfilesApi.list("scene"), []);
   const [generating, setGenerating] = useState(false);
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -116,22 +116,22 @@ export function SceneStrip({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
-        {/* Hot-swap model pick (owner request 2026-07-11): saves on select via
-            the state PATCH — no save button. The list is the registry filtered
-            to edit-capable models (owner ruling 2026-07-29): a text-to-image
-            model would paint a different-looking person. */}
-        <ImageModelSelect
-          models={sceneModels.data}
+        {/* Hot-swap profile pick (owner request 2026-07-11): saves on select via
+            the state PATCH — no save button. The list is the scene task's
+            offered profiles — exactly what resolution accepts, so a stored pick
+            can no longer be silently resolved past (capabilities Slice D). */}
+        <ImageProfileSelect
+          profiles={sceneProfiles.data}
           value={sceneModel}
           onChange={onSceneModelChange}
           disabled={sending}
           title={
             sending
               ? "Wait for the reply to finish — the conversation is locked while it streams"
-              : "Which image model paints the next scene. Every option keeps her exact look from the avatar reference."
+              : "Which image profile paints the next scene. Every option keeps her exact look from the avatar reference."
           }
           className="h-8 w-56 text-xs"
-          emptyHint="No reference-editing model is registered."
+          emptyHint="No scene profile is offered."
         />
         <Button
           size="sm"

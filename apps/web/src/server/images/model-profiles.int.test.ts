@@ -4,7 +4,12 @@ import type { ImageProfileTask } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageModelProfiles, imageModels } from "../db";
-import { loadImageModelProfiles, loadImageModelProfilesForTask, resolveImageProfileForTask } from "./model-profiles";
+import {
+  loadImageModelProfiles,
+  loadImageModelProfilesForTask,
+  resolveImageProfileForTask,
+  updateImageModelProfile,
+} from "./model-profiles";
 
 /**
  * The profile registry against a migrated database (image-model-capabilities.spec.md
@@ -39,11 +44,43 @@ const FIXTURE_PROFILE_IDS = [FIXTURE_OK_PROFILE_ID, FIXTURE_BAD_PROFILE_ID];
 /**
  * The seeded rows, as the migrations wrote them. Any drift here is a render change.
  * 17 from migration 0100, plus 5 from 0104 (three portrait-only text-to-image
- * models and the two SDXL PuLID edit profiles).
+ * models and the two SDXL PuLID edit profiles), plus 7 curated model-specific
+ * profiles from 0107 (capabilities slice 7) — every 0107 row non-default and
+ * sorted after the earlier seeds, so nothing resolves differently at seed time.
  */
-const SEEDED_PROFILE_COUNT = 22;
+const SEEDED_PROFILE_COUNT = 29;
 const QWEN_GENERATE = "qwen/qwen-image-2512";
 const QWEN_EDIT = "qwen/qwen-image-edit-2511";
+
+/**
+ * The 0107 curated rows, pinned individually: which model each hangs off, the
+ * job it is for, and the sort that keeps it BELOW every Standard row in the
+ * resolver's ordering. `PRE_CURATED_MAX_SORT` is the highest 0100/0104 sort —
+ * a curated row sorting at or under it would change which profile a stored
+ * legacy model pick resolves to, which is a render change.
+ */
+const PRE_CURATED_MAX_SORT = 95;
+const CURATED_PROFILES: ReadonlyArray<{ id: string; slug: string; key: string; task: ImageProfileTask; sort: number }> = [
+  { id: "imgprf2512portfastaaaaaa", slug: QWEN_GENERATE, key: "portrait-fast", task: "portrait", sort: 110 },
+  { id: "imgprf2512portqualityaaa", slug: QWEN_GENERATE, key: "portrait-quality", task: "portrait", sort: 111 },
+  { id: "imgprfs45ensemble2kaaaaa", slug: "bytedance/seedream-4.5", key: "ensemble-scene-2k", task: "scene", sort: 130 },
+  { id: "imgprfs45location4kaaaaa", slug: "bytedance/seedream-4.5", key: "location-4k", task: "location", sort: 131 },
+  { id: "imgprfs5lscene3kaaaaaaaa", slug: "bytedance/seedream-5-lite", key: "quality-scene-3k", task: "scene", sort: 140 },
+  {
+    id: "imgprfsd35highguidanceaa",
+    slug: "stability-ai/stable-diffusion-3.5-large",
+    key: "stylized-portrait-high-guidance",
+    task: "portrait",
+    sort: 150,
+  },
+  {
+    id: "imgprfwan27multiedit2kaa",
+    slug: "wan-video/wan-2.7-image-pro",
+    key: "multi-reference-edit-2k",
+    task: "scene",
+    sort: 160,
+  },
+];
 
 beforeAll(async () => {
   if (!ready) return;
@@ -90,7 +127,7 @@ async function insertFixtureProfile(id: string, label: string): Promise<void> {
 }
 
 describe.skipIf(!ready)("seeded image model profiles", () => {
-  it("the migrations seeded 22 built-in profiles, in sort order, all parseable", async () => {
+  it("the migrations seeded 29 built-in profiles, in sort order, all parseable", async () => {
     const sink = new DiagnosticCollector();
     const profiles = await loadImageModelProfiles(sink);
     const builtin = profiles.filter((profile) => profile.builtin);
@@ -157,7 +194,9 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
         .map((candidate) => candidate.model.slug);
 
     // Portrait is generate-only, so every `for_portrait` model qualifies — including
-    // the three 0104 text-to-image models, which have no reference input at all.
+    // the three 0104 text-to-image models, which have no reference input at all. The
+    // 0107 curated portrait rows all sort after the Standard set, so their models
+    // repeat at the TAIL and the picker's leading entries are unchanged.
     expect(await offeredSlugs("portrait")).toEqual([
       QWEN_GENERATE,
       "bytedance/seedream-4.5",
@@ -167,21 +206,84 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
       "aisha-ai-official/nsfw-flux-dev:fb4f086702d6a301ca32c170d926239324a7b7b2f0afc3d232a9c4be382dc3fa",
       "aisha-ai-official/likereality-pony-v1:f777e1c330555044053ad5089fbcee89804e3df2419c1e09d9bbc80a399b01a2",
       "prunaai/p-image",
+      QWEN_GENERATE,
+      QWEN_GENERATE,
+      "stability-ai/stable-diffusion-3.5-large",
     ]);
     // Scene is identity-critical: the two `img2img`/`weak` models are absent because
     // they are portrait-only AND `profileEligibility` would refuse them anyway. The
     // three 0104 generators are absent for a blunter reason — no reference input, so
-    // `can_edit` is false. SDXL PuLID is the one of that batch that qualifies.
+    // `can_edit` is false. SDXL PuLID is the one of that batch that qualifies. The
+    // three 0107 curated scene rows trail the Standard set, models repeating.
     expect(await offeredSlugs("scene")).toEqual([
       QWEN_EDIT,
       "bytedance/seedream-4.5",
       "bytedance/seedream-5-lite",
       "wan-video/wan-2.7-image-pro",
       "nsfw-api/sdxl-pulid:83bea633f1fbae0729dcfca1c431b01ae2a9e3e39c25b055fed6da2b916822d5",
+      "bytedance/seedream-4.5",
+      "bytedance/seedream-5-lite",
+      "wan-video/wan-2.7-image-pro",
     ]);
-    // The anchor lanes are seeded on one model each — nothing new became eligible.
+    // The anchor lanes item and chat_look remain seeded on one model each. Location
+    // gained the opt-in Seedream 4.5 "Location 4K" row in 0107 — non-default, so the
+    // anchor lane (which stores no pick) still resolves Qwen 2512.
     expect(await offeredSlugs("chat_look")).toEqual([QWEN_EDIT]);
     expect(await offeredSlugs("item")).toEqual([QWEN_GENERATE]);
+    expect(await offeredSlugs("location")).toEqual([QWEN_GENERATE, "bytedance/seedream-4.5"]);
+  });
+
+  // The 0107 curated rows, row by row. Every one must be present (its model is
+  // seeded, so WHERE EXISTS wrote it), enabled, builtin, NON-default, and sorted
+  // after every 0100/0104 row — non-default plus tail-sorted is the whole
+  // "nothing resolves differently at seed time" claim, because the resolver's
+  // model-scoped fallback takes the lowest sort on the stored model.
+  it("seeds the seven 0107 curated profiles enabled, non-default, and sorted after the standard set", async () => {
+    const sink = new DiagnosticCollector();
+    const profiles = await loadImageModelProfiles(sink);
+    const models = await db().select({ id: imageModels.id, slug: imageModels.slug }).from(imageModels);
+    const slugById = new Map(models.map((model) => [model.id, model.slug]));
+
+    for (const expected of CURATED_PROFILES) {
+      const profile = profiles.find((candidate) => candidate.id === expected.id);
+      expect(profile, `curated profile ${expected.id} must be seeded and parseable`).toBeDefined();
+      if (!profile) continue;
+      expect(slugById.get(profile.imageModelId)).toBe(expected.slug);
+      expect(profile.key).toBe(expected.key);
+      expect(profile.task).toBe(expected.task);
+      expect(profile.sort).toBe(expected.sort);
+      expect(profile.sort).toBeGreaterThan(PRE_CURATED_MAX_SORT);
+      expect(profile.enabled).toBe(true);
+      expect(profile.isDefault).toBe(false);
+      expect(profile.builtin).toBe(true);
+    }
+    expect(sink.items.filter((d) => d.code === "image_profile.row_invalid")).toEqual([]);
+  });
+
+  // The curated control defaults, as 0107 wrote them. These are dormant facts
+  // today (steps/guidance/negative/tier drop `no_binding` until a version is
+  // probed; Wan's tier resolves immediately through `chooseDimensions`), but the
+  // moment a probe lands they become the render — so drift here is a future
+  // render change and gets pinned now.
+  it("carries the curated control defaults and the ensemble reference policy as seeded", async () => {
+    const profiles = await loadImageModelProfiles();
+    const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+
+    expect(byId.get("imgprf2512portfastaaaaaa")?.controlDefaults).toMatchObject({ steps: 28 });
+    expect(byId.get("imgprf2512portqualityaaa")?.controlDefaults).toMatchObject({ steps: 50 });
+    expect(byId.get("imgprf2512portqualityaaa")?.providerOverrides).toEqual({ go_fast: false });
+    expect(byId.get("imgprfs45ensemble2kaaaaa")?.controlDefaults).toMatchObject({ resolution: "2K" });
+    expect(byId.get("imgprfs45ensemble2kaaaaa")?.referencePolicy).toMatchObject({
+      allowedRoles: ["identity", "location", "style", "object"],
+      requiredRoles: [],
+      roleOrder: ["identity", "location", "style", "object"],
+      maxPerRole: { identity: 4, location: 1, style: 1, object: 2 },
+    });
+    expect(byId.get("imgprfs45location4kaaaaa")?.controlDefaults).toMatchObject({ resolution: "4K" });
+    expect(byId.get("imgprfs5lscene3kaaaaaaaa")?.controlDefaults).toMatchObject({ resolution: "3K" });
+    expect(byId.get("imgprfsd35highguidanceaa")?.controlDefaults).toMatchObject({ guidance: 8 });
+    expect(byId.get("imgprfsd35highguidanceaa")?.controlDefaults.negativePrompt).toBeTruthy();
+    expect(byId.get("imgprfwan27multiedit2kaa")?.controlDefaults).toMatchObject({ resolution: "2K" });
   });
 
   it("still honors a stored legacy model slug, resolving to that model's own profile", async () => {
@@ -241,6 +343,100 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.severity).toBe("error");
     expect(errors[0]?.context).toMatchObject({ task: "example_transform" });
+  });
+});
+
+// The PATCH lockout decision table: configuration validity gates only the
+// ENABLED merged row. A profile whose stored config went invalid (here: an
+// edit-operation row on a model that cannot edit) must still be disableable
+// and editable WHILE disabled — that is what makes activation's "disable that
+// profile and retry" possible, and what unblocks a seeded row whose override
+// cannot validate on an unprobed deploy. Enabling it, or breaking an enabled
+// row, refuses exactly as before.
+const BROKEN_PROFILE_ID = "imgprffixturebrokenaaaaa";
+const VALID_PROFILE_ID = "imgprffixturevalidaaaaaa";
+
+describe.skipIf(!ready)("updateImageModelProfile enabled-gated validation", () => {
+  beforeAll(async () => {
+    // Direct inserts on purpose: the broken row models a config that WENT
+    // invalid after save (a version move, an unprobed deploy) — the create
+    // path would rightly refuse it today. The fixture model cannot edit, so
+    // the edit-operation row is `operation_unsupported`.
+    await db()
+      .insert(imageModelProfiles)
+      .values([
+        {
+          id: BROKEN_PROFILE_ID,
+          imageModelId: FIXTURE_MODEL_ID,
+          key: "fixture-broken-edit",
+          label: "Broken Edit",
+          task: "text_repair",
+          operation: "edit",
+          promptStrategy: "instruction_edit",
+          enabled: true,
+          isDefault: false,
+          sort: 901,
+        },
+        {
+          id: VALID_PROFILE_ID,
+          imageModelId: FIXTURE_MODEL_ID,
+          key: "fixture-valid-generate",
+          label: "Valid Generate",
+          task: "text_repair",
+          operation: "generate",
+          promptStrategy: "text_to_image_description",
+          enabled: true,
+          isDefault: false,
+          sort: 902,
+        },
+      ]);
+  });
+
+  afterAll(async () => {
+    // Removed HERE, not in the suite afterAll: the resilience describe below
+    // asserts exactly which text_repair rows exist.
+    await db()
+      .delete(imageModelProfiles)
+      .where(inArray(imageModelProfiles.id, [BROKEN_PROFILE_ID, VALID_PROFILE_ID]));
+  });
+
+  it("disables an invalid row (disable-while-invalid succeeds)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, { enabled: false });
+    if (!result.ok) throw new Error(`expected success, got ${result.code}: ${result.message}`);
+    // The returned row is the merged row the update wrote — no re-read.
+    expect(result.profile.enabled).toBe(false);
+    expect(result.profile.label).toBe("Broken Edit");
+  });
+
+  it("edits a disabled invalid row (rename-while-disabled succeeds)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, {
+      label: "Broken Edit (parked)",
+    });
+    if (!result.ok) throw new Error(`expected success, got ${result.code}: ${result.message}`);
+    expect(result.profile.label).toBe("Broken Edit (parked)");
+    expect(result.profile.enabled).toBe(false);
+  });
+
+  it("refuses to ENABLE an invalid row (enable-while-invalid is a 400)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, { enabled: true });
+    expect(result).toMatchObject({ ok: false, code: "invalid" });
+    // And the refusal really did keep the row disabled.
+    const rows = await db()
+      .select({ enabled: imageModelProfiles.enabled })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.id, BROKEN_PROFILE_ID));
+    expect(rows[0]?.enabled).toBe(false);
+  });
+
+  it("validates an edit while the merged row stays enabled", async () => {
+    // Breaking a healthy ENABLED row refuses…
+    const broken = await updateImageModelProfile(FIXTURE_MODEL_ID, VALID_PROFILE_ID, { operation: "edit" });
+    expect(broken).toMatchObject({ ok: false, code: "invalid" });
+    // …and a benign edit passes the same validation and lands.
+    const renamed = await updateImageModelProfile(FIXTURE_MODEL_ID, VALID_PROFILE_ID, { label: "Valid Renamed" });
+    if (!renamed.ok) throw new Error(`expected success, got ${renamed.code}: ${renamed.message}`);
+    expect(renamed.profile.label).toBe("Valid Renamed");
+    expect(renamed.profile.enabled).toBe(true);
   });
 });
 

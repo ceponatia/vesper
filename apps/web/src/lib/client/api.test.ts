@@ -74,6 +74,20 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.error).toBe("The operation was aborted due to timeout");
     expect(parsed.meta.variantKind).toBe("pose");
   });
+
+  it("carries the render provenance through the parse instead of stripping it", () => {
+    const render = { seed: 42, predictionId: "pred-1", droppedControls: [] };
+    const parsed = imageRecordSchema.parse({
+      id: "img-ready",
+      kind: "scene",
+      status: "ready",
+      prompt: "scene prompt",
+      meta: { model: "replicate/qwen/qwen-image-2512", render },
+    });
+    expect(parsed.meta.render).toEqual(render);
+    // Degraded shapes miss cleanly rather than failing the record.
+    expect(imageRecordSchema.parse({ id: "img-2", meta: { render: "not-an-object" } }).meta.render).toBeUndefined();
+  });
 });
 
 describe("request plumbing", () => {

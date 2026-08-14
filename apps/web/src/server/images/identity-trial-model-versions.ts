@@ -19,11 +19,12 @@ import { loadImageModels } from "./models";
  *
  * This module performs that bounded setup immediately before planning. It probes
  * only the distinct selected models that still have no trustworthy pin, writes
- * the same mechanical capability fields as the admin model route, and leaves all
- * reviewed/operator fields alone (`maxReferences`, surface choices, edit kind,
- * identity rating, transport, warnings and advanced controls). The trial planner
- * still refuses an unpinnable cell; this removes the manual prerequisite without
- * weakening the evidence contract.
+ * the same mechanical capability fields as the admin re-probe route, and leaves
+ * all reviewed/operator fields alone (`maxReferences`, the curated
+ * `supportedAspects`, surface choices, edit kind, identity rating, transport,
+ * warnings and advanced controls). The trial planner still refuses an
+ * unpinnable cell; this removes the manual prerequisite without weakening the
+ * evidence contract.
  */
 
 type SuccessfulProbe = Extract<ProbeResult, { ok: true }>["probe"];
@@ -49,28 +50,48 @@ export interface IdentityTrialVersionDependencies {
 }
 
 /**
- * The capability columns a successful Replicate probe owns. Kept here so trial
- * setup, the admin add route and the admin re-probe cannot accidentally overwrite
- * reviewed judgments that the API PATCH route deliberately preserves — and so
- * "what a probe writes" has exactly one answer.
+ * The capability columns a re-probe of an EXISTING row may rewrite. Kept here so
+ * trial setup, candidate activation and the admin re-probe cannot accidentally
+ * overwrite reviewed judgments that the API PATCH route deliberately preserves —
+ * and so "what a re-probe writes" has exactly one answer.
+ *
+ * `supportedAspects` is deliberately ABSENT: the stored list is owner-curated,
+ * not probe-owned. Migration 0098 prunes Wan's list by hand (the 4096*… sizes
+ * are text-to-image-only, and seeding them "would silently break every edit"),
+ * and `chooseAspect`'s largest-exact rule means a probe clobbering the curation
+ * would quietly re-add exactly the entries every edit render then picks. The
+ * owner updates the list through the PATCH route when a diff shows the schema
+ * moved.
  *
  * `advancedCapabilities` is written with `probedVersionId` rather than beside it:
  * the bindings describe ONE version's input schema, so a record that kept the
  * bindings while the version moved would have the render path sending a control
  * to a field that no longer exists.
  */
-export function imageModelProbeFields(probe: SuccessfulProbe) {
+export function imageModelReprobeFields(probe: SuccessfulProbe) {
   return {
     canGenerate: probe.canGenerate,
     canEdit: probe.canEdit,
     referenceField: probe.referenceField,
     referenceArity: probe.referenceArity,
     aspectMode: probe.aspectMode,
-    supportedAspects: probe.supportedAspects,
     outputFormat: probe.outputFormat,
     extraInput: probe.extraInput,
     advancedCapabilities: probe.advancedCapabilities,
     probedVersionId: probe.versionId,
+  };
+}
+
+/**
+ * The CREATE write set: everything a re-probe owns PLUS `supportedAspects`. A
+ * brand-new row has no curation to protect, and the probe's verbatim menu is
+ * the only honest starting value — curation begins the first time the owner
+ * edits it, and from then on only {@link imageModelReprobeFields} runs.
+ */
+export function imageModelProbeFields(probe: SuccessfulProbe) {
+  return {
+    ...imageModelReprobeFields(probe),
+    supportedAspects: probe.supportedAspects,
   };
 }
 
@@ -79,7 +100,7 @@ const defaultDependencies: IdentityTrialVersionDependencies = {
   loadProfiles: loadImageModelProfiles,
   probe: (slug) => replicateClient().probeReplicateModel(slug),
   persist: async (modelId, probe) => {
-    await db().update(imageModels).set(imageModelProbeFields(probe)).where(eq(imageModels.id, modelId));
+    await db().update(imageModels).set(imageModelReprobeFields(probe)).where(eq(imageModels.id, modelId));
   },
 };
 

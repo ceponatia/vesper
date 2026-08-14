@@ -43,11 +43,11 @@ The `strong` rating keeps Qwen eligible for identity-critical tasks. It does not
 mean every output is the exact same face. Trial results and future advisory
 identity checks should remain separate from the coarse eligibility rating.
 
-## Quality policy before profiles are wired
+## Quality policy at the render seam
 
-The provider defaults `go_fast` to `true`. The image-model profile rows are still
-dormant, so `packages/image-core/src/models/quality-presets.ts` applies the reviewed effective
-setting at the shared render seam:
+The provider defaults `go_fast` to `true`. This model's seeded profiles carry
+empty control defaults, so `packages/image-core/src/models/quality-presets.ts`
+applies the reviewed effective setting at the shared render seam:
 
 ```json
 {
@@ -55,14 +55,13 @@ setting at the shared render seam:
 }
 ```
 
-All current Qwen Edit jobs are identity-critical. Quality therefore wins over the
-provider's speed preset. Once text repair or another non-identity task uses this
-model, task profiles must replace this global override so fast and quality work
-can diverge deliberately.
+All current Qwen Edit jobs are identity-critical. Quality therefore wins over
+the provider's speed preset. This model carries no curated fast/quality profile
+variants; a non-identity task on it would need profile-level settings in place
+of this global override before fast and quality work could diverge.
 
-The effective value may differ from the raw `image_models.extra_input` row until
-profile controls reach the render path. Diagnostics and provenance should report
-the final payload, not infer it from the row.
+The effective value differs from the raw `image_models.extra_input` row.
+Diagnostics and provenance report the final payload, not infer it from the row.
 
 ## Numbered-reference instruction policy
 
@@ -100,8 +99,8 @@ drift from it.
 ## Seeded profiles
 
 Three profiles exist, all `operation: edit` with the `instruction_edit` prompt
-strategy. They currently have empty control defaults and nothing calls the
-profile layer yet:
+strategy, and each is its task's global default
+([providers.md](../images/providers.md)):
 
 - `variant-standard` — task `variant`; identity required, style optional;
 - `scene-standard` — task `scene`; identity → location → style → object. It
@@ -110,42 +109,22 @@ profile layer yet:
   still requires at least one image;
 - `chat-look-standard` — task `chat_look`; identity required, style optional.
 
-When shared render intent lands, these profiles should become explicit fast and
-quality variants, and the runtime `go_fast` override should move into the quality
-profiles.
+All three carry empty control defaults. This model has no curated profiles
+beyond them; the `go_fast` override stays at the quality seam above.
 
-## Reference-quality roadmap
+## Identity references
 
-A waist-up portrait may contain too few face pixels for exact identity. The next
-quality slice compiles the canonical portrait into an identity pack containing:
+A waist-up portrait may contain too few face pixels for exact identity, so the
+identity reference(s) an edit render sends come from the identity-pack service —
+[identity-packs.md](../images/identity-packs.md) owns crop derivation, quality
+gates, and provenance. A face crop that cannot clear the quality gate is never
+sent merely to fill a reference slot.
 
-- canonical portrait;
-- tight face crop;
-- crop/source provenance;
-- minimum face-size, blur, occlusion, and face-count checks.
-
-The first single-character scene trial compares:
-
-1. canonical portrait only;
-2. canonical portrait + face crop;
-3. the same references with fast mode on versus off;
-4. numbered/delta-first instruction versus the prior generic sentence.
-
-Only one variable changes per A/B. A face crop that cannot clear the quality gate
-is not sent merely to fill a reference slot.
-
-## Reference ordering
-
-Until role-aware profile selection is live, the existing send order remains
-application-defined. The target single-character order is:
-
-1. canonical identity portrait;
-2. close face crop for the same character;
-3. location reference.
-
-For multiple characters, required identity images outrank face-detail and
-location references. If all required identities do not fit the cap, the profile
-is ineligible; Vesper must not silently drop one person's identity.
+Reference selection and ordering are the resolved profile's policy
+([providers.md](../images/providers.md)): required identity references outrank
+optional face-detail and location references, and a required reference that
+does not survive selection refuses the render rather than silently dropping one
+person's identity.
 
 ## Inputs
 

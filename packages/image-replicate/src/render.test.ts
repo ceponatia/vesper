@@ -3,7 +3,7 @@ import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/im
 import { DiagnosticCollector } from "@vesper/contracts";
 import { createReplicateClient, type ReplicateClient } from "./client";
 import { DEFAULT_PREDICTION_TIMEOUT_MS, OUTPUT_TIMEOUT_MS, type ReplicateConfig, REQUEST_TIMEOUT_MS } from "./config";
-import { DATA_URL_BUDGET_BYTES, referenceDataUrl, withinDataUrlBudget } from "./files";
+import { DATA_URL_BUDGET_BYTES, type PreparedReferenceBytes, referenceDataUrl, withinDataUrlBudget } from "./files";
 import { buildRegistryModelInput, overlayControlInput, type RegistryModelRequest } from "./payload";
 import { replicatePredictionTarget, type ReplicateImageResult } from "./prediction";
 
@@ -25,6 +25,17 @@ const config = (over: Partial<ReplicateConfig> = {}): ReplicateConfig => ({
 });
 
 const client = (over: Partial<ReplicateConfig> = {}): ReplicateClient => createReplicateClient(config(over));
+
+/**
+ * Prepared webp bytes — what the application's preparation step hands the
+ * transport. The request type takes nothing rawer, so every case builds these.
+ */
+const prepared = (bytes: Buffer | string, over: Partial<PreparedReferenceBytes> = {}): PreparedReferenceBytes => ({
+  bytes: typeof bytes === "string" ? Buffer.from(bytes) : bytes,
+  mediaType: "image/webp",
+  extension: "webp",
+  ...over,
+});
 
 const model = (overrides: Partial<ImageModel> = {}): ImageModel => ({
   id: "m1",
@@ -229,15 +240,21 @@ describe("control input overlay", () => {
 });
 
 describe("inline reference transport", () => {
-  it("stamps the stored webp media type into the URI", () => {
-    expect(referenceDataUrl(Buffer.from("bytes"))).toBe(`data:image/webp;base64,${Buffer.from("bytes").toString("base64")}`);
+  it("stamps the prepared media type into the URI", () => {
+    expect(referenceDataUrl(Buffer.from("bytes"), "image/webp")).toBe(
+      `data:image/webp;base64,${Buffer.from("bytes").toString("base64")}`,
+    );
+    // Not every reference is webp — a png mask travels under its own type.
+    expect(referenceDataUrl(Buffer.from("mask"), "image/png")).toBe(
+      `data:image/png;base64,${Buffer.from("mask").toString("base64")}`,
+    );
   });
 
   // These assert by identity (`toBe`) rather than value: a deep-equality check
   // over a multi-megabyte buffer walks it byte by byte and blows the 5s budget.
   it("keeps the references that fit the byte budget, in order", () => {
-    const small = Buffer.alloc(1_000);
-    const huge = Buffer.alloc(7 * 1024 * 1024);
+    const small = prepared(Buffer.alloc(1_000));
+    const huge = prepared(Buffer.alloc(7 * 1024 * 1024));
     expect(withinDataUrlBudget([small, small])).toHaveLength(2);
 
     const trimmed = withinDataUrlBudget([small, huge, small]);
@@ -248,7 +265,7 @@ describe("inline reference transport", () => {
   it("keeps the anchor reference even when it alone exceeds the budget", () => {
     // Dropping every reference would render a stranger rather than the
     // character; let the provider be the one to refuse an oversized request.
-    const huge = Buffer.alloc(7 * 1024 * 1024);
+    const huge = prepared(Buffer.alloc(7 * 1024 * 1024));
     const kept = withinDataUrlBudget([huge]);
     expect(kept).toHaveLength(1);
     expect(kept[0]).toBe(huge);
@@ -393,10 +410,13 @@ describe("runRegistryImageModel", () => {
 
     const result = await client().runRegistryImageModel(
       model({ slug: "qwen/qwen-image-edit-2511", referenceArity: "array", maxReferences: 3 }),
-      { prompt: "keep both people recognizable", references: [Buffer.from("one"), Buffer.from("two")] },
+      { prompt: "keep both people recognizable", references: [prepared("one"), prepared("two")] },
     );
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("edited-image");
+    // The file transport has no byte budget: every fitted reference is sent,
+    // and the result says so.
+    expect(result.sentReferenceCount).toBe(2);
     expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
   });
 
@@ -430,7 +450,7 @@ describe("runRegistryImageModel", () => {
         referenceTransport: "data_url",
         maxReferences: 9,
       }),
-      { prompt: "a scene", references: [Buffer.from("one"), Buffer.from("two")] },
+      { prompt: "a scene", references: [prepared("one"), prepared("two")] },
     );
 
     expect(result.ok).toBe(true);
@@ -464,11 +484,54 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    await client().runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
+    const result = await client().runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
       prompt: "p",
-      references: [Buffer.from("a"), Buffer.from("b"), Buffer.from("c")],
+      references: [prepared("a"), prepared("b"), prepared("c")],
     });
     expect(uploads).toBe(1);
+    // And the count reports the capacity-trimmed send, not the caller's three.
+    expect(result.sentReferenceCount).toBe(1);
+  });
+
+  it("reports how many primary references survived the inline byte budget", async () => {
+    // A budget-trimmed data_url send still succeeds — the caller reading the
+    // count is what keeps stored provenance from claiming the dropped tail went.
+    const sink = new DiagnosticCollector();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/predictions")) {
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    const result = await client().runRegistryImageModel(
+      model({ referenceField: "images", referenceArity: "array", referenceTransport: "data_url", maxReferences: 4 }),
+      {
+        prompt: "a scene",
+        references: [
+          prepared(Buffer.alloc(1_000), { role: "identity" }),
+          prepared(Buffer.alloc(7 * 1024 * 1024), { role: "location" }),
+        ],
+      },
+      sink,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.sentReferenceCount).toBe(1);
+    // The trim report names the caller's REAL roles — what was kept and what
+    // was given up — not a generic "reference".
+    const trimmed = sink.items.find((entry) => entry.code === "image_model.references_trimmed");
+    expect(trimmed?.context).toMatchObject({ sentRoles: ["identity"], droppedRoles: ["location"] });
+  });
+
+  it("carries no sent count on a refusal that never reached the transport", async () => {
+    // Absent means "nothing was posted", which is a different fact from zero.
+    const editOnly = model({ slug: "qwen/qwen-image-edit-2511", canGenerate: false });
+    const refused = await client().runRegistryImageModel(editOnly, { prompt: "portrait" });
+    expect(refused.ok).toBe(false);
+    expect("sentReferenceCount" in refused).toBe(false);
   });
 
   it("sends the client's configured prediction deadline as Replicate's Cancel-After", async () => {
@@ -648,8 +711,8 @@ describe("bound control images", () => {
     const input = await postedInput(
       {
         prompt: "portrait",
-        references: [Buffer.from("face")],
-        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+        references: [prepared("face")],
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [prepared("skeleton")] }],
       },
       { referenceArity: "array", maxReferences: 2 },
     );
@@ -662,7 +725,7 @@ describe("bound control images", () => {
   it("writes an array-arity control field as a list even at one image", async () => {
     const input = await postedInput({
       prompt: "portrait",
-      controlReferences: [{ field: "edges", arity: "array", buffers: [Buffer.from("e1")] }],
+      controlReferences: [{ field: "edges", arity: "array", buffers: [prepared("e1")] }],
     });
     expect(input.edges).toEqual(["https://files.test/1"]);
   });
@@ -673,8 +736,8 @@ describe("bound control images", () => {
     const input = await postedInput({
       prompt: "portrait",
       controlReferences: [
-        { field: "pose_image", arity: "single", buffers: [Buffer.from("same")] },
-        { field: "depth_image", arity: "single", buffers: [Buffer.from("same")] },
+        { field: "pose_image", arity: "single", buffers: [prepared("same")] },
+        { field: "depth_image", arity: "single", buffers: [prepared("same")] },
       ],
     });
     expect(input.pose_image).toBe("https://files.test/1");
@@ -685,13 +748,13 @@ describe("bound control images", () => {
     const input = await postedInput(
       {
         prompt: "a scene",
-        references: [Buffer.from("face")],
-        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+        references: [prepared("face")],
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [prepared("skeleton")] }],
       },
       { referenceField: "images", referenceArity: "array", referenceTransport: "data_url", maxReferences: 4 },
     );
-    expect(input.images).toEqual([referenceDataUrl(Buffer.from("face"))]);
-    expect(input.pose_image).toBe(referenceDataUrl(Buffer.from("skeleton")));
+    expect(input.images).toEqual([referenceDataUrl(Buffer.from("face"), "image/webp")]);
+    expect(input.pose_image).toBe(referenceDataUrl(Buffer.from("skeleton"), "image/webp"));
   });
 
   it("lets an edit-only model run on a control image alone", async () => {
@@ -700,7 +763,7 @@ describe("bound control images", () => {
     const input = await postedInput(
       {
         prompt: "portrait",
-        controlReferences: [{ field: "pose_image", arity: "single", buffers: [Buffer.from("skeleton")] }],
+        controlReferences: [{ field: "pose_image", arity: "single", buffers: [prepared("skeleton")] }],
       },
       { canGenerate: false },
     );
@@ -725,7 +788,7 @@ describe("bound control images", () => {
     );
     await client().runRegistryImageModel(
       model(),
-      { prompt: "portrait", controlReferences: [{ field: "prompt", arity: "single", buffers: [Buffer.from("x")] }] },
+      { prompt: "portrait", controlReferences: [{ field: "prompt", arity: "single", buffers: [prepared("x")] }] },
       sink,
     );
     expect(sink.items.map((entry) => entry.code)).toContain("image_model.control_field_reserved");
@@ -739,7 +802,7 @@ describe("bound control images", () => {
     // anchor-preservation fallback (which returns the first reference whatever
     // the budget says) instead of the reservation. Room for two of three is the
     // case with an unambiguous answer.
-    const small = Buffer.alloc(16);
+    const small = prepared(Buffer.alloc(16));
     expect(withinDataUrlBudget([small, small, small])).toHaveLength(3);
     expect(withinDataUrlBudget([small, small, small], DATA_URL_BUDGET_BYTES - 40)).toHaveLength(2);
   });
@@ -747,7 +810,7 @@ describe("bound control images", () => {
   it("still sends the anchor when the reservation alone exhausts the budget", () => {
     // Sending no identity reference renders a stranger, so the anchor survives a
     // blown budget and the provider is left to accept or refuse it.
-    const small = Buffer.alloc(16);
+    const small = prepared(Buffer.alloc(16));
     expect(withinDataUrlBudget([small, small], DATA_URL_BUDGET_BYTES)).toEqual([small]);
   });
 });

@@ -35,8 +35,9 @@ Reviewed by hand, never probed, and never overwritten by a re-probe:
 
 ## Seeded profiles
 
-Three, none of them a default — this model is an alternative, not a Vesper default
-— all with empty control defaults and no timeout override:
+Five, none of them a default — this model is an alternative, not a Vesper
+default. The three standard rows carry empty control defaults and no timeout
+override:
 
 - `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
   `text_to_image_description`, no references.
@@ -45,12 +46,26 @@ Three, none of them a default — this model is an alternative, not a Vesper def
 - `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
   identity → location → style → object with nothing required.
 
-The scene profile deliberately carries `instruction_edit` rather than
-`multi_reference_compose` even though this model composes: the scene lane still
-picks multi-vs-single reference mode at render time, and changing the strategy here
-would have changed a payload. Slice 2 threads the strategy through. **Nothing calls
-the profile layer yet** — the ensemble, 4K location and coherent-set profiles the
-plan describes are later work.
+The scene profiles deliberately carry `instruction_edit` rather than
+`multi_reference_compose` even though this model composes: the scene lane picks
+multi-vs-single reference mode at render time, and the strategy here must not
+change the payload.
+
+Two curated profiles extend the standard set; each runs only when picked:
+
+- `ensemble-scene-2k` (Ensemble Scene 2K) — task `scene`, the multi-character
+  pick. Same strategy and role order as Standard, but `maxPerRole` states the
+  ensemble shape — identity 4, location 1, style 1, object 2 (Standard carries
+  no caps; the 14-slot reference capacity still truncates) — plus
+  `resolution: "2K"`.
+- `location-4k` (Location 4K) — task `location`, `generate`, the slow opt-in
+  establishing-shot generator at `resolution: "4K"`. Non-default, so the
+  location anchor lane keeps resolving its Qwen 2512 default until an admin
+  deliberately re-defaults the task.
+
+The `resolution` defaults map through the probed `size`-tier binding: while the
+model row's `advancedCapabilities` is empty they drop as recorded `no_binding`,
+and they take effect once the version is probed or pinned.
 
 ## No output format control
 

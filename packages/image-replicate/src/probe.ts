@@ -68,6 +68,9 @@ const propertySchema = z
     /** The declared numeric range, when a schema states one rather than only prosing it. */
     minimum: z.number().nullish(),
     maximum: z.number().nullish(),
+    /** Inline enum members. Replicate usually routes enums through `allOf` + `$ref`
+     * instead, so both spellings are read ({@link strictEnumValues}). */
+    enum: z.array(z.unknown()).nullish(),
     items: z.object({ type: z.string().nullish(), format: z.string().nullish() }).nullish(),
     allOf: z.array(z.object({ $ref: z.string().nullish() })).nullish(),
   });
@@ -152,14 +155,10 @@ export interface ReplicateModelProbe {
   extraInput: Record<string, unknown>;
   /**
    * The optional input bindings this ONE version declares, as the capability
-   * contract names them.
-   *
-   * Only the LoRA pair is derived today ({@link deriveAdvancedCapabilities});
-   * every other slot stays absent, which the contract already defines as "this
-   * version exposes no field for that control" and the mapper already handles by
-   * dropping it with a reason. Deriving the rest would move behavior on models
-   * nobody re-probed for it, so each further alias arrives with the slice that
-   * has a transport for it.
+   * contract names them ({@link deriveAdvancedCapabilities}). A slot left absent
+   * means "this version exposes no field for that control", and the mapper
+   * drops it with a reason — so a row probed before a given alias existed keeps
+   * sending exactly what it sends today until somebody re-probes it.
    */
   advancedCapabilities: ImageModelAdvancedCapabilities;
 }
@@ -267,50 +266,146 @@ export async function probeReplicateModel(http: ReplicateHttp, slug: string): Pr
       supportedAspects: aspect.supported,
       outputFormat: deriveOutputFormat(properties, schemas),
       extraInput: deriveExtraInput(properties),
-      advancedCapabilities: deriveAdvancedCapabilities(properties),
+      advancedCapabilities: deriveAdvancedCapabilities(properties, schemas),
     },
   };
 }
 
 /**
- * The optional-input bindings this version declares — LoRA only, for now.
+ * The optional-input bindings this version declares, resolved from the KNOWN
+ * ALIAS LIST (image-model-capabilities.spec.md §"Control mapping") — alias
+ * discovery happens once, here, so the render-time mapper never pattern-matches
+ * a field name.
  *
- * `lora_weights` and `lora_scale` are the two fields the Qwen LoRA endpoints
- * publish, and they are derived HERE rather than hand-curated on the row because
- * a locator sent to a field the active version does not declare is a provider
- * rejection at spend time. Recording them with the version they were read from
- * (`probedVersionId`, written in the same update) is what lets the render path
- * say "this version exposes a LoRA input" rather than guessing from the slug.
- *
- * Everything else is deliberately left underived. An alias this function invented
- * would change what an already-registered model sends the moment somebody
- * re-probed it, with no slice owning the resulting behavior — so the empty
- * capability set stays the honest default, and the schema's own thunk defaults
- * fill the rest of the record.
+ * The style is uniformly conservative: a binding is derived only when the
+ * schema declares a field of the expected primitive type under a known name,
+ * absent stays absent, and nothing is invented. A field sent to a name the
+ * active version does not declare is a provider rejection at spend time, which
+ * is why the result is recorded with the version it was read from
+ * (`probedVersionId`, written in the same update).
  *
  * The DECLARED numeric type is preserved rather than flattened to `number`:
  * `bindingAccepts` refuses a fractional value on an integer binding, and calling
  * an integer field a number would send `0.8` to a provider that rejects it.
+ *
+ * `resolutionTier` derives from a `size` input even though `size` is the aspect
+ * key on size-mode models — the collision is real, and it is handled where the
+ * payload is built (`filterReservedInputFields` refuses the mapped value with a
+ * `reserved` drop), not special-cased here: a probe that guessed the aspect
+ * mode's consequences would encode a second copy of the reserved-field rule.
+ *
+ * `knownInputFields` is every property name of the Input schema, sorted. It is
+ * the allowlist `providerOverrides` validation reads, and an empty list fails
+ * CLOSED — so populating it here is what makes overrides usable at all on a
+ * probed row, while unprobed rows keep rejecting everything.
  */
-function deriveAdvancedCapabilities(properties: Record<string, unknown>): ImageModelAdvancedCapabilities {
+function deriveAdvancedCapabilities(
+  properties: Record<string, unknown>,
+  schemas: Record<string, unknown>,
+): ImageModelAdvancedCapabilities {
   const controls: ImageModelControlBindings = {};
 
-  const weights = propertySchema.safeParse(properties.lora_weights);
-  if (weights.success && weights.data.type === "string") {
-    controls.loraWeights = { field: "lora_weights", type: "string" };
+  const assign = (slot: keyof ImageModelControlBindings, binding: ImageInputBinding | null): void => {
+    if (binding) controls[slot] = binding;
+  };
+
+  assign("seed", numericBinding(properties, "seed"));
+  assign("negativePrompt", stringBinding(properties, "negative_prompt"));
+  assign("guidance", numericBinding(properties, "guidance") ?? numericBinding(properties, "cfg"));
+  assign("steps", numericBinding(properties, "num_inference_steps"));
+  assign("editStrength", numericBinding(properties, "strength") ?? numericBinding(properties, "prompt_strength"));
+  assign("outputCount", numericBinding(properties, "num_outputs") ?? numericBinding(properties, "max_images"));
+  assign("thinkingMode", booleanBinding(properties, "thinking_mode"));
+  assign("sequentialMode", enumOrStringBinding(properties, schemas, "sequential_image_generation"));
+  assign("coherentSet", booleanBinding(properties, "image_set_mode"));
+
+  // A `size` input is a resolution-tier control only when its enum actually
+  // offers a tier ("1K", "2K" …). Wan's enum mixes tiers with pixel pairs and
+  // still counts; a size that is a free string, or an enum of shapes alone,
+  // does not — there is no tier to ask for.
+  const sizeValues = strictEnumValues(properties.size, schemas);
+  if (sizeValues && sizeValues.some((value) => /^\d+K$/i.test(value))) {
+    controls.resolutionTier = { field: "size", type: "enum", enumValues: sizeValues };
   }
 
-  const scale = propertySchema.safeParse(properties.lora_scale);
-  if (scale.success && (scale.data.type === "number" || scale.data.type === "integer")) {
-    const binding: ImageInputBinding = { field: "lora_scale", type: scale.data.type };
-    // Absent means "the provider declared no bound", never "unbounded" — so a
-    // missing key is left off rather than written as a made-up range.
-    if (scale.data.minimum != null) binding.minimum = scale.data.minimum;
-    if (scale.data.maximum != null) binding.maximum = scale.data.maximum;
-    controls.loraScale = binding;
-  }
+  const width = numericBinding(properties, "width");
+  if (width?.type === "integer") controls.customWidth = width;
+  const height = numericBinding(properties, "height");
+  if (height?.type === "integer") controls.customHeight = height;
 
-  return imageModelAdvancedCapabilitiesSchema.parse({ controls });
+  assign("loraWeights", stringBinding(properties, "lora_weights"));
+  assign("loraScale", numericBinding(properties, "lora_scale"));
+
+  return imageModelAdvancedCapabilitiesSchema.parse({
+    controls,
+    knownInputFields: Object.keys(properties).sort(),
+  });
+}
+
+/** The declared integer/number binding for one field, range carried over verbatim. */
+function numericBinding(properties: Record<string, unknown>, field: string): ImageInputBinding | null {
+  const parsed = propertySchema.safeParse(properties[field]);
+  if (!parsed.success) return null;
+  const p = parsed.data;
+  if (p.type !== "number" && p.type !== "integer") return null;
+  const binding: ImageInputBinding = { field, type: p.type };
+  // Absent means "the provider declared no bound", never "unbounded" — so a
+  // missing key is left off rather than written as a made-up range.
+  if (p.minimum != null) binding.minimum = p.minimum;
+  if (p.maximum != null) binding.maximum = p.maximum;
+  return binding;
+}
+
+function stringBinding(properties: Record<string, unknown>, field: string): ImageInputBinding | null {
+  const parsed = propertySchema.safeParse(properties[field]);
+  return parsed.success && parsed.data.type === "string" ? { field, type: "string" } : null;
+}
+
+function booleanBinding(properties: Record<string, unknown>, field: string): ImageInputBinding | null {
+  const parsed = propertySchema.safeParse(properties[field]);
+  return parsed.success && parsed.data.type === "boolean" ? { field, type: "boolean" } : null;
+}
+
+/**
+ * An enum binding when the field's members resolve, a string binding when the
+ * field is a plain string, absent otherwise. An `enum` binding always carries
+ * its values: `bindingAccepts` fails a value-less enum closed, so recording one
+ * would be recording a control nothing can ever send.
+ */
+function enumOrStringBinding(
+  properties: Record<string, unknown>,
+  schemas: Record<string, unknown>,
+  field: string,
+): ImageInputBinding | null {
+  const values = strictEnumValues(properties[field], schemas);
+  if (values) return { field, type: "enum", enumValues: values };
+  return stringBinding(properties, field);
+}
+
+/**
+ * The property's enum members — inline `enum` or the `allOf` `$ref` Replicate
+ * favours — but only when EVERY member is a string. A partially-string enum is
+ * skipped whole rather than filtered: filtering would record an enum whose
+ * accepted set differs from the provider's, and a value judged valid here could
+ * still be rejected at spend time.
+ *
+ * Distinct from {@link enumValuesFor}, which FILTERS to strings on purpose —
+ * aspect derivation wants the shape-expressing subset of a mixed enum, while a
+ * control binding must describe the whole input or nothing.
+ */
+function strictEnumValues(property: unknown, schemas: Record<string, unknown>): string[] | null {
+  const parsed = propertySchema.safeParse(property);
+  if (!parsed.success) return null;
+  let values: unknown[] | null = parsed.data.enum ?? null;
+  if (!values) {
+    const ref = parsed.data.allOf?.[0]?.$ref;
+    if (!ref) return null;
+    const referenced = schemas[ref.split("/").pop() ?? ""];
+    const enumShape = z.object({ enum: z.array(z.unknown()).optional() }).safeParse(referenced);
+    values = enumShape.success ? (enumShape.data.enum ?? null) : null;
+  }
+  if (!values || values.length === 0) return null;
+  return values.every((value): value is string => typeof value === "string") ? values : null;
 }
 
 interface ReferenceField {

@@ -10,6 +10,7 @@ import {
   ensureIdentityTrialModelVersions,
   identityTrialModelsNeedingProbe,
   imageModelProbeFields,
+  imageModelReprobeFields,
 } from "./identity-trial-model-versions";
 
 function model(overrides: Partial<ImageModel> = {}): ImageModel {
@@ -119,7 +120,7 @@ describe("ensureIdentityTrialModelVersions", () => {
 });
 
 describe("imageModelProbeFields", () => {
-  it("keeps the update limited to probe-owned mechanical fields", () => {
+  it("keeps the create write set limited to probe-owned mechanical fields", () => {
     expect(imageModelProbeFields(successfulProbe)).toEqual({
       canGenerate: true,
       canEdit: true,
@@ -135,5 +136,14 @@ describe("imageModelProbeFields", () => {
       advancedCapabilities: emptyImageModelAdvancedCapabilities(),
       probedVersionId: "version-123",
     });
+  });
+
+  it("re-probes everything the create set writes EXCEPT the owner-curated supportedAspects", () => {
+    // 0098 hand-prunes Wan's list (the 4096*… sizes break every edit under
+    // chooseAspect's largest-exact rule), so a re-probe writing the probe's
+    // verbatim menu would silently undo the curation.
+    const { supportedAspects, ...expected } = imageModelProbeFields(successfulProbe);
+    expect(supportedAspects).toEqual(["3:4"]);
+    expect(imageModelReprobeFields(successfulProbe)).toEqual(expected);
   });
 });

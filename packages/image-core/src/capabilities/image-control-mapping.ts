@@ -59,15 +59,26 @@ export interface DroppedImageControl {
  * - `no_binding` — the active version exposes no field for this control.
  * - `invalid` — a value the binding's declared type, range, or enum rejects.
  * - `unsupported` — a control this mapper deliberately does not carry yet
- *   (seed, LoRA, coherent sets); the transport for those is owned by later
- *   capability slices and faking one here would send a field nobody probed.
+ *   (coherent sets, an unresolved LoRA selection); the transport for those is
+ *   owned by later capability slices and faking one here would send a field
+ *   nobody probed.
  * - `unknown_field` — a provider override naming a key outside the version's
  *   probed `knownInputFields`.
  * - `reserved` — a field the render path owns (prompt, references, aspect,
  *   version, safety enforcement), named by a provider override OR landed on by
  *   a mapped control whose probed binding happens to point at it.
+ * - `requires_custom_resolution` — a `width`/`height` request on a render whose
+ *   `resolution` is not `custom`. The pair is only ever a request when the tier
+ *   says so (`compileProfileRenderPlan`); honoring it beside a named tier would
+ *   let leftover dimension defaults outrank the tier the profile asked for.
  */
-export type DroppedImageControlReason = "no_binding" | "invalid" | "unsupported" | "unknown_field" | "reserved";
+export type DroppedImageControlReason =
+  | "no_binding"
+  | "invalid"
+  | "unsupported"
+  | "unknown_field"
+  | "reserved"
+  | "requires_custom_resolution";
 
 export interface MapImageRenderControlsInput {
   /** The normalized controls to apply. Absent members are simply not sent. */
@@ -101,26 +112,38 @@ export interface MappedImageRenderControls {
   input: Record<string, unknown>;
   /** The same values keyed by NORMALIZED name — what a caller reports and stores. */
   applied: Record<string, unknown>;
+  /**
+   * For each `applied` key, the provider field(s) its value was written to.
+   * This is what lets a later reserved-field filter keep the normalized record
+   * consistent with the payload it filtered: when a field is refused there, the
+   * caller can find and remove the applied entry that claimed it was sent,
+   * without a second copy of the alias table.
+   */
+  appliedFields: Record<string, string[]>;
   dropped: DroppedImageControl[];
 }
 
 /**
  * The controls this mapper does not carry, with the reason each is out of scope.
  *
- * `seed` has no transport at all yet (the trial records `requestedSeed: null`
- * for exactly this reason), and `coherentSet` belongs to the image-set slice.
- * Listing them explicitly, rather than letting them fall through as
- * `no_binding`, keeps "this version has no field" distinct from "Vesper does not
- * send this yet".
+ * `coherentSet` belongs to the image-set path, which is parked — no slice owns
+ * a transport for it, and faking one here would send a field nobody probed.
+ * Listing it explicitly, rather than letting it fall through as `no_binding`,
+ * keeps "this version has no field" distinct from "Vesper does not send this".
  *
- * `lora` left this list when the library shipped, but only halfway: what this
- * mapper carries is a RESOLVED LoRA ({@link MapImageRenderControlsInput.resolvedLora}),
+ * `seed` left this list with the reproducibility slice: it now maps through the
+ * version's probed `seed` binding like any other requested control, with the
+ * randomness resolved by the CALLER (`renderImageIntent`) so this module stays
+ * pure.
+ *
+ * `lora` left it when the library shipped, but only halfway: what this mapper
+ * carries is a RESOLVED LoRA ({@link MapImageRenderControlsInput.resolvedLora}),
  * never a raw `controls.lora` selection. An unresolved selection still drops as
  * `unsupported`, because a selection is a request for a library row and this
  * module has no library to check it against — sending its id, or guessing a
  * locator from it, is exactly the fabrication the drop is there to prevent.
  */
-const UNSUPPORTED_CONTROLS = ["seed", "coherentSet"] as const;
+const UNSUPPORTED_CONTROLS = ["coherentSet"] as const;
 
 /**
  * Map normalized controls onto one version's declared input fields.
@@ -133,18 +156,22 @@ const UNSUPPORTED_CONTROLS = ["seed", "coherentSet"] as const;
 export function mapImageRenderControls(input: MapImageRenderControlsInput): MappedImageRenderControls {
   const { controls, capabilities } = input;
   const bindings = capabilities.controls;
-  const result: MappedImageRenderControls = { input: {}, applied: {}, dropped: [] };
+  const result: MappedImageRenderControls = { input: {}, applied: {}, appliedFields: {}, dropped: [] };
 
   for (const control of UNSUPPORTED_CONTROLS) {
     if (controls[control] !== undefined) result.dropped.push({ control, reason: "unsupported" });
   }
 
-  // After the list above so the drop order stays seed, coherentSet, lora — the
-  // order a reader of a stored `droppedControls` array has always seen.
+  // After the list above so the drop order stays coherentSet, lora, then the
+  // requested rows — the order a reader of a stored `droppedControls` array has
+  // seen since the unsupported list existed. (`seed` moved into the requested
+  // rows with its transport; no stored array carries a seed drop from before,
+  // because nothing could request one.)
   if (input.resolvedLora) mapResolvedLora(result, input.resolvedLora, bindings);
   else if (controls.lora !== undefined) result.dropped.push({ control: "lora", reason: "unsupported" });
 
   const requested: { control: string; value: unknown; binding: ImageInputBinding | undefined }[] = [
+    { control: "seed", value: controls.seed, binding: bindings.seed },
     { control: "negativePrompt", value: controls.negativePrompt, binding: bindings.negativePrompt },
     { control: "guidance", value: controls.guidance, binding: bindings.guidance },
     { control: "steps", value: controls.steps, binding: bindings.steps },
@@ -168,6 +195,7 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
     }
     result.input[entry.binding.field] = entry.value;
     result.applied[entry.control] = entry.value;
+    result.appliedFields[entry.control] = [entry.binding.field];
   }
 
   return result;
@@ -205,6 +233,7 @@ function mapResolvedLora(
   result.input[weights.field] = lora.locator;
   result.input[scale.field] = lora.scale;
   result.applied.lora = { id: lora.id, scale: lora.scale };
+  result.appliedFields.lora = [weights.field, scale.field];
 }
 
 /**
