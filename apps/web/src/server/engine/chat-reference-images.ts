@@ -84,16 +84,16 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
   // sibling's look and skip minting one for the member whose outfit moved.
   if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
-  // Identity sourcing lives in the render lane itself (chat-look.ts), beside the
-  // profile resolution its flag-on pack path needs; an unreadable source still
-  // reserves nothing and the next change re-fires. The lane drains its own
-  // diagnostics into the process log, so a flag-on pack refusal leaves a record
-  // even though this detached job has no sink to hand it.
+  // Identity sourcing lives in the render lane itself (chat-look.ts): the pack
+  // service evaluates the character's canonical portrait for the resolved
+  // profile, and an ineligible pack reserves nothing — the next change
+  // re-fires. The lane drains its own diagnostics into the process log, so a
+  // pack refusal leaves a record even though this detached job has no sink to
+  // hand it.
   await renderChatLookImage({
     chatId: input.chatId,
     userId: ctx.ownerId,
     characterId: input.characterId,
-    avatarImageId: ctx.avatarImageId,
     lookKey,
     outfit: wardrobe.garments,
     outfitExposed: wardrobe.exposed,

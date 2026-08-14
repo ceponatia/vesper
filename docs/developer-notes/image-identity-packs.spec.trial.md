@@ -1,6 +1,9 @@
 # Image identity packs — trial and promotion spec
 
 Status: detail for [image-identity-packs.spec.md](image-identity-packs.spec.md)
+— the paid trial itself was waived by owner ruling (2026-08-13; recorded in
+the plan's slice 6): the harness below is built and remains available, but no
+run executed and no verdict rows exist.
 
 This document defines the controlled evidence required to promote a face-detail
 reference strategy or an identity-reference quality threshold. It is distinct
@@ -488,9 +491,10 @@ limitations.
   variant/scene/chat_look profile is `edit`-operation; the admin creates a
   generate-operation profile when the baseline arm is wanted. The refusal
   message says exactly that.
-- **`IMAGE_IDENTITY_PACK_REFERENCES` stays off and untouched.** The
-  integration spec explicitly allows packs to be created, inspected, and
-  trialed while the flag is off; the trial does not gate on it.
+- **The trial never gated on render-lane sending.** It was designed to run
+  with the rollout flag off, and the flag's later removal (slice 7 — pack
+  consumption is now unconditional) changes nothing here: packs are created,
+  inspected, and trialed independently of what production lanes send.
 - **`IDENTITY_PACK_TRIAL_CORPORA` remains empty.** Runs accept explicit
   character ids; a named corpus can be registered once the owner builds the
   corpus characters.

@@ -31,18 +31,16 @@ import { projectIdentityPackPolicy } from "./identity-pack-store";
  *
  * **The lane contract.** A lane obtains identity references ONLY through this
  * module — in practice through `./identity-pack-consume`, which joins the bytes
- * and is the render lanes' entry — gated by `imageIdentityPackReferencesEnabled()`
- * from `./identity-pack-store` (one flag, `IMAGE_IDENTITY_PACK_REFERENCES`,
- * default off — do not spell a second copy). No lane may query
+ * and is the render lanes' entry (unconditional since the slice-7 close-out
+ * removed the rollout flag). No lane may query
  * `identity_face_crop` by kind, recompute its own face crop, substitute a
  * Gallery image when the pack is blocked, reorder roles after profile
  * resolution, or drop the provenance.
  *
- * **The flag is checked by the CALLER, not here.** Evaluation is measurement, and
- * measurement is exactly what the trial needs while the flag is off: packs may be
- * prepared, inspected and evaluated with no provider behavior change. Gating this
- * function would blind the admin and trial surfaces to the numbers they exist to
- * collect.
+ * **Evaluation is measurement, never a send decision.** Packs may be prepared,
+ * inspected and evaluated with no provider behavior change, which is what keeps
+ * the admin and trial surfaces able to collect their numbers independently of
+ * any render.
  *
  * **Eligibility runs BEFORE provider reservation** (spec §"Eligibility timing"):
  * a stale, ambiguous, missing or undersized pack must stop the render before

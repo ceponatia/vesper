@@ -21,10 +21,10 @@ import { evaluateIdentityPackForProfile } from "./identity-pack-references";
  * evaluation allowed, and hand back render-intent references with the provenance
  * that must travel to the output row's meta.
  *
- * The FLAG IS CHECKED BY THE LANE, not here. When `IMAGE_IDENTITY_PACK_REFERENCES`
- * is off a lane runs its legacy reference sourcing and no pack code executes at
- * all; this module is the flag-on path, so gating it again would hide the trial
- * and admin surfaces' ability to exercise it directly.
+ * This is the ONLY identity source the lanes have (the slice-7 close-out
+ * removed the rollout flag and the legacy direct-avatar reads): every
+ * identity-critical render sources its references here, and the trial and
+ * admin surfaces exercise the same path directly.
  *
  * Refusal is a VALUE, before any provider spend: an ineligible pack refuses the
  * identity-critical render rather than substituting another Gallery image (the

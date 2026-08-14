@@ -25,7 +25,6 @@ export {
   identityPackLockKey,
   type IdentityPackPolicyProjection,
   type IdentityPackRow,
-  imageIdentityPackReferencesEnabled,
   isRetryableIdentityPackFailure,
   type JsonColumn,
   packRowToContract,
