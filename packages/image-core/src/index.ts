@@ -23,23 +23,38 @@
  */
 
 export {
+  diffImageModelCapabilities,
   emptyImageModelAdvancedCapabilities,
   filterReservedInputFields,
+  imageCapabilityDiffEntrySchema,
+  imageCapabilityDiffKinds,
   imageEditKindSchema,
   imageEditKinds,
   imageIdentityPreservationRatings,
   imageIdentityPreservationSchema,
   imageModelAdvancedCapabilitiesSchema,
+  imageProfileCandidateFindingCodes,
+  imageProfileCandidateFindingLevels,
+  imageProfileCandidateFindingSchema,
   mapImageRenderControls,
   reservedImageInputFields,
+  validateImageProfileForCandidate,
   validateProviderOverrides,
 } from "./capabilities";
 export type {
+  ImageCandidateCapabilities,
+  ImageCapabilityDiffEntry,
+  ImageCapabilityDiffKind,
   ImageEditKind,
   ImageIdentityPreservation,
   ImageInputBinding,
   ImageModelAdvancedCapabilities,
+  ImageModelCapabilitySnapshot,
   ImageModelControlBindings,
+  ImageProfileCandidateFinding,
+  ImageProfileCandidateFindingCode,
+  ImageProfileCandidateFindingLevel,
+  ImageProfileCandidateInput,
   ImageReferenceRole,
 } from "./capabilities";
 export {

@@ -18,6 +18,7 @@ import {
   IMAGE_LORA_MAX_SCALE,
   IMAGE_LORA_MAX_TRIGGER_WORDS,
   IMAGE_LORA_MIN_SCALE,
+  imageCapabilityDiffEntrySchema,
   type ImageEditKind,
   type ImageIdentityPackFailureCode,
   imageIdentityPackFailureCodeSchema,
@@ -46,6 +47,7 @@ import {
   imageModelSchema,
   imageModelsForSurface,
   type ImageModelSurface,
+  imageProfileCandidateFindingSchema,
   type ImageReferenceTransport,
   imageReferenceTransports,
   redactImageLoraLocator,
@@ -775,6 +777,68 @@ export const imageModelsApi = {
     ),
 };
 
+// --- Version candidate wire shapes (image-model-capabilities.spec.md
+// §"Version candidate and promotion flow"). The diff-entry and finding schemas
+// are the package's own, so the client reads exactly the shape the pure layer
+// emits; everything else degrades per field like every schema in this file.
+
+/** The candidate probe summary the admin card renders — mechanical facts only. */
+const imageVersionCandidateSchema = z.object({
+  versionId: z
+    .string()
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+  label: textOr(""),
+  canGenerate: z.boolean().catch(false),
+  canEdit: z.boolean().catch(false),
+  referenceField: textOr("image"),
+  referenceArity: textOr("array"),
+  maxReferences: z.number().catch(0),
+  aspectMode: textOr("aspect_ratio"),
+  supportedAspects: arrayOf(z.string()),
+  outputFormat: z
+    .string()
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+});
+
+/** One enabled profile's candidate findings; a bad finding row costs itself. */
+const imageVersionProfileFindingsSchema = z.object({
+  profileId: z.string().min(1),
+  key: textOr(""),
+  label: textOr(""),
+  findings: arrayOf(imageProfileCandidateFindingSchema),
+});
+export type ImageVersionProfileFindings = z.infer<typeof imageVersionProfileFindingsSchema>;
+
+const imageVersionProbeResponseSchema = z.object({
+  candidate: imageVersionCandidateSchema,
+  activatable: z.boolean().catch(false),
+  latestDiffers: z.boolean().catch(false),
+  diff: arrayOf(imageCapabilityDiffEntrySchema),
+  profiles: arrayOf(imageVersionProfileFindingsSchema),
+});
+export type ImageVersionProbeResponse = z.infer<typeof imageVersionProbeResponseSchema>;
+
+const imageVersionSmokeResponseSchema = z.object({
+  smoke: z.object({
+    predictionId: z.string().optional().catch(undefined),
+    executedVersionId: z.string().optional().catch(undefined),
+    durationMs: z.number().catch(0),
+    imageBytes: z.number().catch(0),
+    width: z.number().optional().catch(undefined),
+    height: z.number().optional().catch(undefined),
+  }),
+});
+export type ImageVersionSmokeResponse = z.infer<typeof imageVersionSmokeResponseSchema>;
+
+const imageVersionActivateResponseSchema = z.object({
+  model: imageModelSchema,
+  profiles: arrayOf(imageVersionProfileFindingsSchema),
+});
+
 /** Admin-only registry management (`/api/admin/self` — 404s for non-admins). */
 export const adminImageModelsApi = {
   list: () => apiGet(listOf(imageModelSchema, "models"), "/api/admin/self/image-models"),
@@ -799,6 +863,16 @@ export const adminImageModelsApi = {
     },
   ) => apiPatch(z.object({ model: imageModelSchema }), `/api/admin/self/image-models/${modelId}`, body),
   remove: (modelId: string) => apiDelete(`/api/admin/self/image-models/${modelId}`),
+  /** What is latest, and what would activating it change? Read-only; costs one schema probe. */
+  probeLatest: (modelId: string) =>
+    apiPost(imageVersionProbeResponseSchema, `/api/admin/self/image-models/${modelId}/probe-latest`),
+  /** ONE transient render pinned to the candidate — cost-bearing, persists nothing. */
+  smokeTest: (modelId: string, body: { versionId: string; profileId: string }) =>
+    apiPost(imageVersionSmokeResponseSchema, `/api/admin/self/image-models/${modelId}/smoke-test`, body),
+  /** Atomically pin the row to the probed candidate; 409 `image_model.activation_blocked`
+   * (with per-profile findings in the body) when an enabled profile would break. */
+  activateVersion: (modelId: string, body: { versionId: string }) =>
+    apiPost(imageVersionActivateResponseSchema, `/api/admin/self/image-models/${modelId}/activate-version`, body),
 };
 
 // The curated LoRA library is data too, and its rules — the locator shapes, the
