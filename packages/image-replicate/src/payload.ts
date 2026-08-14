@@ -1,5 +1,6 @@
 import { type ImageModel, reservedImageInputFields } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
+import type { PreparedReferenceBytes } from "./files";
 
 /**
  * One structural control image and the provider input it was bound to.
@@ -13,13 +14,19 @@ export interface RenderControlReference {
   field: string;
   /** `single` writes one URI; `array` writes a list, matching the declared schema. */
   arity: "single" | "array";
-  buffers: Buffer[];
+  buffers: PreparedReferenceBytes[];
 }
 
 export interface RegistryModelRequest {
   prompt: string;
-  /** Ordered identity/location references; trimmed to what the model accepts. */
-  references?: Buffer[];
+  /**
+   * Ordered identity/location references; trimmed to what the model accepts.
+   * PREPARED bytes, never raw buffers: the application's preparation step
+   * (orientation, metadata strip, encode) resolves the media type and extension
+   * this package stamps on uploads and data URIs, because deriving them here
+   * would need sharp — which this package may not run.
+   */
+  references?: PreparedReferenceBytes[];
   /**
    * Structural controls that have their own provider input, already bound to a
    * field name.

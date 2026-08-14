@@ -74,9 +74,12 @@ export async function runReplicatePreprocessor(
       },
     );
 
-  if (request.transport === "data_url") return run(referenceDataUrl(request.image));
+  // The source is always a stored Vesper asset, and those are webp by the
+  // storage contract (`writeWebpAtomic`) — the one place a constant media type
+  // is still a fact rather than an assumption.
+  if (request.transport === "data_url") return run(referenceDataUrl(request.image, "image/webp"));
 
-  const upload = await uploadReplicateFile(http, request.image, "vesper-preprocessor-source.webp");
+  const upload = await uploadReplicateFile(http, request.image, "vesper-preprocessor-source.webp", "image/webp");
   if (!upload.ok) return { ok: false, error: upload.error };
   try {
     return await run(upload.file.url);

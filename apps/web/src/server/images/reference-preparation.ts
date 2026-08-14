@@ -1,0 +1,188 @@
+import sharp from "sharp";
+import type { ImageModel } from "@vesper/image-core";
+import type { PreparedReferenceBytes } from "@vesper/image-replicate";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { SHARP_DECODE_LIMITS } from "./assets";
+
+/**
+ * Reference preparation ahead of transport (image-model-capabilities.spec.md
+ * §"Preparation"): the sharp pass every reference and control image crosses in
+ * `renderWithModel` before its bytes reach `@vesper/image-replicate`.
+ *
+ * It lives here rather than in a package because sharp execution is Node-only
+ * application infrastructure (the `identity-pack-preparation.ts` precedent);
+ * what the pass produces — bytes plus the media type and extension the
+ * transport stamps on uploads and data URIs — is the package's
+ * `PreparedReferenceBytes` contract.
+ *
+ * The pass normalizes rather than trusts: EXIF orientation is applied (a
+ * provider reading raw pixels would render a sideways reference), metadata is
+ * stripped (camera serials and GPS tags have no business reaching a provider),
+ * and the bytes are re-encoded to a format the model accepts. Stored Vesper
+ * assets are webp today, but masks and external control images may not be —
+ * which is exactly why the media type is resolved here instead of hardcoded at
+ * the transport.
+ */
+
+/** The encodings preparation can produce; each is accepted by every model Vesper runs. */
+export type ReferenceImageFormat = "webp" | "jpeg" | "png";
+
+/**
+ * What preparation encodes toward for one model.
+ *
+ * Derived per model ({@link referencePreparationTarget}) so a binding that
+ * declares a format constraint has one seam to land in — today none does, so
+ * every model gets the default.
+ */
+export interface ReferencePreparationTarget {
+  format: ReferenceImageFormat;
+  /**
+   * Longest-edge ceiling a provider limit demands, or null when none does.
+   * Null for every model today — the seam exists so a real limit becomes a
+   * data edit here, not so this module can invent one.
+   */
+  maxEdgePx: number | null;
+}
+
+/**
+ * The target for one model's references.
+ *
+ * Always the default today: no model binding declares an accepted-format list
+ * or an input-dimension limit, and `model.outputFormat` deliberately does not
+ * participate — it describes what the model PRODUCES, not what it reads.
+ */
+export function referencePreparationTarget(model: ImageModel): ReferencePreparationTarget {
+  void model;
+  return { format: "webp", maxEdgePx: null };
+}
+
+/** One image awaiting preparation, with the caller's name for what it is. */
+export interface RenderReferenceInput {
+  buffer: Buffer;
+  /** A reference role or bound control field — diagnostic label, nothing more. */
+  role: string;
+}
+
+export interface PreparedRenderReference extends PreparedReferenceBytes {
+  role: string;
+  /** Post-preparation pixel size; null when preparation degraded to the original bytes. */
+  width: number | null;
+  height: number | null;
+}
+
+/** Matches `writeWebpAtomic`'s storage quality — preparation must not cost more fidelity than storage does. */
+const REFERENCE_ENCODE_QUALITY = 90;
+
+/** Per-format transport facts, and whether flattening is needed at all. */
+const FORMAT_FACTS: Record<ReferenceImageFormat, { mediaType: string; extension: string; acceptsAlpha: boolean }> = {
+  webp: { mediaType: "image/webp", extension: "webp", acceptsAlpha: true },
+  jpeg: { mediaType: "image/jpeg", extension: "jpg", acceptsAlpha: false },
+  png: { mediaType: "image/png", extension: "png", acceptsAlpha: true },
+};
+
+/**
+ * Prepare a list of reference images for transport, in order.
+ *
+ * Sequential on purpose: sharp already parallelizes each operation across its
+ * own thread pool, and a render's references are a handful of images — queueing
+ * them keeps peak memory at one decoded raster instead of several.
+ *
+ * A reference whose preparation FAILS degrades to its original bytes with a
+ * warn diagnostic rather than failing the render (docs/resilience.md): an
+ * unnormalized reference costs at worst some fidelity, a refused render costs
+ * the image. The degraded media type is sniffed from the bytes' own magic
+ * numbers, falling back to webp — the stored-asset format, and exactly what
+ * every reference was labeled before preparation existed.
+ */
+export async function prepareRenderReferences(
+  inputs: readonly RenderReferenceInput[],
+  target: ReferencePreparationTarget,
+  sink?: DiagnosticSink,
+): Promise<PreparedRenderReference[]> {
+  const prepared: PreparedRenderReference[] = [];
+  for (const input of inputs) {
+    prepared.push(await prepareOneReference(input, target, sink));
+  }
+  return prepared;
+}
+
+async function prepareOneReference(
+  input: RenderReferenceInput,
+  target: ReferencePreparationTarget,
+  sink?: DiagnosticSink,
+): Promise<PreparedRenderReference> {
+  const facts = FORMAT_FACTS[target.format];
+  try {
+    // `.rotate()` with no argument applies the EXIF orientation and drops the
+    // tag; encoding without `.withMetadata()` is what strips everything else.
+    let pipeline = sharp(input.buffer, SHARP_DECODE_LIMITS).rotate();
+    if (target.maxEdgePx !== null) {
+      pipeline = pipeline.resize({
+        width: target.maxEdgePx,
+        height: target.maxEdgePx,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+    }
+    // Flatten ONLY when the target cannot carry alpha: a mask's transparency is
+    // signal, and discarding it for a format that keeps it would be data loss
+    // for tidiness. White matches what a provider compositing a transparent
+    // reference over a light canvas expects; black would read as ink.
+    if (!facts.acceptsAlpha) pipeline = pipeline.flatten({ background: "#ffffff" });
+    const { data, info } = await encodeReference(pipeline, target.format).toBuffer({ resolveWithObject: true });
+    return {
+      bytes: data,
+      mediaType: facts.mediaType,
+      extension: facts.extension,
+      role: input.role,
+      width: info.width,
+      height: info.height,
+    };
+  } catch (error) {
+    sink?.push(
+      diag("warn", "image_model.reference_preparation_failed", "a reference could not be prepared; sending its original bytes", {
+        path: "image_models",
+        context: { role: input.role, error: error instanceof Error ? error.message : String(error) },
+      }),
+    );
+    const sniffed = sniffImageMediaType(input.buffer);
+    return {
+      bytes: input.buffer,
+      mediaType: sniffed?.mediaType ?? "image/webp",
+      extension: sniffed?.extension ?? "webp",
+      role: input.role,
+      width: null,
+      height: null,
+    };
+  }
+}
+
+/** The encoder for one target format, at the shared quality. PNG is lossless and takes no quality. */
+function encodeReference(pipeline: sharp.Sharp, format: ReferenceImageFormat): sharp.Sharp {
+  switch (format) {
+    case "webp":
+      return pipeline.webp({ quality: REFERENCE_ENCODE_QUALITY });
+    case "jpeg":
+      return pipeline.jpeg({ quality: REFERENCE_ENCODE_QUALITY });
+    case "png":
+      return pipeline.png();
+  }
+}
+
+/**
+ * Magic-number sniff for the degraded path only — the formats models accept,
+ * nothing more. Null means "unrecognized", which the caller maps to the stored
+ * default rather than guessing here.
+ */
+function sniffImageMediaType(buffer: Buffer): { mediaType: string; extension: string } | null {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { mediaType: "image/png", extension: "png" };
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mediaType: "image/jpeg", extension: "jpg" };
+  }
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString("latin1") === "RIFF" && buffer.subarray(8, 12).toString("latin1") === "WEBP") {
+    return { mediaType: "image/webp", extension: "webp" };
+  }
+  return null;
+}

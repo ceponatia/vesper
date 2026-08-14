@@ -6,6 +6,7 @@ import {
   IMAGE_TARGET_ASPECT,
   type ImageModel,
   imageModelSchema,
+  type PlannedControlReference,
   preparePromptForImageModel,
   withReviewedImageQuality,
 } from "@vesper/image-core";
@@ -13,6 +14,7 @@ import type { RenderControlReference } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { replicateClient } from "../ai";
+import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).
@@ -102,11 +104,12 @@ export interface RenderWithModelInput {
    *
    * Separate from `references` because they are separate provider fields, and
    * because they do not cross the reference-capacity trim: a `pose_image` input
-   * is not competing for a slot in the `image` array. Passed through untouched,
-   * like `controlInput` and for the same reason — the binding decision belongs to
-   * the one place that reads the capability record.
+   * is not competing for a slot in the `image` array. The binding decision is
+   * passed through untouched, like `controlInput` and for the same reason — it
+   * belongs to the one place that reads the capability record. Only the BYTES
+   * are touched here, by the same preparation pass the references cross.
    */
-  controlReferences?: RenderControlReference[];
+  controlReferences?: PlannedControlReference[];
   /**
    * The shape this lane wants, as a width/height ratio. Defaults to Vesper's
    * 3:4; the entity lanes ask for 1 (items) and 1.5 (locations).
@@ -174,6 +177,12 @@ export interface RenderWithModelResult {
  * replaces the legacy identity lock with a Qwen-dialect one, and a prompt that
  * no longer contains the legacy sentence passes through untouched — so a
  * pre-compiled prompt arrives at the provider exactly as it was hashed.
+ *
+ * Reference and control bytes cross `prepareRenderReferences` here, and here
+ * only — this is the one choke point every render path shares, so preparing at
+ * it is what guarantees no raw buffer reaches the transport from any lane. A
+ * reference whose preparation fails degrades to its original bytes with a
+ * diagnostic rather than failing the render.
  */
 export async function renderWithModel(
   input: RenderWithModelInput,
@@ -183,12 +192,34 @@ export async function renderWithModel(
   const model = withReviewedImageQuality(input.model);
   const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
   const aspect = chooseAspect(model, targetRatio);
+  const preparationTarget = referencePreparationTarget(model);
+  const references = input.references
+    ? await prepareRenderReferences(
+        input.references.map((buffer) => ({ buffer, role: "reference" })),
+        preparationTarget,
+        sink,
+      )
+    : undefined;
+  // Control buffers cross the same pass with the field name as their label;
+  // the binding itself (field, arity) is not this wrapper's to reinterpret.
+  const controlReferences: RenderControlReference[] = [];
+  for (const control of input.controlReferences ?? []) {
+    controlReferences.push({
+      field: control.field,
+      arity: control.arity,
+      buffers: await prepareRenderReferences(
+        control.buffers.map((buffer) => ({ buffer, role: control.field })),
+        preparationTarget,
+        sink,
+      ),
+    });
+  }
   const result = await replicateClient().runRegistryImageModel(
     model,
     {
       prompt,
-      ...(input.references ? { references: input.references } : {}),
-      ...(input.controlReferences?.length ? { controlReferences: input.controlReferences } : {}),
+      ...(references ? { references } : {}),
+      ...(controlReferences.length ? { controlReferences } : {}),
       aspect: aspect.value,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),

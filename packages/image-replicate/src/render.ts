@@ -1,13 +1,7 @@
 import { fitReferences, type ImageModel } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ReplicateConfig } from "./config";
-import {
-  deleteReplicateFile,
-  type ReplicateFile,
-  referenceDataUrl,
-  uploadReplicateFile,
-  withinDataUrlBudget,
-} from "./files";
+import { deleteReplicateFile, transportReplicateReferences, withinDataUrlBudget } from "./files";
 import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 import { buildPayload, controlUris, type RegistryModelRequest } from "./payload";
 import { type ReplicateImageResult, runPrediction } from "./prediction";
@@ -51,48 +45,42 @@ export async function runRegistryImageModel(
   if (references.length === 0 && controls.length === 0 && !model.canGenerate) {
     return { ok: false, error: `${model.slug} requires at least one reference image` };
   }
-  const controlBuffers = controls.flatMap((control) => control.buffers);
+  const controlImages = controls.flatMap((control) => control.buffers);
 
+  // The inline byte budget is a SELECTION decision, so it happens before the
+  // transport call: bound controls are charged first (they are not negotiable),
+  // and the anchor survives even a blown budget. The file transport has no
+  // budget — uploads keep the prediction payload small whatever the bytes.
+  let send = references;
   if (model.referenceTransport === "data_url") {
-    const reserved = controlBuffers.reduce((total, buffer) => total + buffer.byteLength, 0);
-    const inlined = withinDataUrlBudget(references, reserved);
-    if (inlined.length < references.length) {
+    const reserved = controlImages.reduce((total, image) => total + image.bytes.byteLength, 0);
+    send = withinDataUrlBudget(references, reserved);
+    if (send.length < references.length) {
       sink?.push(
         diag("warn", "image_model.references_trimmed", "dropped references that did not fit the inline byte budget", {
           path: "image_models",
-          context: { slug: model.slug, sent: inlined.length, requested: references.length, reservedBytes: reserved },
+          context: {
+            slug: model.slug,
+            sent: send.length,
+            requested: references.length,
+            reservedBytes: reserved,
+            // Roles, never bytes or URIs: what was kept and what was given up.
+            sentRoles: send.map((image) => image.role ?? "reference"),
+            droppedRoles: references.slice(send.length).map((image) => image.role ?? "reference"),
+          },
         }),
       );
     }
-    return await runPrediction(
-      http,
-      config,
-      model.slug,
-      buildPayload(
-        model,
-        request,
-        inlined.map(referenceDataUrl),
-        controlUris(controls, controlBuffers.map(referenceDataUrl)),
-        config.safetyCheckerDisabled,
-        sink,
-      ),
-      request,
-    );
   }
 
-  const uploads: ReplicateFile[] = [];
+  // One numbering across both lists so a Replicate file name is unique within
+  // the run; the control images travel last so a reference's name stays what it
+  // was before controls existed.
+  const transported = await transportReplicateReferences(http, [...send, ...controlImages], model.referenceTransport);
+  if (!transported.ok) return { ok: false, error: transported.error };
   try {
-    // One numbering across both lists so a Replicate file name is unique within
-    // the run; the control images upload last so a reference's name stays what it
-    // was before controls existed.
-    for (const [index, buffer] of [...references, ...controlBuffers].entries()) {
-      const upload = await uploadReplicateFile(http, buffer, `vesper-reference-${index + 1}.webp`);
-      if (!upload.ok) return { ok: false, error: upload.error };
-      uploads.push(upload.file);
-    }
-    // Split back POSITIONALLY, on the same order they were uploaded in. Keying a
+    // Split back POSITIONALLY, on the same order they traveled in. Keying a
     // lookup by buffer would collapse two identical control images onto one URL.
-    const urls = uploads.map((file) => file.url);
     return await runPrediction(
       http,
       config,
@@ -100,14 +88,14 @@ export async function runRegistryImageModel(
       buildPayload(
         model,
         request,
-        urls.slice(0, references.length),
-        controlUris(controls, urls.slice(references.length)),
+        transported.uris.slice(0, send.length),
+        controlUris(controls, transported.uris.slice(send.length)),
         config.safetyCheckerDisabled,
         sink,
       ),
       request,
     );
   } finally {
-    await Promise.allSettled(uploads.map((file) => deleteReplicateFile(http, file.id)));
+    await Promise.allSettled(transported.files.map((file) => deleteReplicateFile(http, file.id)));
   }
 }

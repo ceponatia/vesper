@@ -29,7 +29,8 @@ export {
   REQUEST_TIMEOUT_MS,
 } from "./config";
 export type { ReplicateConfig } from "./config";
-export { DATA_URL_BUDGET_BYTES, referenceDataUrl, withinDataUrlBudget } from "./files";
+export { DATA_URL_BUDGET_BYTES, referenceDataUrl, transportReplicateReferences, withinDataUrlBudget } from "./files";
+export type { PreparedReferenceBytes, TransportReferencesResult } from "./files";
 export { buildRegistryModelInput, overlayControlInput } from "./payload";
 export type { RegistryModelRequest, RenderControlReference } from "./payload";
 export { replicatePredictionTarget } from "./prediction";
