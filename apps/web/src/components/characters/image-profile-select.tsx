@@ -11,11 +11,13 @@ import { Select } from "@/components/ui/select";
  * agree on what an empty list and a still-loading list look like.
  *
  * The value is a PROFILE id; `""` means "whatever this task's default is",
- * which is what the server resolves when no id is sent. The stored fields the
- * value lands in (`modelId`, `sceneModel`) are unchanged and may still hold
- * legacy MODEL ids — the resolver's step 2 keeps those working — so the picker
- * maps a legacy value onto that model's profile for display rather than
- * silently showing the first option (see {@link displayedProfileId}).
+ * which is what the server resolves when no id is sent — and it is a REAL
+ * option ("Task default", always first), so a fresh chat's legacy sentinel
+ * (`"reference"`) and a pick that is no longer offered display honestly
+ * instead of rendering a blank control. The stored fields the value lands in
+ * (`modelId`, `sceneModel`) are unchanged and may still hold legacy MODEL ids
+ * — the resolver's step 2 keeps those working — so the picker maps a legacy
+ * value onto that model's profile for display (see {@link displayedProfileId}).
  *
  * When several profiles use the same model they group under its label
  * (§"Admin UI": "group them under the model label"), and a selected profile's
@@ -47,7 +49,9 @@ export function ImageProfileSelect({
   }
 
   const displayed = displayedProfileId(value, profiles);
-  const selected = profiles?.find((profile) => profile.id === (displayed || profiles[0]?.id));
+  // Only an actually-selected profile shows its operator warning — "Task
+  // default" names no profile here, so it caveats nothing.
+  const selected = displayed ? profiles?.find((profile) => profile.id === displayed) : undefined;
 
   // Group under each model's label, preserving the offered (sort) order.
   const groups: { modelLabel: string; entries: ImageProfileOption[] }[] = [];
@@ -71,15 +75,18 @@ export function ImageProfileSelect({
         {profiles === null ? (
           <option value="">Loading profiles…</option>
         ) : (
-          groups.map((group) => (
-            <optgroup key={group.modelLabel} label={group.modelLabel}>
-              {group.entries.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.label}
-                </option>
-              ))}
-            </optgroup>
-          ))
+          <>
+            <option value="">Task default</option>
+            {groups.map((group) => (
+              <optgroup key={group.modelLabel} label={group.modelLabel}>
+                {group.entries.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </>
         )}
       </Select>
       {selected?.operatorWarning ? (
@@ -95,8 +102,9 @@ export function ImageProfileSelect({
  * What the control SHOWS for a stored value: the profile itself when the value
  * names one, or — for a legacy stored MODEL id — that model's default-then-first
  * offered profile, mirroring the resolver's step 2 so the picker displays what
- * the server will actually run. Anything else falls back to `""` (the browser
- * shows the first option, and {@link pickedProfileId} sends it).
+ * the server will actually run. Anything else falls back to `""`, which selects
+ * the explicit "Task default" option — exactly what the server resolves for a
+ * value it cannot honor.
  */
 function displayedProfileId(value: string, profiles: ImageProfileOption[] | null): string {
   if (!value || !profiles) return value;
@@ -107,13 +115,11 @@ function displayedProfileId(value: string, profiles: ImageProfileOption[] | null
 }
 
 /**
- * Resolve what to send the server: the explicit pick (a profile id, or a legacy
- * stored model id — the resolver accepts both), else the first offered profile,
- * else nothing (the server falls back to the task default). Sending the first
- * profile rather than `""` keeps the request honest about what the user is
- * looking at in the dropdown.
+ * What to send the server: the explicit pick (a profile id, or a legacy stored
+ * model id — the resolver accepts both), or nothing for "Task default" — the
+ * server resolves the task's default itself, and sending a guess would freeze
+ * today's default into a stored pick.
  */
-export function pickedProfileId(value: string, profiles: ImageProfileOption[] | null): string | undefined {
-  if (value) return value;
-  return profiles?.[0]?.id;
+export function pickedProfileId(value: string): string | undefined {
+  return value || undefined;
 }

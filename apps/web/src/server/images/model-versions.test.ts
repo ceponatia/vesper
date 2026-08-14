@@ -144,7 +144,7 @@ describe("smokeTestCandidate", () => {
       undefined,
       {
         loadModel: async () => model(),
-        loadProfiles: async () => [profile({ id: "profile_other", imageModelId: "model_b" })],
+        loadProfile: async () => profile({ id: "profile_other", imageModelId: "model_b" }),
       },
     );
     expect(result).toEqual({ ok: false, code: "profile_not_found", message: "image model profile not found" });
@@ -159,7 +159,7 @@ describe("smokeTestCandidate", () => {
     }));
     const result = await smokeTestCandidate("model_a", { versionId: "candidate-v2", profileId: "profile_a" }, undefined, {
       loadModel: async () => model(),
-      loadProfiles: async () => [profile()],
+      loadProfile: async () => profile(),
       render,
     });
 
@@ -191,7 +191,7 @@ describe("smokeTestCandidate", () => {
     });
     const result = await smokeTestCandidate("model_a", { versionId: "candidate-v2", profileId: "profile_edit" }, undefined, {
       loadModel: async () => model(),
-      loadProfiles: async () => [editProfile],
+      loadProfile: async () => editProfile,
       render,
     });
 
@@ -207,7 +207,7 @@ describe("smokeTestCandidate", () => {
     const render = renderMock(async () => ({ ok: true, image: await renderedImage() }));
     await smokeTestCandidate("model_a", { versionId: "candidate-v2", profileId: "profile_a" }, undefined, {
       loadModel: async () => model({ canGenerate: false }),
-      loadProfiles: async () => [profile({ operation: "edit", promptStrategy: "instruction_edit" })],
+      loadProfile: async () => profile({ operation: "edit", promptStrategy: "instruction_edit" }),
       render,
     });
     const intent = render.mock.calls[0]?.[0];
@@ -217,7 +217,7 @@ describe("smokeTestCandidate", () => {
   it("reports a failed render with its prediction id and duration, persisting nothing", async () => {
     const result = await smokeTestCandidate("model_a", { versionId: "candidate-v2", profileId: "profile_a" }, undefined, {
       loadModel: async () => model(),
-      loadProfiles: async () => [profile()],
+      loadProfile: async () => profile(),
       render: async () => ({ ok: false, error: "provider refused", predictionId: "pred_9" }),
     });
     expect(result).toMatchObject({ ok: false, code: "smoke_failed", message: "provider refused", predictionId: "pred_9" });
@@ -246,9 +246,10 @@ describe("activateCandidateVersion", () => {
     expect(update.slug).toBe("owner/model-a:candidate-v2");
     expect(update.probedVersionId).toBe("candidate-v2");
     expect(update.updatedAt).toBeInstanceOf(Date);
-    // The write set is the probe bridge plus slug and updatedAt — the reviewed
-    // fields (editKind, identityPreservation, operatorWarning), maxReferences,
-    // label, transport, surfaces, and sort are untouchable from here.
+    // The write set is the re-probe bridge plus slug and updatedAt — the
+    // reviewed fields (editKind, identityPreservation, operatorWarning),
+    // maxReferences, the owner-curated supportedAspects, label, transport,
+    // surfaces, and sort are untouchable from here.
     expect(Object.keys(update).sort()).toEqual([
       "advancedCapabilities",
       "aspectMode",
@@ -260,7 +261,6 @@ describe("activateCandidateVersion", () => {
       "referenceArity",
       "referenceField",
       "slug",
-      "supportedAspects",
       "updatedAt",
     ]);
     expect(result.ok).toBe(true);

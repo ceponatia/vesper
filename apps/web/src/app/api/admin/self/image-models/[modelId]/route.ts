@@ -9,7 +9,7 @@ import {
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { replicateClient } from "@/server/ai";
-import { imageModelProbeFields, loadImageModel } from "@/server/images";
+import { imageModelReprobeFields, loadImageModel } from "@/server/images";
 
 type Params = { modelId: string };
 
@@ -69,6 +69,14 @@ const patchSchema = z.object({
   forVariant: z.boolean().optional(),
   forScene: z.boolean().optional(),
   sort: z.number().int().min(0).max(9999).optional(),
+  /**
+   * Owner-CURATED, never re-probed: the stored list is the probe's menu minus
+   * whatever the owner pruned (0098 removes Wan's text-to-image-only 4096*…
+   * sizes, which `chooseAspect`'s largest-exact rule would otherwise pick for
+   * every edit). When the capability diff shows the provider's menu moved, the
+   * owner updates the list HERE, deliberately — no probe writes it after create.
+   */
+  supportedAspects: z.array(z.string().trim().min(1).max(32)).max(64).optional(),
   /** Re-read the model's schema from Replicate and refresh the capability columns. */
   reprobe: z.boolean().optional(),
   // `advancedCapabilities` is deliberately NOT settable here — but it IS probe-written
@@ -89,14 +97,14 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   const { reprobe, ...fields } = body.value;
 
   // Re-probing refreshes what the model CAN do; the surface toggles, the hand-set
-  // reference cap, and the three reviewed judgments above are the owner's and are
-  // never overwritten by it.
+  // reference cap, the curated `supportedAspects` list, and the three reviewed
+  // judgments above are the owner's and are never overwritten by it.
   //
-  // The refreshed columns are `imageModelProbeFields`' list and nothing else, read
-  // from the shared helper rather than restated here: a second list would be a
-  // second answer to "what does a probe own", and the two would drift the first
-  // time either gained a column. It includes the version those fields were read
-  // FROM — recorded with them or not at all, since stored capabilities whose
+  // The refreshed columns are `imageModelReprobeFields`' list and nothing else,
+  // read from the shared helper rather than restated here: a second list would be
+  // a second answer to "what does a re-probe own", and the two would drift the
+  // first time either gained a column. It includes the version those fields were
+  // read FROM — recorded with them or not at all, since stored capabilities whose
   // version is unknown cannot be checked against a pinned `owner/name:version`
   // slug later, which is how a control keeps being sent to a field that moved
   // between versions.
@@ -104,7 +112,7 @@ export const PATCH = withOwnerAdmin<Params>(async (_user, req: NextRequest, ctx)
   if (reprobe) {
     const probed = await replicateClient().probeReplicateModel(existing.slug);
     if (!probed.ok) return jsonError("image_model.probe_failed", probed.error, 400);
-    probedFields = imageModelProbeFields(probed.probe);
+    probedFields = imageModelReprobeFields(probed.probe);
   }
 
   const update = { ...probedFields, ...fields };

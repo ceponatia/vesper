@@ -17,6 +17,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { MODEL_SURFACES } from "./image-admin-shared";
 import { ImageLoraLibrary } from "./image-lora-library";
 import { ModelRow, type ImageModelPatchBody } from "./image-model-row";
 
@@ -34,12 +35,6 @@ import { ModelRow, type ImageModelPatchBody } from "./image-model-row";
  * exist. Seeded models and profiles are ordinary rows: editable and deletable
  * like any other (owner ruling 4); `builtin` is a note, not a lock.
  */
-
-const CREATE_SURFACES: { key: ImageModelSurface; label: string; hint: string }[] = [
-  { key: "portrait", label: "Portrait studio", hint: "Making a new portrait from a description" },
-  { key: "variant", label: "New Variant", hint: "Editing an existing portrait" },
-  { key: "scene", label: "Scene generator", hint: "Painting a chat moment from the avatar" },
-];
 
 export function ImageModelsPage() {
   const me = useAsyncData(() => meApi.get(), []);
@@ -156,7 +151,7 @@ export function ImageModelsPage() {
           </Button>
         </div>
         <div className="mt-3 flex flex-wrap gap-4">
-          {CREATE_SURFACES.map((surface) => (
+          {MODEL_SURFACES.map((surface) => (
             <label key={surface.key} className="flex items-center gap-2 text-sm text-paper-300" title={surface.hint}>
               <input
                 type="checkbox"

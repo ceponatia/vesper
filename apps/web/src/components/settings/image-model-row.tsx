@@ -19,6 +19,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
+import { MODEL_SURFACES } from "./image-admin-shared";
 import { ImageModelProfilesSection } from "./image-model-profiles-section";
 import { ImageModelVersionPanel } from "./image-model-version-panel";
 
@@ -35,12 +36,6 @@ import { ImageModelVersionPanel } from "./image-model-version-panel";
  */
 
 export type ImageModelPatchBody = Parameters<typeof adminImageModelsApi.update>[1];
-
-const SURFACES: { key: ImageModelSurface; label: string; hint: string }[] = [
-  { key: "portrait", label: "Portrait studio", hint: "Making a new portrait from a description" },
-  { key: "variant", label: "New Variant", hint: "Editing an existing portrait" },
-  { key: "scene", label: "Scene generator", hint: "Painting a chat moment from the avatar" },
-];
 
 export function ModelRow({
   model,
@@ -106,7 +101,7 @@ export function ModelRow({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-4">
-        {SURFACES.map((surface) => (
+        {MODEL_SURFACES.map((surface) => (
           <label
             key={surface.key}
             className={`flex items-center gap-2 text-sm ${capable[surface.key] ? "text-paper-300" : "text-paper-600"}`}

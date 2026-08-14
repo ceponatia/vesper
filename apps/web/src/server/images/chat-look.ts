@@ -242,6 +242,8 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           },
           sink,
         );
+        // A failure still THROWS (this lane's ruled failure shape), so provenance
+        // is recorded only on success — a thrown produce has no meta channel.
         if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
         return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
       },
@@ -315,6 +317,8 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
           { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
           sink,
         );
+        // A failure still THROWS (this lane's ruled failure shape), so provenance
+        // is recorded only on success — a thrown produce has no meta channel.
         if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
         return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt) };
       },

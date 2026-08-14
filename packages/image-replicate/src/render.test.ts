@@ -414,6 +414,9 @@ describe("runRegistryImageModel", () => {
     );
     expect(result.ok).toBe(true);
     expect(result.image?.toString()).toBe("edited-image");
+    // The file transport has no byte budget: every fitted reference is sent,
+    // and the result says so.
+    expect(result.sentReferenceCount).toBe(2);
     expect(calls.filter((call) => call.method === "DELETE")).toHaveLength(2);
   });
 
@@ -481,11 +484,54 @@ describe("runRegistryImageModel", () => {
       }),
     );
 
-    await client().runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
+    const result = await client().runRegistryImageModel(model({ referenceArity: "single", maxReferences: 1 }), {
       prompt: "p",
       references: [prepared("a"), prepared("b"), prepared("c")],
     });
     expect(uploads).toBe(1);
+    // And the count reports the capacity-trimmed send, not the caller's three.
+    expect(result.sentReferenceCount).toBe(1);
+  });
+
+  it("reports how many primary references survived the inline byte budget", async () => {
+    // A budget-trimmed data_url send still succeeds — the caller reading the
+    // count is what keeps stored provenance from claiming the dropped tail went.
+    const sink = new DiagnosticCollector();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/predictions")) {
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    const result = await client().runRegistryImageModel(
+      model({ referenceField: "images", referenceArity: "array", referenceTransport: "data_url", maxReferences: 4 }),
+      {
+        prompt: "a scene",
+        references: [
+          prepared(Buffer.alloc(1_000), { role: "identity" }),
+          prepared(Buffer.alloc(7 * 1024 * 1024), { role: "location" }),
+        ],
+      },
+      sink,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.sentReferenceCount).toBe(1);
+    // The trim report names the caller's REAL roles — what was kept and what
+    // was given up — not a generic "reference".
+    const trimmed = sink.items.find((entry) => entry.code === "image_model.references_trimmed");
+    expect(trimmed?.context).toMatchObject({ sentRoles: ["identity"], droppedRoles: ["location"] });
+  });
+
+  it("carries no sent count on a refusal that never reached the transport", async () => {
+    // Absent means "nothing was posted", which is a different fact from zero.
+    const editOnly = model({ slug: "qwen/qwen-image-edit-2511", canGenerate: false });
+    const refused = await client().runRegistryImageModel(editOnly, { prompt: "portrait" });
+    expect(refused.ok).toBe(false);
+    expect("sentReferenceCount" in refused).toBe(false);
   });
 
   it("sends the client's configured prediction deadline as Replicate's Cancel-After", async () => {

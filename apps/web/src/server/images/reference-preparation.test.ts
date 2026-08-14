@@ -124,6 +124,55 @@ describe("prepareRenderReferences", () => {
     expect(sink.items.map((entry) => entry.code)).toEqual(["image_model.reference_preparation_failed"]);
   });
 
+  it("passes an already-clean webp through byte-identical — no decode, no generational loss", async () => {
+    const clean = await sharp({ create: { width: 8, height: 12, channels: 3, background: { r: 40, g: 90, b: 200 } } })
+      .webp()
+      .toBuffer();
+    const reference = await prepareOne(clean, WEBP_TARGET);
+    // The SAME object: a re-encode of stored webp bytes would cost a generation
+    // of fidelity to produce nothing the transport needs.
+    expect(reference.bytes).toBe(clean);
+    expect(reference.mediaType).toBe("image/webp");
+    expect(reference.extension).toBe("webp");
+    expect(reference.width).toBe(8);
+    expect(reference.height).toBe(12);
+  });
+
+  it("still rewrites a webp that carries an EXIF orientation", async () => {
+    const oriented = await sharp({ create: { width: 8, height: 12, channels: 3, background: { r: 200, g: 80, b: 80 } } })
+      .webp()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const reference = await prepareOne(oriented, WEBP_TARGET);
+    // A provider reading raw pixels would render it sideways, so the fast path
+    // must refuse it: the orientation is applied and the tag dropped.
+    expect(reference.bytes).not.toBe(oriented);
+    expect(reference.width).toBe(12);
+    expect(reference.height).toBe(8);
+    expect((await sharp(reference.bytes).metadata()).orientation).toBeUndefined();
+  });
+
+  it("still converts a png — the fast path is webp-to-webp only", async () => {
+    const png = await testPngBuffer();
+    const reference = await prepareOne(png, WEBP_TARGET);
+    expect(reference.bytes).not.toBe(png);
+    expect(reference.mediaType).toBe("image/webp");
+    expect((await sharp(reference.bytes).metadata()).format).toBe("webp");
+  });
+
+  it("still resizes a clean webp when the target demands it — and only then", async () => {
+    const clean = await sharp({ create: { width: 8, height: 12, channels: 3, background: { r: 40, g: 90, b: 200 } } })
+      .webp()
+      .toBuffer();
+    const shrunk = await prepareOne(clean, { format: "webp", maxEdgePx: 6 });
+    expect(shrunk.bytes).not.toBe(clean);
+    expect(shrunk.width).toBeLessThanOrEqual(6);
+    expect(shrunk.height).toBeLessThanOrEqual(6);
+    // A ceiling the image already fits under demands nothing: passthrough.
+    const roomy = await prepareOne(clean, { format: "webp", maxEdgePx: 100 });
+    expect(roomy.bytes).toBe(clean);
+  });
+
   it("prepares a list in order, one result per input", async () => {
     const results = await prepareRenderReferences(
       [

@@ -217,10 +217,28 @@ describe("chooseDimensions", () => {
   it("crops an offered pair whose shape misses the lane's target", () => {
     // The pair is sent (it is a real enum entry), but the lane's ratio still
     // wins downstream: the mismatch is declared so the caller crops.
-    expect(chooseDimensions(wan(), { targetRatio: 1, width: 768, height: 1024 })).toEqual({
+    expect(chooseDimensions(wan(), { targetRatio: 1, resolution: "custom", width: 768, height: 1024 })).toEqual({
       input: { size: "768*1024" },
       expectedAspect: 3 / 4,
       needsCrop: true,
+      requestedResolution: "custom",
+    });
+  });
+
+  it("never lets a leftover pair outrank a stored tier — the pair needs `custom`", () => {
+    // Width/height are a request only when the resolution says so. Ungated, a
+    // profile that stored a tier beside leftover dimension defaults would render
+    // the pair's size under the tier's name.
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, resolution: "2K", width: 768, height: 1024 })).toEqual({
+      input: { size: "1536*2048" },
+      expectedAspect: 3 / 4,
+      needsCrop: false,
+      requestedResolution: "2K",
+    });
+    // No resolution at all reads the same way: the pair is ignored and the
+    // default largest-exact-match answer stands.
+    expect(chooseDimensions(wan(), { targetRatio: 3 / 4, width: 768, height: 1024 }).input).toEqual({
+      size: "3072*4096",
     });
   });
 

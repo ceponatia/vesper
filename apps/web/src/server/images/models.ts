@@ -101,6 +101,14 @@ export interface RenderWithModelInput {
   prompt: string;
   references?: Buffer[];
   /**
+   * The caller's names for each `references` entry, index-parallel — a plan's
+   * sent-reference roles (`renderImageIntent`). Diagnostic labels only, never a
+   * provider field: the transport's trim report names what was kept and what
+   * was given up by these. A missing entry falls back to `"reference"`, which
+   * is what every buffer was labeled before roles traveled.
+   */
+  referenceRoles?: string[];
+  /**
    * Structural controls bound to their own provider inputs, already resolved
    * against this version's `additionalImageInputs` (`planImageRender`).
    *
@@ -154,6 +162,13 @@ export interface RenderWithModelResult {
    * recorded: a pin states intent, and only this states outcome.
    */
   executedVersionId?: string;
+  /**
+   * How many primary references the transport actually sent, passed through
+   * untouched from `ReplicateImageResult` (where the counting rule is
+   * recorded). `renderImageIntent` truncates its sent-roles provenance to this,
+   * so a stored attempt never claims a budget-trimmed reference was sent.
+   */
+  sentReferenceCount?: number;
 }
 
 /**
@@ -210,7 +225,9 @@ export async function renderWithModel(
   const preparationTarget = referencePreparationTarget(model);
   const references = input.references
     ? await prepareRenderReferences(
-        input.references.map((buffer) => ({ buffer, role: "reference" })),
+        // Each buffer travels under the caller's role for it, so a transport
+        // trim report can say "location dropped" instead of "reference 2".
+        input.references.map((buffer, index) => ({ buffer, role: input.referenceRoles?.[index] ?? "reference" })),
         preparationTarget,
         sink,
       )
@@ -243,11 +260,14 @@ export async function renderWithModel(
     sink,
   );
   // Spread rather than assigned, so a run the provider never got a prediction id
-  // (or never echoed a version) for reports no field at all instead of an
-  // explicit undefined.
+  // (or never echoed a version, or never reached the transport's send) for
+  // reports no field at all instead of an explicit undefined. The count is
+  // compared against undefined, not truthiness: zero references sent is a real
+  // count, absence means the transport never said.
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
     ...(result.executedVersionId ? { executedVersionId: result.executedVersionId } : {}),
+    ...(result.sentReferenceCount !== undefined ? { sentReferenceCount: result.sentReferenceCount } : {}),
   };
   if (!result.ok || !result.image) {
     return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };

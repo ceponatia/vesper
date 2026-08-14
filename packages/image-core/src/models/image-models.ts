@@ -458,10 +458,13 @@ function chooseRatioDimensions(model: ImageModel, request: ImageDimensionRequest
  *
  * In precedence order:
  *
- * - An explicit pair is honored only when it parses into an offered entry
- *   VERBATIM — a size-mode model accepts nothing but its enum, so a pair the
- *   schema does not offer is ignored rather than rounded to an invented value
- *   the provider would reject.
+ * - An explicit pair is honored only when the request's `resolution` is
+ *   `custom` AND it parses into an offered entry VERBATIM. The gate matters as
+ *   much as the verbatim rule: width/height are only ever a request when the
+ *   tier says so, and an ungated pair let leftover dimension defaults silently
+ *   outrank a stored tier. A pair the schema does not offer is ignored rather
+ *   than rounded to an invented value the provider would reject — a size-mode
+ *   model accepts nothing but its enum.
  * - A named tier picks, among the entries `chooseAspect` would consider (the
  *   closest-ratio group), the one nearest the tier's pixel area — ties toward
  *   the larger, matching the exact-match bias. The ratio contest still runs
@@ -472,7 +475,7 @@ function chooseRatioDimensions(model: ImageModel, request: ImageDimensionRequest
 function chooseSizeDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
   const field = imageAspectInputField(model);
 
-  if (request.width !== undefined && request.height !== undefined) {
+  if (request.resolution === "custom" && request.width !== undefined && request.height !== undefined) {
     const offered = model.supportedAspects.find((value) => {
       const pair = parsePixelPair(value);
       return pair !== null && pair.width === request.width && pair.height === request.height;

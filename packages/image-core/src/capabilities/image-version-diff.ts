@@ -15,7 +15,11 @@ import {
  *
  * 1. **What changed?** {@link diffImageModelCapabilities} compares the active
  *    row's mechanical capabilities against a candidate probe, field by field,
- *    so the admin card can show exactly what activating would rewrite.
+ *    so the admin card can show exactly how the candidate's schema differs.
+ *    Entries describe SCHEMA DIFFERENCES, not a write plan: most diffed fields
+ *    are what activation rewrites, but the owner-owned ones (`maxReferences`,
+ *    `supportedAspects`) are reported for review and never auto-written — they
+ *    carry {@link ImageCapabilityDiffEntry.ownerOwned} so the card can say so.
  * 2. **Would activating break a profile?** {@link validateImageProfileForCandidate}
  *    judges one enabled profile against the candidate's capabilities and
  *    reports findings. BLOCKING findings refuse activation (the profile's
@@ -69,16 +73,23 @@ export type ImageCapabilityDiffKind = (typeof imageCapabilityDiffKinds)[number];
  * (`knownInputFields.seed`), one dedicated image input
  * (`additionalImageInputs.pose_image`), `output`, or `prompt`.
  *
- * Unchanged fields are OMITTED — the diff is what activation would rewrite,
- * not a second copy of the capability record. `active`/`candidate` carry the
- * serializable values where a value is worth showing; a `knownInputFields.*`
- * entry carries neither, because the field name IS the fact.
+ * Unchanged fields are OMITTED — the diff is what differs between the two
+ * schemas, not a second copy of the capability record. `active`/`candidate`
+ * carry the serializable values where a value is worth showing; a
+ * `knownInputFields.*` entry carries neither, because the field name IS the
+ * fact.
+ *
+ * `ownerOwned` marks the fields whose STORED value is the owner's judgment
+ * rather than the probe's (`maxReferences`, the curated `supportedAspects`):
+ * the entry is reported so the owner can review the drift, but neither
+ * activation nor a re-probe ever writes those columns.
  */
 export interface ImageCapabilityDiffEntry {
   field: string;
   kind: ImageCapabilityDiffKind;
   active?: unknown;
   candidate?: unknown;
+  ownerOwned?: true;
 }
 
 /** Wire schema for the diff entry, so routes and the admin client parse one shape. */
@@ -87,6 +98,7 @@ export const imageCapabilityDiffEntrySchema = z.object({
   kind: z.enum(imageCapabilityDiffKinds),
   active: z.unknown().optional(),
   candidate: z.unknown().optional(),
+  ownerOwned: z.literal(true).optional(),
 });
 
 /** Deep equality via the fingerprint spelling — one answer to "did this value move?". */
@@ -129,10 +141,12 @@ function recordEntries(
 
 /**
  * Field-level diff between the ACTIVE version's stored capabilities and a
- * CANDIDATE probe — what `activate-version` would rewrite
+ * CANDIDATE probe — how the candidate's schema differs from what is stored
  * (spec §"Version candidate and promotion flow": the diff must highlight
  * removed or changed fields used by enabled profiles, including LoRA bindings,
  * reference arity, output format, aspects, size controls, and numeric ranges).
+ * Most entries are what `activate-version` would rewrite; the owner-owned
+ * `maxReferences` and `supportedAspects` entries are review-only and flagged.
  *
  * Entry order is deterministic: the scalar columns in declaration order, then
  * `supportedAspects`, then `extraInput.*`, then the advanced record —
@@ -156,7 +170,10 @@ export function diffImageModelCapabilities(
     ...changedEntry("referenceArity", active.referenceArity, candidate.referenceArity),
     ...(active.maxReferences === undefined || candidate.maxReferences === undefined
       ? []
-      : changedEntry("maxReferences", active.maxReferences, candidate.maxReferences)),
+      : changedEntry("maxReferences", active.maxReferences, candidate.maxReferences).map((entry) => ({
+          ...entry,
+          ownerOwned: true as const,
+        }))),
     ...changedEntry("aspectMode", active.aspectMode, candidate.aspectMode),
     ...(sameValue([...active.supportedAspects].sort(), [...candidate.supportedAspects].sort())
       ? []
@@ -166,6 +183,9 @@ export function diffImageModelCapabilities(
             kind: "changed" as const,
             active: [...active.supportedAspects],
             candidate: [...candidate.supportedAspects],
+            // The stored list is curation (0098 prunes Wan's edit-breaking 4K
+            // sizes); the diff shows the provider moved, the owner decides.
+            ownerOwned: true as const,
           },
         ]),
     ...changedEntry("outputFormat", active.outputFormat, candidate.outputFormat),
@@ -240,6 +260,19 @@ export const imageProfileCandidateFindingSchema = z.object({
   message: z.string(),
   context: z.record(z.string(), z.unknown()).default(() => ({})),
 });
+
+/**
+ * One enabled profile's findings against a candidate, labeled for the admin
+ * card — the wire shape the probe/activate routes emit and the client parses,
+ * spelled once here like the diff-entry and finding schemas above.
+ */
+export const imageModelProfileFindingsSchema = z.object({
+  profileId: z.string().min(1),
+  key: z.string(),
+  label: z.string(),
+  findings: z.array(imageProfileCandidateFindingSchema),
+});
+export type ImageModelProfileFindings = z.infer<typeof imageModelProfileFindingsSchema>;
 
 /** The slice of a profile row validation reads — the full row is assignable. */
 export type ImageProfileCandidateInput = Pick<ImageModelProfile, "operation" | "providerOverrides" | "controlDefaults">;

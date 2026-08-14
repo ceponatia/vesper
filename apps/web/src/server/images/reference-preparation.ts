@@ -2,7 +2,7 @@ import sharp from "sharp";
 import type { ImageModel } from "@vesper/image-core";
 import type { PreparedReferenceBytes } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { SHARP_DECODE_LIMITS } from "./assets";
+import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./assets";
 
 /**
  * Reference preparation ahead of transport (image-model-capabilities.spec.md
@@ -21,7 +21,10 @@ import { SHARP_DECODE_LIMITS } from "./assets";
  * and the bytes are re-encoded to a format the model accepts. Stored Vesper
  * assets are webp today, but masks and external control images may not be —
  * which is exactly why the media type is resolved here instead of hardcoded at
- * the transport.
+ * the transport. A buffer that already satisfies the target — clean webp, no
+ * orientation to apply, no resize due — ships its ORIGINAL bytes
+ * ({@link webpPassthrough}): re-encoding it would cost a generation of fidelity
+ * to produce nothing the transport needs.
  */
 
 /** The encodings preparation can produce; each is accepted by every model Vesper runs. */
@@ -70,9 +73,6 @@ export interface PreparedRenderReference extends PreparedReferenceBytes {
   height: number | null;
 }
 
-/** Matches `writeWebpAtomic`'s storage quality — preparation must not cost more fidelity than storage does. */
-const REFERENCE_ENCODE_QUALITY = 90;
-
 /** Per-format transport facts, and whether flattening is needed at all. */
 const FORMAT_FACTS: Record<ReferenceImageFormat, { mediaType: string; extension: string; acceptsAlpha: boolean }> = {
   webp: { mediaType: "image/webp", extension: "webp", acceptsAlpha: true },
@@ -113,6 +113,15 @@ async function prepareOneReference(
 ): Promise<PreparedRenderReference> {
   const facts = FORMAT_FACTS[target.format];
   try {
+    // The cheap fast path: a stored Vesper asset is ALREADY a normalized webp,
+    // and re-encoding it costs a decode, a lossy re-encode, and a generation of
+    // fidelity for nothing. When the bytes are webp, no EXIF orientation needs
+    // applying, and the target demands neither a format change nor a resize,
+    // the ORIGINAL bytes ship with the metadata's own dimensions. Everything
+    // else — another format, an orientation to apply, a resize, an animated
+    // buffer the full pass would flatten — takes the full pipeline below.
+    const passthrough = await webpPassthrough(input, target);
+    if (passthrough) return passthrough;
     // `.rotate()` with no argument applies the EXIF orientation and drops the
     // tag; encoding without `.withMetadata()` is what strips everything else.
     let pipeline = sharp(input.buffer, SHARP_DECODE_LIMITS).rotate();
@@ -157,13 +166,54 @@ async function prepareOneReference(
   }
 }
 
-/** The encoder for one target format, at the shared quality. PNG is lossless and takes no quality. */
+/**
+ * The already-prepared answer, or null when the full pipeline must run.
+ *
+ * One metadata sniff, no decode. Every condition is a "nothing to do" check:
+ * webp target, webp bytes, a single frame (the full pass flattens animation via
+ * `animated: false`, so passing an animated buffer through would CHANGE what the
+ * provider sees relative to today), no EXIF orientation to apply (absent or the
+ * identity `1`), real dimensions to report, and no resize demanded by the
+ * target's edge ceiling. Any metadata the buffer carries stays — these are
+ * Vesper's own stored bytes, already stripped at storage time, and a
+ * generational re-encode is the greater loss. A sniff that throws falls through
+ * to the full pipeline, whose own catch owns degradation.
+ */
+async function webpPassthrough(
+  input: RenderReferenceInput,
+  target: ReferencePreparationTarget,
+): Promise<PreparedRenderReference | null> {
+  if (target.format !== "webp") return null;
+  let meta: sharp.Metadata;
+  try {
+    meta = await sharp(input.buffer, SHARP_DECODE_LIMITS).metadata();
+  } catch {
+    return null;
+  }
+  if (meta.format !== "webp" || (meta.pages ?? 1) > 1) return null;
+  if (meta.orientation !== undefined && meta.orientation !== 1) return null;
+  const { width, height } = meta;
+  if (typeof width !== "number" || typeof height !== "number" || width < 1 || height < 1) return null;
+  if (target.maxEdgePx !== null && (width > target.maxEdgePx || height > target.maxEdgePx)) return null;
+  return {
+    bytes: input.buffer,
+    mediaType: FORMAT_FACTS.webp.mediaType,
+    extension: FORMAT_FACTS.webp.extension,
+    role: input.role,
+    width,
+    height,
+  };
+}
+
+/** The encoder for one target format, at `writeWebpAtomic`'s storage quality —
+ * preparation must not cost more fidelity than storage does. PNG is lossless
+ * and takes no quality. */
 function encodeReference(pipeline: sharp.Sharp, format: ReferenceImageFormat): sharp.Sharp {
   switch (format) {
     case "webp":
-      return pipeline.webp({ quality: REFERENCE_ENCODE_QUALITY });
+      return pipeline.webp({ quality: WEBP_QUALITY });
     case "jpeg":
-      return pipeline.jpeg({ quality: REFERENCE_ENCODE_QUALITY });
+      return pipeline.jpeg({ quality: WEBP_QUALITY });
     case "png":
       return pipeline.png();
   }

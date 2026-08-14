@@ -169,8 +169,10 @@ export type ImageModelProfileMutation =
   | { ok: false; code: "not_found" | "invalid" | "conflict"; message: string };
 
 /** One row by id, or null when it is missing or unreadable (the LoRA rule: a row
- * that cannot parse cannot be edited into shape through a partial merge). */
-async function loadProfileRow(profileId: string): Promise<ImageModelProfile | null> {
+ * that cannot parse cannot be edited into shape through a partial merge).
+ * Exported for the version service's smoke test, which needs exactly one
+ * profile row and should not load and parse the whole registry to find it. */
+export async function loadImageModelProfileById(profileId: string): Promise<ImageModelProfile | null> {
   const [row] = await db().select().from(imageModelProfiles).where(eq(imageModelProfiles.id, profileId)).limit(1);
   if (!row) return null;
   const parsed = imageModelProfileSchema.safeParse(row);
@@ -255,13 +257,21 @@ export async function createImageModelProfile(
  * un-defaulting) a task's only default is deliberately allowed: resolution
  * degrades to the next candidate by design, and a guard here would make
  * "switch the default to another model" a forbidden two-step.
+ *
+ * Configuration validation runs ONLY when the merged row is ENABLED. A disabled
+ * row is out of every candidate list, so nothing can resolve to it — and gating
+ * its edits on validity would make the activation flow's "disable that profile
+ * and retry" advice impossible for exactly the rows that need it (a profile
+ * whose stored config went invalid under a new version, or a seeded row like
+ * 0107's Portrait Quality whose `go_fast` override cannot validate until the
+ * model is probed). Enabling, or editing while enabled, validates as before.
  */
 export async function updateImageModelProfile(
   modelId: string,
   profileId: string,
   request: ImageModelProfileUpdateRequest,
 ): Promise<ImageModelProfileMutation> {
-  const existing = await loadProfileRow(profileId);
+  const existing = await loadImageModelProfileById(profileId);
   // A profile reached under the wrong model's URL is the same 404 as a missing
   // one — the collapsed shape every resource route answers with.
   if (!existing || existing.imageModelId !== modelId) {
@@ -270,21 +280,25 @@ export async function updateImageModelProfile(
   if (Object.keys(request).length === 0) return { ok: true, profile: existing };
 
   const merged: ImageModelProfile = { ...existing, ...request };
-  const model = await loadImageModel(merged.imageModelId);
-  if (!model) {
-    // Unreachable while the FK cascade holds (a deleted model deletes its
-    // profiles), kept because an unparseable model row reads the same here.
-    return { ok: false, code: "invalid", message: "the profile's model cannot be loaded" };
-  }
-  const issues = validateImageProfileConfiguration(merged, model);
-  if (issues.length > 0) {
-    return { ok: false, code: "invalid", message: issues.map((issue) => issue.message).join("; ") };
+  if (merged.enabled) {
+    const model = await loadImageModel(merged.imageModelId);
+    if (!model) {
+      // Unreachable while the FK cascade holds (a deleted model deletes its
+      // profiles), kept because an unparseable model row reads the same here.
+      return { ok: false, code: "invalid", message: "the profile's model cannot be loaded" };
+    }
+    const issues = validateImageProfileConfiguration(merged, model);
+    if (issues.length > 0) {
+      return { ok: false, code: "invalid", message: issues.map((issue) => issue.message).join("; ") };
+    }
   }
   const conflict = await profileConflict(merged);
   if (conflict) return { ok: false, code: "conflict", message: conflict };
 
   await db().update(imageModelProfiles).set(request).where(eq(imageModelProfiles.id, profileId));
-  return { ok: true, profile: (await loadProfileRow(profileId)) ?? merged };
+  // The merged row IS what the update wrote — `existing` parsed, `request`
+  // passed the boundary schema — so a re-read would only repeat the merge.
+  return { ok: true, profile: merged };
 }
 
 /**
@@ -295,7 +309,7 @@ export async function updateImageModelProfile(
  * `image_profile.none_offered`) rather than failing the render.
  */
 export async function deleteImageModelProfile(modelId: string, profileId: string): Promise<boolean> {
-  const existing = await loadProfileRow(profileId);
+  const existing = await loadImageModelProfileById(profileId);
   if (!existing || existing.imageModelId !== modelId) return false;
   await db().delete(imageModelProfiles).where(eq(imageModelProfiles.id, profileId));
   return true;

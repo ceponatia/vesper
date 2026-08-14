@@ -130,6 +130,21 @@ describe("seed resolution", () => {
     expect(result.attempt?.seed).toBeNull();
     expect(result.attempt?.droppedControls).toEqual([{ control: "seedPolicy", reason: "no_seed_transport" }]);
   });
+
+  it("draws nothing for an explicitly pinned render", async () => {
+    // The active row's probed seed binding describes the ACTIVE version, not
+    // the pin — a number drawn from it would be validated against a range the
+    // pinned version never declared.
+    const result = await renderImageIntent(intent({ versionId: "v-pinned" }));
+    expect(sentControlInput()).toEqual({});
+    expect(result.attempt?.seed).toBeNull();
+  });
+
+  it("still honours an explicit seed verbatim on a pinned render", async () => {
+    const result = await renderImageIntent(intent({ versionId: "v-pinned", controls: { seed: 123 } }));
+    expect(sentControlInput()).toEqual({ seed: 123 });
+    expect(result.attempt?.seed).toBe(123);
+  });
 });
 
 describe("attempt provenance", () => {
@@ -185,6 +200,32 @@ describe("dimension facts", () => {
     await renderImageIntent(intent());
     const call = mockRender.mock.calls.at(-1)?.[0] as RenderWithModelInput | undefined;
     expect(call?.dimensionFacts).toEqual({ operation: "edit", mappedCustomSize: null });
+  });
+});
+
+describe("sent-reference provenance", () => {
+  it("hands the plan's roles to renderWithModel beside its buffers", async () => {
+    // Index-parallel with `references`, so the transport's trim diagnostics can
+    // name what was kept and what was given up.
+    await renderImageIntent(intent());
+    const call = mockRender.mock.calls.at(-1)?.[0] as RenderWithModelInput | undefined;
+    expect(call?.referenceRoles).toEqual(["identity"]);
+    expect(call?.references).toHaveLength(1);
+  });
+
+  it("truncates the attempt's sent roles to what the transport says it sent", async () => {
+    // The data_url byte budget can trim the plan's tail AFTER planning; the
+    // stored attempt must not claim the trimmed reference went.
+    mockRender.mockResolvedValue({ ok: true, image: Buffer.from("img"), sentReferenceCount: 0 });
+    const result = await renderImageIntent(intent());
+    expect(result.attempt?.sentReferenceRoles).toEqual([]);
+  });
+
+  it("keeps the plan's roles when the transport reports no count", async () => {
+    // Absence means "the transport never said" — an injected renderer, an older
+    // result shape — and the plan's list is the only honest answer available.
+    const result = await renderImageIntent(intent());
+    expect(result.attempt?.sentReferenceRoles).toEqual(["identity"]);
   });
 });
 

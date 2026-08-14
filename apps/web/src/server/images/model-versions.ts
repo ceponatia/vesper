@@ -7,7 +7,7 @@ import {
   type ImageCapabilityDiffEntry,
   type ImageModel,
   type ImageModelProfile,
-  type ImageProfileCandidateFinding,
+  type ImageModelProfileFindings,
   type ImageReferenceRole,
   type ImageRenderIntent,
   type ImageRenderReference,
@@ -18,8 +18,8 @@ import type { ProbeResult } from "@vesper/image-replicate";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { replicateClient } from "../ai";
 import { db, imageModels } from "../db";
-import { imageModelProbeFields } from "./identity-trial-model-versions";
-import { loadImageModelProfiles } from "./model-profiles";
+import { imageModelReprobeFields } from "./identity-trial-model-versions";
+import { loadImageModelProfileById, loadImageModelProfiles } from "./model-profiles";
 import { loadImageModel } from "./models";
 import { renderImageIntent, type RenderImageIntentResult } from "./render-intent";
 
@@ -40,24 +40,23 @@ import { renderImageIntent, type RenderImageIntentResult } from "./render-intent
  *   and probe-owned capability columns in one atomic update.
  *
  * The judgment calls (the diff, the blocking/warning rules) are pure and live
- * in `@vesper/image-core`; the probe write set is `imageModelProbeFields`, the
- * single answer to "what does a probe own" — reviewed judgments (`editKind`,
+ * in `@vesper/image-core`; the write set is `imageModelReprobeFields`, the
+ * single answer to "what does a re-probe own" — reviewed judgments (`editKind`,
  * `identityPreservation`, `operatorWarning`), the owner-set reference cap and
- * transport, the surface toggles and sort are never touched here.
+ * transport, the curated `supportedAspects` list, the surface toggles and sort
+ * are never touched here.
  */
 
 type SuccessfulProbe = Extract<ProbeResult, { ok: true }>["probe"];
 
-/** One enabled profile's findings against a candidate, labeled for the admin card. */
-export interface ImageModelProfileFindings {
-  profileId: string;
-  key: string;
-  label: string;
-  findings: ImageProfileCandidateFinding[];
-}
+// The `{ profileId, key, label, findings }` wire shape is the package's
+// `imageModelProfileFindingsSchema` — one spelling shared with the client,
+// like the diff-entry schema. Re-exported so this module stays the server-side
+// home of the name.
+export type { ImageModelProfileFindings };
 
-/** The one atomic write activation performs. `slug` carries the new pin; the rest is probe-owned. */
-export type ActivatedImageModelUpdate = ReturnType<typeof imageModelProbeFields> & {
+/** The one atomic write activation performs. `slug` carries the new pin; the rest is re-probe-owned. */
+export type ActivatedImageModelUpdate = ReturnType<typeof imageModelReprobeFields> & {
   slug: string;
   updatedAt: Date;
 };
@@ -69,6 +68,8 @@ export type ActivatedImageModelUpdate = ReturnType<typeof imageModelProbeFields>
 export interface ImageModelVersionDependencies {
   loadModel: (id: string) => Promise<ImageModel | null>;
   loadProfiles: (sink?: DiagnosticSink) => Promise<ImageModelProfile[]>;
+  /** One row by id — the smoke test needs a single profile, not the registry. */
+  loadProfile: (profileId: string) => Promise<ImageModelProfile | null>;
   probe: (slug: string) => Promise<ProbeResult>;
   render: (intent: ImageRenderIntent, sink?: DiagnosticSink) => Promise<RenderImageIntentResult>;
   persist: (modelId: string, update: ActivatedImageModelUpdate) => Promise<void>;
@@ -77,6 +78,7 @@ export interface ImageModelVersionDependencies {
 const defaultDependencies: ImageModelVersionDependencies = {
   loadModel: loadImageModel,
   loadProfiles: loadImageModelProfiles,
+  loadProfile: loadImageModelProfileById,
   probe: (slug) => replicateClient().probeReplicateModel(slug),
   render: renderImageIntent,
   persist: async (modelId, update) => {
@@ -220,10 +222,10 @@ export async function smokeTestCandidate(
   const deps: ImageModelVersionDependencies = { ...defaultDependencies, ...dependencies };
   const model = await deps.loadModel(modelId);
   if (!model) return { ok: false, code: "not_found", message: "image model not found" };
-  const profile = (await deps.loadProfiles(sink)).find(
-    (row) => row.id === input.profileId && row.imageModelId === modelId,
-  );
-  if (!profile) return { ok: false, code: "profile_not_found", message: "image model profile not found" };
+  const profile = await deps.loadProfile(input.profileId);
+  if (!profile || profile.imageModelId !== modelId) {
+    return { ok: false, code: "profile_not_found", message: "image model profile not found" };
+  }
 
   const intent: ImageRenderIntent = {
     profile: { profile, model },
@@ -315,7 +317,7 @@ async function probeExactCandidate(
  * its exact version, then any BLOCKING finding on any enabled profile — the
  * admin disables or repairs that profile and retries. On success ONE update
  * writes the new pin (`path:versionId`, any previous pin stripped), the
- * probe-owned capability columns including `probedVersionId` and the
+ * re-probe-owned capability columns including `probedVersionId` and the
  * version-specific `advancedCapabilities`, and `updatedAt`. Warnings do not
  * refuse; they come back beside the updated row so the card can show what
  * degraded.
@@ -354,7 +356,7 @@ export async function activateCandidateVersion(
     };
   }
 
-  const probeFields = imageModelProbeFields(probed.probe);
+  const probeFields = imageModelReprobeFields(probed.probe);
   const update: ActivatedImageModelUpdate = {
     slug: `${basePath}:${input.versionId}`,
     ...probeFields,

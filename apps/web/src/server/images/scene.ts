@@ -265,7 +265,18 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
         const outcome = await executeSceneChain(chain, (id) => runSceneProvider(id, ctx), sink);
-        if (!outcome) return { ok: false, error: sceneFailureMessage(collected.items) };
+        if (!outcome) {
+          // The whole chain exhausted. The failed row still records the LAST
+          // rung's attempt — the failure its error text describes — so a failed
+          // scene keeps its prediction id and provenance. Walked from the deep
+          // end because later rungs overwrite nothing: each rung keys its own
+          // attempt, and the deepest one recorded is the last that ran.
+          const lastAttempt = [...chain]
+            .reverse()
+            .map((id) => ctx.attempts.get(id))
+            .find((attempt) => attempt !== undefined);
+          return { ok: false, error: sceneFailureMessage(collected.items), ...renderAttemptMeta(lastAttempt) };
+        }
         if (outcome.attemptId !== primary) {
           await correctProviderMeta(
             asset.id,

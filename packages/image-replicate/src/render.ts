@@ -81,7 +81,7 @@ export async function runRegistryImageModel(
   try {
     // Split back POSITIONALLY, on the same order they traveled in. Keying a
     // lookup by buffer would collapse two identical control images onto one URL.
-    return await runPrediction(
+    const result = await runPrediction(
       http,
       config,
       model.slug,
@@ -95,6 +95,11 @@ export async function runRegistryImageModel(
       ),
       request,
     );
+    // Stamped on every prediction outcome, success and failure alike: the count
+    // is a fact about what was POSTED, and a failed prediction still received
+    // exactly these references. The pre-transport refusals above carry no count
+    // because nothing was sent.
+    return { ...result, sentReferenceCount: send.length };
   } finally {
     await Promise.allSettled(transported.files.map((file) => deleteReplicateFile(http, file.id)));
   }

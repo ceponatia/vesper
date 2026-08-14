@@ -68,3 +68,28 @@ describe("renderWithModel dimension negotiation", () => {
     expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("3072*4096");
   });
 });
+
+describe("renderWithModel reference roles and sent count", () => {
+  it("labels each prepared reference with the caller's role, falling back to 'reference'", async () => {
+    // The buffers here are not decodable, so preparation degrades to the
+    // original bytes — the ROLE must survive that path too.
+    await renderWithModel({
+      model: wan(),
+      prompt: "a scene",
+      references: [Buffer.from("a"), Buffer.from("b"), Buffer.from("c")],
+      referenceRoles: ["identity", "location"],
+    });
+    const sent = runModel.mock.calls.at(-1)?.[1]?.references;
+    expect(sent?.map((reference) => reference.role)).toEqual(["identity", "location", "reference"]);
+  });
+
+  it("passes the transport's sent-reference count through, absence included", async () => {
+    runModel.mockResolvedValue({ ok: true, image: Buffer.from("img"), sentReferenceCount: 1 });
+    const counted = await renderWithModel({ model: wan(), prompt: "p", references: [Buffer.from("a")] });
+    expect(counted.sentReferenceCount).toBe(1);
+
+    runModel.mockResolvedValue({ ok: true, image: Buffer.from("img") });
+    const uncounted = await renderWithModel({ model: wan(), prompt: "p" });
+    expect("sentReferenceCount" in uncounted).toBe(false);
+  });
+});

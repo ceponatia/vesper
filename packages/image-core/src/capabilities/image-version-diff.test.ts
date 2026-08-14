@@ -49,10 +49,12 @@ describe("diffImageModelCapabilities", () => {
     ]);
   });
 
-  it("compares supportedAspects as a set, so a pure reordering is unchanged", () => {
+  it("compares supportedAspects as a set, flagging the entry owner-owned", () => {
     expect(diffImageModelCapabilities(snapshot(), snapshot({ supportedAspects: ["1:1", "3:4"] }))).toEqual([]);
+    // The stored list is owner curation, so the entry is review-only: reported
+    // with `ownerOwned` and never auto-written by activation or a re-probe.
     expect(diffImageModelCapabilities(snapshot(), snapshot({ supportedAspects: ["3:4", "16:9"] }))).toEqual([
-      { field: "supportedAspects", kind: "changed", active: ["3:4", "1:1"], candidate: ["3:4", "16:9"] },
+      { field: "supportedAspects", kind: "changed", active: ["3:4", "1:1"], candidate: ["3:4", "16:9"], ownerOwned: true },
     ]);
   });
 
@@ -62,12 +64,12 @@ describe("diffImageModelCapabilities", () => {
     ]);
   });
 
-  it("skips maxReferences when either side omits it", () => {
+  it("skips maxReferences when either side omits it, flagging a real entry owner-owned", () => {
     const active = snapshot();
     delete active.maxReferences;
     expect(diffImageModelCapabilities(active, snapshot({ maxReferences: 9 }))).toEqual([]);
     expect(diffImageModelCapabilities(snapshot({ maxReferences: 3 }), snapshot({ maxReferences: 9 }))).toEqual([
-      { field: "maxReferences", kind: "changed", active: 3, candidate: 9 },
+      { field: "maxReferences", kind: "changed", active: 3, candidate: 9, ownerOwned: true },
     ]);
   });
 

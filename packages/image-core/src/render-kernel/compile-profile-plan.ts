@@ -275,14 +275,16 @@ export interface ProfileRenderPlan {
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   /**
-   * The controls that actually reached `controlInput`, keyed by NORMALIZED name
-   * — the record a caller stores as provenance. Reserved-field collisions are
-   * already removed (an entry here was really sent), each value is read back
-   * out of the FINAL payload so an override that replaced a mapped value is
+   * The controls this render actually honors, keyed by NORMALIZED name — the
+   * record a caller stores as provenance. Reserved-field collisions are already
+   * removed (an entry here was really sent), each payload-mapped value is read
+   * back out of the FINAL payload so an override that replaced a mapped value is
    * reported as what went, and the LoRA entry is the mapper's `{ id, scale }` —
-   * never the locator. Deliberately NOT fingerprinted:
-   * `profileRenderControlsFingerprintJson` already carries `controlInput` and
-   * the drops, and this is the same information under normalized names.
+   * never the locator. ONE entry is applied outside the payload: a size-mode
+   * model's `resolution` tier, which the dimension resolver consumes via
+   * `dimensionFacts` rather than a provider field. Deliberately NOT
+   * fingerprinted: `profileRenderControlsFingerprintJson` already carries
+   * `controlInput`, the drops, and the dimension request.
    */
   appliedControls: Record<string, unknown>;
   /** The auditable record of the above, drops included. */
@@ -498,9 +500,30 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     lora: requested?.lora ?? defaults.lora,
   };
 
+  // Which dimension controls the MAPPER may see. Two rules, both about honesty:
+  //
+  // - On a size-mode model the resolution tier belongs to the DIMENSION
+  //   RESOLVER, not the control mapper: the enum entries ARE the sizes, and
+  //   `chooseSizeDimensions` consumes the tier via `dimensionFacts` to pick
+  //   among them. Handing it to the mapper as well either sent a second copy
+  //   through a probed binding or — when that binding is the reserved `size`
+  //   key itself — recorded a `reserved` drop for a control that WAS applied.
+  //   On aspect-ratio models the tier stays an ordinary binding-mapped control.
+  // - `width`/`height` are honored ONLY when `resolution` is `custom`. The pair
+  //   is the request exactly when the tier says so; mapped beside a named tier,
+  //   leftover dimension defaults would silently outrank the tier the profile
+  //   asked for. Excluded here and recorded below as `requires_custom_resolution`.
+  const sizeModeTier = effectiveModel.aspectMode === "size" && controls.resolution !== undefined;
+  const customPairRequested = controls.resolution === "custom";
+  const mapperControls: ImageRenderControls = {
+    ...controls,
+    ...(sizeModeTier ? { resolution: undefined } : {}),
+    ...(customPairRequested ? {} : { width: undefined, height: undefined }),
+  };
+
   const reservedFields = reservedImageInputFields(effectiveModel);
   const mapped = mapImageRenderControls({
-    controls,
+    controls: mapperControls,
     capabilities: effectiveModel.advancedCapabilities,
     // Only the three facts a payload needs. The label and the prompt additions
     // stay out: they have already done their work above, and a locator in the
@@ -551,6 +574,11 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     appliedControls[name] =
       name !== "lora" && field !== undefined && field in controlInput ? controlInput[field] : value;
   }
+  // A size-mode tier IS applied — through the dimension resolver, which reads it
+  // off `dimensionFacts` below, not through a payload field. Recording it here
+  // keeps the provenance record equal to what the render honors; recording a
+  // drop for it would claim the request was refused while the size it chose ships.
+  if (sizeModeTier) appliedControls.resolution = controls.resolution;
 
   // Typed as the contract's own list rather than the mapper's narrower union:
   // the notes below are this layer's facts, not ones the mapper can produce.
@@ -559,6 +587,16 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     ...sendableMapped.dropped,
     ...overrides.dropped,
   ];
+  // The custom gate's record: a width/height the merge produced under a
+  // non-custom resolution never reached the mapper (see `mapperControls`), and
+  // "this pair was set but the tier outranks it" is a fact the fingerprint must
+  // carry — silently ignoring it would make two different configurations hash alike.
+  if (!customPairRequested) {
+    if (controls.width !== undefined) droppedControls.push({ control: "width", reason: "requires_custom_resolution" });
+    if (controls.height !== undefined) {
+      droppedControls.push({ control: "height", reason: "requires_custom_resolution" });
+    }
+  }
   if (outputCount !== undefined) {
     // This compile step serves the SINGLE-IMAGE path. A profile asking for four
     // outputs would be billed for four and graded on one, so the count never

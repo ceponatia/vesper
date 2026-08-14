@@ -138,7 +138,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
     const result = await charactersApi.generateAvatar(characterId, {
-      modelId: pickedProfileId(avatarProfileId, portraitProfiles.data),
+      modelId: pickedProfileId(avatarProfileId),
     });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
@@ -171,7 +171,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     const result = await charactersApi.createPortrait(characterId, {
       kind,
       instruction: instruction.trim(),
-      modelId: pickedProfileId(variantProfileId, variantProfiles.data),
+      modelId: pickedProfileId(variantProfileId),
     });
     setSubmittingVariant(false);
     if (result.ok) {

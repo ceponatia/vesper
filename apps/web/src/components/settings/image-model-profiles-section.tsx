@@ -32,7 +32,7 @@ import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { CheckOption, TASK_LABELS, TextField } from "./image-admin-shared";
+import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
  * The task profiles nested under one model card (image-model-capabilities.spec.md
@@ -186,7 +186,7 @@ export function ImageModelProfilesSection({
           </>
         }
       >
-        It disappears from every picker. Anything still storing it falls back to the task&rsquo;s default profile —
+        It disappears from every picker. Anything still storing it falls back to the task’s default profile —
         including when this was the default: the next render degrades to the next offered profile, by design.
       </Dialog>
     </div>
@@ -199,29 +199,6 @@ function parseOptionalNumber(text: string): { ok: true; value: number | undefine
   if (trimmed === "") return { ok: true, value: undefined };
   const value = Number(trimmed);
   return Number.isFinite(value) ? { ok: true, value } : { ok: false };
-}
-
-/** A labelled optional number input for one control default. */
-function ControlNumberField({
-  label,
-  hint,
-  value,
-  step,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-  step?: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <Input id={id} type="number" step={step} value={value} placeholder="unset" onChange={(e) => onChange(e.target.value)} />
-      )}
-    </Field>
-  );
 }
 
 /**
@@ -468,7 +445,7 @@ function ImageModelProfileForm({
               </Select>
             )}
           </Field>
-          <ControlNumberField label="Sort" hint="Picker order; seeded rows use 10–60." value={sort} onChange={setSort} />
+          <NumberField label="Sort" hint="Picker order; seeded rows use 10–60." value={sort} placeholder="unset" onChange={setSort} />
         </div>
 
         <Field
@@ -488,13 +465,14 @@ function ImageModelProfileForm({
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <ControlNumberField label="Guidance" value={guidance} step={0.1} onChange={setGuidance} />
-          <ControlNumberField label="Steps" value={steps} onChange={setSteps} />
-          <ControlNumberField
+          <NumberField label="Guidance" value={guidance} step={0.1} placeholder="unset" onChange={setGuidance} />
+          <NumberField label="Steps" value={steps} placeholder="unset" onChange={setSteps} />
+          <NumberField
             label="Edit strength"
             hint="0–1; how far an edit may move from the source."
             value={editStrength}
             step={0.05}
+            placeholder="unset"
             onChange={setEditStrength}
           />
           <Field label="Resolution tier" hint="Custom means the width/height pair is the request.">
@@ -513,8 +491,8 @@ function ImageModelProfileForm({
               </Select>
             )}
           </Field>
-          <ControlNumberField label="Width" value={width} onChange={setWidth} />
-          <ControlNumberField label="Height" value={height} onChange={setHeight} />
+          <NumberField label="Width" value={width} placeholder="unset" onChange={setWidth} />
+          <NumberField label="Height" value={height} placeholder="unset" onChange={setHeight} />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -539,11 +517,12 @@ function ImageModelProfileForm({
               </Select>
             )}
           </Field>
-          <ControlNumberField
+          <NumberField
             label="LoRA scale"
             hint="Blank uses the row's default scale."
             value={loraScale}
             step={0.05}
+            placeholder="unset"
             onChange={setLoraScale}
           />
         </div>

@@ -321,19 +321,18 @@ describe("compileProfileRenderPlan", () => {
   });
 
   it("keeps appliedControls consistent with the reserved-filtered payload", () => {
-    // Same fixture as the reserved-collision case above: the mapped resolution
-    // landed on the shape key and was refused, so the normalized record must not
-    // claim it was sent — while the innocent control stays, read back from the
-    // final payload.
+    // Same fixture as the reserved-collision case below: the mapped resolution
+    // landed on the ratio model's own aspect key and was refused, so the
+    // normalized record must not claim it was sent — while the innocent control
+    // stays, read back from the final payload.
     const compiled = plan(
       {
-        aspectMode: "size",
         advancedCapabilities: {
           controls: {
-            resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] },
+            resolutionTier: { field: "aspect_ratio", type: "enum", enumValues: ["1K", "2K"] },
             guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
           },
-          knownInputFields: ["size", "guidance_scale"],
+          knownInputFields: ["aspect_ratio", "guidance_scale"],
         },
       },
       { controlDefaults: { resolution: "2K", guidance: 6, seedPolicy: "random" } },
@@ -386,25 +385,25 @@ describe("compileProfileRenderPlan", () => {
   });
 
   it("drops a mapped control whose probed binding collides with a render-path field", () => {
-    // A size-mode model's shape key IS `size`, and `resolutionTier` is commonly
-    // probed as `size` too. Left alone, the mapped value travels, the transport
-    // discards it, and the fingerprint claims a control was sent that never was.
+    // A probe can point a control at the very key the render path owns — here a
+    // ratio model's `resolutionTier` probed as `aspect_ratio`. Left alone, the
+    // mapped value travels, the transport discards it, and the fingerprint
+    // claims a control was sent that never was.
     const compiled = plan(
       {
-        aspectMode: "size",
         advancedCapabilities: {
           controls: {
-            resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] },
+            resolutionTier: { field: "aspect_ratio", type: "enum", enumValues: ["1K", "2K"] },
             guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
           },
-          knownInputFields: ["size", "guidance_scale"],
+          knownInputFields: ["aspect_ratio", "guidance_scale"],
         },
       },
       { controlDefaults: { resolution: "2K", guidance: 6, seedPolicy: "random" } },
     );
     // The colliding field never enters the payload; the innocent one does.
     expect(compiled.controlInput).toEqual({ guidance_scale: 6 });
-    expect(compiled.resolvedControls.droppedControls).toEqual([{ control: "size", reason: "reserved" }]);
+    expect(compiled.resolvedControls.droppedControls).toEqual([{ control: "aspect_ratio", reason: "reserved" }]);
   });
 
   it("never sends an output count, whatever the profile stores", () => {
@@ -506,6 +505,124 @@ describe("dimension facts", () => {
     );
     expect(halved.dimensionFacts.mappedCustomSize).toBeNull();
     expect(halved.dimensionFacts.width).toBe(1200);
+  });
+});
+
+describe("the size-mode resolution tier", () => {
+  const SIZE_MODEL = {
+    aspectMode: "size",
+    supportedAspects: ["768*1024", "1536*2048", "3072*4096"],
+  };
+
+  it("belongs to the dimension resolver — applied, never mapped, never dropped", () => {
+    // On a size-mode model the enum entries ARE the sizes: the tier is consumed
+    // by `chooseSizeDimensions` off the plan's facts. Before this, a tier whose
+    // probed binding was the reserved `size` key recorded a `reserved` drop for
+    // a control the render actually honors.
+    const compiled = plan(
+      {
+        ...SIZE_MODEL,
+        advancedCapabilities: {
+          controls: {
+            resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] },
+            guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
+          },
+          knownInputFields: ["size", "guidance_scale"],
+        },
+      },
+      { controlDefaults: { resolution: "2K", guidance: 6, seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({ guidance_scale: 6 });
+    expect(compiled.appliedControls).toEqual({ guidance: 6, resolution: "2K" });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+    expect(compiled.dimensionFacts.resolution).toBe("2K");
+  });
+
+  it("stays out of the payload even when the probed binding is not a reserved field", () => {
+    // The exclusion is about WHO consumes the tier, not about collisions: a
+    // size-mode tier riding a harmless-looking binding would be sent twice —
+    // once as a field, once as the size the resolver picks.
+    const compiled = plan(
+      {
+        ...SIZE_MODEL,
+        advancedCapabilities: {
+          controls: { resolutionTier: { field: "resolution_level", type: "enum", enumValues: ["1K", "2K"] } },
+          knownInputFields: ["resolution_level"],
+        },
+      },
+      { controlDefaults: { resolution: "2K", seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({});
+    expect(compiled.appliedControls).toEqual({ resolution: "2K" });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("keeps the binding-mapped path on an aspect-ratio model", () => {
+    // On ratio models the tier is an ordinary probed control: the shape rides
+    // the aspect enum and the tier rides its own field.
+    const compiled = plan(
+      {
+        advancedCapabilities: {
+          controls: { resolutionTier: { field: "resolution_level", type: "enum", enumValues: ["1K", "2K"] } },
+          knownInputFields: ["resolution_level"],
+        },
+      },
+      { controlDefaults: { resolution: "2K", seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({ resolution_level: "2K" });
+    expect(compiled.appliedControls).toEqual({ resolution: "2K" });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+});
+
+describe("the custom gate", () => {
+  /** A version binding both halves of the pair AND a tier field. */
+  const GATE_CAPABILITIES = {
+    controls: {
+      resolutionTier: { field: "resolution_level", type: "enum", enumValues: ["1K", "2K"] },
+      customWidth: { field: "width", type: "integer", minimum: 64, maximum: 8192 },
+      customHeight: { field: "height", type: "integer", minimum: 64, maximum: 8192 },
+    },
+    knownInputFields: ["resolution_level", "width", "height"],
+  };
+
+  it("drops a width/height pair set beside a named tier, with its own reason", () => {
+    // The pair is a request only when the tier says `custom`. Mapped beside a
+    // named tier, leftover dimension defaults would silently outrank the tier —
+    // so the pair never reaches the payload and the refusal is recorded.
+    const compiled = plan(
+      { advancedCapabilities: GATE_CAPABILITIES },
+      { controlDefaults: { resolution: "2K", width: 1200, height: 1600, seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({ resolution_level: "2K" });
+    expect(compiled.resolvedControls.droppedControls).toEqual([
+      { control: "width", reason: "requires_custom_resolution" },
+      { control: "height", reason: "requires_custom_resolution" },
+    ]);
+    expect(compiled.dimensionFacts.mappedCustomSize).toBeNull();
+  });
+
+  it("drops the pair when no resolution is set at all", () => {
+    const compiled = plan(
+      { advancedCapabilities: GATE_CAPABILITIES },
+      { controlDefaults: { width: 1200, height: 1600, seedPolicy: "random" } },
+    );
+    expect(compiled.controlInput).toEqual({});
+    expect(compiled.resolvedControls.droppedControls).toEqual([
+      { control: "width", reason: "requires_custom_resolution" },
+      { control: "height", reason: "requires_custom_resolution" },
+    ]);
+  });
+
+  it("maps the pair under a custom resolution exactly as before", () => {
+    const compiled = plan(
+      { advancedCapabilities: GATE_CAPABILITIES },
+      { controlDefaults: { resolution: "custom", width: 1200, height: 1600, seedPolicy: "random" } },
+    );
+    // `custom` is no tier name, so the tier binding gets it as an enum miss —
+    // dropped `invalid` — while the pair maps and the facts carry it.
+    expect(compiled.controlInput).toEqual({ width: 1200, height: 1600 });
+    expect(compiled.dimensionFacts.mappedCustomSize).toEqual({ width: 1200, height: 1600 });
   });
 });
 

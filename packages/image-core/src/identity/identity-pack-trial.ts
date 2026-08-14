@@ -167,9 +167,11 @@ export type TrialResolvedControls = z.infer<typeof trialResolvedControlsSchema>;
  *   version cannot be identified refuses `version_unpinned` at planning: the old
  *   `"unprobed"` floor let a cell claim a pin it did not have, so an unannounced
  *   provider-side version bump mid-run read as a matching re-check.
- * - `requestedSeed` is still always null — no seed transport exists yet (the
- *   capabilities plan owns seeds) — but the field is modelled now so a seeded
- *   rerun is a value change, not a schema change.
+ * - `requestedSeed` is still always null — trials deliberately pass no seed.
+ *   The seed transport exists (`renderImageIntent` resolves and maps one), but
+ *   a comparison's cells stay unseeded so its arms differ only by their
+ *   declared variable. The field is modelled so a seeded rerun is a value
+ *   change, not a schema change.
  *
  * The pack columns are nullable ONLY for the no-pack baseline
  * (`referenceSource: "none"`), and the `superRefine` below is what keeps that

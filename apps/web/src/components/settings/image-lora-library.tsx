@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
-import { CheckOption, TASK_LABELS, TextField } from "./image-admin-shared";
+import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
  * The curated LoRA library, on the image-models settings page
@@ -283,39 +283,6 @@ function ImageLoraRow({
   );
 }
 
-/**
- * One end of the curated band, or the value inside it. Bounded by the absolute
- * rails the contract declares rather than by numbers typed here, so a widened
- * provider ceiling moves one constant and this control follows.
- */
-function ScaleField({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <Input
-          id={id}
-          type="number"
-          step={0.05}
-          min={IMAGE_LORA_MIN_SCALE}
-          max={IMAGE_LORA_MAX_SCALE}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  );
-}
-
 /** An optional prompt addition. Blank means none, never "an addition saying nothing". */
 function PromptField({
   label,
@@ -540,22 +507,34 @@ function ImageLoraForm({
           onChange={setVersionText}
         />
 
+        {/* The scale band, bounded by the absolute rails the contract declares
+            rather than by numbers typed here, so a widened provider ceiling
+            moves one constant and all three controls follow. */}
         <div className="grid gap-4 sm:grid-cols-3">
-          <ScaleField
+          <NumberField
             label="Minimum scale"
             hint="The weakest blend a render may ask for."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={minimumScale}
             onChange={setMinimumScale}
           />
-          <ScaleField
+          <NumberField
             label="Default scale"
             hint="Used when a render names no scale."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={defaultScale}
             onChange={setDefaultScale}
           />
-          <ScaleField
+          <NumberField
             label="Maximum scale"
             hint="Anything past this is refused, never clamped."
+            step={0.05}
+            min={IMAGE_LORA_MIN_SCALE}
+            max={IMAGE_LORA_MAX_SCALE}
             value={maximumScale}
             onChange={setMaximumScale}
           />

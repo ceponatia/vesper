@@ -3,6 +3,7 @@ import {
   imageModelProfileSchema,
   imageModelSchema,
   imageReferencePolicySchema,
+  type ResolvedImageAttempt,
   type ResolvedImageProfile,
   type SceneVisualReference,
 } from "@vesper/image-core";
@@ -39,7 +40,7 @@ vi.mock("@/server/log", () => ({
 
 import { classifyImageFailure, isDemoMode } from "../ai";
 import { db } from "../db";
-import { runImagePipeline, type ImagePipelineOptions, type ImageRow } from "./assets";
+import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult, type ImageRow } from "./assets";
 import { renderImageIntent } from "./render-intent";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
@@ -193,6 +194,48 @@ describe("renderResolvedScene identity provenance", () => {
     expect(corrected).toBeDefined();
     const correctedMeta = corrected?.meta as Record<string, unknown>;
     expect("identityReferences" in correctedMeta).toBe(false);
+  });
+
+  it("an exhausted chain still records the LAST rung's attempt on the failed row", async () => {
+    // The failure the row's error text describes is the last rung's — its
+    // prediction id is what an operator traces, so the failed row keeps it.
+    const attempt = (predictionId: string): ResolvedImageAttempt => ({
+      modelId: "mdl",
+      modelSlug: "vendor/model",
+      profileId: "prf",
+      task: "scene",
+      promptStrategy: "instruction_edit",
+      requestedVersionId: null,
+      seed: null,
+      appliedControls: {},
+      droppedControls: [],
+      sentReferenceRoles: ["identity"],
+      predictionId,
+      executedVersionId: null,
+    });
+    mockIntent
+      .mockResolvedValueOnce({ ok: false, error: "multi boom", attempt: attempt("pred-multi") })
+      .mockResolvedValueOnce({ ok: false, error: "edit boom", attempt: attempt("pred-edit") });
+    // Capture what produce hands the pipeline — the failed row's meta channel.
+    let produced: ImageProduceResult | undefined;
+    mockPipeline.mockImplementation(async (opts) => {
+      pipelineCalls.push(opts);
+      produced = await opts.produce({ id: "img1" } as unknown as ImageRow);
+      return { imageId: "img1", status: produced.ok ? "ready" : "failed" };
+    });
+
+    await renderResolvedScene(
+      baseInput({
+        references: [characterRef("Mira", "imgA"), characterRef("Nadia", "imgB")],
+        referenceBuffers: new Map([
+          ["imgA", Buffer.from("a")],
+          ["imgB", Buffer.from("b")],
+        ]),
+      }),
+    );
+    expect(produced?.ok).toBe(false);
+    // The deeper `edit` rung's attempt, not the primary `multi_edit` plan's.
+    expect((produced?.meta?.render as ResolvedImageAttempt | undefined)?.predictionId).toBe("pred-edit");
   });
 
   it("a pack-sourced PRIMARY anchor keeps its provenance across the same fallback", async () => {

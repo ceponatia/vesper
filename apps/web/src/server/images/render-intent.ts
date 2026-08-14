@@ -117,7 +117,10 @@ function randomSeedWithin(binding: ImageInputBinding): number | null {
  * honoured verbatim. Otherwise a `random`-policy profile draws a fresh seed —
  * but only when the active version's probed bindings declare a seed field,
  * because a generated number the mapper would immediately drop records a seed
- * the provider never saw as if it shaped the image. `reuse_source` and `caller`
+ * the provider never saw as if it shaped the image. An explicitly PINNED render
+ * (`intent.versionId`) draws nothing either: the row's probed bindings describe
+ * the ACTIVE version, not the pin, so a drawn number would be validated against
+ * a range the pinned version never declared. `reuse_source` and `caller`
  * resolve nothing here (the source seed and the caller's seed both arrive as
  * the explicit value when they exist at all); unresolved, they surface as the
  * compile step's `seedPolicy` drop.
@@ -125,6 +128,7 @@ function randomSeedWithin(binding: ImageInputBinding): number | null {
 function resolveIntentSeed(intent: ImageRenderIntent): { intent: ImageRenderIntent; seed: number | null } {
   const explicit = intent.controls?.seed;
   if (explicit !== undefined) return { intent, seed: explicit };
+  if (intent.versionId) return { intent, seed: null };
   const { profile, model } = intent.profile;
   if (profile.controlDefaults.seedPolicy !== "random") return { intent, seed: null };
   const binding = model.advancedCapabilities.controls.seed;
@@ -153,6 +157,7 @@ function resolvedAttempt(
   result: RenderWithModelResult,
 ): ResolvedImageAttempt {
   const { profile, model } = intent.profile;
+  const plannedRoles = roleNames(plan.sentReferences);
   return {
     modelId: model.id,
     modelSlug: model.slug,
@@ -163,7 +168,12 @@ function resolvedAttempt(
     seed,
     appliedControls: plan.appliedControls,
     droppedControls: plan.droppedControls,
-    sentReferenceRoles: roleNames(plan.sentReferences),
+    // Truncated to what the transport says it SENT (the data_url byte budget
+    // can trim the plan's tail), so `meta.render` never claims a trimmed
+    // reference went. Absent count means the transport never said — then the
+    // plan's list is the only honest answer available.
+    sentReferenceRoles:
+      result.sentReferenceCount !== undefined ? plannedRoles.slice(0, result.sentReferenceCount) : plannedRoles,
     predictionId: result.predictionId ?? null,
     executedVersionId: result.executedVersionId ?? null,
   };
@@ -243,6 +253,9 @@ export async function renderImageIntent(
       model: plan.model,
       prompt: plan.prompt,
       references: plan.references,
+      // The plan's roles, index-parallel with its buffers, so the transport's
+      // trim diagnostics name real roles rather than "reference".
+      referenceRoles: roleNames(plan.sentReferences),
       controlReferences: plan.controlReferences,
       targetRatio: plan.targetRatio,
       dimensionFacts: plan.dimensionFacts,

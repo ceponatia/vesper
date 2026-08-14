@@ -117,6 +117,28 @@ describe("profileRenderControlsFingerprintJson", () => {
       fingerprintOf(plan()),
     );
   });
+
+  it("carries the dimension request, and only when one is set", () => {
+    // A factless profile's string must not gain a member — every stored hash of
+    // one compares against the pre-dimensions serialization.
+    const base = JSON.parse(fingerprintOf(plan())) as Record<string, unknown>;
+    expect("dimensions" in base).toBe(false);
+
+    const tiered = plan({}, { controlDefaults: { resolution: "2K", seedPolicy: "random" } });
+    const parsed = JSON.parse(fingerprintOf(tiered)) as Record<string, unknown>;
+    expect(parsed.dimensions).toEqual({ resolution: "2K" });
+  });
+
+  it("separates two size-mode tiers whose payloads are identical", () => {
+    // THE GAP THIS CLOSES: a size-mode tier never enters `controlInput` (the
+    // dimension resolver consumes it), so without the dimensions member two
+    // profiles differing only in tier hashed alike while sending different sizes.
+    const sizeModel = { aspectMode: "size", supportedAspects: ["768*1024", "1536*2048", "3072*4096"] };
+    const oneK = plan(sizeModel, { controlDefaults: { resolution: "1K", seedPolicy: "random" } });
+    const twoK = plan(sizeModel, { controlDefaults: { resolution: "2K", seedPolicy: "random" } });
+    expect(oneK.controlInput).toEqual(twoK.controlInput);
+    expect(fingerprintOf(oneK)).not.toBe(fingerprintOf(twoK));
+  });
 });
 
 describe("stableJson", () => {

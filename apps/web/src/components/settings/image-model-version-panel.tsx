@@ -194,6 +194,14 @@ export function ImageModelVersionPanel({
                 <li key={index}>
                   <code>{entry.field}</code> {entry.kind}
                   {entry.kind === "changed" ? `: ${diffValue(entry.active)} → ${diffValue(entry.candidate)}` : ""}
+                  {entry.ownerOwned ? (
+                    <Tag
+                      className="ml-1.5"
+                      title="The stored value is the owner's judgment — activation reports this drift but never rewrites the field"
+                    >
+                      owner-curated
+                    </Tag>
+                  ) : null}
                 </li>
               ))}
             </ul>

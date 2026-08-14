@@ -67,8 +67,18 @@ export interface DroppedImageControl {
  * - `reserved` — a field the render path owns (prompt, references, aspect,
  *   version, safety enforcement), named by a provider override OR landed on by
  *   a mapped control whose probed binding happens to point at it.
+ * - `requires_custom_resolution` — a `width`/`height` request on a render whose
+ *   `resolution` is not `custom`. The pair is only ever a request when the tier
+ *   says so (`compileProfileRenderPlan`); honoring it beside a named tier would
+ *   let leftover dimension defaults outrank the tier the profile asked for.
  */
-export type DroppedImageControlReason = "no_binding" | "invalid" | "unsupported" | "unknown_field" | "reserved";
+export type DroppedImageControlReason =
+  | "no_binding"
+  | "invalid"
+  | "unsupported"
+  | "unknown_field"
+  | "reserved"
+  | "requires_custom_resolution";
 
 export interface MapImageRenderControlsInput {
   /** The normalized controls to apply. Absent members are simply not sent. */

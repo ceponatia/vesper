@@ -46,11 +46,11 @@ import {
   type ImageModel,
   type ImageModelProfile,
   type ImageModelProfileCreateRequest,
+  imageModelProfileFindingsSchema,
   imageModelProfileSchema,
   type ImageModelProfileUpdateRequest,
   imageModelSchema,
   type ImageModelSurface,
-  imageProfileCandidateFindingSchema,
   type ImageProfileTask,
   type ImageReferenceTransport,
   imageReferenceTransports,
@@ -829,21 +829,16 @@ const imageVersionCandidateSchema = z.object({
     .transform((v) => v ?? null),
 });
 
-/** One enabled profile's candidate findings; a bad finding row costs itself. */
-const imageVersionProfileFindingsSchema = z.object({
-  profileId: z.string().min(1),
-  key: textOr(""),
-  label: textOr(""),
-  findings: arrayOf(imageProfileCandidateFindingSchema),
-});
-export type ImageVersionProfileFindings = z.infer<typeof imageVersionProfileFindingsSchema>;
+/** One enabled profile's candidate findings — the package's wire shape; a bad
+ * row costs itself through the `arrayOf` wrappers below. */
+export type ImageVersionProfileFindings = z.infer<typeof imageModelProfileFindingsSchema>;
 
 const imageVersionProbeResponseSchema = z.object({
   candidate: imageVersionCandidateSchema,
   activatable: z.boolean().catch(false),
   latestDiffers: z.boolean().catch(false),
   diff: arrayOf(imageCapabilityDiffEntrySchema),
-  profiles: arrayOf(imageVersionProfileFindingsSchema),
+  profiles: arrayOf(imageModelProfileFindingsSchema),
 });
 export type ImageVersionProbeResponse = z.infer<typeof imageVersionProbeResponseSchema>;
 
@@ -861,7 +856,7 @@ export type ImageVersionSmokeResponse = z.infer<typeof imageVersionSmokeResponse
 
 const imageVersionActivateResponseSchema = z.object({
   model: imageModelSchema,
-  profiles: arrayOf(imageVersionProfileFindingsSchema),
+  profiles: arrayOf(imageModelProfileFindingsSchema),
 });
 
 /**
@@ -870,7 +865,7 @@ const imageVersionActivateResponseSchema = z.object({
  * operator sees WHICH profile blocks without a second probe round-trip.
  */
 export const imageVersionBlockedBodySchema = z.object({
-  profiles: arrayOf(imageVersionProfileFindingsSchema),
+  profiles: arrayOf(imageModelProfileFindingsSchema),
 });
 
 /**
@@ -906,6 +901,8 @@ export const adminImageModelsApi = {
       forVariant?: boolean;
       forScene?: boolean;
       sort?: number;
+      /** Owner-curated menu — no probe rewrites it, so updating it is always deliberate. */
+      supportedAspects?: string[];
       reprobe?: boolean;
     },
   ) => apiPatch(z.object({ model: imageModelSchema }), `/api/admin/self/image-models/${modelId}`, body),

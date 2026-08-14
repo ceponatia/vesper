@@ -116,6 +116,25 @@ describe("profileRenderControlsHash", () => {
     );
   });
 
+  it("pins the dimension-carrying hashes for tiered profiles", () => {
+    // NEW pins (2026-08-14, the dimensions member): a tier now enters the
+    // fingerprint through the plan's dimension facts — on a size-mode model it
+    // never reaches `controlInput` at all — so these values are pinned from the
+    // first build that could produce them. The factless fixtures above are
+    // deliberately untouched: their serialization gained no member.
+    expect(hashOf(plan({}, { controlDefaults: { resolution: "2K", seedPolicy: "random" } }))).toBe(
+      "fee6e15732f72cfbbfb980ef258760ee2ed524482ecacc31f5573a03c5faf2d7",
+    );
+    expect(
+      hashOf(
+        plan(
+          { aspectMode: "size", supportedAspects: ["768*1024", "1536*2048", "3072*4096"] },
+          { controlDefaults: { resolution: "2K", seedPolicy: "random" } },
+        ),
+      ),
+    ).toBe("62342c76d5c2fec7ffbc73126dce086c6150578c7761ce319ed3311c12f525cb");
+  });
+
   it("produces the stored hash for a plan carrying a resolved LoRA", () => {
     const loraPlan = plan(
       {

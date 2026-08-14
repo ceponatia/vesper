@@ -4,7 +4,12 @@ import type { ImageProfileTask } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageModelProfiles, imageModels } from "../db";
-import { loadImageModelProfiles, loadImageModelProfilesForTask, resolveImageProfileForTask } from "./model-profiles";
+import {
+  loadImageModelProfiles,
+  loadImageModelProfilesForTask,
+  resolveImageProfileForTask,
+  updateImageModelProfile,
+} from "./model-profiles";
 
 /**
  * The profile registry against a migrated database (image-model-capabilities.spec.md
@@ -338,6 +343,100 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.severity).toBe("error");
     expect(errors[0]?.context).toMatchObject({ task: "example_transform" });
+  });
+});
+
+// The PATCH lockout decision table: configuration validity gates only the
+// ENABLED merged row. A profile whose stored config went invalid (here: an
+// edit-operation row on a model that cannot edit) must still be disableable
+// and editable WHILE disabled — that is what makes activation's "disable that
+// profile and retry" possible, and what unblocks a seeded row whose override
+// cannot validate on an unprobed deploy. Enabling it, or breaking an enabled
+// row, refuses exactly as before.
+const BROKEN_PROFILE_ID = "imgprffixturebrokenaaaaa";
+const VALID_PROFILE_ID = "imgprffixturevalidaaaaaa";
+
+describe.skipIf(!ready)("updateImageModelProfile enabled-gated validation", () => {
+  beforeAll(async () => {
+    // Direct inserts on purpose: the broken row models a config that WENT
+    // invalid after save (a version move, an unprobed deploy) — the create
+    // path would rightly refuse it today. The fixture model cannot edit, so
+    // the edit-operation row is `operation_unsupported`.
+    await db()
+      .insert(imageModelProfiles)
+      .values([
+        {
+          id: BROKEN_PROFILE_ID,
+          imageModelId: FIXTURE_MODEL_ID,
+          key: "fixture-broken-edit",
+          label: "Broken Edit",
+          task: "text_repair",
+          operation: "edit",
+          promptStrategy: "instruction_edit",
+          enabled: true,
+          isDefault: false,
+          sort: 901,
+        },
+        {
+          id: VALID_PROFILE_ID,
+          imageModelId: FIXTURE_MODEL_ID,
+          key: "fixture-valid-generate",
+          label: "Valid Generate",
+          task: "text_repair",
+          operation: "generate",
+          promptStrategy: "text_to_image_description",
+          enabled: true,
+          isDefault: false,
+          sort: 902,
+        },
+      ]);
+  });
+
+  afterAll(async () => {
+    // Removed HERE, not in the suite afterAll: the resilience describe below
+    // asserts exactly which text_repair rows exist.
+    await db()
+      .delete(imageModelProfiles)
+      .where(inArray(imageModelProfiles.id, [BROKEN_PROFILE_ID, VALID_PROFILE_ID]));
+  });
+
+  it("disables an invalid row (disable-while-invalid succeeds)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, { enabled: false });
+    if (!result.ok) throw new Error(`expected success, got ${result.code}: ${result.message}`);
+    // The returned row is the merged row the update wrote — no re-read.
+    expect(result.profile.enabled).toBe(false);
+    expect(result.profile.label).toBe("Broken Edit");
+  });
+
+  it("edits a disabled invalid row (rename-while-disabled succeeds)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, {
+      label: "Broken Edit (parked)",
+    });
+    if (!result.ok) throw new Error(`expected success, got ${result.code}: ${result.message}`);
+    expect(result.profile.label).toBe("Broken Edit (parked)");
+    expect(result.profile.enabled).toBe(false);
+  });
+
+  it("refuses to ENABLE an invalid row (enable-while-invalid is a 400)", async () => {
+    const result = await updateImageModelProfile(FIXTURE_MODEL_ID, BROKEN_PROFILE_ID, { enabled: true });
+    expect(result).toMatchObject({ ok: false, code: "invalid" });
+    // And the refusal really did keep the row disabled.
+    const rows = await db()
+      .select({ enabled: imageModelProfiles.enabled })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.id, BROKEN_PROFILE_ID));
+    expect(rows[0]?.enabled).toBe(false);
+  });
+
+  it("validates an edit while the merged row stays enabled", async () => {
+    // Breaking a healthy ENABLED row refuses…
+    const broken = await updateImageModelProfile(FIXTURE_MODEL_ID, VALID_PROFILE_ID, { operation: "edit" });
+    expect(broken).toMatchObject({ ok: false, code: "invalid" });
+    // …and a benign edit passes the same validation and lands.
+    const renamed = await updateImageModelProfile(FIXTURE_MODEL_ID, VALID_PROFILE_ID, { label: "Valid Renamed" });
+    if (!renamed.ok) throw new Error(`expected success, got ${renamed.code}: ${renamed.message}`);
+    expect(renamed.profile.label).toBe("Valid Renamed");
+    expect(renamed.profile.enabled).toBe(true);
   });
 });
 

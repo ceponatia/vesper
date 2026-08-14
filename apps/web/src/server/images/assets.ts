@@ -89,7 +89,10 @@ export interface WrittenImageInfo {
   bytes: number;
 }
 
-const WEBP_QUALITY = 90;
+/** Storage encode quality. Exported so reference preparation encodes at the
+ * SAME fidelity — preparation must not cost more than storage does, and one
+ * constant cannot drift into two answers. */
+export const WEBP_QUALITY = 90;
 
 /**
  * Decode guards for the one sharp call every saved buffer passes through: cap
