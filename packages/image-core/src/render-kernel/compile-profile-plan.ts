@@ -8,7 +8,13 @@ import type { IdentityReferenceRole } from "../identity/identity-pack";
 import type { TrialResolvedControls } from "../identity/identity-pack-trial";
 import { applyImageLoraPromptAdditions, type ImageLoraRenderBinding } from "../loras/image-loras";
 import { chooseAspect, type ImageModel } from "../models/image-models";
-import type { ImageModelProfile, ImagePromptStrategy, ImageRenderControls } from "../models/image-model-profiles";
+import type {
+  ImageModelProfile,
+  ImageProfileOperation,
+  ImagePromptStrategy,
+  ImageRenderControls,
+  ImageResolutionTier,
+} from "../models/image-model-profiles";
 import { preparePromptForImageModel, withReviewedImageQuality } from "../models/quality-presets";
 import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
 import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
@@ -157,6 +163,34 @@ function referenceBindingCount(references: PromptReferenceBinding): number {
   }
 }
 
+/**
+ * The dimension resolver's input facts, resolved where the merged controls live
+ * (spec §"Dimension negotiation") and carried on the plan so `renderWithModel`
+ * can hand them to `chooseDimensions` without re-deriving any merge or mapping.
+ *
+ * These are INPUTS, not a choice: the shape itself is negotiated at the
+ * transport wrapper against the lane's target ratio, which this step does not
+ * know (see {@link ProfileRenderPlan.aspectValue} for why). A caller that
+ * passes none of these — the trial, the lab's direct probes — gets the pure
+ * `chooseAspect` behavior, which is also what these facts resolve to when the
+ * profile sets no dimension control.
+ */
+export interface ImageRenderDimensionFacts {
+  /** The profile's declared operation, for the future per-operation size rules. */
+  operation: ImageProfileOperation;
+  /** The merged tier request (defaults, then the render's override). */
+  resolution?: ImageResolutionTier;
+  width?: number;
+  height?: number;
+  /**
+   * The explicit pair as it actually reached the payload through the version's
+   * `customWidth`/`customHeight` bindings — null when either half dropped.
+   * Resolved HERE because only this step sees the mapper's verdict; the
+   * resolver takes it as a fact rather than re-running binding logic.
+   */
+  mappedCustomSize: { width: number; height: number } | null;
+}
+
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
   profile: ImageModelProfile;
@@ -236,8 +270,23 @@ export interface ProfileRenderPlan {
    * render of this profile would use", not "the shape this plan will produce".
    */
   aspectValue: string | null;
+  /** The dimension resolver's input facts — see {@link ImageRenderDimensionFacts}. */
+  dimensionFacts: ImageRenderDimensionFacts;
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
+  /**
+   * The controls this render actually honors, keyed by NORMALIZED name — the
+   * record a caller stores as provenance. Reserved-field collisions are already
+   * removed (an entry here was really sent), each payload-mapped value is read
+   * back out of the FINAL payload so an override that replaced a mapped value is
+   * reported as what went, and the LoRA entry is the mapper's `{ id, scale }` —
+   * never the locator. ONE entry is applied outside the payload: a size-mode
+   * model's `resolution` tier, which the dimension resolver consumes via
+   * `dimensionFacts` rather than a provider field. Deliberately NOT
+   * fingerprinted: `profileRenderControlsFingerprintJson` already carries
+   * `controlInput`, the drops, and the dimension request.
+   */
+  appliedControls: Record<string, unknown>;
   /** The auditable record of the above, drops included. */
   resolvedControls: TrialResolvedControls;
   /**
@@ -429,13 +478,13 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // are the same thing to `mapImageRenderControls`: it skips every control whose
   // value is undefined, so nothing here reaches a payload uninvited.
   //
-  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send, and
-  // no seed transport exists anywhere in the render path yet — so a seed-shaped
-  // default is recorded as a DROP below rather than quietly ignored, because
-  // "this run was not seeded" is a fact the comparison fingerprint must carry. A
-  // REQUESTED numeric seed does travel to the mapper, which refuses it as
-  // `unsupported` and records that refusal, so asking for one is visible rather
-  // than silently ineffective.
+  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send.
+  // Resolving it into a number is the CALLER's job (`renderImageIntent` draws
+  // the random seed and passes it as `controlOverrides.seed`), because this
+  // step is pure and a compile that rolled its own dice could never be
+  // fingerprinted. A policy that arrived here unresolved is recorded as a DROP
+  // below — "this run was not seeded" is a fact the comparison fingerprint must
+  // carry.
   const controls: ImageRenderControls = {
     seed: requested?.seed,
     negativePrompt: negative ?? undefined,
@@ -451,9 +500,30 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     lora: requested?.lora ?? defaults.lora,
   };
 
+  // Which dimension controls the MAPPER may see. Two rules, both about honesty:
+  //
+  // - On a size-mode model the resolution tier belongs to the DIMENSION
+  //   RESOLVER, not the control mapper: the enum entries ARE the sizes, and
+  //   `chooseSizeDimensions` consumes the tier via `dimensionFacts` to pick
+  //   among them. Handing it to the mapper as well either sent a second copy
+  //   through a probed binding or — when that binding is the reserved `size`
+  //   key itself — recorded a `reserved` drop for a control that WAS applied.
+  //   On aspect-ratio models the tier stays an ordinary binding-mapped control.
+  // - `width`/`height` are honored ONLY when `resolution` is `custom`. The pair
+  //   is the request exactly when the tier says so; mapped beside a named tier,
+  //   leftover dimension defaults would silently outrank the tier the profile
+  //   asked for. Excluded here and recorded below as `requires_custom_resolution`.
+  const sizeModeTier = effectiveModel.aspectMode === "size" && controls.resolution !== undefined;
+  const customPairRequested = controls.resolution === "custom";
+  const mapperControls: ImageRenderControls = {
+    ...controls,
+    ...(sizeModeTier ? { resolution: undefined } : {}),
+    ...(customPairRequested ? {} : { width: undefined, height: undefined }),
+  };
+
   const reservedFields = reservedImageInputFields(effectiveModel);
   const mapped = mapImageRenderControls({
-    controls,
+    controls: mapperControls,
     capabilities: effectiveModel.advancedCapabilities,
     // Only the three facts a payload needs. The label and the prompt additions
     // stay out: they have already done their work above, and a locator in the
@@ -488,6 +558,28 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // fingerprint of something the provider never saw.
   const controlInput = { ...sendableMapped.input, ...overrides.input };
 
+  // The normalized provenance record, kept consistent with the two adjustments
+  // above by the same two rules: an entry whose provider field the reserved
+  // filter refused is removed (it was never sent), and a surviving single-field
+  // value is read back out of the FINAL payload so an override that replaced it
+  // is reported as what went. The LoRA entry keeps the mapper's own record —
+  // its two fields carry the locator and the scale, and the locator must never
+  // enter a stored value.
+  const reservedDrops = new Set(sendableMapped.dropped.map((entry) => entry.control));
+  const appliedControls: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(mapped.applied)) {
+    const fields = mapped.appliedFields[name] ?? [];
+    if (fields.some((field) => reservedDrops.has(field))) continue;
+    const [field] = fields;
+    appliedControls[name] =
+      name !== "lora" && field !== undefined && field in controlInput ? controlInput[field] : value;
+  }
+  // A size-mode tier IS applied — through the dimension resolver, which reads it
+  // off `dimensionFacts` below, not through a payload field. Recording it here
+  // keeps the provenance record equal to what the render honors; recording a
+  // drop for it would claim the request was refused while the size it chose ships.
+  if (sizeModeTier) appliedControls.resolution = controls.resolution;
+
   // Typed as the contract's own list rather than the mapper's narrower union:
   // the notes below are this layer's facts, not ones the mapper can produce.
   const droppedControls: TrialResolvedControls["droppedControls"] = [
@@ -495,6 +587,16 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     ...sendableMapped.dropped,
     ...overrides.dropped,
   ];
+  // The custom gate's record: a width/height the merge produced under a
+  // non-custom resolution never reached the mapper (see `mapperControls`), and
+  // "this pair was set but the tier outranks it" is a fact the fingerprint must
+  // carry — silently ignoring it would make two different configurations hash alike.
+  if (!customPairRequested) {
+    if (controls.width !== undefined) droppedControls.push({ control: "width", reason: "requires_custom_resolution" });
+    if (controls.height !== undefined) {
+      droppedControls.push({ control: "height", reason: "requires_custom_resolution" });
+    }
+  }
   if (outputCount !== undefined) {
     // This compile step serves the SINGLE-IMAGE path. A profile asking for four
     // outputs would be billed for four and graded on one, so the count never
@@ -503,11 +605,37 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     // difference between two configurations and the fingerprint must carry it.
     droppedControls.push({ control: "outputCount", reason: "single_image_path" });
   }
-  if (defaults.seedPolicy !== "random") {
-    // Only a non-default policy is worth recording: `random` is what sending no
-    // seed key already does at every provider, so it drops nothing.
+  if (defaults.seedPolicy !== "random" && controls.seed === undefined) {
+    // A non-random policy that no caller resolved into a number: `reuse_source`
+    // with no recorded source seed, `caller` with no seed supplied. Recorded
+    // rather than quietly ignored — and ONLY when unresolved, because a run
+    // that did get its seed must not report the policy as unmet beside the very
+    // value that met it. (`random` drops nothing either way: an unseeded random
+    // run is what sending no seed key already does at every provider.) The
+    // reason string predates the seed transport and is kept verbatim: it is
+    // part of stored trial fingerprints, and renaming it would conflict every
+    // pinned cell that ever carried it.
     droppedControls.push({ control: "seedPolicy", reason: "no_seed_transport" });
   }
+
+  // The custom pair only counts when BOTH halves survived mapping AND the
+  // reserved filter — `appliedControls` is exactly that record, its values read
+  // back out of the final payload so an override that replaced a mapped
+  // dimension is the number reported. The typeof guards matter because an
+  // override CAN write a non-number over a mapped width; a half-mapped or
+  // nonsense pair is no pair, and the model's own shape answer stands.
+  const mappedWidth = appliedControls.width;
+  const mappedHeight = appliedControls.height;
+  const dimensionFacts: ImageRenderDimensionFacts = {
+    operation: profile.operation,
+    ...(controls.resolution === undefined ? {} : { resolution: controls.resolution }),
+    ...(controls.width === undefined ? {} : { width: controls.width }),
+    ...(controls.height === undefined ? {} : { height: controls.height }),
+    mappedCustomSize:
+      typeof mappedWidth === "number" && mappedWidth > 0 && typeof mappedHeight === "number" && mappedHeight > 0
+        ? { width: mappedWidth, height: mappedHeight }
+        : null,
+  };
 
   const timeoutMs = Math.min(profile.timeoutMs ?? TRIAL_FALLBACK_PREDICTION_MS, MAX_TRIAL_PREDICTION_MS);
   return {
@@ -517,7 +645,9 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       finalPrompt,
       negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
       aspectValue: chooseAspect(effectiveModel).value,
+      dimensionFacts,
       controlInput,
+      appliedControls,
       resolvedControls: {
         operation: profile.operation,
         // The RESOLVED budget, not the profile's wish: this column answers "what

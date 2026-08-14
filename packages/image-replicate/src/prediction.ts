@@ -34,6 +34,16 @@ export interface ReplicateImageResult {
    * back as if it were confirmation.
    */
   executedVersionId?: string;
+  /**
+   * How many PRIMARY references actually traveled with the prediction — after
+   * `fitReferences` and, on the `data_url` transport, the inline byte budget
+   * (the `file` transport sends every fitted reference). Set only by
+   * `runRegistryImageModel`, and only once a prediction was posted: a caller
+   * recording which reference roles were sent truncates its list to this count,
+   * so a budget-trimmed reference is never claimed as sent. Absent means the
+   * run never reached the transport (or predates the field), never "zero".
+   */
+  sentReferenceCount?: number;
 }
 
 const predictionSchema = z.object({

@@ -310,15 +310,22 @@ describe("probeReplicateModel", () => {
         loraWeights: { field: "lora_weights", type: "string" },
         loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
       });
-      // Nothing ELSE is derived: an alias this probe invented would change what an
-      // already-registered model sends the moment somebody re-probed it.
-      expect(result.probe.advancedCapabilities.knownInputFields).toEqual([]);
+      // EVERY declared input name, sorted — the allowlist providerOverrides
+      // validation reads, which fails closed while this is empty.
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual([
+        "image",
+        "lora_scale",
+        "lora_weights",
+        "prompt",
+      ]);
       expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
     });
 
-    it("records no bindings for a version that declares no LoRA inputs", async () => {
-      // `qwen/qwen-image-edit-2511` — the empty capability set is what keeps every
-      // model that has never been re-probed sending exactly what it sends today.
+    it("records no bindings for a version that declares none of the known aliases", async () => {
+      // `qwen/qwen-image-edit-2511` — absent stays absent: a slot is derived only
+      // when the schema declares a field of the expected type under a known name,
+      // so a spartan schema keeps the inert control set (and with it, today's
+      // payload) however often it is re-probed.
       stubFetch(() => ({
         name: "qwen-image-edit-2511",
         latest_version: {
@@ -331,6 +338,194 @@ describe("probeReplicateModel", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.probe.advancedCapabilities.controls).toEqual({});
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual(["image", "prompt"]);
+    });
+
+    it("derives every known alias the schema declares, ranges and enums carried verbatim", async () => {
+      stubFetch(() => ({
+        name: "full-controls",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              image: uriArray(),
+              seed: { type: "integer", minimum: 0, maximum: 2147483647 },
+              negative_prompt: { type: "string" },
+              guidance: { type: "number", minimum: 0, maximum: 20 },
+              num_inference_steps: { type: "integer", minimum: 1, maximum: 50 },
+              strength: { type: "number", minimum: 0, maximum: 1 },
+              num_outputs: { type: "integer", minimum: 1, maximum: 4 },
+              thinking_mode: { type: "boolean", default: false },
+              sequential_image_generation: enumRef("sequential_image_generation"),
+              image_set_mode: { type: "boolean", default: false },
+              size: enumRef("size"),
+              width: { type: "integer", minimum: 64, maximum: 4096 },
+              height: { type: "integer", minimum: 64, maximum: 4096 },
+            },
+            enums: {
+              sequential_image_generation: ["disabled", "auto"],
+              size: ["1K", "2K", "4K", "custom"],
+            },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/full-controls");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls).toEqual({
+        seed: { field: "seed", type: "integer", minimum: 0, maximum: 2147483647 },
+        negativePrompt: { field: "negative_prompt", type: "string" },
+        guidance: { field: "guidance", type: "number", minimum: 0, maximum: 20 },
+        steps: { field: "num_inference_steps", type: "integer", minimum: 1, maximum: 50 },
+        editStrength: { field: "strength", type: "number", minimum: 0, maximum: 1 },
+        outputCount: { field: "num_outputs", type: "integer", minimum: 1, maximum: 4 },
+        thinkingMode: { field: "thinking_mode", type: "boolean" },
+        sequentialMode: { field: "sequential_image_generation", type: "enum", enumValues: ["disabled", "auto"] },
+        coherentSet: { field: "image_set_mode", type: "boolean" },
+        resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K", "4K", "custom"] },
+        customWidth: { field: "width", type: "integer", minimum: 64, maximum: 4096 },
+        customHeight: { field: "height", type: "integer", minimum: 64, maximum: 4096 },
+      });
+      // Sorted and COMPLETE — the whole Input schema, not just the bound aliases.
+      expect(result.probe.advancedCapabilities.knownInputFields).toEqual(
+        [
+          "height",
+          "guidance",
+          "image",
+          "image_set_mode",
+          "negative_prompt",
+          "num_inference_steps",
+          "num_outputs",
+          "prompt",
+          "seed",
+          "sequential_image_generation",
+          "size",
+          "strength",
+          "thinking_mode",
+          "width",
+        ].sort(),
+      );
+    });
+
+    it("keeps a seed's declared numeric type apart from integer", async () => {
+      // The mapper refuses a fractional value on an integer binding, so the
+      // probe must record the type the provider declared, not flatten it.
+      stubFetch(() => ({
+        name: "number-seed",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: { prompt: { type: "string" }, seed: { type: "number" } },
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/number-seed");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // No declared bounds ⇒ no invented ones.
+      expect(result.probe.advancedCapabilities.controls.seed).toEqual({ field: "seed", type: "number" });
+    });
+
+    it("resolves an alias pair to the FIRST declared field", async () => {
+      stubFetch(() => ({
+        name: "both-guidance",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              guidance: { type: "number", minimum: 0, maximum: 10 },
+              cfg: { type: "number", minimum: 0, maximum: 30 },
+            },
+          }),
+        },
+      }));
+      const both = await probeReplicateModel("acme/both-guidance");
+      expect(both.ok && both.probe.advancedCapabilities.controls.guidance).toEqual({
+        field: "guidance",
+        type: "number",
+        minimum: 0,
+        maximum: 10,
+      });
+
+      stubFetch(() => ({
+        name: "cfg-only",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: { prompt: { type: "string" }, cfg: { type: "number", minimum: 0, maximum: 30 } },
+          }),
+        },
+      }));
+      const cfgOnly = await probeReplicateModel("acme/cfg-only");
+      expect(cfgOnly.ok && cfgOnly.probe.advancedCapabilities.controls.guidance).toEqual({
+        field: "cfg",
+        type: "number",
+        minimum: 0,
+        maximum: 30,
+      });
+    });
+
+    it("derives a resolution tier only from a tier-bearing size ENUM, never a free string", async () => {
+      // A free-string `size` gives the mapper nothing to validate a tier against,
+      // and an enum of pixel pairs alone offers no tier to ask for.
+      const probeSize = async (size: unknown, enums?: Record<string, string[]>) => {
+        stubFetch(() => ({
+          name: "size-model",
+          latest_version: {
+            id: "v1",
+            openapi_schema: openapi({ properties: { prompt: { type: "string" }, size }, ...(enums ? { enums } : {}) }),
+          },
+        }));
+        const result = await probeReplicateModel("acme/size-model");
+        expect(result.ok).toBe(true);
+        return result.ok ? result.probe.advancedCapabilities.controls.resolutionTier : undefined;
+      };
+
+      // Wan's real mix — tiers beside pixel pairs still counts, values verbatim.
+      expect(await probeSize(enumRef("size"), { size: ["1K", "2K", "1536*2048"] })).toEqual({
+        field: "size",
+        type: "enum",
+        enumValues: ["1K", "2K", "1536*2048"],
+      });
+      expect(await probeSize({ type: "string" })).toBeUndefined();
+      expect(await probeSize(enumRef("size"), { size: ["1536*2048", "1024*768"] })).toBeUndefined();
+    });
+
+    it("skips an enum whose members are not all strings", async () => {
+      // A filtered enum would record an accepted set that differs from the
+      // provider's — a value judged valid here could still be rejected at spend
+      // time — so a partially-string enum derives nothing. Mixed members can't
+      // travel through the `enums` helper (it types strings), so the referenced
+      // schema is stubbed directly.
+      stubFetch(() => ({
+        name: "mixed-enum",
+        latest_version: {
+          id: "v1",
+          openapi_schema: {
+            components: {
+              schemas: {
+                Input: {
+                  properties: {
+                    prompt: { type: "string" },
+                    sequential_image_generation: enumRef("sequential_image_generation"),
+                  },
+                  required: ["prompt"],
+                },
+                sequential_image_generation: { enum: ["disabled", 2] },
+              },
+            },
+          },
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/mixed-enum");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls.sequentialMode).toBeUndefined();
     });
 
     it("omits a range the schema did not declare, and ignores a LoRA field of the wrong type", async () => {

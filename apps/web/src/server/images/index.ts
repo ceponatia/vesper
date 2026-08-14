@@ -150,6 +150,7 @@ export * from "./image-lab-controls";
 export * from "./image-loras";
 export * from "./models";
 export * from "./model-profiles";
+export * from "./model-versions";
 export * from "./render-intent";
 export * from "./render-fingerprint";
 export * from "./route-safe";

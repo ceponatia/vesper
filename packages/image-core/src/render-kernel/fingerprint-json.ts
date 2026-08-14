@@ -62,7 +62,21 @@ export function profileRenderControlsFingerprintJson(
   extra: ProfileRenderControlsFingerprintInput,
 ): string {
   const model = plan.effectiveModel;
+  // The dimension REQUEST (spec §"Dimension negotiation"): a size-mode tier
+  // never enters `controlInput` — the dimension resolver consumes it off the
+  // plan's facts — so without this member two profiles differing only in tier
+  // could hash alike while sending different sizes. `operation` stays out (it is
+  // already fingerprinted, and it is not a request), and the member is added
+  // ONLY when a dimension control is set, so every factless profile's stored
+  // hash is byte-identical to what it was before dimensions were carried.
+  const facts = plan.dimensionFacts;
+  const dimensions = {
+    ...(facts.resolution === undefined ? {} : { resolution: facts.resolution }),
+    ...(facts.width === undefined ? {} : { width: facts.width }),
+    ...(facts.height === undefined ? {} : { height: facts.height }),
+  };
   return stableJson({
+    ...(Object.keys(dimensions).length > 0 ? { dimensions } : {}),
     modelId: model.id,
     modelSlug: model.slug,
     modelVersion: plan.versionId,

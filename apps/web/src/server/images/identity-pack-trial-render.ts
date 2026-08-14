@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import {
   compileProfileRenderPlan,
+  IMAGE_TARGET_ASPECT,
   type ImageIdentityPackTrialCellSpec,
   imageIdentityPackTrialCellSpecSchema,
   imageIdentityPackTrialDiagnosticCode,
@@ -9,6 +10,7 @@ import {
   type ImageIdentityPackV1,
   type ImageModel,
   type ImageModelProfile,
+  type ImageRenderDimensionFacts,
   pinnedImageModelVersion,
   providerVersionsDisagree,
   type TrialCellStatus,
@@ -59,7 +61,10 @@ const RESERVED_FIELD_IGNORED_DIAGNOSTIC = "image_model.reserved_field_ignored";
  * This seam is the PROOF SURFACE for "the trial renders the profile it says it
  * renders": an integration test captures this object and compares it against the
  * cell's stored `resolvedControls`. Anything the provider receives that is not
- * visible here is something the harness cannot prove it sent.
+ * visible here is something the harness cannot prove it sent — which is why the
+ * dimension inputs travel too: the transport wrapper negotiates the aspect/size
+ * key from `targetRatio` and `dimensionFacts`, so a size a tier profile asks
+ * for must be stated here or the seam would hide part of the payload.
  */
 export interface TrialCellRenderInput {
   /** The EFFECTIVE model — post reviewed-quality seam, as the provider sees it. */
@@ -67,6 +72,18 @@ export interface TrialCellRenderInput {
   /** The final compiled text, role preamble included. Hashed as `positivePromptHash`. */
   prompt: string;
   references: Buffer[];
+  /**
+   * The shape a trial cell renders: Vesper's 3:4, stated explicitly rather than
+   * left to `renderWithModel`'s default so the captured input names it.
+   */
+  targetRatio: number;
+  /**
+   * The recompiled plan's dimension-resolver inputs — the merged tier and pair
+   * a size-mode model's shape negotiation consumes. Without them a tier
+   * profile's trial rendered the model's default size while production sent
+   * the tier's, and the two were not the same experiment.
+   */
+  dimensionFacts: ImageRenderDimensionFacts;
   /** Mapped controls plus validated overrides, keyed by real provider fields. */
   controlInput: Record<string, unknown>;
   /**
@@ -109,6 +126,8 @@ export function trialRenderer(): TrialCellRenderer {
           model: input.model,
           prompt: input.prompt,
           references: input.references,
+          targetRatio: input.targetRatio,
+          dimensionFacts: input.dimensionFacts,
           controlInput: input.controlInput,
           timeoutMs: input.timeoutMs,
           versionId: input.versionId,
@@ -601,6 +620,10 @@ async function executeOneTrialCell(
       model: plan.effectiveModel,
       prompt: plan.finalPrompt,
       references,
+      // The trial's one shape, and the plan's dimension inputs — so a size-mode
+      // tier profile trial-renders the same size production sends.
+      targetRatio: IMAGE_TARGET_ASPECT,
+      dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
       timeoutMs: plan.timeoutMs,
       versionId: plan.versionId,

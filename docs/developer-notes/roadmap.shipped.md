@@ -16,6 +16,12 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image model capabilities — profiles, shared controls, and richer
+  workflows** — [plan](finished/image-model-capabilities.plan.md) — 2026-08-14 —
+  every render resolves a task profile with role-aware references, probe-bound
+  controls, recorded seeds and attempt provenance, negotiated dimensions, safe
+  version promotion, and profile-based pickers; image sets parked to the
+  deferred lot.
 - **Monorepo follow-through — self-validating workspaces and the simulation
   package** — [plan](finished/monorepo-simulation-core.plan.md) — 2026-08-14 —
   workspaces validate themselves recursively, packages declare public subpath

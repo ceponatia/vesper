@@ -2,10 +2,13 @@ import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import type { output as ZodOutput, ZodType } from "zod";
 import {
-  chooseAspect,
+  chooseDimensions,
   IMAGE_TARGET_ASPECT,
+  imageAspectInputField,
   type ImageModel,
   imageModelSchema,
+  type ImageRenderDimensionFacts,
+  type PlannedControlReference,
   preparePromptForImageModel,
   withReviewedImageQuality,
 } from "@vesper/image-core";
@@ -13,6 +16,7 @@ import type { RenderControlReference } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { replicateClient } from "../ai";
+import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 
 /**
  * The image-model registry's server seam (image-model-registry.spec.md).
@@ -97,21 +101,38 @@ export interface RenderWithModelInput {
   prompt: string;
   references?: Buffer[];
   /**
+   * The caller's names for each `references` entry, index-parallel — a plan's
+   * sent-reference roles (`renderImageIntent`). Diagnostic labels only, never a
+   * provider field: the transport's trim report names what was kept and what
+   * was given up by these. A missing entry falls back to `"reference"`, which
+   * is what every buffer was labeled before roles traveled.
+   */
+  referenceRoles?: string[];
+  /**
    * Structural controls bound to their own provider inputs, already resolved
    * against this version's `additionalImageInputs` (`planImageRender`).
    *
    * Separate from `references` because they are separate provider fields, and
    * because they do not cross the reference-capacity trim: a `pose_image` input
-   * is not competing for a slot in the `image` array. Passed through untouched,
-   * like `controlInput` and for the same reason — the binding decision belongs to
-   * the one place that reads the capability record.
+   * is not competing for a slot in the `image` array. The binding decision is
+   * passed through untouched, like `controlInput` and for the same reason — it
+   * belongs to the one place that reads the capability record. Only the BYTES
+   * are touched here, by the same preparation pass the references cross.
    */
-  controlReferences?: RenderControlReference[];
+  controlReferences?: PlannedControlReference[];
   /**
    * The shape this lane wants, as a width/height ratio. Defaults to Vesper's
    * 3:4; the entity lanes ask for 1 (items) and 1.5 (locations).
    */
   targetRatio?: number;
+  /**
+   * The compile step's dimension-resolver inputs (`compileProfileRenderPlan`):
+   * operation, the merged resolution/width/height controls, and whether a
+   * custom pair actually mapped. Absent — the trial, the lab, any direct caller
+   * — dimension negotiation is the pure `chooseAspect` result, exactly as
+   * before the facts existed.
+   */
+  dimensionFacts?: ImageRenderDimensionFacts;
   /**
    * Provider-shaped control fields, already mapped against this version's
    * bindings (`compileProfileRenderPlan`). Passed straight through — this
@@ -141,6 +162,13 @@ export interface RenderWithModelResult {
    * recorded: a pin states intent, and only this states outcome.
    */
   executedVersionId?: string;
+  /**
+   * How many primary references the transport actually sent, passed through
+   * untouched from `ReplicateImageResult` (where the counting rule is
+   * recorded). `renderImageIntent` truncates its sent-roles provenance to this,
+   * so a stored attempt never claims a budget-trimmed reference was sent.
+   */
+  sentReferenceCount?: number;
 }
 
 /**
@@ -153,11 +181,13 @@ export interface RenderWithModelResult {
  * controls gain transports — the profiles now reach this path, but the controls
  * they would carry (guidance, steps, negatives) still have no probed bindings.
  *
- * This wrapper also owns shape negotiation. A lane says what ratio it wants;
- * `chooseAspect` finds the closest thing the model offers; anything short of
- * exact is centre-cropped here. That is what lets Stable Diffusion 3.5 Large (no
- * 3:4 in its enum) serve a portrait, and the same code serve the item lane's 1:1,
- * without either caller knowing which models need help.
+ * This wrapper also owns shape negotiation. A lane says what ratio it wants —
+ * and, when it compiled a profile plan, what dimensions the profile asked for —
+ * and `chooseDimensions` finds the closest thing the model offers; anything
+ * short of exact is centre-cropped here, toward the lane's ratio. That is what
+ * lets Stable Diffusion 3.5 Large (no 3:4 in its enum) serve a portrait, and
+ * the same code serve the item lane's 1:1, without either caller knowing which
+ * models need help.
  *
  * A crop failure is not fatal — the uncropped image beats no image — so it
  * degrades with a diagnostic.
@@ -174,6 +204,12 @@ export interface RenderWithModelResult {
  * replaces the legacy identity lock with a Qwen-dialect one, and a prompt that
  * no longer contains the legacy sentence passes through untouched — so a
  * pre-compiled prompt arrives at the provider exactly as it was hashed.
+ *
+ * Reference and control bytes cross `prepareRenderReferences` here, and here
+ * only — this is the one choke point every render path shares, so preparing at
+ * it is what guarantees no raw buffer reaches the transport from any lane. A
+ * reference whose preparation fails degrades to its original bytes with a
+ * diagnostic rather than failing the render.
  */
 export async function renderWithModel(
   input: RenderWithModelInput,
@@ -182,14 +218,41 @@ export async function renderWithModel(
   const targetRatio = input.targetRatio ?? IMAGE_TARGET_ASPECT;
   const model = withReviewedImageQuality(input.model);
   const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
-  const aspect = chooseAspect(model, targetRatio);
+  // Absent facts spread to nothing, and a factless request resolves to the pure
+  // `chooseAspect` answer — the direct callers keep exactly their old shapes.
+  const dimensions = chooseDimensions(model, { targetRatio, ...input.dimensionFacts });
+  const aspectValue = dimensions.input[imageAspectInputField(model)];
+  const preparationTarget = referencePreparationTarget(model);
+  const references = input.references
+    ? await prepareRenderReferences(
+        // Each buffer travels under the caller's role for it, so a transport
+        // trim report can say "location dropped" instead of "reference 2".
+        input.references.map((buffer, index) => ({ buffer, role: input.referenceRoles?.[index] ?? "reference" })),
+        preparationTarget,
+        sink,
+      )
+    : undefined;
+  // Control buffers cross the same pass with the field name as their label;
+  // the binding itself (field, arity) is not this wrapper's to reinterpret.
+  const controlReferences: RenderControlReference[] = [];
+  for (const control of input.controlReferences ?? []) {
+    controlReferences.push({
+      field: control.field,
+      arity: control.arity,
+      buffers: await prepareRenderReferences(
+        control.buffers.map((buffer) => ({ buffer, role: control.field })),
+        preparationTarget,
+        sink,
+      ),
+    });
+  }
   const result = await replicateClient().runRegistryImageModel(
     model,
     {
       prompt,
-      ...(input.references ? { references: input.references } : {}),
-      ...(input.controlReferences?.length ? { controlReferences: input.controlReferences } : {}),
-      aspect: aspect.value,
+      ...(references ? { references } : {}),
+      ...(controlReferences.length ? { controlReferences } : {}),
+      aspect: typeof aspectValue === "string" ? aspectValue : null,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.versionId ? { versionId: input.versionId } : {}),
@@ -197,18 +260,24 @@ export async function renderWithModel(
     sink,
   );
   // Spread rather than assigned, so a run the provider never got a prediction id
-  // (or never echoed a version) for reports no field at all instead of an
-  // explicit undefined.
+  // (or never echoed a version, or never reached the transport's send) for
+  // reports no field at all instead of an explicit undefined. The count is
+  // compared against undefined, not truthiness: zero references sent is a real
+  // count, absence means the transport never said.
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
     ...(result.executedVersionId ? { executedVersionId: result.executedVersionId } : {}),
+    ...(result.sentReferenceCount !== undefined ? { sentReferenceCount: result.sentReferenceCount } : {}),
   };
   if (!result.ok || !result.image) {
     return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };
   }
-  // Crop when the model had no exact shape, and also when it offered none at
-  // all — in that case it used its own default, which is unlikely to match.
-  if (!aspect.needsCrop && aspect.value !== null) return { ok: true, ...provenance, image: result.image };
+  // Crop when the expected shape misses the target, and also when nothing can
+  // say what shape is coming — a model with no usable shape used its own
+  // default, which is unlikely to match.
+  if (!dimensions.needsCrop && dimensions.expectedAspect !== null) {
+    return { ok: true, ...provenance, image: result.image };
+  }
   try {
     return { ok: true, ...provenance, image: await cropToTargetAspect(result.image, targetRatio) };
   } catch (error) {

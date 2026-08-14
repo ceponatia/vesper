@@ -54,11 +54,17 @@ face) in with `stability-ai/stable-diffusion-3.5-large` (strength repainting tha
 hands back a plausible stranger). Three **reviewed** columns carry that human
 judgment — `editKind` (`none` · `instruction_edit` · `multi_reference_compose` ·
 `img2img` · `unknown`), `identityPreservation` (`strong` · `moderate` · `weak` ·
-`unknown`), and `operatorWarning` (free text bound for the admin card and the
-pickers, though no surface renders it; Wan 2.7's un-disableable moderation is its
-only value) — and **a re-probe
+`unknown`), and `operatorWarning` (free text the admin card edits and the profile
+pickers show as helper text before use; Wan 2.7's un-disableable moderation is
+its first value) — and **a re-probe
 must never overwrite them**, because no schema can tell you whether a face
-survived. `unknown` is the column default and is deliberately **permissive**: an
+survived. `supportedAspects` and `maxReferences` are owner-curated on the same
+terms once a row exists: the probe writes both at **create**, but a re-probe and
+a version activation leave them alone (`imageModelReprobeFields`), because the
+stored list can deliberately exclude entries the schema offers — Wan's 4K size
+pairs break its edit path, so resurrecting them from the schema would break
+every Wan edit. The admin PATCH accepts `supportedAspects` for deliberate
+updates, and the version diff labels both fields "owner-curated". `unknown` is the column default and is deliberately **permissive**: an
 operator-added experimental row keeps behaving exactly as it does today instead
 of being locked out by a rating nobody has written. Per-model ratings are written
 up in [image-models/](../image-models/README.md); the row is the runtime truth. Two
@@ -68,15 +74,38 @@ pinned `owner/name:version` slug it must equal the pin) and
 `advancedCapabilities` (optional control bindings — seed, guidance, steps, edit
 strength, output count, thinking mode, LoRA … — plus extra image inputs, output
 arity, and the `knownInputFields` allowlist a profile's raw overrides are
-validated against). The probe derives exactly two of those bindings — a string
-`lora_weights` input becomes `controls.loraWeights` and a numeric `lora_scale`
-becomes `controls.loraScale`, range included, written atomically beside
-`probedVersionId` at create and re-probe — and derives nothing else, so a row
-probed before that existed holds `{}`, and empty means "send no optional
-control", which is exactly what every lane sends for everything but a LoRA.
+validated against). The probe derives the full known-alias binding set — seed,
+negative prompt, guidance (`guidance`/`cfg`), steps (`num_inference_steps`),
+edit strength (`strength`/`prompt_strength`), output count
+(`num_outputs`/`max_images`), thinking mode, sequential/set modes, a tier-like
+`size` enum as `resolutionTier`, integer `width`/`height` as custom dimensions,
+and the two LoRA fields — types, ranges and enum values included, plus
+`knownInputFields` as the sorted list of every input property, all written
+atomically beside `probedVersionId` at create and re-probe. A row probed before
+any of this holds `{}`, and empty means "send no optional control" — so a
+profile's control defaults sit recorded-but-inert until its model's version is
+probed or pinned, which is the designed activation path.
 `updated_at` is a **column with no contract field**: the record crosses to the
 client as JSON, so adding a timestamp forces a date-serialization decision no
 consumer needs until the admin version card shows "capabilities changed at".
+
+**Versions are promoted through an explicit candidate flow, never by drift.**
+Three owner-admin actions on the model card (`/settings/image-models`):
+`probe-latest` probes the bare model path and returns the candidate version, a
+field-level capability diff (owner-curated fields labeled as review-only), and
+per-profile findings without mutating anything; `smoke-test` runs one transient
+render pinned to the candidate through a chosen profile — an edit profile gets
+a locally generated neutral reference, nothing is persisted, and the action is
+explicitly cost-bearing; `activate-version` re-probes that exact version
+(falling back to the bare probe plus a latest-id equality check for official
+models, which expose no per-version endpoint), refuses with the blocking
+findings when an enabled profile would break — an impossible operation, a
+provider override outside the candidate's `knownInputFields`, a LoRA profile
+losing its bindings — and otherwise atomically pins the slug to
+`owner/name:version` and swaps in the candidate's probed capabilities. A
+re-probe of a pinned row probes only its pin and never moves it to latest.
+Ordinary renders follow whatever the slug resolves to, so pinning the slug is
+what pins production.
 
 **Beneath a model sit task profiles — "how to use this model for one job."**
 `image_model_profiles` (contract `packages/image-core/src/models/image-model-profiles.ts`) is
@@ -94,7 +123,14 @@ seed is a pin, not a default), `providerOverrides`, `timeoutMs` (null, or
 30s–15min), `enabled`/`isDefault`/`builtin`, and `sort`. `(imageModelId, key)` is
 unique, at most **one enabled default per task globally** (a partial unique
 index), and profiles cascade-delete with their model. A profile may *narrow* a
-model; it can never claim a capability the model does not expose.
+model; it can never claim a capability the model does not expose. Profiles have
+a full admin write path — create/edit/delete routes under
+`/api/admin/self/image-models/{modelId}/profiles`, managed from a nested
+section of each model card — and a saved configuration is validated against the
+model (eligibility, provider overrides against `knownInputFields`, fail-closed
+when unprobed) **only while the merged row is enabled**: a disabled row accepts
+any schema-valid patch, which is what makes "disable the broken profile and
+retry" an action that actually works.
 
 **A LoRA is a curated library row, never a raw locator on a request.**
 `image_loras` (contract `packages/image-core/src/loras/image-loras.ts`, admin CRUD under
@@ -117,12 +153,20 @@ is the sent prompt; the record keeps `{ id, scale }` while the locator goes to
 the provider payload and nowhere else, with URL query strings redacted from
 diagnostics. One LoRA per render — that is what the tested binding supports.
 
-**Every render resolves a profile.** All seven lanes call
-`resolveImageProfileForTask` for their own task before they reserve an image row,
-then describe the render as an *intent* (below). Model-level resolution no longer
-exists. The 22 built-in profiles are each equivalent to what its lane rendered
-before, so the switch changed where the configuration comes from and not what the
-provider receives. The seeded set, by model:
+**Every render resolves a profile, and every picker lists profiles.** All seven
+lanes call `resolveImageProfileForTask` for their own task before they reserve
+an image row, then describe the render as an *intent* (below). Model-level
+resolution no longer exists, and neither does a model picker: the player-facing
+selects (`ImageProfileSelect` — the portrait studio's two sections, the chat
+scene strip, the scenario modal) list offered profiles grouped per model from
+`GET /api/image-profiles?task=…`, lead with an explicit "Task default" option
+(an empty value; the server resolves the task default), and show the selected
+profile's operator warning as helper text. The stored value rides the same
+`modelId`/`sceneModel` fields, so a legacy stored model id keeps resolving
+through the degrade chain below. Of the 29 built-in profiles, the 22 standard
+ones are each equivalent to what its lane rendered before; the seven curated
+ones are non-default alternatives a player or admin must pick. The standard
+set, by model:
 
 - `qwen/qwen-image-2512` — `portrait-standard`, `item-standard`,
   `location-standard`, `chat-place-standard`; all `generate` /
@@ -155,6 +199,17 @@ runs with zero references. `scene` profiles carry the `instruction_edit` strateg
 even on the multi-reference models — the lane decides multi-vs-single at
 render time, and changing that here would change a payload.
 
+The seven curated profiles ride the same machinery as alternatives, never
+defaults: Qwen 2512 `portrait-fast` (steps 28) and `portrait-quality` (steps
+50, `go_fast` off via provider override), Seedream 4.5 `ensemble-scene-2k`
+(multi-identity/object reference policy, 2K tier) and `location-4k`, Seedream 5
+Lite `quality-scene-3k`, Stable Diffusion 3.5 `stylized-portrait-high-guidance`
+(guidance 8 plus a curated negative), and Wan `multi-reference-edit-2k`.
+Control defaults that map through probed bindings sit inert until the model's
+version is probed or pinned; Wan's 2K tier is effective the moment the profile
+is picked, because size-pair negotiation needs no binding. Per-model detail:
+[image-models/](../image-models/README.md).
+
 **Profile resolution is a five-step degrade** (`resolveImageProfile`), because the
 stored value may be a profile id, a model id, a model slug, or a dead value from
 before any of this existed: (1) a profile id among the offered candidates; (2) a
@@ -162,10 +217,9 @@ model id or slug → that model's **own** default profile, else its first offere
 profile in sort order; (3) the task's global default profile; (4) the first
 offered profile in sort order; (5) null, which the caller reports as
 `image_profile.none_offered` and fails the render on. A stored pick the resolver
-did not honor raises `image_profile.pick_unavailable` — which is also what an
-operator sees after adding a model through the admin page, because the model
-pickers still list models by legacy surface while renders resolve profiles, so a
-model with no profile is offered and then passed over for the task default. Step
+did not honor raises `image_profile.pick_unavailable`; the pickers list the same
+candidate set resolution reads, so the picker and the render can no longer
+disagree about what is offered. Step
 2's second half is load-bearing: `isDefault` is
 globally unique per task, so most models carry none, and without that fallback a
 stored Seedream scene pick would silently jump to Qwen Edit — a render change.
@@ -256,11 +310,25 @@ to bind to that field is refused with
 buying a provider rejection at full latency.
 
 Two things the intent deliberately does not send. It does **not** pin a provider
-version — an ordinary render follows the model slug's floating latest, while a
-controlled comparison pins, which is why only the trial does. And it does **not**
+version — an ordinary render follows whatever the model slug resolves to (a
+pinned slug pins production; a bare slug floats), while a controlled comparison
+pins explicitly, which is why only the trial does. And it does **not**
 force a prediction budget: a profile's own `timeoutMs` is used when it declares
-one (none of the seeded 17 do), and otherwise `REPLICATE_PREDICTION_TIMEOUT_MS`
+one (no seeded profile does), and otherwise `REPLICATE_PREDICTION_TIMEOUT_MS`
 still decides.
+
+**Seeds are resolved app-side and recorded, never drawn in the pure planner.**
+An explicit `controls.seed` always wins; otherwise a `random`-policy profile
+draws a uniform integer inside the active version's probed seed binding — only
+when that binding exists (an unseeded run stays honestly unseeded), and never
+on a render carrying an explicit version pin, whose schema the active bindings
+do not describe. Every generating lane then records the attempt under
+`images.meta.render` — model, profile, task, prompt strategy, resolved seed,
+applied and dropped controls, the reference roles actually sent (truncated to
+what the byte budget let through), the prediction id, and the version the
+provider says it executed — on failures too where the lane's failure shape
+returns rather than throws. That record is what a retry of the same composition
+reads.
 
 **Eligibility composes the mechanical and the reviewed** (`profileEligibility` →
 `operation_unsupported` | `edit_kind_none` | `identity_too_weak` |
@@ -274,12 +342,21 @@ img2img model stays usable through a deliberate remix profile on a non-identity
 task, and `unknown` passes every semantic check.
 
 **Shape is negotiated per render, not fixed per model.** A lane asks for a ratio
-(3:4 everywhere except items at 1:1 and locations at 3:2); `chooseAspect` picks
-the closest entry in `supportedAspects`, preferring the largest exact match; and
-`renderWithModel` centre-crops whatever is left over. One mechanism therefore
-serves Vesper's 3:4 portraits, Stable Diffusion 3.5 Large (whose enum has **no**
-3:4 — it renders 4:5 and gets cropped), Wan 2.7 (which has no aspect input at all
-and takes `1536*2048` pixel pairs), and the entity lanes.
+(3:4 everywhere except items at 1:1 and locations at 3:2); `chooseDimensions`
+extends the `chooseAspect` seam with the profile's dimension controls. On
+aspect-ratio models the shape is the closest enum entry (largest exact match
+preferred) while a tier or custom pair rides the mapped control fields; on
+size-mode models the enum entries ARE the sizes, so a named tier picks the
+nearest-area entry within the closest-ratio group (largest when unset — the
+pre-tier behavior), and an explicit pair is honored only under the `custom`
+tier and only when it matches an offered entry verbatim. `width`/`height`
+require the `custom` tier in both modes — set without it they are dropped with
+`requires_custom_resolution` rather than sent under a crop expectation that
+would be wrong. `renderWithModel` centre-crops toward the lane's ratio whenever
+the expected shape misses it. One mechanism therefore serves Vesper's 3:4
+portraits, Stable Diffusion 3.5 Large (whose enum has **no** 3:4 — it renders
+4:5 and gets cropped), Wan 2.7 (no aspect input; `1536*2048` pixel pairs, its
+2K/4K tiers picking among them), and the entity lanes.
 
 **Selection stays fail-visible.** `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's
 degradation ladder — multi-reference edit → single-reference edit → bare prompt —
@@ -294,10 +371,21 @@ with no reference yields an empty chain and a visible refusal. The
 `POST /predictions` carrying a version id when the slug is pinned
 `owner/name:version`. `REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default
 5m) drives both deadlines — Replicate's `Cancel-After` header and the client's own
-poll cutoff — so raising it can't leave the provider cancelling at a stale bound. Edit references are uploaded as
+poll cutoff — so raising it can't leave the provider cancelling at a stale bound.
+Reference and control bytes cross a **preparation pass** at the
+`renderWithModel` choke point (`reference-preparation.ts`: EXIF orientation
+applied, metadata stripped, alpha flattened only for non-alpha targets, encoded
+to a format the model accepts) — an already-clean webp passes through
+byte-identical after one metadata sniff, and a reference whose preparation
+fails degrades to its original bytes with a diagnostic rather than failing the
+render. Prepared bytes carry their real media type and extension to the wire.
+Edit references are uploaded as
 **private Replicate files** (Vesper's images are not publicly addressable and
 exceed the data-URL guidance), trimmed to the model's capacity by `fitReferences`
-*before* the upload cost is paid, and deleted best-effort as soon as the
+*before* the upload cost is paid, uploaded with **bounded concurrency of three**
+(`transportReplicateReferences` — input-order URIs whatever the completion
+order, and on any single failure every successful upload is deleted best-effort
+before the failure returns), and deleted best-effort as soon as the
 prediction settles; outputs are downloaded only from `replicate.delivery` /
 `api.replicate.com` and land in the same immutable pipeline as every other asset.
 Nothing throws — a failure degrades to an error string the caller turns into a

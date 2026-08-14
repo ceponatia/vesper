@@ -32,6 +32,7 @@ import { db, imageLabExperiments, images } from "../db";
 import { createImageAsset, deleteOwnedImage, type ImageRow, readImageBytes, saveImageBuffer } from "./assets";
 import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels, type RenderWithModelResult } from "./models";
+import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 import { renderImageIntent } from "./render-intent";
 import {
   type ImageLabExperimentRow,
@@ -108,15 +109,24 @@ export function setImageLabRendererForTesting(renderer: ImageLabRenderer | null)
  * The real renderer maps each mode straight onto its transport, field for field.
  * That is deliberate: the moment this seam starts deciding anything, what a test
  * captures stops being evidence of what the provider was sent.
+ *
+ * Reference bytes cross `prepareRenderReferences` on the direct arm because
+ * preparation is part of the transport contract now, not a decision: every
+ * production render's references arrive prepared (`renderWithModel`), so a
+ * probe that skipped it would render from bytes no production request sends.
  */
-function runRealLabRender(request: ImageLabRenderRequest, sink?: DiagnosticSink): Promise<RenderWithModelResult> {
+async function runRealLabRender(request: ImageLabRenderRequest, sink?: DiagnosticSink): Promise<RenderWithModelResult> {
   switch (request.mode) {
     case "direct":
       return replicateClient().runRegistryImageModel(
         request.model,
         {
           prompt: request.prompt,
-          references: request.references,
+          references: await prepareRenderReferences(
+            request.references.map((buffer) => ({ buffer, role: "reference" })),
+            referencePreparationTarget(request.model),
+            sink,
+          ),
           aspect: request.aspect,
           controlInput: request.controlInput,
           versionId: request.versionId,

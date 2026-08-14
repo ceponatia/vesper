@@ -1,11 +1,15 @@
 # Image model capabilities — profiles, shared controls, and richer workflows
 
-Status: active. Slice 1 shipped 2026-08-05 (reviewed capability ratings, the
-profile table, 17 built-in profiles, and the resolver). Slice 2 shipped
-2026-08-07: every player render now resolves a profile and goes through the
-shared render intent, with payloads unchanged. Slices 3 and 9 shipped their
-selection and control-binding halves and slice 6 shipped the LoRA library, all
-2026-08-11; slices 4–5, 7–8 and the transport half of slice 3 remain.
+Status: shipped — 2026-08-14. Slices 1–7, 9 and the profile pickers/admin UI
+are all delivered; slice 8 (image sets) was descoped by owner ruling to
+[deferred.plan.md](../deferred.plan.md) rather than holding the plan open, along
+with the multi-output provider shell, prompt fitting, the retry-same-composition
+action, and derived latency labels ("Image capability remainders" there).
+Leftovers that are operations rather than code: pinning each production model
+row — and thereby activating the curated profiles' probe-bound controls — is a
+deliberate post-deploy admin action through the new version-promotion flow.
+The ordinary-lane style-LoRA promotion stays parked in deferred.plan.md on its
+recorded identity-regression constraint.
 
 Outcome: The owner can pick a named, curated setup for each image model — a quick
 portrait, a 4K location, a scene that keeps the same character — so that one
@@ -112,12 +116,13 @@ instead of silently running without it. The first trial that exercises it is
 the Qwen lab's Stage 4
 ([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)).
 
-**Not started.** Reference preparation and parallel uploads (the rest of slice
-3), recorded seeds, safe version promotion, image sets, and any admin or player
-UI for profiles remain ahead. One gap the migration opens: the model pickers
-still list models, while renders resolve profiles, so a model an operator adds
-without a profile is offered and then quietly passed over for the default —
-visible in the diagnostics, and closed by the picker slice.
+**Shipped (2026-08-14, the close-out).** Reference preparation and bounded
+concurrent uploads, recorded seeds and per-render attempt provenance,
+resolution tiers and custom dimensions, the version candidate/smoke/activate
+flow, profile create-edit-delete with admin model cards, profile-based player
+pickers, and the seven curated model profiles. The picker gap is closed: the
+pickers list exactly the profiles resolution would accept, so a pick and a
+render can no longer disagree.
 
 ## What stays unchanged
 
@@ -346,14 +351,13 @@ it cannot pin, which is why trial setup re-probes the models a run will use.
 
 ## Multiple outputs and coherent sets
 
-Existing image lanes continue to ask for one image. The provider layer will be
-able to normalize several outputs, while the existing single-image wrapper takes
-the first result and preserves today's behavior.
-
-A separate image-set workflow will store ordered siblings with a shared set
-identity. It can later support Seedream sequences, Wan image sets, storyboard
-shots, and variation grids without forcing the portrait, variant, and scene
-pipelines to understand batches.
+Descoped 2026-08-14 (owner ruling): a separate multi-output workflow is a
+product expansion, not the infrastructure this plan existed to finish, and it
+does not hold the close-out open. The idea — ordered siblings with a shared set
+identity, Seedream sequences, Wan image sets, storyboard shots, variation
+grids, never changing the single-image lanes — is parked in
+[deferred.plan.md](../deferred.plan.md) §"Image sets and multi-output" with the
+technical design preserved in the spec.
 
 ## Delivery slices
 
@@ -368,31 +372,32 @@ pipelines to understand batches.
    renders: production still follows each model's floating latest version rather
    than the compile step's pin, and still takes its prediction budget from the
    environment unless a profile declares one.
-3. **Role-aware references and transport.** Status: in progress — selection and
-   prompt wording complete 2026-08-11; the transport half remains. A profile's
-   policy now chooses which references survive when capacity is short, in what
-   order, and reports why each omission happened; the composing strategy has
-   general-vocabulary wording that names every reference's job. What remains is
-   the transport half: a preparation step and bounded concurrent uploads,
-   preserving Wan's inline path.
-4. **Common controls and reproducibility.** Status: in progress — control
-   mapping and per-profile timeouts landed; seed recording remains. Store
-   seeds, add quality profiles, map guidance, steps, negative prompt, and edit
-   strength only where supported, and use per-profile prediction timeouts.
-5. **Version promotion.** Status: queued. Pin the built-ins, add candidate
-   probing and capability diffs, and provide an explicit smoke-test-and-activate
-   flow.
+3. **Role-aware references and transport.** Status: complete — selection and
+   prompt wording 2026-08-11; preparation and bounded concurrent uploads
+   2026-08-14, Wan's inline path preserved.
+4. **Common controls and reproducibility.** Status: complete — 2026-08-14.
+   Probe-derived bindings for every known control alias, a seed transport with
+   app-side resolution, and per-render attempt provenance recorded on every
+   image row; per-profile timeouts had landed earlier.
+5. **Version promotion.** Status: complete — 2026-08-14. Candidate probing,
+   capability diffs with owner-curated fields labeled, an explicit
+   smoke-test-and-activate flow; pinning each production row through it is a
+   post-deploy admin action.
 6. **Qwen LoRA library.** Status: complete — 2026-08-11; the initial style
    trial ran the same day through the Qwen lab's Stage 4 protocol, and its
    verdicts were accepted when that plan shipped (2026-08-13,
    [finished/qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md)).
    Add compatible hosted LoRAs, profile selection, scale validation, trigger or
    prompt additions, and one initial style trial.
-7. **Model-specific profiles.** Status: queued. Add Seedream high-resolution and
-   example-based profiles, Wan generation/edit profiles, Qwen text repair, and
-   curated Stable Diffusion portrait profiles.
-8. **Image sets.** Status: queued. Normalize multiple outputs and add the
-   separate coherent-set storage and UI workflow.
+7. **Model-specific profiles.** Status: complete — 2026-08-14. Seven curated
+   profiles seeded; the text-repair, example-transform, remix, and coherent-set
+   rows were deliberately not seeded (no lane can run them today — the
+   migration's header records each omission), and Wan generation profiles were
+   skipped as either duplicating its standard behavior or promising a 4K its
+   curated aspect list deliberately excludes.
+8. **Image sets.** Status: void — descoped 2026-08-14 by owner ruling to
+   [deferred.plan.md](../deferred.plan.md); a product expansion, not
+   normal-render infrastructure.
 9. **Future visual controls.** Status: complete — 2026-08-11. Masks, pose, depth
    and edge images are routed by what the active model declares: to a dedicated
    provider input where the version has one, and otherwise as numbered images in
@@ -440,17 +445,10 @@ the image path into six separate systems.
 
 ## Open questions
 
-Each carries a recommended default the implementation may proceed on unless the
-owner rules otherwise.
-
-- Should normal player controls stay profile-based, with raw settings admin-only?
-  Recommended: yes.
-- When should production models be pinned? Recommended: as part of the
-  version-promotion slice.
-- Should LoRAs be administrator-curated only at first? Recommended: yes.
-- Should one render be limited to one LoRA? Recommended: yes — that is what the
-  tested Qwen Image Edit binding supports.
-- Should a global prediction-timeout fallback survive alongside a bounded
-  per-profile override? Recommended: yes.
-- Should latency be a maintained model label or derived from measurements?
-  Recommended: derived — treat it as operational data.
+None remain. Every question this plan carried proceeded on its recommended
+default and shipped that way: player controls are profile-based with raw
+settings admin-only, production pinning belongs to the version-promotion flow
+(exercised post-deploy per row), LoRAs are administrator-curated, one LoRA per
+render, the global prediction-timeout fallback survives beside the per-profile
+override, and latency stays operational data — the derived label is parked with
+the other remainders in [deferred.plan.md](../deferred.plan.md).

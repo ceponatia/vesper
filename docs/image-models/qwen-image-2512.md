@@ -36,15 +36,32 @@ future use of its `strength` control.
 
 ## Seeded profiles
 
-Four dormant `generate` profiles use the `text_to_image_description` strategy:
+Four `generate` profiles use the `text_to_image_description` strategy, and each
+is its task's global default ([providers.md](../images/providers.md)):
 
 - `portrait-standard`;
 - `item-standard`;
 - `location-standard`;
 - `chat-place-standard`.
 
-They reproduce current model selection but do not yet provide controls. Nothing
-calls the profile layer yet.
+All four carry empty control defaults, so resolving one reproduces the payload
+below.
+
+Two curated portrait profiles trade speed against detail. Neither is a default;
+each runs only when picked:
+
+- `portrait-fast` — `steps: 28`, down from the provider's 40, for a cheaper
+  everyday render. `go_fast` is already `true` in the row's `extra_input`, so no
+  override is needed.
+- `portrait-quality` — `steps: 50`, the ceiling, plus a `go_fast: false`
+  provider override — the raw boolean has no normalized control, so the override
+  is the only reach.
+
+The `steps` defaults map through the version's probed control bindings: while
+the model row's `advancedCapabilities` is empty they drop as recorded
+`no_binding`, and they take effect once the version is probed or pinned. The
+`go_fast` override is refused fail-closed until the probe writes
+`knownInputFields`.
 
 ## Negative-prompt ruling
 

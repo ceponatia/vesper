@@ -15,7 +15,7 @@ import {
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { renderImageIntent } from "./render-intent";
+import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
 
 /**
@@ -242,8 +242,10 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           },
           sink,
         );
+        // A failure still THROWS (this lane's ruled failure shape), so provenance
+        // is recorded only on success — a thrown produce has no meta channel.
         if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: edit.image };
+        return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
       },
       // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
       // files. Scoped by `entityId` for the same reason the loader above is — a
@@ -315,8 +317,10 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
           { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
           sink,
         );
+        // A failure still THROWS (this lane's ruled failure shape), so provenance
+        // is recorded only on success — a thrown produce has no meta channel.
         if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: shot.image };
+        return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt) };
       },
       failureDiagnostic: { code: "images.chat_place.failed" },
       sink,
