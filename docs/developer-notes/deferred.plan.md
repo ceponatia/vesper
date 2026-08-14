@@ -220,6 +220,33 @@ answering:
   finished image, a wardrobe-specific recipe, or a model with more reference
   room.
 
+## Video generation — reference-driven clips and keyframe stitching
+
+_Owner direction 2026-08-14: a future capability, deliberately not next on the
+roadmap. Feasibility research run the same day; full detail (model landscape,
+provider comparison, costs, workflows) in
+[video-generation.deferred.md](video-generation.deferred.md)._
+
+Generate ~10-second clips the way Vesper generates images: a portrait or scene
+render as the reference plus a motion prompt — an admin **video lab** first
+(the Advanced Image Lab pattern), chat-context later. Longer videos come from
+chaining clips through keyframes and concatenating. The research settled the
+shape: it is an API-only commodity capability today; the image registry's
+moderation split repeats exactly (open-weights Wan 2.2 / HunyuanVideo-1.5 /
+LTX-2.5 are the explicit-capable backbone, hosted flagships the SFW quality
+tier); Replicate is the recommended first provider (same predictions/webhook
+flow as images, whole Wan line + MiniMax H3 + the `nsfw-api` Hunyuan tooling,
+permissive terms, video LoRA trainers); and the identity-safe path to long
+video is image-model keyframes — identity-pack-anchored stills — with the
+video model interpolating first→last between them, so drift cannot compound.
+This is also where the Seedream-to-Seedance video handoff idea
+([image-model-capabilities.plan.md](image-model-capabilities.plan.md)) lands
+when a video pipeline exists.
+
+**Trigger:** owner scheduling. Promotion starts with a lane ruling (SFW-first
+vs explicit-first) and a paid Stage-0-style probe; the detail doc names the
+candidate endpoints.
+
 ## World authoring — locations, travel distances & durations
 
 _Owner direction 2026-07-23: world setup for bespoke first-party worlds and
