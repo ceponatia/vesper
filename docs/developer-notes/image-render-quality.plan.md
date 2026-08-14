@@ -2,8 +2,8 @@
 
 Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
 exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
-through 2026-08-06; slices 2–3 wait on the capabilities plan's shared render
-intent; reference preparation left this plan for
+through 2026-08-06; slice 2 unblocked since the capabilities plan's shared
+render intent shipped 2026-08-07; reference preparation left this plan for
 [image-identity-packs.plan.md](image-identity-packs.plan.md) on 2026-08-05;
 nothing else in the slice list exists in code)
 
@@ -314,8 +314,9 @@ prompts want and cannot currently obtain.
 [visual-state.plan.md](visual-state.plan.md) owns that projection.
 
 **From capabilities:** ordered semantic prompt segments, resolved controls, seeds,
-and role-aware reference transport. Until its shared render intent exists, this
-plan's slices 2 and 3 have nothing to compile from.
+and role-aware reference transport. Its shared render intent shipped 2026-08-07,
+so this plan's slice 2 has its seam; the segment vocabulary and control
+transports it still lists as remaining are what slices 3 and beyond wait on.
 
 ## Face repair strategy
 

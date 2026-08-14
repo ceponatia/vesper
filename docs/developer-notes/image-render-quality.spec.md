@@ -19,8 +19,8 @@ identity-pack specs' reference contracts, or the visual-state spec's projection.
 
 ## Current implementation (slice 1, shipped 2026-08-05)
 
-Every image lane still builds its existing prompt and resolves an `ImageModel`.
-All lanes then cross:
+Every image lane still builds its existing prompt and resolves its task's
+profile (which carries the parsed model record). All lanes then cross:
 
 ```text
 renderWithModel
@@ -31,16 +31,21 @@ renderWithModel
   -> cropToTargetAspect when needed
 ```
 
-Both functions live in `packages/image-core/src/models/quality-presets.ts`, called from
-`src/server/images/models.ts`. This is intentionally the narrowest seam that
-improves every current lane without wiring the dormant profile rows halfway.
+Both functions live in `packages/image-core/src/models/quality-presets.ts`
+(provider-neutral reviewed policy), called from
+`apps/web/src/server/images/models.ts`. This is intentionally the narrowest seam
+that improves every current lane without wiring the dormant profile rows halfway.
 
-`compileProfileRenderPlan` (`src/server/images/render-profile.ts`) is a **second**
+`compileProfileRenderPlan`
+(`packages/image-core/src/render-kernel/compile-profile-plan.ts`) is a **second**
 caller of both. It is the capabilities plan's slice-2 kernel, landed early for the
 identity-pack trial harness, and it compiles a profile row plus a prompt into the
 exact provider payload — hashing what it just produced rather than the raw model
 row, precisely so the reviewed overrides cannot change a pinned comparison
-silently. Production lanes do not call it; `renderImageIntent` does not exist yet.
+silently. Since capabilities slice 2 (2026-08-07) production lanes reach it too,
+through `renderImageIntent` (`apps/web/src/server/images/render-intent.ts`),
+which then crosses `renderWithModel` on the way to the
+`@vesper/image-replicate` transport.
 
 Two consequences follow from having two callers, and both are load-bearing:
 
@@ -262,7 +267,7 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 
 ## Tests for slice 1
 
-`src/server/images/quality-presets.test.ts` pins these properties:
+`packages/image-core/src/models/quality-presets.test.ts` pins these properties:
 
 - pinned community slugs resolve to their base path;
 - unknown models return the same object and inputs;
@@ -278,10 +283,13 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 - the rewrite is idempotent across a doubled legacy lock;
 - custom, zero-reference, and non-Qwen prompts are byte-identical.
 
-`render-profile.test.ts` re-asserts the idempotency property from the trial side,
+`packages/image-core/src/render-kernel/compile-profile-plan.test.ts` re-asserts
+the idempotency property from the trial side,
 because that is where a violation would show up as a refused cell.
 
-The existing `models.ts` crop tests continue to own output normalization. Future
+The crop math is pinned by `packages/image-core/src/geometry/crop.test.ts`;
+the Node execution (`cropToTargetAspect`) stays in
+`apps/web/src/server/images/models.ts`. Future
 shared-render-intent tests should assert the final provider payload, including
 profile controls, so the transitional and profile paths cannot diverge during
 migration.
@@ -646,8 +654,9 @@ harness; that trial answers reference-strategy questions with the model held
 fixed, and this one answers model-tuning questions with the reference held fixed.
 Neither may vary both at once.
 
-Reports live under `docs/developer-notes/images/` as `<topic>.trial.md`, beside
-the existing `seedream-5-lite.trial.md`.
+Reports are written as `<topic>.trial.md` beside this plan family in
+`docs/developer-notes/`, with per-model observations folded into the matching
+[docs/image-models/](../image-models/README.md) file.
 
 Corpus:
 
