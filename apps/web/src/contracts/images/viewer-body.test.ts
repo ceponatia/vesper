@@ -88,8 +88,8 @@ describe("resolveViewerParts (the composer proposes, coverage disposes)", () => 
 });
 
 /**
- * The composer has no intimate vocabulary — it runs allowIntimate:false on the
- * moderation-prone tool model — so `genitals` can never be PROPOSED. It has to be earned
+ * The composer has no intimate vocabulary — it runs allowIntimate:false whatever model
+ * its seam picks — so `genitals` can never be PROPOSED. It has to be earned
  * deterministically (scene-pov-embodiment slice 4), and three independent conditions must
  * all hold: the shot is already looking down the viewer's body, the pelvis reads bare, and
  * the route is uncensored.
