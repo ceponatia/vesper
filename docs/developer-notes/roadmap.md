@@ -34,12 +34,17 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   false-premise fences and mandatory action outcomes, live in production; slice 4
   needs a design decision, slices 5–6 need instruments that don't exist.
 
+- **Scene image composition — camera, facing, and intimate staging** —
+  [plan](scene-composition.plan.md) · [spec](scene-composition.spec.md) — all
+  three slices built 2026-08-14: the shot follows the fiction, intimate acts
+  stage from a solo-cast catalog, committed scene facts clamp the camera;
+  awaiting the paid A/B probes and the owner's acceptance-scene grading.
+
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, visual
-state, scene composition slices 1–2, the shadow-measurement enable, resilience
-closures, `ConfirmDialog`, clothing slice 7, and wiring the affordance layer to
-the scene owner.
+state, the shadow-measurement enable, resilience closures, `ConfirmDialog`,
+clothing slice 7, and wiring the affordance layer to the scene owner.
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
@@ -51,13 +56,6 @@ the scene owner.
   appearance, wardrobe, body-condition and scene owners, keeping identity,
   presentation, current state and body language separate for narrator, image and
   inspector digests; its image slice is unblocked now that references carry roles.
-
-- **Scene image composition — camera, facing, and intimate staging** —
-  [plan](scene-composition.plan.md) · [spec](scene-composition.spec.md) — the
-  shot follows the fiction: a character with her back to the player renders
-  from behind, intimate moments stage the act from the player's vantage;
-  prompt-only, with committed scene facts overriding inference where they
-  exist.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·

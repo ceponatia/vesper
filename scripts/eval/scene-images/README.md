@@ -6,9 +6,16 @@ quality can only be judged by eye.
 
 ## What's here
 
-- `fixtures.ts` — ~14 fixed scenes spanning the routing matrix (one character;
-  two clothed; two partial; three characters; character+location; location-only;
-  high-risk wardrobe/exposure; uploaded-anchor safety case).
+- `fixtures.ts` — ~24 fixed scenes. The routing matrix (one character; two
+  clothed; two partial; three characters; character+location; location-only;
+  high-risk wardrobe/exposure; uploaded-anchor safety case), plus the
+  orientation/staging block (scene-composition.spec.md) — a non-default camera
+  on the `orientation` rows, a registry staging entry on the `staging` ones, and
+  the frontal rows above them as the identity-regression control.
+- `orientation-ab.ts` — the paid, manually run A/B for that block: one beat
+  rendered twice, today's front-facing prompt against the same plan with its
+  camera and staging set. Prompts print with no provider key configured, so the
+  wording can be reviewed for free; only the renders cost anything.
 - `run.ts` — offline runner. Computes each fixture's provider routing decision and
   the exact prompt(s) the executor would build, and writes:
   - `data/eval/scene-images/manifest.json` — inputs / chain / primary provider / prompts
@@ -17,6 +24,10 @@ quality can only be judged by eye.
 ```
 pnpm tsx scripts/eval/scene-images/run.ts        # writes manifest + scores template
 EVAL_OUT=/tmp/eval pnpm tsx scripts/eval/scene-images/run.ts
+
+# the orientation/staging A/B — PAID once a provider key is configured
+AB_BEAT=behind pnpm tsx scripts/eval/scene-images/orientation-ab.ts [anchor.webp] [variants]
+# beats: behind | glance | kneel | doggy | oral | oral_guided | missionary   (AB_RUNS=n per variant)
 ```
 
 ## Scoring (manual)
