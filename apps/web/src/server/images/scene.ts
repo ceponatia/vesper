@@ -6,7 +6,7 @@ import {
   isDemoMode,
   toolModelId,
 } from "../ai";
-import { renderImageIntent } from "./render-intent";
+import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logDiagnostics } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -18,6 +18,7 @@ import {
   type ImageRenderReference,
   type ProviderRenderResult,
   referenceCapacity,
+  type ResolvedImageAttempt,
   type ResolvedImageProfile,
   routeSceneAttempts,
   type SceneAttemptId,
@@ -236,6 +237,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     multiReferences,
     focalName: plan.focal?.name ?? "Scene",
     profile,
+    attempts: new Map(),
     sink,
   };
 
@@ -272,7 +274,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
             provenanceFor(outcome.attemptId),
           );
         }
-        return { ok: true, image: outcome.image };
+        // The WINNING rung's provenance — the render the stored image came from,
+        // never the primary attempt's plan. This merges in the save step, which
+        // runs AFTER the fallback correction above rewrote the row, so the two
+        // writes never fight: the correction describes the rung, and this is the
+        // same rung's attempt record.
+        return { ok: true, image: outcome.image, ...renderAttemptMeta(ctx.attempts.get(outcome.attemptId)) };
       },
       onSettled: ({ imageId, status, startedMs }) => input.logResult(imageId, status, startedMs),
       onThrown: ({ imageId, startedMs }) => input.logResult(imageId, "failed", startedMs),
@@ -290,6 +297,13 @@ interface SceneAttemptContext {
   multiReferences: ImageRenderReference[];
   focalName: string;
   profile: ResolvedImageProfile | null;
+  /**
+   * Each rung's latest attempt provenance, written by {@link runSceneProvider}.
+   * Keyed by rung so the produce step can record the one that actually won —
+   * a retry within a rung overwrites, which is correct: the surviving image
+   * came from the LAST run of that rung.
+   */
+  attempts: Map<SceneAttemptId, ResolvedImageAttempt>;
   sink?: DiagnosticSink;
 }
 
@@ -405,6 +419,7 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
     },
     ctx.sink,
   );
+  if (result.attempt) ctx.attempts.set(id, result.attempt);
   if (result.ok && result.image) return { ok: true, image: result.image };
   const message = result.error ?? `${ctx.profile.model.slug} returned no image`;
   return { ok: false, failure: { reason: classifyImageFailure(message), message } };

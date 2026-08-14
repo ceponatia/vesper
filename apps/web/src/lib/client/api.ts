@@ -742,6 +742,10 @@ export const imageRecordSchema = z.object({
       /** "selfie" marks a character-sent photo message (chat-selfies.plan.md). */
       flavor: z.string().optional().catch(undefined),
       variantKind: z.string().optional().catch(undefined),
+      /** The attempt provenance the lanes record (`ResolvedImageAttempt`) — kept
+       * loose: the Gallery only carries it, and a strict shape here would strip
+       * a record written by a newer deploy. */
+      render: z.record(z.string(), z.unknown()).optional().catch(undefined),
     })
     .catch({}),
 });

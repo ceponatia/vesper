@@ -1,11 +1,14 @@
 import {
   effectiveImageLoraSelection,
+  type ImageInputBinding,
   type ImageReferenceRole,
   type ImageRenderIntent,
   type ImageRenderReferenceSpec,
   type ImageRenderRuntimeFacts,
   pinnedImageModelVersion,
   planImageRender,
+  type PlannedImageRender,
+  type ResolvedImageAttempt,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { disableSafetyChecker } from "../ai";
@@ -18,8 +21,10 @@ import { renderWithModel, type RenderWithModelResult } from "./models";
  *
  * The planning half is `planImageRender` in `@vesper/image-core`: pure,
  * database-free, deployment-free. What is left here is everything that is not —
- * resolving the LoRA binding against the library, resolving the deployment facts
- * a pure planner may not read, reporting diagnostics, and calling the transport.
+ * resolving the LoRA binding against the library, resolving the seed (the one
+ * place randomness may enter a plan), resolving the deployment facts a pure
+ * planner may not read, reporting diagnostics, calling the transport, and
+ * assembling the attempt's provenance record.
  *
  * That split is the point of the render-kernel slice: the decisions about what a
  * provider is sent can now be exercised with no application in the process,
@@ -81,6 +86,95 @@ async function resolveIntentLora(intent: ImageRenderIntent, sink?: DiagnosticSin
 }
 
 /**
+ * The ceiling of the generated-seed range when the version's binding declares
+ * no maximum: 2^31 − 1, the widest span every seed-taking provider input in the
+ * probed set accepts (signed 32-bit), and comfortably within the normalized
+ * contract's non-negative integer.
+ */
+const DEFAULT_SEED_MAX = 2 ** 31 - 1;
+
+/**
+ * A uniform random integer inside the binding's declared range, floored at zero
+ * (the normalized contract refuses a negative seed — some providers use `-1` as
+ * a second spelling of "random", and two spellings of random is how a replayed
+ * attempt stops being reproducible). Null when the declared range admits no
+ * such integer — then nothing is generated and the run is honestly unseeded.
+ */
+function randomSeedWithin(binding: ImageInputBinding): number | null {
+  const minimum = Math.max(0, Math.ceil(binding.minimum ?? 0));
+  const maximum = Math.floor(Math.min(binding.maximum ?? DEFAULT_SEED_MAX, Number.MAX_SAFE_INTEGER));
+  if (maximum < minimum) return null;
+  return minimum + Math.floor(Math.random() * (maximum - minimum + 1));
+}
+
+/**
+ * Resolve the seed this render runs under — the ONE place randomness enters the
+ * render path, kept here because the compile step is pure and a plan that
+ * rolled its own dice could never be fingerprinted or replayed.
+ *
+ * An explicit `controls.seed` always wins, whatever the policy: it is either a
+ * caller replaying a stored composition or a request that deserves to be
+ * honoured verbatim. Otherwise a `random`-policy profile draws a fresh seed —
+ * but only when the active version's probed bindings declare a seed field,
+ * because a generated number the mapper would immediately drop records a seed
+ * the provider never saw as if it shaped the image. `reuse_source` and `caller`
+ * resolve nothing here (the source seed and the caller's seed both arrive as
+ * the explicit value when they exist at all); unresolved, they surface as the
+ * compile step's `seedPolicy` drop.
+ */
+function resolveIntentSeed(intent: ImageRenderIntent): { intent: ImageRenderIntent; seed: number | null } {
+  const explicit = intent.controls?.seed;
+  if (explicit !== undefined) return { intent, seed: explicit };
+  const { profile, model } = intent.profile;
+  if (profile.controlDefaults.seedPolicy !== "random") return { intent, seed: null };
+  const binding = model.advancedCapabilities.controls.seed;
+  if (!binding) return { intent, seed: null };
+  const seed = randomSeedWithin(binding);
+  if (seed === null) return { intent, seed: null };
+  return { intent: { ...intent, controls: { ...intent.controls, seed } }, seed };
+}
+
+/** What `renderImageIntent` returns: the render result plus, when a plan existed, its provenance. */
+export interface RenderImageIntentResult extends RenderWithModelResult {
+  /**
+   * The attempt's provenance record, present on success AND failure whenever a
+   * plan was compiled — a failed prediction's id is exactly what an operator
+   * needs. Absent only when the render was refused before planning (LoRA
+   * resolution, a plan refusal), where there is no attempt to describe.
+   */
+  attempt?: ResolvedImageAttempt;
+}
+
+/** Assemble the provenance record from the plan, the resolved seed, and the provider's echo. */
+function resolvedAttempt(
+  intent: ImageRenderIntent,
+  plan: PlannedImageRender,
+  seed: number | null,
+  result: RenderWithModelResult,
+): ResolvedImageAttempt {
+  const { profile, model } = intent.profile;
+  return {
+    modelId: model.id,
+    modelSlug: model.slug,
+    profileId: profile.id,
+    task: profile.task,
+    promptStrategy: profile.promptStrategy,
+    requestedVersionId: intent.versionId ?? null,
+    seed,
+    appliedControls: plan.appliedControls,
+    droppedControls: plan.droppedControls,
+    sentReferenceRoles: roleNames(plan.sentReferences),
+    predictionId: result.predictionId ?? null,
+    executedVersionId: result.executedVersionId ?? null,
+  };
+}
+
+/** The produce-meta fragment recording one attempt under the row's `render` key. */
+export function renderAttemptMeta(attempt: ResolvedImageAttempt | undefined): { meta?: Record<string, unknown> } {
+  return attempt ? { meta: { render: attempt } } : {};
+}
+
+/**
  * Render one intent.
  *
  * A refusal is reported as a returned failure with its own diagnostic, never a
@@ -92,10 +186,11 @@ async function resolveIntentLora(intent: ImageRenderIntent, sink?: DiagnosticSin
 export async function renderImageIntent(
   intent: ImageRenderIntent,
   sink?: DiagnosticSink,
-): Promise<RenderWithModelResult> {
+): Promise<RenderImageIntentResult> {
   const prepared = await resolveIntentLora(intent, sink);
   if (!prepared.ok) return { ok: false, error: prepared.error };
-  const planned = planImageRender(prepared.intent, currentRuntimeFacts());
+  const seeded = resolveIntentSeed(prepared.intent);
+  const planned = planImageRender(seeded.intent, currentRuntimeFacts());
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
     sink?.push(diag("warn", code, message, { path: "image_model_profiles", context }));
@@ -143,7 +238,7 @@ export async function renderImageIntent(
       }),
     );
   }
-  return renderWithModel(
+  const result = await renderWithModel(
     {
       model: plan.model,
       prompt: plan.prompt,
@@ -156,6 +251,7 @@ export async function renderImageIntent(
     },
     sink,
   );
+  return { ...result, attempt: resolvedAttempt(seeded.intent, plan, seeded.seed, result) };
 }
 
 /** The roles a diagnostic is about, in the order they were given or sent. */

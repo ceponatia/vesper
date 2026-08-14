@@ -238,6 +238,17 @@ export interface ProfileRenderPlan {
   aspectValue: string | null;
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
+  /**
+   * The controls that actually reached `controlInput`, keyed by NORMALIZED name
+   * — the record a caller stores as provenance. Reserved-field collisions are
+   * already removed (an entry here was really sent), each value is read back
+   * out of the FINAL payload so an override that replaced a mapped value is
+   * reported as what went, and the LoRA entry is the mapper's `{ id, scale }` —
+   * never the locator. Deliberately NOT fingerprinted:
+   * `profileRenderControlsFingerprintJson` already carries `controlInput` and
+   * the drops, and this is the same information under normalized names.
+   */
+  appliedControls: Record<string, unknown>;
   /** The auditable record of the above, drops included. */
   resolvedControls: TrialResolvedControls;
   /**
@@ -429,13 +440,13 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // are the same thing to `mapImageRenderControls`: it skips every control whose
   // value is undefined, so nothing here reaches a payload uninvited.
   //
-  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send, and
-  // no seed transport exists anywhere in the render path yet — so a seed-shaped
-  // default is recorded as a DROP below rather than quietly ignored, because
-  // "this run was not seeded" is a fact the comparison fingerprint must carry. A
-  // REQUESTED numeric seed does travel to the mapper, which refuses it as
-  // `unsupported` and records that refusal, so asking for one is visible rather
-  // than silently ineffective.
+  // `seedPolicy` is deliberately absent: it is a POLICY, not a value to send.
+  // Resolving it into a number is the CALLER's job (`renderImageIntent` draws
+  // the random seed and passes it as `controlOverrides.seed`), because this
+  // step is pure and a compile that rolled its own dice could never be
+  // fingerprinted. A policy that arrived here unresolved is recorded as a DROP
+  // below — "this run was not seeded" is a fact the comparison fingerprint must
+  // carry.
   const controls: ImageRenderControls = {
     seed: requested?.seed,
     negativePrompt: negative ?? undefined,
@@ -488,6 +499,23 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // fingerprint of something the provider never saw.
   const controlInput = { ...sendableMapped.input, ...overrides.input };
 
+  // The normalized provenance record, kept consistent with the two adjustments
+  // above by the same two rules: an entry whose provider field the reserved
+  // filter refused is removed (it was never sent), and a surviving single-field
+  // value is read back out of the FINAL payload so an override that replaced it
+  // is reported as what went. The LoRA entry keeps the mapper's own record —
+  // its two fields carry the locator and the scale, and the locator must never
+  // enter a stored value.
+  const reservedDrops = new Set(sendableMapped.dropped.map((entry) => entry.control));
+  const appliedControls: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(mapped.applied)) {
+    const fields = mapped.appliedFields[name] ?? [];
+    if (fields.some((field) => reservedDrops.has(field))) continue;
+    const [field] = fields;
+    appliedControls[name] =
+      name !== "lora" && field !== undefined && field in controlInput ? controlInput[field] : value;
+  }
+
   // Typed as the contract's own list rather than the mapper's narrower union:
   // the notes below are this layer's facts, not ones the mapper can produce.
   const droppedControls: TrialResolvedControls["droppedControls"] = [
@@ -503,9 +531,16 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     // difference between two configurations and the fingerprint must carry it.
     droppedControls.push({ control: "outputCount", reason: "single_image_path" });
   }
-  if (defaults.seedPolicy !== "random") {
-    // Only a non-default policy is worth recording: `random` is what sending no
-    // seed key already does at every provider, so it drops nothing.
+  if (defaults.seedPolicy !== "random" && controls.seed === undefined) {
+    // A non-random policy that no caller resolved into a number: `reuse_source`
+    // with no recorded source seed, `caller` with no seed supplied. Recorded
+    // rather than quietly ignored — and ONLY when unresolved, because a run
+    // that did get its seed must not report the policy as unmet beside the very
+    // value that met it. (`random` drops nothing either way: an unseeded random
+    // run is what sending no seed key already does at every provider.) The
+    // reason string predates the seed transport and is kept verbatim: it is
+    // part of stored trial fingerprints, and renaming it would conflict every
+    // pinned cell that ever carried it.
     droppedControls.push({ control: "seedPolicy", reason: "no_seed_transport" });
   }
 
@@ -518,6 +553,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
       aspectValue: chooseAspect(effectiveModel).value,
       controlInput,
+      appliedControls,
       resolvedControls: {
         operation: profile.operation,
         // The RESOLVED budget, not the profile's wish: this column answers "what

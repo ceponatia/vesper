@@ -164,8 +164,18 @@ export function imageMeta(meta: unknown): Record<string, unknown> {
  * Completes the row-before-file protocol for a generated buffer. Conversion
  * or write failure marks the row failed instead of throwing; the returned row
  * carries the final status.
+ *
+ * `extraMeta` is the producer's contribution to the row's meta (the render
+ * provenance under `render`), merged in the SAME update as the file facts so
+ * the row never says "ready" without it. The file facts win a key collision —
+ * width/height/bytes describe the file that actually landed.
  */
-export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: DiagnosticSink): Promise<ImageRow | null> {
+export async function saveImageBuffer(
+  imageId: string,
+  buffer: Buffer,
+  sink?: DiagnosticSink,
+  extraMeta?: Record<string, unknown>,
+): Promise<ImageRow | null> {
   const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
   if (!row) {
     sink?.push(diag("error", "images.save_missing_row", `no images row for ${imageId}`));
@@ -178,19 +188,26 @@ export async function saveImageBuffer(imageId: string, buffer: Buffer, sink?: Di
       // `bytes` is also the storage-quota column (rate-limits.plan.md slice 4);
       // it is written here, at the one place a file actually lands on disk, so
       // the quota measures reality rather than intent.
-      .set({ status: "ready", bytes: info.bytes, meta: mergeMeta(row.meta, { ...info }) })
+      .set({ status: "ready", bytes: info.bytes, meta: mergeMeta(row.meta, { ...(extraMeta ?? {}), ...info }) })
       .where(eq(images.id, imageId))
       .returning();
     return updated ?? null;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     sink?.push(diag("error", "images.save_failed", message.slice(0, 300), { context: { imageId } }));
-    return failImage(imageId, message);
+    return failImage(imageId, message, extraMeta);
   }
 }
 
-/** What a lane's generate step hands back: bytes to save, or the text a failed row records. */
-export type ImageProduceResult = { ok: true; image: Buffer } | { ok: false; error: string };
+/**
+ * What a lane's generate step hands back: bytes to save, or the text a failed
+ * row records — either way with an optional meta contribution the pipeline
+ * merges into the row (the attempt provenance under `render`, on failures too,
+ * because a failed prediction's id is what an operator traces).
+ */
+export type ImageProduceResult =
+  | { ok: true; image: Buffer; meta?: Record<string, unknown> }
+  | { ok: false; error: string; meta?: Record<string, unknown> };
 
 /** `ready` ⇒ the file landed and the row says so; `failed` ⇒ the row carries the reason. */
 export type ImagePipelineStatus = "ready" | "failed";
@@ -261,7 +278,9 @@ export interface ImagePipelineResult {
  *   provider that reports one instead of throwing (the scene chain exhausting
  *   every rung; a reference edit returning `ok: false`). Whatever it throws is
  *   caught here and `describeProviderError` writes the row's failure text, so no
- *   lane repeats that.
+ *   lane repeats that. Either arm may carry `meta`, merged into the row in the
+ *   save or fail update — the render-provenance channel; a THROWN produce has
+ *   none to offer.
  * - **`onReady`** — the pointer writes that are only correct once the file
  *   exists: `characters.avatar_image_id`, an entity's `image_id` + reclaim, the
  *   look anchor's keep-latest purge.
@@ -310,11 +329,11 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
   try {
     const produced = await opts.produce(asset);
     if (!produced.ok) {
-      await failImage(asset.id, produced.error);
+      await failImage(asset.id, produced.error, produced.meta);
       opts.onSettled?.({ imageId: asset.id, status: "failed", startedMs });
       return { imageId: asset.id, status: "failed" };
     }
-    const saved = await saveImageBuffer(asset.id, produced.image, opts.sink);
+    const saved = await saveImageBuffer(asset.id, produced.image, opts.sink, produced.meta);
     const status: ImagePipelineStatus = saved?.status === "ready" ? "ready" : "failed";
     if (status === "ready") await opts.onReady?.(asset);
     opts.onSettled?.({ imageId: asset.id, status, startedMs });
@@ -699,11 +718,16 @@ export async function cloneEntityImages(
   return idMap;
 }
 
-export async function failImage(imageId: string, error: string): Promise<ImageRow | null> {
+/** `extraMeta` rides the same update as the error text; the error wins a collision. */
+export async function failImage(
+  imageId: string,
+  error: string,
+  extraMeta?: Record<string, unknown>,
+): Promise<ImageRow | null> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
   const [updated] = await db()
     .update(images)
-    .set({ status: "failed", meta: mergeMeta(row?.meta, { error: error.slice(0, 500) }) })
+    .set({ status: "failed", meta: mergeMeta(row?.meta, { ...(extraMeta ?? {}), error: error.slice(0, 500) }) })
     .where(eq(images.id, imageId))
     .returning();
   return updated ?? null;

@@ -5,7 +5,7 @@ import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode } from "../ai";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { renderImageIntent } from "./render-intent";
+import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -121,9 +121,11 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
             context: { characterId: input.characterId, imageId: asset.id },
           }),
         );
-        return { ok: false, error };
+        // Provenance rides the failure too — a failed prediction's id is what
+        // an operator traces at the provider.
+        return { ok: false, error, ...renderAttemptMeta(edit.attempt) };
       }
-      return { ok: true, image: edit.image };
+      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
     },
     // Every branch past the character check logs — including the two failures,
     // which carry `durationMs` here where avatar/entity's thrown line does not.

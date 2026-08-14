@@ -129,6 +129,7 @@ export type {
   PlanImageRenderResult,
   PlannedControlReference,
   PlannedImageRender,
+  ResolvedImageAttempt,
 } from "./render-intent";
 export {
   MAX_TRIAL_PREDICTION_MS,

@@ -265,6 +265,82 @@ describe("compileProfileRenderPlan", () => {
     expect(plan().resolvedControls.droppedControls).toEqual([]);
   });
 
+  const SEED_CAPABILITIES = {
+    controls: {
+      ...CAPABILITIES.controls,
+      seed: { field: "seed", type: "integer", minimum: 0, maximum: 2147483647 },
+    },
+    knownInputFields: [...CAPABILITIES.knownInputFields, "seed"],
+  };
+
+  it("maps a requested seed onto the version's seed binding", () => {
+    const compiled = compiledPlan({
+      model: model({ advancedCapabilities: SEED_CAPABILITIES }),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { seed: 12345 },
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({ seed: 12345 });
+    expect(compiled.appliedControls).toEqual({ seed: 12345 });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("does not report the seed policy beside a seed that actually resolved", () => {
+    // The caller resolved the policy into a number (`renderImageIntent`), so
+    // recording "the policy went unmet" beside the value that met it would be a
+    // double report — the drop is ONLY for the unresolved case above.
+    const compiled = compiledPlan({
+      model: model({ advancedCapabilities: SEED_CAPABILITIES }),
+      profile: profile({ controlDefaults: { seedPolicy: "caller" } }),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { seed: 7 },
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({ seed: 7 });
+    expect(compiled.resolvedControls.droppedControls).toEqual([]);
+  });
+
+  it("drops a requested seed with no binding as no_binding, visibly", () => {
+    const compiled = compiledPlan({
+      model: model(),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { seed: 7 },
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.controlInput).toEqual({});
+    expect(compiled.appliedControls).toEqual({});
+    expect(compiled.resolvedControls.droppedControls).toEqual([{ control: "seed", reason: "no_binding" }]);
+  });
+
+  it("keeps appliedControls consistent with the reserved-filtered payload", () => {
+    // Same fixture as the reserved-collision case above: the mapped resolution
+    // landed on the shape key and was refused, so the normalized record must not
+    // claim it was sent — while the innocent control stays, read back from the
+    // final payload.
+    const compiled = plan(
+      {
+        aspectMode: "size",
+        advancedCapabilities: {
+          controls: {
+            resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] },
+            guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
+          },
+          knownInputFields: ["size", "guidance_scale"],
+        },
+      },
+      { controlDefaults: { resolution: "2K", guidance: 6, seedPolicy: "random" } },
+    );
+    expect(compiled.appliedControls).toEqual({ guidance: 6 });
+  });
+
   it("merges validated provider overrides last and refuses reserved fields", () => {
     const compiled = plan(
       {},

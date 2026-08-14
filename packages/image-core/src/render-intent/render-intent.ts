@@ -5,7 +5,12 @@ import {
   type ImageReferenceRole,
 } from "../capabilities/image-model-capabilities";
 import type { ImageLoraRenderBinding } from "../loras/image-loras";
-import type { ImageReferencePolicy, ImageRenderControls } from "../models/image-model-profiles";
+import type {
+  ImageProfileTask,
+  ImagePromptStrategy,
+  ImageReferencePolicy,
+  ImageRenderControls,
+} from "../models/image-model-profiles";
 
 /**
  * The normalized render request every image lane speaks
@@ -134,6 +139,52 @@ export interface ImageRenderIntentCore {
    * second.
    */
   resolvedLora?: ImageLoraRenderBinding;
+}
+
+/**
+ * The serializable provenance of ONE provider attempt (the spec's
+ * "Observability and reproducibility" record) — what a lane stores on the image
+ * row's `meta.render`, on success and on failure alike, so an operator can
+ * trace a stored render back to the provider's own record of it and "retry same
+ * composition" has a seed and controls to replay.
+ *
+ * Everything here is safe to persist: normalized control names and values, ids,
+ * roles. No locators, no signed URLs, no bytes — the LoRA entry inside
+ * `appliedControls` is `{ id, scale }`, per the mapper's own rule.
+ *
+ * Assembled by the application (`renderImageIntent`), not here: the two
+ * provider-echoed fields only exist after IO. This module owns the SHAPE so
+ * every consumer — lanes, the Gallery's loose client parse, a future retry
+ * action — reads one contract.
+ */
+export interface ResolvedImageAttempt {
+  modelId: string;
+  modelSlug: string;
+  profileId: string;
+  task: ImageProfileTask;
+  promptStrategy: ImagePromptStrategy;
+  /**
+   * The pin the CALLER requested (a controlled run's `versionId`) — null for a
+   * production render, which follows the slug's floating latest by design. The
+   * version that actually ran is `executedVersionId`.
+   */
+  requestedVersionId: string | null;
+  /**
+   * The seed this render resolved — explicit or generated. Whether it was SENT
+   * is `appliedControls.seed`; when the version had no field for it, the drop
+   * beside it says so and the value is still preserved here.
+   */
+  seed: number | null;
+  /** The normalized controls that actually reached the provider payload. */
+  appliedControls: Record<string, unknown>;
+  /** Every control that did not, each with its reason. */
+  droppedControls: { control: string; reason: string }[];
+  /** Roles of the primary references actually sent, in send order. */
+  sentReferenceRoles: ImageReferenceRole[];
+  /** The provider's own id for the prediction, when one was created — failures included. */
+  predictionId: string | null;
+  /** The version the provider says it executed, when it echoes one. */
+  executedVersionId: string | null;
 }
 
 /**

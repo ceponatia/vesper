@@ -3,11 +3,11 @@ import { db, images, items, locations } from "../db";
 import { isDemoMode } from "../ai";
 import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
-import { parseAspectValue, type ResolvedImageProfile } from "@vesper/image-core";
+import { parseAspectValue } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { renderImageIntent } from "./render-intent";
+import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { monogramSvg } from "./monogram";
 import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts-entity";
 
@@ -62,13 +62,21 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
         : "no image model is registered for entity images"
       : `${input.entityKind} ${input.entityId} not found`,
     // Only reached once the entity loaded, so the name fallback never fires.
-    produce: async () => ({
-      ok: true,
-      image:
-        demo || !resolved
-          ? monogramSvg(loaded?.name ?? "")
-          : await generateEntityBuffer(resolved, prompt, ASPECT[input.entityKind], input.sink),
-    }),
+    // Item and location shots are SFW (product / establishing) and are the one
+    // lane that does NOT want 3:4 — items are square, locations landscape. The
+    // registry serves them through the same shape negotiation as everything
+    // else: the ratio is requested, the closest offered shape is used, and any
+    // remainder is cropped. A failure still THROWS (this lane's ruled failure
+    // shape), so provenance is recorded only on success.
+    produce: async () => {
+      if (demo || !resolved) return { ok: true, image: monogramSvg(loaded?.name ?? "") };
+      const result = await renderImageIntent(
+        { profile: resolved, prompt, references: [], target: { aspectRatio: parseAspectValue(ASPECT[input.entityKind]) ?? 1 } },
+        input.sink,
+      );
+      if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
+      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
+    },
     onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);
       await reclaimOldImages(input.entityKind, input.entityId, input.userId, asset.id);
@@ -156,25 +164,6 @@ async function reclaimOldImages(kind: EntityImageKind, id: string, ownerId: stri
   await purgeImagesWhere(
     and(eq(images.ownerId, ownerId), eq(images.entityKind, kind), eq(images.entityId, id), ne(images.id, keepId)),
   );
-}
-
-/**
- * Item and location shots are SFW (product / establishing) and are the one lane
- * that does NOT want 3:4 — items are square, locations landscape. The registry
- * serves them through the same shape negotiation as everything else: the ratio
- * is requested, the closest offered shape is used, and any remainder is cropped.
- * A missing key / API error throws and the caller marks the row failed.
- */
-async function generateEntityBuffer(
-  profile: ResolvedImageProfile,
-  prompt: string,
-  aspectRatio: `${number}:${number}`,
-  sink?: DiagnosticSink,
-): Promise<Buffer> {
-  const targetRatio = parseAspectValue(aspectRatio) ?? 1;
-  const result = await renderImageIntent({ profile, prompt, references: [], target: { aspectRatio: targetRatio } }, sink);
-  if (!result.ok || !result.image) throw new Error(result.error ?? `${profile.model.slug} returned no image`);
-  return result.image;
 }
 
 /** How many entity images generate concurrently in a batch (user spec). */

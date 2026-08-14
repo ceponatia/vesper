@@ -306,6 +306,44 @@ describe("runImagePipeline", () => {
     expect(sink.items).toEqual([]);
   });
 
+  it("merges a produce result's meta into the row on save", async () => {
+    // The provenance channel: the render attempt rides the SAME update that
+    // marks the row ready, so a ready row never lacks its record.
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+
+    const result = await runImagePipeline({
+      asset,
+      produce: () =>
+        Promise.resolve({ ok: true, image: monogramSvg("Mira Vale"), meta: { render: { seed: 42, predictionId: "pred-1" } } }),
+    });
+
+    expect(result.status).toBe("ready");
+    const saved = updates.at(-1);
+    expect(saved).toMatchObject({ status: "ready" });
+    expect(imageMeta(saved?.meta).render).toEqual({ seed: 42, predictionId: "pred-1" });
+    // The file facts land beside it, not instead of it.
+    expect(imageMeta(saved?.meta).width).toBe(768);
+  });
+
+  it("merges a produce result's meta into the row on a reported failure", async () => {
+    // A failed prediction's id is exactly what an operator needs to trace, so
+    // the fail update carries the meta too — beside the error text.
+    const { client, updates } = fakePipelineDb();
+    vi.mocked(db).mockReturnValue(client);
+
+    const result = await runImagePipeline({
+      asset,
+      produce: () => Promise.resolve({ ok: false, error: "provider exploded", meta: { render: { predictionId: "pred-9" } } }),
+    });
+
+    expect(result.status).toBe("failed");
+    const failed = updates.at(-1);
+    expect(failed).toMatchObject({ status: "failed" });
+    expect(imageMeta(failed?.meta).render).toEqual({ predictionId: "pred-9" });
+    expect(rowError(failed)).toBe("provider exploded");
+  });
+
   it("runs afterReserve before generating, and a context-free lane gets a context-free diagnostic", async () => {
     // The chat anchors' shape (no context supplied) and the scene lane's
     // reference rows, which are written against the row before the clock starts.
