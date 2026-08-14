@@ -16,6 +16,13 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Image identity packs — durable owner-scoped face references** —
+  [plan](finished/image-identity-packs.plan.md) — 2026-08-13 — every
+  identity-critical render sources its reference from a revisioned,
+  provenance-carrying pack of the canonical portrait; the paid strategy trial
+  was waived by owner ruling (canonical-only ships) and the rollout flag was
+  lit, verified live, and removed the same day.
+
 - **Qwen advanced image subsystem — controlled composition experiments** —
   [plan](finished/qwen-advanced-image-subsystem.plan.md) — 2026-08-13 — an
   admin-only lab proved control-mapped Qwen edits stage by stage, and its one

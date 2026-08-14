@@ -1,11 +1,14 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: awaiting acceptance — the slice-7 close-out deploy. (Slices 1–4 and 5A
-shipped 2026-08-06; 5B merged and deployed dark 2026-08-13; slice 6's paid
-trial was waived by owner ruling the same day — see the slice — and slice 7
-lit the flag in production, verified it live, and removed it, making the pack
-the unconditional identity source. Shipped status and the archive follow the
-verified deploy of that close-out.)
+Status: shipped — 2026-08-13. Slices 1–5 and 7 delivered (1–4 and 5A on
+2026-08-06, the rest on 2026-08-13); the slice-6 paid trial was waived by
+owner ruling — canonical-only ships as the production strategy — with its
+harness left built and available should the strategy question reopen. The
+pack service is the unconditional identity source on the deploy, verified
+live. Leftovers: the local face-detector adapter deliberately finds nothing
+(choosing a detector library is a future trial-plus-privacy-review decision),
+and `IDENTITY_PACK_TRIAL_CORPORA` stays empty until someone builds corpus
+characters.
 
 Outcome: A player can recognize the same character's face in every image Vesper
 makes of them, so that a newly generated picture stops looking like a different
@@ -421,7 +424,8 @@ limitations: [image-identity-packs.spec.trial.md](image-identity-packs.spec.tria
 
 ### Slice 7 — production close-out
 
-Status: built 2026-08-13 — awaiting its deploy, the plan's acceptance step.
+Status: complete — 2026-08-13, deployed and verified live (a flagless-build
+portrait variant rendered ready with pack provenance on its row).
 
 Delivered under the slice-6 waiver: the consumer flag was enabled in
 production and verified live (a portrait variant rendered ready with the

@@ -40,14 +40,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   remaining are reference preparation and parallel uploads, reproducibility,
   version promotion, curated profiles and image sets.
 
-- **Image identity packs — durable owner-scoped face references** —
-  [plan](image-identity-packs.plan.md) · [spec](image-identity-packs.spec.md) —
-  each character's canonical portrait compiled into a revisioned pack, now the
-  unconditional identity source for every identity-critical render (the paid
-  trial was waived by owner ruling; canonical-only ships). Awaiting the
-  close-out deploy, then the plan ships and this entry moves to the shipped
-  index.
-
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is

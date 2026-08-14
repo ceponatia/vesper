@@ -1,7 +1,7 @@
 # Identity packs (derived face crops)
 A character's **identity pack** records which bytes its face reference came from, how it was cropped, and what was
-measured about it ([developer-notes/image-identity-packs.plan.md](../developer-notes/image-identity-packs.plan.md) ·
-[spec](../developer-notes/image-identity-packs.spec.md)). One **current** pack per character, derived from that
+measured about it ([developer-notes/finished/image-identity-packs.plan.md](../developer-notes/finished/image-identity-packs.plan.md) ·
+[spec](../developer-notes/finished/image-identity-packs.spec.md)). One **current** pack per character, derived from that
 character's **current canonical portrait** — never a gallery image, never an old avatar — keyed by a **SHA-256 over
 the stored normalized WebP bytes**, so bytes that merely *look* the same are a different source. Revisions are **rows**
 in `image_identity_packs` (migration 0101, the `images/identity-pack-*` service modules): a partial unique index enforces one `current`
@@ -124,7 +124,7 @@ ambiguous source, an undersized crop) gets its identity-critical renders refused
 a character with no portrait at all still renders scenes from text, since there is no identity to preserve.
 
 **The fixed-trial harness.** Admin-only infrastructure for the reference trial of
-[the trial spec](../developer-notes/image-identity-packs.spec.trial.md): four tables (migrations
+[the trial spec](../developer-notes/finished/image-identity-packs.spec.trial.md): four tables (migrations
 0102/0103 — `image_identity_pack_trial_runs`/`_cells`/`_grades`/`_verdicts`; one verdict row per
 profile/strategy slot, upserted so a concurrent ruling can never clobber another), a service
 (the `images/identity-pack-trial-*` modules: store, plan, execute, render, review), owner-admin routes under `/api/admin/self/identity-packs/trial`, and a Settings →
