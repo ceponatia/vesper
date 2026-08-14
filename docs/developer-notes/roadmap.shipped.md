@@ -16,6 +16,13 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Monorepo follow-through — self-validating workspaces and the simulation
+  package** — [plan](finished/monorepo-simulation-core.plan.md) — 2026-08-14 —
+  workspaces validate themselves recursively, packages declare public subpath
+  exports, the pure simulation domain became `@vesper/simulation-core`, and the
+  giant image/store files split in place; accepted when the deployed app served
+  chats unchanged.
+
 - **Image identity packs — durable owner-scoped face references** —
   [plan](finished/image-identity-packs.plan.md) — 2026-08-13 — every
   identity-critical render sources its reference from a revisioned,
