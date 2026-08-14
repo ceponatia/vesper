@@ -27,19 +27,38 @@ render-intent seam the lane already crosses. Nothing here touches
 
 ## Implementation status
 
-- **Slice 1 — camera vocabulary, composer read, prompt emission**: not
-  started. Includes the composer-model seam (`sceneComposerModelId()`, default
-  unchanged).
-- **Slice 2 — staging registry, gates, composer-model move**: not started;
-  builds on slice 1's camera vocabulary.
-- **Slice 3 — committed-state override**: not started; consumes
-  `character_chats.scene` (live dark since 2026-08-02) — sparse facing
-  coverage is expected while `CHAT_CONTACT_ACTIONS` gathers data, and absence
-  degrades to slices 1–2 behavior.
+- **Slice 1 — camera vocabulary, composer read, prompt emission**: built
+  2026-08-14 — awaiting its A/B probe. The registry is
+  `contracts/images/scene-camera.ts`; the composer proposes `camera` ids with a
+  verbatim quote; `resolveScenePlan` clamps them; the shot line and the
+  identity-lock adaptation emit from `buildSceneRenderPrompt`; the player's
+  newest message joins the composer prompt and all player messages join the
+  evidence corpus. The composer-model seam (`sceneComposerModelId()`) landed
+  here but its default flipped with slice 2 (below).
+- **Slice 2 — staging registry, gates, composer-model move**: built 2026-08-14
+  — awaiting its probe, which includes the owner's acceptance-scene grading.
+  The catalog is `contracts/images/scene-staging.ts` (13 entries, every one
+  `cast: "solo"` per the 2026-08-14 ruling below); the composer-model default
+  is now `aion-labs/aion-3.0` with the narrative-model refusal fallback —
+  flipped ahead of the probe on owner instruction (2026-08-14), verdict
+  pending.
+- **Slice 3 — committed-state override**: built 2026-08-14 — awaiting the
+  same probe rows. Consumes `character_chats.scene` through
+  `contracts/images/scene-committed.ts`; the contact flags have been live for
+  players since 2026-08-10, so facts accumulate as chats use typed movements —
+  sparse coverage is expected and absence degrades to slices 1–2 behavior.
+  The contact→staging evidence table shipped **empty-but-typed**: applied to
+  the affectionate-only contact vocabulary that exists today, no location pair
+  is unambiguous, so every staging still earns a verbatim quote until an
+  intimate contact domain commits waist/hip targets.
 
-Each slice's **enable follows its probe**: land the code with behavior
-unchanged where evidence is absent, run the paid A/B probe (owner-gated
-spend), and record the verdict here before treating the slice as accepted.
+Each slice's **enable follows its probe** in the acceptance sense: the code is
+live (behavior changes only where evidence exists; a scene with none renders
+exactly as before), but no slice is **accepted** until its paid A/B probe
+(owner-gated spend) is run and its verdict recorded here. The probe harness is
+in place: fixture rows for every orientation/staging case
+(`scripts/eval/scene-images/fixtures.ts`) and the
+`scripts/eval/scene-images/orientation-ab.ts` runner.
 
 ## Owner rulings (2026-08-10)
 
@@ -62,6 +81,25 @@ spend), and record the verdict here before treating the slice as accepted.
 - **Orientation is focal-only in v1.** One-on-one chats are the current test
   bed; `others[]` entries carry no orientation, and per-subject orientation
   waits for multi-character chats to matter.
+
+## Owner rulings (2026-08-14)
+
+- **Staging is solo-cast unless an entry says otherwise.** Every `SceneStaging`
+  carries `cast: "solo" | "multi"`; a `"solo"` entry is eligible only when
+  exactly ONE NPC is present (`staging_cast_blocked` otherwise), and every
+  initial entry is `"solo"` — each template is a two-body geometry between the
+  subject and the viewer, so a second present NPC makes it a lie about who is
+  where. A multi-NPC staging is a new entry with its own wording, never a
+  relaxed flag. Ordinary (non-staged) scene generation keeps rendering the
+  full present cast exactly as before; the cast gate constrains staging only.
+- **No larger spatial abstraction rides this work.** Per-subject orientation,
+  generalized multi-character staging, and any 3D/frame abstraction stay out —
+  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) owns that route.
+- **The composer-model flip shipped ahead of its probe.** `sceneComposer`
+  defaults to `aion-labs/aion-3.0` (the character-chat narrative default and
+  the flagged tool-candidate in `lib/narrative-models.ts`) as of 2026-08-14, on
+  owner instruction; the slice-2 probe verdict is what records the value as
+  accepted.
 
 ## Contracts
 
@@ -170,6 +208,8 @@ export interface SceneStaging {
    * on a subject who faces the viewer). Absent ⇒ the orientation's value.
    */
   faceVisibility?: "full" | "partial" | "hidden";
+  /** Cast eligibility (owner ruling 2026-08-14): "solo" ⇒ exactly one present NPC; "multi" ⇒ explicit support. */
+  cast: "solo" | "multi";
 }
 ```
 
@@ -258,18 +298,19 @@ substituted (no bare "a hand"/"one leg" survives into a template).
 
 ### Composer model (slices 1–2)
 
-`composeSceneSpec` stops hardcoding `toolModelId()`: slice 1 introduces
-`sceneComposerModelId()` as its own `MODEL_DEFAULTS` key (initial value = the
-tool default, so slice 1 changes no call). Slice 2 flips that default to a
-less moderation-prone model per the owner ruling — candidates are the chat's
-narrative default or a designated uncensored tool-class model; the slice-2
-probe records which. Refusal handling stays layered: a refusal or schema miss
-on the primary model retries once on `narrativeModelId()` (the approved
-fallback) before `generateChecked`'s existing heuristic fallback takes over —
-so the terminal degrade remains today's deterministic spec, never a failed
-render. `characterAppearanceSummary` keeps `allowIntimate: false` for the
-composer either way: the composer picks ids, and explicit content enters at
-render assembly only.
+`composeSceneSpec` no longer hardcodes `toolModelId()`: the composer has its
+own `MODEL_DEFAULTS.sceneComposer` key behind `sceneComposerModelId()`, and
+its default is `aion-labs/aion-3.0` (owner ruling 2026-08-10; flipped ahead of
+the probe 2026-08-14 — see §Owner rulings). Refusal handling is layered: the
+primary call runs with **no fallback** and its `degraded` flag is the refusal
+signal (a missing fallback parses to schema defaults, which would read as a
+successful composition), then one retry on `narrativeModelId()` carries the
+heuristic fallback — so the terminal degrade remains the deterministic
+heuristic spec, never a failed render. The hop is logged as
+`images.scene_composer.model_fallback` (info), and demo mode short-circuits to
+the heuristic without a second call. `characterAppearanceSummary` keeps
+`allowIntimate: false` for the composer either way: the composer picks ids,
+and explicit content enters at render assembly only.
 
 ### Resolution and clamps (`resolveScenePlan`)
 
@@ -287,11 +328,18 @@ render assembly only.
    kneeling/crouching/sitting/lying with no committed viewer posture ⇒ `high`
    is permitted without a quote (the geometry is entailed by the pose text the
    composer already wrote); `low` always needs evidence.
-4. Slice 2: staging id looked up (`unknown` ⇒ drop +
-   `images.scene_composer.staging_invalid` warn); evidence gate as above
-   (`staging_ungrounded` info); exposure gate — every `requiresBare` region of
-   the SUBJECT must read bare/sheer (`staging_blocked` info); route gating is
-   NOT done here — `intimate` stagings are filtered per-prompt where
+4. Slice 2: staging gates, in order — the lane (a proposal in a non-embodied
+   lane drops with `staging_unrequested` warn, the `viewer_body_unrequested`
+   pattern); the registry (`staging_invalid` warn); the cast (a `"solo"` entry
+   with ≠1 present NPC drops with `staging_cast_blocked` info — owner ruling
+   2026-08-14); committed-fact consistency (a committed facing or
+   posture-derived height that contradicts the entry's own camera drops it
+   with `staging_contradicted` info — state beats prose; distance is exempt,
+   being a framing choice rather than a body fact); evidence (a verbatim quote
+   from the corpus OR a matching row in the contact-evidence table, else
+   `staging_ungrounded` info); exposure — every `requiresBare` region of the
+   SUBJECT must read bare/sheer (`staging_blocked` info). Route gating is NOT
+   done here — `intimate` stagings are filtered per-prompt where
    `allowIntimate` is known, exactly like `intimateAppearance`.
 5. A surviving staging **overwrites** `plan.camera` with its own and unions
    its `viewerParts` into `plan.viewerBody` (they then pass the existing
@@ -311,10 +359,21 @@ render assembly only.
   `medium` + `eye_level` ⇒ no line), keeping today's prompts byte-identical
   when no evidence moved the camera — that is the slice's no-regression
   anchor.
-- The staging sentence (uncensored routes only) leads the pose: `Pose:
-  <staging template with {name} bound>; <composer pose/activity text>.` On
-  moderated rungs the staging is absent and the composer's (cautious) pose
-  stands alone, as today.
+- The staging sentence leads the pose: `Pose: <staging template with {name}
+  bound>; <composer pose/activity text>.` An `intimate: true` staging emits on
+  uncensored routes only; a clothed-capable one emits on any non-selfie route.
+  Two further per-prompt rules:
+  - **All-or-nothing viewer-part gate**: every id in `staging.viewerParts`
+    must survive `resolveViewerParts` for THIS prompt, or the sentence does
+    not emit at all — a template names the viewer's anatomy in its own words,
+    so emitting it past a covered player pelvis would smuggle anatomy around
+    the coverage rule. The composer's pose stands alone instead, as today.
+  - **A dropped staging's camera stands.** On a rung where the staging
+    sentence does not emit, `plan.camera` (which the staging overwrote at
+    resolve time) and any non-intimate unioned viewer parts still do — where
+    the shot is taken from is never what a moderator objected to, and
+    un-composing the scene per rung would make the ladder's rungs disagree
+    about geometry. Deliberate, not an oversight.
 - A surviving staging also reshapes the framing clause: `framingFor` still
   gates the parts and emits the embodied POV opening, the person-count
   assertion, and the viewer's own body facts — but the generic "Also in frame,
@@ -342,9 +401,13 @@ render assembly only.
 ### Committed-state mapping (slice 3)
 
 Read `character_chats.scene` through `parseSceneState` (its healing laws
-already answer garbage with the empty scene). Resolve the focal character's
-and the player's participant ids the way the lane adapter does
-(`apps/web/src/server/engine/chat-contact-adapter.ts`); then, all reads through
+already answer garbage with the empty scene — `loadChatScenario` does this and
+hands the queue `scenario.scene`). Participant ids resolve the way the lane
+adapter states them (`apps/web/src/server/engine/chat-contact-adapter.ts`):
+the player is `CHAT_CONTACT_PLAYER_SUBJECT`, a roster character is their bare
+character id branded through `affordanceSubjectId`. The projection lives in
+`contracts/images/scene-committed.ts` (`committedSceneFactsFor`,
+`cameraFromCommittedFacts`, `describeCommittedFacts`); all reads go through
 the scene module's own accessors:
 
 - facing (focal → player, ordered): `toward` ⇒ `toward_viewer` · `side_on` ⇒
@@ -381,9 +444,13 @@ existing `images.prompt` and the `images.meta.camera`/`staging` ids above.
 | `images.scene_composer.camera_invalid`        | warn     | Camera id outside the registry — degraded to default.         |
 | `images.scene_composer.camera_ungrounded`     | info     | Non-default camera without a matching quote — degraded.       |
 | `images.scene_composer.glance_ungrounded`     | info     | Glance-back quote lacks glance language — degraded to away.   |
+| `images.scene_composer.staging_unrequested`   | warn     | Staging proposed in a lane with no viewer body — dropped.     |
 | `images.scene_composer.staging_invalid`       | warn     | Staging id outside the registry — dropped.                    |
+| `images.scene_composer.staging_cast_blocked`  | info     | Solo staging with ≠1 present NPC (ruling 2026-08-14).         |
+| `images.scene_composer.staging_contradicted`  | info     | Staging geometry contradicts committed facts — dropped.       |
 | `images.scene_composer.staging_ungrounded`    | info     | Staging without a matching quote or contact fact — dropped.   |
 | `images.scene_composer.staging_blocked`       | info     | Subject exposure fails the staging's bare requirement.        |
+| `images.scene_composer.model_fallback`        | info     | Composer degraded on its model — retrying on the narrative.   |
 | `images.scene_render.camera_from_state`       | info     | Committed facts replaced a composer proposal (slice 3).       |
 
 Every new schema field is `.catch`-lenient; every degradation lands on
@@ -394,17 +461,39 @@ fail a render. Degradation tests assert the fallback **and** the code
 ## Code organization
 
 - `apps/web/src/contracts/images/scene-camera.ts` — orientations, distances,
-  heights, resolvers; exported via the contracts barrel.
+  heights, resolvers, `GLANCE_WORDS`; exported via the contracts barrel.
 - `apps/web/src/contracts/images/scene-staging.ts` — the staging registry, its
   gates' pure halves, the contact→staging evidence table.
+- `apps/web/src/contracts/images/scene-committed.ts` — the committed-fact
+  projection and its camera mapping (slice 3's pure half).
 - `apps/web/src/server/images/prompts-*.ts` — schema fields, clamps, shot-line
   and staging emission, lock adaptation (existing module; no split required by
-  this work).
+  this work). The composer-model seam is `server/ai/provider.ts`
+  (`MODEL_DEFAULTS.sceneComposer`) with the fallback layering in
+  `server/images/scene.ts`.
 - `apps/web/src/server/images/character-scene.ts` +
   `apps/web/src/app/api/chats/[chatId]/scene/queue.ts` — player-message and
   committed-scene threading.
+- Pure suites beside their subjects: `contracts/images/scene-camera.test.ts`,
+  `scene-staging.test.ts`, `scene-committed.test.ts`;
+  `server/images/scene-composition-resolve.test.ts`,
+  `scene-composer-model.test.ts`, `prompts-scene-render-shot.test.ts`.
 - `scripts/eval/scene-images/` — fixture rows for the orientation/staging
   cases and an `orientation-ab.ts` probe on the `phantom-limb-ab.ts` pattern.
+
+## Known tensions for the probe review
+
+- **`intimateSceneAppearance` is not orientation-aware.** The exposure-gated
+  anatomy phrase describes the subject's front, and it still emits on an
+  `away` shot — a self-contradicting prompt the model may resolve by turning
+  her around. The behind-nude fixture row exists to measure exactly this;
+  whether emission should clamp front-anatomy text on away orientations is the
+  probe's question to answer, not this slice's to preempt. Tracked as the
+  plan's open question.
+- **`run.ts` scoring rows carry no camera/staging column.** The resolved ids
+  are on `images.meta` and in the probe manifest prompts, but the manual
+  `scores.csv` gives a grader no per-row shot column. A data-only follow-up if
+  grading proves awkward without it.
 
 ## Fixtures and tests
 

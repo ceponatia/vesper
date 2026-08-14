@@ -1,6 +1,8 @@
 # Scene image composition — camera, facing, and intimate staging
 
-Status: next (planned 2026-08-10)
+Status: awaiting acceptance — all three slices built 2026-08-14; waiting on
+the paid per-slice A/B probes and the owner's acceptance-scene grading
+(owner-gated spend)
 
 Outcome: A player can get a scene image composed from where they actually stand
 in the fiction — a character with her back to them is painted from behind, and
@@ -130,28 +132,46 @@ Four things cause this, and none of them is the image model misbehaving:
 
 ## Slices
 
-- **Slice 1 — the camera follows the fiction.** The shot planner proposes
-  orientation, distance, and camera height from a fixed menu, quoting
-  narration for anything non-default; the player's recent messages join its
-  context; the render prompt states the shot explicitly and adapts the
-  identity wording when the face is only partly visible. Behavior is compared
-  against today's output on fixed fixtures before enable.
-- **Slice 2 — intimate acts are staged.** The staging catalog with per-entry
-  camera setup, implied viewer-body parts, and explicit phrasing emitted only
-  on the uncensored route; evidence, exposure, and route gates in code. The
-  shot planner also moves onto a less cautious model here (owner ruling
-  2026-08-10), with the chat's own narrative model approved as the refusal
-  fallback — the catalog still owns every explicit word either way.
-- **Slice 3 — committed facts override inference.** Chat scene facts (posture,
-  facing, distance, active contact) reach the planner as authoritative
-  context and clamp its camera proposal; absent facts change nothing.
-  Successor chats read the engine equivalent when one exists; the read
-  migrates onto the visual-state image digest when that ships.
+- **Slice 1 — the camera follows the fiction.**
+
+  Status: built 2026-08-14 — awaiting its A/B probe on the fixture rows.
+
+  The shot planner proposes orientation, distance, and camera height from a
+  fixed menu, quoting narration for anything non-default; the player's recent
+  messages join its context; the render prompt states the shot explicitly and
+  adapts the identity wording when the face is only partly visible. Behavior
+  is compared against today's output on fixed fixtures before acceptance.
+
+- **Slice 2 — intimate acts are staged.**
+
+  Status: built 2026-08-14 — awaiting its probe, including the owner's
+  three-scene acceptance grading.
+
+  The staging catalog with per-entry camera setup, implied viewer-body parts,
+  and explicit phrasing emitted only on the uncensored route; evidence,
+  exposure, and route gates in code. A staged configuration is eligible only
+  when exactly one character is present, unless a catalog entry explicitly
+  supports more (owner ruling 2026-08-14) — ordinary, unstaged scene images
+  keep drawing the whole present cast as they always have. The shot planner
+  also moved onto a less cautious model here (owner ruling 2026-08-10), with
+  the chat's own narrative model as the refusal fallback — the catalog still
+  owns every explicit word either way.
+
+- **Slice 3 — committed facts override inference.**
+
+  Status: built 2026-08-14 — awaiting the same probe rows.
+
+  Chat scene facts (posture, facing, distance, active contact) reach the
+  planner as authoritative context and clamp its camera proposal; absent facts
+  change nothing. Successor chats read the engine equivalent when one exists;
+  the read migrates onto the visual-state image digest when that ships.
 
 ## Where the work stands
 
-- **[scene-composition.spec.md](scene-composition.spec.md)** — written with
-  this plan; no slice built.
+- **[scene-composition.spec.md](scene-composition.spec.md)** — complete: all
+  three slices built 2026-08-14, with the per-slice status, the build's
+  rulings, and the probe harness recorded there. Nothing is accepted yet —
+  acceptance is the probes.
 
 ## Success criteria
 
@@ -185,12 +205,20 @@ Four things cause this, and none of them is the image model misbehaving:
 
 ## Open questions
 
-None open. The launch rulings — a character described as behind-facing renders
-fully away unless the story actually describes the glance back; the shot
-planner moves to a less cautious model with the narrative model as refusal
-fallback; orientation is focal-only while one-on-one chats are the test bed —
-are recorded as owner rulings (2026-08-10) in
-[the spec](scene-composition.spec.md).
+- **Should the subject's intimate-anatomy phrasing be suppressed on a
+  from-behind shot?** Today it still emits there, and a prompt that describes
+  her front over a shot of her back may make the model turn her around. The
+  probe's behind-nude row measures it; detail in
+  [the spec](scene-composition.spec.md) §Known tensions.
+
+The launch rulings — a character described as behind-facing renders fully away
+unless the story actually describes the glance back; the shot planner moves to
+a less cautious model with the narrative model as refusal fallback;
+orientation is focal-only while one-on-one chats are the test bed — are
+recorded as owner rulings (2026-08-10) in
+[the spec](scene-composition.spec.md), alongside the 2026-08-14 rulings the
+build settled (solo-cast staging eligibility; no larger spatial abstraction;
+the composer-model flip ahead of its probe).
 
 ## Technical companion
 

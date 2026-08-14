@@ -1,10 +1,25 @@
 import type { AttributeValue } from "@/contracts/attributes";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { RegionExposure } from "@/contracts/items/visibility";
+import {
+  DEFAULT_SCENE_CAMERA,
+  GLANCE_WORDS,
+  sceneCameraHeightById,
+  sceneShotDistanceById,
+  sceneSubjectOrientationById,
+  type SceneCameraHeightId,
+  type SceneCameraSpec,
+  type SceneShotDistanceId,
+  type SceneSubjectOrientationId,
+} from "@/contracts/images/scene-camera";
+import { cameraFromCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
+import { sceneStagingById, stagingEvidenceFromContacts, type SceneStaging } from "@/contracts/images/scene-staging";
+import type { ScenePosture } from "@/contracts/affordances/scene/vocabulary";
 import { viewerBodyPartById, type ViewerBodyPartId } from "@/contracts/images/viewer-body";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import {
   formatExposure,
+  sceneEvidenceCorpus,
   type SceneComposerContext,
   type ScenePresentCharacter,
   type SceneSpec,
@@ -48,6 +63,15 @@ export interface SceneRenderPlan {
   lighting: string;
   mood: string;
   /**
+   * Where the camera stands (scene-composition.plan.md slice 1). REQUIRED, and defaulted
+   * rather than optional: an absent camera is the state the whole plan exists to end, so
+   * every plan states one and `DEFAULT_SCENE_CAMERA` is what "nothing moved it" looks like.
+   * The render layer emits no shot line for the default, keeping today's prompts unchanged.
+   */
+  camera: SceneCameraSpec;
+  /** The staged intimate configuration — present only once every gate (evidence, exposure) has passed. */
+  staging?: SceneStaging;
+  /**
    * The viewer's own parts in frame — registry-validated, but NOT yet gated on coverage or
    * the route. That last filter runs per-prompt in `buildSceneRenderPrompt`, because
    * `allowIntimate` differs per provider rung (the uncensored edit allows intimate detail;
@@ -72,7 +96,15 @@ export interface SceneRenderPlan {
 }
 
 export function emptySceneRenderPlan(): SceneRenderPlan {
-  return { focal: null, others: [], setting: "", lighting: "soft natural light", mood: "calm", viewerBody: [] };
+  return {
+    focal: null,
+    others: [],
+    setting: "",
+    lighting: "soft natural light",
+    mood: "calm",
+    camera: { ...DEFAULT_SCENE_CAMERA },
+    viewerBody: [],
+  };
 }
 
 export const normalizeName = (name: string): string => name.trim().toLowerCase();
@@ -207,7 +239,26 @@ export function resolveScenePlan(
     focalEntry = byName.get(normalizeName(fallbackName)) ?? roster[0] ?? null;
   }
 
-  const viewerBody = resolveViewerBody(spec, context, sink);
+  // One corpus for every verbatim-quote gate in this function — the narrator's replies AND
+  // the player's own messages, normalized once (`sceneEvidenceCorpus` states why both).
+  const corpus = normalizeEvidence(sceneEvidenceCorpus(context).join("\n"));
+  const viewerBody = resolveViewerBody(spec, context, corpus, sink);
+  // Committed facts for the RESOLVED focal pair — after the focal clamp, because a fact
+  // about someone the composer wrongly picked is not a fact about this shot.
+  const focalFacts = focalEntry ? context.committedScene?.get(normalizeName(focalEntry.name)) : undefined;
+  const camera = resolveSceneCamera(spec.camera, focalFacts, focalEntry, corpus, sink);
+  const staging = resolveSceneStaging(spec.staging, context, focalEntry, focalFacts, corpus, sink);
+  // A surviving staging OWNS the shot: the geometry is entailed by the act it stages, so its
+  // camera replaces the composer's rather than merging with it, and the viewer parts it puts
+  // in frame join the plan's. The union happens HERE, after `resolveViewerBody` has run its
+  // registry and evidence gates, precisely so those gates cannot drop them — a staging's
+  // parts are registry data with their own evidence already spent, not a composer proposal.
+  // They are still not through: `resolveViewerParts` re-gates every one per prompt on the
+  // player's coverage and the route, exactly as a composer-proposed part is.
+  const resolvedCamera = staging ? { ...staging.camera } : camera;
+  const resolvedViewerBody = staging
+    ? [...viewerBody, ...staging.viewerParts.filter((part) => !viewerBody.includes(part))]
+    : viewerBody;
   // Trailing periods stripped before the join — "…teasing smile.; Leading…" read as two
   // stitched sentences in the render prompt instead of one pose phrase.
   const focalAction = [spec.pose, spec.activity]
@@ -217,7 +268,7 @@ export function resolveScenePlan(
   // The scrub only rewrites (rather than drops) player references when the viewer actually
   // has a body in frame — otherwise "her hand on the viewer's arm" would ask for an arm the
   // shot doesn't contain.
-  const embodied = Boolean(context.embodiedViewer) && viewerBody.length > 0;
+  const embodied = Boolean(context.embodiedViewer) && resolvedViewerBody.length > 0;
   const focal = focalEntry ? characterSpec(focalEntry, focalAction, embodied) : null;
   const seen = new Set(focalEntry ? [normalizeName(focalEntry.name)] : []);
   const others: SceneCharacterSpec[] = [];
@@ -261,7 +312,9 @@ export function resolveScenePlan(
   return {
     focal,
     others,
-    viewerBody,
+    camera: resolvedCamera,
+    ...(staging ? { staging } : {}),
+    viewerBody: resolvedViewerBody,
     ...(context.playerExposure ? { playerExposure: context.playerExposure } : {}),
     ...(context.playerAttributes ? { playerAttributes: context.playerAttributes } : {}),
     ...(context.playerProfile ? { playerProfile: context.playerProfile } : {}),
@@ -296,6 +349,8 @@ export function resolveScenePlan(
 function resolveViewerBody(
   spec: Pick<SceneSpec, "viewerBody" | "viewerBodyEvidence">,
   context: SceneComposerContext,
+  /** The normalized evidence corpus — narration AND the player's own messages (scene-composition slice 1). */
+  corpus: string,
   sink?: DiagnosticSink,
 ): ViewerBodyPartId[] {
   const proposed = spec.viewerBody;
@@ -324,21 +379,20 @@ function resolveViewerBody(
       }),
     );
   }
-  return groundViewerBody(kept, spec.viewerBodyEvidence, context.recentNarration ?? [], sink);
+  return groundViewerBody(kept, spec.viewerBodyEvidence, corpus, sink);
 }
 
 /** A quote shorter than this (normalized) proves nothing — "his hand" matches half of any transcript. */
 const VIEWER_EVIDENCE_MIN_CHARS = 12;
 
-/** Keep only the parts whose evidence quote is a verbatim (normalized) substring of the recent narration. */
+/** Keep only the parts whose evidence quote is a verbatim (normalized) substring of the corpus. */
 function groundViewerBody(
   parts: readonly ViewerBodyPartId[],
   evidence: ReadonlyArray<{ part: string; quote: string }>,
-  recentNarration: readonly string[],
+  transcript: string,
   sink?: DiagnosticSink,
 ): ViewerBodyPartId[] {
   if (parts.length === 0) return [];
-  const transcript = normalizeEvidence(recentNarration.join("\n"));
   const quoteByPart = new Map<string, string>();
   for (const entry of evidence) quoteByPart.set(entry.part.trim().toLowerCase(), entry.quote);
   const grounded: ViewerBodyPartId[] = [];
@@ -356,6 +410,263 @@ function groundViewerBody(
     );
   }
   return grounded;
+}
+
+// ---------------------------------------------------------------------------
+// Camera and staging (scene-composition.plan.md slices 1–3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Postures that put the focal body BELOW a standing viewer.
+ *
+ * Spelled out rather than "anything but standing" for the reason
+ * `contracts/images/scene-committed.ts` spells its copy out: a sixth posture joining the
+ * vocabulary should force a decision here instead of silently inheriting one.
+ */
+const LOWERED_POSTURES: readonly ScenePosture[] = ["sitting", "kneeling", "crouching", "lying"];
+
+/**
+ * The same four postures as the composer writes them — the roster's `posture` is free text
+ * ("curled in an armchair", "kneeling by the hearth"), not a vocabulary member.
+ */
+const LOWERED_POSTURE_TEXT = /\b(kneel\w*|crouch\w*|sitting|sits|seated|lying|lies)\b/i;
+
+/**
+ * The posture waiver for a looking-DOWN camera: she is kneeling and the viewer is not, so the
+ * downward angle is entailed by the pose the composer already wrote and demanding a separate
+ * quote for it would be asking the fiction to state geometry twice.
+ *
+ * `low` gets no equivalent: a camera looking UP at a standing subject is a claim about the
+ * VIEWER's body being low, which nothing in the focal's posture can establish.
+ *
+ * A committed viewer posture closes the waiver outright — with both postures known,
+ * `cameraFromCommittedFacts` has already ruled on the height and its answer is a fact rather
+ * than an inference.
+ */
+function postureImpliesHighCamera(
+  facts: CommittedSceneFacts | undefined,
+  focalEntry: ScenePresentCharacter | null,
+): boolean {
+  if (facts?.viewerPosture !== undefined) return false;
+  const committed = facts?.focalPosture;
+  if (committed !== undefined) return LOWERED_POSTURES.includes(committed);
+  return LOWERED_POSTURE_TEXT.test(focalEntry?.posture ?? "");
+}
+
+/**
+ * The composer's camera proposal, resolved to registry ids — committed facts first, then id
+ * lookup, then the evidence gate, then the posture waiver.
+ *
+ * Every degradation lands on `DEFAULT_SCENE_CAMERA`, and the render layer emits nothing at
+ * all for that shot: a camera problem must never fail a render, and a scene with no grounding
+ * evidence must render exactly as it does today.
+ */
+function resolveSceneCamera(
+  proposal: SceneSpec["camera"],
+  facts: CommittedSceneFacts | undefined,
+  focalEntry: ScenePresentCharacter | null,
+  corpus: string,
+  sink?: DiagnosticSink,
+): SceneCameraSpec {
+  const quote = normalizeEvidence(proposal.evidence);
+  const grounded = quote.length >= VIEWER_EVIDENCE_MIN_CHARS && corpus.includes(quote);
+  const proposed = {
+    orientation: proposal.orientation.trim(),
+    distance: proposal.distance.trim(),
+    height: proposal.height.trim(),
+  };
+
+  const state = facts ? cameraFromCommittedFacts(facts) : {};
+  // The one upgrade a proposal may make to committed state (owner ruling 2026-08-10): state
+  // knows which way she is TURNED and says nothing about whether she looked back, so a
+  // grounded glance quote refines a committed `away` rather than contradicting it.
+  const glanceUpgrade =
+    state.orientation === "away" && proposed.orientation === "away_glance_back" && grounded && GLANCE_WORDS.test(quote);
+
+  const invalid: Record<string, string> = {};
+  const replaced: Record<string, string> = {};
+  const ungrounded: string[] = [];
+
+  let orientation: SceneSubjectOrientationId = DEFAULT_SCENE_CAMERA.orientation;
+  let orientationFromState = false;
+  if (state.orientation !== undefined && !glanceUpgrade) {
+    orientation = state.orientation;
+    orientationFromState = true;
+    if (proposed.orientation && proposed.orientation !== orientation) replaced.orientation = proposed.orientation;
+  } else {
+    const entry = sceneSubjectOrientationById(proposed.orientation);
+    if (entry) orientation = entry.id;
+    // An empty string is the composer declining to answer, not an off-registry id — the same
+    // silence `focal_clamped` passes over.
+    else if (proposed.orientation) invalid.orientation = proposed.orientation;
+  }
+
+  let distance: SceneShotDistanceId = DEFAULT_SCENE_CAMERA.distance;
+  if (state.distance !== undefined) {
+    distance = state.distance;
+    if (proposed.distance && proposed.distance !== distance) replaced.distance = proposed.distance;
+  } else {
+    const entry = sceneShotDistanceById(proposed.distance);
+    if (entry) distance = entry.id;
+    else if (proposed.distance) invalid.distance = proposed.distance;
+  }
+
+  let height: SceneCameraHeightId = DEFAULT_SCENE_CAMERA.height;
+  let heightFromState = false;
+  if (state.height !== undefined) {
+    height = state.height;
+    heightFromState = true;
+    if (proposed.height && proposed.height !== height) replaced.height = proposed.height;
+  } else {
+    const entry = sceneCameraHeightById(proposed.height);
+    if (entry) height = entry.id;
+    else if (proposed.height) invalid.height = proposed.height;
+  }
+
+  // The evidence gate runs ONLY on fields the composer still owns: a field replaced from
+  // committed state carries provenance, which is a stronger claim than any prose quote.
+  if (!orientationFromState && sceneSubjectOrientationById(orientation)?.evidenceRequired) {
+    if (!grounded) {
+      ungrounded.push(`orientation:${orientation}`);
+      orientation = DEFAULT_SCENE_CAMERA.orientation;
+    } else if (orientation === "away_glance_back" && !GLANCE_WORDS.test(quote)) {
+      // Two-step: the quote grounds the behind-position, so THAT stands. Only the glance —
+      // the second, separate physical claim — is refused.
+      orientation = "away";
+      sink?.push(
+        diag("info", "images.scene_composer.glance_ungrounded", "glance-back quote carries no glance language — degraded to a full back-to-camera shot", {
+          context: { quote: proposal.evidence.slice(0, 160) },
+        }),
+      );
+    }
+  }
+  if (!heightFromState && sceneCameraHeightById(height)?.evidenceRequired) {
+    const waived = height === "high" && postureImpliesHighCamera(facts, focalEntry);
+    if (!grounded && !waived) {
+      ungrounded.push(`height:${height}`);
+      height = DEFAULT_SCENE_CAMERA.height;
+    }
+  }
+
+  if (Object.keys(replaced).length > 0) {
+    sink?.push(
+      diag("info", "images.scene_render.camera_from_state", "committed scene facts replaced the composer's camera proposal", {
+        context: { replaced, camera: { orientation, distance, height } },
+      }),
+    );
+  }
+  if (Object.keys(invalid).length > 0) {
+    sink?.push(
+      diag("warn", "images.scene_composer.camera_invalid", "composer proposed camera ids outside the registry — degraded to the default shot", {
+        context: { invalid },
+      }),
+    );
+  }
+  if (ungrounded.length > 0) {
+    sink?.push(
+      diag("info", "images.scene_composer.camera_ungrounded", "camera facts without a verbatim quote from the transcript — degraded to the default (anti-eagerness gate)", {
+        context: { ungrounded, quote: proposal.evidence.slice(0, 160) },
+      }),
+    );
+  }
+  return { orientation, distance, height };
+}
+
+/**
+ * The composer's staging proposal, run through every gate that is code's job: the lane, the
+ * registry, the cast, the evidence, and the subject's own coverage.
+ *
+ * Route gating is deliberately NOT here — an `intimate` staging is filtered per-prompt where
+ * `allowIntimate` is known, exactly as `intimateAppearance` is, because the ladder's rungs
+ * disagree about it. Everything below is a property of the SCENE and therefore settled once.
+ */
+function resolveSceneStaging(
+  proposal: SceneSpec["staging"],
+  context: SceneComposerContext,
+  focalEntry: ScenePresentCharacter | null,
+  facts: CommittedSceneFacts | undefined,
+  corpus: string,
+  sink?: DiagnosticSink,
+): SceneStaging | undefined {
+  const id = proposal.id.trim();
+  if (!id) return undefined;
+  if (!context.embodiedViewer) {
+    sink?.push(
+      diag("warn", "images.scene_composer.staging_unrequested", "composer proposed a staging in a lane with no viewer body — dropped", {
+        context: { proposed: id },
+      }),
+    );
+    return undefined;
+  }
+  const entry = sceneStagingById(id);
+  if (!entry) {
+    sink?.push(
+      diag("warn", "images.scene_composer.staging_invalid", "composer proposed a staging id outside the registry — dropped", {
+        context: { proposed: id },
+      }),
+    );
+    return undefined;
+  }
+  // The cast gate (owner ruling 2026-08-14): every entry is a two-body geometry between the
+  // subject and the viewer, so a second person standing in the room makes the sentence a lie
+  // about who is where — the same self-contradiction the person-count assertion prevents.
+  const castFits = entry.cast === "solo" ? context.present.length === 1 : context.present.length > 0;
+  if (!castFits || !focalEntry) {
+    sink?.push(
+      diag("info", "images.scene_composer.staging_cast_blocked", "staging cannot honestly describe this cast — dropped", {
+        context: { staging: entry.id, cast: entry.cast, present: context.present.length },
+      }),
+    );
+    return undefined;
+  }
+  // A provenance-carrying fact beats a prose quote (spec §Committed-state mapping): a
+  // staging earns its shot from narration, and committed state outranks narration — so a
+  // committed facing or posture-derived height that contradicts the geometry the entry
+  // stages refuses the whole entry rather than letting its camera overwrite the fact.
+  // Distance is deliberately exempt: `cameraFromCommittedFacts` maps body distance to a
+  // FRAMING heuristic, while an entry's distance is its own framing choice — a spooning
+  // couple is `touching`, and the entry still frames it `close` or `medium` as it likes.
+  const state = facts ? cameraFromCommittedFacts(facts) : {};
+  const contradicted = [
+    state.orientation !== undefined && state.orientation !== entry.camera.orientation ? "orientation" : "",
+    state.height !== undefined && state.height !== entry.camera.height ? "height" : "",
+  ].filter(Boolean);
+  if (contradicted.length > 0) {
+    sink?.push(
+      diag("info", "images.scene_composer.staging_contradicted", "staging geometry contradicts committed scene facts — dropped (state beats prose)", {
+        context: { staging: entry.id, contradicted, state },
+      }),
+    );
+    return undefined;
+  }
+  const quote = normalizeEvidence(proposal.evidence);
+  const quoted = quote.length >= VIEWER_EVIDENCE_MIN_CHARS && corpus.includes(quote);
+  // A committed contact on the focal pair is provenance rather than prose, so it stands in
+  // for the quote where the table knows the geometry is unambiguous.
+  if (!quoted && !stagingEvidenceFromContacts(facts?.contacts ?? [], entry.id)) {
+    sink?.push(
+      diag("info", "images.scene_composer.staging_ungrounded", "staging without a verbatim quote or a matching committed contact — dropped", {
+        context: { staging: entry.id, quote: proposal.evidence.slice(0, 160) },
+      }),
+    );
+    return undefined;
+  }
+  // Default-shut: an absent exposure reads as covered, so a staging whose template describes
+  // bare skin can never fire on a subject whose coverage nobody computed.
+  const exposure = focalEntry.exposure;
+  const covered = entry.requiresBare.filter((region) => {
+    const level = exposure?.[region];
+    return level !== "bare" && level !== "sheer";
+  });
+  if (covered.length > 0) {
+    sink?.push(
+      diag("info", "images.scene_composer.staging_blocked", "staging needs bare regions the subject's coverage does not report — dropped", {
+        context: { staging: entry.id, covered },
+      }),
+    );
+    return undefined;
+  }
+  return entry;
 }
 
 /** Normalization for the evidence substring check: case, whitespace, curly quotes, ellipses. */

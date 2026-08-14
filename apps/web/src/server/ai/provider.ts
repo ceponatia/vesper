@@ -13,9 +13,29 @@ export const MODEL_DEFAULTS = {
   narrative: DEFAULT_NARRATIVE_MODEL_ID,
   // state + tool both default to the curated in-session agent default
   // (lib/agent-models.ts). state backs the post-turn agents + authoring; tool
-  // backs intake + the scene composer.
+  // backs intake.
   state: DEFAULT_AGENT_MODEL_ID,
   tool: DEFAULT_AGENT_MODEL_ID,
+  /**
+   * The scene composer's OWN seam (scene-composition.plan.md slice 2).
+   *
+   * It used to ride `tool`, and that was the wrong bed for it: the shot planner reads the
+   * most explicit stretch of a chat and answers with vague poses ("close to the viewer,
+   * intimate") when it runs on a moderation-prone model — which is a grounding failure
+   * before it is a moderation one, because the render then gets anatomy with no act. Owner
+   * ruling 2026-08-10: move it to a less moderation-prone model, with the chat's narrative
+   * model as the approved refusal fallback (`composeSceneSpec`).
+   *
+   * Aion 3.0 is the character-chat narrative default (lib/narrative-models.ts, where it is
+   * also the flagged tool-candidate), so it is already proven on this repo's most explicit
+   * text. Flipped ahead of slice 2's A/B probe on owner instruction (2026-08-14); the probe
+   * verdict is still pending and is what records this value as accepted.
+   *
+   * The propose-then-verify architecture does not move with it: the registries still own
+   * every explicit word, and `characterAppearanceSummary` still runs `allowIntimate:false`
+   * for the composer, because exposure gating is code's job however bold the model is.
+   */
+  sceneComposer: "aion-labs/aion-3.0",
   embedding: "openai/text-embedding-3-small",
   // Image UNDERSTANDING (portrait → attributes, character-sheet-forge.plan.md)
   // — the first vision-input capability; distinct from the Replicate image
@@ -178,6 +198,11 @@ export function stateModelId(): string {
 
 export function toolModelId(): string {
   return MODEL_DEFAULTS.tool;
+}
+
+/** The scene composer's model — its own seam, not the tool default (see MODEL_DEFAULTS.sceneComposer). */
+export function sceneComposerModelId(): string {
+  return MODEL_DEFAULTS.sceneComposer;
 }
 
 /**

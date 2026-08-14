@@ -1,6 +1,9 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import {
+  affordanceSubjectId,
   characterProfileSchema,
+  type CommittedSceneFacts,
+  committedSceneFactsFor,
   currentScenePlace,
   emptyCharacterProfile,
   garmentActorForCharacter,
@@ -13,6 +16,7 @@ import { startJob } from "@/server/api";
 import { characterChatMessages, db, hasLiveChatJob } from "@/server/db";
 import {
   buildChatGarmentNarration,
+  CHAT_CONTACT_PLAYER_SUBJECT,
   chatGarmentCuesEnabled,
   chatGarmentLookKey,
   enqueueChatPlaceImage,
@@ -22,7 +26,7 @@ import {
   resolvePlayerWardrobe,
 } from "@/server/engine";
 import { resolveChatPersona } from "@/server/players";
-import { chatLookKey, renderCharacterSceneImage } from "@/server/images";
+import { chatLookKey, normalizeName, renderCharacterSceneImage } from "@/server/images";
 import { log } from "@/server/log";
 
 export const SCENE_CHAT_CONTEXT = 6;
@@ -58,14 +62,31 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
   try {
     if (await hasLiveChatSceneJob(args.chatId)) return null;
 
+    // BOTH roles now, on the same total row budget (scene-composition.plan.md slice 1): the
+    // shot planner used to read only the narrator's replies, and "I come up behind her" is
+    // almost always the PLAYER's sentence — so a camera it could never learn about was the
+    // single largest source of the front-facing default being wrong. The two lists stay
+    // separate; `recentChat` keeps its meaning of assistant rows only, unchanged for every
+    // consumer, and the anchor keeps pointing at the newest assistant row.
     const recent = await db()
-      .select({ id: characterChatMessages.id, content: characterChatMessages.content })
+      .select({
+        id: characterChatMessages.id,
+        content: characterChatMessages.content,
+        role: characterChatMessages.role,
+      })
       .from(characterChatMessages)
-      .where(and(eq(characterChatMessages.chatId, args.chatId), eq(characterChatMessages.role, "assistant")))
+      .where(eq(characterChatMessages.chatId, args.chatId))
       .orderBy(desc(characterChatMessages.createdAt))
       .limit(SCENE_CHAT_CONTEXT);
-    const recentChat = recent.map((row) => row.content).reverse();
-    const anchorMessageId = args.anchorMessageId ?? recent[0]?.id;
+    const recentChat = recent
+      .filter((row) => row.role === "assistant")
+      .map((row) => row.content)
+      .reverse();
+    const recentPlayerChat = recent
+      .filter((row) => row.role === "user")
+      .map((row) => row.content)
+      .reverse();
+    const anchorMessageId = args.anchorMessageId ?? recent.find((row) => row.role === "assistant")?.id;
 
     const scenario = await loadChatScenario(args.chatId);
 
@@ -188,6 +209,25 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
         };
       }),
     );
+    // What the chat's typed movements have actually COMMITTED about each cast member and the
+    // player (scene-composition.plan.md slice 3) — posture, facing, distance, touch. A
+    // provenance-carrying fact outranks anything the shot planner infers from prose, so these
+    // reach it as authoritative context and clamp its camera proposal. Sparse coverage is
+    // expected while the typed-movement lane gathers data: a member with nothing committed is
+    // simply absent from the map, and an empty map behaves exactly like slices 1–2. Nothing
+    // is written back — the resolved camera lives and dies inside one render job.
+    const committedScene = new Map<string, CommittedSceneFacts>();
+    if (scenario) {
+      for (const member of cast) {
+        const facts = committedSceneFactsFor(
+          scenario.scene,
+          affordanceSubjectId(member.characterId),
+          CHAT_CONTACT_PLAYER_SUBJECT,
+        );
+        if (Object.keys(facts).length > 0) committedScene.set(normalizeName(member.name), facts);
+      }
+    }
+
     if (place?.sketch && !place.imageId) {
       void enqueueChatPlaceImage({ chatId: args.chatId, characterId: args.character.id, placeName: place.name });
     }
@@ -209,6 +249,8 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           room,
           timeOfDay: scenario ? timeOfDayFor(scenario.clockMinutes, scenario.calendarStart) : undefined,
           recentChat,
+          recentPlayerChat,
+          committedScene,
           playerExposure: playerWardrobe?.exposure,
           playerAttributes: playerResolved,
           playerProfile,

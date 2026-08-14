@@ -121,10 +121,11 @@ export interface ResolveViewerPartsArgs {
  * **The gate: the composer proposes, coverage disposes.**
  *
  * The ask was for the composer to withhold anatomy when the player is dressed. This puts
- * the mechanism in code instead, for a reason worth keeping: the composer runs on the
- * moderation-prone tool model with `allowIntimate: false` — which is *precisely* why the
+ * the mechanism in code instead, for a reason worth keeping: the composer runs with
+ * `allowIntimate: false` whatever model its seam picks — which is *precisely* why the
  * character's intimate anatomy has always been injected at render assembly rather than
- * through it. `exposedRegions(playerWorn).pelvis === "covered"` is a boolean. Wearing pants
+ * through it, and stays true however bold the composer model gets (owner ruling
+ * 2026-08-10: exposure gating is code's job regardless of the model choice). `exposedRegions(playerWorn).pelvis === "covered"` is a boolean. Wearing pants
  * makes the part **structurally unavailable**: it never enters the plan, so there is no
  * prompt text to leak and nothing to talk the model out of.
  *
@@ -164,8 +165,8 @@ const LOOKING_DOWN_PART_IDS: readonly string[] = ["lap_thighs", "torso"];
 /**
  * Derive the intimate parts the composer is structurally unable to ask for (slice 4).
  *
- * The composer has no intimate vocabulary — it runs `allowIntimate: false` on the
- * moderation-prone tool model — so `genitals` can never be *proposed*. It has to be
+ * The composer has no intimate vocabulary — it runs `allowIntimate: false` whatever
+ * model its seam picks — so `genitals` can never be *proposed*. It has to be
  * **earned**, deterministically, the way `intimateSceneAppearance` is:
  *
  * - the shot must already be looking down the viewer's body (`lap_thighs` or `torso` in
