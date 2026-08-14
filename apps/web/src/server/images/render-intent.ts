@@ -245,6 +245,7 @@ export async function renderImageIntent(
       references: plan.references,
       controlReferences: plan.controlReferences,
       targetRatio: plan.targetRatio,
+      dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
       timeoutMs: plan.timeoutMs,
       ...(intent.versionId ? { versionId: intent.versionId } : {}),

@@ -47,7 +47,9 @@ export {
   REPLICATE_VERSION_UNDISCLOSED,
   baseImageModelSlug,
   chooseAspect,
+  chooseDimensions,
   fitReferences,
+  imageAspectInputField,
   imageAspectModes,
   imageModelProfileSchema,
   imageModelSchema,
@@ -72,7 +74,9 @@ export {
   withReviewedImageQuality,
 } from "./models";
 export type {
+  DimensionChoice,
   ImageAspectMode,
+  ImageDimensionRequest,
   ImageLoraSelection,
   ImageModel,
   ImageModelProfile,
@@ -142,6 +146,7 @@ export {
 export type {
   CompileProfileRenderPlanInput,
   CompileProfileRenderPlanResult,
+  ImageRenderDimensionFacts,
   ProfileRenderControlsFingerprintInput,
   ProfileRenderPlan,
   PromptReferenceBinding,

@@ -1,7 +1,7 @@
 import type { ImageModel } from "../models/image-models";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import type { ResolvedImageProfile } from "../models/image-model-profiles";
-import { compileProfileRenderPlan } from "../render-kernel/compile-profile-plan";
+import { compileProfileRenderPlan, type ImageRenderDimensionFacts } from "../render-kernel/compile-profile-plan";
 import type { CompileReferenceBinding } from "../references/reference-role-prompt";
 import {
   type DroppedImageReference,
@@ -130,6 +130,13 @@ export interface PlannedImageRender {
   /** Every control that did not reach the payload, each with its reason. */
   droppedControls: { control: string; reason: string }[];
   targetRatio: number;
+  /**
+   * The compile step's dimension-resolver inputs (operation, merged
+   * resolution/width/height, the mapped custom pair). `renderWithModel` hands
+   * them to `chooseDimensions` beside `targetRatio`; a caller that renders
+   * without them gets the pure `chooseAspect` shape, unchanged.
+   */
+  dimensionFacts: ImageRenderDimensionFacts;
   /** The profile's own budget, or null to leave it to the environment. */
   timeoutMs: number | null;
   /** References that will not be sent, in caller order, each with its reason. */
@@ -302,6 +309,7 @@ export function planImageRender(intent: ImageRenderIntent, runtime: ImageRenderR
       appliedControls: compiled.plan.appliedControls,
       droppedControls: compiled.plan.resolvedControls.droppedControls,
       targetRatio: intent.target.aspectRatio,
+      dimensionFacts: compiled.plan.dimensionFacts,
       timeoutMs: profile.timeoutMs,
       dropped,
       sentReferences: primary,

@@ -228,10 +228,18 @@ export function parseAspectValue(value: string): number | null {
   return match && width > 0 && height > 0 ? width / height : null;
 }
 
+/** One offered pixel pair, or null for ratio spellings and tier names. */
+function parsePixelPair(value: string): { width: number; height: number } | null {
+  const match = /^(\d+)\s*\*\s*(\d+)$/.exec(value.trim());
+  const width = Number(match?.[1]);
+  const height = Number(match?.[2]);
+  return match && width > 0 && height > 0 ? { width, height } : null;
+}
+
 /** Pixel count of a `1536*2048`-style value; 0 for ratio spellings, which carry no size. */
 function pixelArea(value: string): number {
-  const match = /^(\d+)\s*\*\s*(\d+)$/.exec(value.trim());
-  return match ? Number(match[1]) * Number(match[2]) : 0;
+  const pair = parsePixelPair(value);
+  return pair ? pair.width * pair.height : 0;
 }
 
 export interface AspectChoice {
@@ -239,6 +247,68 @@ export interface AspectChoice {
   value: string | null;
   /** True when the result must be centre-cropped to reach the requested ratio. */
   needsCrop: boolean;
+}
+
+/** Ratio distance below which an offered shape counts as an exact match. */
+const EXACT_RATIO_TOLERANCE = 0.001;
+/** Ratio distance below which two offered shapes count as the same ratio. */
+const RATIO_TIE_TOLERANCE = 0.0001;
+
+/** One parseable `supportedAspects` entry: the stored spelling and its ratio. */
+interface ShapeOption {
+  value: string;
+  ratio: number;
+}
+
+/** Every shape this model offers that carries a ratio, in stored order. */
+function shapeOptions(model: ImageModel): ShapeOption[] {
+  return model.supportedAspects
+    .map((value) => ({ value, ratio: parseAspectValue(value) }))
+    .filter((entry): entry is ShapeOption => entry.ratio !== null);
+}
+
+/** The entries nearest a target ratio, and the single one `chooseAspect` answers with. */
+interface ShapeCandidates {
+  /** Every offered entry at the winning ratio, in stored order — what a
+   * resolution tier picks among ({@link chooseDimensions}). */
+  group: ShapeOption[];
+  preferred: ShapeOption;
+  needsCrop: boolean;
+}
+
+/**
+ * The closest-ratio contest both shape pickers share, so a tier selection can
+ * never choose a ratio `chooseAspect` would not have.
+ *
+ * Among exact matches, `preferred` is the biggest. Wan offers 768*1024,
+ * 1536*2048 and 3072*4096 — all exactly 3:4 — and picking the first would
+ * quietly render portraits at a quarter of the resolution every other model
+ * produces. Ratio spellings ("3:4") have no pixel count, so this is a no-op for
+ * them.
+ *
+ * With no exact match, ties break toward the WIDER option, because cropping a
+ * too-wide image trims the sides (usually background) while cropping a too-tall
+ * one trims the top or bottom — which is where heads are.
+ */
+function closestShapeCandidates(options: readonly ShapeOption[], targetRatio: number): ShapeCandidates | null {
+  if (options.length === 0) return null;
+
+  const exact = options.filter((entry) => Math.abs(entry.ratio - targetRatio) < EXACT_RATIO_TOLERANCE);
+  if (exact.length > 0) {
+    const largest = exact.reduce((best, entry) => (pixelArea(entry.value) > pixelArea(best.value) ? entry : best));
+    return { group: exact, preferred: largest, needsCrop: false };
+  }
+
+  const closest = options.reduce((best, entry) => {
+    const delta = Math.abs(entry.ratio - targetRatio) - Math.abs(best.ratio - targetRatio);
+    if (Math.abs(delta) < RATIO_TIE_TOLERANCE) return entry.ratio > best.ratio ? entry : best;
+    return delta < 0 ? entry : best;
+  });
+  return {
+    group: options.filter((entry) => Math.abs(entry.ratio - closest.ratio) < RATIO_TIE_TOLERANCE),
+    preferred: closest,
+    needsCrop: true,
+  };
 }
 
 /**
@@ -249,32 +319,189 @@ export interface AspectChoice {
  * beats refusing to render, and beats stretching. A model offering no parseable
  * shape at all gets no aspect key, taking its own default.
  *
- * Ties break toward the WIDER option, because cropping a too-wide image trims
- * the sides (usually background) while cropping a too-tall one trims the top or
- * bottom — which is where heads are.
+ * The selection rules live in {@link closestShapeCandidates}, shared with the
+ * dimension resolver below.
  */
 export function chooseAspect(model: ImageModel, targetRatio: number = IMAGE_TARGET_ASPECT): AspectChoice {
-  const options = model.supportedAspects
-    .map((value) => ({ value, ratio: parseAspectValue(value) }))
-    .filter((entry): entry is { value: string; ratio: number } => entry.ratio !== null);
-  if (options.length === 0) return { value: null, needsCrop: false };
+  const candidates = closestShapeCandidates(shapeOptions(model), targetRatio);
+  if (!candidates) return { value: null, needsCrop: false };
+  return { value: candidates.preferred.value, needsCrop: candidates.needsCrop };
+}
 
-  // Among exact matches, take the biggest. Wan offers 768*1024, 1536*2048 and
-  // 3072*4096 — all exactly 3:4 — and picking the first would quietly render
-  // portraits at a quarter of the resolution every other model produces.
-  // Ratio spellings ("3:4") have no pixel count, so this is a no-op for them.
-  const exact = options.filter((entry) => Math.abs(entry.ratio - targetRatio) < 0.001);
-  if (exact.length > 0) {
-    const largest = exact.reduce((best, entry) => (pixelArea(entry.value) > pixelArea(best.value) ? entry : best));
-    return { value: largest.value, needsCrop: false };
+/**
+ * The provider input key the chosen shape travels to — `size` on a size-mode
+ * model, `aspect_ratio` everywhere else. The payload builder and
+ * `reservedImageInputFields` each state the same two-way mapping where they
+ * apply it; this spelling exists so the dimension resolver and the render
+ * wrapper agree on which entry of a {@link DimensionChoice} is the aspect key.
+ */
+export function imageAspectInputField(model: ImageModel): string {
+  return model.aspectMode === "size" ? "size" : "aspect_ratio";
+}
+
+/**
+ * The pixel area a named resolution tier asks for, on the models that take a
+ * tier by pixel pair rather than by name. `custom` is deliberately absent — it
+ * means "the width and height are the request", never an area — and an unknown
+ * name degrades to "no tier requested" rather than a guess.
+ */
+const RESOLUTION_TIER_AREAS: Readonly<Record<string, number>> = {
+  "1K": 1024 ** 2,
+  "2K": 2048 ** 2,
+  "3K": 3072 ** 2,
+  "4K": 4096 ** 2,
+};
+
+/**
+ * What one render asks the dimension resolver
+ * (image-model-capabilities.spec.md §"Dimension negotiation").
+ *
+ * `operation`, `resolution`, `width` and `height` are the profile's merged
+ * dimension controls, spelled as plain strings and numbers rather than the
+ * profile vocabulary: `image-model-profiles` imports THIS module, so naming its
+ * enums here would be a cycle, and this resolver treats a tier name as data (a
+ * table lookup where an unknown name degrades to "unset") in any case. The
+ * strongly-typed carrier is the compile step's `ImageRenderDimensionFacts`.
+ */
+export interface ImageDimensionRequest {
+  /** The shape the lane wants, as a width/height ratio. */
+  targetRatio: number;
+  /**
+   * Accepted and deliberately unused: generation and editing can have different
+   * valid size options, but no probed capability records them yet, so there is
+   * nothing honest to validate against. When `advancedCapabilities` grows
+   * per-operation size constraints, they apply here — in the one place every
+   * render already passes through — rather than in each caller.
+   */
+  operation?: string;
+  /** The requested resolution tier (`"2K"`), or `"custom"` for an explicit pair. */
+  resolution?: string;
+  width?: number;
+  height?: number;
+  /**
+   * The explicit pair as it actually reached the payload through the version's
+   * `customWidth`/`customHeight` bindings — the compile step's fact, taken as an
+   * input rather than re-derived, because only the control mapper may decide
+   * whether a normalized control was sent. Null (or absent) when either half
+   * dropped, in which case the model's own shape answer stands.
+   */
+  mappedCustomSize?: { width: number; height: number } | null;
+}
+
+/** The negotiated shape for one render (spec §"Dimension negotiation"). */
+export interface DimensionChoice {
+  /**
+   * The aspect-key entry to send, or empty when the model offers no usable
+   * shape and takes its own default. Tier and custom width/height fields are
+   * deliberately NOT written here — they ride the mapped `controlInput`, and a
+   * second copy would race the mapper's drop record.
+   */
+  input: Record<string, string | number>;
+  /** The ratio the provider is expected to return, or null when nothing can say. */
+  expectedAspect: number | null;
+  /** True when the result must be centre-cropped to reach the requested ratio. */
+  needsCrop: boolean;
+  /** The tier the request asked for, echoed for provenance when one was set. */
+  requestedResolution?: string;
+}
+
+/**
+ * Pick the shape AND size to request — the {@link chooseAspect} seam extended
+ * with the profile's dimension controls (spec §"Dimension negotiation").
+ *
+ * A request carrying no dimension controls resolves to exactly the
+ * `chooseAspect` answer, whatever the mode: both branches delegate their
+ * default path to it, which is what keeps every existing render byte-identical.
+ */
+export function chooseDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
+  const choice =
+    model.aspectMode === "size" ? chooseSizeDimensions(model, request) : chooseRatioDimensions(model, request);
+  return { ...choice, ...(request.resolution === undefined ? {} : { requestedResolution: request.resolution }) };
+}
+
+/** Two ratios that count as the same shape — the exact-match rule, reused. */
+function sameRatio(a: number, b: number): boolean {
+  return Math.abs(a - b) < EXACT_RATIO_TOLERANCE;
+}
+
+/**
+ * The `aspect_ratio` branch: the shape is `chooseAspect`'s answer, untouched.
+ *
+ * A tier or an explicit pair changes nothing HERE — on these models they are
+ * ordinary probed control bindings and travel with the mapped `controlInput`.
+ * What a mapped custom pair does change is the expectation: a model told
+ * `width: 1600, height: 1200` returns 4:3 whatever the aspect enum said, so
+ * when the request is `custom` and BOTH halves actually mapped, the expected
+ * ratio (and the crop it implies) is judged against the pair.
+ */
+function chooseRatioDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
+  const aspect = chooseAspect(model, request.targetRatio);
+  const input: Record<string, string | number> =
+    aspect.value === null ? {} : { [imageAspectInputField(model)]: aspect.value };
+
+  const custom = request.resolution === "custom" ? request.mappedCustomSize : null;
+  if (custom && custom.width > 0 && custom.height > 0) {
+    const expected = custom.width / custom.height;
+    return { input, expectedAspect: expected, needsCrop: !sameRatio(expected, request.targetRatio) };
   }
 
-  const closest = options.reduce((best, entry) => {
-    const delta = Math.abs(entry.ratio - targetRatio) - Math.abs(best.ratio - targetRatio);
-    if (Math.abs(delta) < 0.0001) return entry.ratio > best.ratio ? entry : best;
+  return {
+    input,
+    expectedAspect: aspect.value === null ? null : parseAspectValue(aspect.value),
+    needsCrop: aspect.needsCrop,
+  };
+}
+
+/**
+ * The `size` branch (Wan): the enum entries ARE the sizes, so the dimension
+ * controls pick among them instead of riding the control mapping.
+ *
+ * In precedence order:
+ *
+ * - An explicit pair is honored only when it parses into an offered entry
+ *   VERBATIM — a size-mode model accepts nothing but its enum, so a pair the
+ *   schema does not offer is ignored rather than rounded to an invented value
+ *   the provider would reject.
+ * - A named tier picks, among the entries `chooseAspect` would consider (the
+ *   closest-ratio group), the one nearest the tier's pixel area — ties toward
+ *   the larger, matching the exact-match bias. The ratio contest still runs
+ *   first: a tier must never move the render to a worse shape to hit an area.
+ * - Neither set (or `custom` with no offered pair): `chooseAspect`'s answer,
+ *   exactly.
+ */
+function chooseSizeDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
+  const field = imageAspectInputField(model);
+
+  if (request.width !== undefined && request.height !== undefined) {
+    const offered = model.supportedAspects.find((value) => {
+      const pair = parsePixelPair(value);
+      return pair !== null && pair.width === request.width && pair.height === request.height;
+    });
+    if (offered !== undefined) {
+      const expected = request.width / request.height;
+      return {
+        input: { [field]: offered },
+        expectedAspect: expected,
+        needsCrop: !sameRatio(expected, request.targetRatio),
+      };
+    }
+  }
+
+  const candidates = closestShapeCandidates(shapeOptions(model), request.targetRatio);
+  if (!candidates) return { input: {}, expectedAspect: null, needsCrop: false };
+
+  const targetArea = request.resolution === undefined ? undefined : RESOLUTION_TIER_AREAS[request.resolution];
+  if (targetArea === undefined) {
+    const { preferred } = candidates;
+    return { input: { [field]: preferred.value }, expectedAspect: preferred.ratio, needsCrop: candidates.needsCrop };
+  }
+
+  const chosen = candidates.group.reduce((best, entry) => {
+    const delta = Math.abs(pixelArea(entry.value) - targetArea) - Math.abs(pixelArea(best.value) - targetArea);
+    if (delta === 0) return pixelArea(entry.value) > pixelArea(best.value) ? entry : best;
     return delta < 0 ? entry : best;
   });
-  return { value: closest.value, needsCrop: true };
+  return { input: { [field]: chosen.value }, expectedAspect: chosen.ratio, needsCrop: candidates.needsCrop };
 }
 
 /**

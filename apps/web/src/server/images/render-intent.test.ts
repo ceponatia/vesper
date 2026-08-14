@@ -178,6 +178,16 @@ describe("attempt provenance", () => {
   });
 });
 
+describe("dimension facts", () => {
+  it("hands the plan's dimension facts to renderWithModel", async () => {
+    // The compile step resolves them where the merged controls live; this entry
+    // point only threads them, so the transport wrapper can negotiate the shape.
+    await renderImageIntent(intent());
+    const call = mockRender.mock.calls.at(-1)?.[0] as RenderWithModelInput | undefined;
+    expect(call?.dimensionFacts).toEqual({ operation: "edit", mappedCustomSize: null });
+  });
+});
+
 describe("renderAttemptMeta", () => {
   it("wraps an attempt under the render key and vanishes without one", async () => {
     const result = await renderImageIntent(intent({ controls: { seed: 5 } }));

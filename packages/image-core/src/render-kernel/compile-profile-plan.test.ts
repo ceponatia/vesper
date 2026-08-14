@@ -447,6 +447,68 @@ describe("compileProfileRenderPlan", () => {
   });
 });
 
+describe("dimension facts", () => {
+  /** A version that gives the explicit pair somewhere real to land. */
+  const PAIR_CAPABILITIES = {
+    controls: {
+      customWidth: { field: "width", type: "integer", minimum: 64, maximum: 8192 },
+      customHeight: { field: "height", type: "integer", minimum: 64, maximum: 8192 },
+    },
+    knownInputFields: ["width", "height"],
+  };
+
+  it("absent dimension controls produce absent facts", () => {
+    // The facts must not invent members: `renderWithModel` treats an absent
+    // control as "negotiate purely", and an explicit `undefined` would still be
+    // a key a reader has to explain.
+    const facts = plan().dimensionFacts;
+    expect(facts).toEqual({ operation: "edit", mappedCustomSize: null });
+    expect(Object.keys(facts).sort()).toEqual(["mappedCustomSize", "operation"]);
+  });
+
+  it("carries the merged dimension controls, the render's override winning", () => {
+    const compiled = compiledPlan({
+      model: model(),
+      profile: profile({ controlDefaults: { resolution: "4K", width: 1200, height: 1600, seedPolicy: "random" } }),
+      basePrompt: "p",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      controlOverrides: { resolution: "2K" },
+      references: { vocabulary: "identity_pack", roles: [] },
+    });
+    // This version binds neither dimension, so the pair never mapped — the
+    // facts still say what was ASKED, which is what the resolver negotiates on.
+    expect(compiled.dimensionFacts).toEqual({
+      operation: "edit",
+      resolution: "2K",
+      width: 1200,
+      height: 1600,
+      mappedCustomSize: null,
+    });
+  });
+
+  it("reports the custom pair only when BOTH halves reached the payload", () => {
+    const defaults = { resolution: "custom", width: 1200, height: 1600, seedPolicy: "random" };
+    const both = plan({ advancedCapabilities: PAIR_CAPABILITIES }, { controlDefaults: defaults });
+    expect(both.dimensionFacts.mappedCustomSize).toEqual({ width: 1200, height: 1600 });
+    expect(both.controlInput).toEqual({ width: 1200, height: 1600 });
+
+    // One binding missing takes the whole pair out: a width without its height
+    // renders a shape nobody requested, so the expectation must not follow it.
+    const halved = plan(
+      {
+        advancedCapabilities: {
+          controls: { customWidth: PAIR_CAPABILITIES.controls.customWidth },
+          knownInputFields: ["width"],
+        },
+      },
+      { controlDefaults: defaults },
+    );
+    expect(halved.dimensionFacts.mappedCustomSize).toBeNull();
+    expect(halved.dimensionFacts.width).toBe(1200);
+  });
+});
+
 describe("the safety setting as an input", () => {
   const withToggle = { extraInput: { disable_safety_checker: true } };
 

@@ -2,10 +2,12 @@ import { asc, eq } from "drizzle-orm";
 import sharp from "sharp";
 import type { output as ZodOutput, ZodType } from "zod";
 import {
-  chooseAspect,
+  chooseDimensions,
   IMAGE_TARGET_ASPECT,
+  imageAspectInputField,
   type ImageModel,
   imageModelSchema,
+  type ImageRenderDimensionFacts,
   type PlannedControlReference,
   preparePromptForImageModel,
   withReviewedImageQuality,
@@ -116,6 +118,14 @@ export interface RenderWithModelInput {
    */
   targetRatio?: number;
   /**
+   * The compile step's dimension-resolver inputs (`compileProfileRenderPlan`):
+   * operation, the merged resolution/width/height controls, and whether a
+   * custom pair actually mapped. Absent — the trial, the lab, any direct caller
+   * — dimension negotiation is the pure `chooseAspect` result, exactly as
+   * before the facts existed.
+   */
+  dimensionFacts?: ImageRenderDimensionFacts;
+  /**
    * Provider-shaped control fields, already mapped against this version's
    * bindings (`compileProfileRenderPlan`). Passed straight through — this
    * wrapper deliberately knows nothing about control names, so the compile step
@@ -156,11 +166,13 @@ export interface RenderWithModelResult {
  * controls gain transports — the profiles now reach this path, but the controls
  * they would carry (guidance, steps, negatives) still have no probed bindings.
  *
- * This wrapper also owns shape negotiation. A lane says what ratio it wants;
- * `chooseAspect` finds the closest thing the model offers; anything short of
- * exact is centre-cropped here. That is what lets Stable Diffusion 3.5 Large (no
- * 3:4 in its enum) serve a portrait, and the same code serve the item lane's 1:1,
- * without either caller knowing which models need help.
+ * This wrapper also owns shape negotiation. A lane says what ratio it wants —
+ * and, when it compiled a profile plan, what dimensions the profile asked for —
+ * and `chooseDimensions` finds the closest thing the model offers; anything
+ * short of exact is centre-cropped here, toward the lane's ratio. That is what
+ * lets Stable Diffusion 3.5 Large (no 3:4 in its enum) serve a portrait, and
+ * the same code serve the item lane's 1:1, without either caller knowing which
+ * models need help.
  *
  * A crop failure is not fatal — the uncropped image beats no image — so it
  * degrades with a diagnostic.
@@ -191,7 +203,10 @@ export async function renderWithModel(
   const targetRatio = input.targetRatio ?? IMAGE_TARGET_ASPECT;
   const model = withReviewedImageQuality(input.model);
   const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
-  const aspect = chooseAspect(model, targetRatio);
+  // Absent facts spread to nothing, and a factless request resolves to the pure
+  // `chooseAspect` answer — the direct callers keep exactly their old shapes.
+  const dimensions = chooseDimensions(model, { targetRatio, ...input.dimensionFacts });
+  const aspectValue = dimensions.input[imageAspectInputField(model)];
   const preparationTarget = referencePreparationTarget(model);
   const references = input.references
     ? await prepareRenderReferences(
@@ -220,7 +235,7 @@ export async function renderWithModel(
       prompt,
       ...(references ? { references } : {}),
       ...(controlReferences.length ? { controlReferences } : {}),
-      aspect: aspect.value,
+      aspect: typeof aspectValue === "string" ? aspectValue : null,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.versionId ? { versionId: input.versionId } : {}),
@@ -237,9 +252,12 @@ export async function renderWithModel(
   if (!result.ok || !result.image) {
     return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };
   }
-  // Crop when the model had no exact shape, and also when it offered none at
-  // all — in that case it used its own default, which is unlikely to match.
-  if (!aspect.needsCrop && aspect.value !== null) return { ok: true, ...provenance, image: result.image };
+  // Crop when the expected shape misses the target, and also when nothing can
+  // say what shape is coming — a model with no usable shape used its own
+  // default, which is unlikely to match.
+  if (!dimensions.needsCrop && dimensions.expectedAspect !== null) {
+    return { ok: true, ...provenance, image: result.image };
+  }
   try {
     return { ok: true, ...provenance, image: await cropToTargetAspect(result.image, targetRatio) };
   } catch (error) {

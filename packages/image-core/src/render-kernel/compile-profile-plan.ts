@@ -8,7 +8,13 @@ import type { IdentityReferenceRole } from "../identity/identity-pack";
 import type { TrialResolvedControls } from "../identity/identity-pack-trial";
 import { applyImageLoraPromptAdditions, type ImageLoraRenderBinding } from "../loras/image-loras";
 import { chooseAspect, type ImageModel } from "../models/image-models";
-import type { ImageModelProfile, ImagePromptStrategy, ImageRenderControls } from "../models/image-model-profiles";
+import type {
+  ImageModelProfile,
+  ImageProfileOperation,
+  ImagePromptStrategy,
+  ImageRenderControls,
+  ImageResolutionTier,
+} from "../models/image-model-profiles";
 import { preparePromptForImageModel, withReviewedImageQuality } from "../models/quality-presets";
 import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
 import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
@@ -157,6 +163,34 @@ function referenceBindingCount(references: PromptReferenceBinding): number {
   }
 }
 
+/**
+ * The dimension resolver's input facts, resolved where the merged controls live
+ * (spec §"Dimension negotiation") and carried on the plan so `renderWithModel`
+ * can hand them to `chooseDimensions` without re-deriving any merge or mapping.
+ *
+ * These are INPUTS, not a choice: the shape itself is negotiated at the
+ * transport wrapper against the lane's target ratio, which this step does not
+ * know (see {@link ProfileRenderPlan.aspectValue} for why). A caller that
+ * passes none of these — the trial, the lab's direct probes — gets the pure
+ * `chooseAspect` behavior, which is also what these facts resolve to when the
+ * profile sets no dimension control.
+ */
+export interface ImageRenderDimensionFacts {
+  /** The profile's declared operation, for the future per-operation size rules. */
+  operation: ImageProfileOperation;
+  /** The merged tier request (defaults, then the render's override). */
+  resolution?: ImageResolutionTier;
+  width?: number;
+  height?: number;
+  /**
+   * The explicit pair as it actually reached the payload through the version's
+   * `customWidth`/`customHeight` bindings — null when either half dropped.
+   * Resolved HERE because only this step sees the mapper's verdict; the
+   * resolver takes it as a fact rather than re-running binding logic.
+   */
+  mappedCustomSize: { width: number; height: number } | null;
+}
+
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
   profile: ImageModelProfile;
@@ -236,6 +270,8 @@ export interface ProfileRenderPlan {
    * render of this profile would use", not "the shape this plan will produce".
    */
   aspectValue: string | null;
+  /** The dimension resolver's input facts — see {@link ImageRenderDimensionFacts}. */
+  dimensionFacts: ImageRenderDimensionFacts;
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   /**
@@ -544,6 +580,25 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
     droppedControls.push({ control: "seedPolicy", reason: "no_seed_transport" });
   }
 
+  // The custom pair only counts when BOTH halves survived mapping AND the
+  // reserved filter — `appliedControls` is exactly that record, its values read
+  // back out of the final payload so an override that replaced a mapped
+  // dimension is the number reported. The typeof guards matter because an
+  // override CAN write a non-number over a mapped width; a half-mapped or
+  // nonsense pair is no pair, and the model's own shape answer stands.
+  const mappedWidth = appliedControls.width;
+  const mappedHeight = appliedControls.height;
+  const dimensionFacts: ImageRenderDimensionFacts = {
+    operation: profile.operation,
+    ...(controls.resolution === undefined ? {} : { resolution: controls.resolution }),
+    ...(controls.width === undefined ? {} : { width: controls.width }),
+    ...(controls.height === undefined ? {} : { height: controls.height }),
+    mappedCustomSize:
+      typeof mappedWidth === "number" && mappedWidth > 0 && typeof mappedHeight === "number" && mappedHeight > 0
+        ? { width: mappedWidth, height: mappedHeight }
+        : null,
+  };
+
   const timeoutMs = Math.min(profile.timeoutMs ?? TRIAL_FALLBACK_PREDICTION_MS, MAX_TRIAL_PREDICTION_MS);
   return {
     ok: true,
@@ -552,6 +607,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       finalPrompt,
       negativePrompt: resolvedNegativePrompt(effectiveModel, controlInput),
       aspectValue: chooseAspect(effectiveModel).value,
+      dimensionFacts,
       controlInput,
       appliedControls,
       resolvedControls: {
