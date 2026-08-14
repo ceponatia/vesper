@@ -1,9 +1,12 @@
 # Monorepo follow-through — self-validating workspaces and the simulation package
 
-Status: awaiting acceptance — the next Fly deploy confirming the deployed app
-serves chats unchanged (every slice is built and every local gate, the engine
-suite, and the production build have passed; the first monorepo pass was
-likewise accepted on its deploy)
+Status: shipped — 2026-08-14. All four slices built 2026-08-13 with every local
+gate, the engine suite, and the production build passing; the 2026-08-13
+deploys carried the extraction and splits, and the owner verified the deployed
+app serves chats unchanged (2026-08-14). No leftovers queued: further package
+extractions stay banned until a real boundary earns one (this plan's standing
+non-goal), and the remaining giant-file splits stay with
+[codebase-modularity.audit.md](../codebase-modularity.audit.md).
 
 Outcome: A developer can drop a new code package into the repository and every
 check, build, and deployment picks it up automatically — and the
@@ -94,7 +97,8 @@ application-side splits of the image lifecycle files and simulation stores.
 ## Where the work stands
 
 - **[monorepo-simulation-core.spec.md](monorepo-simulation-core.spec.md)** —
-  complete 2026-08-13; all four slices built, plan awaiting the deploy check.
+  complete 2026-08-13; all four slices built and accepted with the plan
+  2026-08-14.
 
 ## Success criteria
 

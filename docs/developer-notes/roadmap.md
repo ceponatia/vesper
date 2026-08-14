@@ -22,14 +22,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Active (building now)
 
-- **Monorepo follow-through — self-validating workspaces and the simulation
-  package** — [plan](monorepo-simulation-core.plan.md) ·
-  [spec](monorepo-simulation-core.spec.md) — workspaces own their own
-  typecheck/test scripts, the boundary checker learns declared subpath exports,
-  the pure simulation domain extracts as `@vesper/simulation-core`, and the
-  giant image/store files split in place — then packaging stops until a real
-  boundary earns the next extraction.
-
 - **Image model capabilities — profiles, shared controls, and richer workflows** —
   [plan](image-model-capabilities.plan.md) ·
   [spec](image-model-capabilities.spec.md) — task profiles beneath each model,
