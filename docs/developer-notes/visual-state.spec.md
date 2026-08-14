@@ -9,12 +9,13 @@ rollout seams.
 **None of it is built.** Every type, flag, and diagnostic below is a design, not
 a description of code. The modules it reuses, by contrast, are all live:
 
-- `src/contracts/appearance-features/` for truth-level appearance projection;
-- `src/contracts/affordances/recognition/` for observer-relative candidates,
-  fixed-point salience, and visual memory — including the `ProjectedFeatureTruth`
-  record the compatibility adapter must preserve;
-- `src/contracts/affordances/scene/` for proved posture, facing, proximity,
-  support, and reach, with provenance on every fact;
+- `apps/web/src/contracts/appearance-features/` for truth-level appearance
+  projection;
+- `apps/web/src/contracts/affordances/recognition/` for observer-relative
+  candidates, fixed-point salience, and visual memory — including the
+  `ProjectedFeatureTruth` record the compatibility adapter must preserve;
+- `apps/web/src/contracts/affordances/scene/` for proved posture, facing,
+  proximity, support, and reach, with provenance on every fact;
 - the garment graph for garment identity, parts, presentation, coverage, and
   condition;
 - physical affordances for derived effects.
@@ -404,13 +405,24 @@ Reference extraction promotes beyond admin only after proposal precision,
 review effort, conflict behavior, and manual-edit preservation are measured.
 
 ## Implementation placement
-Pure contracts belong under `src/contracts/visual-state/` and may import
-existing pure appearance, affordance, body, and item contracts, never server
-code.
+The whole projection is application code by the workspace ownership rule
+([docs/images/README.md](../images/README.md)): it translates Vesper's
+characters, wardrobe, and scene state, so none of it moves into
+`@vesper/image-core` (which knows nothing of characters) or
+`@vesper/simulation-core` — and since those packages hold equal layer rank and
+never import one another, this projection is exactly the application bridge
+that reads simulated state on one side and emits render-intent facts on the
+other.
 
-Lane adapters and source assembly belong under `src/server/engine/` or a focused
-`src/server/visual-state/` barrel. Image realization belongs at shared render
-intent. Narrator realization belongs in the prompt adapter.
+Pure contracts belong under `apps/web/src/contracts/visual-state/` and may
+import existing pure appearance, affordance, body, and item contracts, never
+server code.
+
+Lane adapters and source assembly belong under `apps/web/src/server/engine/` or
+a focused `apps/web/src/server/visual-state/` barrel. Image realization belongs
+at the shared render intent seam (`renderImageIntent` and the role-carrying
+references of `@vesper/image-core`). Narrator realization belongs in the prompt
+adapter.
 
 The first implementation preserves `ProjectedFeatureTruth` as the frozen
 recognition input and adapts it into `VisualStateFeature`. Later consolidation

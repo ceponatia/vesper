@@ -315,7 +315,11 @@ The implementation should centralize the following work:
   seed, duration, and warnings for later comparison.
 
 The control mapping and the profile compile step in that list already exist, from
-the trial work. The rest does not.
+the trial work. The rest does not. Since the monorepo split, each shared utility
+has a fixed home: decisions that need no provider or game attached live in the
+`@vesper/image-core` package, the Replicate upload/polling/download mechanics
+live in `@vesper/image-replicate`, and the translation from Vesper's characters
+and scenes stays in the app (the spec's anchors section maps this per seam).
 
 The model adapter should only own behavior that really is specific to that model,
 primarily prompt strategy and provider quirks that cannot be represented as data.

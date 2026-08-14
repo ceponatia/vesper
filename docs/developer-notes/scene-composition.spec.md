@@ -9,14 +9,21 @@ built.
 ## Scope
 
 Governs the chat-lane scene image composition path: the scene composer's
-schema and rules (`server/images/prompts-*.ts`), plan resolution
+schema and rules (`apps/web/src/server/images/prompts-*.ts`), plan resolution
 (`resolveScenePlan`), render-prompt assembly (`buildSceneRenderPrompt`), the
-composer's context inputs (`server/images/character-scene.ts`,
-`app/api/chats/[chatId]/scene/queue.ts`), and a read-only consumption of the
-chat's committed scene state. Leaves alone: the model registry and profiles,
-reference selection and the attempt ladder, identity packs, per-model prompt
-rewriting (image-render-quality slice 1's exact-slug policy), the selfie
-framing, and every narrator surface.
+composer's context inputs (`apps/web/src/server/images/character-scene.ts`,
+`apps/web/src/app/api/chats/[chatId]/scene/queue.ts`), and a read-only
+consumption of the chat's committed scene state. Leaves alone: the model
+registry and profiles, reference selection and the attempt ladder, identity
+packs, per-model prompt rewriting (image-render-quality slice 1's exact-slug
+policy), the selfie framing, and every narrator surface.
+
+Everything this spec adds is deliberately application code, per the workspace
+ownership rule ([docs/images/README.md](../images/README.md)): the camera and
+staging vocabularies translate Vesper's narrative and scene state into prompt
+text, so they stay in `apps/web` and meet `@vesper/image-core` only at the
+render-intent seam the lane already crosses. Nothing here touches
+`@vesper/image-replicate`.
 
 ## Implementation status
 
@@ -58,7 +65,7 @@ spend), and record the verdict here before treating the slice as accepted.
 
 ## Contracts
 
-### Camera vocabulary — `src/contracts/images/scene-camera.ts` (new, pure)
+### Camera vocabulary — `apps/web/src/contracts/images/scene-camera.ts` (new, pure)
 
 A registry, not free text — the phrasing is the feature, exactly as
 `contracts/images/viewer-body.ts` established. Tuning a phrase is a data edit;
@@ -139,7 +146,7 @@ staging?: ResolvedSceneStaging; // present only when every gate passed
 `emptySceneRenderPlan()` carries the defaults, so every existing caller and
 test remains valid.
 
-### Staging registry — `src/contracts/images/scene-staging.ts` (new, pure)
+### Staging registry — `apps/web/src/contracts/images/scene-staging.ts` (new, pure)
 
 One entry per stageable configuration. The composer proposes an `id` + a
 quote; **the registry owns every word that reaches the model**:
@@ -337,8 +344,8 @@ render assembly only.
 Read `character_chats.scene` through `parseSceneState` (its healing laws
 already answer garbage with the empty scene). Resolve the focal character's
 and the player's participant ids the way the lane adapter does
-(`server/engine/chat-contact-adapter.ts`); then, all reads through the scene
-module's own accessors:
+(`apps/web/src/server/engine/chat-contact-adapter.ts`); then, all reads through
+the scene module's own accessors:
 
 - facing (focal → player, ordered): `toward` ⇒ `toward_viewer` · `side_on` ⇒
   `profile` · `away` ⇒ `away`. A committed facing fact never produces
@@ -386,14 +393,16 @@ fail a render. Degradation tests assert the fallback **and** the code
 
 ## Code organization
 
-- `src/contracts/images/scene-camera.ts` — orientations, distances, heights,
-  resolvers; exported via the contracts barrel.
-- `src/contracts/images/scene-staging.ts` — the staging registry, its gates'
-  pure halves, the contact→staging evidence table.
-- `server/images/prompts-*.ts` — schema fields, clamps, shot-line and staging
-  emission, lock adaptation (existing module; no split required by this work).
-- `server/images/character-scene.ts` + `app/api/chats/[chatId]/scene/queue.ts`
-  — player-message and committed-scene threading.
+- `apps/web/src/contracts/images/scene-camera.ts` — orientations, distances,
+  heights, resolvers; exported via the contracts barrel.
+- `apps/web/src/contracts/images/scene-staging.ts` — the staging registry, its
+  gates' pure halves, the contact→staging evidence table.
+- `apps/web/src/server/images/prompts-*.ts` — schema fields, clamps, shot-line
+  and staging emission, lock adaptation (existing module; no split required by
+  this work).
+- `apps/web/src/server/images/character-scene.ts` +
+  `apps/web/src/app/api/chats/[chatId]/scene/queue.ts` — player-message and
+  committed-scene threading.
 - `scripts/eval/scene-images/` — fixture rows for the orientation/staging
   cases and an `orientation-ab.ts` probe on the `phantom-limb-ab.ts` pattern.
 

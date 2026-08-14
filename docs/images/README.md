@@ -2,12 +2,13 @@
 
 The full image suite: avatar generation, reference editing (identity-locked portrait variants), and character-chat scene images. All assets are rows in the `images` table with files under `data/` — one registry, one serving route, one lifecycle. (The old app had three parallel ad-hoc systems; don't recreate that.)
 
-It spans two places, and the split is the load-bearing distinction:
+It spans three places, and the split is the load-bearing distinction:
 
 - **`packages/image-core/`** (`@vesper/image-core`) — the provider-neutral engine. What a model can do, which references a render may carry and in what role, how a prompt compiles for a profile, what an identity pack is and when it is usable, how controls bind to a provider's real fields, what a failure message means. It knows nothing about characters, chats, or the database, and it may not import the app at all. See [its README](../../packages/image-core/README.md).
+- **`packages/image-replicate/`** (`@vesper/image-replicate`) — the server-only Replicate transport: predictions, reference uploads and cleanup, output download, payload construction, and save-time schema probing. It reads no environment; `apps/web/src/server/ai/replicate-runtime.ts` is the only code that reads `REPLICATE_*` and hands it one configured client per process.
 - **`apps/web/src/server/images/`** — the application's image work: turning game state into an image request, and everything stateful around it. Persistence, ownership, job state, event logging, prompt composition from a character's attributes and wardrobe, identity-pack and lab lifecycle, the gallery, the chat scene queue.
 
-The rule for new code: if it would still make sense with no game attached, it belongs in the package.
+The rule for new code: a provider-neutral image decision belongs in `@vesper/image-core`; Replicate network or schema work belongs in `@vesper/image-replicate`; translating Vesper's characters, wardrobe, and scene state into either vocabulary stays in `apps/web`. And because `@vesper/image-core` and `@vesper/simulation-core` hold equal layer rank, neither may import the other — application code is the bridge that reads simulated state and emits an image request.
 
 ## Reading order
 

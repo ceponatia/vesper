@@ -96,9 +96,10 @@ Character chat remains the test bed. The session lane is not changed implicitly.
 8. **Providers expose capabilities, not model names, to domain code.** Routing
    chooses a legal workflow at runtime.
 9. **Build alongside; cut over by evidence.** The structural path is additive
-   and feature-flagged. Today's Venice/Qwen routes remain maintained and
-   intentionally selectable—not merely emergency fallbacks—while the new route
-   is debugged. No solver, worker, or provider failure may block a text turn.
+   and feature-flagged. Today's Replicate registry-model routes remain
+   maintained and intentionally selectable—not merely emergency
+   fallbacks—while the new route is debugged. No solver, worker, or provider
+   failure may block a text turn.
 10. **Stills ship before motion.** Contracts remain time-extensible.
 
 ## Existing foundation and gaps
@@ -171,8 +172,16 @@ committed scene state or detached composer proposal
 
 ### Spatial contracts
 
-Add a pure `contracts/spatial/` module with no Three.js, ComfyUI, or
-model-specific types:
+Add a pure `apps/web/src/contracts/spatial/` module with no Three.js, ComfyUI,
+or model-specific types. It is deliberately application code under the
+workspace ownership rule ([docs/images/README.md](../images/README.md)): the
+frame translates Vesper's committed scene state into render controls, reading
+the simulation on one side and feeding image renders on the other — the bridge
+role, since `@vesper/image-core` and `@vesper/simulation-core` never import one
+another. The provider-neutral control-role vocabulary (`pose`, `depth`, `edge`,
+`mask`, `control`) and reference planning it feeds already live in
+`@vesper/image-core`, and control-map transport to Replicate rides
+`@vesper/image-replicate`:
 
 - `SpatialPoseRequest`: template intent, role bindings, contacts, camera intent,
   provenance, and confidence.
@@ -245,6 +254,11 @@ background or costume.
 Extend provider capabilities with pose/depth/multi-control support, masks and
 regional identity, reference limits, LoRA/inpaint/upscale support, deterministic
 seeds, policy/provenance requirements, license, resolution, latency, and cost.
+The capability vocabulary this extends is `@vesper/image-core`'s
+(`advancedCapabilities` and its `additionalImageInputs` bindings, per the
+capabilities plan); a self-hosted or ComfyUI worker, if Gate 0's successor ever
+funds one, would be a sibling transport package beside `@vesper/image-replicate`,
+not new provider code in the app.
 
 Each attempt records frame hash, control checksums, provider/model/workflow
 revision, seed, LoRAs, references, prompt, timings, cost, and scores. Cache controls

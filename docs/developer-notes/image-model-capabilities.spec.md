@@ -53,6 +53,17 @@ all seven player-facing render lanes call it on every render.
 
 ## Current anchors
 
+Placement follows the workspace ownership rule
+([docs/images/README.md](../images/README.md)): a provider-neutral image
+decision — capability vocabulary, profile resolution, reference planning,
+control mapping, prompt-strategy compilation — belongs in `@vesper/image-core`;
+Replicate network and schema work — probing, payload construction, uploads,
+prediction polling, output download — belongs in `@vesper/image-replicate`;
+translating Vesper's characters, wardrobe, and scene state into those
+vocabularies, plus everything stateful (registry reads, row reservation, job
+state), stays in `apps/web/src/server/images/`. Unbuilt work below lands on the
+same rule.
+
 The implementation is spread across these seams:
 
 - `packages/image-core/src/models/image-models.ts` — model record, surface filtering,
@@ -69,23 +80,28 @@ The implementation is spread across these seams:
   version's declared fields, plus provider-override validation;
 - `packages/image-core/src/provider-interface/` — scene attempt ordering and capability
   checks;
-- `src/server/images/models.ts` — registry resolution, shape negotiation, and
-  crop normalization;
-- `src/server/images/model-profiles.ts` — profile loading and task resolution;
-- `src/server/images/render-profile.ts` — the profile compile step
-  (`compileProfileRenderPlan`), the prompt-strategy dispatch over both reference
-  vocabularies, and the version-pin rule;
+- `packages/image-core/src/render-kernel/compile-profile-plan.ts` — the profile
+  compile step (`compileProfileRenderPlan`), the prompt-strategy dispatch over
+  both reference vocabularies, and the version-pin rule;
 - `packages/image-core/src/render-intent/render-intent.ts` — the intent vocabulary, the
   required-role check, and capacity selection;
-- `src/server/images/render-intent.ts` — `planImageRender` and
-  `renderImageIntent`, the entry point every render lane calls;
+- `packages/image-core/src/render-intent/plan-image-render.ts` — `planImageRender`,
+  the pure planner;
 - `packages/image-core/src/models/quality-presets.ts` — the reviewed-quality seam that
   rewrites a model's constants and prompt dialect at the render boundary;
-- `src/server/images/scene.ts` — scene degradation ladder and the current
-  three-reference cap, now carrying reference roles through each rung;
-- `src/server/images/variants.ts`, `entity.ts`, `chat-look.ts`, `avatar.ts` and
-  `character-scene.ts` — the lanes, each resolving its own task's profile and
-  emitting an intent.
+- `apps/web/src/server/images/models.ts` — registry loading, `renderWithModel`,
+  and crop normalization;
+- `apps/web/src/server/images/model-profiles.ts` — profile loading and task
+  resolution;
+- `apps/web/src/server/images/render-intent.ts` — `renderImageIntent`, the
+  orchestration entry point every render lane calls: it resolves the LoRA
+  binding against the library, resolves deployment facts, and calls the
+  transport;
+- `apps/web/src/server/images/scene.ts` — scene degradation ladder and the
+  current three-reference cap, now carrying reference roles through each rung;
+- `apps/web/src/server/images/variants.ts`, `entity.ts`, `chat-look.ts`,
+  `avatar.ts` and `character-scene.ts` — the lanes, each resolving its own
+  task's profile and emitting an intent.
 
 `resolveSurfaceModel`, `loadImageModelsForSurface` and the pure
 `resolveImageModel` were **deleted** with the lane migration, along with the two
@@ -534,7 +550,7 @@ create an image set.
 **Shipped 2026-08-05; live on every lane 2026-08-07.** The pure resolver is
 `resolveImageProfile` in `packages/image-core/src/models/image-model-profiles.ts`; the
 server loader is `resolveImageProfileForTask` in
-`src/server/images/model-profiles.ts`. Each of the seven lanes calls it for its
+`apps/web/src/server/images/model-profiles.ts`. Each of the seven lanes calls it for its
 own task before it reserves an image row, so the row's `meta.model` records what
 will actually run.
 
@@ -559,7 +575,8 @@ model and profile independently.
 **Shipped 2026-08-07 (slice 2).** All seven lanes emit an intent; the gate on the
 identity-pack plan's render-lane slice and the visual-state plan is open.
 
-`compileProfileRenderPlan` in `src/server/images/render-profile.ts` performs
+`compileProfileRenderPlan` in
+`packages/image-core/src/render-kernel/compile-profile-plan.ts` performs
 steps 5–11 of the resolution order below and was reused rather than re-invented:
 reviewed quality seam, strategy-compiled prompt, model-dialect preparation,
 negative resolution, control mapping, override validation, aspect choice, and
@@ -568,9 +585,10 @@ reference selection against capacity, the required-role gate, per-request
 control overrides, and — since slice 6 — LoRA resolution against the library.
 Image sets remain a later slice.
 
-Serializable vocabulary lives in `packages/image-core/src/render-intent/render-intent.ts`; the
-buffer-bearing request and the orchestration in
-`src/server/images/render-intent.ts`.
+Serializable vocabulary lives in `packages/image-core/src/render-intent/render-intent.ts`
+and the pure planner in `packages/image-core/src/render-intent/plan-image-render.ts`;
+the buffer-bearing request and the orchestration in
+`apps/web/src/server/images/render-intent.ts`.
 
 ```ts
 export interface ImageRenderIntent {
@@ -655,7 +673,8 @@ would be behavior changes if production inherited them:
 resolved through a code registry.
 
 **Partly built.** `compilePromptForStrategy` in
-`src/server/images/render-profile.ts` is that registry, written as an exhaustive
+`packages/image-core/src/render-kernel/compile-profile-plan.ts` is that
+registry, written as an exhaustive
 switch rather than a framework because only four arms have an implementation.
 An eighth strategy is a compile error there rather than a silent fall-through.
 
@@ -737,7 +756,9 @@ through the shared intent does not silently rewrite current images.
 
 Not started. `fitPromptToModel` does not exist, the probe records no prompt
 limits, and the reference-edit paths still use the fixed character budget
-inherited from Venice in `src/server/images/prompts-*.ts`.
+inherited from Venice in `apps/web/src/server/images/prompts-*.ts`. The fitting
+algorithm is a provider-neutral decision and lands in `@vesper/image-core`; the
+segment content it fits comes from the app's prompt builders.
 
 The probe should record exact and recommended prompt limits when they can be
 derived reliably. Owner overrides may correct them.
@@ -813,7 +834,10 @@ accepts it so archived pre-`edge` experiments stay readable.
 
 ### Preparation
 
-Not started. Create `src/server/images/reference-preparation.ts`.
+Not started. Create `apps/web/src/server/images/reference-preparation.ts` —
+sharp execution is Node-only application infrastructure (the
+`identity-pack-preparation.ts` precedent), while any format constraint it obeys
+comes from the version's bindings in `@vesper/image-core`.
 
 For each selected buffer:
 
@@ -831,7 +855,9 @@ are WebP, but masks and external control images may not be.
 ### File transport
 
 Bounded concurrency not started; uploads are still serial. Move upload and
-cleanup mechanics behind `transportReplicateReferences(prepared, transport)`.
+cleanup mechanics behind `transportReplicateReferences(prepared, transport)` —
+Replicate network work, so it lands in `@vesper/image-replicate` beside the
+existing `uploadReplicateFile` (`files.ts`).
 
 For file transport, upload with bounded concurrency of three by default. Preserve
 reference order in the returned URI list regardless of completion order. If one
@@ -957,9 +983,11 @@ Not started for multi-output. `ReplicateImageResult` still carries one `image`,
 there are no `…One` / `…Many` wrappers, and no `outputUrls` helper. The result
 did gain `predictionId` and `executedVersionId` (the version the provider says it
 actually ran, which a pin states intent for but cannot confirm). The timeout
-rules below **are** built.
+rules below **are** built. The shell is `@vesper/image-replicate`
+(`render.ts`, `prediction.ts`, `outputs.ts`), and the multi-output work happens
+there.
 
-Refactor `runReplicateImageModel` so its core returns every output URI instead
+Refactor `runRegistryImageModel` so its core returns every output URI instead
 of the first one.
 
 ```ts
@@ -1032,7 +1060,7 @@ and numeric ranges.
 
 `smoke-test` runs the candidate version transiently through one selected profile.
 It does not change the row. Live smoke tests are explicit, cost-bearing admin
-actions and do not run in CI.
+actions and run in no automated gate.
 
 `activate-version` rechecks that the candidate still exists, validates every
 enabled profile against it, and atomically updates:
@@ -1508,30 +1536,31 @@ segment.
 
 What exists today, all pure except the last:
 
-- `src/contracts/images/image-model-profiles.test.ts` — profile and control
-  schemas, identity-critical task classification, legacy surface mapping,
-  eligibility, offering, candidates, and the five-step resolver;
-- `src/contracts/images/image-model-capabilities.test.ts` — the advanced
-  capability schema including its per-row default isolation, and the two binding
-  schemas;
+- `packages/image-core/src/models/image-model-profiles.test.ts` — profile and
+  control schemas, identity-critical task classification, legacy surface
+  mapping, eligibility, offering, candidates, and the five-step resolver;
+- `packages/image-core/src/capabilities/image-model-capabilities.test.ts` — the
+  advanced capability schema including its per-row default isolation, and the
+  two binding schemas;
 - `packages/image-core/src/capabilities/image-control-mapping.test.ts` — control mapping, reserved-field
   filtering, and provider-override validation;
-- `src/server/images/render-profile.test.ts` — the version-pin rule, the
-  prompt-strategy dispatch, `compileProfileRenderPlan`, prompt-preparation
-  idempotency, and the control hash;
-- `src/server/images/render-intent.test.ts` — prompt neutrality at one and at
+- `packages/image-core/src/render-kernel/compile-profile-plan.test.ts` — the
+  version-pin rule, the prompt-strategy dispatch, `compileProfileRenderPlan`,
+  prompt-preparation idempotency, and the control hash;
+- `packages/image-core/src/render-intent/render-intent.test.ts` and
+  `plan-image-render.test.ts` — prompt neutrality at one and at
   many references, the four-plus-one refusing strategies, capacity selection and
   its dropped list, the required-role gate (including a role capacity pushed
   out), control merge precedence, and the null prediction budget;
-- `src/server/images/model-profiles.int.test.ts` — the seeded profile set, the
-  registry's per-row resilience, and the model-deletion cascade, plus the
-  assertion that every anchor task still resolves to the model its lane renders
-  with today;
-- `src/contracts/images/image-loras.test.ts` — the library record and request
-  schemas, locator validation and redaction, scale invariants, the render
-  evaluator's full decision table, prompt-addition weaving, and the effective
-  selection rule (slice 6; the mapper, probe, compile and intent suites carry
-  the matching LoRA cases).
+- `apps/web/src/server/images/model-profiles.int.test.ts` — the seeded profile
+  set, the registry's per-row resilience, and the model-deletion cascade, plus
+  the assertion that every anchor task still resolves to the model its lane
+  renders with today;
+- `packages/image-core/src/loras/image-loras.test.ts` — the library record and
+  request schemas, locator validation and redaction, scale invariants, the
+  render evaluator's full decision table, prompt-addition weaving, and the
+  effective selection rule (slice 6; the mapper, probe, compile and intent
+  suites carry the matching LoRA cases).
 
 The rest of this section is the target coverage for the unbuilt slices.
 
@@ -1603,9 +1632,11 @@ Cover:
 
 ### Live trials
 
-Live Replicate smoke tests are explicit, owner-triggered, and excluded from CI.
-Record cost, duration, active version, payload summary, output dimensions,
-identity result, and moderation result in `docs/developer-notes/images/`.
+Live Replicate smoke tests are explicit, owner-triggered, and run in no
+automated gate. Record cost, duration, active version, payload summary, output
+dimensions, identity result, and moderation result in a `<topic>.trial.md`
+beside this plan in `docs/developer-notes/`, with per-model observations folded
+into the matching [docs/image-models/](../image-models/README.md) file.
 
 Required first trials:
 

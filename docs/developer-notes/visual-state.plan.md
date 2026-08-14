@@ -40,11 +40,13 @@ since 2026-07-31 — the scene / body-relations owner that proves posture, facin
 proximity, support, and reach. That last one was the notable gap when this plan
 was written, and it has closed.
 
-Two later slices have real prerequisites:
+One later slice has a real prerequisite:
 
-- **Slice 8** feeds shared render intent, which does not exist yet. It waits on
-  the [capabilities plan's](image-model-capabilities.plan.md) slice 2.
 - **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
+- **Slice 8** feeds the shared render intent, which shipped with the
+  [capabilities plan's](image-model-capabilities.plan.md) slice 2 on
+  2026-08-07 — that gate is open, and the intent's role-carrying references
+  are waiting for this plan's image digest.
 
 This plan does **not** depend on
 [image identity packs](image-identity-packs.plan.md). A pack is a stored picture
@@ -345,7 +347,8 @@ grounded specificity, naturalness, and hidden-detail leakage.
 
 ### Slice 8 — image-render-intent integration
 
-Blocked until shared render intent exists. Feed mandatory and optional visual
+The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
+Feed mandatory and optional visual
 facts into it, record keys, fingerprints, source versions, and camera visibility
 in provenance, and add morphology/negative-steering conflict checks plus paired
 trials across human, non-human, altered anatomy, realistic, and stylized

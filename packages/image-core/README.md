@@ -4,9 +4,9 @@ The provider-neutral image engine. Everything here answers a question about
 **images**; nothing here knows that Vesper has characters, chats, a database, or
 a Next.js application.
 
-Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
+Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/finished/monorepo-image-core.plan.md).
 How the application uses it: [docs/images/](../../docs/images/README.md).
-Slice 1 enforcement: [monorepo-image-core.spec.guardrails.md](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md).
+Boundary enforcement rationale: [monorepo-image-core.spec.guardrails.md](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md).
 
 ## Boundary
 
@@ -44,9 +44,9 @@ resolves every import and owns the real answer: cross-workspace containment in
 both directions, exact-name package imports, manifest dependency ownership,
 package-graph direction and cycles, root-barrel wildcards, and this package's
 browser/server portability. `pnpm lint:package-resolution` separately imports the
-package by name through the installed workspace. Both run in CI's static gate;
-the rules and their rationale are in
-[the guardrails spec](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md).
+package by name through the installed workspace. Both run in the `static` gate
+of `pnpm verify`; the rules and their rationale are in
+[the guardrails spec](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md).
 
 The dependency direction is deliberate: the application depends on the package,
 never the reverse. When code here appears to need something from the application,
@@ -75,7 +75,7 @@ Practical consequences:
   `@vesper/contracts`, the one definition the whole repository shares; this
   package reports degradation through it and never decides what becomes of the
   record. See
-  [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
+  [spec.foundation.md](../../docs/developer-notes/finished/monorepo-image-core.spec.foundation.md).
 - **Boundary parsing is not this package's job.** `@vesper/contracts` also owns
   `parseOr`, but nothing here parses untrusted data: a registry row or an
   identity pack arrives already parsed, at the application boundary that owns it.
@@ -128,10 +128,14 @@ The application still owns Vesper-specific image orchestration:
 - Node-only execution that is application infrastructure rather than image
   decision logic, such as the current SHA-256 fingerprint wrapper.
 
-Replicate network transport and schema probing are planned for a separate
-server-only `@vesper/image-replicate` package rather than being folded into this
-core. That package is allowed to perform network IO but, like this one, may not
-own Vesper state or read ambient application configuration.
+Replicate network transport and schema probing live in the separate server-only
+`@vesper/image-replicate` package rather than in this core. That package is
+allowed to perform network IO but, like this one, may not own Vesper state or
+read ambient application configuration — `apps/web/src/server/ai/replicate-runtime.ts`
+reads the `REPLICATE_*` environment and hands it one configured client per
+process. The two packages hold the same layer rank as `@vesper/simulation-core`,
+and equal-rank packages never import one another: application code bridges the
+simulation and image worlds.
 
 ## Working in here
 
@@ -141,13 +145,13 @@ own Vesper state or read ambient application configuration.
   checked through the package-local TypeScript project.
 - Resolution runs through pnpm/package `exports`, not tool aliases: TypeScript,
   Vitest and Next all reach this package by name through the workspace link, and
-  `pnpm lint:package-resolution` proves it in CI. If a tool ever needs a mapping
+  `pnpm lint:package-resolution` proves it in the `static` gate of `pnpm verify`.
+  If a tool ever needs a mapping
   again, keep it exact-root-only — never `@vesper/* -> packages/*/src`.
 - Dependencies this package imports belong in **its** `package.json`, including
   test-only ones. `pnpm lint:package-boundaries` fails on anything reachable only
   through the root install.
 - Tests live beside their subject and run without application-global setup.
-- Validation follows the repository milestone-gate policy: code/config work is
-  proven by ready-state CI `verify`; `pnpm gates:local` is permitted only as the
-  explicit batch checkpoint described in root `CLAUDE.md`, never as an automatic
-  per-task gate. Raw lint/type/test/verify commands remain banned locally.
+- Validation is local and push-gated: `pnpm verify` (which `.husky/pre-push`
+  runs automatically) is the only gate, per the root `CLAUDE.md`. There is no
+  GitHub Actions CI.
