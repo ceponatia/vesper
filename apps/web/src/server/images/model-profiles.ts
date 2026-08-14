@@ -1,16 +1,20 @@
-import { asc } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import {
   type ImageModel,
   type ImageModelProfile,
+  type ImageModelProfileCreateRequest,
+  type ImageModelProfileUpdateRequest,
   imageModelProfileSchema,
   imageProfileCandidates,
   type ImageProfileTask,
   type ResolvedImageProfile,
   resolveImageProfile,
+  validateImageProfileConfiguration,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { newId } from "@/lib/ids";
 import { db, imageModelProfiles } from "../db";
-import { loadImageModels, parseRegistryRows } from "./models";
+import { loadImageModel, loadImageModels, parseRegistryRows } from "./models";
 
 /**
  * The profile registry's server seam (image-model-capabilities.spec.md
@@ -147,4 +151,152 @@ export async function resolveImageProfileForTask(
     );
   }
   return resolved;
+}
+
+// ---------------------------------------------------------------------------
+// Admin CRUD (image-model-capabilities.spec.md §"Admin UI") — the LoRA
+// library's idiom: rows parsed at the boundary, cross-row rules judged against
+// the MERGED row, refusals returned as typed results the route maps to 400s.
+// ---------------------------------------------------------------------------
+
+/**
+ * A mutation's result: the row as it now stands, or the typed reason it was
+ * refused. `conflict` is separate from `invalid` because it maps to a 409 and a
+ * different fix: the request is well-formed, another ROW is in the way.
+ */
+export type ImageModelProfileMutation =
+  | { ok: true; profile: ImageModelProfile }
+  | { ok: false; code: "not_found" | "invalid" | "conflict"; message: string };
+
+/** One row by id, or null when it is missing or unreadable (the LoRA rule: a row
+ * that cannot parse cannot be edited into shape through a partial merge). */
+async function loadProfileRow(profileId: string): Promise<ImageModelProfile | null> {
+  const [row] = await db().select().from(imageModelProfiles).where(eq(imageModelProfiles.id, profileId)).limit(1);
+  if (!row) return null;
+  const parsed = imageModelProfileSchema.safeParse(row);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The two pre-checks the database constraints back up, judged here so an
+ * operator reads a sentence instead of a raw unique-violation. The constraints
+ * remain the backstop for a concurrent write; these exist for the message.
+ */
+async function profileConflict(profile: ImageModelProfile): Promise<string | null> {
+  const [duplicateKey] = await db()
+    .select({ id: imageModelProfiles.id })
+    .from(imageModelProfiles)
+    .where(
+      and(
+        eq(imageModelProfiles.imageModelId, profile.imageModelId),
+        eq(imageModelProfiles.key, profile.key),
+        ne(imageModelProfiles.id, profile.id),
+      ),
+    )
+    .limit(1);
+  if (duplicateKey) return `this model already has a profile with the key “${profile.key}”`;
+
+  if (profile.isDefault && profile.enabled) {
+    const [existingDefault] = await db()
+      .select({ id: imageModelProfiles.id, label: imageModelProfiles.label })
+      .from(imageModelProfiles)
+      .where(
+        and(
+          eq(imageModelProfiles.task, profile.task),
+          eq(imageModelProfiles.isDefault, true),
+          eq(imageModelProfiles.enabled, true),
+          ne(imageModelProfiles.id, profile.id),
+        ),
+      )
+      .limit(1);
+    if (existingDefault) {
+      return `“${existingDefault.label}” is already the ${profile.task} default — untick it first (one enabled default per task)`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Add one profile beneath a model.
+ *
+ * The would-be row is validated as the render path will read it: eligibility
+ * and override keys against the PARENT model (`validateImageProfileConfiguration`
+ * — a row every resolution would silently skip is refused at save, with the
+ * reason), then the two uniqueness pre-checks. The id is ours to mint, and a
+ * row assembled from a request that passed the contract schema cannot fail to
+ * parse back.
+ */
+export async function createImageModelProfile(
+  modelId: string,
+  request: ImageModelProfileCreateRequest,
+): Promise<ImageModelProfileMutation> {
+  const model = await loadImageModel(modelId);
+  if (!model) return { ok: false, code: "not_found", message: "image model not found" };
+
+  const row: ImageModelProfile = { id: newId(), imageModelId: modelId, builtin: false, ...request };
+  const issues = validateImageProfileConfiguration(row, model);
+  if (issues.length > 0) {
+    return { ok: false, code: "invalid", message: issues.map((issue) => issue.message).join("; ") };
+  }
+  const conflict = await profileConflict(row);
+  if (conflict) return { ok: false, code: "conflict", message: conflict };
+
+  await db().insert(imageModelProfiles).values(row);
+  return { ok: true, profile: imageModelProfileSchema.parse(row) };
+}
+
+/**
+ * Edit one profile.
+ *
+ * Every rule that spans fields the request did not send — eligibility after an
+ * operation or task change, override keys, the duplicate key, the
+ * second-default — is re-judged against the MERGED row, because this is the
+ * only place that can see the fields the PATCH left alone. Disabling (or
+ * un-defaulting) a task's only default is deliberately allowed: resolution
+ * degrades to the next candidate by design, and a guard here would make
+ * "switch the default to another model" a forbidden two-step.
+ */
+export async function updateImageModelProfile(
+  modelId: string,
+  profileId: string,
+  request: ImageModelProfileUpdateRequest,
+): Promise<ImageModelProfileMutation> {
+  const existing = await loadProfileRow(profileId);
+  // A profile reached under the wrong model's URL is the same 404 as a missing
+  // one — the collapsed shape every resource route answers with.
+  if (!existing || existing.imageModelId !== modelId) {
+    return { ok: false, code: "not_found", message: "image model profile not found" };
+  }
+  if (Object.keys(request).length === 0) return { ok: true, profile: existing };
+
+  const merged: ImageModelProfile = { ...existing, ...request };
+  const model = await loadImageModel(merged.imageModelId);
+  if (!model) {
+    // Unreachable while the FK cascade holds (a deleted model deletes its
+    // profiles), kept because an unparseable model row reads the same here.
+    return { ok: false, code: "invalid", message: "the profile's model cannot be loaded" };
+  }
+  const issues = validateImageProfileConfiguration(merged, model);
+  if (issues.length > 0) {
+    return { ok: false, code: "invalid", message: issues.map((issue) => issue.message).join("; ") };
+  }
+  const conflict = await profileConflict(merged);
+  if (conflict) return { ok: false, code: "conflict", message: conflict };
+
+  await db().update(imageModelProfiles).set(request).where(eq(imageModelProfiles.id, profileId));
+  return { ok: true, profile: (await loadProfileRow(profileId)) ?? merged };
+}
+
+/**
+ * Remove one profile. Deleting a task's only default — or the only profile a
+ * stored pick names — is deliberately allowed, on the model registry's
+ * precedent: stored selections are plain ids, and `resolveImageProfileForTask`
+ * degrades an unknown one to the task's default (or reports
+ * `image_profile.none_offered`) rather than failing the render.
+ */
+export async function deleteImageModelProfile(modelId: string, profileId: string): Promise<boolean> {
+  const existing = await loadProfileRow(profileId);
+  if (!existing || existing.imageModelId !== modelId) return false;
+  await db().delete(imageModelProfiles).where(eq(imageModelProfiles.id, profileId));
+  return true;
 }

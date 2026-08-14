@@ -44,10 +44,14 @@ import {
   imageLoraSchema,
   type ImageLoraUpdateRequest,
   type ImageModel,
+  type ImageModelProfile,
+  type ImageModelProfileCreateRequest,
+  imageModelProfileSchema,
+  type ImageModelProfileUpdateRequest,
   imageModelSchema,
-  imageModelsForSurface,
   type ImageModelSurface,
   imageProfileCandidateFindingSchema,
+  type ImageProfileTask,
   type ImageReferenceTransport,
   imageReferenceTransports,
   redactImageLoraLocator,
@@ -761,20 +765,41 @@ export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
 // pure, so it is re-exported here for component imports.
 export {
   imageModelSchema,
-  imageModelsForSurface,
   imageReferenceTransports,
   type ImageModel,
+  type ImageModelProfile,
+  type ImageModelProfileCreateRequest,
+  type ImageModelProfileUpdateRequest,
   type ImageModelSurface,
+  type ImageProfileTask,
   type ImageReferenceTransport,
 };
 
-export const imageModelsApi = {
-  /** The models one picker may offer; omit `surface` for the whole registry. */
-  list: (surface?: ImageModelSurface) =>
-    apiGet(
-      listOf(imageModelSchema, "models"),
-      surface ? `/api/image-models?surface=${surface}` : "/api/image-models",
-    ),
+/**
+ * One entry of a player-facing profile picker (capabilities Slice D): the id to
+ * store, the labels to group by, and the model's operator warning shown BEFORE
+ * use. Deliberately not the profile row — the pickers need an option, and a row
+ * here would make every picker a consumer of admin vocabulary.
+ */
+export const imageProfileOptionSchema = z.object({
+  id: z.string().min(1),
+  label: textOr(""),
+  task: textOr(""),
+  isDefault: z.boolean().catch(false),
+  modelId: textOr(""),
+  modelLabel: textOr(""),
+  operatorWarning: z
+    .string()
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+});
+export type ImageProfileOption = z.infer<typeof imageProfileOptionSchema>;
+
+export const imageProfilesApi = {
+  /** The offered profiles for one task — exactly what resolution would accept. */
+  list: (task: ImageProfileTask) =>
+    apiGet(listOf(imageProfileOptionSchema, "profiles"), `/api/image-profiles?task=${task}`),
 };
 
 // --- Version candidate wire shapes (image-model-capabilities.spec.md
@@ -839,9 +864,31 @@ const imageVersionActivateResponseSchema = z.object({
   profiles: arrayOf(imageVersionProfileFindingsSchema),
 });
 
+/**
+ * The 409 body of a blocked activation: the standard error envelope PLUS the
+ * per-profile findings, parsed off `ApiError.body` by the admin card so the
+ * operator sees WHICH profile blocks without a second probe round-trip.
+ */
+export const imageVersionBlockedBodySchema = z.object({
+  profiles: arrayOf(imageVersionProfileFindingsSchema),
+});
+
+/**
+ * The admin registry read: every model row and every profile row beneath them,
+ * one fetch so the cards and their nested profile lists can never disagree
+ * about which models exist. Both lists drop a bad element rather than failing
+ * — one row whose stored jsonb no longer parses must cost itself, not the page
+ * an operator needs to fix it from.
+ */
+const adminImageRegistrySchema = z.object({
+  models: listOf(imageModelSchema, "models"),
+  profiles: listOf(imageModelProfileSchema, "profiles"),
+});
+export type AdminImageRegistry = z.infer<typeof adminImageRegistrySchema>;
+
 /** Admin-only registry management (`/api/admin/self` — 404s for non-admins). */
 export const adminImageModelsApi = {
-  list: () => apiGet(listOf(imageModelSchema, "models"), "/api/admin/self/image-models"),
+  list: () => apiGet(adminImageRegistrySchema, "/api/admin/self/image-models"),
   create: (body: { slug: string; label?: string; surfaces?: ImageModelSurface[]; maxReferences?: number }) =>
     apiPost(z.object({ model: imageModelSchema }), "/api/admin/self/image-models", body),
   update: (
@@ -873,6 +920,24 @@ export const adminImageModelsApi = {
    * (with per-profile findings in the body) when an enabled profile would break. */
   activateVersion: (modelId: string, body: { versionId: string }) =>
     apiPost(imageVersionActivateResponseSchema, `/api/admin/self/image-models/${modelId}/activate-version`, body),
+};
+
+/**
+ * Admin CRUD for the task profiles beneath a model (capabilities spec §"Admin
+ * UI"). The eligibility and override-key refusals arrive as a 400/409 whose
+ * message the form shows beside the fields; the row shapes are the contract's.
+ */
+export const adminImageModelProfilesApi = {
+  create: (modelId: string, body: ImageModelProfileCreateRequest) =>
+    apiPost(z.object({ profile: imageModelProfileSchema }), `/api/admin/self/image-models/${modelId}/profiles`, body),
+  update: (modelId: string, profileId: string, body: ImageModelProfileUpdateRequest) =>
+    apiPatch(
+      z.object({ profile: imageModelProfileSchema }),
+      `/api/admin/self/image-models/${modelId}/profiles/${profileId}`,
+      body,
+    ),
+  remove: (modelId: string, profileId: string) =>
+    apiDelete(`/api/admin/self/image-models/${modelId}/profiles/${profileId}`),
 };
 
 // The curated LoRA library is data too, and its rules — the locator shapes, the

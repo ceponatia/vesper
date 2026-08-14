@@ -5,7 +5,7 @@ import { imageModelSurfaces } from "@vesper/image-core";
 import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
 import { db, imageModels } from "@/server/db";
 import { replicateClient } from "@/server/ai";
-import { imageModelProbeFields, loadImageModels } from "@/server/images";
+import { imageModelProbeFields, loadImageModelProfiles, loadImageModels } from "@/server/images";
 import { newId } from "@/lib/ids";
 
 /**
@@ -14,8 +14,12 @@ import { newId } from "@/lib/ids";
  * closed with a hidden 404 anywhere else, so the client-side gate on the
  * settings page is UX rather than security.
  *
- * GET lists every row. POST adds one by Replicate slug, deriving its
- * capabilities from a live schema probe.
+ * GET lists every model row AND every profile row beneath them — one response,
+ * because the admin page reads them together (each model card nests its
+ * profiles, and the smoke-test picker needs a model's profiles beside its
+ * version actions) and two fetches could disagree about which models exist.
+ * POST adds one model by Replicate slug, deriving its capabilities from a live
+ * schema probe; profiles are managed under `[modelId]/profiles`.
  */
 
 const createSchema = z.object({
@@ -28,7 +32,8 @@ const createSchema = z.object({
 });
 
 export const GET = withOwnerAdmin(async () => {
-  return jsonOk({ models: await loadImageModels() });
+  const [models, profiles] = await Promise.all([loadImageModels(), loadImageModelProfiles()]);
+  return jsonOk({ models, profiles });
 });
 
 export const POST = withOwnerAdmin(async (_user, req: NextRequest) => {

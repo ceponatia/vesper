@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   charactersApi,
-  imageModelsApi,
+  imageProfilesApi,
   portraitVariantKinds,
 
   type ImageRecord,
@@ -13,7 +13,7 @@ import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
-import { ImageModelSelect, pickedId } from "./image-model-select";
+import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
@@ -55,22 +55,22 @@ function portraitKindLabel(image: ImageRecord): string {
  * (the frozen-until-tab-reentry bug; same shape as the chat scene lane's fix,
  * QA batch 2026-07-09).
  *
- * TWO model pickers, reading different slices of the registry
- * (image-model-registry.plan.md). Making an avatar from nothing needs a model
- * that can work from a prompt alone; editing one into a variant needs a model
- * that takes a reference. Before the registry only one provider model could
- * edit, so the variant section had no choice to offer and silently used it.
+ * TWO profile pickers, reading different tasks of the profile registry
+ * (image-model-capabilities.spec.md Slice D). Making an avatar from nothing is
+ * the `portrait` task; editing one into a variant is `variant`. The stored
+ * `modelId` request field is unchanged and now carries a profile id — legacy
+ * stored model ids keep resolving through the server's step-2 fallback.
  */
 export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChanged }: PortraitStudioProps) {
   const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
-  // Both pickers default to the first model their surface offers, which is the
+  // Both pickers default to the first profile their task offers, which is the
   // registry's stored sort order — the seeded defaults sort first.
-  const portraitModels = useAsyncData(() => imageModelsApi.list("portrait"), []);
-  const variantModels = useAsyncData(() => imageModelsApi.list("variant"), []);
-  const [avatarModelId, setAvatarModelId] = useState<string>("");
-  const [variantModelId, setVariantModelId] = useState<string>("");
+  const portraitProfiles = useAsyncData(() => imageProfilesApi.list("portrait"), []);
+  const variantProfiles = useAsyncData(() => imageProfilesApi.list("variant"), []);
+  const [avatarProfileId, setAvatarProfileId] = useState<string>("");
+  const [variantProfileId, setVariantProfileId] = useState<string>("");
   const [instruction, setInstruction] = useState("");
   const [generatingAvatar, setGeneratingAvatar] = useState(false);
   // POST in flight — the button stays busy for the WHOLE request, releasing only
@@ -137,7 +137,9 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
   const generateAvatar = async () => {
     genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
     setGeneratingAvatar(true);
-    const result = await charactersApi.generateAvatar(characterId, { modelId: pickedId(avatarModelId, portraitModels.data) });
+    const result = await charactersApi.generateAvatar(characterId, {
+      modelId: pickedProfileId(avatarProfileId, portraitProfiles.data),
+    });
     if (result.ok) {
       toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
     } else {
@@ -169,7 +171,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     const result = await charactersApi.createPortrait(characterId, {
       kind,
       instruction: instruction.trim(),
-      modelId: pickedId(variantModelId, variantModels.data),
+      modelId: pickedProfileId(variantProfileId, variantProfiles.data),
     });
     setSubmittingVariant(false);
     if (result.ok) {
@@ -241,12 +243,12 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
           </p>
           <Field label="Model" className="w-56">
             {(id) => (
-              <ImageModelSelect
+              <ImageProfileSelect
                 id={id}
-                models={portraitModels.data}
-                value={avatarModelId}
-                onChange={setAvatarModelId}
-                emptyHint="No text-to-image model is registered."
+                profiles={portraitProfiles.data}
+                value={avatarProfileId}
+                onChange={setAvatarProfileId}
+                emptyHint="No portrait profile is offered."
               />
             )}
           </Field>
@@ -292,17 +294,18 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
               </Select>
             )}
           </Field>
-          {/* Edit-capable models only — a variant is a reference edit of the
-              canonical portrait, so a text-to-image model would paint a
-              different-looking person (owner ruling 2026-07-29). */}
+          {/* Edit-capable profiles only — a variant is a reference edit of the
+              canonical portrait, so a text-to-image profile would paint a
+              different-looking person (owner ruling 2026-07-29; the variant
+              task's eligibility rules enforce it server-side). */}
           <Field label="Model" className="w-56">
             {(id) => (
-              <ImageModelSelect
+              <ImageProfileSelect
                 id={id}
-                models={variantModels.data}
-                value={variantModelId}
-                onChange={setVariantModelId}
-                emptyHint="No reference-editing model is registered."
+                profiles={variantProfiles.data}
+                value={variantProfileId}
+                onChange={setVariantProfileId}
+                emptyHint="No variant profile is offered."
               />
             )}
           </Field>

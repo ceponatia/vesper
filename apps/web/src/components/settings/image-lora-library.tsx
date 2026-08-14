@@ -25,6 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
+import { CheckOption, TASK_LABELS, TextField } from "./image-admin-shared";
 
 /**
  * The curated LoRA library, on the image-models settings page
@@ -71,20 +72,6 @@ function locatorPlaceholder(locatorType: ImageLoraLocatorType): string {
       return "https://huggingface.co/owner/repo/resolve/main/weights.safetensors";
   }
 }
-
-/** What each profile task is, in the operator's words rather than the enum's. */
-const TASK_LABELS: Record<ImageProfileTask, string> = {
-  portrait: "portrait",
-  variant: "variant (and every lab finishing pass)",
-  scene: "scene",
-  item: "item art",
-  location: "location art",
-  chat_look: "chat look",
-  chat_place: "chat place",
-  text_repair: "text repair",
-  example_transform: "example transform",
-  image_set: "image set",
-};
 
 /**
  * What a new row is offered: the two jobs this library exists for today — a
@@ -296,38 +283,6 @@ function ImageLoraRow({
   );
 }
 
-/** Label + single-line text control — the four one-line fields, spelled once. */
-function TextField({
-  label,
-  hint,
-  value,
-  placeholder,
-  maxLength,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: string;
-  placeholder?: string;
-  maxLength: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      {(id) => (
-        <Input
-          id={id}
-          value={value}
-          placeholder={placeholder}
-          maxLength={maxLength}
-          spellCheck={false}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      )}
-    </Field>
-  );
-}
-
 /**
  * One end of the curated band, or the value inside it. Bounded by the absolute
  * rails the contract declares rather than by numbers typed here, so a widened
@@ -379,26 +334,6 @@ function PromptField({
         <Textarea id={id} rows={2} value={value} maxLength={2000} onChange={(e) => onChange(e.target.value)} />
       )}
     </Field>
-  );
-}
-
-/** One tick box in a group — the model list, the task list, and the row's own switch. */
-function CheckOption({
-  label,
-  checked,
-  title,
-  onToggle,
-}: {
-  label: string;
-  checked: boolean;
-  title?: string;
-  onToggle: () => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-paper-300" title={title}>
-      <input type="checkbox" checked={checked} onChange={onToggle} className="accent-accent-500" />
-      {label}
-    </label>
   );
 }
 

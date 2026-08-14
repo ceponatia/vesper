@@ -8,10 +8,10 @@ import {
   type SocialReactionCard,
 } from "@/contracts";
 import { MONTHS } from "@/lib/clock";
-import { chatPresetsApi, chatsApi, imageModelsApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatPresetsApi, chatsApi, imageProfilesApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
-import { ImageModelSelect } from "./image-model-select";
+import { ImageProfileSelect } from "./image-profile-select";
 import { SocialCardsEditor } from "@/components/personality/social-cards-editor";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -106,7 +106,7 @@ function ScenarioForm({
   const toast = useToast();
   const [premise, setPremise] = useState(snapshot.premise);
   const [sceneAuto, setSceneAuto] = useState(snapshot.sceneAuto === "milestones");
-  const sceneModels = useAsyncData(() => imageModelsApi.list("scene"), []);
+  const sceneProfiles = useAsyncData(() => imageProfilesApi.list("scene"), []);
   const [sceneModel, setSceneModel] = useState(snapshot.sceneModel ?? "");
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [personaId, setPersonaId] = useState(snapshot.playerState.personaId);
@@ -320,11 +320,11 @@ function ScenarioForm({
           A relationship-stage change or a strong reaction paints the moment into the transcript on its own.
           Generation otherwise stays yours to trigger.
         </span>
-        <ImageModelSelect
-          models={sceneModels.data}
+        <ImageProfileSelect
+          profiles={sceneProfiles.data}
           value={sceneModel}
           onChange={setSceneModel}
-          emptyHint="No reference-editing model is registered."
+          emptyHint="No scene profile is offered."
         />
         <span className="text-[11px] text-paper-600">
           Outfits and exposure moved to each character&rsquo;s sheet — tap a name in the roster.

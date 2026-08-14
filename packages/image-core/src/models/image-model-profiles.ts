@@ -304,7 +304,10 @@ export type ImageProfileEligibility = { ok: true } | { ok: false; reason: ImageP
  * working exactly as it does today rather than being disabled by the absence of a
  * rating. Ratings gate; missing ratings do not.
  */
-export function profileEligibility(profile: ImageModelProfile, model: ImageModel): ImageProfileEligibility {
+export function profileEligibility(
+  profile: Pick<ImageModelProfile, "task" | "operation">,
+  model: ImageModel,
+): ImageProfileEligibility {
   switch (profile.operation) {
     case "generate":
       if (!model.canGenerate) return { ok: false, reason: "operation_unsupported" };
