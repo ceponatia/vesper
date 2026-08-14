@@ -47,10 +47,10 @@ Reviewed by hand, never probed, and never overwritten by a re-probe:
 
 ## Seeded profiles
 
-Three, none of them a default — this is the slow, opt-in quality pick — all with
-empty control defaults and no timeout override (its ~40–60s latency still fits the
-global prediction budget; a per-profile `timeout_ms` is available if a 3K profile
-later needs one):
+Four, none of them a default — this is the slow, opt-in quality pick. The three
+standard rows carry empty control defaults and no timeout override (its ~40–60s
+latency still fits the global prediction budget; a per-profile `timeout_ms` is
+available if the 3K profile needs one):
 
 - `portrait-standard` (Portrait Standard) — task `portrait`, `generate`,
   `text_to_image_description`, no references.
@@ -59,10 +59,20 @@ later needs one):
 - `scene-standard` (Scene Standard) — task `scene`, `edit`, `instruction_edit`,
   identity → location → style → object with nothing required.
 
-The scene profile carries `instruction_edit` rather than `multi_reference_compose`
-for the same reason as [Seedream 4.5](seedream-4-5.md): the lane still chooses the
-reference mode at render time. **Nothing calls the profile layer yet** — the 3K,
-example-transformation and coherent-set profiles the plan describes are later work.
+The scene profiles carry `instruction_edit` rather than `multi_reference_compose`
+for the same reason as [Seedream 4.5](seedream-4-5.md): the lane chooses the
+reference mode at render time.
+
+One curated profile extends the standard set and runs only when picked:
+
+- `quality-scene-3k` (Quality Scene 3K) — task `scene`, the identity-strong
+  quality pick at the model's top tier, `resolution: "3K"` (the `size` enum
+  stops at 3K — there is no 4K). Same strategy and role order as
+  `scene-standard`, no per-role caps.
+
+The `resolution` default maps through the probed `size`-tier binding: while the
+model row's `advancedCapabilities` is empty it drops as recorded `no_binding`,
+and it takes effect once the version is probed or pinned.
 
 ## No WebP
 

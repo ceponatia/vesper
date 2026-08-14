@@ -74,9 +74,14 @@ export function hasImageProvider(): boolean {
   return hasReplicate();
 }
 
-/** Single- or multi-reference edit at 3:4. */
+/**
+ * Single- or multi-reference edit at 3:4. Eval references come from stored
+ * Vesper assets, so the webp transport facts are stated rather than sniffed —
+ * the app's preparation pass is deliberately not imported here.
+ */
 export function evalEdit(prompt: string, references: Buffer[]): Promise<ReplicateImageResult> {
-  return replicateClient().runRegistryImageModel(evalEditModel(), { prompt, references, aspect: "3:4" });
+  const prepared = references.map((bytes) => ({ bytes, mediaType: "image/webp", extension: "webp" }));
+  return replicateClient().runRegistryImageModel(evalEditModel(), { prompt, references: prepared, aspect: "3:4" });
 }
 
 /** Text-to-image at 3:4. */

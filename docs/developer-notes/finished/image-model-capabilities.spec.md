@@ -33,23 +33,25 @@ all seven player-facing render lanes call it on every render.
 | Section                             | Status                          |
 | ----------------------------------- | ------------------------------- |
 | Extensions to `image_models`        | shipped 2026-08-05 (mig 0100)   |
-| Advanced capability contract        | shipped; probe derives LoRA     |
+| Advanced capability contract        | shipped; probe derives all      |
 | `image_model_profiles`              | shipped 2026-08-05 (mig 0100)   |
 | Profile task eligibility            | shipped 2026-08-05              |
 | Reference policy                    | shipped 2026-08-11 (slice 3)    |
 | Normalized controls                 | shipped 2026-08-05              |
 | `image_loras`                       | shipped 2026-08-11 (slice 6)    |
-| Image sets                          | not started                     |
+| Image sets                          | descoped 2026-08-14 → deferred  |
 | Profile resolution                  | shipped 2026-08-07, every lane  |
 | Normalized render intent            | shipped 2026-08-07              |
-| Prompt strategies                   | 4 of 7 arms (compose landed)    |
-| Reference preparation and transport | control binding only (slice 9)  |
+| Prompt strategies                   | 4 of 7 arms; rest descoped      |
+| Reference preparation and transport | shipped 2026-08-14 (slice 3)    |
 | Control mapping                     | shipped 2026-08-07, every lane  |
-| Dimension negotiation               | not started                     |
-| Replicate prediction shell          | timeouts only; single-output    |
-| Version candidate and promotion     | not started                     |
-| Model-specific seeded profiles      | not started                     |
-| Admin UI                            | not started                     |
+| Dimension negotiation               | shipped 2026-08-14              |
+| Replicate prediction shell          | single-output; multi descoped   |
+| Version candidate and promotion     | shipped 2026-08-14 (slice 5)    |
+| Model-specific seeded profiles      | shipped 2026-08-14 (mig 0107)   |
+| Admin UI                            | shipped 2026-08-14 (slice D)    |
+| Seeds and attempt provenance        | shipped 2026-08-14 (slice 4)    |
+| Prompt fitting                      | descoped 2026-08-14 → deferred  |
 
 ## Current anchors
 
@@ -530,8 +532,11 @@ prompt fitting.
 
 ### Image sets
 
-Not started — no tables, no columns, and the provider shell still returns one
-image. Slice 8. The multiple-output slice adds:
+**Descoped 2026-08-14 (owner ruling): image sets left this plan unbuilt** — a
+product expansion, not normal-render infrastructure — and are parked in
+[deferred.plan.md](../deferred.plan.md) §"Image sets and multi-output" together
+with the multi-output prediction shell and the `coherent_set` prompt strategy.
+The design below stays as the parked reference. It would have added:
 
 - `image_sets` with `id`, `ownerId`, `task`, `profileId`, `prompt`, `status`,
   `meta`, `createdAt`, and `updatedAt`;
@@ -754,11 +759,14 @@ through the shared intent does not silently rewrite current images.
 
 ### Prompt fitting
 
-Not started. `fitPromptToModel` does not exist, the probe records no prompt
+**Descoped 2026-08-14 (owner ruling)** — parked in
+[deferred.plan.md](../deferred.plan.md) §"Image capability remainders".
+`fitPromptToModel` does not exist, the probe records no prompt
 limits, and the reference-edit paths still use the fixed character budget
 inherited from Venice in `apps/web/src/server/images/prompts-*.ts`. The fitting
 algorithm is a provider-neutral decision and lands in `@vesper/image-core`; the
-segment content it fits comes from the app's prompt builders.
+segment content it fits comes from the app's prompt builders. The design below
+stays as the parked reference.
 
 The probe should record exact and recommended prompt limits when they can be
 derived reliably. Owner overrides may correct them.
@@ -781,11 +789,16 @@ safety-critical facts.
 
 ## Reference preparation and transport
 
-**Control binding shipped 2026-08-11 (slice 9); preparation and concurrency not
-started.** `runRegistryImageModel` now writes bound control images to their own
-provider fields, on both transports, and charges them against the inline byte
-budget before optional references. It still uploads serially and applies no
-preparation step, so the two sub-sections below remain the open half of slice 3.
+**Shipped in full: control binding 2026-08-11 (slice 9); preparation and
+bounded-concurrency transport 2026-08-14 (slice 3).**
+`runRegistryImageModel` writes bound control images to their own provider
+fields, on both transports, and charges them against the inline byte budget
+before optional references. Reference and control bytes cross the preparation
+pass at the `renderWithModel` choke point and travel as `PreparedReferenceBytes`
+(bytes, media type, extension, role label) through
+`transportReplicateReferences` — concurrency three, input-order URIs, delete-on-
+failure cleanup. Rulings the build settled are in §"Close-out implementation
+rulings".
 
 ### Control-image binding
 
@@ -834,10 +847,13 @@ accepts it so archived pre-`edge` experiments stay readable.
 
 ### Preparation
 
-Not started. Create `apps/web/src/server/images/reference-preparation.ts` —
+**Shipped 2026-08-14** as `apps/web/src/server/images/reference-preparation.ts` —
 sharp execution is Node-only application infrastructure (the
 `identity-pack-preparation.ts` precedent), while any format constraint it obeys
-comes from the version's bindings in `@vesper/image-core`.
+comes from the version's bindings in `@vesper/image-core`. An already-clean
+webp (no EXIF orientation, no resize demanded) passes through byte-identical
+after one metadata sniff; a reference whose preparation fails degrades to its
+original bytes with a warn diagnostic rather than failing the render.
 
 For each selected buffer:
 
@@ -854,10 +870,10 @@ are WebP, but masks and external control images may not be.
 
 ### File transport
 
-Bounded concurrency not started; uploads are still serial. Move upload and
-cleanup mechanics behind `transportReplicateReferences(prepared, transport)` —
-Replicate network work, so it lands in `@vesper/image-replicate` beside the
-existing `uploadReplicateFile` (`files.ts`).
+**Shipped 2026-08-14.** Upload and cleanup mechanics live behind
+`transportReplicateReferences(http, prepared, transport)` in
+`@vesper/image-replicate` (`files.ts`), beside `uploadReplicateFile`, which now
+takes each reference's real media type.
 
 For file transport, upload with bounded concurrency of three by default. Preserve
 reference order in the returned URI list regardless of completion order. If one
@@ -944,10 +960,18 @@ refused key raises `image_model.reserved_field_ignored`.
 
 ## Dimension negotiation
 
-Not started. `chooseAspect` still takes only a model and a target ratio, and
-`renderWithModel` crops afterwards. Slice 4/7.
-
-Extend the existing `chooseAspect` seam rather than replacing it.
+**Shipped 2026-08-14** as `chooseDimensions` in
+`packages/image-core/src/models/image-models.ts`, extending the `chooseAspect`
+seam exactly as specified: aspect-ratio models keep `chooseAspect`'s shape while
+tier/custom fields ride the mapped `controlInput`; size-mode models pick among
+their offered pixel pairs — ratio contest first, then nearest tier area,
+largest when unset (the pre-tier behavior); `width`/`height` are honored only
+under the `custom` tier in both modes (`requires_custom_resolution` drop
+otherwise); the compile step derives `dimensionFacts` from the merged controls
+and `renderWithModel` consumes them, factless callers resolving to the pure
+`chooseAspect` answer. Per-operation valid-size constraints remain unbuilt —
+no probed data drives them; `operation` is accepted and recorded so the future
+constraint lands in one place. The design below is what shipped.
 
 The new resolver receives operation and profile controls in addition to target
 ratio. It can choose among:
@@ -979,13 +1003,15 @@ explicitly requests padding.
 
 ## Replicate prediction shell
 
-Not started for multi-output. `ReplicateImageResult` still carries one `image`,
-there are no `…One` / `…Many` wrappers, and no `outputUrls` helper. The result
-did gain `predictionId` and `executedVersionId` (the version the provider says it
-actually ran, which a pin states intent for but cannot confirm). The timeout
-rules below **are** built. The shell is `@vesper/image-replicate`
-(`render.ts`, `prediction.ts`, `outputs.ts`), and the multi-output work happens
-there.
+**Multi-output descoped 2026-08-14 with image sets** (parked in
+[deferred.plan.md](../deferred.plan.md)). `ReplicateImageResult` carries one
+`image` by design — plus `predictionId`, `executedVersionId` (the version the
+provider says it actually ran, which a pin states intent for but cannot
+confirm), and `sentReferenceCount` (the primary references that survived the
+inline byte budget, which is what keeps stored sent-roles provenance honest).
+The timeout rules below **are** built. The shell is `@vesper/image-replicate`
+(`render.ts`, `prediction.ts`, `outputs.ts`), and the parked multi-output work
+would happen there.
 
 Refactor `runRegistryImageModel` so its core returns every output URI instead
 of the first one.
@@ -1035,14 +1061,17 @@ environment, so a run's budget is a fact the plan can state and hash.
 
 ## Version candidate and promotion flow
 
-Not started — none of the three routes exist, and all six built-in models are
-still bare official slugs tracking `latest_version` with `probedVersionId` null.
-Slice 5. Note the practical cost of leaving it: `pinnedImageModelVersion` returns
-null for those rows, so a controlled comparison refuses them as
-`version_unpinned` until an admin re-probes each one.
-
-The active model slug should be pinned after this slice. A bare slug may remain
-accepted for manually added experimental rows.
+**Shipped 2026-08-14 (slice 5).** The three routes exist under
+`/api/admin/self/image-models/{modelId}/` (`probe-latest`, `smoke-test`,
+`activate-version`), the pure diff and per-profile candidate validation live in
+`packages/image-core/src/capabilities/image-version-diff.ts`, and the service is
+`apps/web/src/server/images/model-versions.ts`. Rulings the build settled are in
+§"Close-out implementation rulings". The seeded official rows still carry bare
+slugs with `probedVersionId` null until the owner runs the flow — **pinning each
+production row is a deliberate post-deploy admin action through it**, and until
+a row is pinned or re-probed a controlled comparison keeps refusing it as
+`version_unpinned` and its profile control defaults stay inert. A bare slug
+remains accepted for manually added experimental rows.
 
 Add admin endpoints conceptually equivalent to:
 
@@ -1079,10 +1108,17 @@ it to latest.
 
 ## Model-specific seeded profiles
 
-Not started. Migration 0100 seeded 17 deliberately plain profiles — one per model
-per job its lane already runs, named "… Standard" — because slice 1 had to change
-nothing. The curated profiles below are slice 7 and depend on the control
-transports of slices 4–6.
+**Shipped 2026-08-14 (slice 7, migration `drizzle/0107_curated-model-profiles.sql`)**
+— seven curated rows, every one enabled, non-default, and sorted after the
+existing seed, so nothing resolves differently until picked. The migration's
+header is the canonical record of the values chosen and of every deliberate
+omission from the lists below (owner descopes: no LoRA House Style, no
+coherent-set rows, no text-repair/example-transform rows — their strategies
+refuse to compile and no lane supplies their references — no remix rows, no
+duplicate "Balanced" rows, no Wan generate rows: 2K-thinking duplicates Wan's
+standard behavior and the 4K pairs are deliberately absent from its curated
+aspects). The per-model lists below are the original design; where a row is
+absent, the migration header says why.
 
 Profiles are ordinary database rows and deletable, matching the model registry's
 single-source-of-truth ruling.
@@ -1166,13 +1202,20 @@ claims to bypass moderation.
 
 ## Admin UI
 
-Mostly not started. `/settings/image-models` today adds a model by slug, ticks
-its three surface toggles, re-probes it, switches its reference transport,
-deletes it — and, since slice 6, manages the LoRA library in its own section
-(list, create, edit, enable, delete). Nothing on the page shows the reviewed
-ratings, the operator warning, the pinned version, or profiles — the PATCH
-route accepts the three reviewed fields, so they are currently only settable by
-API call or migration.
+**Shipped 2026-08-14 (slice D).** `/settings/image-models` is split into card,
+version-panel, and profiles-section components: the reviewed judgments
+(editKind, identityPreservation, operatorWarning) and the label are editable on
+the card; the pinned/probed/floating version shows with the candidate actions
+(check latest → diff with owner-curated labels and per-profile findings →
+smoke test with a cost-naming confirm → activate with blocked findings
+rendered on refusal); each model nests its profiles with a create/edit form
+(task, operation, strategy, timeout, policy JSON validated before save,
+structured curated controls, LoRA from the library, provider-overrides JSON
+with inline refusals). Player pickers are `ImageProfileSelect` — offered
+profiles grouped per model, a leading "Task default" option, the selected
+profile's operator warning as helper text — reading
+`GET /api/image-profiles?task=…`. Measured recent latency has no data source
+and was not built (parked with the other remainders in deferred.plan.md).
 
 Extend `/settings/image-models` rather than creating six separate settings
 pages.
@@ -1202,7 +1245,8 @@ does not change the model automatically.
 ## Caller migration
 
 These lettered slices are the migration sequence; the numbered slices in the plan
-are the delivery order. Slice A is done, Slice B half done, C–F untouched.
+are the delivery order. A–E are done; F (image sets) is descoped to the parking
+lot.
 
 ### Slice A: schema and compatibility profiles — done 2026-08-05
 
@@ -1225,21 +1269,24 @@ arm adds nothing), the control overlay is empty for inert `{}` defaults, the
 target ratio is the lane's own, and neither a version pin nor a forced budget is
 sent. Reference uploads are still serial; that is slice 3.
 
-### Slice D: profile pickers and storage
+### Slice D: profile pickers and storage — done 2026-08-14
 
-Update the portrait, variant, and scene controls to persist profile ids. Keep
-server parsing compatible with old model ids. Entity and chat anchor tasks use
-their configured global default profiles without adding new player controls.
+The portrait, variant, and scene controls persist profile ids through the
+existing `modelId`/`sceneModel` fields; server parsing stays compatible with old
+model ids through resolver step 2, and the fresh-chat `"reference"` sentinel is
+superseded by the picker's empty "Task default" value. Entity and chat anchor
+tasks use their configured global default profiles without new player controls.
 
-### Slice E: optional controls and model-specific profiles
+### Slice E: optional controls and model-specific profiles — done 2026-08-14
 
-Enable controls only after the common adapter is in use. Do not add a control
-directly to a lane-specific Replicate call.
+Controls ride the common adapter only; no lane-specific Replicate call carries
+one. Probe-bound defaults activate per model when its version is probed or
+pinned.
 
-### Slice F: image sets
+### Slice F: image sets — descoped 2026-08-14
 
-Add multi-output persistence and UI separately. Existing single-image functions
-continue to call the one-output wrapper.
+Parked in [deferred.plan.md](../deferred.plan.md); single-image callers keep the
+one-output shell.
 
 ## Slice 1 implementation rulings (2026-08-05)
 
@@ -1442,11 +1489,87 @@ lab spec.
   `probedVersionId` at create and re-probe, and the admin PATCH still cannot
   set it directly.
 
+## Close-out implementation rulings (2026-08-14)
+
+Slices 3 (transport), 4, 5, 7, D/E and dimension negotiation landed together on
+one branch, followed by a ten-finding adversarial review whose fixes are part of
+the same change. The rulings that build settled:
+
+- **Preparation is downstream of planning, at the one choke point.**
+  `renderWithModel` prepares both ordinary references and control buffers, so
+  every caller — lanes, trial, lab — sends prepared bytes without changing its
+  own signature. The package's `PreparedReferenceBytes` carries bytes, media
+  type, extension and a diagnostics-only role label; the app's
+  `PreparedRenderReference` adds dimensions. A clean webp passes through
+  byte-identical; degraded preparation falls back to the original bytes with a
+  warn, never a failed render.
+- **The transport pool is deliberately order-stable and fail-clean.** Slot-
+  indexed results keep URIs in input order whatever the completion order;
+  workers stop claiming after the first failure, in-flight uploads settle, and
+  every success is deleted best-effort before the failure returns.
+- **Randomness enters the render path in exactly one place.**
+  `resolveIntentSeed` in the app draws only for a `random`-policy profile, only
+  inside the active version's probed seed binding, and never on a render
+  carrying an explicit version pin (the active bindings do not describe the
+  pin — the smoke-test flow is why). An explicit `controls.seed` always wins.
+  `reuse_source` and `caller` resolve nothing themselves and surface as the
+  compile step's preserved `seedPolicy` drop when unresolved.
+- **Provenance is assembled from the plan plus the provider echo, and never
+  overclaims.** `ResolvedImageAttempt` truncates its sent-roles list to the
+  transport's `sentReferenceCount`, real role labels travel to the transport
+  diagnostic via `RenderWithModelInput.referenceRoles`, and the produce-meta
+  channel merges the record in the same row update as the file facts (error
+  text wins collisions on the failure arm).
+- **The dimension resolver owns the aspect/size slot; the mapper owns bound
+  tier fields.** On a size-mode model the tier is excluded from control mapping,
+  recorded as applied, and consumed by `chooseSizeDimensions`; on an
+  aspect-ratio model it rides its probed binding. `width`/`height` demand the
+  `custom` tier in both modes (`requires_custom_resolution` drop otherwise).
+  The fingerprint gains a `dimensions` member only when a dimension request
+  exists, so every pre-existing profile's hash is byte-identical.
+- **The trial renders what production renders.** `TrialCellRenderInput` carries
+  `targetRatio` and `dimensionFacts`, so a tiered profile's cell and its
+  production render negotiate the same size.
+- **Owner curation survives the probe.** `imageModelProbeFields` is the CREATE
+  write set; `imageModelReprobeFields` — re-probe, activation, trial auto-pin —
+  excludes `supportedAspects` (0098 curates Wan's list; resurrecting the 4K
+  pairs breaks every Wan edit). The admin PATCH accepts `supportedAspects` for
+  deliberate updates, and the capability diff labels it and `maxReferences`
+  `ownerOwned` — reported for review, never auto-written.
+- **Activation blocks on three findings and warns on the rest.**
+  `operation_impossible`, `override_field_unknown` (empty candidate
+  `knownInputFields` fails closed when overrides exist), and
+  `lora_binding_missing` refuse with HTTP 409 and the findings in the body;
+  a tuned control default losing its binding only warns, because live renders
+  already tolerate recorded `no_binding` drops. Official models activate
+  through a bare-probe fallback gated on latest-id equality, since they expose
+  no per-version endpoint.
+- **Profile configuration is validated only while enabled.** A disabled row
+  accepts any schema-valid patch — disabling a broken profile must always be
+  possible, which is exactly what the activation flow's "disable and retry"
+  advice assumes.
+- **The picker's empty value is the stored vocabulary for "task default".**
+  `""` supersedes the legacy `"reference"` sentinel, displays as an explicit
+  "Task default" option, and sends nothing so the server resolves the default;
+  `pickedProfileId` no longer coerces to the first listed option.
+- **`GET /api/image-models` is deleted.** The pickers read
+  `/api/image-profiles`; the admin page reads the admin registry route; a dead
+  authenticated endpoint serving full registry rows had no remaining consumer.
+
 ## Observability and reproducibility
 
-Not started for ordinary renders. The only place any of this exists is the
-identity trial's own attempt record, which carries the resolved controls, drops
-included, plus the prediction id and the executed version the provider echoed.
+**Shipped 2026-08-14 (slice 4)** for every generating lane: `renderImageIntent`
+assembles a `ResolvedImageAttempt` (model id + slug, profile id + task +
+strategy, requested version pin, resolved seed, applied and dropped controls,
+sent reference roles truncated to what the byte budget let through, prediction
+id, executed version) on success and on failure whenever a plan existed, and
+the pipeline's produce-meta channel merges it into `images.meta.render` in the
+same update as the file facts or the error text. Lanes whose ruled failure
+shape throws (avatar, entity, chat_look, chat_place) record it on success only;
+variants and the scene ladder record failures too — the scene lane attaches the
+deepest rung's attempt when the whole chain exhausts. Durations and derived
+fast/normal/slow labels were not built (parked in deferred.plan.md). The rest of
+this section is the original design.
 
 Every completed or failed provider attempt should record, in image metadata or a
 normalized attempt record:

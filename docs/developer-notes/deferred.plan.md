@@ -178,6 +178,48 @@ coding, carried here from the spec's delivery section:
 
 **Trigger:** owner scheduling, with the source-picking ruling taken first.
 
+## Image sets and multi-output
+
+_Parked 2026-08-14 (owner ruling at the image-model-capabilities close-out,
+[finished/image-model-capabilities.plan.md](finished/image-model-capabilities.plan.md)):
+a separate multi-output workflow is a product expansion, not normal-render
+infrastructure, and did not hold that plan open._ The idea: an `image_sets`
+table with ordered sibling images sharing a set identity, a multi-output
+provider shell (`runRegistryImageModelMany`, `outputUrls`), the `coherent_set`
+prompt strategy, and a distinct workflow for Seedream sequences, Wan image
+sets, storyboard shots, and variation grids — while every existing lane stays
+single-image. The full technical design is preserved in the archived spec
+([finished/image-model-capabilities.spec.md](finished/image-model-capabilities.spec.md)
+§"Image sets", §"Replicate prediction shell").
+
+**Trigger:** owner scheduling, when a product surface actually wants ordered
+multi-image output.
+
+## Image capability remainders
+
+_Parked 2026-08-14 with the same close-out._ Small pieces of the capabilities
+plan deliberately left unbuilt, none load-bearing for normal renders:
+
+- **Prompt fitting to model limits** — `fitPromptToModel` over named prompt
+  segments, probe-recorded prompt length limits, and the
+  `image_model.prompt_too_long_required` refusal (design:
+  [finished/image-model-capabilities.spec.md](finished/image-model-capabilities.spec.md)
+  §"Prompt fitting"). The reference-edit paths still run the fixed character
+  budget inherited from Venice. Most natural alongside the render-quality
+  plan's per-model prompt work.
+- **Retry same composition** — a player/admin action reusing a stored
+  `images.meta.render` record (profile, prompt, seed, controls, reference
+  sources). The record exists on every render; only the button does not.
+- **Derived latency labels** — per-profile fast/normal/slow from recent
+  successful runs; needs duration recording first.
+- **Text-repair / example-transform / remix profiles** — their prompt
+  strategies deliberately refuse to compile and no lane supplies their
+  references; seeding any of them is a broken picker entry until a consuming
+  surface exists.
+
+**Trigger:** owner scheduling; the retry action is the most player-visible of
+the four.
+
 ## A reviewed style LoRA in an ordinary lane
 
 _Parked 2026-08-13, when the Qwen advanced image subsystem closed

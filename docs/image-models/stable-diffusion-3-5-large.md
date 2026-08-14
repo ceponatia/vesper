@@ -60,12 +60,21 @@ future deliberate remix path must normalize after generation.
 The semantic rating makes identity-critical profiles ineligible even if a surface
 toggle is changed later.
 
-## Seeded profile
+## Seeded profiles
 
 - `portrait-standard` — `generate`, `text_to_image_description`, no references,
   empty controls, not the global default.
+- `stylized-portrait-high-guidance` (Stylized Portrait High Guidance) — the
+  deliberate stylization pick, runs only when picked: `guidance: 8` (the `cfg`
+  field, provider range 1–10, default 5) plus a curated artifact-cleanup
+  negative prompt (blur, low detail, JPEG artifacts, watermark/signature,
+  deformed hands, extra fingers).
 
-Nothing calls the profile layer yet.
+The curated controls map through the probed bindings (`cfg`,
+`negative_prompt`): while the model row's `advancedCapabilities` is empty they
+drop as recorded `no_binding`, and they take effect once the version is probed
+or pinned. `portrait-standard` stays byte-identical for everyone who does not
+choose the stylized profile.
 
 ## Negative-prompt ruling
 
@@ -73,9 +82,10 @@ The transitional render policy adds no `negative_prompt` field. Even on a
 portrait surface, a generic cleanup block can conflict with requested printed
 clothing, logos, blur, pixel-art media, unusual anatomy, or authored absences.
 
-A future portrait profile may compose negative terms from style, visible anatomy,
-subject count, and positive prompt segments. Until that context reaches the
-render seam, Stable Diffusion 3.5 Large remains byte-identical there.
+Negative terms are an opt-in curation instead:
+`stylized-portrait-high-guidance` carries the one conflict-checked negative
+block, chosen with the profile rather than imposed at the seam. The default
+path remains byte-identical there.
 
 ## Inputs
 
