@@ -62,12 +62,10 @@ import {
  * recorded outcome — because a difference anywhere else would show up in the
  * comparison as if it were the LoRA's doing.
  *
- * The pack gate (`imageIdentityPackReferencesEnabled`) is deliberately NOT
- * consulted, on the identity-pack trial's own precedent: that flag governs
- * whether production LANES send pack references, and a bench measuring what the
- * references are worth cannot be gated on the decision it exists to inform.
- * Nothing here is player-visible, and every render still lands as a hidden
- * `lab_output`.
+ * The bench consumes the pack service directly, exactly as the production
+ * lanes do since the slice-7 close-out made it their unconditional identity
+ * source. Nothing here is player-visible, and every render still lands as a
+ * hidden `lab_output`.
  */
 export async function runFinishingPass(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
   const variant = finishingPassVariant(row, sink);

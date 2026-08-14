@@ -263,30 +263,26 @@ The final render record also includes model/profile/version, prompt hashes,
 ordered non-identity references, resolved controls, seed, latency, cost, crop
 bounds, moderation, and output-QA findings as defined by sibling plans.
 
-## Rollout flag
+## Rollout flag (removed — slice 7, 2026-08-13)
 
-Pack persistence and preparation ship before provider behavior changes.
+Pack persistence and preparation shipped before provider behavior changed,
+staged behind one consumer flag (`IMAGE_IDENTITY_PACK_REFERENCES`, default
+off). The staging is over: the flag was enabled in production on 2026-08-13,
+verified live (a flag-on portrait variant rendered ready with pack provenance
+on its row), and then **removed outright in the slice-7 close-out** together
+with the legacy direct-avatar reads it had gated — the plan's own instruction
+("do not create a permanent legacy-references preference").
 
-Use one consumer flag:
+The standing contract, no longer conditional:
 
-```text
-IMAGE_IDENTITY_PACK_REFERENCES
-```
-
-Default off. When off:
-
-- packs may be created, backfilled, inspected, and trialed;
-- current lanes preserve existing reference behavior;
-- no provider payload changes because a pack exists.
-
-When on for an eligible profile:
-
-- shared render intent obtains candidates only through the pack service;
-- provenance records the selected revision;
-- profile capacity and quality gates apply.
-
-Do not create a permanent “legacy references” preference. After trial and
-rollout, remove lane-local recropping and the compatibility fallback.
+- shared render intent obtains identity candidates only through the pack
+  service (`identityPackRenderReferences`);
+- provenance for the references actually sent records the selected revision on
+  `meta.identityReferences`;
+- profile capacity and quality gates apply, and an ineligible pack refuses the
+  render rather than substituting;
+- packs may still be created, backfilled, inspected, and trialed independently
+  of any render — evaluation is measurement.
 
 ## Output QA relationship
 
@@ -326,8 +322,11 @@ images.identity_pack.required_identity_capacity
 images.identity_pack.reference_fetch_failed
 images.identity_pack.provenance_missing
 images.identity_pack.manual_override
-images.identity_pack.legacy_fallback_used
 ```
+
+(`images.identity_pack.legacy_fallback_used` was reserved for the rollout
+compatibility fallback; the slice-7 close-out removed that fallback before the
+code was ever emitted, so it left the vocabulary with it.)
 
 A profile-ineligible result is actionable product feedback, not an unhandled
 provider error. The UI can suggest a clearer canonical portrait, manual crop, or a
@@ -335,7 +334,8 @@ model/profile that supports the required references.
 
 ## Slice 5B build record (2026-08-13)
 
-Render-lane consumption is built behind the flag, which stays off. Rulings the
+Render-lane consumption was built behind the rollout flag (enabled, verified,
+and then removed the same day by the slice-7 close-out above). Rulings the
 build settled:
 
 - **The strategy lives in the profile's `referencePolicy` jsonb** as

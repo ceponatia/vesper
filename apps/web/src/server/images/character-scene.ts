@@ -14,7 +14,6 @@ import { db, images } from "../db";
 import { logEvent } from "../events";
 import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
 import { identityPackRenderReferences } from "./identity-pack-consume";
-import { imageIdentityPackReferencesEnabled } from "./identity-pack-store";
 import { latestChatLook } from "./chat-look";
 import {
   apparentAgeAnchor,
@@ -162,23 +161,6 @@ async function loadChatPlaceImage(ownerId: string, imageId: string): Promise<{ i
   return buffer ? { imageId: row.id, buffer } : null;
 }
 
-async function loadCharacterAvatar(
-  ownerId: string,
-  avatarImageId: string | null,
-): Promise<{ imageId: string; buffer: Buffer; source: SceneReferenceSource } | null> {
-  if (!avatarImageId) return null;
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(and(eq(images.id, avatarImageId), eq(images.ownerId, ownerId)))
-    .limit(1);
-  if (!row || row.status !== "ready") return null;
-  const buffer = await readImageBytes(row);
-  if (!buffer) return null;
-  const uploaded = imageMeta(row.meta).source === "upload";
-  return { imageId: row.id, buffer, source: uploaded ? "uploaded" : "generated" };
-}
-
 /** Compose and render one character-chat scene with the persisted provider choice. */
 export async function renderCharacterSceneImage(input: RenderCharacterSceneInput): Promise<string> {
   const selfie = input.flavor === "selfie";
@@ -205,29 +187,24 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, input.sink);
   const model = imageProfile?.model ?? null;
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
-  // Avatar-fallback anchors go through the identity-pack service when the
-  // consumer flag is on (5B ruling): a minted chat look STAYS the identity
-  // reference — it carries current wardrobe/state and is itself downstream of
-  // the avatar — so only the member with no fresh look asks the pack.
-  const packRoute = referenceRoute && imageProfile !== null && imageIdentityPackReferencesEnabled();
   // One anchor per cast member, resolved in roster order: this character's own
-  // tracked look when the chat has minted one, else their canonical portrait. A
-  // member with neither renders from the prompt's textual description, which the
-  // multi-reference prompt already labels as such.
+  // tracked look when the chat has minted one, else the identity-pack service's
+  // candidate for their canonical portrait (5B ruling — a minted chat look
+  // STAYS the identity reference: it carries current wardrobe/state and is
+  // itself downstream of the avatar, so only the member with no fresh look
+  // asks the pack). A member with neither renders from the prompt's textual
+  // description, which the multi-reference prompt already labels as such.
   const anchors = new Map<string, { imageId: string; buffer: Buffer; source: SceneReferenceSource }>();
   const identityProvenance: IdentityReferenceProvenance[] = [];
   let identityRefusal: string | null = null;
-  if (referenceRoute) {
+  // `imageProfile !== null` is implied by `referenceRoute` at runtime (the model
+  // comes from the profile) — restated so the pack call below type-narrows.
+  if (referenceRoute && imageProfile !== null) {
     for (const member of cast) {
       const look =
         input.chatId && member.lookKey ? await latestChatLook(input.chatId, member.characterId, member.lookKey) : null;
       if (look) {
         anchors.set(member.characterId, { imageId: look.imageId, buffer: look.buffer, source: "generated" });
-        continue;
-      }
-      if (!packRoute || imageProfile === null) {
-        const anchor = await loadCharacterAvatar(input.userId, member.avatarImageId);
-        if (anchor) anchors.set(member.characterId, anchor);
         continue;
       }
       // A member with no portrait at all renders from text, exactly as before —

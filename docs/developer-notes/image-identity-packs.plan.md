@@ -1,9 +1,11 @@
 # Image identity packs — durable references that preserve a character's face
 
-Status: active (slices 1–4 and 5A shipped 2026-08-06; slice 5B merged and
-deployed dark 2026-08-13 — every identity-critical lane consumes the pack
-behind the still-off flag; slice 6's trial harness shipped 2026-08-06 and was
-hardened through 2026-08-07; the paid trial run and slice 7 remain)
+Status: awaiting acceptance — the slice-7 close-out deploy. (Slices 1–4 and 5A
+shipped 2026-08-06; 5B merged and deployed dark 2026-08-13; slice 6's paid
+trial was waived by owner ruling the same day — see the slice — and slice 7
+lit the flag in production, verified it live, and removed it, making the pack
+the unconditional identity source. Shipped status and the archive follow the
+verified deploy of that close-out.)
 
 Outcome: A player can recognize the same character's face in every image Vesper
 makes of them, so that a newly generated picture stops looking like a different
@@ -336,8 +338,8 @@ override, and a bounded batch over the admin's own characters.
 
 ### Slice 5 — reference-role integration
 
-Status: complete — 5A 2026-08-06; 5B merged and deployed dark 2026-08-13,
-awaiting the slice-6 trial verdict to light the flag; rulings in the
+Status: complete — 5A 2026-08-06; 5B 2026-08-13 (built dark, then lit and
+made unconditional by slice 7 the same day); rulings in the
 [integration spec](image-identity-packs.spec.integration.md)
 §"Slice 5B build record".
 
@@ -350,28 +352,35 @@ for a model profile and answers with the candidate reference roles that profile
 may use, profile-aware eligibility, and the provenance record behind that
 answer.
 
-**Slice 5B — render-lane consumption. Built 2026-08-13.** When the consumer
-flag is on, the three identity-critical lanes — portrait variants, chat looks,
-and the chat scene cast's avatar-fallback anchor — evaluate the pack for their
-resolved profile, send its candidate roles with recorded provenance, and refuse
-rather than substitute another image when a pack is blocked. Every profile's
-declared strategy defaults to canonical-only, so the reference a lane sends is
-the same canonical portrait it sends today — what changes is eligibility
-gating, authorization, and traceability. The flag stays off, so production
-behavior is unchanged until the slice-6 trial verdict. The recropping removal
-this slice once anticipated turned out to be vacuous: no lane ever performed
-its own face recropping.
+**Slice 5B — render-lane consumption. Built 2026-08-13.** The three
+identity-critical lanes — portrait variants, chat looks, and the chat scene
+cast's look-less-member anchor — evaluate the pack for their resolved profile,
+send its candidate roles with recorded provenance, and refuse rather than
+substitute another image when a pack is blocked. Every profile's declared
+strategy defaults to canonical-only, so the reference a lane sends is the same
+canonical portrait it sent before — what changed is eligibility gating,
+authorization, and traceability. (Built dark behind a rollout flag; slice 7
+enabled, verified, and then removed that flag the same day.) The recropping
+removal this slice once anticipated turned out to be vacuous: no lane ever
+performed its own face recropping.
 
 ### Slice 6 — fixed identity-reference trial
 
-Status: built 2026-08-06 — awaiting the paid trial run, which is owner work.
+Status: void — the paid trial was waived by owner ruling (2026-08-13). The
+harness remains built and available if the strategy question reopens.
 
-Run the fixed corpus against canonical-only, canonical-plus-face-detail, and any
-profile-specific reference strategies. Measure identity preference, edit fidelity,
-composition drift, failure rate, provider latency, and effective reference size.
+Owner ruling (2026-08-13): the paid comparison trial is waived, and
+`canonical_only` — every profile's existing default, sending the same
+canonical portrait the lanes always sent — ships as the production strategy
+without a measured verdict. No paid renders ran and no verdict rows exist;
+richer strategies (face-detail roles, per-profile orderings) stay expressible
+as data and would go through this harness if ever pursued.
 
-Promote only strategies that materially improve identity without unacceptable
-regressions. Record the thresholds and policy version used for the verdict.
+The slice's original charge, kept for the record: run the fixed corpus against
+canonical-only, canonical-plus-face-detail, and any profile-specific reference
+strategies; measure identity preference, edit fidelity, composition drift,
+failure rate, provider latency, and effective reference size; promote only
+strategies that materially improve identity without unacceptable regressions.
 
 **The harness shipped 2026-08-06 and was hardened through 2026-08-07. The trial
 itself has not run.** An admin has a Settings → Identity trials page where they
@@ -401,27 +410,29 @@ renders are outstanding or the blind review is unfinished — recording one anyw
 is an explicit, labeled override — and a run counts as complete only when both
 the review and the rulings are.
 
-**What remains is the trial, and it is owner work.** No corpus characters exist
-yet, no paid renders have happened, no thresholds are calibrated, no detector is
-chosen, and no verdict is recorded. Trial creation now handles its own bounded
-version setup: before planning cells, it re-probes only the distinct selected
-model rows whose exact Replicate version is still unknown and persists the
-probe-owned capability/version fields. A probe failure stops before the run is
-created, and the planner still refuses any model it cannot pin; the evidence
-contract is unchanged, but an admin no longer has to re-probe all six seeded
-models manually or probe models the trial will not use.
-
-Reference sending stays off throughout: the integration rules deliberately allow
-packs to be trialed while it is off. Mechanics and recorded v1 limitations:
-[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md).
+The trial never ran — the waiver ruling above stands in for its verdict. No
+corpus characters exist, no paid renders happened, no thresholds were
+calibrated, no detector was chosen, and no verdict is recorded. The harness
+still handles its own bounded version setup (re-probing only unknown selected
+model versions before planning, refusing models it cannot pin), and packs can
+be trialed independently of render-lane sending, so reopening the question is
+an owner decision away rather than a rebuild. Mechanics and recorded v1
+limitations: [image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md).
 
 ### Slice 7 — production close-out
 
-Status: queued — after the slice 6 verdict.
+Status: built 2026-08-13 — awaiting its deploy, the plan's acceptance step.
 
-Turn advisory measurements into the reviewed production gate, wire provenance and
-telemetry, verify deletion/copy/publish paths, remove rollout fallbacks, and update
-`docs/images/identity-packs.md` with the shipped operational contract.
+Delivered under the slice-6 waiver: the consumer flag was enabled in
+production and verified live (a portrait variant rendered ready with the
+pack's `canonical_identity` candidate and its provenance on the row), then the
+flag and every legacy fallback it gated were removed outright — the pack
+service is the unconditional identity source, per this plan's own
+no-permanent-legacy-preference instruction. The profile-aware eligibility
+check built in 5B is the production gate; render provenance persists on
+`meta.identityReferences`; deletion/copy/publish isolation is exercised by the
+lifecycle integration suites; and `docs/images/identity-packs.md` (plus
+`pipelines.md`) now states the shipped operational contract.
 
 ## Acceptance criteria
 
@@ -438,8 +449,8 @@ The plan is complete when:
 - character deletion removes the operational pack and hidden derivatives while
   respecting Gallery retention for the canonical source;
 - render provenance identifies the exact pack revision and role used;
-- the fixed trial establishes whether face-detail references improve Vesper's
-  supported identity-critical profiles;
+- the reference-strategy question is settled — by the fixed trial, or, as
+  ruled 2026-08-13, by the owner waiving it in favor of canonical-only;
 - temporary render-time crop fallbacks are removed.
 
 ## Risks and controls
