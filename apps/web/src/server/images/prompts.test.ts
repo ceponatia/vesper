@@ -27,9 +27,11 @@ import {
   formatExposure,
   RECENT_NARRATION_LATEST_CHARS,
   RECENT_NARRATION_PRIOR_CHARS,
+  RECENT_PLAYER_MESSAGE_CHARS,
   SCENE_COMPOSER_SYSTEM,
   type SceneComposerContext,
   sceneComposerSystem,
+  sceneEvidenceCorpus,
   type ScenePresentCharacter,
   sceneSpecSchema,
   wardrobeOutfitSummary,
@@ -602,6 +604,89 @@ describe("buildSceneComposerPrompt", () => {
     });
     // Species phrase precedes the activity on the line; assert order without pinning separators.
     expect(prompt).toMatch(/- Lilith\b.*Succubus.*pouring a drink/);
+  });
+});
+
+describe("the composer's camera and staging rules (scene-composition slices 1–2)", () => {
+  it("states the camera menu, its default, and the quote requirement in BOTH lanes", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      expect(system).toContain('"toward_viewer", "three_quarter", "profile", "away_glance_back", "away"');
+      expect(system).toContain('"close", "medium", "full_figure", "wide"');
+      expect(system).toContain('"eye_level", "high", "low"');
+      expect(system).toContain("MUST carry camera.evidence");
+      expect(system).toContain("copied EXACTLY, word for word, from the recent narration or the player's own words");
+      expect(system).toContain("Distance never needs a quote");
+    }
+  });
+
+  it("teaches away-means-fully-away and gates the glance on its own quote (owner ruling 2026-08-10)", () => {
+    expect(SCENE_COMPOSER_SYSTEM).toContain("away means fully away");
+    expect(SCENE_COMPOSER_SYSTEM).toContain(
+      'Propose "away_glance_back" ONLY when the history actually describes her looking or glancing back',
+    );
+    expect(SCENE_COMPOSER_SYSTEM).toContain("the quote must be that glance itself, not the behind-position");
+  });
+
+  it("makes the gaze translation orientation-aware in both rule sets", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      expect(system).toContain('become "toward the viewer"');
+      expect(system).toContain('"glancing back over her shoulder toward the viewer" instead');
+    }
+  });
+
+  it("offers staging only to the embodied lane, as ids plus a quote and never as prose", () => {
+    const embodied = sceneComposerSystem(true);
+    expect(embodied).toContain("- staging:");
+    expect(embodied).toContain("held_from_behind, held_from_behind_bare, kneeling_before_viewer");
+    expect(embodied).toContain("pressed_to_wall_away");
+    expect(embodied).toContain("You never write the configuration out in words");
+    expect(sceneComposerSystem(false)).not.toContain("staging");
+  });
+});
+
+describe("the composer's new context inputs (scene-composition slices 1+3)", () => {
+  it("adds nothing at all when neither input is supplied — the byte-identical pin", () => {
+    expect(buildSceneComposerPrompt(libraryContext)).not.toContain("The player's own words");
+    expect(buildSceneComposerPrompt(libraryContext)).not.toContain("Committed scene facts");
+  });
+
+  it("quotes the NEWEST player message only, labeled as theirs and excerpted", () => {
+    const prompt = buildSceneComposerPrompt({
+      ...libraryContext,
+      recentPlayerMessages: ["older words entirely", "z".repeat(2000)],
+    });
+    expect(prompt).toContain("The player's own words (their stated position and actions):");
+    expect(prompt).not.toContain("older words entirely");
+    const zRun = prompt.match(/z{10,}/)?.[0] ?? "";
+    expect(zRun.length).toBeGreaterThan(0);
+    expect(zRun.length).toBeLessThanOrEqual(RECENT_PLAYER_MESSAGE_CHARS);
+  });
+
+  it("states committed facts as authoritative, before the narration they outrank", () => {
+    const prompt = buildSceneComposerPrompt({
+      ...libraryContext,
+      committedScene: new Map([["mira", { facing: "away", focalPosture: "standing", proximity: "touching" }]]),
+    });
+    expect(prompt).toContain("Committed scene facts (authoritative");
+    expect(prompt).toContain("outrank anything the narration implies");
+    expect(prompt).toContain("Mira faces away from the player; Mira is standing; they are touching.");
+    expect(prompt.indexOf("Committed scene facts")).toBeLessThan(prompt.indexOf("Recent narration"));
+    // A present character the scene knows nothing about contributes no line.
+    expect(prompt).not.toContain("Sayed faces");
+  });
+
+  it("adds no header when the map holds nothing for anyone present", () => {
+    const prompt = buildSceneComposerPrompt({ ...libraryContext, committedScene: new Map([["lyra", { facing: "away" }]]) });
+    expect(prompt).not.toContain("Committed scene facts");
+  });
+});
+
+describe("sceneEvidenceCorpus", () => {
+  it("is narration AND the player's own messages — every one of them, not just the prompted newest", () => {
+    expect(
+      sceneEvidenceCorpus({ recentNarration: ["a", "  "], recentPlayerMessages: ["b", "c"] }),
+    ).toEqual(["a", "b", "c"]);
+    expect(sceneEvidenceCorpus({})).toEqual([]);
   });
 });
 
@@ -1521,7 +1606,7 @@ describe("the composer's viewer-body proposal (slice 3)", () => {
     expect(sink.items.map((d) => d.code)).toContain("images.scene_composer.viewer_body_dropped");
   });
 
-  // The composer runs allowIntimate:false on the moderation-prone tool model and has no
+  // The composer runs allowIntimate:false whatever model its seam picks and has no
   // intimate vocabulary — proposing one is off-script, even though the render gate would
   // also have caught it.
   it("drops an intimate part the composer had no business proposing", () => {
@@ -1636,6 +1721,12 @@ describe("sceneComposerSystem lane scope (slice 3)", () => {
     expect(embodied).toContain('"hands", "forearms", "lap_thighs", "legs_feet", "torso"');
     // Intimate anatomy is derived at render assembly, never proposed by this model.
     expect(embodied).not.toContain("genitals");
+  });
+
+  it("keeps EVERY rule of the embodied set, the contact rule that spends viewerBody included", () => {
+    // A two-name destructure once dropped this third rule on the floor: the lane was handed
+    // a `viewerBody` vocabulary and never told it may name contact with the player at all.
+    expect(sceneComposerSystem(true)).toContain("- pose/activity may now name contact with the player");
   });
 
   it("keeps the blush rule on both lanes", () => {

@@ -3,6 +3,7 @@ import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/v
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { resolveImageProfileForTask } from "./model-profiles";
+import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
 import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -63,6 +64,16 @@ export interface RenderCharacterSceneInput {
   room?: string;
   timeOfDay?: string;
   recentChat?: string[];
+  /**
+   * The player's own recent messages, oldest first (scene-composition.plan.md slice 1) — a
+   * separate list from `recentChat`, which keeps its meaning of assistant rows only.
+   */
+  recentPlayerChat?: string[];
+  /**
+   * Committed scene facts per cast member, keyed by normalized name (slice 3). Authoritative
+   * where present; an absent entry constrains nothing.
+   */
+  committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
   playerExposure?: RegionExposure;
   playerAttributes?: ReadonlyArray<AttributeValue>;
   playerProfile?: CharacterProfile;
@@ -123,6 +134,8 @@ export function buildCharacterSceneContext(input: {
   room: string;
   timeOfDay?: string;
   recentChat: string[];
+  recentPlayerChat?: string[];
+  committedScene?: ReadonlyMap<string, CommittedSceneFacts>;
   playerExposure?: RegionExposure;
   playerAttributes?: ReadonlyArray<AttributeValue>;
   playerProfile?: CharacterProfile;
@@ -133,6 +146,12 @@ export function buildCharacterSceneContext(input: {
     locationDescription: input.room,
     timeOfDay: input.timeOfDay?.trim() || "day",
     recentNarration: input.recentChat,
+    // Both spread conditionally: an absent player corpus and an empty committed map must
+    // leave the composer prompt byte-identical to the pre-slice one.
+    ...(input.recentPlayerChat && input.recentPlayerChat.length > 0
+      ? { recentPlayerMessages: input.recentPlayerChat }
+      : {}),
+    ...(input.committedScene && input.committedScene.size > 0 ? { committedScene: input.committedScene } : {}),
     embodiedViewer: true,
     ...(input.playerExposure ? { playerExposure: input.playerExposure } : {}),
     ...(input.playerAttributes ? { playerAttributes: input.playerAttributes } : {}),
@@ -173,6 +192,8 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     room,
     timeOfDay: input.timeOfDay,
     recentChat: (input.recentChat ?? []).filter((text) => text.trim()),
+    recentPlayerChat: (input.recentPlayerChat ?? []).filter((text) => text.trim()),
+    committedScene: input.committedScene,
     playerExposure: input.playerExposure,
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,
@@ -335,8 +356,13 @@ function sanitizeScenePlan(plan: SceneRenderPlan): SceneRenderPlan {
     exposure: undefined,
     intimateAppearance: undefined,
   });
+  // The staging goes with them (scene-composition.spec.md §Ownership rules): a content
+  // rejection is the provider refusing what the prompt described, and the staged act is the
+  // most explicit sentence in it. The camera stays — where the shot is taken from is never
+  // what a moderator objected to, and dropping it would silently un-compose the scene.
   return {
     ...plan,
+    staging: undefined,
     focal: plan.focal ? scrub(plan.focal) : null,
     others: plan.others.map(scrub),
   };

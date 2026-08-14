@@ -4,7 +4,8 @@ import {
   classifyImageFailure,
   generateChecked,
   isDemoMode,
-  toolModelId,
+  narrativeModelId,
+  sceneComposerModelId,
 } from "../ai";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logDiagnostics } from "@/server/log";
@@ -42,20 +43,42 @@ import { buildSceneRenderPrompt } from "./prompts-scene-render";
 
 export type SceneComposeInput = SceneComposerContext & { sink?: DiagnosticSink };
 
-/** Compose a validated render plan from the current scene context. */
+/**
+ * Compose a validated render plan from the current scene context.
+ *
+ * TWO model calls at most, on two models (scene-composition.plan.md slice 2, owner ruling
+ * 2026-08-10). The primary runs on the composer's own seam and is asked with **no fallback**
+ * on purpose: `generateChecked` answers a missing fallback with the schema's own defaults,
+ * which parse cleanly and would look exactly like a successful composition — the refusal
+ * would be invisible and the second model would never be asked. Reading `degraded` is what
+ * makes a refusal or a schema miss visible enough to retry.
+ *
+ * The retry is the chat's narrative model (the approved fallback: already trusted with this
+ * repo's most explicit text), and it carries the heuristic fallback, so the terminal degrade
+ * stays today's deterministic spec — never a failed render.
+ */
 export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneRenderPlan> {
   const { sink, ...context } = input;
   const fallback = (): SceneSpec => heuristicSceneSpec(context);
-  const { value } = await generateChecked({
+  const request = {
     schema: sceneSpecSchema,
     system: sceneComposerSystem(context.embodiedViewer === true),
     prompt: buildSceneComposerPrompt(context),
-    modelId: toolModelId(),
     code: "images.scene_composer",
     sink,
-    fallback,
-  });
-  return resolveScenePlan(value ?? fallback(), context, sink);
+  };
+  const primary = await generateChecked({ ...request, modelId: sceneComposerModelId() });
+  if (!primary.degraded && primary.value) return resolveScenePlan(primary.value, context, sink);
+  // Demo mode degrades every model call by design, so a second one buys nothing but noise —
+  // and the primary's own `.degraded` diagnostic has already said what happened.
+  if (isDemoMode()) return resolveScenePlan(fallback(), context, sink);
+  sink?.push(
+    diag("info", "images.scene_composer.model_fallback", `scene composer degraded on ${sceneComposerModelId()} — retrying on ${narrativeModelId()}`, {
+      context: { primary: sceneComposerModelId(), fallback: narrativeModelId() },
+    }),
+  );
+  const retry = await generateChecked({ ...request, modelId: narrativeModelId(), fallback });
+  return resolveScenePlan(retry.value ?? fallback(), context, sink);
 }
 
 function heuristicSceneSpec(context: SceneComposerContext): SceneSpec {
@@ -257,6 +280,13 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           focalName: plan.focal?.name ?? null,
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
+          // The RESOLVED shot, for the dev lightbox and probe grading
+          // (scene-composition.spec.md §"Prompt emission"). Ids only — the phrasing
+          // lives in the registries, and the prompt itself is already on the row.
+          // Written once at reserve time: unlike the prompt and model, the camera is
+          // the same on every rung, so a fallback needs no correction pass.
+          camera: plan.camera,
+          ...(plan.staging ? { staging: plan.staging.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
         },
