@@ -36,6 +36,12 @@ quality can only be judged by eye.
   the app's own gates, not a paraphrase. Reports measured latency and measured
   dollars alongside the score. `composer-model-score.ts` is pure and covered by
   `pnpm test` — a grader nobody tests is an instrument nobody can trust.
+- `composer-model-eval.ts` + `composer-model-economics.ts` — the owner-facing
+  entrypoint and its pure economics helper. The entrypoint runs the existing
+  composer A/B unchanged, then separates the quality `answered` rate from the
+  exact production fallback trigger, reports primary and effective two-rung cost,
+  flags the owner-set 10% fallback-review threshold, and writes
+  `ladder-summary.json`. The arithmetic helper is covered by `pnpm test`.
 - `run.ts` — offline runner. Computes each fixture's provider routing decision and
   the exact prompt(s) the executor would build, and writes:
   - `data/eval/scene-images/manifest.json` — inputs / chain / primary provider / prompts
@@ -57,19 +63,23 @@ EVAL_LORA_WEIGHTS=owner/model EVAL_LORA_SCALE=1 pnpm tsx scripts/eval/scene-imag
 # Renders land in screenshots/intimate-model-ab/<beat>/<arm>-<n>.webp
 
 # the composer-model A/B — PAID, but TEXT: the full 8×7×2 matrix is well under $2
-pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
-AB_BEAT=doggy AB_RUNS=3 pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
-AB_ARMS=aion3,dsflash-off pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
+# Use the owner entrypoint so the unchanged A/B is followed by production-ladder economics.
+pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
+AB_BEAT=doggy AB_RUNS=3 pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
+AB_ARMS=aion3,dsflash-off pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
 # arms: aion3 (control, required) | aion3mini | aion2 | dsflash-off | dsflash-low
 #       | qwen37flash | glm47flash | ling3flash
-# Results land in data/eval/composer-model-ab/results.{csv,json} (EVAL_OUT overrides).
+# Raw results: data/eval/composer-model-ab/results.{csv,json}
+# Ladder report: data/eval/composer-model-ab/ladder-summary.json   (EVAL_OUT overrides both).
 ```
 
-Both A/Bs print their prompts with no provider key configured, so the wording is free to
+The image A/Bs print their prompts with no provider key configured, so the wording is free to
 review; only the renders cost anything. `intimate-model-ab.ts` additionally refuses to send
 ANYTHING when its own honesty checks fail — two arms sharing a prompt they should not, a
 `lora` arm that has drifted off the `qwen` arm's prompt, a staging sentence missing from a
-pipeline prompt, or a compact prompt over its word budget.
+pipeline prompt, or a compact prompt over its word budget. The composer-model owner entrypoint
+also preserves no-provider behavior: the underlying A/B prints its prompts, then the wrapper
+skips ladder economics rather than reading stale results from an earlier paid run.
 
 ## Scoring (manual)
 
