@@ -16,7 +16,8 @@ contract: its spec.
   before any spend), `baseline_portrait` / `baseline_scene` (re-run the
   ordinary lane's own resolved profile + render-intent configuration, so the
   recorded settings prove parity), `controlled_portrait` / `controlled_scene`
-  (below), `two_character_scene` (below), and `finishing_pass` (below). Every
+  (below), `two_character_scene` (below), `staged_scene` (below), and
+  `finishing_pass` (below). Every
   experiment records model slug, requested
   and executed version, final prompt, ordered input roles, settings, and
   prediction id — enough to compare or retry. Outputs save as hidden
@@ -142,6 +143,24 @@ contract: its spec.
   before any spend — the output could match the control by copying that
   reference, so a pass would prove copying, not obedience. The experiment form
   greys that render out in the identity picker with the reason.
+- **Staged scenes** (`staged_scene`) are the one kind whose prompt the admin
+  does not write. The admin picks an intimate staging from the registry
+  (`apps/web/src/contracts/images/scene-staging.ts`) and a character; the lane
+  assembles the scene plan and compiles it through `buildSceneRenderPrompt`,
+  the chat lane's own compiler, so the registry owns every explicit phrase and
+  the sent wording is byte-identical to what a chat would send for that plan.
+  The LoRA rides `settings.controls.lora` and resolves through the same library
+  seam as the render path — same curated scale band, same `image_lora.*`
+  refusals — which is what lets this bench answer whether a scale is right,
+  graded across a sweep on one staging. There is no instruction box and no
+  control fixture; the form seeds the builtin intimate LoRA at its curated
+  default. Verdicts are its own vocabulary (`act_depicted`, `act_substituted`,
+  `anatomy_withheld`, `geometry_wrong`, `identity_lost`), where the two middle
+  rulings point at opposite scale corrections. A staged run reads only the
+  character's **name** — the likeness rides the identity reference under the
+  lock — so it carries none of the chat lane's textual appearance anchors, and
+  a verdict is evidence about the staging and the weights rather than about a
+  chat render's identity fidelity.
 
 ## Control fixtures
 

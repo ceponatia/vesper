@@ -63,11 +63,17 @@ prompts only when its planned expansion happens (slice 2).
   intimate-staged uncensored renders; the builtin library row and the token
   seam land with it; degradations named and tested.
 
-- **Slice 2 — the expanded admin image lab drives the staged prompts.**
+- **Slice 2 — the admin image lab drives the staged prompts.**
 
-  Status: blocked on the image-lab expansion (owner: "when we expand that")
-  — the lab's staged-scene recipes adopt the staging registry and the same
-  LoRA binding when that work is planned.
+  Status: in progress — scoped 2026-08-15 (owner ruling) as its own
+  `staged_scene` lab kind, which removes the dependency on the image-lab
+  expansion the slice was originally queued behind.
+
+  The owner picks an intimate staging outright and renders it on the bench —
+  the same words and the same LoRA a chat would send, with no chat, no
+  composer, and no narration to steer. It answers a question the chat lane
+  structurally cannot: whether the LoRA's scale is right, graded across a
+  sweep on one staging.
 
 ## Success criteria
 

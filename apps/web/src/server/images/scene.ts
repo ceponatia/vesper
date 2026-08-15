@@ -107,7 +107,17 @@ const TIME_OF_DAY_LIGHTING: Record<string, string> = {
   night: "dim night-time lighting",
 };
 
-function heuristicLighting(timeOfDay: string | undefined): string {
+/**
+ * The light a time of day implies, for a plan whose lighting nobody wrote.
+ *
+ * Exported for the staged-scene lab lane, which has no composer to ask and no
+ * chat to read one off: an admin who states `night` and no lighting gets the
+ * same phrase the chat lane's own fallback spec would have produced, rather than
+ * a second table saying nearly the same thing. Anything outside the four words
+ * falls through to the neutral phrase, which is why both callers can pass free
+ * text at it.
+ */
+export function heuristicLighting(timeOfDay: string | undefined): string {
   return (timeOfDay && TIME_OF_DAY_LIGHTING[timeOfDay]) || "soft natural light";
 }
 

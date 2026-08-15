@@ -35,16 +35,17 @@ import type { ImageReferenceDropReason } from "../render-intent/render-intent";
  * re-run an ordinary lane's own configuration so a later comparison has a
  * same-settings control to sit beside; the two controlled kinds ask whether the
  * control still holds when the request is production-shaped;
- * `two_character_scene` puts TWO people in one render; and `finishing_pass`
+ * `two_character_scene` puts TWO people in one render; `finishing_pass`
  * re-edits one of those results against the subject's identity pack, changing
- * nothing but the face.
+ * nothing but the face; and `staged_scene` benches one intimate staging from the
+ * registry.
  *
  * The first six were declared at once, three of them unused for two stages,
  * because the record shape had to survive Stages 1–3 without a migration — an
  * experiment kind arriving later would otherwise mean altering a column every
  * stored row uses. That bet paid off exactly as intended when Stage 6 added a
- * seventh: the column is plain `text`, so widening this tuple was a code change
- * and nothing else.
+ * seventh, and again when the intimate-scene bench added an eighth: the column
+ * is plain `text`, so widening this tuple was a code change and nothing else.
  *
  * `two_character_scene` is its own kind rather than a `controlled_scene`
  * carrying a second identity input, because the two ask different questions and
@@ -55,6 +56,26 @@ import type { ImageReferenceDropReason } from "../render-intent/render-intent";
  * pose ownership a note rather than the ruling. One kind covering both would need
  * a verdict column that meant different things depending on how many identity
  * inputs the row happened to carry.
+ *
+ * `staged_scene` is the eighth, and the first whose subject is neither the
+ * control nor the cast but the ACT: it renders one entry from the staging
+ * registry — the same compiled wording and the same intimate LoRA binding the
+ * chat lane sends — with no chat, no composer, and no narration to steer
+ * (intimate-scene-lora.spec.md §"Slice 2"). The chat lane cannot ask this
+ * question at all: production only reaches an intimate render when the composer
+ * proposes a staging AND quotes narration verbatim for it, so grading one today
+ * means playing a chat until the composer cooperates. Here the staging is chosen
+ * outright.
+ *
+ * It is its own kind rather than a `controlled_scene` carrying a staging id, for
+ * the reason the two-character kind is its own. A controlled scene's evidence is
+ * obedience to a FIXTURE the admin ordered, and its recipe REQUIRES one; a staged
+ * scene sends none. Its structure arrives as registry-owned wording, and the
+ * questions it settles are whether the model draws the act those words describe
+ * and whether the LoRA's scale is right — neither of which a control-shaped
+ * record can hold, which is why it rules in {@link imageLabStagedSceneVerdicts}
+ * rather than in the probe's. One kind covering both would need a control slot
+ * that half its rows leave empty.
  *
  * `schema.ts` imports this tuple for its `text(..., { enum })` column (the
  * `trialRunStatuses` precedent), so the column and the parser cannot drift.
@@ -67,6 +88,7 @@ export const imageLabExperimentKinds = [
   "controlled_scene",
   "two_character_scene",
   "finishing_pass",
+  "staged_scene",
 ] as const;
 export const imageLabExperimentKindSchema = z.enum(imageLabExperimentKinds);
 export type ImageLabExperimentKind = (typeof imageLabExperimentKinds)[number];
@@ -194,8 +216,8 @@ export type ImageLabProbeVerdict = (typeof imageLabProbeVerdicts)[number];
  *   lighting, or setting. Not promotable whatever it did to the face, which is
  *   why it is one ruling rather than a note on the two above.
  *
- * `inconclusive` is shared with the probe vocabulary and means there what it
- * means here: this run settles nothing.
+ * `inconclusive` is shared with the other three vocabularies and means there what
+ * it means here: this run settles nothing.
  */
 export const imageLabFinishingVerdicts = [
   "improves_identity",
@@ -239,7 +261,7 @@ export type ImageLabFinishingVerdict = (typeof imageLabFinishingVerdicts)[number
  *   could not hold two faces at once, which is the outcome that says the arity is
  *   the limit rather than the wording.
  *
- * `inconclusive` is shared with the other two vocabularies and means the same
+ * `inconclusive` is shared with the other three vocabularies and means the same
  * thing: this run settles nothing.
  *
  * CONTROL OBEDIENCE IS NOT HERE. A controlled two-character run wants both
@@ -265,6 +287,67 @@ export const imageLabTwoCharacterVerdictSchema = z.enum(imageLabTwoCharacterVerd
 export type ImageLabTwoCharacterVerdict = (typeof imageLabTwoCharacterVerdicts)[number];
 
 /**
+ * The reviewing admin's ruling on a `staged_scene` (owner ruling, 2026-08-15),
+ * and the fourth vocabulary for the reason there was a second and a third.
+ *
+ * None of the three fits. "Honours the control" cannot be asked of a run that
+ * sends no fixture: filed here it would read, six months later, exactly like a
+ * probe that sent one, which is the confusion every split in this file exists to
+ * prevent. "Improves identity" is a comparison against a base render this kind
+ * has no base for. The cast vocabulary counts people, and a staged render depicts
+ * exactly one by construction — every registry entry is `cast: "solo"`. The
+ * question this bench exists to settle is the ACT: the staging says what should
+ * be happening, in words the registry owns and no model wrote, and the ruling
+ * says what came back instead.
+ *
+ * The five substantive rulings are the failure modes an intimate staged render
+ * actually has, ordered the way a reader narrows — what the picture is OF, then
+ * how explicit it is, then how the bodies are arranged, then who they are. Each
+ * stays separate because each sends the next run somewhere different:
+ *
+ * - `act_depicted` — the act the staging describes is what the picture shows, on
+ *   the right person, explicitly. The only promotable outcome, and the whole bar:
+ *   a staged render that depicts its own staging is what the kind IS.
+ * - `act_substituted` — a DIFFERENT act came back. The staged sentence described
+ *   one configuration and the render is another — a portrait, an embrace, someone
+ *   standing where the words said otherwise. A comprehension failure in the
+ *   wording or the model, and it says nothing at all about the LoRA.
+ * - `anatomy_withheld` — the RIGHT act, arranged right, rendered coy: the anatomy
+ *   the act requires is absent, smoothed over, cropped out, or tucked behind a
+ *   convenient shadow. This is the nervous near-miss the whole intimate-scene
+ *   work exists to end, and keeping it apart from `act_substituted` is the point
+ *   of having both — they collapse into one "the picture is wrong" bucket while
+ *   pointing at opposite fixes. A substituted act is a WORDING problem; withheld
+ *   anatomy is a WEIGHTS problem, which is the LoRA missing, refused by the
+ *   library seam, or running at too low a scale.
+ * - `geometry_wrong` — the right act with the anatomy present, but the bodies are
+ *   arranged wrong: limbs misplaced, multiplied or fused, or an orientation the
+ *   staging's own camera never asked for. The reading that says the scale is too
+ *   HIGH — the opposite correction to `anatomy_withheld`'s, which is exactly why
+ *   this bench can ask "is scale 1 right?" and a chat render cannot.
+ * - `identity_lost` — every question about the act came out right and the person
+ *   is not the character. Its own id rather than the cast vocabulary's
+ *   `identity_degraded`, which means "both people present, unswapped, one likeness
+ *   drifted" — a sentence about two faces crowding a three-slot model. Here there
+ *   is one face, and what it competes with is the LoRA's own weights pulling
+ *   toward the bodies they were trained on. One shared id would make a stored
+ *   ruling unreadable without first knowing the kind.
+ *
+ * `inconclusive` is shared with the other three vocabularies and means here what
+ * it means there: this run settles nothing.
+ */
+export const imageLabStagedSceneVerdicts = [
+  "act_depicted",
+  "act_substituted",
+  "anatomy_withheld",
+  "geometry_wrong",
+  "identity_lost",
+  "inconclusive",
+] as const satisfies readonly ImageLabVerdict[];
+export const imageLabStagedSceneVerdictSchema = z.enum(imageLabStagedSceneVerdicts);
+export type ImageLabStagedSceneVerdict = (typeof imageLabStagedSceneVerdicts)[number];
+
+/**
  * Every ruling any experiment kind may record — the union the row's `verdict`
  * column and the record-verdict request both speak.
  *
@@ -274,7 +357,7 @@ export type ImageLabTwoCharacterVerdict = (typeof imageLabTwoCharacterVerdicts)[
  * null on every row that used the first, and a reader assembling "the verdict"
  * would have to know which column its kind used before it could read it. The
  * `satisfies` on each sub-vocabulary above is the tie that keeps this list a
- * superset of both.
+ * superset of all four.
  *
  * The database column is plain `text` (drizzle's `{ enum }` is a TypeScript
  * refinement, not a check constraint), so widening this tuple is a code change
@@ -291,6 +374,11 @@ export const imageLabVerdicts = [
   "character_missing",
   "character_duplicated",
   "identity_degraded",
+  "act_depicted",
+  "act_substituted",
+  "anatomy_withheld",
+  "geometry_wrong",
+  "identity_lost",
   "inconclusive",
 ] as const;
 export const imageLabVerdictSchema = z.enum(imageLabVerdicts);
@@ -310,9 +398,10 @@ export type ImageLabVerdict = (typeof imageLabVerdicts)[number];
  * How each kind earns its place: the probe was the first, while it was the only
  * kind that sent a fixture; the controlled recipes declare one too, and their
  * whole point is that the same limb-for-limb judgment applies to a
- * production-shaped render; a two-character scene is judged on its cast; and a
- * `finishing_pass` declares no control and is judged against its own base image.
- * Three different questions, which is why they rule in three vocabularies.
+ * production-shaped render; a two-character scene is judged on its cast; a
+ * `finishing_pass` declares no control and is judged against its own base image;
+ * and a `staged_scene` is judged on the ACT, against the staging it was told to
+ * render. Four different questions, which is why they rule in four vocabularies.
  *
  * Baselines still have none — a ruling recorded against a run that declares no
  * control, refines nothing, and depicts one person would be a fact about nothing.
@@ -323,6 +412,7 @@ export const imageLabVerdictKinds = [
   "controlled_scene",
   "two_character_scene",
   "finishing_pass",
+  "staged_scene",
 ] as const satisfies readonly ImageLabExperimentKind[];
 export type ImageLabVerdictKind = (typeof imageLabVerdictKinds)[number];
 
@@ -351,6 +441,8 @@ export function imageLabVerdictOptions(kind: ImageLabExperimentKind): readonly I
       return imageLabTwoCharacterVerdicts;
     case "finishing_pass":
       return imageLabFinishingVerdicts;
+    case "staged_scene":
+      return imageLabStagedSceneVerdicts;
     case "baseline_portrait":
     case "baseline_scene":
       return null;
@@ -440,6 +532,11 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   into a statement the send does not honour, which is the one thing this kind's
  *   evidence rests on. Refused before any provider spend, because the resulting
  *   render would look exactly like a model that swapped or duplicated a person.
+ *   A `staged_scene` settles the same code for the same reason on either of its
+ *   two subjects: a staging id no registry entry answers to (the wire carries a
+ *   plain string — see {@link imageLabStagingSchema} — so the lane is where
+ *   membership is checked), or an identity image that is not a render of the
+ *   character the row names. Both leave the row claiming a render nothing sent.
  * - `identity_unavailable` — no identity reference could be drawn for the
  *   subject: the finishing pass has nothing to improve the face TOWARD, and a
  *   run without one would be an unconstrained re-edit wearing the name of an
@@ -760,6 +857,51 @@ export const imageLabOutcomeSchema = z.object({
 export type ImageLabOutcome = z.infer<typeof imageLabOutcomeSchema>;
 
 /**
+ * What a `staged_scene` stages: which registry entry to render, and the scene
+ * facts the render plan needs around it (intimate-scene-lora.spec.md
+ * §"Slice 2").
+ *
+ * `id` is a PLAIN STRING rather than the registry's own `SceneStagingId`, and
+ * that is a layering fact rather than looseness. The staging registry lives
+ * app-side (`apps/web/src/contracts/images/scene-staging.ts`) beside the
+ * templates, viewer parts and camera overrides that only mean anything to the
+ * scene lane, and a package may not import the app. So the wire carries the id
+ * and the LANE checks it, settling `subject_invalid` with the id echoed when
+ * nothing answers to it. The alternative — lifting the registry in here so the
+ * type could be narrowed — would drag the whole scene vocabulary across the
+ * boundary to buy one enum.
+ *
+ * The three scene fields exist because a bench row has to state its own scene:
+ * there is no chat here, so nothing else can say where the act happens or what
+ * light it happens in. They are OPTIONAL because each has a default the lane
+ * already owns — an absent `lighting` is derived from `timeOfDay` by the same
+ * heuristic the chat lane uses, and an absent `setting` is the empty backdrop the
+ * lane's own plan starts from. The caps restate what the scene lane already
+ * accepts rather than inventing rails here: its composer truncates a setting at
+ * 300 characters, and lighting and time of day are a phrase and a word.
+ *
+ * The LoRA is deliberately NOT here. It rides `settings.controls.lora` like every
+ * other run's does, so the staged bench reaches `resolveImageLoraForRender`
+ * through the one seam the chat route already uses — same library gates, same
+ * curated scale band, same `image_lora.*` refusals. A scale field on this object
+ * would be a second binding path to drift, and the question the bench exists to
+ * answer ("is scale 1 right?") is asked by moving that existing value.
+ */
+export const imageLabStagingSchema = z.object({
+  /** A staging registry id. The cap is a wire sanity rail; registry membership is
+   * the real gate, and it is the lane's to apply. */
+  id: z.string().trim().min(1).max(120),
+  /** Where the act happens. Absent ⇒ the lane's own empty backdrop. */
+  setting: z.string().trim().max(300).optional(),
+  /** The light it happens in. Absent ⇒ derived from `timeOfDay`. */
+  lighting: z.string().trim().max(200).optional(),
+  /** The chat lane's own shorthand (`dawn`/`day`/`dusk`/`night`), left a free
+   * string because that lane's derivation already falls back for anything else. */
+  timeOfDay: z.string().trim().max(60).optional(),
+});
+export type ImageLabStaging = z.infer<typeof imageLabStagingSchema>;
+
+/**
  * One experiment as the lab's routes report it.
  *
  * Timestamps are ISO strings and `ownerId` is absent, matching
@@ -841,6 +983,27 @@ export const imageLabExperimentSchema = z.object({
    */
   finishingVariant: imageLabFinishingVariantSchema.nullable().catch(null).default(null),
 
+  /**
+   * What a `staged_scene` staged — null on every other kind.
+   *
+   * The runner reads the ROW, never the create request, so the staging has to
+   * survive the write or the kind cannot run: this is the field it comes back
+   * through. It rides the meta bag beside `sourceExperimentId` and
+   * `finishingVariant`, which is the same placement for the same two reasons —
+   * no migration, and it is a fact about what the experiment IS.
+   *
+   * Not `settings`, deliberately. That overlay is the per-run KNOBS: the
+   * normalized controls and the raw provider bag, both of which move the numbers
+   * within a fixed request shape. A staging is not a number to move, it is the
+   * subject of the run — the same category as the finishing pass's source
+   * experiment — and filing it under tuning would also mean widening the overlay
+   * schema, since a plain object parse drops what it does not declare.
+   *
+   * `.catch` for the reason its two neighbours carry one: a bag that no longer
+   * parses costs the field, never the row.
+   */
+  staging: imageLabStagingSchema.nullable().catch(null).default(null),
+
   status: imageLabExperimentStatusSchema,
   failureCode: z.string().min(1).max(120).nullable().default(null),
   verdict: imageLabVerdictSchema.nullable().default(null),
@@ -904,6 +1067,19 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   above still apply to a control it does declare), because "does one control
  *   guide both people?" and "do two people survive at all?" are separate
  *   questions and the second is answerable without a fixture.
+ * - a `staged_scene` names the STAGING it benches and the character it stages,
+ *   and says nothing about a chat. The staging is the whole subject of the run —
+ *   with no id there is no act, only an ordinary scene render wearing the kind's
+ *   name — and the character is named at the TOP LEVEL because only a
+ *   two-character scene binds subjects to its inputs. A chat is refused rather
+ *   than ignored: this kind exists precisely because the composer cannot be
+ *   relied on to propose a staging, so a row filed against a chat would suggest
+ *   it read one. It declares no control fixture, for the reason a finishing pass
+ *   declares none — its recipe has no slot to send one under, so a fixture could
+ *   only be recorded and never sent.
+ * - no other kind carries a staging. A staging on a controlled scene would name
+ *   an act its runner never compiles, leaving a row that claims a staged render
+ *   and an image that is not one.
  * - a `finishing_pass` names its source experiment and nothing else: no
  *   subject, no ordered inputs, no control. Every one of those is INHERITED or
  *   RESOLVED — the subject from the source (so the two arms of a comparison can
@@ -945,6 +1121,8 @@ export const imageLabCreateExperimentRequestSchema = z
     sourceExperimentId: z.string().min(1).optional(),
     /** Which arm a `finishing_pass` runs. Absent means `identity`; refused on every other kind. */
     finishingVariant: imageLabFinishingVariantSchema.optional(),
+    /** The staging a `staged_scene` benches. Required there, refused everywhere else. */
+    staging: imageLabStagingSchema.optional(),
     settings: imageLabSettingsSchema.optional(),
   })
   .superRefine((request, ctx) => {
@@ -1064,6 +1242,42 @@ export const imageLabCreateExperimentRequestSchema = z
           message: `only a two-character scene binds a character to an input; a ${request.kind} runner reads none`,
         });
       }
+    }
+    if (request.kind === "staged_scene") {
+      if (request.staging === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["staging"],
+          message: "a staged scene names the staging it benches; the registry owns the words, so with no id there is no act to render",
+        });
+      }
+      if (request.characterId === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["characterId"],
+          message: "a staged scene names the character it stages; only a two-character scene binds its subjects to the inputs instead",
+        });
+      }
+      if (request.chatId !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["chatId"],
+          message: "a staged scene is about no chat: the staging is chosen outright, with no composer to propose one and no narration to quote",
+        });
+      }
+      if (request.controlImageId !== undefined || request.controlKind !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["controlImageId"],
+          message: "a staged scene sends no control fixture; its structure is the staging's own wording, and the recipe has no slot to send one under",
+        });
+      }
+    } else if (request.staging !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["staging"],
+        message: `only a staged scene benches a staging; a ${request.kind} runner compiles none, so the row would claim an act its render never staged`,
+      });
     }
     if (request.kind === "baseline_portrait" && request.characterId === undefined) {
       ctx.addIssue({
