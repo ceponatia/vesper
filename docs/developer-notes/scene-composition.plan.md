@@ -214,10 +214,13 @@ Four things cause this, and none of them is the image model misbehaving:
   cannot draw the explicit anatomy the acceptance scenes grade — a capability
   gap, not a wording one. Candidates: the identity-preserving adult model
   already in the registry, or an anatomy LoRA on the LoRA-capable Qwen
-  wrapper. First LoRA comparison run (2026-08-15): the general NSFW LoRA
-  fixes penetration framings outright while mouth-level acts still fail, and
-  the identity-adapter arms are unrun — the routing decision stays open.
-  Probe: `scripts/eval/scene-images/intimate-model-ab.ts`; detail in
+  wrapper. Two LoRA runs (2026-08-15) narrowed it: a Civitai "all inclusive"
+  LoRA renders every act including the previously-impossible oral beats with
+  identity held, while the general NSFW LoRA better preserves the viewer-hand
+  geometry on doggy — so the remaining decision is per-staging LoRA routing
+  (the wrapper loads one LoRA at a time) plus a scale tune, and the
+  identity-adapter arms remain unrun. Probe:
+  `scripts/eval/scene-images/intimate-model-ab.ts`; detail in
   [the spec](scene-composition.spec.md) §Probe results.
 - **Should the subject's intimate-anatomy phrasing be suppressed on a
   from-behind shot?** Today it still emits there, and a prompt that describes
