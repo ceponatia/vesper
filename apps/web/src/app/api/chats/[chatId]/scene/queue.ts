@@ -20,6 +20,7 @@ import {
   chatGarmentCuesEnabled,
   chatGarmentLookKey,
   enqueueChatPlaceImage,
+  loadChatComposerModel,
   loadChatScenario,
   loadChatState,
   resolveChatWardrobe,
@@ -89,6 +90,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     const anchorMessageId = args.anchorMessageId ?? recent.find((row) => row.role === "assistant")?.id;
 
     const scenario = await loadChatScenario(args.chatId);
+    // Read separately from the scenario, and outside it, on purpose: the composer-model
+    // override is operational config that a retake must not revert (chat-state.ts).
+    const composerModel = await loadChatComposerModel(args.chatId);
 
     // Who is in the shot. Chat tracks no per-character location — `presence` is
     // its only location-like state, so "both in the same room" and "both present"
@@ -239,6 +243,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
         chatId: args.chatId,
         characterId: args.character.id,
         sceneModel: scenario?.sceneModel ?? "reference",
+        // Only when overridden: on the default this key is absent, so a job row can be
+        // read as "whatever the app default was" rather than pinning a value nobody chose.
+        ...(composerModel ? { composerModel } : {}),
         ...(args.flavor ? { flavor: args.flavor } : {}),
       },
       run: async () => ({
@@ -259,6 +266,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           flavor: args.flavor,
           place: place?.imageId ? { name: place.name, imageId: place.imageId } : undefined,
           sceneModel: scenario?.sceneModel,
+          composerModel,
         }),
       }),
     });

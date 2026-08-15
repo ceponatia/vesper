@@ -43,6 +43,7 @@ import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { PER_CHAT_DEFAULTS, type PerChatState } from "@/components/chat/chat-conversation-state";
 import { AgentReasoningSelect } from "@/components/chat/agent-reasoning-select";
+import { SceneComposerSelect } from "@/components/chat/scene-composer-select";
 import { ChatPermissionsPanel } from "@/components/chat/chat-permissions-panel";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
 import { ChatRelationshipPanel } from "@/components/chat/chat-relationship-panel";
@@ -1129,6 +1130,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
       chatModel={chatModel}
       onChatModelChange={saveChatModel}
       agentReasoningControl={isAdmin ? <AgentReasoningSelect chatId={chatId} /> : undefined}
+      sceneComposerControl={isAdmin ? <SceneComposerSelect chatId={chatId} /> : undefined}
       hasState={chatState !== null}
       archived={archived}
       archiveBusy={archiveBusy}
@@ -2027,6 +2029,7 @@ function ConversationMenu({
   chatModel,
   onChatModelChange,
   agentReasoningControl,
+  sceneComposerControl,
   hasState,
   archived,
   archiveBusy,
@@ -2048,6 +2051,8 @@ function ConversationMenu({
   onChatModelChange: (modelId: string) => void;
   /** Owner-admin-only experiment selector; absent for ordinary users. */
   agentReasoningControl?: ReactNode;
+  /** Owner-admin-only scene-composer model picker; absent for ordinary users. */
+  sceneComposerControl?: ReactNode;
   hasState: boolean;
   archived: boolean;
   archiveBusy: boolean;
@@ -2087,6 +2092,7 @@ function ConversationMenu({
         />
       </label>
       {agentReasoningControl}
+      {sceneComposerControl}
       <div className="my-1 border-t border-ink-600" />
       <MenuItem onClick={onScenario} disabled={!hasState}>
         Scenario setup

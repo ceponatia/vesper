@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { narrativeModelId, sceneComposerModelId, toolModelId } from "../ai";
+import { DEFAULT_SCENE_COMPOSER_MODEL_ID, SCENE_COMPOSER_MODELS } from "@/lib/composer-models";
+import { composerFallbackModelId, narrativeModelId, sceneComposerModelId, toolModelId } from "../ai";
 import { sceneSpecSchema } from "./prompts-scene-composer";
 
 /**
@@ -53,6 +54,34 @@ describe("sceneComposerModelId", () => {
   it("differs from the approved refusal fallback, or the retry would be the same model twice", () => {
     expect(sceneComposerModelId()).not.toBe(narrativeModelId());
   });
+
+  it("honours a curated per-chat override — the whole point of the admin picker", () => {
+    expect(sceneComposerModelId("~deepseek/deepseek-v4-flash-latest")).toBe("~deepseek/deepseek-v4-flash-latest");
+  });
+
+  it("treats absent / empty / whitespace as no override", () => {
+    for (const value of [undefined, null, "", "   "]) {
+      expect(sceneComposerModelId(value)).toBe(DEFAULT_SCENE_COMPOSER_MODEL_ID);
+    }
+  });
+
+  it("REFUSES an uncurated id — this value reaches OpenRouter on the deployment's key", () => {
+    expect(sceneComposerModelId("openai/o3-pro")).toBe(DEFAULT_SCENE_COMPOSER_MODEL_ID);
+  });
+});
+
+describe("composerFallbackModelId", () => {
+  it("is the narrator for the shipped default — a model already trusted with this text", () => {
+    expect(composerFallbackModelId(DEFAULT_SCENE_COMPOSER_MODEL_ID)).toBe(narrativeModelId());
+  });
+
+  it("never returns the primary, for ANY curated composer — including the narrator itself", () => {
+    // Aion 2.0 is both the session narrator and a curated composer option, so the naive
+    // `narrativeModelId()` retry would have asked the refusing model a second time.
+    for (const option of SCENE_COMPOSER_MODELS) {
+      expect(composerFallbackModelId(option.id)).not.toBe(option.id);
+    }
+  });
 });
 
 describe("composeSceneSpec model ladder", () => {
@@ -95,5 +124,20 @@ describe("composeSceneSpec model ladder", () => {
     expect(seam.calls).toHaveLength(2);
     expect(plan.focal?.name).toBe("Mira");
     expect(plan.focal?.action).toBe("curled in an armchair; reading");
+  });
+
+  it("asks the chat's overridden model, and keeps the two rungs distinct", async () => {
+    seam.results.push({ value: null, degraded: true });
+    seam.results.push({ value: composed("at the window"), degraded: false });
+    // The narrator's own id as the override — the collision case the fallback rung exists for.
+    await composeSceneSpec({ ...context, composerModel: narrativeModelId() });
+    expect(seam.calls[0]?.modelId).toBe(narrativeModelId());
+    expect(seam.calls[1]?.modelId).not.toBe(narrativeModelId());
+  });
+
+  it("degrades an uncurated override to the default rather than billing it", async () => {
+    seam.results.push({ value: composed("at the window"), degraded: false });
+    await composeSceneSpec({ ...context, composerModel: "some/unbilled-model" });
+    expect(seam.calls).toEqual([{ modelId: sceneComposerModelId(), hasFallback: false }]);
   });
 });

@@ -41,6 +41,12 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   else renders exactly as today; lab adoption queued behind the lab
   expansion.
 
+- **Scene composer model — a fast, cheap shot planner** —
+  [plan](composer-model.plan.md) · [spec](composer-model.spec.md) — the model
+  that plans every scene image is the slowest and priciest in the app; the
+  self-grading A/B and the per-chat picker are built, and the paid comparison
+  run is the next step.
+
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, visual

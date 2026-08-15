@@ -2,9 +2,9 @@ import { eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
   classifyImageFailure,
+  composerFallbackModelId,
   generateChecked,
   isDemoMode,
-  narrativeModelId,
   sceneComposerModelId,
 } from "../ai";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -42,7 +42,16 @@ import {
 import { heuristicFocalName, resolveScenePlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
 
-export type SceneComposeInput = SceneComposerContext & { sink?: DiagnosticSink };
+export type SceneComposeInput = SceneComposerContext & {
+  sink?: DiagnosticSink;
+  /**
+   * The conversation's admin-set composer model (`character_chats.scene_composer_model`,
+   * a curated `SCENE_COMPOSER_MODELS` id). Empty/absent/unknown ⇒ the curated default,
+   * which is what every chat that has never been switched sends — so this is additive
+   * and the untouched path is byte-identical.
+   */
+  composerModel?: string | null;
+};
 
 /**
  * Compose a validated render plan from the current scene context.
@@ -54,12 +63,13 @@ export type SceneComposeInput = SceneComposerContext & { sink?: DiagnosticSink }
  * would be invisible and the second model would never be asked. Reading `degraded` is what
  * makes a refusal or a schema miss visible enough to retry.
  *
- * The retry is the chat's narrative model (the approved fallback: already trusted with this
- * repo's most explicit text), and it carries the heuristic fallback, so the terminal degrade
- * stays today's deterministic spec — never a failed render.
+ * The retry is the approved refusal fallback (`composerFallbackModelId` — a model already
+ * trusted with this repo's most explicit text, and guaranteed not to be the primary itself),
+ * and it carries the heuristic fallback, so the terminal degrade stays today's deterministic
+ * spec — never a failed render.
  */
 export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneRenderPlan> {
-  const { sink, ...context } = input;
+  const { sink, composerModel, ...context } = input;
   const fallback = (): SceneSpec => heuristicSceneSpec(context);
   const request = {
     schema: sceneSpecSchema,
@@ -68,17 +78,22 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
     code: "images.scene_composer",
     sink,
   };
-  const primary = await generateChecked({ ...request, modelId: sceneComposerModelId() });
+  // Resolved ONCE: the id is read four times below (the call, the diagnostic, its context,
+  // and the fallback's collision check), and re-resolving would let a mid-compose default
+  // change split the ladder across two models nobody chose.
+  const primaryModelId = sceneComposerModelId(composerModel);
+  const primary = await generateChecked({ ...request, modelId: primaryModelId });
   if (!primary.degraded && primary.value) return resolveScenePlan(primary.value, context, sink);
   // Demo mode degrades every model call by design, so a second one buys nothing but noise —
   // and the primary's own `.degraded` diagnostic has already said what happened.
   if (isDemoMode()) return resolveScenePlan(fallback(), context, sink);
+  const fallbackModelId = composerFallbackModelId(primaryModelId);
   sink?.push(
-    diag("info", "images.scene_composer.model_fallback", `scene composer degraded on ${sceneComposerModelId()} — retrying on ${narrativeModelId()}`, {
-      context: { primary: sceneComposerModelId(), fallback: narrativeModelId() },
+    diag("info", "images.scene_composer.model_fallback", `scene composer degraded on ${primaryModelId} — retrying on ${fallbackModelId}`, {
+      context: { primary: primaryModelId, fallback: fallbackModelId },
     }),
   );
-  const retry = await generateChecked({ ...request, modelId: narrativeModelId(), fallback });
+  const retry = await generateChecked({ ...request, modelId: fallbackModelId, fallback });
   return resolveScenePlan(retry.value ?? fallback(), context, sink);
 }
 
