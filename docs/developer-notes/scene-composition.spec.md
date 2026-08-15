@@ -60,6 +60,54 @@ in place: fixture rows for every orientation/staging case
 (`scripts/eval/scene-images/fixtures.ts`) and the
 `scripts/eval/scene-images/orientation-ab.ts` runner.
 
+### Probe results — orientation-ab, owner run 2026-08-14 (qwen-image-edit-2511)
+
+Renders in `screenshots/orientation-ab/` (untracked), two runs per variant per
+beat. Per-beat verdicts:
+
+- **behind** — pass. Old rendered profile/three-quarter; new is clean full
+  back-to-camera on both runs, identity (hair, build) held.
+- **glance** — pass with a wobble: one of two runs over-rotated into a
+  three-quarter turn. Orientation phrase re-anchored 2026-08-15 ("{name}'s
+  body still turned away"); re-probe with the height fix.
+- **kneel** (camera-height-only) — **fail, diagnostic**: the model satisfied
+  "looking down" by moving her GAZE, not the camera — renders sat at her eye
+  level or dropped into a low-angle hero shot. Cause: abstract camera language
+  steers this model weakly; what worked elsewhere in the same probe was
+  frame-anchored content (a viewer limb entering from a frame edge, the
+  subject placed low in frame). Height phrases rewritten frame-anchored
+  2026-08-15 (see the registry comment); awaiting re-probe.
+- **doggy** — geometry pass (from behind, bare, high), two element misses: the
+  viewer's hands were drawn as HER hands (viewer absent), and "on all fours"
+  drifted toward a kneeling lean. Template re-anchored 2026-08-15 (frame-edge
+  hands clause, palms-and-knees clause); awaiting re-probe.
+- **oral** — composition pass (kneeling, looking up), act absent: no viewer
+  anatomy rendered at all. See the anatomy finding below.
+- **oral-guided** — the geometry win of the set (crown of head, viewer's arm
+  from the top edge, hand on head — frame-anchored content carried the
+  camera), but the anatomy between her face and the viewer rendered as a
+  smooth ambiguous shape. The set's clearest uncanny artifact.
+- **missionary** — closest intimate beat: overhead POV, her face up, viewer's
+  hands entering from the bottom corners onto her thighs all pass; penetration
+  absent or rendered as an indistinct wedge; waxy skin.
+
+**Cross-cutting finding — male POV anatomy is a model-capability gap, not a
+prompt gap.** qwen-image-edit-2511 followed every compositional instruction it
+plausibly has priors for and omitted/substituted explicit genital geometry
+everywhere the templates demanded it (male-from-POV worst; female anatomy
+renders but waxy). No phrasing conjures what the weights lack, so the next
+step is model routing, probed by
+`scripts/eval/scene-images/intimate-model-ab.ts`: baseline qwen vs
+`nsfw-api/sdxl-pulid` (the registry's identity-preserving adult model —
+pipeline prompt AND a compact SDXL-dialect prompt, since SDXL's CLIP truncates
+~77 tokens) vs an optional anatomy-LoRA arm on
+`qwen/qwen-image-edit-plus-lora` (env `EVAL_LORA_WEIGHTS` — a HuggingFace repo
+slug or safetensors URL; the wrapper fetches weights at prediction time, so no
+HuggingFace account is needed for public repos). The LoRA path's sanctioned
+production route, if it wins, is a curated `image_loras` library row plus an
+Advanced-Image-Lab LoRA trial — noting that wrapper is the older 2509
+generation and is deliberately off every player surface.
+
 ## Owner rulings (2026-08-10)
 
 - **Away means fully away; the glance back is itself evidence-gated.** A

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   DEFAULT_SCENE_CAMERA,
   type SceneCameraSpec,
@@ -107,7 +108,13 @@ function stagingEntry(id: SceneStagingId): SceneStaging {
   return entry;
 }
 
-interface Beat {
+/**
+ * EXPORTED for `intimate-model-ab.ts`, which grades the same four intimate beats across
+ * several models. The beats are the acceptance scenes themselves, so a second probe must
+ * reuse these definitions rather than paraphrase them — two probes disagreeing about what
+ * "doggy" is would make their gradings incomparable.
+ */
+export interface Beat {
   /** One clause naming the shot — printed above the prompts at run time. */
   summary: string;
   /** What the owner is looking for: the graded elements, or the preference question. */
@@ -125,8 +132,10 @@ interface Beat {
  * Beats are FACTORIES, built only for the one selected: each parses a spec and reads the
  * registries, and a broken beat should fail the run it belongs to rather than every run. A Map
  * rather than an object so the ids stay the env-var spellings the header documents.
+ *
+ * EXPORTED alongside {@link Beat} for `intimate-model-ab.ts` — see that note.
  */
-const BEATS = new Map<string, () => Beat>([
+export const BEATS = new Map<string, () => Beat>([
   ["behind", behindBeat],
   ["glance", glanceBeat],
   ["kneel", kneelBeat],
@@ -548,7 +557,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+// Run ONLY as the process entry point. `intimate-model-ab.ts` imports the beat factories
+// above, and a module-level `main()` would make that import fire a full PAID orientation
+// run as an import side effect. Invoked directly the behavior is unchanged.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err: unknown) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}

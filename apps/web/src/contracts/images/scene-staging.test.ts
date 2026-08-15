@@ -181,7 +181,11 @@ describe("the acceptance-scene entries", () => {
     expect(entry?.template).toContain("on all fours");
     expect(entry?.template).toContain("{name}'s back to the camera");
     expect(entry?.template).toContain("facing away from the lens");
-    expect(entry?.template).toContain("the viewer's own hands resting on {name}'s waist and hips");
+    // The frame-edge clause is part of the pin (probe run 2026-08-14): hands stated
+    // without an entry edge were drawn as HER hands, and the viewer vanished.
+    expect(entry?.template).toContain(
+      "the viewer's own hands entering frame from the lower edge and resting on {name}'s waist and hips",
+    );
   });
 
   it("stages oral both ways — her face up, or the crown of her head under the viewer's hand", () => {
