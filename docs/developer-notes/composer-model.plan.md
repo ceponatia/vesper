@@ -46,8 +46,10 @@ good is checkable in code — which means this is measurable, and cheaply.
   scores a point for a camera angle, a staged act, or a quoted piece of evidence
   that the real pipeline would have accepted.
 - **A per-conversation switch.** The chat menu gains an admin-only picker for
-  which model plans the shot. A candidate can be tried on a real conversation
-  without a deploy, and switched back the same way.
+  which model plans the shot. A candidate model can be tried on a real
+  conversation without a deploy, and switched back the same way. The picker
+  selects the model ID only; DeepSeek's reasoning-off/low A/B variants are
+  probe-only configurations until Slice 4 encodes a winning reasoning policy.
 - **The numbers to decide with.** Primary cost and effective primary-plus-fallback
   cost are reported per thousand compositions, alongside the measured production
   fallback rate, so a cheap model that leans heavily on Aion 2.0 cannot look
@@ -96,7 +98,10 @@ selected for a conversation.
   slice 3. Either outcome is a result: if nothing matches Aion 3.0 on the intimate
   beats, "it stays, and here is the evidence" closes this plan just as well. A
   winning floating candidate is pinned to the exact tested snapshot before it
-  becomes the production default.
+  becomes the production default. If the winning arm also used a non-default
+  reasoning profile (the DeepSeek off/low arms), that exact profile is encoded in
+  the composer call and parity-probed before promotion; changing only the model
+  slug would not reproduce the winning arm.
 
 ## Where the work stands
 
@@ -116,6 +121,9 @@ selected for a conversation.
   invoke the fallback, and what the complete ladder costs at that measured rate.
 - The production default cannot be a floating latest alias; the winning snapshot
   is pinned before promotion.
+- Promotion reproduces the **whole winning call configuration**, not merely its
+  model slug. If a reasoning-off/low arm wins, production adopts that setting and
+  a targeted parity run confirms it before the default moves.
 
 ## Owner decisions — 2026-08-15
 
@@ -130,7 +138,8 @@ selected for a conversation.
   as eval/admin candidates because they follow new releases automatically. If a
   floating candidate wins, resolve and use the exact snapshot that was tested for
   the production default. A test prevents a `~...-latest`/`-latest` id from being
-  promoted accidentally.
+  promoted accidentally. Where the winning A/B arm also changes reasoning, pin
+  that call behavior too; the model ID alone is not the tested product.
 
 ## Technical companion
 
