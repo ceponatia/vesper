@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "scene_composer_model" text DEFAULT '' NOT NULL;

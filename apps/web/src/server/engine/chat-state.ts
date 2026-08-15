@@ -930,6 +930,27 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
 }
 
 /**
+ * The conversation's admin-set **scene composer** model override, raw as stored
+ * (`""` ⇒ no override). Resolved by `sceneComposerModelId` at the call site, never here —
+ * a loader that healed the value would hide a dropped registry entry from the resolver's
+ * warning.
+ *
+ * A read of its OWN, deliberately not a field on {@link loadChatScenario}: the scenario is
+ * the "another take" rollback snapshot (`pre_exchange_scenario`), and this is operational
+ * configuration for comparing composer models. Folding it in would make a retake silently
+ * revert an admin's model pick, which is the one thing an A/B must never do. Same reasoning
+ * — and the same shape — as `agentReasoningProfile`.
+ */
+export async function loadChatComposerModel(chatId: string): Promise<string> {
+  const [row] = await db()
+    .select({ model: characterChats.sceneComposerModel })
+    .from(characterChats)
+    .where(eq(characterChats.id, chatId))
+    .limit(1);
+  return row?.model ?? "";
+}
+
+/**
  * Persist the scenario onto the chat row. With `guardMessageId` the write only
  * lands while that prompting message still exists — the same clear-mid-stream
  * guard as the state save.
