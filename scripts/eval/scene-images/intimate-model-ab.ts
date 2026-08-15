@@ -69,8 +69,10 @@ import { type Beat, BEATS } from "./orientation-ab";
  * Run: `pnpm tsx scripts/eval/scene-images/intimate-model-ab.ts [anchor.webp]`
  * - `AB_BEAT` — `all` (default) | doggy | oral | oral_guided | missionary
  * - `AB_RUNS` — renders per arm per beat (default 2)
- * - `EVAL_LORA_WEIGHTS` — a HuggingFace repo slug or a direct .safetensors URL; unset ⇒ the
- *   `lora` arm is skipped and says so
+ * - `EVAL_LORA_WEIGHTS` — a HuggingFace repo slug or a direct .safetensors URL. Unset, a
+ *   `CIVITAI_API_TOKEN` in the env builds the tokened Civitai URL for the curated
+ *   all-inclusive LoRA instead (`EVAL_LORA_CIVITAI_VERSION` overrides its version id,
+ *   default 3160956 = v2.0). With neither, the `lora` arm is skipped and says so.
  * - `EVAL_LORA_SCALE` — 0–4, default 1
  *
  * Prompts are printed and every honesty check runs BEFORE anything is sent, so the wording
@@ -91,8 +93,44 @@ const ARM_FILTER = (process.env.AB_ARMS ?? "")
   .split(",")
   .map((id) => id.trim())
   .filter(Boolean);
-const LORA_WEIGHTS = process.env.EVAL_LORA_WEIGHTS?.trim() ?? "";
+/**
+ * The Civitai fallback source (owner setup 2026-08-15): "Qwen Image Edit 2511 NSFW all
+ * inclusive" v2.0 — the only LoRA found whose training data explicitly covers the
+ * mouth-level acts the 2026-08-15 run showed no other arm can draw. Civitai gates NSFW
+ * downloads behind login, so the download endpoint takes the owner's API key as a query
+ * parameter and 302s to a signed CDN URL.
+ *
+ * Precedence: an explicit `EVAL_LORA_WEIGHTS` always wins (any HF slug or URL); otherwise a
+ * `CIVITAI_API_TOKEN` in the environment builds this URL. THE TOKEN IS A CREDENTIAL — it
+ * must never be printed, and every log line below that names the weights uses
+ * {@link describeLoraWeights}, which strips the query string exactly like the LoRA
+ * library's `redactImageLoraLocator` does.
+ */
+const CIVITAI_LORA_VERSION = process.env.EVAL_LORA_CIVITAI_VERSION?.trim() || "3160956";
+const CIVITAI_TOKEN = process.env.CIVITAI_API_TOKEN?.trim() ?? "";
+
+function civitaiLoraUrl(): string {
+  if (!CIVITAI_TOKEN) return "";
+  const url = new URL(`https://civitai.com/api/download/models/${CIVITAI_LORA_VERSION}`);
+  url.searchParams.set("type", "Model");
+  url.searchParams.set("format", "SafeTensor");
+  url.searchParams.set("token", CIVITAI_TOKEN);
+  return url.toString();
+}
+
+const LORA_WEIGHTS = process.env.EVAL_LORA_WEIGHTS?.trim() || civitaiLoraUrl();
 const LORA_SCALE = Number(process.env.EVAL_LORA_SCALE ?? 1);
+
+/** The weights source as it may appear in output: scheme+host+path only — never the token. */
+function describeLoraWeights(): string {
+  if (!LORA_WEIGHTS) return "(none)";
+  try {
+    const url = new URL(LORA_WEIGHTS);
+    return `${url.origin}${url.pathname} (query redacted)`;
+  } catch {
+    return LORA_WEIGHTS; // a bare HF slug carries no secret
+  }
+}
 
 /** The four acceptance scenes, in orientation-ab's own order. Nothing else in this probe is intimate. */
 const INTIMATE_BEATS = ["doggy", "oral", "oral_guided", "missionary"] as const;
@@ -496,7 +534,7 @@ async function main(): Promise<void> {
         if (!known.has(wanted)) {
           throw new Error(
             `AB_ARMS names "${wanted}", which this run did not build — have: ${[...known].join(", ")}` +
-              (wanted === "lora" && !LORA_WEIGHTS ? " (the lora arm needs EVAL_LORA_WEIGHTS)" : ""),
+              (wanted === "lora" && !LORA_WEIGHTS ? " (the lora arm needs EVAL_LORA_WEIGHTS or CIVITAI_API_TOKEN)" : ""),
           );
         }
       }
@@ -515,8 +553,11 @@ async function main(): Promise<void> {
 
   if (!LORA_WEIGHTS) {
     console.log(
-      "\nlora arm SKIPPED — set EVAL_LORA_WEIGHTS to a HuggingFace repo slug (owner/model) or a direct .safetensors URL to enable it (EVAL_LORA_SCALE=0–4, default 1).",
+      "\nlora arm SKIPPED — set EVAL_LORA_WEIGHTS (HuggingFace repo slug or .safetensors URL) or CIVITAI_API_TOKEN (builds the curated Civitai URL) to enable it (EVAL_LORA_SCALE=0–4, default 1).",
     );
+  } else {
+    // Redacted on purpose: the Civitai form of this URL carries the owner's API key.
+    console.log(`\nlora weights: ${describeLoraWeights()} @ scale ${LORA_SCALE}`);
   }
 
   // The prompts are free and are half of what this probe is for; only the renders cost money.
