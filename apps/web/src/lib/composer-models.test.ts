@@ -27,6 +27,11 @@ describe("SCENE_COMPOSER_MODELS", () => {
     expect(SCENE_COMPOSER_MODELS.some((option) => option.id === DEFAULT_SCENE_COMPOSER_MODEL_ID)).toBe(true);
   });
 
+  it("the production default is pinned rather than a floating latest alias", () => {
+    expect(DEFAULT_SCENE_COMPOSER_MODEL_ID).not.toMatch(/^~/);
+    expect(DEFAULT_SCENE_COMPOSER_MODEL_ID).not.toMatch(/-latest$/);
+  });
+
   it("has at least two entries — a one-model list cannot be a selection", () => {
     expect(SCENE_COMPOSER_MODELS.length).toBeGreaterThan(1);
   });
