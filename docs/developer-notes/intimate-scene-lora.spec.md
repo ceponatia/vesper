@@ -20,19 +20,64 @@ changes — the token append happens app-side).
 ## Implementation status
 
 - **Slice 1 — render-path routing + builtin row + token seam**: built
-  2026-08-15. `scene-lora.ts` owns the route (trigger mirrors the staged
-  sentence's own gates; four degradation legs, each `lora_unavailable` with a
-  named `leg`); `lora-credentials.ts` is the one `CIVITAI_API_TOKEN` reader,
-  applied at the render-intent seam downstream of both LoRA resolution paths;
-  migration `drizzle/0108_intimate-scene-lora.sql` seeds the builtin row
-  (public locator, band 0.5–1.5 around the probed default 1, `allowed_tasks:
-  ["scene"]` fail-closed, no trigger words — the probe graded the unchanged
-  prompt). 49 tests. **Live in production only when two deploy-time pieces
-  exist**: the wrapper model row on Neon with probed `loraWeights`/`loraScale`
-  bindings (admin-registered, not seeded — absent ⇒ `leg: "wrapper_model"`),
-  and the `CIVITAI_API_TOKEN` Fly secret (absent ⇒ `leg: "credential"`).
+  2026-08-15, **verified live in production 2026-08-15**. `scene-lora.ts` owns
+  the route (trigger mirrors the staged sentence's own gates; four degradation
+  legs, each `lora_unavailable` with a named `leg`); `lora-credentials.ts` is
+  the one `CIVITAI_API_TOKEN` reader, applied at the render-intent seam
+  downstream of both LoRA resolution paths; migration
+  `drizzle/0108_intimate-scene-lora.sql` seeds the builtin row (public locator,
+  band 0.5–1.5 around the probed default 1, `allowed_tasks: ["scene"]`
+  fail-closed, no trigger words — the probe graded the unchanged prompt). 49
+  tests. Production evidence: [the live-route run](#live-route-verification-2026-08-15).
 - **Slice 2 — lab adoption**: blocked on the image-lab expansion; widens the
   builtin row's `allowed_tasks` rather than adding a second row.
+
+## Live-route verification (2026-08-15)
+
+An intimate staged chat render on the Fly deploy took the LoRA route end to
+end, on the QA account's Sabrina Vale cast.
+
+| Field            | Value                                          |
+| ---------------- | ---------------------------------------------- |
+| Image row        | `bvzh3lhu4e0i5e3fsxzvkbib` — kind scene, ready |
+| `meta.model`     | `replicate/qwen/qwen-image-edit-plus-lora`     |
+| `meta.lora`      | `imglorqwennsfwallinclv20`                     |
+| `meta.staging`   | `astride_viewer_facing`                        |
+| `meta.camera`    | low / close / toward_viewer — set by staging   |
+| Diagnostic       | `images.scene_render.lora_route`, scale 1      |
+
+Three facts the run settled:
+
+- **The control render is the contrast.** The immediately preceding scene in
+  the same chat (`iji1lpio7903ew9lw0dukile`) carried no surviving staging and
+  rendered on the stock `qwen/qwen-image-edit-2511` with no LoRA — the
+  untouched-request criterion, observed rather than argued.
+- **A staging owns the shot.** The control's camera was `eye_level`; the staged
+  render's was the registry's `low`, confirming the camera override.
+- **Redaction holds.** The `lora_route` log line carries the LoRA id, the slug,
+  and the scale, and no locator or token.
+
+### Deploy-time state, corrected
+
+The earlier claim that two deploy-time pieces were outstanding was wrong on the
+first: the wrapper model row was already registered on the production registry
+on 2026-08-11 during the probe work, with probed `loraWeights`/`loraScale`
+bindings — it is the only registry row whose `advancedCapabilities.controls`
+are non-empty. Only the `CIVITAI_API_TOKEN` Fly secret was genuinely missing,
+and it was set on 2026-08-15 before this run.
+
+### What gates the route in practice
+
+Every LoRA leg was healthy on the first attempt of the run; the render still
+took the stock model, because **no staging survived the composer gates**. The
+binding constraint on seeing the LoRA fire is therefore upstream, in
+scene-composition: the composer must propose a staging AND quote narration
+verbatim for it. Reaching it took an explicitly staged act in the player's own
+words — "astride", by itself, did not match `astride_viewer_facing`, whose
+template describes penetration. A render that comes back LoRA-free with **no**
+`lora_unavailable` line was dropped there, and the composer's staging-drop
+diagnostics never reach the process log on the chat path (`queueChatScene`
+passes no sink), so `meta.staging` is the only signal.
 
 ## Decisions (probe-settled, 2026-08-15)
 
@@ -91,9 +136,10 @@ band 0.5–1.5 with default 1, builtin true. No schema change.
 
 ## Deploy note
 
-Production needs the Fly secret set before the LoRA route can fire:
-`fly secrets set CIVITAI_API_TOKEN=…` (value from the owner's Civitai
-account). Until then every render degrades to today's behavior by design.
+The Fly secret is set (2026-08-15): `fly secrets set CIVITAI_API_TOKEN=…`,
+value from the owner's Civitai account. A rebuilt or re-secreted environment
+needs it again — without it every render degrades to the stock model by design,
+diagnosed as `leg: "credential"`.
 
 ## Fixtures and tests
 
