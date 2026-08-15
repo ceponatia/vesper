@@ -1,8 +1,15 @@
 # Scene image composition — camera, facing, and intimate staging
 
-Status: awaiting acceptance — all three slices built 2026-08-14; waiting on
-the paid per-slice A/B probes and the owner's acceptance-scene grading
-(owner-gated spend)
+Status: shipped — 2026-08-15. All three slices built 2026-08-14, probe-graded
+across five owner-funded rounds, and accepted by owner ruling (2026-08-15):
+the probe-hardened prompts are the versions the app uses from the next
+deploy, accepted with one element knowingly open — oral-contact geometry
+renders the moment before contact, not contact itself (the evidence trail and
+do-not-retry levers are in the spec §Probe results). Successor work:
+[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md) carries the
+owner-directed production incorporation of the act-rendering LoRA (plus the
+staged prompts driving the expanded admin image lab, and the
+intimate-anatomy-on-away-shots tension as its open question).
 
 Outcome: A player can get a scene image composed from where they actually stand
 in the fiction — a character with her back to them is painted from behind, and
@@ -134,7 +141,9 @@ Four things cause this, and none of them is the image model misbehaving:
 
 - **Slice 1 — the camera follows the fiction.**
 
-  Status: built 2026-08-14 — awaiting its A/B probe on the fixture rows.
+  Status: complete — 2026-08-15. Orientation preferred in the owner's probe
+  review; the camera-height phrasing was reworked to frame-anchored language
+  and verified in the follow-up runs; accepted 2026-08-15.
 
   The shot planner proposes orientation, distance, and camera height from a
   fixed menu, quoting narration for anything non-default; the player's recent
@@ -144,8 +153,11 @@ Four things cause this, and none of them is the image model misbehaving:
 
 - **Slice 2 — intimate acts are staged.**
 
-  Status: built 2026-08-14 — awaiting its probe, including the owner's
-  three-scene acceptance grading.
+  Status: complete — 2026-08-15. Staging geometry, framing, and limb
+  attribution probe-verified through five hardening rounds; accepted
+  2026-08-15 with oral-contact geometry knowingly open; the act-rendering
+  LoRA's production incorporation is
+  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md)'s build.
 
   The staging catalog with per-entry camera setup, implied viewer-body parts,
   and explicit phrasing emitted only on the uncensored route; evidence,
@@ -159,7 +171,7 @@ Four things cause this, and none of them is the image model misbehaving:
 
 - **Slice 3 — committed facts override inference.**
 
-  Status: built 2026-08-14 — awaiting the same probe rows.
+  Status: complete — 2026-08-15, accepted with the slices above.
 
   Chat scene facts (posture, facing, distance, active contact) reach the
   planner as authoritative context and clamp its camera proposal; absent facts
@@ -205,11 +217,14 @@ Four things cause this, and none of them is the image model misbehaving:
 
 ## Open questions
 
-- **Should the subject's intimate-anatomy phrasing be suppressed on a
-  from-behind shot?** Today it still emits there, and a prompt that describes
-  her front over a shot of her back may make the model turn her around. The
-  probe's behind-nude row measures it; detail in
-  [the spec](scene-composition.spec.md) §Known tensions.
+None remaining in this plan. Both questions it carried moved with the
+close-out (owner acceptance ruling, 2026-08-15) to
+[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md): the LoRA choice
+is settled by the probes (detail in [the spec](scene-composition.spec.md)
+§Probe results) and its production incorporation is that plan's build;
+whether intimate-anatomy phrasing should be suppressed on from-behind shots
+([the spec](scene-composition.spec.md) §Known tensions) rides along as its
+open question.
 
 The launch rulings — a character described as behind-facing renders fully away
 unless the story actually describes the glance back; the shot planner moves to

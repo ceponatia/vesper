@@ -52,13 +52,159 @@ render-intent seam the lane already crosses. Nothing here touches
   is unambiguous, so every staging still earns a verbatim quote until an
   intimate contact domain commits waist/hip targets.
 
-Each slice's **enable follows its probe** in the acceptance sense: the code is
-live (behavior changes only where evidence exists; a scene with none renders
-exactly as before), but no slice is **accepted** until its paid A/B probe
-(owner-gated spend) is run and its verdict recorded here. The probe harness is
-in place: fixture rows for every orientation/staging case
-(`scripts/eval/scene-images/fixtures.ts`) and the
-`scripts/eval/scene-images/orientation-ab.ts` runner.
+**Accepted — owner ruling 2026-08-15.** All three slices were probe-graded
+across the runs recorded below and accepted as the versions the app serves
+from the next deploy, with oral-contact geometry knowingly open (§Probe
+results, template-hardening rounds). The probe harness remains for future
+tuning: `scripts/eval/scene-images/fixtures.ts`, `orientation-ab.ts`, and
+`intimate-model-ab.ts`. The LoRA that makes the intimate acts render rode
+the probe only at this plan's close; its production incorporation is
+`intimate-scene-lora.plan.md` (owner direction, 2026-08-15).
+
+### Probe results — orientation-ab, owner run 2026-08-14 (qwen-image-edit-2511)
+
+Renders in `screenshots/orientation-ab/` (untracked), two runs per variant per
+beat. Per-beat verdicts:
+
+- **behind** — pass. Old rendered profile/three-quarter; new is clean full
+  back-to-camera on both runs, identity (hair, build) held.
+- **glance** — pass with a wobble: one of two runs over-rotated into a
+  three-quarter turn. Orientation phrase re-anchored 2026-08-15 ("{name}'s
+  body still turned away"); re-probe with the height fix.
+- **kneel** (camera-height-only) — **fail, diagnostic**: the model satisfied
+  "looking down" by moving her GAZE, not the camera — renders sat at her eye
+  level or dropped into a low-angle hero shot. Cause: abstract camera language
+  steers this model weakly; what worked elsewhere in the same probe was
+  frame-anchored content (a viewer limb entering from a frame edge, the
+  subject placed low in frame). Height phrases rewritten frame-anchored
+  2026-08-15 (see the registry comment); awaiting re-probe.
+- **doggy** — geometry pass (from behind, bare, high), two element misses: the
+  viewer's hands were drawn as HER hands (viewer absent), and "on all fours"
+  drifted toward a kneeling lean. Template re-anchored 2026-08-15 (frame-edge
+  hands clause, palms-and-knees clause); awaiting re-probe.
+- **oral** — composition pass (kneeling, looking up), act absent: no viewer
+  anatomy rendered at all. See the anatomy finding below.
+- **oral-guided** — the geometry win of the set (crown of head, viewer's arm
+  from the top edge, hand on head — frame-anchored content carried the
+  camera), but the anatomy between her face and the viewer rendered as a
+  smooth ambiguous shape. The set's clearest uncanny artifact.
+- **missionary** — closest intimate beat: overhead POV, her face up, viewer's
+  hands entering from the bottom corners onto her thighs all pass; penetration
+  absent or rendered as an indistinct wedge; waxy skin.
+
+### Probe results — intimate-model-ab, run 2026-08-15 (qwen + lora arms; pulid arms not yet run)
+
+16 renders, `screenshots/intimate-model-ab/`: the four intimate beats on the
+re-anchored templates, `qwen` baseline vs the `lora` arm
+(`qwen/qwen-image-edit-plus-lora` +
+`ScottzillaSystems/qwen-image-edit-plus-nsfw-lora`, scale 1). Verdicts:
+
+- **The 2026-08-15 phrase re-anchoring is confirmed on the base model.** The
+  frame-edge hands clause put the VIEWER's hands (with forearms entering from
+  the lower corners) into every doggy render on both arms — yesterday they
+  were drawn as hers — and the rewritten `high` phrase produced a genuine
+  high-angle on every beat, including the oral beats that sat at eye level
+  yesterday. Camera-height rework: verified; the kneel re-probe can piggyback
+  on any future run.
+- **The LoRA materially improves explicit anatomy in pelvic framings.** Both
+  missionary LoRA runs render actual, plausible penetration (yesterday: an
+  ambiguous wedge); doggy LoRA runs render clear, believable detail. Skin
+  texture also reads less waxy.
+- **Mouth-level male anatomy is still unrenderable on the Qwen path.** Oral:
+  both arms render the composition (kneeling, high angle, mid-act expression)
+  with no viewer anatomy at all. Oral-guided: the LoRA substitutes misplaced
+  female anatomy or fused shapes — still the set's uncanny failure. This LoRA
+  evidently carries penetration priors but not organ-at-face framings.
+- **Identity drift risk on the LoRA wrapper is real but mild here**: one
+  missionary LoRA run pulled hair color toward brown (the 2509-generation
+  wrapper's documented weaker identity); the rest held the anchor well.
+- Two transient `fetch failed` errors on first attempt (Replicate fetching
+  the LoRA weights, most likely); a scoped retry succeeded — expect cold-start
+  flakes on LoRA-carrying runs.
+
+### Probe results — intimate-model-ab, run 2026-08-15b (the Civitai all-inclusive LoRA)
+
+8 renders, `screenshots/intimate-model-ab/` (the earlier LoRA's outputs
+archived beside it as `intimate-model-ab-scottzilla/`): all four beats, lora
+arm only, weights = "Qwen Image Edit 2511 NSFW all inclusive" v2.0 (Civitai
+version 3160956) at scale 1, fetched through the tokened Civitai URL — which
+the Replicate wrapper accepted, settling that open question. Verdicts:
+
+- **The oral beats render for the first time.** Both `oral_guided` runs draw
+  the full acceptance composition — crown of head to camera, the viewer's
+  hand resting on her head, the act explicit with plausible, correctly
+  attached anatomy — and `oral` run 2 is the first clean take of composition
+  A (face up, eyes on the viewer, mouth engaged). `oral` run 1 mis-attaches
+  the anatomy (1/2). Identity holds throughout — no drift observed.
+- **Missionary is the best yet**: explicit, clean penetration, her face up,
+  the viewer's hands and legs entering from the bottom edge.
+- **Doggy regresses on hand attribution (0/2)**: this LoRA gives the
+  hip-hands to HER (arms reaching back) despite the frame-edge template
+  clause, where the general-NSFW LoRA run held viewer hands 2/2 on the same
+  prompt — its priors overpower the composition there. Untested lever:
+  `EVAL_LORA_SCALE` below 1 may let the base model's compositional obedience
+  reassert.
+- **Net**: the two LoRAs split the catalog between them — all-inclusive wins
+  every act the other cannot draw, the general one wins doggy's viewer-hand
+  geometry. The wrapper takes ONE `lora_weights`, so production shape is a
+  per-staging LoRA choice through the `image_loras` library, not stacking.
+  This refines the plan's model-routing open question.
+
+### Probe results — template-hardening rounds, 2026-08-15c (all-inclusive LoRA, 21 renders)
+
+Owner review of run 2026-08-15b found two attribution defects the earlier
+grading under-called: the guided entry's hand-on-head rendered as a phantom
+arm or as HER third arm, and doggy's hip-hands went to her (0/2). Five
+directed template rounds followed (`intimate-model-ab-*` folders, r2–r6),
+with a per-element verdict trail:
+
+- **`on_all_fours` — fixed, 4/4** (plus 2/2 at scale 0.75, which proved
+  unnecessary): the viewer's hands AND forearms entering from the lower
+  corners (a two-limbs-from-opposite-corners shape her own arms cannot make),
+  and her arms spent straight ahead with palms planted — pinning all-fours
+  and leaving no free hands to recruit.
+- **`kneeling_before_viewer_guided` — attribution fixed 14/14 across every
+  wording tried**: the hand gets an arm, a source edge, and the registry's
+  lens-geometry idiom. The act split into two elements: **presence** of the
+  viewer's anatomy went 0/3 → 3/3 the moment the template gave it a frame
+  position ("rising into frame from the lower edge") — it had none, because
+  the gate-list rule suppresses a staged part's generic registry line and the
+  template only asserted contact. **Contact** remains 0/3 in the shipped
+  state: her mouth stops short of anatomy that now always renders. Two
+  contact attempts failed and are recorded as do-not-retry in the registry
+  comment: re-spending her hands onto the viewer's thighs (r4 — the model
+  dropped the referent, act 0/3) and a wrap-around contact verb (r6 — lost
+  presence itself, 0/3, likely because occluding language makes the part
+  undrawable).
+- **The transferable rule, demonstrated three times**: anything named without
+  a frame position renders unreliably; anything given one renders every
+  time. Corollary: claiming a part in `viewerParts` removes its generic
+  framing line, so the template MUST supply that geometry itself.
+- **Budget note**: both hardened templates sit within ~10 chars of
+  `EDIT_RENDER_PROMPT_LIMIT`'s never-dropped-tier clamp; the registry
+  comments carry the measured numbers and the phrases already cut. Any future
+  wording change must re-measure or it silently eats the prompt tail.
+- **Open**: relational contact geometry (two named things touching) has no
+  proven phrasing; single-variable probes only, and the arm clause's "close
+  to the lens and strongly foreshortened" (14/14) is the last phrase to
+  sacrifice.
+
+**Cross-cutting finding — male POV anatomy is a model-capability gap, not a
+prompt gap.** qwen-image-edit-2511 followed every compositional instruction it
+plausibly has priors for and omitted/substituted explicit genital geometry
+everywhere the templates demanded it (male-from-POV worst; female anatomy
+renders but waxy). No phrasing conjures what the weights lack, so the next
+step is model routing, probed by
+`scripts/eval/scene-images/intimate-model-ab.ts`: baseline qwen vs
+`nsfw-api/sdxl-pulid` (the registry's identity-preserving adult model —
+pipeline prompt AND a compact SDXL-dialect prompt, since SDXL's CLIP truncates
+~77 tokens) vs an optional anatomy-LoRA arm on
+`qwen/qwen-image-edit-plus-lora` (env `EVAL_LORA_WEIGHTS` — a HuggingFace repo
+slug or safetensors URL; the wrapper fetches weights at prediction time, so no
+HuggingFace account is needed for public repos). The LoRA path's sanctioned
+production route, if it wins, is a curated `image_loras` library row plus an
+Advanced-Image-Lab LoRA trial — noting that wrapper is the older 2509
+generation and is deliberately off every player surface.
 
 ## Owner rulings (2026-08-10)
 

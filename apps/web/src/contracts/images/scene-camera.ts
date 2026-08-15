@@ -83,8 +83,11 @@ export const sceneSubjectOrientations: readonly SceneSubjectOrientation[] = [
     // itself contain glance language (`GLANCE_WORDS`, owner ruling 2026-08-10), so a quote
     // that grounds only the behind-position resolves to `away` instead.
     id: "away_glance_back",
+    // "{name}'s body still turned away" anchors the torso (probe run 2026-08-14: one of two
+    // renders over-rotated into a three-quarter turn — the identity lock pulls the face out,
+    // and with it the shoulders, unless the body is pinned separately from the glance).
     phrase:
-      "{name} seen from behind, {name}'s back to the camera, glancing back over {name}'s shoulder toward the viewer",
+      "{name} seen from behind with {name}'s back to the camera and {name}'s body still turned away, glancing back over {name}'s shoulder toward the viewer",
     faceVisibility: "partial",
     evidenceRequired: true,
   },
@@ -157,10 +160,30 @@ export interface SceneCameraHeight {
   evidenceRequired: boolean;
 }
 
+/*
+ * Height phrases are FRAME-ANCHORED, and that wording is load-bearing (probe run
+ * 2026-08-14, kneel beat): the first draft said "the camera looking down at {name} from the
+ * viewer's standing height", and the model satisfied it by moving {name}'s GAZE — she looked
+ * up while the camera stayed level, or even dropped into a low-angle hero shot. Abstract
+ * camera language barely steers these models; what they follow is photographic caption
+ * vocabulary ("high-angle shot") plus where the subject sits IN THE FRAME. The same probe's
+ * staged beats proved the converse: a downward shot landed exactly when frame-edge content
+ * (an arm entering from the top edge, a body receding from the bottom) anchored it.
+ */
 export const sceneCameraHeights: readonly SceneCameraHeight[] = [
   { id: "eye_level", phrase: "the camera at eye level with {name}", evidenceRequired: false },
-  { id: "high", phrase: "the camera looking down at {name} from the viewer's standing height", evidenceRequired: true },
-  { id: "low", phrase: "the camera low, looking up at {name}", evidenceRequired: true },
+  {
+    id: "high",
+    phrase:
+      "a high-angle shot from above, the camera looking down on {name} from the viewer's standing height, {name} framed below the camera in the lower half of the frame",
+    evidenceRequired: true,
+  },
+  {
+    id: "low",
+    phrase:
+      "a low-angle shot from below, the camera under {name}'s eye line looking up, {name} rising above the camera toward the top of the frame",
+    evidenceRequired: true,
+  },
 ];
 
 export function sceneCameraHeightById(id: string): SceneCameraHeight | undefined {
