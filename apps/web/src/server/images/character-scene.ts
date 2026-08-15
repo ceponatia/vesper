@@ -9,7 +9,8 @@ import { speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { IdentityReferenceProvenance, SceneReferenceSource } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
-import { diag } from "@/contracts/diagnostics";
+import { diag, DiagnosticCollector, teeSink } from "@/contracts/diagnostics";
+import { logDiagnostics } from "@/server/log";
 import { classifyImageFailure, hasReplicate, isDemoMode } from "../ai";
 import { db, images } from "../db";
 import { logEvent } from "../events";
@@ -25,6 +26,7 @@ import {
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
+import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 
 export const DEFAULT_CHAT_ROOM =
   "A warm, softly lit room — a comfortable couch, a low wooden table, shelves of books along one wall, and a tall window letting in natural light.";
@@ -271,8 +273,31 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   if (placeRef) referenceBuffers.set(placeRef.imageId, placeRef.buffer);
   const imageBearing = anchors.size + (placeRef ? 1 : 0);
 
-  const renderOnce = (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> =>
-    renderResolvedScene({
+  // Resolved PER ATTEMPT rather than once for the render, because the trigger is
+  // a fact about the attempt: the content-rejection retry strips the staging from
+  // its plan and clears `allowIntimate`, and re-asking here is what makes that
+  // retry render LoRA-free without a second rule saying so
+  // (intimate-scene-lora.spec.md §Algorithm step 3). Off the trigger it reads
+  // nothing and reports nothing, so an ordinary scene pays one comparison.
+  const renderOnce = async (attemptPlan: SceneRenderPlan, allowIntimate: boolean): Promise<string> => {
+    // The scene queue is a detached job and passes no sink, so the route's own
+    // diagnostics would have nowhere to land — and "the LoRA was skipped" is
+    // exactly the line an operator needs when the pictures go back to being
+    // nervous near-misses. Collected here and replayed at their own severities,
+    // the collector pattern's documented tail (docs/resilience.md §2), the same
+    // way `renderResolvedScene` answers for the attempt chain's.
+    const routeDiagnostics = new DiagnosticCollector();
+    const lora = await resolveIntimateSceneLoraRoute({
+      plan: attemptPlan,
+      allowIntimate,
+      selfie,
+      referenceRoute,
+      anchored: anchors.size > 0,
+      profile: imageProfile,
+      sink: input.sink ? teeSink(input.sink, routeDiagnostics) : routeDiagnostics,
+    });
+    logDiagnostics("images.scene_lora", routeDiagnostics.items, { characterId: input.characterId });
+    return renderResolvedScene({
       plan: attemptPlan,
       references: [
         ...cast.map((member) => {
@@ -301,7 +326,11 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       ],
       referenceBuffers,
       mode: imageBearing >= 2 ? "multi" : "single",
-      profile: imageProfile,
+      // The route's profile IS the lane's profile with the LoRA wrapper in place
+      // of the scene model; off the route it is the resolved object itself, so a
+      // LoRA-free render is unchanged down to the reference.
+      profile: lora?.profile ?? imageProfile,
+      ...(lora ? { resolvedLora: lora.binding } : {}),
       framing: selfie ? "selfie" : undefined,
       flavor: input.flavor,
       // No provenance travels with a refusal: an earlier cast member's pack may
@@ -326,6 +355,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
         }),
       sink: input.sink,
     });
+  };
 
   const first = await renderOnce(plan, true);
   // A refused identity render retries into the same refusal — return the record.

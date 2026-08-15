@@ -19,9 +19,20 @@ changes — the token append happens app-side).
 
 ## Implementation status
 
-- **Slice 1 — render-path routing + builtin row + token seam**: in progress.
-- **Slice 2 — lab adoption**: blocked on the image-lab expansion; nothing
-  specified yet.
+- **Slice 1 — render-path routing + builtin row + token seam**: built
+  2026-08-15. `scene-lora.ts` owns the route (trigger mirrors the staged
+  sentence's own gates; four degradation legs, each `lora_unavailable` with a
+  named `leg`); `lora-credentials.ts` is the one `CIVITAI_API_TOKEN` reader,
+  applied at the render-intent seam downstream of both LoRA resolution paths;
+  migration `drizzle/0108_intimate-scene-lora.sql` seeds the builtin row
+  (public locator, band 0.5–1.5 around the probed default 1, `allowed_tasks:
+  ["scene"]` fail-closed, no trigger words — the probe graded the unchanged
+  prompt). 49 tests. **Live in production only when two deploy-time pieces
+  exist**: the wrapper model row on Neon with probed `loraWeights`/`loraScale`
+  bindings (admin-registered, not seeded — absent ⇒ `leg: "wrapper_model"`),
+  and the `CIVITAI_API_TOKEN` Fly secret (absent ⇒ `leg: "credential"`).
+- **Slice 2 — lab adoption**: blocked on the image-lab expansion; widens the
+  builtin row's `allowed_tasks` rather than adding a second row.
 
 ## Decisions (probe-settled, 2026-08-15)
 

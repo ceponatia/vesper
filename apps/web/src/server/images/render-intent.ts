@@ -13,6 +13,7 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { disableSafetyChecker } from "../ai";
 import { resolveImageLoraForRender } from "./image-loras";
+import { withLoraDownloadCredential } from "./lora-credentials";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 
 /**
@@ -83,6 +84,37 @@ async function resolveIntentLora(intent: ImageRenderIntent, sink?: DiagnosticSin
   // reporting it again here would double every LoRA failure in the sink.
   if (!resolved.ok) return { ok: false, error: resolved.message };
   return { ok: true, intent: { ...intent, resolvedLora: resolved.binding } };
+}
+
+/**
+ * Complete the resolved LoRA's locator with the download credential it needs.
+ *
+ * THE one point where a stored locator becomes a fetchable one, and it is here
+ * rather than in the library or the mapper for two reasons. It is downstream of
+ * BOTH resolution paths — the caller that pre-resolved (the image lab, the
+ * intimate-scene route) and the caller that let `resolveIntentLora` do it — so
+ * neither can reach a provider uncompleted. And it is the last app-side step
+ * before planning, which keeps the credential out of everything upstream: the
+ * database row, the admin screens, the image row's `meta`, and every diagnostic,
+ * all of which only ever see the stored address.
+ *
+ * Downstream of here the locator travels in exactly one direction: into
+ * `plan.controlInput` under the version's `loraWeights` field, and from there
+ * into the prediction body. The mapper deliberately keeps it out of
+ * `appliedControls` (which records `{ id, scale }`), so nothing that is stored
+ * or reported carries it. The compile step's fingerprint hashes `controlInput`,
+ * so a rotated token changes a comparison hash — accepted: the alternative is a
+ * fingerprint that describes a payload the provider never received.
+ *
+ * Returns the intent UNCHANGED — same object — when nothing needed adding, so a
+ * render with no LoRA, a Hugging Face slug, or a deployment without the token is
+ * byte-identical to what it was before this seam existed.
+ */
+function withLoraCredential(intent: ImageRenderIntent): ImageRenderIntent {
+  const binding = intent.resolvedLora;
+  if (!binding) return intent;
+  const completed = withLoraDownloadCredential(binding);
+  return completed === binding ? intent : { ...intent, resolvedLora: completed };
 }
 
 /**
@@ -199,7 +231,7 @@ export async function renderImageIntent(
 ): Promise<RenderImageIntentResult> {
   const prepared = await resolveIntentLora(intent, sink);
   if (!prepared.ok) return { ok: false, error: prepared.error };
-  const seeded = resolveIntentSeed(prepared.intent);
+  const seeded = resolveIntentSeed(withLoraCredential(prepared.intent));
   const planned = planImageRender(seeded.intent, currentRuntimeFacts());
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
