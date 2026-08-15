@@ -1,6 +1,7 @@
 import "dotenv/config";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   DEFAULT_SCENE_CAMERA,
   type SceneCameraSpec,
@@ -107,7 +108,13 @@ function stagingEntry(id: SceneStagingId): SceneStaging {
   return entry;
 }
 
-interface Beat {
+/**
+ * EXPORTED for `intimate-model-ab.ts`, which grades the same four intimate beats across
+ * several models. The beats are the acceptance scenes themselves, so a second probe must
+ * reuse these definitions rather than paraphrase them — two probes disagreeing about what
+ * "doggy" is would make their gradings incomparable.
+ */
+export interface Beat {
   /** One clause naming the shot — printed above the prompts at run time. */
   summary: string;
   /** What the owner is looking for: the graded elements, or the preference question. */
@@ -125,8 +132,10 @@ interface Beat {
  * Beats are FACTORIES, built only for the one selected: each parses a spec and reads the
  * registries, and a broken beat should fail the run it belongs to rather than every run. A Map
  * rather than an object so the ids stay the env-var spellings the header documents.
+ *
+ * EXPORTED alongside {@link Beat} for `intimate-model-ab.ts` — see that note.
  */
-const BEATS = new Map<string, () => Beat>([
+export const BEATS = new Map<string, () => Beat>([
   ["behind", behindBeat],
   ["glance", glanceBeat],
   ["kneel", kneelBeat],
@@ -263,8 +272,9 @@ function kneelBeat(): Beat {
 
 /**
  * Acceptance scene "Doggy style" (owner-specified 2026-08-10). `on_all_fours` lists `hands`
- * only, so a bare persona still puts NO viewer anatomy in this frame — the staging's part list
- * is what keeps it out, not the coverage gate, and the graded elements say the same.
+ * and `forearms` and no anatomy, so a bare persona still puts NO viewer anatomy in this frame
+ * — the staging's part list is what keeps it out, not the coverage gate, and the graded
+ * elements say the same.
  */
 function doggyBeat(): Beat {
   const narration =
@@ -296,8 +306,8 @@ function doggyBeat(): Beat {
     summary: "she is on all fours, the viewer behind her",
     grading: [
       "she is on all fours with her back to the camera, face not toward the lens",
-      "the viewer's own hands are on her waist or hips",
-      "nobody but her and the viewer's own hands is in frame",
+      "the viewer's own hands are on her waist or hips, on arms entering from the lower corners",
+      "nobody but her and the viewer's own hands and forearms is in frame",
     ],
     context,
     // The composer's real output for a beat like this: cautious, vague, and exactly why the
@@ -548,7 +558,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exitCode = 1;
-});
+// Run ONLY as the process entry point. `intimate-model-ab.ts` imports the beat factories
+// above, and a module-level `main()` would make that import fire a full PAID orientation
+// run as an import side effect. Invoked directly the behavior is unchanged.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err: unknown) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
+}

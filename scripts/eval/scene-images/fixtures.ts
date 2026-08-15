@@ -338,8 +338,9 @@ export const EVAL_FIXTURES: EvalFixture[] = [
   },
   {
     // Acceptance scene "Doggy style". The player is bare here too, and the viewer's anatomy
-    // still must not appear: `on_all_fours` lists `hands` only, so what keeps the frame clean
-    // is the staging's own part list rather than the coverage gate — worth seeing separately.
+    // still must not appear: `on_all_fours` lists `hands` and `forearms` and nothing else, so
+    // what keeps the frame clean is the staging's own part list rather than the coverage
+    // gate — worth seeing separately.
     name: "on-all-fours",
     category: "staging",
     plan: plan({
