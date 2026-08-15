@@ -12,11 +12,19 @@ Technical companion:
 
 Related work, and the boundary with each:
 
-- [scene image composition](scene-composition.plan.md) owns **which shot the
-  story asks for** — the camera vocabulary, the evidence gate, the staging
-  catalog. This plan owns **what the app has to show the model** once that shot
-  says "from behind". The two meet at one lookup: a resolved camera picks a
-  view.
+- [scene image composition](finished/scene-composition.plan.md), shipped
+  2026-08-15, owns **which shot the story asks for** — the camera vocabulary,
+  the evidence gate, the staging catalog. This plan owns **what the app has to
+  show the model** once that shot says "from behind". The two meet at one
+  lookup: a resolved camera picks a view.
+- [intimate-scene LoRA](intimate-scene-lora.plan.md) owns **which model renders
+  an intimate act** — staged intimate scenes route through the probe-proven
+  anatomy LoRA. This plan owns **what reference that model is handed**. They are
+  complementary and land on the same renders: the LoRA fixes what the model
+  knows how to draw, the undressed view fixes what it is looking at. Neither
+  substitutes for the other, and the slice-4 trial grades this plan's
+  contribution with the LoRA routing already in place, never against a
+  pre-LoRA baseline.
 - [spatially controlled scene images](spatial-scene-images.plan.md) owns the
   long-horizon structural route, and already names "multi-view identity
   references" as something it needs and does not have. This plan builds that
@@ -39,7 +47,7 @@ camera. Every scene image is an edit off that single view.
 That was survivable while every scene came back front-facing anyway. It stopped
 being survivable the moment the scene composer learned to move the camera. The
 shot vocabulary now includes profile, three-quarter, and fully-away framing, and
-seven of the thirteen intimate staging entries are `away` shots — the character
+eight of the thirteen intimate staging entries are `away` shots — the character
 seen from behind is now a routine request, not an exotic one. When one of those
 renders, the model is handed a front-facing waist-up photo and told to draw the
 same person from behind at full length. Everything not in the portrait is

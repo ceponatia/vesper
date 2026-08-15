@@ -306,9 +306,11 @@ integration test must pin.
 
 ## Persistence
 
-Next migration number is 0108 (0107 is `curated-model-profiles`). Follow the DB
-workflow: edit `schema.ts`, `pnpm db:generate`, review the SQL, `pnpm db:migrate`.
-**Do not** fake a TTY past drizzle's create-vs-rename prompt (root `CLAUDE.md`).
+Next free migration number is 0109 (0108 is `intimate-scene-lora`) — check the
+`drizzle/` directory rather than trusting this line, since concurrent work claims
+numbers. Follow the DB workflow: edit `schema.ts`, `pnpm db:generate`, review the
+SQL, `pnpm db:migrate`. **Do not** fake a TTY past drizzle's create-vs-rename
+prompt (root `CLAUDE.md`).
 
 - **`characters`** gains `accepted_avatar_image_id` (text, nullable, soft pointer
   with no FK — same treatment as `avatar_image_id`, and for the same reason:
