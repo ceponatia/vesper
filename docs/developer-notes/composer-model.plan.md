@@ -35,11 +35,12 @@ good is checkable in code — which means this is measurable, and cheaply.
 
 ## What the owner gets
 
-- **A one-command comparison.** One script runs every candidate against the
-  shipped default on the same seven fixture scenes — three ordinary shots and
-  the four explicitly intimate acceptance scenes — and prints a table: how often
-  each model refused, how often it got the shot right, how fast it was, and what
-  it actually cost in dollars.
+- **A one-command comparison.** `composer-model-eval.ts` runs every candidate
+  against the shipped default on the same seven fixture scenes — three ordinary
+  shots and the four explicitly intimate acceptance scenes — then reports how
+  often each model answered, how often production would actually invoke the
+  fallback, how often it got the shot right, how fast it was, and what both the
+  primary and the full two-rung ladder actually cost.
 - **A verdict that can be checked.** The grade is not an opinion. Each model's
   answer is run through the same code that runs in production, so a model only
   scores a point for a camera angle, a staged act, or a quoted piece of evidence
@@ -47,9 +48,10 @@ good is checkable in code — which means this is measurable, and cheaply.
 - **A per-conversation switch.** The chat menu gains an admin-only picker for
   which model plans the shot. A candidate can be tried on a real conversation
   without a deploy, and switched back the same way.
-- **The numbers to decide with.** Cost is reported per thousand compositions and
-  as a multiple of today's, so the trade-off is stated in the terms a decision
-  is actually made in.
+- **The numbers to decide with.** Primary cost and effective primary-plus-fallback
+  cost are reported per thousand compositions, alongside the measured production
+  fallback rate, so a cheap model that leans heavily on Aion 2.0 cannot look
+  artificially cheap.
 
 ## Boundaries
 
@@ -75,20 +77,26 @@ selected for a conversation.
 
 ## Slices
 
-- **Slice 1 — the composer's model is a curated list, and a conversation can be
-  switched onto any of it.** Status: complete — 2026-08-15. Seven candidates are
-  named in one place with operator guidance; an admin picks one per conversation
-  from the chat menu; an uncurated value can never reach the provider.
+- **Slice 1 — the composer's model is a curated candidate list, and a conversation
+  can be switched onto any of it.** Status: complete — 2026-08-15. Seven
+  owner-approved candidates are named in one place with operator guidance; an
+  admin picks one per conversation from the chat menu; an uncurated value can
+  never reach the provider. Membership in the shortlist is not a validation
+  verdict — promotion to the app default is what requires the A/B.
 - **Slice 2 — the comparison exists and grades itself honestly.** Status:
   complete — 2026-08-15. The A/B asks every arm the real question and grades the
   answer through the production resolver. It refuses to spend anything if its own
-  answer key cannot be satisfied, or if the control is missing from the run.
+  answer key cannot be satisfied, or if the control is missing from the run. The
+  owner entrypoint adds production fallback-rate and effective ladder-cost
+  reporting without changing that grading path.
 - **Slice 3 — the comparison is run and a verdict recorded.** Status: next —
   owner action, needs an OpenRouter key and costs roughly $2. The result table and
   the per-model verdict land in the spec's results section.
 - **Slice 4 — the default moves, or is deliberately kept.** Status: blocked on
   slice 3. Either outcome is a result: if nothing matches Aion 3.0 on the intimate
-  beats, "it stays, and here is the evidence" closes this plan just as well.
+  beats, "it stays, and here is the evidence" closes this plan just as well. A
+  winning floating candidate is pinned to the exact tested snapshot before it
+  becomes the production default.
 
 ## Where the work stands
 
@@ -104,22 +112,28 @@ selected for a conversation.
 - Switching a conversation's composer model changes which model the next scene
   render asks, and taking "another take" on a reply does not revert the pick.
 - After slice 3, the owner can state — from the table, not from impression —
-  whether a cheaper model holds the four intimate scenes.
+  whether a cheaper model holds the four intimate scenes, how often it would
+  invoke the fallback, and what the complete ladder costs at that measured rate.
+- The production default cannot be a floating latest alias; the winning snapshot
+  is pinned before promotion.
 
-## Open questions
+## Owner decisions — 2026-08-15
 
-- **Does the fallback rung need to change if the default moves?** Today a
-  degraded composition retries on a permissive Aion model. If the primary becomes
-  a cheap model, that retry becomes the thing that saves a refused intimate scene,
-  and its cost profile stops being negligible
-  ([detail](composer-model.spec.md)).
-- **Should a winning model be pinned or floating?** The strongest candidate is
-  reached through a floating alias that always redirects to the newest release, so
-  its weights can shift without a code change
-  ([detail](composer-model.spec.md)).
+- **Keep Aion 2.0 as the fallback unless the winning primary actually leans on it.**
+  The eval reports the exact production fallback trigger separately from its
+  broader quality score. If the measured fallback invocation rate is **10% or
+  higher**, review and test a replacement second rung before promoting that
+  primary; below 10%, keep Aion 2.0 rather than optimizing a rare path
+  pre-emptively. DeepSeek is expected to refuse rarely, but the measured rate —
+  not that expectation — makes the call.
+- **Pin the winner before it becomes the default.** Floating aliases remain useful
+  as eval/admin candidates because they follow new releases automatically. If a
+  floating candidate wins, resolve and use the exact snapshot that was tested for
+  the production default. A test prevents a `~...-latest`/`-latest` id from being
+  promoted accidentally.
 
 ## Technical companion
 
-[composer-model.spec.md](composer-model.spec.md) — the curated list, the seam and
+[composer-model.spec.md](composer-model.spec.md) — the candidate list, the seam and
 its fallback rung, the persistence and admin surface, and the A/B's arms, answer
-keys and grading rules.
+keys, grading rules, and ladder-economics report.
