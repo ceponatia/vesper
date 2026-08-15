@@ -104,6 +104,12 @@ is "Default (follows the app)" bound to `""`; the description line always
 describes the **effective** model, since on "Default" the operator's open
 question is which model that currently is.
 
+The persisted/admin value is **model id only**. It does not carry a composer
+reasoning profile. That matters for the DeepSeek A/B arms below: selecting
+DeepSeek in a live chat exercises the model's normal production call, not the
+probe's explicit `reasoning: off` or `reasoning: low` variants. Those variants
+are diagnostic until Slice 4 deliberately encodes the winning reasoning policy.
+
 ## The A/B harness
 
 The grading path and the owner-facing economics are deliberately separated so
@@ -154,11 +160,20 @@ beat's `camera` and `staging` — the shot the story establishes — plus a smal
 ### Arms
 
 Eight: the control, the two other Aion models, DeepSeek 4 Flash **twice**
-(reasoning off and reasoning low — genuinely different products for a short
-structured extraction, and the only way to know is to pay for both), and the three
-remaining flash-tier candidates. `AB_ARMS`, `AB_BEAT`, `AB_RUNS` and `EVAL_OUT`
-scope a run. Full matrix: 8 × 7 × 2 = 112 calls, well under $2, dominated almost
-entirely by the control.
+(reasoning off and reasoning low — genuinely different call configurations for
+a short structured extraction, and the only way to know is to pay for both), and
+the three remaining flash-tier candidates. `AB_ARMS`, `AB_BEAT`, `AB_RUNS` and
+`EVAL_OUT` scope a run. Full matrix: 8 × 7 × 2 = 112 calls, well under $2,
+dominated almost entirely by the control.
+
+**DeepSeek's two rows are not directly promotable as-is.** Production currently
+persists only the model id and `composeSceneSpec` supplies neither the A/B's
+`disableReasoning` option nor its `reasoning.effort="low"` option. If either
+DeepSeek reasoning arm wins, Slice 4 must first encode that exact setting as a
+composer-specific model policy, then rerun a targeted parity check through the
+production call. Merely changing `DEFAULT_SCENE_COMPOSER_MODEL_ID` would test one
+product and ship another. The same rule applies to any future A/B arm that adds a
+call option the production seam does not already carry.
 
 ### Grading
 
@@ -223,7 +238,7 @@ The run refuses to spend anything when it would prove nothing:
 With no provider key the runner prints every system prompt and user prompt and
 makes no calls — the wording is free to review, exactly as the image A/Bs do it.
 The wrapper detects that no `results.json` was written and skips economics rather
-than inventing zero-cost measurements.
+than inventing zero-cost measurements or reading a stale paid result.
 
 ### Output
 
@@ -263,8 +278,10 @@ held and which it lost, in the shape
   newer second rung before promoting that primary; below 10%, keep Aion 2.0 rather
   than optimizing a rare path pre-emptively. DeepSeek is expected to refuse rarely,
   but the measured `degraded` rate decides this, not the expectation.
-- **Pinning:** if the winner is reached through a floating alias, pin the exact
-  snapshot that was tested before assigning it to
+- **Pinning and call parity:** if the winner is reached through a floating alias,
+  pin the exact snapshot that was tested before assigning it to
   `DEFAULT_SCENE_COMPOSER_MODEL_ID`. Floating aliases remain valid admin/eval
-  candidates. The production-default test makes the pinning rule executable
-  rather than advisory.
+  candidates. If the winning arm also changed reasoning or another provider
+  option, encode that exact call behavior before promotion and parity-probe it
+  through production. The production-default test makes the model-snapshot rule
+  executable; the Slice 4 parity check covers call options that a slug cannot.
