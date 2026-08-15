@@ -52,13 +52,14 @@ render-intent seam the lane already crosses. Nothing here touches
   is unambiguous, so every staging still earns a verbatim quote until an
   intimate contact domain commits waist/hip targets.
 
-Each slice's **enable follows its probe** in the acceptance sense: the code is
-live (behavior changes only where evidence exists; a scene with none renders
-exactly as before), but no slice is **accepted** until its paid A/B probe
-(owner-gated spend) is run and its verdict recorded here. The probe harness is
-in place: fixture rows for every orientation/staging case
-(`scripts/eval/scene-images/fixtures.ts`) and the
-`scripts/eval/scene-images/orientation-ab.ts` runner.
+**Accepted — owner ruling 2026-08-15.** All three slices were probe-graded
+across the runs recorded below and accepted as the versions the app serves
+from the next deploy, with oral-contact geometry knowingly open (§Probe
+results, template-hardening rounds). The probe harness remains for future
+tuning: `scripts/eval/scene-images/fixtures.ts`, `orientation-ab.ts`, and
+`intimate-model-ab.ts`. The LoRA that makes the intimate acts render rode
+the probe only at this plan's close; its production incorporation is
+`intimate-scene-lora.plan.md` (owner direction, 2026-08-15).
 
 ### Probe results — orientation-ab, owner run 2026-08-14 (qwen-image-edit-2511)
 
