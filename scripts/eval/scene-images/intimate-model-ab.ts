@@ -48,7 +48,8 @@ import { type Beat, BEATS } from "./orientation-ab";
  *    beat fails on ANY missing element, any extra person, or an unbound limb readable as a
  *    third party. They print above the prompts at run time from the beat's own list.
  *    - `doggy` — on all fours, back to camera, face not toward the lens; the viewer's own
- *      hands on her waist or hips; nobody but her and the viewer's own hands in frame.
+ *      hands on her waist or hips, on arms entering from the lower corners; nobody but her
+ *      and the viewer's own hands and forearms in frame.
  *    - `oral` — her face visible, looking up mid-act; the act legible AS the act rather than
  *      a nude portrait of someone kneeling; nobody but her and the viewer's own body.
  *    - `oral_guided` — the top of her head under the viewer's own hand; same two riders.
@@ -74,11 +75,14 @@ import { type Beat, BEATS } from "./orientation-ab";
  *   all-inclusive LoRA instead (`EVAL_LORA_CIVITAI_VERSION` overrides its version id,
  *   default 3160956 = v2.0). With neither, the `lora` arm is skipped and says so.
  * - `EVAL_LORA_SCALE` — 0–4, default 1
+ * - `EVAL_OUT` — output directory, default `screenshots/intimate-model-ab`. A run that varies
+ *   a lever (a different LoRA scale, say) writes to its own directory, so two gradings never
+ *   overwrite each other and the comparison survives the second run.
  *
  * Prompts are printed and every honesty check runs BEFORE anything is sent, so the wording
  * and the arm matrix can be reviewed for free; only the renders cost money.
  */
-const OUT = "screenshots/intimate-model-ab";
+const OUT = process.env.EVAL_OUT ?? "screenshots/intimate-model-ab";
 /** Reference portrait: argv override for ad-hoc anchors; the eval portrait (untracked, regenerable) by default. */
 const ANCHOR = process.argv[2] ?? "docs/scene-image-eval/portraits/Mira.webp";
 const RUNS_PER_ARM = Number(process.env.AB_RUNS ?? 2);
@@ -165,21 +169,33 @@ const COMPACT_WORD_BUDGET = 60;
  * `on_all_fours` (without it the model gave the hands to her and the viewer left the shot)
  * and "kneeling on the floor below the camera and facing up toward it" to
  * `kneeling_before_viewer` (a stated camera height alone moved her gaze but never the
- * camera). Both are carried below. **When a template's geometry changes, re-derive its
- * compact prompt** — nothing can check this automatically, because the whole point of the arm
- * is that it is a different dialect saying the same thing.
+ * camera), and the 2026-08-15b run strengthened two of them again — the doggy and guided-oral
+ * templates now name the viewer's ARM as well as the hand, place the SUBJECT's hands, and (in
+ * the guided-oral entry) anchor the act itself to the lower frame edge, so the LoRA has
+ * neither a hand without an origin, nor a free pair of hers to recruit, nor a piece of the
+ * composition that no line ever locates. All of it is carried below. **When a template's geometry changes, re-derive its compact prompt** —
+ * nothing can check this automatically, because the whole point of the arm is that it is a
+ * different dialect saying the same thing.
  */
 const COMPACT_PROMPTS: Readonly<Record<IntimateBeatId, string>> = {
-  // `on_all_fours`: away / close / high, viewer's HANDS only — this composition puts no
-  // viewer anatomy in frame, so the compact prompt names none either.
+  // `on_all_fours`: away / close / high, the viewer's HANDS AND FOREARMS — this composition
+  // puts no viewer anatomy in frame, so the compact prompt names none either. Both of the
+  // template's 2026-08-15 attribution fixes are carried: her arms straight and ahead (so she
+  // has no free pair to be given the hips), and the viewer's hands AND forearms entering
+  // from the lower corners (so the hands have an arm and an origin outside the frame).
   doggy:
-    "POV first person. Auburn-haired woman on all fours on a bed, her palms and knees planted, her back to the camera, her bare hips raised toward the viewer, her head lowered away from the lens. The viewer's own hands enter frame from the lower edge, resting on her waist and hips. Close, high angle from behind. Photorealistic, warm lamplight.",
+    "POV first person. Auburn-haired woman on all fours on a bed, her arms straight ahead, palms planted, her back to the camera, her bare hips raised toward the viewer, her head lowered away from the lens. The viewer's own hands and forearms enter frame from the lower corners onto her waist and hips. Close, high angle. Photorealistic, warm lamplight.",
   // `kneeling_before_viewer` (composition A): toward_viewer / close / high, viewer's GENITALS.
   oral: "POV first person. Auburn-haired woman kneeling on the floor below the camera and facing up toward it, her face tilted up and her mouth on the viewer's own erect circumcised penis, her eyes on the viewer. Close, high angle looking down at her. Explicit, photorealistic, dim lamplight.",
   // `kneeling_before_viewer_guided` (composition B): the crown of the head to the lens, so
-  // the face is hidden by head angle and the viewer's own hand is the second staged part.
+  // the face is hidden by head angle and the viewer's own hand is the second staged part —
+  // carried here with the template's 2026-08-15 fixes: the arm and upper entry edge that give
+  // the hand a body, her hands pinned cheaply so none are spare, and the act's own frame
+  // anchor at the opposite edge — the lever that two attempts at moving her hands could not
+  // supply, because the part that kept vanishing was the one nothing had ever located. A
+  // contact verb was probed here too and reverted; see the template's note before retrying.
   oral_guided:
-    "POV first person. Auburn-haired woman kneeling before the viewer with her head bowed, the crown of her head toward the camera, her mouth on the viewer's own erect circumcised penis, the viewer's own hand resting on top of her head. Close shot, high angle looking straight down. Explicit, photorealistic, dim lamplight.",
+    "POV first person. Auburn-haired woman kneeling, head bowed, the crown of her head toward the camera, her mouth on the viewer's own erect circumcised penis rising into frame from the lower edge, her palms on the floor. The viewer's own arm enters frame from the upper edge, hand resting flat on top of her head. High angle. Explicit, photorealistic, lamplight.",
   // `lying_beneath_viewer`: the heaviest of the four — her face up, penetration at the bottom
   // frame edge, and the viewer's own hands on her, all three in one compact prompt.
   missionary:

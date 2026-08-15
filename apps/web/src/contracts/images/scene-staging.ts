@@ -145,11 +145,62 @@ export const sceneStagings: readonly SceneStaging[] = [
     // lock adaptation's `hidden` branch has to fire off the staging rather than the camera.
     id: "kneeling_before_viewer_guided",
     camera: { orientation: "toward_viewer", distance: "close", height: "high" },
-    viewerParts: ["hands", "genitals"],
+    viewerParts: ["hands", "forearms", "genitals"],
     requiresBare: [],
     intimate: true,
+    // Two ATTRIBUTION fixes, both from the 2026-08-15 all-inclusive-LoRA run, where the act
+    // and the crown-of-head composition rendered perfectly and only the hand's ownership
+    // failed — once as a phantom arm materializing behind her head, once as HER own arm
+    // reaching up, which left the render with three of them.
+    //
+    // 1. The hand gets an ARM AND A SOURCE EDGE. A hand stated only as located on somebody
+    //    has no route back to a body, so the model attaches it to whichever body is already
+    //    drawn — hers. Naming the arm, the edge it enters from, and the proven lens geometry
+    //    ("close to the lens and strongly foreshortened", the viewer-body registry's own
+    //    wording) gives the limb a viewer-side origin to hang from. Measured 5/5 across the
+    //    2026-08-15 verification runs: no phantom, no third arm.
+    // 2. HER hands are spent, cheaply. An unplaced pair is an invitation — the run with no
+    //    hands clause at all is the one that produced the third arm — but the clause only has
+    //    to account for them, and the model already puts them palms-down on the floor when
+    //    left alone (3/3). Pinning them where they were going anyway costs a quarter of the
+    //    characters, and the budget below is why that matters.
+    //
+    // The third fix is the ACT's FRAME ANCHOR, and it is the same defect as #1 one part over.
+    // Everything in this composition that names where it sits relative to the lens renders
+    // every time (the arm from the upper edge, 8/8; the crown of the head, 8/8). The viewer's
+    // genitals were the one element with no such anchor: the template stated contact only
+    // ("{name}'s mouth on ..."), and because the staging claims `genitals` in `viewerParts`,
+    // the viewer-body registry's own near-the-lens line for it is suppressed by design — so
+    // nothing in the assembled prompt ever said where that anatomy was. It rendered 2/5.
+    // Two attempts at fixing this from HER side both failed: hands on her own thighs (2/5),
+    // then hands braced on the viewer's own thighs, which was meant to force the viewer's
+    // lower body into frame and instead was ignored outright — 0/3, her palms on the carpet,
+    // no viewer below her. Her hands were never the variable. So the anchor goes on the part
+    // that lacked one, in the construction this entry has the most evidence for: the arm's
+    // "entering frame from the upper edge" mirrored to the opposite edge. It says the same
+    // thing the arm clause says — this belongs to a body continuing past the frame edge.
+    //
+    // The anchor fixed presence, and the residue is a KNOWN, MEASURED limitation rather than
+    // a bug to keep poking: the anatomy renders in frame every time and her mouth stops short
+    // of it. Anatomy present 3/3, mouth on it 0/3 — with the anatomy pinned to the frame edge
+    // and her bow holding her mouth mid-frame, the composition is complete with a visible gap.
+    //
+    // DO NOT re-try the obvious fix. Replacing "mouth on" with a contact verb ("lips wrapped
+    // tight around"), funded by dropping "before the viewer" from the opening clause, was
+    // rendered 3 times on 2026-08-15 and LOST the anchor's win: the viewer's anatomy went
+    // absent 0/3, contact 0/3. Best read is that lips wrapped around a thing occlude it, and
+    // the model resolves that by drawing her mouth closed and the thing not at all — where
+    // "mouth on" leaves it exposed and drawable. Two variables moved in that run (the verb
+    // and the dropped "before the viewer"), so which one cost the presence is unproven; what
+    // is proven is that the pair together is worse than this wording on every axis.
+    //
+    // Budget: the assembled edit prompt measures 1491 against `EDIT_RENDER_PROMPT_LIMIT`
+    // (1500), and this entry is written AGAINST that ceiling — every clause here was funded
+    // by shortening another one. Longer anchors ("below the camera", "in front of {name}'s
+    // face") measured over and cost the setting/lighting/quality tail. Re-measure on any
+    // edit; there is no slack left to spend twice.
     template:
-      "{name} kneeling before the viewer with {name}'s head bowed, the crown of {name}'s head toward the camera and {name}'s mouth on the viewer's own genitals, the viewer's own hand resting on top of {name}'s head",
+      "{name} kneeling before the viewer with {name}'s head bowed, the crown of {name}'s head toward the camera and {name}'s mouth on the viewer's own genitals rising into frame from the lower edge, {name}'s palms on the floor, the viewer's own arm entering frame from the upper edge, close to the lens and strongly foreshortened, and the viewer's own hand resting flat on top of {name}'s head",
     faceVisibility: "hidden",
     cast: "solo",
   },
@@ -189,20 +240,38 @@ export const sceneStagings: readonly SceneStaging[] = [
   {
     // Acceptance scene "Doggy style" (owner-specified 2026-08-10). Graded on three visible
     // elements: on all fours, back to the camera with the face away from the lens, and the
-    // viewer's own hands on her waist or hips. `viewerParts` is hands ONLY — the pinned
+    // viewer's own hands on her waist or hips. `viewerParts` carries hands and forearms —
+    // the forearms because the template names them, and no anatomy, because the pinned
     // acceptance composition does not put the viewer's anatomy in this frame.
     id: "on_all_fours",
     camera: { orientation: "away", distance: "close", height: "high" },
-    viewerParts: ["hands"],
+    viewerParts: ["hands", "forearms"],
     requiresBare: ["pelvis"],
     intimate: true,
-    // "Entering frame from the lower edge" is the frame anchor that keeps these hands the
-    // VIEWER's (probe run 2026-08-14: without it the model gave the hands to her — her own
-    // hands on her own hips — and the viewer vanished from the shot entirely). The palms-
-    // and-knees clause pins the actual all-fours pose, which the first draft's bare "on all
-    // fours" let drift into a kneeling lean.
+    // The frame-edge clause is this entry's load-bearing sentence and it has been beaten
+    // twice, each time by the same failure: the hip-hands drawn as HER own, arms reaching
+    // back, and the viewer gone from the shot entirely. Probe run 2026-08-14 lost them that
+    // way with no edge stated at all; run 2026-08-15b lost them again (0/2) on a LoRA whose
+    // priors overpower a bare "entering frame from the lower edge" — while a weaker LoRA
+    // held the viewer's hands 2/2 on that same wording. So the wording has to out-shout a
+    // prior rather than merely state a fact, and it does that two ways:
+    //
+    // 1. The FOREARM is named alongside the hand, entering from the lower CORNERS. The
+    //    renders that worked showed forearms converging from the lower corners: a hand with
+    //    an arm behind it has somewhere to come from, and two limbs entering from opposite
+    //    corners is a shape her own arms cannot make. A hand named with no arm gets grafted
+    //    onto the nearest body already drawn — hers.
+    // 2. HER arms are spent forward. "Palms and knees planted" alone let the pose drift into
+    //    an upright kneeling spread with both arms free to reach back; straight arms held
+    //    ahead pin the all-fours pose AND leave her no hands to be recruited for the hips.
+    //
+    // It is written TIGHT because it has to be: this entry's assembled edit prompt sits ~25
+    // characters under `EDIT_RENDER_PROMPT_LIMIT`, and past that the budgeter's clamp eats
+    // the setting, lighting and quality tail. Longer drafts (the knees clause, "close to the
+    // lens and strongly foreshortened", "either side of {name}'s hips") each measured over
+    // the line and were cut for the two levers above. Re-measure before adding a word.
     template:
-      "{name} on all fours with {name}'s palms and {name}'s knees planted, {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands entering frame from the lower edge and resting on {name}'s waist and hips",
+      "{name} on all fours with {name}'s arms straight ahead and {name}'s palms planted, {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands and forearms entering frame from the lower corners onto {name}'s waist and hips",
     cast: "solo",
   },
   {

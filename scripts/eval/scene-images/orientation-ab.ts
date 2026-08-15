@@ -272,8 +272,9 @@ function kneelBeat(): Beat {
 
 /**
  * Acceptance scene "Doggy style" (owner-specified 2026-08-10). `on_all_fours` lists `hands`
- * only, so a bare persona still puts NO viewer anatomy in this frame — the staging's part list
- * is what keeps it out, not the coverage gate, and the graded elements say the same.
+ * and `forearms` and no anatomy, so a bare persona still puts NO viewer anatomy in this frame
+ * — the staging's part list is what keeps it out, not the coverage gate, and the graded
+ * elements say the same.
  */
 function doggyBeat(): Beat {
   const narration =
@@ -305,8 +306,8 @@ function doggyBeat(): Beat {
     summary: "she is on all fours, the viewer behind her",
     grading: [
       "she is on all fours with her back to the camera, face not toward the lens",
-      "the viewer's own hands are on her waist or hips",
-      "nobody but her and the viewer's own hands is in frame",
+      "the viewer's own hands are on her waist or hips, on arms entering from the lower corners",
+      "nobody but her and the viewer's own hands and forearms is in frame",
     ],
     context,
     // The composer's real output for a beat like this: cautious, vague, and exactly why the
