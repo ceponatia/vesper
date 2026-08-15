@@ -1,7 +1,9 @@
 # Intimate-scene LoRA — the acts render in the app
 
-Status: active (owner-directed 2026-08-15, graduating the routing question
-from [finished/scene-composition.plan.md](finished/scene-composition.plan.md))
+Status: awaiting acceptance — the owner's first `staged_scene` bench run.
+Both slices are built; slice 1 is verified live in production, and nothing is
+left to code. (Owner-directed 2026-08-15, graduating the routing question from
+[finished/scene-composition.plan.md](finished/scene-composition.plan.md).)
 
 Outcome: A player whose chat stages an intimate act gets a scene image that
 actually depicts it — rendered through the anatomy-trained LoRA the probes

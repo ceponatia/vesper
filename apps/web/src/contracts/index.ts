@@ -50,6 +50,7 @@ export * from "./facts/taxonomy";
 export * from "./images/viewer-body";
 export * from "./images/scene-camera";
 export * from "./images/scene-staging";
+export * from "./images/intimate-scene-lora";
 export * from "./images/scene-committed";
 export * from "./players/persona-profile";
 export * from "./players/chat-player-state";
