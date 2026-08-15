@@ -177,15 +177,21 @@ describe("the acceptance-scene entries", () => {
   it("stages doggy style away from the camera with the viewer's hands on her waist or hips", () => {
     const entry = sceneStagingById("on_all_fours");
     expect(entry?.camera).toEqual({ orientation: "away", distance: "close", height: "high" });
-    expect(entry?.viewerParts).toEqual(["hands"]);
+    expect(entry?.viewerParts).toEqual(["hands", "forearms"]);
     expect(entry?.template).toContain("on all fours");
     expect(entry?.template).toContain("{name}'s back to the camera");
     expect(entry?.template).toContain("facing away from the lens");
-    // The frame-edge clause is part of the pin (probe run 2026-08-14): hands stated
-    // without an entry edge were drawn as HER hands, and the viewer vanished.
+    // The frame-edge clause is part of the pin, and it is pinned in its STRENGTHENED form
+    // (probe runs 2026-08-14 and 2026-08-15b): hands stated without an entry edge were drawn
+    // as HER hands and the viewer vanished, and a bare "lower edge" lost them the same way
+    // under a stronger LoRA. Naming the forearm and the corners it enters from is what gives
+    // the limb a viewer-side origin — weakening either half re-opens the failure.
     expect(entry?.template).toContain(
-      "the viewer's own hands entering frame from the lower edge and resting on {name}'s waist and hips",
+      "the viewer's own hands and forearms entering frame from the lower corners onto {name}'s waist and hips",
     );
+    // Her arms are spent forward — the pose pin AND the reason no free pair of her hands is
+    // available to be recruited onto her own hips.
+    expect(entry?.template).toContain("{name}'s arms straight ahead and {name}'s palms planted");
   });
 
   it("stages oral both ways — her face up, or the crown of her head under the viewer's hand", () => {
@@ -199,10 +205,27 @@ describe("the acceptance-scene entries", () => {
 
     const guided = sceneStagingById("kneeling_before_viewer_guided");
     expect(guided?.camera).toEqual({ orientation: "toward_viewer", distance: "close", height: "high" });
-    expect(guided?.viewerParts).toEqual(["hands", "genitals"]);
+    expect(guided?.viewerParts).toEqual(["hands", "forearms", "genitals"]);
     expect(guided?.template).toContain("{name}'s head bowed");
     expect(guided?.template).toContain("the crown of {name}'s head toward the camera");
-    expect(guided?.template).toContain("the viewer's own hand resting on top of {name}'s head");
+    // Kept deliberately as an assertion of contact. A contact verb ("lips wrapped tight
+    // around") was probed and cost the anchor's win — the anatomy went absent 0/3 — so this
+    // wording stands with a known residue: present 3/3, mouth actually on it 0/3.
+    expect(guided?.template).toContain("{name}'s mouth on the viewer's own genitals");
+    // The hand keeps its arm and its source edge (probe run 2026-08-15b): stated as a hand
+    // on her head alone it came back a phantom arm behind her head, or hers, reaching up.
+    expect(guided?.template).toContain("the viewer's own arm entering frame from the upper edge");
+    expect(guided?.template).toContain("the viewer's own hand resting flat on top of {name}'s head");
+    // Her hands are spoken for — cheaply, pinned where the model puts them unprompted, so the
+    // characters go to the clause below instead. Two richer placements were tried and neither
+    // was what fixed the act.
+    expect(guided?.template).toContain("{name}'s palms on the floor");
+    // The act's own frame anchor, mirroring the arm clause's edge idiom to the lower edge.
+    // Contact alone ("mouth on the viewer's own genitals") left the anatomy unlocated, and
+    // the staged-part rule suppresses the registry's generic near-the-lens line for it.
+    expect(guided?.template).toContain(
+      "the viewer's own genitals rising into frame from the lower edge",
+    );
     // The whole reason the override field exists: the camera faces her, and the face is
     // hidden by head angle alone, so the lock adaptation's `hidden` branch fires off this.
     expect(guided?.faceVisibility).toBe("hidden");

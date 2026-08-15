@@ -149,6 +149,45 @@ the Replicate wrapper accepted, settling that open question. Verdicts:
   per-staging LoRA choice through the `image_loras` library, not stacking.
   This refines the plan's model-routing open question.
 
+### Probe results — template-hardening rounds, 2026-08-15c (all-inclusive LoRA, 21 renders)
+
+Owner review of run 2026-08-15b found two attribution defects the earlier
+grading under-called: the guided entry's hand-on-head rendered as a phantom
+arm or as HER third arm, and doggy's hip-hands went to her (0/2). Five
+directed template rounds followed (`intimate-model-ab-*` folders, r2–r6),
+with a per-element verdict trail:
+
+- **`on_all_fours` — fixed, 4/4** (plus 2/2 at scale 0.75, which proved
+  unnecessary): the viewer's hands AND forearms entering from the lower
+  corners (a two-limbs-from-opposite-corners shape her own arms cannot make),
+  and her arms spent straight ahead with palms planted — pinning all-fours
+  and leaving no free hands to recruit.
+- **`kneeling_before_viewer_guided` — attribution fixed 14/14 across every
+  wording tried**: the hand gets an arm, a source edge, and the registry's
+  lens-geometry idiom. The act split into two elements: **presence** of the
+  viewer's anatomy went 0/3 → 3/3 the moment the template gave it a frame
+  position ("rising into frame from the lower edge") — it had none, because
+  the gate-list rule suppresses a staged part's generic registry line and the
+  template only asserted contact. **Contact** remains 0/3 in the shipped
+  state: her mouth stops short of anatomy that now always renders. Two
+  contact attempts failed and are recorded as do-not-retry in the registry
+  comment: re-spending her hands onto the viewer's thighs (r4 — the model
+  dropped the referent, act 0/3) and a wrap-around contact verb (r6 — lost
+  presence itself, 0/3, likely because occluding language makes the part
+  undrawable).
+- **The transferable rule, demonstrated three times**: anything named without
+  a frame position renders unreliably; anything given one renders every
+  time. Corollary: claiming a part in `viewerParts` removes its generic
+  framing line, so the template MUST supply that geometry itself.
+- **Budget note**: both hardened templates sit within ~10 chars of
+  `EDIT_RENDER_PROMPT_LIMIT`'s never-dropped-tier clamp; the registry
+  comments carry the measured numbers and the phrases already cut. Any future
+  wording change must re-measure or it silently eats the prompt tail.
+- **Open**: relational contact geometry (two named things touching) has no
+  proven phrasing; single-variable probes only, and the arm clause's "close
+  to the lens and strongly foreshortened" (14/14) is the last phrase to
+  sacrifice.
+
 **Cross-cutting finding — male POV anatomy is a model-capability gap, not a
 prompt gap.** qwen-image-edit-2511 followed every compositional instruction it
 plausibly has priors for and omitted/substituted explicit genital geometry
