@@ -16,6 +16,13 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Scene image composition — camera, facing, and intimate staging** —
+  [plan](finished/scene-composition.plan.md) — 2026-08-15 — the shot follows
+  the fiction: probe-hardened camera and staging prompts, committed scene
+  facts clamping the camera, accepted with oral-contact geometry knowingly
+  open; the act-rendering LoRA's production wiring continues in
+  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md).
+
 - **Image model capabilities — profiles, shared controls, and richer
   workflows** — [plan](finished/image-model-capabilities.plan.md) — 2026-08-14 —
   every render resolves a task profile with role-aware references, probe-bound
