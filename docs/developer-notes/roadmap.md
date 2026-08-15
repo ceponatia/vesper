@@ -36,9 +36,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Intimate-scene LoRA — the acts render in the app** —
   [plan](intimate-scene-lora.plan.md) · [spec](intimate-scene-lora.spec.md) —
-  owner-directed 2026-08-15: intimate staged scene renders route through the
-  probe-proven anatomy LoRA on the Replicate Qwen LoRA wrapper; everything
-  else renders exactly as today; lab adoption queued behind the lab
+  intimate staged scene renders route through the probe-proven anatomy LoRA on
+  the Replicate Qwen LoRA wrapper, live in production since 2026-08-15;
+  everything else renders exactly as today; lab adoption queued behind the lab
   expansion.
 
 ## Next (queued, in dependency order)

@@ -54,9 +54,10 @@ prompts only when its planned expansion happens (slice 2).
 - **Slice 1 — the render path routes intimate staged scenes through the
   LoRA.**
 
-  Status: built 2026-08-15 — awaiting the two deploy-time pieces the spec
-  names (the wrapper model row on the production registry, and the Fly
-  secret) before a production render can take the route.
+  Status: complete — 2026-08-15. Verified on the live deploy: an intimate
+  staged chat render reached Replicate as the LoRA wrapper, and the scene
+  before it — same chat, no surviving staging — rendered on the stock model
+  untouched. Evidence in the spec.
 
   The wrapper model + LoRA binding replace the stock model for exactly the
   intimate-staged uncensored renders; the builtin library row and the token
@@ -70,15 +71,23 @@ prompts only when its planned expansion happens (slice 2).
 
 ## Success criteria
 
-- An intimate staged chat render on the uncensored route reaches Replicate
-  as the LoRA wrapper model with `lora_weights` set (verifiable on the image
-  row's recorded model + meta).
-- A non-intimate or unstaged render's request is byte-identical to today's.
-- With `CIVITAI_API_TOKEN` unset, every render still succeeds on the stock
-  model and the skip is diagnosed.
-- The next `fly deploy` checklist includes setting the `CIVITAI_API_TOKEN`
-  Fly secret — without it production quietly renders as today, which is the
-  designed degradation but not the owner's intent.
+- **Met 2026-08-15.** An intimate staged chat render on the uncensored route
+  reaches Replicate as the LoRA wrapper model with `lora_weights` set
+  (verifiable on the image row's recorded model + meta).
+- **Met 2026-08-15.** A non-intimate or unstaged render's request is
+  byte-identical to today's.
+- **Met at build time.** With `CIVITAI_API_TOKEN` unset, every render still
+  succeeds on the stock model and the skip is diagnosed — covered by the
+  degradation tests, not re-run against production.
+- **Met 2026-08-15.** The `CIVITAI_API_TOKEN` Fly secret is set; without it
+  production quietly renders as today, which is the designed degradation but
+  not the owner's intent.
+
+One thing the run exposed that no criterion asked for: the route's practical
+gate is not the LoRA machinery at all, but whether a staging survives the
+composer. The first render of the verification took the stock model with every
+LoRA leg healthy, because the composer proposed no staging for prose that
+described the act only glancingly. Detail in the spec.
 
 ## Open questions
 
