@@ -13,6 +13,7 @@ import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSin
 import {
   attemptReferenceCount,
   type IdentityReferenceProvenance,
+  type ImageLoraRenderBinding,
   IMAGE_TARGET_ASPECT,
   type ImageProviderFailure,
   type ImageReferenceRole,
@@ -126,6 +127,21 @@ export interface RenderResolvedSceneInput {
   mode?: SceneReferenceMode;
   /** The resolved scene profile and its model; null when none is offered. */
   profile?: ResolvedImageProfile | null;
+  /**
+   * A library LoRA the CALLER already resolved against `profile`'s model,
+   * version and task (`resolveIntimateSceneLoraRoute` — the intimate-scene
+   * route, and the only source of one today).
+   *
+   * Passed rather than resolved here for the reason the lab passes its own: the
+   * decision to take the LoRA route is also the decision to swap the model, and
+   * both have to be made before the row is reserved, because the row records the
+   * model it will run on. Resolving again inside the render would read the
+   * library twice and could disagree with the profile that was already chosen.
+   *
+   * Absent — every render but an intimate staged one — leaves the intent
+   * byte-identical to what it was before this field existed.
+   */
+  resolvedLora?: ImageLoraRenderBinding;
   framing?: "pov" | "selfie";
   flavor?: string;
   /**
@@ -260,6 +276,7 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
     multiReferences,
     focalName: plan.focal?.name ?? "Scene",
     profile,
+    ...(input.resolvedLora ? { resolvedLora: input.resolvedLora } : {}),
     attempts: new Map(),
     sink,
   };
@@ -287,6 +304,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // the same on every rung, so a fallback needs no correction pass.
           camera: plan.camera,
           ...(plan.staging ? { staging: plan.staging.id } : {}),
+          // The LoRA that drew it, by library id — the other half of the
+          // provenance `meta.model` starts (the wrapper slug lands there through
+          // `modelFor`). The id, never the locator: a locator is completed with a
+          // credential on its way to the provider, and an image row is exactly
+          // the kind of long-lived record that must never carry one.
+          ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
         },
@@ -338,6 +361,8 @@ interface SceneAttemptContext {
   multiReferences: ImageRenderReference[];
   focalName: string;
   profile: ResolvedImageProfile | null;
+  /** The caller-resolved LoRA every rung of this chain carries, when there is one. */
+  resolvedLora?: ImageLoraRenderBinding;
   /**
    * Each rung's latest attempt provenance, written by {@link runSceneProvider}.
    * Keyed by rung so the produce step can record the one that actually won —
@@ -457,6 +482,11 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
       prompt: ctx.promptFor(id),
       references,
       target: { aspectRatio: IMAGE_TARGET_ASPECT },
+      // Every rung carries it: the chain is one model's degradation ladder, so a
+      // fallback from the multi-reference rung to the single-anchor one is still
+      // the render the LoRA was chosen for. Spread conditionally so a LoRA-free
+      // scene hands the renderer the exact object it always did.
+      ...(ctx.resolvedLora ? { resolvedLora: ctx.resolvedLora } : {}),
     },
     ctx.sink,
   );
