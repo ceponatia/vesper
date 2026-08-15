@@ -21,6 +21,7 @@ import {
   isImageLabControlledKind,
   isImageLabFinishableKind,
 } from "@vesper/image-core";
+import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { DaylightBand } from "@/lib/clock";
 import {
@@ -138,6 +139,28 @@ import {
 
 /** What the runner uses when the form names no model. Shown, never sent. */
 const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
+
+/**
+ * A staged scene's default model, and the one kind whose blank Model box IS
+ * sent rather than left to the runner.
+ *
+ * The ordinary default cannot carry a LoRA at all — `qwen-image-edit-2511`
+ * exposes no `lora_weights` input, which is the entire reason the wrapper row
+ * exists (docs/image-models/qwen-image-edit-plus-lora.md). A staged run seeds
+ * the builtin intimate LoRA below, so defaulting the model the way every other
+ * kind does would pair weights with a model that cannot load them and settle
+ * the run `image_lora.incompatible` before rendering — a form that queues a
+ * request it knows will fail.
+ *
+ * So the staged kind defaults its own model and SENDS it. An admin who names
+ * another slug still overrides it; this only fills the blank.
+ *
+ * It is the SAME constant the chat render route resolves, imported rather than
+ * retyped: a second spelling here would drift the day the wrapper is
+ * re-registered, and a bench that ran a different model than production would
+ * quietly stop being evidence about production.
+ */
+const STAGED_DEFAULT_MODEL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;
 
 /**
  * The send order a finishing pass compiles its numbered bindings over: the base
@@ -481,9 +504,11 @@ export function ImageLabExperimentForm({
     setSeededLoraId(null);
     if (loraId === seededLoraId) setLoraId("");
   }
-  // The model the run will actually resolve — what the admin named, or the plan's
-  // own default when the box is blank.
-  const effectiveModelSlug = modelSlug.trim() === "" ? DEFAULT_MODEL_SLUG : modelSlug.trim();
+  // The model the run will actually resolve — what the admin named, or the
+  // kind's own default when the box is blank. A staged scene's default is the
+  // LoRA wrapper, because its seeded weights have nowhere else to load.
+  const blankModelDefault = isStaged ? STAGED_DEFAULT_MODEL_SLUG : DEFAULT_MODEL_SLUG;
+  const effectiveModelSlug = modelSlug.trim() === "" ? blankModelDefault : modelSlug.trim();
   // Whether the chosen weights can reach that model at all. The library compares
   // BASE slugs (a version suffix is not a different model), so this asks the same
   // question the same way, and a mismatch is the run's only possible outcome:
@@ -808,7 +833,12 @@ export function ImageLabExperimentForm({
   const submit = async () => {
     if (!ready) return;
     const sendsCharacter = kind === "control_probe" || kind === "baseline_portrait" || kind === "controlled_portrait";
-    const namedModel = modelSlug.trim() === "" ? undefined : modelSlug.trim();
+    // Blank normally means "let the runner resolve the plan's model". The staged
+    // kind is the exception and fills its own blank (STAGED_DEFAULT_MODEL_SLUG):
+    // its seeded LoRA cannot load on the ordinary default, so a blank box there
+    // would queue a run whose only outcome is `image_lora.incompatible`.
+    const namedModel =
+      modelSlug.trim() === "" ? (isStaged ? STAGED_DEFAULT_MODEL_SLUG : undefined) : modelSlug.trim();
     // A finishing pass sends its source and nothing else: the subject is
     // inherited from that run and the references are resolved by the runner, so
     // every other field here would be a value the server refuses.
@@ -1099,13 +1129,20 @@ export function ImageLabExperimentForm({
               </Select>
             )}
           </Field>
-          <Field label="Model" hint={`Blank runs the plan's model (${DEFAULT_MODEL_SLUG}). Name another to probe a fallback connector.`}>
+          <Field
+            label="Model"
+            hint={
+              isStaged
+                ? `Blank runs the LoRA wrapper (${STAGED_DEFAULT_MODEL_SLUG}) — the only Qwen edit model that loads weights. Name another to probe a fallback connector.`
+                : `Blank runs the plan's model (${DEFAULT_MODEL_SLUG}). Name another to probe a fallback connector.`
+            }
+          >
             {(id) => (
               <Input
                 id={id}
                 value={modelSlug}
                 onChange={(e) => setModelSlug(e.target.value)}
-                placeholder={DEFAULT_MODEL_SLUG}
+                placeholder={blankModelDefault}
                 // Italic on top of the shared muted placeholder colour: this
                 // placeholder is a model slug, and a slug sitting in the box
                 // reads exactly like one somebody typed. Blank means the plan's
