@@ -17,15 +17,15 @@ entry without one is an unexplained choice.
 **An id earns its place by being run through the A/B**, with the verdict recorded
 in [Results](#results). The list is not a menu of everything OpenRouter sells.
 
-| Id                                  | In / out $ per M | Why it is a candidate                  |
-| ----------------------------------- | ---------------- | -------------------------------------- |
-| `aion-labs/aion-3.0`                | 3.000 / 6.000    | The shipped default; the control       |
-| `aion-labs/aion-3.0-mini`           | 0.700 / 1.400    | Same lab, ~4× cheaper                  |
-| `aion-labs/aion-2.0`                | 0.800 / 1.600    | The session narrator; proven permissive |
-| `~deepseek/deepseek-v4-flash-latest` | 0.068 / 0.135   | The in-session agent default           |
-| `qwen/qwen3.7-flash`                | 0.030 / 0.130    | Cheapest capable                       |
-| `z-ai/glm-4.7-flash`                | 0.060 / 0.400    | Flash sibling of the curated narrator  |
-| `inclusionai/ling-3.0-flash`        | 0.021 / 0.063    | The price floor                        |
+| Id                                   | In / out $ per M | Why it is a candidate                   |
+| ------------------------------------ | ---------------- | --------------------------------------- |
+| `aion-labs/aion-3.0`                 | 3.000 / 6.000    | The shipped default; the control        |
+| `aion-labs/aion-3.0-mini`            | 0.700 / 1.400    | Same lab, ~4× cheaper                   |
+| `aion-labs/aion-2.0`                 | 0.800 / 1.600    | The session narrator; proven permissive |
+| `~deepseek/deepseek-v4-flash-latest` | 0.068 / 0.135    | The in-session agent default            |
+| `qwen/qwen3.7-flash`                 | 0.030 / 0.130    | Cheapest capable                        |
+| `z-ai/glm-4.7-flash`                 | 0.060 / 0.400    | Flash sibling of the curated narrator   |
+| `inclusionai/ling-3.0-flash`         | 0.021 / 0.063    | The price floor                         |
 
 **No entry needs tool calling or `response_format`.** `generateChecked` sends the
 JSON Schema as prompt text and parses the reply locally — provider-side
@@ -136,17 +136,17 @@ cannot pass by satisfying a paraphrase of the pipeline. Nine checks, each `true`
 `false`, or `null` when the beat does not grade that axis; the score is passed
 over applicable.
 
-| Check                | Passes when                                              |
-| -------------------- | -------------------------------------------------------- |
-| `answered`           | Not a refusal, transport failure, or all-defaulted spec   |
-| `focal`              | The right roster member, with no focal clamp              |
-| `camera`             | The resolved camera is the ids the story establishes      |
-| `staging`            | The right staging id survived every gate                  |
-| `viewerBody`         | Every expected viewer part was proposed                   |
-| `groundedParts`      | No ungrounded, off-vocabulary or unrequested part          |
-| `noInventedCast`     | Nobody was invented into the frame                        |
-| `noBannedWords`      | `scrubBlush` leaves every authored field unchanged        |
-| `concrete`           | The pose and activity are not the documented hedge        |
+| Check            | Passes when                                             |
+| ---------------- | ------------------------------------------------------- |
+| `answered`       | Not a refusal, transport failure, or all-defaulted spec |
+| `focal`          | The right roster member, with no focal clamp            |
+| `camera`         | The resolved camera is the ids the story establishes    |
+| `staging`        | The right staging id survived every gate                |
+| `viewerBody`     | Every expected viewer part was proposed                 |
+| `groundedParts`  | No ungrounded, off-vocabulary or unrequested part       |
+| `noInventedCast` | Nobody was invented into the frame                      |
+| `noBannedWords`  | `scrubBlush` leaves every authored field unchanged      |
+| `concrete`       | The pose and activity are not the documented hedge      |
 
 Three of these need their reasoning stated:
 
@@ -168,7 +168,7 @@ Three of these need their reasoning stated:
 
 The run refuses to spend anything when it would prove nothing:
 
-- **The answer key must be satisfiable.** Before the first call, an *ideal* spec
+- **The answer key must be satisfiable.** Before the first call, an _ideal_ spec
   is built for each beat from its own evidence quotes and graded. If it does not
   score 1.0, the answer key and the pipeline have drifted and every arm would be
   marked down for the harness's mistake — a broken instrument, not a model
@@ -207,6 +207,8 @@ short verdict per arm naming which beats it held and which it lost, in the shape
   and its cost stop being negligible. The A/B's `answered` column is the number
   that decides this: an arm that refuses one beat in ten makes the fallback a
   tenth of all compositions, not a rounding error.
+  - If the fallback is triggered often (10% or higher) we should look at a new fallback as Aion-2.0 is dated.
+    However, I do not foresee Deepseek refusing often.
 - **Should a winning model be pinned or floating?** `~deepseek/…-latest` is
   OpenRouter's floating alias and always redirects to the newest release, so a new
   snapshot needs no code change — and the exact weights can shift under us. The
@@ -214,3 +216,4 @@ short verdict per arm naming which beats it held and which it lost, in the shape
   agent lane already accepted the floating trade (owner ask 2026-08-04); whether
   the composer should is a separate call, because a regression here shows up as a
   wrong picture rather than a dropped background field.
+  - Pin v4 Flash if it wins, etc.
