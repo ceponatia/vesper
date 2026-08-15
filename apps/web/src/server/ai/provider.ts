@@ -26,8 +26,8 @@ export const MODEL_DEFAULTS = {
    * most explicit stretch of a chat and answers with vague poses ("close to the viewer,
    * intimate") when it runs on a moderation-prone model — which is a grounding failure
    * before it is a moderation one, because the render then gets anatomy with no act. Owner
-   * ruling 2026-08-10: move it to a less moderation-prone model, with the chat's narrative
-   * model as the approved refusal fallback (`composeSceneSpec`).
+   * ruling 2026-08-10: move it to a less moderation-prone model, with the fixed session
+   * narrative default as the approved refusal fallback (`composeSceneSpec`).
    *
    * The propose-then-verify architecture does not move with it: the registries still own
    * every explicit word, and `characterAppearanceSummary` still runs `allowIntimate:false`
