@@ -86,3 +86,4 @@ prompts only when its planned expansion happens (slice 2).
   from-behind shots?** Carried from the scene-composition close-out; detail
   in finished/scene-composition.spec.md §Known tensions. The LoRA may change
   the answer — re-grade on post-LoRA renders.
+  - No for now.
