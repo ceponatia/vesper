@@ -32,9 +32,11 @@ changes the token append, which stays app-side.
   band 0.5–1.5 around the probed default 1, `allowed_tasks: ["scene"]`
   fail-closed, no trigger words — the probe graded the unchanged prompt). 49
   tests. Production evidence: [the live-route run](#live-route-verification-2026-08-15).
-- **Slice 2 — lab adoption**: in progress. Scoped 2026-08-15 (owner ruling) as
-  a first-class `staged_scene` lab kind rather than waiting on the lab
-  expansion — design below.
+- **Slice 2 — lab adoption**: built 2026-08-15, **not yet accepted** — the kind
+  renders and records a verdict, and no owner bench run has happened. Scoped
+  that day (owner ruling) as a first-class `staged_scene` lab kind rather than
+  waiting on the lab expansion; design below. No migration. The parity pin runs
+  as a census over all 13 registry stagings.
 
 ## Live-route verification (2026-08-15)
 
