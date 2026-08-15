@@ -91,6 +91,36 @@ beat. Per-beat verdicts:
   hands entering from the bottom corners onto her thighs all pass; penetration
   absent or rendered as an indistinct wedge; waxy skin.
 
+### Probe results — intimate-model-ab, run 2026-08-15 (qwen + lora arms; pulid arms not yet run)
+
+16 renders, `screenshots/intimate-model-ab/`: the four intimate beats on the
+re-anchored templates, `qwen` baseline vs the `lora` arm
+(`qwen/qwen-image-edit-plus-lora` +
+`ScottzillaSystems/qwen-image-edit-plus-nsfw-lora`, scale 1). Verdicts:
+
+- **The 2026-08-15 phrase re-anchoring is confirmed on the base model.** The
+  frame-edge hands clause put the VIEWER's hands (with forearms entering from
+  the lower corners) into every doggy render on both arms — yesterday they
+  were drawn as hers — and the rewritten `high` phrase produced a genuine
+  high-angle on every beat, including the oral beats that sat at eye level
+  yesterday. Camera-height rework: verified; the kneel re-probe can piggyback
+  on any future run.
+- **The LoRA materially improves explicit anatomy in pelvic framings.** Both
+  missionary LoRA runs render actual, plausible penetration (yesterday: an
+  ambiguous wedge); doggy LoRA runs render clear, believable detail. Skin
+  texture also reads less waxy.
+- **Mouth-level male anatomy is still unrenderable on the Qwen path.** Oral:
+  both arms render the composition (kneeling, high angle, mid-act expression)
+  with no viewer anatomy at all. Oral-guided: the LoRA substitutes misplaced
+  female anatomy or fused shapes — still the set's uncanny failure. This LoRA
+  evidently carries penetration priors but not organ-at-face framings.
+- **Identity drift risk on the LoRA wrapper is real but mild here**: one
+  missionary LoRA run pulled hair color toward brown (the 2509-generation
+  wrapper's documented weaker identity); the rest held the anchor well.
+- Two transient `fetch failed` errors on first attempt (Replicate fetching
+  the LoRA weights, most likely); a scoped retry succeeded — expect cold-start
+  flakes on LoRA-carrying runs.
+
 **Cross-cutting finding — male POV anatomy is a model-capability gap, not a
 prompt gap.** qwen-image-edit-2511 followed every compositional instruction it
 plausibly has priors for and omitted/substituted explicit genital geometry
