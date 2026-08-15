@@ -4,6 +4,7 @@ import {
 } from "@openrouter/ai-sdk-provider";
 import type { JSONValue, ProviderMetadata } from "ai";
 import { AGENT_MODELS, DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
+import { DEFAULT_SCENE_COMPOSER_MODEL_ID, SCENE_COMPOSER_MODELS } from "@/lib/composer-models";
 import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { log } from "@/server/log";
 
@@ -17,7 +18,9 @@ export const MODEL_DEFAULTS = {
   state: DEFAULT_AGENT_MODEL_ID,
   tool: DEFAULT_AGENT_MODEL_ID,
   /**
-   * The scene composer's OWN seam (scene-composition.plan.md slice 2).
+   * The scene composer's OWN seam (scene-composition.plan.md slice 2), now backed by a
+   * curated list (lib/composer-models.ts) so a chat can be moved onto a candidate without
+   * a deploy.
    *
    * It used to ride `tool`, and that was the wrong bed for it: the shot planner reads the
    * most explicit stretch of a chat and answers with vague poses ("close to the viewer,
@@ -26,16 +29,11 @@ export const MODEL_DEFAULTS = {
    * ruling 2026-08-10: move it to a less moderation-prone model, with the chat's narrative
    * model as the approved refusal fallback (`composeSceneSpec`).
    *
-   * Aion 3.0 is the character-chat narrative default (lib/narrative-models.ts, where it is
-   * also the flagged tool-candidate), so it is already proven on this repo's most explicit
-   * text. Flipped ahead of slice 2's A/B probe on owner instruction (2026-08-14); the probe
-   * verdict is still pending and is what records this value as accepted.
-   *
    * The propose-then-verify architecture does not move with it: the registries still own
    * every explicit word, and `characterAppearanceSummary` still runs `allowIntimate:false`
    * for the composer, because exposure gating is code's job however bold the model is.
    */
-  sceneComposer: "aion-labs/aion-3.0",
+  sceneComposer: DEFAULT_SCENE_COMPOSER_MODEL_ID,
   embedding: "openai/text-embedding-3-small",
   // Image UNDERSTANDING (portrait → attributes, character-sheet-forge.plan.md)
   // — the first vision-input capability; distinct from the Replicate image
@@ -200,9 +198,22 @@ export function toolModelId(): string {
   return MODEL_DEFAULTS.tool;
 }
 
-/** The scene composer's model — its own seam, not the tool default (see MODEL_DEFAULTS.sceneComposer). */
-export function sceneComposerModelId(): string {
-  return MODEL_DEFAULTS.sceneComposer;
+/**
+ * The scene composer's model — its own seam, not the tool default (see
+ * MODEL_DEFAULTS.sceneComposer). `chatComposerModel` is the per-conversation admin
+ * override (`character_chats.scene_composer_model`); empty/unknown ⇒ the curated default.
+ *
+ * STRICT like the other two resolvers, and for the same reason: this id reaches
+ * `openrouter().chat()` on the deployment's key, so an uncurated value must never survive
+ * the trip from a chat row to a billed generation.
+ */
+export function sceneComposerModelId(chatComposerModel?: string | null): string {
+  return resolveCurated(
+    SCENE_COMPOSER_MODELS,
+    chatComposerModel,
+    MODEL_DEFAULTS.sceneComposer,
+    "ai.scene_composer_model",
+  );
 }
 
 /**
@@ -212,6 +223,27 @@ export function sceneComposerModelId(): string {
  * image pipeline deliberately do NOT call this — they stay on the plain
  * `stateModelId`/`toolModelId` defaults, outside the session switch.
  */
+/**
+ * The composer ladder's SECOND rung — the approved refusal fallback
+ * (`composeSceneSpec`): a model already trusted with this repo's most explicit text,
+ * asked once when the primary degrades.
+ *
+ * It is `narrativeModelId()` (the session narrator, Aion 2.0) except when that IS the
+ * primary — which the per-chat override made reachable, since Aion 2.0 is a curated
+ * composer option. Asking the same model twice is not a fallback, it is a retry of a
+ * refusal, so the ladder falls back to the curated composer default instead. The one
+ * invariant every caller depends on: **the two rungs are never the same id.**
+ */
+export function composerFallbackModelId(primaryModelId: string): string {
+  const narrative = narrativeModelId();
+  if (narrative !== primaryModelId) return narrative;
+  // The narrator IS the primary. Prefer the curated composer default; if that collides
+  // too (only reachable by setting both defaults to one id), take the first curated
+  // composer option that differs — the invariant matters more than the preference order.
+  if (MODEL_DEFAULTS.sceneComposer !== primaryModelId) return MODEL_DEFAULTS.sceneComposer;
+  return SCENE_COMPOSER_MODELS.find((option) => option.id !== primaryModelId)?.id ?? primaryModelId;
+}
+
 export function agentModelId(worldAgentModel?: string | null): string {
   return resolveCurated(AGENT_MODELS, worldAgentModel, MODEL_DEFAULTS.state, "ai.agent_model");
 }

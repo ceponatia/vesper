@@ -25,6 +25,17 @@ quality can only be judged by eye.
   and an optional `lora` arm. Grades the ACT and the LIKENESS: sdxl-pulid's row records that
   its likeness is unmeasured in Vesper, and it is single-reference, so identity rides one
   portrait. Prompts print and every honesty check runs before anything is sent.
+- `composer-model-ab.ts` + `composer-model-score.ts` — the **composer-model** A/B
+  (composer-model.plan.md), and the odd one out in this folder: it grades TEXT, so
+  it is scored in code rather than by eye. It takes the seven beats from
+  `orientation-ab.ts` — again imported, never restated — and asks each candidate
+  shot-planning model the real question (`sceneComposerSystem`,
+  `buildSceneComposerPrompt`, `sceneSpecSchema`, `generateChecked`), then grades
+  the answer by resolving it through the production `resolveScenePlan`: camera
+  ids, staging id, verbatim evidence, roster clamps and the skin-colour scrub are
+  the app's own gates, not a paraphrase. Reports measured latency and measured
+  dollars alongside the score. `composer-model-score.ts` is pure and covered by
+  `pnpm test` — a grader nobody tests is an instrument nobody can trust.
 - `run.ts` — offline runner. Computes each fixture's provider routing decision and
   the exact prompt(s) the executor would build, and writes:
   - `data/eval/scene-images/manifest.json` — inputs / chain / primary provider / prompts
@@ -44,6 +55,14 @@ AB_BEAT=all|doggy|oral|oral_guided|missionary   AB_RUNS=n
 EVAL_LORA_WEIGHTS=owner/model EVAL_LORA_SCALE=1 pnpm tsx scripts/eval/scene-images/intimate-model-ab.ts
 # ↳ the 4th `lora` arm runs only when EVAL_LORA_WEIGHTS is set; unset, it says so and is skipped.
 # Renders land in screenshots/intimate-model-ab/<beat>/<arm>-<n>.webp
+
+# the composer-model A/B — PAID, but TEXT: the full 8×7×2 matrix is well under $2
+pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
+AB_BEAT=doggy AB_RUNS=3 pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
+AB_ARMS=aion3,dsflash-off pnpm tsx scripts/eval/scene-images/composer-model-ab.ts
+# arms: aion3 (control, required) | aion3mini | aion2 | dsflash-off | dsflash-low
+#       | qwen37flash | glm47flash | ling3flash
+# Results land in data/eval/composer-model-ab/results.{csv,json} (EVAL_OUT overrides).
 ```
 
 Both A/Bs print their prompts with no provider key configured, so the wording is free to
