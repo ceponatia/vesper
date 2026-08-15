@@ -121,6 +121,34 @@ re-anchored templates, `qwen` baseline vs the `lora` arm
   the LoRA weights, most likely); a scoped retry succeeded — expect cold-start
   flakes on LoRA-carrying runs.
 
+### Probe results — intimate-model-ab, run 2026-08-15b (the Civitai all-inclusive LoRA)
+
+8 renders, `screenshots/intimate-model-ab/` (the earlier LoRA's outputs
+archived beside it as `intimate-model-ab-scottzilla/`): all four beats, lora
+arm only, weights = "Qwen Image Edit 2511 NSFW all inclusive" v2.0 (Civitai
+version 3160956) at scale 1, fetched through the tokened Civitai URL — which
+the Replicate wrapper accepted, settling that open question. Verdicts:
+
+- **The oral beats render for the first time.** Both `oral_guided` runs draw
+  the full acceptance composition — crown of head to camera, the viewer's
+  hand resting on her head, the act explicit with plausible, correctly
+  attached anatomy — and `oral` run 2 is the first clean take of composition
+  A (face up, eyes on the viewer, mouth engaged). `oral` run 1 mis-attaches
+  the anatomy (1/2). Identity holds throughout — no drift observed.
+- **Missionary is the best yet**: explicit, clean penetration, her face up,
+  the viewer's hands and legs entering from the bottom edge.
+- **Doggy regresses on hand attribution (0/2)**: this LoRA gives the
+  hip-hands to HER (arms reaching back) despite the frame-edge template
+  clause, where the general-NSFW LoRA run held viewer hands 2/2 on the same
+  prompt — its priors overpower the composition there. Untested lever:
+  `EVAL_LORA_SCALE` below 1 may let the base model's compositional obedience
+  reassert.
+- **Net**: the two LoRAs split the catalog between them — all-inclusive wins
+  every act the other cannot draw, the general one wins doggy's viewer-hand
+  geometry. The wrapper takes ONE `lora_weights`, so production shape is a
+  per-staging LoRA choice through the `image_loras` library, not stacking.
+  This refines the plan's model-routing open question.
+
 **Cross-cutting finding — male POV anatomy is a model-capability gap, not a
 prompt gap.** qwen-image-edit-2511 followed every compositional instruction it
 plausibly has priors for and omitted/substituted explicit genital geometry
