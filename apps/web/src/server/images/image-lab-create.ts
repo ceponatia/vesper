@@ -143,9 +143,9 @@ export async function createImageLabExperiment(
       controlImageId: request.controlImageId ?? null,
       controlKind: request.controlKind ?? null,
       settings: request.settings ?? emptyImageLabSettings(),
-      // The create-time meta keys, both a finishing pass's: the run it refines
-      // and the arm it runs. Written here and preserved by every later write
-      // through `labMeta`.
+      // The create-time meta keys — a finishing pass's two (the run it refines
+      // and the arm it runs) and a staged scene's one. Written here and
+      // preserved by every later write through `labMeta`.
       ...createMeta(request),
       status: "pending",
     })
@@ -157,21 +157,29 @@ export async function createImageLabExperiment(
 /**
  * The `meta` column a create writes, or nothing at all.
  *
- * Only a finishing pass has create-time meta (the create schema refuses both keys
- * on every other kind), so most inserts contribute no `meta` key whatsoever and
- * take the column's own `{}` default. Spread rather than assigned for that
- * reason: writing `meta: {}` on every kind would be an empty bag standing where
- * "this row never had create-time facts" is the truth.
+ * Only two kinds have create-time meta — a finishing pass and a staged scene
+ * (the create schema refuses each key on every other kind) — so most inserts
+ * contribute no `meta` key whatsoever and take the column's own `{}` default.
+ * Spread rather than assigned for that reason: writing `meta: {}` on every kind
+ * would be an empty bag standing where "this row never had create-time facts" is
+ * the truth.
  *
  * The variant is stored EXACTLY as sent, including an explicit `"identity"`. A
  * request that names its arm is a request that made a choice, and flattening the
  * chosen default into an absence would lose the one fact distinguishing a Stage 5
  * identity arm from a Stage 3 pass that predates the question.
+ *
+ * The staging is stored the same way and for a blunter reason: the staged lane
+ * reads the ROW, so this write is the only thing that makes the kind runnable at
+ * all. It is NOT validated against the registry here — that is the runner's
+ * `subject_invalid`, settled onto the row where an admin can read which id
+ * nothing answered to, exactly as the control-fixture gates are the runner's.
  */
 function createMeta(request: ImageLabCreateExperimentRequest): { meta?: Record<string, unknown> } {
   const meta: Record<string, unknown> = {};
   if (request.sourceExperimentId !== undefined) meta.sourceExperimentId = request.sourceExperimentId;
   if (request.finishingVariant !== undefined) meta.finishingVariant = request.finishingVariant;
+  if (request.staging !== undefined) meta.staging = request.staging;
   return Object.keys(meta).length === 0 ? {} : { meta };
 }
 

@@ -9,8 +9,10 @@ import {
   type ImageLabCreateExperimentRequest,
   imageLabDiagnosticCode,
   type ImageLabInput,
+  type ImageLabStaging,
   REPLICATE_VERSION_UNDISCLOSED,
 } from "@vesper/image-core";
+import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
 import {
   imageRenderRejection,
   laneHealth,
@@ -35,6 +37,7 @@ import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type 
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
+import { stagedSceneWords } from "./image-lab-staged";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -103,6 +106,15 @@ const PINNED_VERSION = "imagelabversionaaaaaaaaa";
 /** The curated library row the LoRA-only arm measures — global, like the registry. */
 const FIXTURE_LORA_ID = "imgloraimagelabfixtureaa";
 const FIXTURE_LORA_SCALE = 1;
+/**
+ * The staged bench's own library row — a SECOND fixture rather than a widened
+ * first, because `allowedTasks` is the gate under test on both: the row above is
+ * a `variant` LoRA and this one is a `scene` LoRA, exactly as the shipped
+ * intimate row is (`allowed_tasks: ["scene"]`, fail-closed). One row allowed for
+ * both tasks would let a staged run pass a check the production row would have
+ * failed.
+ */
+const FIXTURE_SCENE_LORA_ID = "imglorailabstagedsceneaa";
 /** What the provider "echoes back" — deliberately the pinned one, so a test that
  * asserts both columns proves the runner recorded each from its own source. */
 const EXECUTED_VERSION = PINNED_VERSION;
@@ -199,31 +211,50 @@ beforeAll(async () => {
       },
     ]);
 
-  await db().delete(imageLoras).where(eq(imageLoras.id, FIXTURE_LORA_ID));
+  await db().delete(imageLoras).where(inArray(imageLoras.id, [FIXTURE_LORA_ID, FIXTURE_SCENE_LORA_ID]));
   await db()
     .insert(imageLoras)
-    .values({
-      id: FIXTURE_LORA_ID,
-      label: "Image Lab Character LoRA Fixture",
-      locatorType: "huggingface_repo",
-      locator: "vesper-test/image-lab-character-lora",
-      compatibleModelSlugs: [LORA_SLUG],
-      // Empty means any version of a compatible slug — the row is not making a
-      // claim about version drift, so the arm under test is the arm, not the pin.
-      compatibleVersionIds: [],
-      defaultScale: FIXTURE_LORA_SCALE,
-      minimumScale: 0.5,
-      maximumScale: 1.5,
-      triggerWords: [],
-      allowedTasks: ["variant"],
-      enabled: true,
-    });
+    .values([
+      {
+        id: FIXTURE_LORA_ID,
+        label: "Image Lab Character LoRA Fixture",
+        locatorType: "huggingface_repo",
+        locator: "vesper-test/image-lab-character-lora",
+        compatibleModelSlugs: [LORA_SLUG],
+        // Empty means any version of a compatible slug — the row is not making a
+        // claim about version drift, so the arm under test is the arm, not the pin.
+        compatibleVersionIds: [],
+        defaultScale: FIXTURE_LORA_SCALE,
+        minimumScale: 0.5,
+        maximumScale: 1.5,
+        triggerWords: [],
+        allowedTasks: ["variant"],
+        enabled: true,
+      },
+      {
+        // The staged bench's row, in the shipped intimate row's shape: scene-only,
+        // and a curated band around the probed default of 1 — which is what makes
+        // "is scale 1 right?" a question this bench can ask and 2.5 a refusal.
+        id: FIXTURE_SCENE_LORA_ID,
+        label: "Image Lab Staged Scene LoRA Fixture",
+        locatorType: "huggingface_repo",
+        locator: "vesper-test/image-lab-staged-scene-lora",
+        compatibleModelSlugs: [LORA_SLUG],
+        compatibleVersionIds: [],
+        defaultScale: FIXTURE_LORA_SCALE,
+        minimumScale: 0.5,
+        maximumScale: 1.5,
+        triggerWords: [],
+        allowedTasks: ["scene"],
+        enabled: true,
+      },
+    ]);
 });
 
 afterAll(async () => {
   if (ready) {
     await db().delete(imageModels).where(inArray(imageModels.id, FIXTURE_MODEL_IDS));
-    await db().delete(imageLoras).where(eq(imageLoras.id, FIXTURE_LORA_ID));
+    await db().delete(imageLoras).where(inArray(imageLoras.id, [FIXTURE_LORA_ID, FIXTURE_SCENE_LORA_ID]));
   }
   await temp?.cleanup();
   await purgeOwnerRows([ownerId]);
@@ -479,6 +510,93 @@ async function seedCharacterFace(characterId: string): Promise<string> {
   const saved = await saveImageBuffer(asset.id, await testPngBuffer());
   expect(saved?.status).toBe("ready");
   return asset.id;
+}
+
+const STAGED_SUBJECT = "Sabrina Vale";
+/** An intimate entry with bare regions AND the viewer's anatomy in frame — the shape the whole slice is for. */
+const STAGED_ID = "astride_viewer_facing";
+const STAGED_SETTING = "a rumpled bed, one lamp left on";
+
+/** The registry entry under test, resolved loudly — a dropped id is drift, not a skip. */
+function stagedEntry(): SceneStaging {
+  const entry = sceneStagingById(STAGED_ID);
+  if (!entry) throw new Error(`unknown staging id "${STAGED_ID}" — scene-staging.ts and this suite have drifted`);
+  return entry;
+}
+
+/** What the lane compiles for that entry — the words the provider must be handed unchanged. */
+function stagedWords(): { prompt: string } {
+  return stagedSceneWords(STAGED_SUBJECT, stagedEntry(), { id: STAGED_ID, setting: STAGED_SETTING, timeOfDay: "night" });
+}
+
+interface StagedSceneOptions {
+  staging?: Partial<ImageLabStaging>;
+  modelSlug?: string;
+  settings?: ImageLabCreateExperimentRequest["settings"];
+  /** File the identity image against THIS character instead of the one the row stages. */
+  faceOf?: string;
+  /** Order a reviewed pose fixture alongside the identity, declaring nothing. */
+  extraControl?: boolean;
+  /** Replace the ordered inputs outright — `[]` is the no-reference refusal. */
+  inputs?: ImageLabInput[];
+}
+
+/**
+ * A runnable staged scene: one registry staging, the character it stages named
+ * at the top level, and one identity render of that character.
+ *
+ * No chat and no control, which the create schema enforces for this kind — the
+ * staging is chosen outright, and there is no composer to have proposed it.
+ */
+async function createStagedScene(
+  opts: StagedSceneOptions = {},
+): Promise<{ id: string; sink: DiagnosticCollector; characterId: string; faceId: string }> {
+  const sink = new DiagnosticCollector();
+  const characterId = await seedOwnedCharacter(STAGED_SUBJECT);
+  const faceId = await seedCharacterFace(opts.faceOf ?? characterId);
+  const control = opts.extraControl ? await seedControlFixture("pose") : null;
+  const inputs: ImageLabInput[] = opts.inputs ?? [
+    { position: 1, role: "identity", imageId: faceId },
+    ...(control === null ? [] : [{ position: 2, role: "pose" as const, imageId: control }]),
+  ];
+  const created = await createImageLabExperiment({
+    ownerId,
+    request: {
+      kind: "staged_scene",
+      modelSlug: opts.modelSlug ?? PINNED_SLUG,
+      characterId,
+      // Deliberately empty: this kind compiles its own words from the registry,
+      // and an admin sentence would compete with the wording the probe renders
+      // settled.
+      instruction: "",
+      inputs,
+      staging: { id: STAGED_ID, setting: STAGED_SETTING, timeOfDay: "night", ...opts.staging },
+      ...(opts.settings ? { settings: opts.settings } : {}),
+    },
+    sink,
+  });
+  if (!created.ok) throw new Error(`unexpected create refusal: ${created.refusal.code}`);
+  return { id: created.experiment.id, sink, characterId, faceId };
+}
+
+/** A staged row the create schema would refuse — the only way its runner-side rules are reachable. */
+async function insertStagedRow(input: { characterId: string; inputs: ImageLabInput[] }): Promise<string> {
+  const [row] = await db()
+    .insert(imageLabExperiments)
+    .values({
+      ownerId,
+      kind: "staged_scene",
+      modelSlug: PINNED_SLUG,
+      characterId: input.characterId,
+      instruction: "",
+      inputs: input.inputs,
+      settings: {},
+      meta: { staging: { id: STAGED_ID, setting: STAGED_SETTING } },
+      status: "pending",
+    })
+    .returning({ id: imageLabExperiments.id });
+  if (!row) throw new Error("failed to seed a staged scene experiment");
+  return row.id;
 }
 
 /**
@@ -1580,6 +1698,221 @@ describe.skipIf(!ready)("image lab two-character scenes", () => {
 
     // Control obedience rides the NOTE, never the column: one row, one ruling,
     // and this kind's defining question is the two-character one.
+    const wrongVocabulary = await recordImageLabVerdict(id, ownerId, {
+      verdict: "honours_control",
+      note: "the skeleton took",
+    });
+    expect(wrongVocabulary?.ok).toBe(false);
+    if (wrongVocabulary && !wrongVocabulary.ok) {
+      expect(wrongVocabulary.refusal.code).toBe("verdict_not_in_vocabulary");
+    }
+  });
+});
+
+/**
+ * The staged bench end to end (intimate-scene-lora.spec.md §"Slice 2"): one
+ * registry staging rendered on a named character with no chat, no composer and
+ * no narration.
+ *
+ * What these cases add to the pure parity suite beside them is the LANE: that
+ * the compiled words reach the provider unmodified, that the LoRA selection
+ * reaches the library seam through the shared recipe runner rather than a second
+ * path, and that every way a staged row can be unrenderable settles on the row
+ * before any spend.
+ */
+describe.skipIf(!ready)("image lab staged scenes", () => {
+  it("renders the registry's own words for the staging, and records what it sent", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createStagedScene();
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("succeeded");
+    expect(experiment?.failureCode).toBeNull();
+    expect(experiment?.requestedVersionId).toBe(PINNED_VERSION);
+    expect(experiment?.resultImageId).not.toBeNull();
+    // The staging round-trips through the meta bag, which is the only reason the
+    // runner could read it at all.
+    expect(experiment?.staging?.id).toBe(STAGED_ID);
+    expect(experiment?.staging?.setting).toBe(STAGED_SETTING);
+
+    // The registry owns every explicit word, so the assertion is its own template
+    // verbatim — not a paraphrase this suite could quietly keep passing after the
+    // lane started rewording one.
+    const template = stagedEntry().template.replaceAll("{name}", STAGED_SUBJECT);
+    expect(experiment?.finalPrompt).toContain(template);
+    // And the compiled prompt arrives WHOLE: the recipe's compose strategy only
+    // prefixes its numbered bindings, so the base prompt is the tail.
+    expect(experiment?.finalPrompt?.endsWith(stagedWords().prompt)).toBe(true);
+    // One identity reference and no subject on it: the subject-bearing wording
+    // says "one of the people this render depicts", which a solo bench is not.
+    expect(experiment?.finalPrompt).toContain("Image 1: the identity reference — the person this render depicts.");
+    expect(experiment?.finalPrompt).toContain(`Exactly one person is fully in frame: ${STAGED_SUBJECT}.`);
+
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.versionId).toBe(PINNED_VERSION);
+      expect(request.intent.profile.profile.key).toBe(`staged_scene/${STAGED_ID}`);
+      expect(request.intent.references.map((reference) => reference.role)).toEqual(["identity"]);
+      // Required, because the likeness is what the whole render is an edit of.
+      expect(request.intent.references[0]?.required).toBe(true);
+      expect(request.intent.references[0]?.subject).toBeUndefined();
+    }
+    expect(experiment?.outcome).toEqual({
+      recipeKey: `staged_scene/${STAGED_ID}`,
+      sentRoles: ["identity"],
+      dropped: [],
+      renumbered: false,
+    });
+  });
+
+  it("refuses a staging id the registry does not have, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // The wire carries a plain string because the registry is app-side, so this
+    // is the one place membership is checked — and a retired or misspelled id
+    // must cost nothing to discover.
+    const { id, sink } = await createStagedScene({ staging: { id: "astride_the_chandelier" } });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("refuses a staged scene with no identity reference to stage the act on", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createStagedScene({ inputs: [] });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a staged scene sending two identity references", async () => {
+    stubSuccessfulRenderer();
+    // Inserted directly: the create schema caps every kind but the two-character
+    // scene at one identity, so a row in this state predates that rule or came
+    // from a caller that went around it. The runner stays authoritative because
+    // the failure is a MISFILED render — a second face in a shot whose staging
+    // describes a two-body geometry between the subject and the viewer.
+    const characterId = await seedOwnedCharacter(STAGED_SUBJECT);
+    const inputs: ImageLabInput[] = [
+      { position: 1, role: "identity", imageId: await seedCharacterFace(characterId) },
+      { position: 2, role: "identity", imageId: await seedCharacterFace(characterId) },
+    ];
+    const id = await insertStagedRow({ characterId, inputs });
+    const sink = new DiagnosticCollector();
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("input_missing"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses an identity image that is not a render of the character it stages", async () => {
+    stubSuccessfulRenderer();
+    // Owned, ready, a real face — somebody else's. Every clause of the compiled
+    // prompt names this character, so the render would stage the act on one
+    // person's face under another's name and the bench's verdict would be about
+    // the request.
+    const stranger = await seedOwnedCharacter("Lysandra Vane");
+    const { id, sink } = await createStagedScene({ faceOf: stranger });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_invalid"));
+    expect(codes(sink)).toContain(imageLabDiagnosticCode("subject_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a control image riding along on a run that declares none", async () => {
+    stubSuccessfulRenderer();
+    // A staged scene's structure is the staging's own wording and its recipe has
+    // no control slot, so a skeleton in the ordered inputs is a fixture the
+    // record cannot name — the uncontrolled two-character arm's refusal, reached
+    // from the same direction.
+    const { id, sink } = await createStagedScene({ extraControl: true });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("control_invalid"));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("sends the selected LoRA through the shared library seam at its curated scale", async () => {
+    stubSuccessfulRenderer();
+    // The whole LoRA half of this kind: `controls.lora` rides the settings the
+    // admin set, `runRecipeIntent` resolves it through `resolveImageLoraForRender`
+    // ahead of the provider, and the binding arrives pre-resolved on the intent —
+    // the same seam and the same gates the chat route's own intimate render uses.
+    const { id, sink } = await createStagedScene({
+      modelSlug: LORA_SLUG,
+      settings: { controls: { lora: { id: FIXTURE_SCENE_LORA_ID, scale: FIXTURE_LORA_SCALE } }, controlInput: {} },
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    const request = captured[0];
+    expect(request?.mode).toBe("intent");
+    if (request?.mode === "intent") {
+      expect(request.intent.resolvedLora?.id).toBe(FIXTURE_SCENE_LORA_ID);
+      expect(request.intent.resolvedLora?.scale).toBe(FIXTURE_LORA_SCALE);
+    }
+  });
+
+  it("refuses a scale outside the library row's curated band, before any spend", async () => {
+    stubSuccessfulRenderer();
+    // The question this bench exists to ask is "is scale 1 right?", and the
+    // answer has to come from inside the band a reviewer curated: a 2.5 is
+    // refused rather than clamped, in the library's own vocabulary, with the
+    // `image_lora.*` code landing verbatim on the row.
+    const { id, sink } = await createStagedScene({
+      modelSlug: LORA_SLUG,
+      settings: { controls: { lora: { id: FIXTURE_SCENE_LORA_ID, scale: 2.5 } }, controlInput: {} },
+    });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe("image_lora.incompatible");
+    expect(codes(sink)).toContain("image_lora.incompatible");
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+  });
+
+  it("records an act ruling and refuses one from another kind's vocabulary", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createStagedScene();
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const recorded = await recordImageLabVerdict(id, ownerId, {
+      verdict: "anatomy_withheld",
+      note: "the arrangement is exactly the staging's and the anatomy is cropped out of it",
+    });
+    expect(recorded?.ok).toBe(true);
+    if (recorded?.ok) expect(recorded.experiment.verdict).toBe("anatomy_withheld");
+
+    // A control ruling on a run that sent no fixture would read, six months
+    // later, exactly like a run that sent one — which is why this kind has a
+    // vocabulary of its own rather than borrowing the probe's.
     const wrongVocabulary = await recordImageLabVerdict(id, ownerId, {
       verdict: "honours_control",
       note: "the skeleton took",

@@ -6,17 +6,94 @@ import {
   imageLabExperimentKinds,
   imageLabFailureCodes,
   imageLabOutcomeDropReasons,
+  imageLabStagedSceneVerdicts,
   imageLabTwoCharacterVerdicts,
   imageLabVerdictOptions,
   imageLabVerdicts,
 } from "@vesper/image-core";
+import { sceneStagings } from "@/contracts/images/scene-staging";
 import {
   imageLabDropReasonExplanation,
+  imageLabExperimentKindDescription,
+  imageLabExperimentKindLabel,
   imageLabFailureExplanation,
+  imageLabStagingBareSummary,
+  imageLabStagingCameraSummary,
+  imageLabStagingOptionLabel,
+  imageLabStagingViewerPartsSummary,
   imageLabVerdictChip,
   imageLabVerdictHint,
   imageLabVerdictLabel,
 } from "./image-lab-copy";
+
+/**
+ * The kind vocabulary is what the create form's select and its hint are built
+ * from, and a kind reaching either as a bare identifier is an admin choosing a
+ * run from a code name.
+ */
+describe("experiment kind copy", () => {
+  it("names and explains every declared kind", () => {
+    for (const kind of imageLabExperimentKinds) {
+      expect(imageLabExperimentKindLabel(kind)).not.toBe(kind);
+      expect(imageLabExperimentKindDescription(kind).length).toBeGreaterThan(40);
+    }
+  });
+
+  it("gives every kind a distinct label and a distinct description", () => {
+    const labels = imageLabExperimentKinds.map(imageLabExperimentKindLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+    const descriptions = imageLabExperimentKinds.map(imageLabExperimentKindDescription);
+    expect(new Set(descriptions).size).toBe(descriptions.length);
+  });
+});
+
+/**
+ * The staging select is the only picker on the bench whose options are registry
+ * data rather than stored rows, so these summaries are all that separates two
+ * acts an admin is choosing between — and the id has to survive into the label,
+ * because the id is what the created row records and what a ruling cites.
+ */
+describe("staging copy", () => {
+  const intimate = sceneStagings.filter((staging) => staging.intimate);
+
+  it("has intimate stagings to offer at all", () => {
+    expect(intimate.length).toBeGreaterThan(0);
+  });
+
+  it("labels every intimate staging with its own id and its camera", () => {
+    for (const staging of intimate) {
+      const label = imageLabStagingOptionLabel(staging);
+      expect(label).toContain(staging.id);
+      expect(label).toContain(imageLabStagingCameraSummary(staging.camera));
+      // Two entries differing only by orientation must not read alike.
+      expect(label).toContain(staging.camera.orientation.replaceAll("_", " "));
+    }
+  });
+
+  it("gives every intimate staging a distinct option label", () => {
+    const labels = intimate.map(imageLabStagingOptionLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("names the regions a staging needs bare, and says whose when it needs none", () => {
+    for (const staging of intimate) {
+      const summary = imageLabStagingBareSummary(staging);
+      expect(summary.length).toBeGreaterThan(0);
+      for (const region of staging.requiresBare) expect(summary).toContain(region);
+    }
+    // The two oral compositions need nothing of the SUBJECT bared — the anatomy
+    // the shot needs is the viewer's — so the empty case must not read as
+    // "clothed", which would send an admin looking for a bug in the exposure.
+    const noSubjectExposure = intimate.filter((staging) => staging.requiresBare.length === 0);
+    expect(noSubjectExposure.length).toBeGreaterThan(0);
+    for (const staging of noSubjectExposure) {
+      expect(imageLabStagingBareSummary(staging)).toContain("subject");
+      // ...and the viewer parts line is where that exposure requirement actually
+      // lands, so it must be saying something.
+      expect(imageLabStagingViewerPartsSummary(staging)).not.toBe("none");
+    }
+  });
+});
 
 /**
  * A settled experiment's `failureCode` reaches this function in the dotted form
@@ -135,5 +212,30 @@ describe("verdict copy", () => {
     for (const verdict of options ?? []) {
       expect(imageLabVerdictLabel(verdict).length).toBeGreaterThan(0);
     }
+  });
+
+  it("offers the staged kind a vocabulary to rule in, and marks the promotable one", () => {
+    const options = imageLabVerdictOptions("staged_scene");
+    expect(options).not.toBeNull();
+    for (const verdict of imageLabStagedSceneVerdicts) {
+      expect(imageLabVerdictLabel(verdict)).not.toBe(verdict);
+      expect(imageLabVerdictHint(verdict).length).toBeGreaterThan(20);
+    }
+    expect(imageLabVerdictChip("act_depicted").tone).toBe("ok");
+    expect(imageLabVerdictChip("act_substituted").tone).toBe("danger");
+  });
+
+  // The pair this bench is actually used for. Both mean "the picture is wrong"
+  // and they point at OPPOSITE scale corrections, so an admin running a sweep has
+  // to be able to read the direction off the hint itself — a month later, with no
+  // memory of which one meant which.
+  it("sends the two middle staged rulings in opposite directions", () => {
+    const withheld = imageLabVerdictHint("anatomy_withheld");
+    const geometry = imageLabVerdictHint("geometry_wrong");
+    expect(withheld).toContain("LOW");
+    expect(geometry).toContain("HIGH");
+    expect(withheld).not.toBe(geometry);
+    // And the third failure mode must NOT be read as a scale problem at all.
+    expect(imageLabVerdictHint("act_substituted")).toContain("wording");
   });
 });

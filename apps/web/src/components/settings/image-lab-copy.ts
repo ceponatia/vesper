@@ -13,6 +13,8 @@ import {
   type ImageLoraRefusalCode,
   type ImageReferenceRole,
 } from "@vesper/image-core";
+import type { SceneCameraSpec } from "@/contracts/images/scene-camera";
+import type { SceneStaging } from "@/contracts/images/scene-staging";
 import type { TagTone } from "@/components/ui/tag";
 
 /**
@@ -43,7 +45,98 @@ export function imageLabExperimentKindLabel(kind: ImageLabExperimentKind): strin
       return "two-character scene";
     case "finishing_pass":
       return "finishing pass";
+    case "staged_scene":
+      return "staged scene";
   }
+}
+
+/**
+ * What one kind is FOR, in a sentence — the create form's hint for whichever kind
+ * is currently selected.
+ *
+ * One sentence per kind rather than one sentence listing every kind: the form
+ * used to enumerate all of them in a single hint, which was already a run-on at
+ * seven and would be unreadable at eight, and an admin choosing a kind is asking
+ * about the one in the box rather than about the set. Exhaustive, so a ninth kind
+ * is a compile error here instead of a select entry nothing explains.
+ */
+export function imageLabExperimentKindDescription(kind: ImageLabExperimentKind): string {
+  switch (kind) {
+    case "control_probe":
+      return "Sends a pose, depth, or edge fixture as a numbered image and asks the plainest question there is: does this model obey a control at all?";
+    case "baseline_portrait":
+      return "Re-runs the ordinary portrait lane's own settings, so a controlled render has a same-settings arm to be read beside.";
+    case "baseline_scene":
+      return "Re-runs one conversation's own scene settings, as the same-settings arm of a scene comparison.";
+    case "controlled_portrait":
+      return "Asks whether a control still holds when the request is production-shaped — the recipe, the numbered bindings, and the identity reference a real portrait render sends.";
+    case "controlled_scene":
+      return "The same production-shaped question in the scene lane, with the conversation's own character and renders feeding the references.";
+    case "two_character_scene":
+      return "Puts two characters in one render and asks whether both identities survive it: unswapped, undoubled, and neither one missing.";
+    case "finishing_pass":
+      return "Re-edits another run's result to correct the face and nothing else, so a second render can be judged on whether it earned its cost.";
+    case "staged_scene":
+      return "Renders one intimate staging from the registry — the same compiled wording and the same curated weights the chat lane sends, with no chat, no composer, and no narration to steer. Here the act is chosen outright.";
+  }
+}
+
+/**
+ * The staging registry, as the create form has to offer it.
+ *
+ * These read a registry rather than a code union, which is the one thing about
+ * them worth stating: `apps/web/src/contracts/images/scene-staging.ts` owns every
+ * explicit word of an intimate act, deliberately, so that no model can invent one
+ * and no screen can water one down. That ownership holds here too — nothing below
+ * paraphrases a template, retypes a camera, or hard-codes which regions an act
+ * needs bare. A new entry in the registry is a new option on the form with no
+ * edit here at all, and a reworded one changes what the form shows the same day.
+ *
+ * The ID IS SHOWN, verbatim and first. Every other picker on this bench leads
+ * with a prettier label, and this one cannot: the staging id is what the created
+ * row records, what the recipe key carries (`staged_scene/<id>`), and what a
+ * ruling written up weeks later cites — so the admin has to choose the same
+ * string the record will keep.
+ */
+function humanizeRegistryId(id: string): string {
+  return id.replaceAll("_", " ");
+}
+
+/** The shot a staging entails — it OVERRIDES any composer proposal, so it is a fact about the entry, not a suggestion. */
+export function imageLabStagingCameraSummary(camera: SceneCameraSpec): string {
+  return [camera.orientation, camera.distance, camera.height].map(humanizeRegistryId).join(" · ");
+}
+
+/**
+ * Which regions of the SUBJECT the template describes as bare.
+ *
+ * An empty list is not "clothed-capable" for the intimate entries this form
+ * offers: two of them need nothing of the subject bared because the anatomy the
+ * shot needs is the VIEWER's, gated separately through the viewer parts below. So
+ * the empty case says whose regions it is talking about rather than implying the
+ * render is a clothed one.
+ */
+export function imageLabStagingBareSummary(staging: SceneStaging): string {
+  if (staging.requiresBare.length === 0) return "none of the subject's own regions";
+  return staging.requiresBare.map(humanizeRegistryId).join(" + ");
+}
+
+/** Which of the viewer's own limbs the entry puts in frame — the other half of what an act needs bared. */
+export function imageLabStagingViewerPartsSummary(staging: SceneStaging): string {
+  if (staging.viewerParts.length === 0) return "none";
+  return staging.viewerParts.map(humanizeRegistryId).join(", ");
+}
+
+/**
+ * One line in the staging select: the id, the shot it entails, and what it needs
+ * bare — the three facts that separate two entries an admin is choosing between
+ * (`astride_viewer_facing` and `astride_viewer_away` differ by exactly one of
+ * them). The sentence itself is too long for an option and is shown whole beneath
+ * the select instead.
+ */
+export function imageLabStagingOptionLabel(staging: SceneStaging): string {
+  const bare = staging.requiresBare.length === 0 ? "no bare region" : `bare ${staging.requiresBare.join(" + ")}`;
+  return `${staging.id} — ${imageLabStagingCameraSummary(staging.camera)} — ${bare}`;
 }
 
 /** Lifecycle chip. `pending` has spent nothing yet; `running` is on the meter. */
@@ -137,6 +230,16 @@ export function imageLabVerdictLabel(verdict: ImageLabVerdict): string {
       return "Character duplicated";
     case "identity_degraded":
       return "Identity degraded";
+    case "act_depicted":
+      return "Depicts the act";
+    case "act_substituted":
+      return "Wrong act";
+    case "anatomy_withheld":
+      return "Anatomy missing or coy";
+    case "geometry_wrong":
+      return "Geometry wrong (limbs / orientation)";
+    case "identity_lost":
+      return "Identity lost";
     case "inconclusive":
       return "Inconclusive";
   }
@@ -165,6 +268,23 @@ export function imageLabVerdictHint(verdict: ImageLabVerdict): string {
       return "One identity is rendered more than once, or the scene gained a person nobody sent a reference for.";
     case "identity_degraded":
       return "Both characters are present and in the right places, but one or both faces drifted from their own reference.";
+    // The staged vocabulary narrows the way a reader does — what the picture is
+    // OF, then how explicit it is, then how the bodies sit, then who they are —
+    // and the two middle hints carry the load. `anatomy_withheld` and
+    // `geometry_wrong` both read as "the picture is wrong" and point at OPPOSITE
+    // scale corrections, so each says which way to move the number rather than
+    // leaving the reader to reconstruct it from the wording a month later. That
+    // one distinction is what makes this bench a scale instrument at all.
+    case "act_depicted":
+      return "The act the staging describes is what the picture shows, on the right person, explicitly. The only promotable ruling, and the whole bar for this kind.";
+    case "act_substituted":
+      return "A different act came back — a portrait, an embrace, someone simply standing. The words or the model failed to land the configuration, so this run says nothing at all about the weights. Fix the wording, not the scale.";
+    case "anatomy_withheld":
+      return "The right act, arranged right, rendered coy: the anatomy it needs is absent, smoothed over, cropped out, or lost in shadow. That points at the weights — no LoRA, one the library refused, or a scale too LOW. Try the next run higher.";
+    case "geometry_wrong":
+      return "The right act with its anatomy present, but the bodies are arranged wrong — limbs misplaced, multiplied or fused, or an orientation the staging's own camera never asked for. The opposite reading to withheld anatomy: a scale too HIGH. Try the next run lower.";
+    case "identity_lost":
+      return "Every question about the act came out right and the face is not the character's. The weights pulled the likeness toward the bodies they were trained on.";
     case "inconclusive":
       return "The fixture was ambiguous, or something unrelated broke — this run settles nothing.";
   }
@@ -195,6 +315,19 @@ export function imageLabVerdictChip(verdict: ImageLabVerdict): { label: string; 
       return { label: "character duplicated", tone: "danger" };
     case "identity_degraded":
       return { label: "identity degraded", tone: "danger" };
+    // The staged vocabulary tones the same way, and for the same reason: it rules
+    // on one question — did the render depict the act it was told to — and every
+    // way of missing answers it no, however good the picture is otherwise.
+    case "act_depicted":
+      return { label: "depicts the act", tone: "ok" };
+    case "act_substituted":
+      return { label: "wrong act", tone: "danger" };
+    case "anatomy_withheld":
+      return { label: "anatomy withheld", tone: "danger" };
+    case "geometry_wrong":
+      return { label: "geometry wrong", tone: "danger" };
+    case "identity_lost":
+      return { label: "identity lost", tone: "danger" };
     case "inconclusive":
       return { label: "inconclusive", tone: "accent" };
   }
