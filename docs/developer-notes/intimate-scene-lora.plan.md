@@ -54,7 +54,9 @@ prompts only when its planned expansion happens (slice 2).
 - **Slice 1 — the render path routes intimate staged scenes through the
   LoRA.**
 
-  Status: in progress.
+  Status: built 2026-08-15 — awaiting the two deploy-time pieces the spec
+  names (the wrapper model row on the production registry, and the Fly
+  secret) before a production render can take the route.
 
   The wrapper model + LoRA binding replace the stock model for exactly the
   intimate-staged uncensored renders; the builtin library row and the token

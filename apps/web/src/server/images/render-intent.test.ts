@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type ImageLoraRenderBinding,
   imageModelProfileSchema,
   imageModelSchema,
   type ImageRenderIntent,
@@ -226,6 +227,82 @@ describe("sent-reference provenance", () => {
     // result shape — and the plan's list is the only honest answer available.
     const result = await renderImageIntent(intent());
     expect(result.attempt?.sentReferenceRoles).toEqual(["identity"]);
+  });
+});
+
+describe("LoRA credential completion", () => {
+  /**
+   * The seam that makes a stored PUBLIC locator into a fetchable one
+   * (intimate-scene-lora.spec.md §Decisions, "Secret handling"). The credential
+   * may exist in exactly one place in a render — the provider payload — and
+   * these cases assert both halves of that: it arrives there, and it arrives
+   * nowhere else.
+   */
+  const TOKEN = "civitai-test-token-value";
+
+  const binding: ImageLoraRenderBinding = {
+    id: "imglorqwennsfwallinclv20",
+    label: "Qwen Image Edit 2511 NSFW all inclusive v2.0",
+    locator: "https://civitai.com/api/download/models/3160956?type=Model&format=SafeTensor",
+    scale: 1,
+    promptPrefix: null,
+    promptSuffix: null,
+    triggerWords: [],
+  };
+
+  /** A version that declares both LoRA bindings, like the registered wrapper row. */
+  function loraProfile(): ResolvedImageProfile {
+    const base = resolved({ seedBinding: null });
+    return {
+      ...base,
+      model: imageModelSchema.parse({
+        ...base.model,
+        advancedCapabilities: {
+          controls: {
+            loraWeights: { field: "lora_weights", type: "string" },
+            loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+          },
+          knownInputFields: ["lora_weights", "lora_scale"],
+        },
+      }),
+    };
+  }
+
+  let saved: string | undefined;
+
+  beforeEach(() => {
+    saved = process.env.CIVITAI_API_TOKEN;
+    process.env.CIVITAI_API_TOKEN = TOKEN;
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.CIVITAI_API_TOKEN;
+    else process.env.CIVITAI_API_TOKEN = saved;
+  });
+
+  it("sends the tokened weights URL and records neither the token nor the locator", async () => {
+    const result = await renderImageIntent(intent({ profile: loraProfile(), resolvedLora: binding }));
+    const sent = sentControlInput();
+    expect(sent.lora_scale).toBe(1);
+    expect(String(sent.lora_weights)).toContain(`token=${TOKEN}`);
+    expect(String(sent.lora_weights)).toContain("format=SafeTensor");
+    // `appliedControls` is what a caller STORES and reports: id and scale only.
+    expect(result.attempt?.appliedControls).toEqual({ lora: { id: binding.id, scale: 1 } });
+    expect(JSON.stringify(result.attempt)).not.toContain(TOKEN);
+    // The caller's own binding is untouched, so the row it came from stays clean.
+    expect(binding.locator).not.toContain(TOKEN);
+  });
+
+  it("sends the stored locator unchanged when the deployment has no token", async () => {
+    delete process.env.CIVITAI_API_TOKEN;
+    await renderImageIntent(intent({ profile: loraProfile(), resolvedLora: binding }));
+    expect(sentControlInput().lora_weights).toBe(binding.locator);
+  });
+
+  it("leaves a non-Civitai locator alone", async () => {
+    const slug = { ...binding, locator: "owner/some-lora" };
+    await renderImageIntent(intent({ profile: loraProfile(), resolvedLora: slug }));
+    expect(sentControlInput().lora_weights).toBe("owner/some-lora");
   });
 });
 
