@@ -134,7 +134,9 @@ Four things cause this, and none of them is the image model misbehaving:
 
 - **Slice 1 — the camera follows the fiction.**
 
-  Status: built 2026-08-14 — awaiting its A/B probe on the fixture rows.
+  Status: built 2026-08-14; first probe run 2026-08-14 — orientation preferred
+  by the owner, camera height failed and its phrasing was reworked 2026-08-15;
+  awaiting the re-probe.
 
   The shot planner proposes orientation, distance, and camera height from a
   fixed menu, quoting narration for anything non-default; the player's recent
@@ -144,8 +146,10 @@ Four things cause this, and none of them is the image model misbehaving:
 
 - **Slice 2 — intimate acts are staged.**
 
-  Status: built 2026-08-14 — awaiting its probe, including the owner's
-  three-scene acceptance grading.
+  Status: built 2026-08-14; first probe run 2026-08-14 — staging geometry and
+  framing preferred, but the render model cannot draw the explicit anatomy the
+  acceptance scenes grade, so acceptance is blocked on a model-routing
+  decision (see Open questions); templates re-anchored 2026-08-15.
 
   The staging catalog with per-entry camera setup, implied viewer-body parts,
   and explicit phrasing emitted only on the uncensored route; evidence,
@@ -205,6 +209,15 @@ Four things cause this, and none of them is the image model misbehaving:
 
 ## Open questions
 
+- **Which model renders the staged intimate shots?** The first probe
+  (2026-08-14) showed the current scene model follows the staged geometry but
+  cannot draw the explicit anatomy the acceptance scenes grade — a capability
+  gap, not a wording one. Candidates: the identity-preserving adult model
+  already in the registry, or an anatomy LoRA on the LoRA-capable Qwen
+  wrapper. The comparison probe exists
+  (`scripts/eval/scene-images/intimate-model-ab.ts`, owner-run, paid); its
+  verdict decides. Detail in [the spec](scene-composition.spec.md) §Probe
+  results.
 - **Should the subject's intimate-anatomy phrasing be suppressed on a
   from-behind shot?** Today it still emits there, and a prompt that describes
   her front over a shot of her back may make the model turn her around. The

@@ -131,8 +131,11 @@ export const sceneStagings: readonly SceneStaging[] = [
     viewerParts: ["genitals"],
     requiresBare: [],
     intimate: true,
+    // "Below the camera" is the frame anchor for this entry's high angle (probe run
+    // 2026-08-14, kneel/oral beats: stated camera height alone moved her gaze, never the
+    // camera — she looked up at nothing from an eye-level shot).
     template:
-      "{name} kneeling on the floor facing the camera, {name}'s face tilted up toward the viewer and {name}'s mouth on the viewer's own genitals, {name}'s eyes on the viewer",
+      "{name} kneeling on the floor below the camera and facing up toward it, {name}'s face tilted up toward the viewer and {name}'s mouth on the viewer's own genitals, {name}'s eyes on the viewer",
     cast: "solo",
   },
   {
@@ -180,7 +183,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     requiresBare: ["pelvis"],
     intimate: true,
     template:
-      "{name} bent forward over a waist-high surface with {name}'s back to the camera and {name}'s hips raised toward the viewer, penetration where the viewer's own genitals meet {name}'s bare pelvis from behind, the viewer's own hands on {name}'s hips",
+      "{name} bent forward over a waist-high surface with {name}'s back to the camera and {name}'s hips raised toward the viewer, penetration where the viewer's own genitals meet {name}'s bare pelvis from behind, the viewer's own hands entering frame from the lower edge and holding {name}'s hips",
     cast: "solo",
   },
   {
@@ -193,8 +196,13 @@ export const sceneStagings: readonly SceneStaging[] = [
     viewerParts: ["hands"],
     requiresBare: ["pelvis"],
     intimate: true,
+    // "Entering frame from the lower edge" is the frame anchor that keeps these hands the
+    // VIEWER's (probe run 2026-08-14: without it the model gave the hands to her — her own
+    // hands on her own hips — and the viewer vanished from the shot entirely). The palms-
+    // and-knees clause pins the actual all-fours pose, which the first draft's bare "on all
+    // fours" let drift into a kneeling lean.
     template:
-      "{name} on all fours with {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands resting on {name}'s waist and hips",
+      "{name} on all fours with {name}'s palms and {name}'s knees planted, {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands entering frame from the lower edge and resting on {name}'s waist and hips",
     cast: "solo",
   },
   {
