@@ -301,6 +301,18 @@ export const characterChats = pgTable(
     sceneAuto: text("scene_auto").notNull().default("off"),
     sceneModel: text("scene_model").notNull().default("reference"),
     /**
+     * Admin-only **scene composer** model override (a curated
+     * `SCENE_COMPOSER_MODELS` id — lib/composer-models.ts). "" ⇒ the curated
+     * default, which is every chat that has never been switched.
+     *
+     * A sibling of `agentReasoningProfile` rather than of `sceneModel`, and
+     * deliberately NOT on the scenario: this is operational configuration for
+     * comparing composer models, not story state, so retakes and state rollback
+     * must never change it. (`sceneModel` picks the IMAGE model that paints the
+     * shot; this picks the TEXT model that plans it.)
+     */
+    sceneComposerModel: text("scene_composer_model").notNull().default(""),
+    /**
      * Admin-only structured-agent reasoning experiment. This is operational
      * configuration, not story state: retakes and state rollback never change it.
      */

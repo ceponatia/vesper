@@ -85,6 +85,12 @@ export interface RenderCharacterSceneInput {
   place?: { name: string; imageId: string };
   /** Persisted registry model id; unknown/absent values fall back to the scene default. */
   sceneModel?: string;
+  /**
+   * The chat's admin-set **composer** model (`character_chats.scene_composer_model`) — the
+   * TEXT model that plans the shot, as distinct from `sceneModel` above, which picks the
+   * IMAGE model that paints it. Unknown/absent ⇒ the curated composer default.
+   */
+  composerModel?: string;
   sink?: DiagnosticSink;
 }
 
@@ -200,7 +206,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,
   });
-  const plan = await composeSceneSpec({ ...context, sink: input.sink });
+  const plan = await composeSceneSpec({ ...context, sink: input.sink, composerModel: input.composerModel });
 
   // The chat's stored scene-model pick, resolved against the profile registry. A
   // pick that no longer exists degrades to the scene task's default (owner ruling
