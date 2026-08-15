@@ -65,8 +65,9 @@ prompts only when its planned expansion happens (slice 2).
 
 - **Slice 2 — the admin image lab drives the staged prompts.**
 
-  Status: in progress — scoped 2026-08-15 (owner ruling) as its own
-  `staged_scene` lab kind, which removes the dependency on the image-lab
+  Status: built 2026-08-15 — awaiting the owner's first bench run, which is
+  what records the kind as accepted. Scoped that day (owner ruling) as its own
+  `staged_scene` lab kind, which removed the dependency on the image-lab
   expansion the slice was originally queued behind.
 
   The owner picks an intimate staging outright and renders it on the bench —
