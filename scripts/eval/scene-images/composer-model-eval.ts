@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { SCENE_COMPOSER_MODELS } from "@/lib/composer-models";
-import { composerFallbackModelId } from "@/server/ai";
+import { composerFallbackModelId, isDemoMode } from "@/server/ai";
 import { effectiveLadderCostPerThousand, fallbackInvocationRate } from "./composer-model-economics";
 
 /**
@@ -16,6 +16,7 @@ import { effectiveLadderCostPerThousand, fallbackInvocationRate } from "./compos
 
 const OUT = process.env.EVAL_OUT ?? "data/eval/composer-model-ab";
 const FALLBACK_REVIEW_THRESHOLD = 0.1;
+const RUNNER_PATH = "scripts/eval/scene-images/composer-model-ab.ts";
 
 const ARM_MODELS: Readonly<Record<string, string>> = {
   aion3: "aion-labs/aion-3.0",
@@ -143,11 +144,27 @@ function assertArmMapIsCurated(): void {
   }
 }
 
+async function assertArmMapMatchesRunner(): Promise<void> {
+  const source = await fs.readFile(RUNNER_PATH, "utf8");
+  for (const [key, modelId] of Object.entries(ARM_MODELS)) {
+    const keyToken = `key: "${key}"`;
+    const keyIndex = source.indexOf(keyToken);
+    if (keyIndex < 0) {
+      throw new Error(`composer eval arm map drift: runner no longer contains ${keyToken}`);
+    }
+    const nearby = source.slice(Math.max(0, keyIndex - 120), keyIndex + 420);
+    if (!nearby.includes(`modelId: "${modelId}"`)) {
+      throw new Error(`composer eval arm map drift: ${key} no longer maps to ${modelId} in ${RUNNER_PATH}`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   assertArmMapIsCurated();
+  await assertArmMapMatchesRunner();
 
   const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-  const run = spawnSync(command, ["tsx", "scripts/eval/scene-images/composer-model-ab.ts"], {
+  const run = spawnSync(command, ["tsx", RUNNER_PATH], {
     cwd: process.cwd(),
     env: process.env,
     stdio: "inherit",
@@ -158,6 +175,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  // The underlying runner intentionally writes no results in demo mode. Explicitly stop here
+  // so a stale results.json from an earlier paid run can never be mistaken for today's output.
+  if (isDemoMode()) {
+    console.log("\nDemo/no-provider run complete; ladder economics skipped because no calls were measured.");
+    return;
+  }
+
   const resultsPath = path.join(OUT, "results.json");
   let rows: ResultRow[];
   try {
@@ -165,7 +189,7 @@ async function main(): Promise<void> {
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      console.log("\nNo results.json was written (expected in demo/no-provider mode); ladder economics skipped.");
+      console.log("\nNo results.json was written; ladder economics skipped.");
       return;
     }
     throw error;
