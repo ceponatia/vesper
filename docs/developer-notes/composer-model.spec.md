@@ -2,11 +2,11 @@
 
 Status: companion to [composer-model.plan.md](composer-model.plan.md)
 
-The curated model list, the composer seam and its fallback rung, the per-chat
+The curated candidate list, the composer seam and its fallback rung, the per-chat
 persistence and admin surface, and the A/B harness — its arms, answer keys,
-grading rules and honesty checks.
+grading rules, honesty checks, and production-ladder economics.
 
-## The curated list
+## The curated candidate list
 
 `apps/web/src/lib/composer-models.ts` owns `SCENE_COMPOSER_MODELS`,
 `DEFAULT_SCENE_COMPOSER_MODEL_ID` and `resolveSceneComposerModelId`. Same shape
@@ -14,8 +14,12 @@ as `agent-models.ts` and `narrative-models.ts`, with one addition: every entry
 carries a `description`, because it is rendered under the admin dropdown and an
 entry without one is an unexplained choice.
 
-**An id earns its place by being run through the A/B**, with the verdict recorded
-in [Results](#results). The list is not a menu of everything OpenRouter sells.
+**The list is an owner-approved shortlist, not a validation ledger.** Candidates
+must be present here to be selectable in the live admin surface, so they may be
+listed before the paid A/B is run. Promotion to
+`DEFAULT_SCENE_COMPOSER_MODEL_ID` is the stronger contract: it requires a
+recorded A/B verdict in [Results](#results). The list is still not a menu of
+everything OpenRouter sells.
 
 | Id                                   | In / out $ per M | Why it is a candidate                   |
 | ------------------------------------ | ---------------- | --------------------------------------- |
@@ -33,6 +37,13 @@ constrained decoding was rejected because it degenerated on some models
 (followups.phase2.md #20). That is what makes Aion 2.0, which advertises no
 structured-output support, a legitimate candidate.
 
+Floating aliases are valid **candidate** ids because the point of the probe and
+per-chat switch is to evaluate what is available now. The **production default
+is different**: it must be pinned to the exact tested snapshot before promotion.
+`composer-models.test.ts` rejects a default beginning with `~` or ending in
+`-latest`, so a future edit cannot silently turn the production composer into a
+moving target.
+
 ## The seam and its fallback rung
 
 `sceneComposerModelId(chatComposerModel?)` (`server/ai/provider.ts`) resolves the
@@ -42,13 +53,15 @@ reaches `openrouter().chat()` on the deployment's key, so an uncurated value mus
 not survive the trip from a chat row to a generation.
 
 `composerFallbackModelId(primary)` owns the ladder's second rung. It is
-`narrativeModelId()` — a model already trusted with this repo's most explicit
-text — **except when that is the primary**, which the per-chat override made
-reachable now that Aion 2.0 is a curated composer option. Asking the same model
-twice is not a fallback, it is a retry of a refusal, so it falls to the curated
-composer default instead. The invariant every caller depends on: **the two rungs
-are never the same id**, asserted over the whole curated list in
-`scene-composer-model.test.ts`.
+`narrativeModelId()` — the **session narrative default, currently Aion 2.0** —
+except when that is the primary, which the per-chat composer override made
+reachable now that Aion 2.0 is a candidate. This is deliberately **not** the
+character chat's selected narrator model: changing a chat from one narrator to
+another must not silently change image-composer reliability or economics. Asking
+the same model twice is not a fallback, it is a retry of a refusal, so when Aion
+2.0 itself is primary the rung falls to the curated composer default instead.
+The invariant every caller depends on: **the two rungs are never the same id**,
+asserted over the whole candidate list in `scene-composer-model.test.ts`.
 
 `composeSceneSpec` resolves the primary **once** and reads it four times (the
 call, the diagnostic message, the diagnostic context, the fallback's collision
@@ -93,10 +106,29 @@ question is which model that currently is.
 
 ## The A/B harness
 
-Two files, split so the part that produces a number is covered by `pnpm test`:
+The grading path and the owner-facing economics are deliberately separated so
+reporting changes cannot accidentally change the instrument:
 
-- `scripts/eval/scene-images/composer-model-score.ts` — the grader. Pure.
-- `scripts/eval/scene-images/composer-model-ab.ts` — the runner. IO and reporting.
+- `scripts/eval/scene-images/composer-model-score.ts` — the grader. Pure and
+  covered by `pnpm test`.
+- `scripts/eval/scene-images/composer-model-ab.ts` — the existing runner. IO,
+  model calls, raw results and the quality table. Left unchanged by the
+  ladder-economics follow-up.
+- `scripts/eval/scene-images/composer-model-economics.ts` — pure fallback-rate
+  and effective-cost arithmetic, covered by `pnpm test`.
+- `scripts/eval/scene-images/composer-model-eval.ts` — the **one-command owner
+  entrypoint**. It runs `composer-model-ab.ts` unchanged, reads its `results.json`,
+  derives the exact production fallback trigger from the runner's diagnostics,
+  prints the ladder-economics table, and writes `ladder-summary.json`.
+
+Run the full comparison with:
+
+```sh
+pnpm tsx scripts/eval/scene-images/composer-model-eval.ts
+```
+
+The existing `AB_ARMS`, `AB_BEAT`, `AB_RUNS` and `EVAL_OUT` environment filters
+flow through to the underlying runner unchanged.
 
 ### What is asked
 
@@ -109,7 +141,7 @@ estimated from a price table.
 ### Beats
 
 Imported from `orientation-ab.ts`, never restated — two probes disagreeing about
-what "doggy" is would make their gradings incomparable, the same rule
+what a fixture means would make their gradings incomparable, the same rule
 `intimate-model-ab.ts` follows. Seven: `behind`, `glance`, `kneel`, plus the four
 intimate acceptance scenes `doggy`, `oral`, `oral_guided`, `missionary`.
 
@@ -164,6 +196,15 @@ Three of these need their reasoning stated:
   proposes no part, so requiring one would grade the arms against an expectation
   the reference answer itself does not meet.
 
+**`answered` is not the fallback-rate metric.** It is intentionally broader than
+production's retry trigger because a syntactically valid, all-defaulted spec is
+still a useless composition and should score as unanswered. Production retries
+only when `generateChecked` returns `degraded: true`. The runner already records
+that event as `images.scene_composer.degraded` in its diagnostics, and
+`composer-model-eval.ts` uses that exact signal for fallback-rate and cost math.
+This keeps quality and economics honest instead of pretending they are the same
+question.
+
 ### Honesty checks
 
 The run refuses to spend anything when it would prove nothing:
@@ -181,39 +222,49 @@ The run refuses to spend anything when it would prove nothing:
 
 With no provider key the runner prints every system prompt and user prompt and
 makes no calls — the wording is free to review, exactly as the image A/Bs do it.
+The wrapper detects that no `results.json` was written and skips economics rather
+than inventing zero-cost measurements.
 
 ### Output
 
-A per-beat detail block (which axis each arm lost, its prose, its proposed camera
-and staging with the evidence it quoted, and the diagnostics that fired), then a
-summary table with mean score, refusals, repair round-trips, p50/p95 latency,
-dollars per thousand compositions, and each arm's speed and cost as a multiple of
-the control's. `results.csv` and `results.json` land under `EVAL_OUT` (default
+The unchanged runner prints a per-beat detail block (which axis each arm lost,
+its prose, its proposed camera and staging with the evidence it quoted, and the
+diagnostics that fired), then its existing quality/latency/cost summary.
+`results.csv` and `results.json` land under `EVAL_OUT` (default
 `data/eval/composer-model-ab`, gitignored).
+
+The owner entrypoint then adds a second table with:
+
+- `answered` rate — quality;
+- **fallback rate** — rows carrying `images.scene_composer.degraded`, the exact
+  condition that makes production ask rung 2;
+- measured primary dollars per thousand compositions;
+- the actual fallback model selected by `composerFallbackModelId(primary)`; and
+- **effective dollars per thousand** = primary $/1k + fallback rate × measured
+  fallback-model $/1k.
+
+It writes the same per-arm economics to `ladder-summary.json`. If a filtered run
+omits the fallback arm and the fallback actually fires, effective cost remains
+unknown rather than substituting a price-table estimate.
 
 ## Results
 
-Not yet run. Slice 3 of the plan fills this section: the summary table, then one
-short verdict per arm naming which beats it held and which it lost, in the shape
+Not yet run. Slice 3 of the plan fills this section: the quality summary, the
+ladder-economics summary, then one short verdict per arm naming which beats it
+held and which it lost, in the shape
 [finished/scene-composition.spec.md](finished/scene-composition.spec.md)
 §"Probe results" uses.
 
-## Open questions
+## Owner decisions — 2026-08-15
 
-- **Does the fallback rung need to change if the default moves?** Today a degraded
-  composition retries on `narrativeModelId()` — Aion 2.0, permissive and mid-priced
-  — and it fires rarely enough that its cost is noise. With a cheap primary, that
-  retry becomes the thing that rescues a refused intimate scene, and both its rate
-  and its cost stop being negligible. The A/B's `answered` column is the number
-  that decides this: an arm that refuses one beat in ten makes the fallback a
-  tenth of all compositions, not a rounding error.
-  - If the fallback is triggered often (10% or higher) we should look at a new fallback as Aion-2.0 is dated.
-    However, I do not foresee Deepseek refusing often.
-- **Should a winning model be pinned or floating?** `~deepseek/…-latest` is
-  OpenRouter's floating alias and always redirects to the newest release, so a new
-  snapshot needs no code change — and the exact weights can shift under us. The
-  dated `deepseek/deepseek-v4-flash-<mmdd>` slugs are the pin-it escape hatch. The
-  agent lane already accepted the floating trade (owner ask 2026-08-04); whether
-  the composer should is a separate call, because a regression here shows up as a
-  wrong picture rather than a dropped background field.
-  - Pin v4 Flash if it wins, etc.
+- **Fallback rung:** keep the session-default Aion 2.0 fallback unless the winning
+  cheap primary invokes it often enough to matter. The owner-set review threshold
+  is **10%**: at or above a 10% measured production fallback rate, test/select a
+  newer second rung before promoting that primary; below 10%, keep Aion 2.0 rather
+  than optimizing a rare path pre-emptively. DeepSeek is expected to refuse rarely,
+  but the measured `degraded` rate decides this, not the expectation.
+- **Pinning:** if the winner is reached through a floating alias, pin the exact
+  snapshot that was tested before assigning it to
+  `DEFAULT_SCENE_COMPOSER_MODEL_ID`. Floating aliases remain valid admin/eval
+  candidates. The production-default test makes the pinning rule executable
+  rather than advisory.
