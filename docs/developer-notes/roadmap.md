@@ -67,8 +67,8 @@ clothing slice 7, and wiring the affordance layer to the scene owner.
 - **Character reference views — accepting a portrait, and the angles it
   unlocks** — [plan](character-reference-views.plan.md) ·
   [spec](character-reference-views.spec.md) — accepting a canonical portrait
-  builds side and full-length front/back views of that character, and a shot
-  taken from behind anchors on her real back; needs three owner rulings first.
+  builds side and full-length front/back views of that character, dressed and
+  undressed, so a shot taken from behind anchors on her real back.
 
 - **Body-attribute visual affordances — remainder** —
   [plan](body-attribute-affordances.plan.md) — `chat-affordances.ts` still
