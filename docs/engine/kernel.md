@@ -141,10 +141,12 @@ identity: the same command ID replayed on a causally isolated branch cannot
 collide in the global event catalog. Every branch-scoped mutable row carries
 its `WorldBranchId`.
 
-A `CharacterTemplate` is authored input; a `WorldCharacter` is the historical
-identity that plays it out in one world. Editing a template never silently
-rewrites an already-instantiated character's past — only an explicit
-migration or world event can (engine.spec §5).
+`CharacterTemplateId` is declared in the identity vocabulary and **is not wired
+to anything**: no template table, no instantiation path, no editing flow. Treat
+it as reserved rather than as a described mechanism. The separation it anticipates
+— authored input distinct from the historical identity that plays it out, so
+editing an author's template never silently rewrites an instantiated character's
+past — is a contract intent (engine.spec §5), not current behavior.
 
 Numeric causal primitives follow the same discipline: story time and branch
 versions are nonnegative safe integers, event sequence and schema version are
@@ -176,9 +178,11 @@ principal's capabilities before honoring it.
 ### Randomness
 
 No kernel code reads ambient randomness. Every random result derives from a
-named stream keyed by world seed, branch ID, ruleset version, the causal
-command/event/trigger ID, a purpose label, and a draw index (engine.spec
-§6.3) — the same key always reproduces the same draw. Iteration order is fixed
+named stream: `deterministicDrawUnit` keys a draw on world seed, branch ID, a
+stream identifier, and a draw index, and callers compose that stream identifier
+from the causal command ID plus a purpose label (engine.spec §6.3) — the same key
+always reproduces the same draw. The ruleset version is **not** part of the draw
+key. Iteration order is fixed
 before drawing, and when a sampled result affects history, the event records
 both the chosen result and the random-stream version.
 

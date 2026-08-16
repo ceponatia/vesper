@@ -22,9 +22,9 @@ tracked and later surfaced as `speakerBeliefs` and `perceptibleNow`, see
 2. `sim-render.ts` turns the cut into a prompt under the shared presentation
    charter, addressing beats and armed effects by opaque handles rather than
    raw IDs.
-3. The narrator model returns prose plus which armed effects it enacted and
-   which soft-canon facts it proposes. The result crosses a trust boundary
-   (`parseNarratorResult`) before anything downstream trusts it.
+3. The narrator model returns prose plus which beats and armed effects it
+   enacted and which soft-canon facts it proposes. The result crosses a trust
+   boundary (`parseNarratorResult`) before anything downstream trusts it.
 4. A deterministic presentation audit checks the prose for leaks, contract
    echoes, and thinness; a failed check triggers one corrective retry, then at
    most a deterministic bridge paragraph.
@@ -40,29 +40,31 @@ them rather than causing them.
 
 A cut's fields fall into a few groups:
 
-| Group            | Purpose                                                            |
-| ---------------- | ------------------------------------------------------------------ |
-| Identity & range | pins the cut to one branch, sequence window, and story-second span |
-| Viewpoint        | which actor's eyes, which engagement this cut belongs to           |
-| Scene state      | perspective-safe loci and activities — see mind.md                 |
-| Turn content     | beats to enact now vs. already-resolved transitions to portray     |
-| Evidence         | perceptible events, beliefs, pressures — mind.md, knowledge.md     |
-| Boundaries       | forbidden claims, failure presentations, creative licenses         |
-| Effects          | armed effects the narrator may trigger by expressing them          |
-| Provenance       | source trace behind every compiled fact                            |
+| Group            | Purpose                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| Identity & range | pins the cut to one branch, its sequence and story-second range, compiler version, and hash |
+| Viewpoint        | which actor's eyes, which engagement this cut belongs to                                    |
+| Scene state      | perspective-safe loci, activities, and body reads — mind.md, bodies.md                      |
+| Turn content     | beats to enact now vs. already-resolved transitions to portray                              |
+| Evidence         | perceptible events, beliefs, pressures — mind.md, knowledge.md                              |
+| Boundaries       | forbidden claims, failure presentations, creative licenses                                  |
+| Effects          | armed effects the narrator may trigger by expressing them                                   |
+| Provenance       | source trace behind every compiled fact                                                     |
 
 ```ts
 type NarrativeCut = {
   id: string;
+  semanticHash: string;
+  compilerVersion: string;
   worldId: string;
   branchId: string;
   branchVersion: number;
+  engagementId: string;
+  viewpointActorId: string;
   fromSequence: number;
   throughSequence: number;
   fromStorySecond: number;
   throughStorySecond: number;
-  viewpointActorId: string;
-  engagementId: string;
   currentLoci: PerspectiveSafeLocus[];
   currentActivities: PerspectiveSafeActivity[];
   mustEnact: NarrativeBeat[];
@@ -74,6 +76,7 @@ type NarrativeCut = {
   failurePresentations: PublicFailurePresentation[];
   creativeLicenses: CreativeLicense[];
   armedEffects: ArmedEffect[];
+  bodilyReads: CutBodilyReads;
   provenance: ProvenanceRef[];
 };
 ```
@@ -110,13 +113,15 @@ of a private denial cause; and a future event stated as already completed.
 ### Stability
 
 A NarrativeCut is immutable and addressable: recompiling the same cut ID
-either reproduces the same canonical content hash or fails with a version
-diagnostic. Prompt formatting built on top of a cut may change over time, but
-the semantic cut itself stays inspectable and stable (engine.spec §22.3). The
-existing chat narrator only ever reaches a cut through
-`buildCharacterChatPromptForNarrativeCut`; rerender variants reuse the same
-cut ID and semantic hash and carry no command or persistence capability of
-their own (engine.spec §22).
+either reproduces the same `semanticHash` or fails with a version diagnostic.
+Prompt formatting built on top of a cut may change over time, but the
+semantic cut itself stays inspectable and stable (engine.spec §22.3). The
+successor narrator reaches a persisted cut through `renderCommittedCut` →
+`buildSimRenderPrompt`, re-reading the same cut for every retry attempt — a
+rerender reuses the same cut ID and hash and carries no command or
+persistence capability of its own. Legacy character chat builds its prompt
+through `buildCharacterChatPromptParts` and never reaches a NarrativeCut at
+all; the two lanes stay separate (engine.spec §22).
 
 ## The narrator contract
 
@@ -126,6 +131,7 @@ The narrator returns a small, trust-boundary-checked result:
 type NarratorResult = {
   prose: string;
   enactedArmedEffectIds: string[];
+  enactedBeatEventIds: string[];
   proposedSoftCanon: SoftCanonProposal[];
   diagnostics?: string[];
 };
@@ -165,11 +171,14 @@ type ArmedEffect = {
 };
 ```
 
-After narration, each ID the narrator claims to have enacted is revalidated
-against the cut, actor, and branch version; unlisted IDs are ignored and
-unenacted effects expire. Armed effects exist for speech acts, not as a side
-door for physical outcomes to reach the world without going through hard-effect
-resolution (engine.spec §23.3).
+After narration, each ID the narrator claims to have enacted is filtered
+against the cut's own `armedEffects` membership; unlisted IDs are ignored and
+unenacted effects expire. Confirming also requires this cut to still be the
+engagement's newest — a superseded cut is refused (`cut_superseded`) rather
+than confirmed against changed state — with no separate actor or
+branch-version recheck. Armed effects exist for speech acts, not a side door
+for physical outcomes to reach the world without hard-effect resolution
+(engine.spec §23.3).
 
 ### Soft canon
 
@@ -180,18 +189,22 @@ type SoftCanonProposal = {
   key: string;
   value: unknown;
   scope: "scene" | "relationship" | "character" | "location" | "world";
+  subjectIds: string[];
   confidenceFixedPoint: number;
   validUntil?: number;
   sourceCutId: string;
 };
 ```
 
-A proposal passes conflict, privacy, scope, duplication, and world-type checks
-before it is kept, and can be rejected without regenerating the prose that
-proposed it. Reused soft canon can be promoted into audited, provenanced hard
-state through a separate ruled path, but promotion is always its own explicit
-event — soft canon never turns into hard state by accident (engine.spec
-§23.4).
+`subjectIds` names who or where the fact is about — actors for scene,
+relationship, or character scope, a zone for location scope, empty for world
+scope; the scope check rejects any subject outside the cut's own visible
+actors and zones. A proposal also passes conflict, privacy, duplication, and
+world-type checks before it is kept, and can be rejected without
+regenerating the prose that proposed it. Reused soft canon can be promoted
+into audited, provenanced hard state through a separate ruled path, but
+promotion is always its own explicit event — soft canon never turns into hard
+state by accident (engine.spec §23.4).
 
 Post-turn extraction is deliberately narrow: it only pulls information
 deterministic code could not already know — episode compression, semantic
@@ -227,9 +240,11 @@ itself is deterministic and structural, not a semantic read of the prose. It
 rejects three things: an id or handle token leaking into prose
 (`presentation.id_leak`), prose that reads as JSON or echoes contract field
 names or placeholder brackets (`presentation.contract_echo`), and prose that
-falls under a substance floor (`presentation.too_thin`) — the last of these is
-retried once and accepted on the final attempt, with a diagnostic recorded
-only when the caller supplies no attempt context (engine.spec §23.6).
+falls under a substance floor (`presentation.too_thin`), recorded whenever
+prose comes in under the floor with beats or an utterance in play, on every
+attempt — only the verdict depends on attempt context: a non-final attempt
+reruns, the final attempt accepts thin prose rather than withholding a turn
+over length alone (engine.spec §23.6).
 
 A retry is never a blind reroll: the second attempt rebuilds the prompt from
 the same persisted cut, with a correction block naming exactly what the
@@ -242,12 +257,15 @@ something the structural audit checks (engine.spec §23.6).
 
 ## Confirming a cut
 
-`confirm_narrator_result`'s idempotency key derives from the cut ID alone: a
-given cut confirms at most once, the first accepted confirm wins, and any
-later retake's confirm — even carrying a different enacted subset — dedupes
-to that first one. A retake can replace which presentation is shown, but it
-never re-arms truth: a same-cut retake never supersedes the original armed
-effects, so they can't be delivered twice (engine.spec §23.7).
+`confirm_narrator_result`'s idempotency key derives from the cut ID alone,
+and the cache is status-blind: whichever result — accepted, rejected, or
+conflict — was stored first for that key is what every later retake replays,
+verbatim. A cut whose first confirm is rejected (`nothing_to_record`, when
+neither an armed effect nor a soft-canon proposal survived validation) stays
+rejected forever; no later retake of that cut can succeed. When a confirm
+does get accepted, a retake still never re-arms truth — it cannot supersede
+the original armed effects, so they can't be delivered twice (engine.spec
+§23.7).
 
 ## Invariants
 

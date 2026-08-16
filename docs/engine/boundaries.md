@@ -15,11 +15,18 @@ The engine occupies three directories, one per authority layer (engine.spec §31
 | `apps/web/src/server/engine/simulation/`  | Stores, transactions, sequencer, scheduler, outbox    |
 
 `contracts/` and `lib/` carry no database, network, file, process clock,
-model, or global random dependency — the repository's ESLint
-`no-restricted-imports` rule enforces the boundary, so it cannot quietly
-regress under a routine import. The server layer holds one store per domain
-plus the shared `runSimulationCommand` transaction shell, and modules there
-import each other only through `index.ts` barrels.
+model, or global random dependency. `pnpm lint:package-boundaries`
+(`scripts/check-workspace-imports.ts`) enforces the boundary: because
+`@vesper/simulation-core` is declared a universal (browser/server-portable)
+package, its `universal-runtime-dependency` rule fails any runtime import of
+a server-only module (`pg`, `drizzle-orm`, `next`, `replicate`, …), and its
+`universal-runtime-global` rule fails any reference to a single-runtime
+global (`process`, `require`, `document`, `window`, …) — so the boundary
+cannot quietly regress under a routine import. The server layer holds one
+store per domain plus the shared `runSimulationCommand` transaction shell;
+other application modules reach that layer only through its `index.ts`
+barrel, while the store files inside the directory import each other
+directly by relative path.
 
 This split is engine-specific: which files are pure and which are stateful.
 The repo-wide rules for how packages relate to the app and to each other —
@@ -30,15 +37,29 @@ surface, dependencies, and test setup are documented in its own contract,
 
 ## Public API surface
 
-The engine's public surface is intent-oriented — callers submit commands and
-read projected state or perspectives, never write a field directly
-(engine.spec §30):
+engine.spec §30 sketches the public surface as a dozen generically-named
+entry points (`submitCommand`, `advanceTo`, `getActorPerspective`,
+`rerenderCut`, `forkForRetake`, …); the code took a different shape instead
+and none of those names exist. Every caller reaches the engine through
+`apps/web/src/server/engine/simulation/index.ts`, the barrel other
+application modules import through, which exports a domain-scoped function
+per command or read rather than one generic entry point — intent-oriented
+in the same sense §30 means (callers submit commands and read projected
+state, never write a field directly), just shaped as many functions:
 
-- **Command and time** — `submitCommand`, `advanceTo`
-- **Reading branch state** — `getBranchState`, `getActorPerspective`, `queryEligibleMemory`
-- **Turn and scene** — `openEngagement`, `prepareTurn`, `getNarrativeCut`, `confirmNarratorResult`
-- **Retakes and forks** — `rerenderCut`, `forkForRetake`, `rebuildProjection`
-- **Audit** — `explainEvent`
+- **Command submission** — one `submitDurable*` per domain (`submitDurableOpenEngagement`, `submitDurableMoveActor`, `submitDurableCreateCommitment`, `submitDurableMakeDisclosure`, `submitDurableTransferItem`, and dozens more), all running through the shared `runSimulationCommand` transaction shell
+- **Branch state** — `assembleBranchState`, `readDurableBranchState`
+- **Memory** — `queryMemoryDocuments`, `rebuildMemoryIndex`
+- **Turn preparation** — `prepareEngagementTurn`, `submitDurableConfirmNarratorResult`
+- **Narrative cut** — `loadPersistedCut`, `latestCutIdForEngagement`, `persistNarrativeCut`
+- **Branching and rebuild** — `forkBranch`, `rebuildDurableBranchProjection`
+- **Time** — `advanceBranchStoryTime`
+- **Audit** — `explainItemPlacement`
+
+There is no `getActorPerspective`, `getNarrativeCut`, or `rerenderCut`
+equivalent — a caller loads a cut by id (`loadPersistedCut`) or narrative
+state by branch (`assembleBranchState`/`readDurableBranchState`) rather than
+requesting a perspective or a rerender through a dedicated entry point.
 
 No public entry exposes a raw setter — "set NPC location," "mark schedule
 kept," "write current meter" — without a privileged migration or storyteller
@@ -53,10 +74,11 @@ audit.
 A conversation only talks to the engine once it is **routed** — successor
 lane, `engine_authority` past the view threshold, branch and actors mapped.
 Two chat-scoped routes carry that traffic, both gated by `requireSimChat`; a
-legacy or shadow chat is refused with 409 `not_sim_enabled`, and the
-conversation UI mirrors the gate client-side (it computes the same
-`isSimRoutedAuthority` predicate from the transcript bootstrap) so a legacy
-chat never even attempts the read (engine.spec §30).
+legacy or shadow chat is refused with 409 `not_sim_enabled`. The gate is not
+recomputed client-side: `GET /api/chats/[chatId]` computes `isSimRoutedAuthority`
+once, server-side, and writes the result into the bootstrap payload as a
+plain `simRouted` boolean; the conversation UI only reads that field, so a
+legacy chat never even attempts the read (engine.spec §30).
 
 | Route                                  | Handler            | Returns                                               |
 | -------------------------------------- | ------------------ | ----------------------------------------------------- |
@@ -99,9 +121,10 @@ Two of these are worth flagging for how they hold their atomicity boundary:
   never a pair split mid-walk.
 
 On commit, `travel` / `advance_time` / `end_scene` / `give_item` /
-`do_activity` each write a best-effort "world beat" message to the chat
-transcript — a side effect, not part of the response. A failed beat write is
-logged and never fails the command that already committed.
+`do_activity` / `move_together` each write a best-effort "world beat"
+message to the chat transcript — a side effect, not part of the response. A
+failed beat write is logged and never fails the command that already
+committed.
 
 ## Determinism and replay
 
@@ -126,19 +149,24 @@ native rewrite would have to clear — is engine.spec §32.
 
 ## Deliberate limits
 
-Durability today covers only the first item-transfer family. The in-memory
-adapter remains a pure test and replay fixture; production persistence is
-what actually supplies crash atomicity, cross-process branch locking,
-durable command results, asynchronous rebuildable consumers, and a durable
-trigger queue (engine.spec §30).
+Durability spans nearly every domain — activities, access, engagements,
+commitments, branches, material and item transfer, households, knowledge,
+bodies, cohorts, LOD, promotion, routines, the relationship ledger, space
+and movement, and the trigger scheduler, among others — each with its own
+store persisting through Postgres. Most run through the shared
+`runSimulationCommand` transaction shell (`command-runner.ts`), which
+supplies the idempotency fast path, branch-row locking, duplicate-command
+defense, optimistic version checks, and durable command-result persistence;
+a handful of stores predate that shell and still inline an equivalent copy.
+There is no in-memory adapter anywhere in the tree.
 
 Three things the design leaves out on purpose, each because the shortcut
 would break replay or the causal chain above:
 
-- **No trigger cancellation.** Nothing mutates a trigger row to cancel it —
-  a cancellation is an event effect exactly like creation would be (a
-  `trigger_cancelled` family). Anything less and a forked replay resurrects
-  an alarm the cancellation was meant to keep dead.
+- **No trigger cancellation.** Nothing mutates a trigger row to cancel it. A
+  cancellation would have to be an event effect exactly like creation is, so
+  that it replays; no cancellation event family exists today. Anything less and
+  a forked replay resurrects an alarm the cancellation was meant to keep dead.
 - **A trigger never sets location directly.** Movement is always a journey
   plus its arrival trigger; a scheduler outcome that wrote a location
   directly would bypass the movement laws that keep spatial state consistent

@@ -106,8 +106,11 @@ item-scoped tables; the body tables aren't reused, only the kernel that drives t
 [bodies.md](bodies.md) covers that shared machinery in full.
 
 The current registry has two meters: `cleanliness` (a linear law with a zero at-rest
-rate — a garment sitting unworn doesn't foul on its own — that picks up a standard
-negative rate while worn, so it only gets dirty on a body) and `wear` (no drift at all,
+rate — a garment sitting unworn doesn't foul on its own — that picks up a
+`rate_add` modifier while worn, so it only gets dirty on a body; the added rate is
+**positive**, which composed with a zero base rate and a zero target produces
+approach-mode decay toward fully soiled, where a literal negative rate would be
+inert and never move the meter at all) and `wear` (no drift at all,
 only discrete deltas landing from `use`-disposition activity completions). Threshold
 crossings — going grimy, going worn-out — are registry data and alarm through an
 `item_condition_threshold_due` trigger, witnessed by co-location with the item's root

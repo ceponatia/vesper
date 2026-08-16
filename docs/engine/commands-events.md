@@ -62,7 +62,6 @@ collapses distinct concepts into a generic `StateChanged` event (engine.spec
 
 | Family       | Example events                                       |
 | ------------ | ---------------------------------------------------- |
-| world        | WorldCreated, BranchForked, RulesetAdopted           |
 | identity     | CharacterInstantiated, ItemInstantiated              |
 | commitment   | CommitmentCreated, CommitmentKept, CommitmentMissed  |
 | activity     | ActivityStarted, ActivityCompleted, ActivityFailed   |
@@ -74,6 +73,12 @@ collapses distinct concepts into a generic `StateChanged` event (engine.spec
 | knowledge    | ObservationRecorded, AssertionMade, BeliefUpdated    |
 | relationship | RelationshipEntryAuthored, ConsentEscalationResolved |
 | privileged   | StorytellerRelocation, StorytellerRetcon             |
+
+World creation and branch forking are not event-sourced: `forkBranch`
+(`branch-store.ts`) inserts a child `sim_branches` row directly, and world
+provisioning (`material-store.ts`) inserts `sim_worlds` directly — neither
+appends a `sim_events` row. The `world_created` string in the schema is a
+provisioning status value on the world row, not a domain event.
 
 The relationship family's events are exactly three:
 `RelationshipEntryAuthored`, `RelationshipChangeRecorded`, and
@@ -88,9 +93,9 @@ in the payload's kind vocabulary instead.
 ### Trigger versus event
 
 A scheduled trigger says "evaluate this at or after story second T" — it is
-not proof that anything happened. A `JourneyArrivalDue` trigger, for example,
+not proof that anything happened. A `journey_arrival_due` trigger, for example,
 may resolve into `ActorArrived`, `JourneyDelayed`, or `JourneyInterrupted`
-depending on state at evaluation time; a `CommitmentNoticeDue` trigger may or
+depending on state at evaluation time; a `commitment_notice_due` trigger may or
 may not emit `PressureRaised`, depending on whether the actor can remember or
 perceive the commitment. Triggers are mutable operational records that get
 claimed, rescheduled, and discarded; domain events are immutable history
@@ -104,16 +109,18 @@ holding, access to both the source and destination containers, and
 destination capacity — all against loaded state, before anything is written.
 Rejection and conflict outcomes never create domain history. An accepted
 command resolves through pure kernel code into exactly one
-`ItemTransferredEvent`, and that event carries the observer IDs computed at
-resolution time under a fixed perception version — replay never recomputes
-historical visibility from state that didn't exist yet. The synchronous
-projector then moves the item to exactly one container and writes one typed
-observation per eligible witness.
+`ItemTransferredEvent`. The event payload itself carries no observer field —
+witnesses are derived live from presence at the acting actor's zone each time
+they are needed, not captured on the event. The synchronous projector then
+moves the item to exactly one container and writes one typed observation per
+eligible witness.
 
-The same pure resolver — `ItemTransferResolutionView` in this case — serves
-both the in-memory path (used for fast local validation) and the durable path
-(used inside the transaction), so there is exactly one place a transfer's
-legality is decided, not two implementations that can drift apart.
+The same pure resolver — `resolveTransferItemFromView`, over a
+`MaterialResolutionView` in this case — serves both the durable path (used
+inside the transaction, via `material-store.ts`) and an in-memory instance
+built by the engine benchmark harness (`scripts/eval/engine-gate1/run.ts`),
+so there is exactly one place a transfer's legality is decided, not two
+implementations that can drift apart.
 
 ## Persistence model
 
@@ -121,30 +128,31 @@ PostgreSQL is the authority store. Snapshots, projections, and vector indexes
 are caches over it — the event stream is the historical record (engine.spec
 §10.4). The core authority tables:
 
-| Table                  | Holds                                                        |
-| ---------------------- | ------------------------------------------------------------ |
-| sim_worlds             | world id, world type, seed, ruleset version, status          |
-| sim_branches           | branch id, parent, fork sequence, head sequence, story time  |
-| sim_commands           | envelope, idempotency key, status, result or rejection       |
-| sim_events             | branch sequence, envelope columns, versioned payload         |
-| sim_scheduled_triggers | due story second, priority, kind, target, payload, state     |
-| sim_outbox             | sequence range, consumer kind, payload, attempts, next retry |
-| sim_snapshots          | branch, sequence, projection kind, schema version, checksum  |
+| Table         | Holds                                                        |
+| ------------- | ------------------------------------------------------------ |
+| sim_worlds    | world id, world type, seed, ruleset version, status          |
+| sim_branches  | branch id, parent, fork sequence, head sequence, story time  |
+| sim_commands  | envelope, idempotency key, status, result or rejection       |
+| sim_events    | branch sequence, envelope columns, versioned payload         |
+| sim_triggers  | due story second, priority, kind, target, payload, state     |
+| sim_outbox    | sequence range, consumer kind, payload, attempts, next retry |
+| sim_snapshots | branch, sequence, projection kind, schema version, checksum  |
 
 The database enforces uniqueness on branch+sequence, event ID, branch+
 idempotency key, and each active trigger's logical key (so duplicate scheduling
 can't produce duplicate outcomes); one further uniqueness rule protects a
 physical-placement invariant that kernel.md owns (engine.spec §10.1).
 
-Core projections (`sim_entities`, `sim_physical_loci`, `sim_item_holdings`,
-`sim_commitments`, `sim_engagements`, and similar) are normalized and typed —
-a generic entity-attribute-value table never substitutes for an
-invariant-critical projection, though a generic entity registry is fine for
-identity bookkeeping. Async projections — search documents, embeddings,
-episode summaries, analytics — may lag behind the event stream, but every one
-must be rebuildable from source branch and sequence, and every embedding row
-must name the event, assertion, observation, or record it represents; prose
-without provenance is invalid (engine.spec §10.2–§10.3).
+Core projections (`sim_characters`, `sim_items`, `sim_physical_loci`,
+`sim_item_holdings`, `sim_commitments`, `sim_engagements`, and similar) are
+normalized and typed — a generic entity-attribute-value table never
+substitutes for an invariant-critical projection, though a generic entity
+registry is fine for identity bookkeeping. Async projections — search
+documents, embeddings, episode summaries, analytics — may lag behind the
+event stream, but every one must be rebuildable from source branch and
+sequence, and every embedding row must name the event, assertion,
+observation, or record it represents; prose without provenance is invalid
+(engine.spec §10.2–§10.3).
 
 A snapshot exists purely to speed up replay: it carries branch, sequence,
 projection schema version, ruleset version, a deterministic checksum, and the
@@ -155,26 +163,35 @@ full rebuild (engine.spec §10.4).
 
 ## Transaction protocol
 
-Accepted, state-changing work serializes on a branch row — different branches
-proceed fully concurrently, but one branch has exactly one ordered stream. A
-`FOR UPDATE` lock on `sim_branches` is what makes command resolution, event
-append, projection update, branch advance, and command-result insert one
-atomic step (engine.spec §11.1). In order:
+Due-trigger reconciliation happens before a command is built, not inside its
+transaction. `advanceBranchStoryTime` (`scheduler-store.ts`) steps the branch
+clock to each due trigger's own due second, resolves it through its own
+command transaction, and repeats until nothing remains due at the boundary —
+writing `storySecond` as it goes; a caller such as the arbiter's turn
+preparation (`arbiter-store.ts`) runs this drain before building the command.
+engine.spec §11.1 places trigger reconciliation inside the locked command
+transaction; the locked transaction never loads or reconciles due triggers.
 
-1. Look up an existing result by branch + idempotency key.
-2. Acquire the branch sequencing lock.
-3. Load branch version, story time, due triggers, and required projections.
-4. Reject a stale `expectedVersion` unless the command explicitly rebases.
-5. Reconcile due triggers up to the command's boundary.
-6. Validate authority and domain preconditions.
-7. Resolve the command with pure kernel code and named random streams.
-8. Append domain events with consecutive sequence values.
-9. Apply invariant-critical projections.
-10. Insert, update, or cancel scheduled triggers.
-11. Insert outbox records.
-12. Advance branch head, version, and story time.
-13. Persist the command result.
-14. Commit.
+Accepted, state-changing work then serializes on a branch row — different
+branches proceed fully concurrently, but one branch has exactly one ordered
+stream. A `FOR UPDATE` lock on `sim_branches` is what makes command
+resolution, event append, projection update, branch advance, and
+command-result insert one atomic step. In order, inside
+`runSimulationCommand` (`command-runner.ts`):
+
+1. Look up an existing result by branch + idempotency key, before the lock is taken.
+2. Acquire the branch sequencing lock, loading branch version, story time, and world status.
+3. Re-check idempotency and reject a duplicate command ID now that the lock is held.
+4. Reject an inactive branch or a stale `expectedVersion` as a conflict outcome.
+5. Load required projections, validate authority and domain preconditions, and resolve the command with pure kernel code and named random streams.
+6. Append domain events with consecutive sequence values.
+7. Apply invariant-critical projections.
+8. Insert, update, or cancel scheduled triggers as an effect of the appended events.
+9. Insert outbox records.
+10. For an accepted outcome, fold observations, knowledge, relationship-ledger entries, and soft-canon snapshots, then enqueue memory-index obligations.
+11. Advance the branch's head sequence and version — story time is not written here; it was already advanced by the trigger reconciliation that ran before the command was built.
+12. Persist the command result.
+13. Commit.
 
 No model or network call happens while the branch lock is held — that would
 turn a database lock into a wait on an LLM. The adapter also rechecks
@@ -182,15 +199,16 @@ idempotency *after* acquiring the lock, not just before, so two concurrent
 retries of the same command can't both race through the lock-free fast path
 and double-resolve.
 
-When a deterministic policy needs to hand a close, consequential choice to a
-deliberator, it does not hold the lock while waiting on that call: it reads
-branch version V and the legal candidate set, releases all locks, asks the
-deliberator to pick one candidate, and submits that pick as a
-`ResolveNpcChoice` command carrying `expectedVersion: V`. The transaction
-revalidates the chosen candidate against current state; on conflict it falls
-back to a deterministic choice or retries at most once within budget. The
-deliberator can select among candidates already known to be legal — it cannot
-introduce a new one (engine.spec §11.2).
+engine.spec §11.2 describes a deterministic policy handing a close,
+consequential choice to a deliberator without holding the lock: it would read
+branch version V, release all locks, ask the deliberator to pick one
+candidate, and submit that pick as a command carrying `expectedVersion: V`,
+with the transaction revalidating the pick against current state on
+conflict. This is not implemented — no `ResolveNpcChoice` command exists.
+`packages/simulation-core/src/contracts/deliberation.ts` defines only the
+admission-gating contract (inference LOD, score-gap threshold,
+consequentiality, model budget) and states it makes zero live model calls
+until an LOD controller supplies a real deliberator.
 
 Opening a physical engagement reserves participant body and attention claims
 under the same optimistic branch versioning, which is what stops two
@@ -218,12 +236,18 @@ Trigger ID is only the final tie-break, for the rare case two rows share a
 ### Advance algorithm
 
 Advancing a branch from T0 to a target T1 repeats: find the next due trigger
-at or before T1, analytically integrate affected rates up to that trigger,
-step the branch clock to that trigger's own due second, process every trigger
-due at that second in stable order, append the resulting events and reschedule
-any new triggers, and repeat until nothing is due — then integrate remaining
-rates and set the clock to T1 (engine.spec §12.2). The scheduler never scans
-every actor or every minute to find what's due.
+at or before T1, step the branch clock to that trigger's own due second,
+process every trigger due at that second in stable order, append the
+resulting events and reschedule any new triggers, and repeat until nothing is
+due — then set the clock to T1. The scheduler never scans every actor or
+every minute to find what's due.
+
+engine.spec §12.2 also describes analytically integrating affected rates up
+to each trigger and again over the remaining span before the final clock set.
+This is not implemented — no continuous rate exists to integrate. Body
+meters instead integrate lazily, on read and on write, in `body-reads.ts` and
+`body-store.ts`; the drain loop above is the seam reserved for analytical
+rate integration once a continuous rate exists.
 
 The clock stepping to each trigger's own due second *before* that trigger
 resolves is easy to get wrong and important: an event takes its story second
@@ -249,7 +273,7 @@ engine prefers not to emit those at all (engine.spec §12.4).
 A trigger is created only as the effect of a committed event, never as a
 side-channel insert. A schedule command — `schedule_transfer_item`, for
 example — appends a `trigger_scheduled` event inside the same branch
-transaction (step 10 above), and one projector, `applyTriggerScheduledEvent`,
+transaction (step 8 above), and one projector, `applyTriggerScheduledEvent`,
 is the only code that inserts trigger rows; it runs both on the live path and
 again during fork replay, so the trigger queue is always rebuildable from
 event history rather than being state the history can't explain.
@@ -263,6 +287,9 @@ trigger is safe to retry.
   envelope factories, principal and exhaustive-result schemas.
 - `packages/simulation-core/src/contracts/scheduler.ts` — trigger contract,
   derived trigger identity, named random draw streams, retry backoff.
+- `apps/web/src/server/engine/simulation/command-runner.ts` — the shared
+  locked command transaction shell (`runSimulationCommand`) every domain
+  store's `execute` callback runs inside.
 - `apps/web/src/server/engine/simulation/scheduler-store.ts` — the durable
   trigger queue, lease/claim semantics, bounded story-time advance.
 - `apps/web/src/server/engine/simulation/branch-store.ts` — the branch

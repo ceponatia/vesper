@@ -28,10 +28,12 @@ forbids.
 
 ### Deterministic scoring
 
-Legal candidates are scored from versioned factors: goal progress, commitment
-priority and lateness risk, physiological need, relationship and promise
-evidence, habit and role, safety and legal risk, effort/time/resource cost,
-interruption cost, and a bounded seeded variation term (engine.spec §19.2).
+There is no single multi-factor scoring formula. Each escalation site scores its
+own narrow candidate set: the routine controller weighs circadian sleep pressure
+against a flat obligation penalty plus a meal weight, and the narrative-departure
+escalation ranks unresolved pressures on deadline lateness alone. The broader
+factor set §19.2 describes — goal progress, habit and role, safety risk, effort
+cost, interruption cost, a seeded variation term — is **not implemented**.
 The score breakdown can be kept as an audit explanation, but it never
 contains or claims to expose a model's private reasoning — deterministic
 scoring has no reasoning to leak in the first place (engine.spec §19.2).
@@ -118,11 +120,12 @@ action of its own.
 Perception is the gate between something happening in the world and an actor
 being able to act on, remember, or discuss it: for every event it computes
 whether that event produces evidence for a given viewpoint (engine.spec
-§20). The gate weighs physical locus and topology; channel — sight, sound,
-touch, smell, device, and social; lighting, cover, distance, barriers, and
-attention; the perceiver's own activity and impairment; concealment and
-privacy; the event's own salience; and, for communicated information,
-delivery and authentication (engine.spec §20).
+§20). The gate is **deliberately coarse in v1**: it grades by how the evidence
+arrived, not by who the witness is. A fixed table maps event type, channel
+(sight, sound, touch, smell, device, social) and zone/location co-presence onto
+a confidence and detail tier. Lighting, cover, distance, barriers, attention,
+impairment, salience and communicated-information authentication are named by
+§20 but are not computed — they are deferred to a bumped derivation version.
 
 Where an event does produce evidence, that evidence is a first-class row:
 
@@ -130,6 +133,8 @@ Where an event does produce evidence, that evidence is a first-class row:
       id: string;
       branchId: string;
       sourceEventId: string;
+      // Denormalized from the source event so interval reads never join the log.
+      sourceEventSequence: number;
       witnessActorId: string;
       storySecond: number;
       channel: string;

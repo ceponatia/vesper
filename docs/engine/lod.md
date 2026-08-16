@@ -108,10 +108,11 @@ something reads them. LOD gates scheduled work, never the read path
 
 Waking an actor is a promotion back to `event` or `exact` — either an
 explicit assignment, or the automatic wake an engagement causes when it
-reaches a below-event participant (below). Any other command that targets a
-below-event actor is treated as an authored intervention: it needs the actor
-promoted first, because its own alarms would otherwise fire against an actor
-scheduled for no work (engine.spec §27.5, §27.7).
+reaches a below-event participant (below). §27.5 and §27.7 describe other
+commands as authored interventions needing the actor promoted first; **no store
+enforces that today** — outside the engagement wake path, command handlers do not
+read the target's simulation-axis level at all, so a below-event actor can be
+targeted without being promoted.
 
 ### Population cohorts
 
@@ -191,9 +192,9 @@ ordinary event rules that apply to any actor (engine.spec §27.7).
 promotes them to `event` as part of the same transaction (their inference
 axis is untouched) — attention is something a below-event actor cannot
 supply, since by definition they perform no scheduled work. If the engagement
-itself is rejected, nothing wakes. Opening an engagement is the only kind of
-command that wakes a below-event actor this way; every other command still
-needs the actor promoted first (engine.spec §27.7).
+itself is rejected, nothing wakes. Opening an engagement is the only command that
+wakes a below-event actor automatically; other commands neither wake nor check
+their target's level (engine.spec §27.7 asks for the check; it is not built).
 
 **Catch-up.** A newly woken or promoted actor never needs retroactive events.
 Meters integrate lazily and analytically from their last known boundary

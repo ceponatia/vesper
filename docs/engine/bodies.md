@@ -48,8 +48,8 @@ moments it's asked about or crosses a threshold that matters.
 
 A temporary effect on a body fact — a stimulant raising an energy rate, an
 injury capping a capability — goes through one modifier contract: a source
-event, a target path, an operation (add, multiply, clamp, override, or rate
-change), a stacking group and priority, a valid interval, conditions, and
+event, a target path, an operation (`rate_multiplier`, `rate_add`, or `suspend`
+— those three, and no others), a stacking group and priority, a valid interval, conditions, and
 visibility/provenance (engine.spec §25.3). An overlay-specific path that
 bypasses this ordering or expiry is debt to remove, not a second valid
 pattern — a modifier that skips the stacking and priority rules is a modifier
@@ -123,11 +123,15 @@ untyped text never produces a hard body or location effect — a character's
 
 ## Extending it
 
-Meter, condition, and body-location vocabulary is registry data shared by
-both the chat lane and the engine, defined in
-[../contracts/meters.md](../contracts/meters.md) and
-[../contracts/body.md](../contracts/body.md) — a new meter id or condition
-starts as a data edit there, not an engine code change. What the engine adds
+The engine keeps **its own** meter and condition vocabulary — `bodyMeterRegistryV1`
+and `bodyConditionKeys` in `packages/simulation-core/src/contracts/bodies.ts`,
+versioned by `bodyDerivationVersion`. It is deliberately not shared with the chat
+lane's registry ([../contracts/meters.md](../contracts/meters.md)): it ported that
+lane's semantics, but a package cannot import from the app, so the two are
+parallel by construction. Adding an engine meter or condition means editing that
+registry array and bumping the version — a code change, not a data edit.
+Body-location anatomy ([../contracts/body.md](../contracts/body.md)) is a
+separate registry this module does not read. What the engine adds
 on top is the substrate/resolution/read machinery in this document: a body
 fact's fixed-point representation, the modifier operations that can act on
 it, and any coupling edges it needs in the resolver graph.
