@@ -27,10 +27,15 @@ import type { ImageControlDefaults } from "./image-model-profiles";
  */
 
 /**
- * The normalized controls a reviewed setting can be. A deliberate subset of the
- * control vocabulary — these are the six the reviewed table actually uses, and
- * naming them keeps a policy from claiming a control (`seed`, `lora`) that the
+ * The normalized controls a reviewed setting can be — a deliberate subset,
+ * which keeps a policy from claiming a control (`seed`, `lora`) that the
  * reviewed judgment has nothing to say about.
+ *
+ * `steps` and `guidance` are currently expressible but unused: the sampler
+ * corrections that needed them belonged to models the 2026-08-16 ruling dropped.
+ * They stay in the vocabulary because the remaining trial questions are exactly
+ * about steps and guidance on the seeded catalog, and a reviewed answer should
+ * be a one-line table edit rather than a type change.
  */
 export type ReviewedImageControlDefaults = Pick<
   ImageControlDefaults,
@@ -65,11 +70,19 @@ export interface ReviewedImageQualityPolicy {
  * matched on `owner/name`).
  *
  * Exact slugs are the point: an operator-added model never receives a guessed
- * field. Three of these six slugs have no seeded `image_models` row at all —
- * Juggernaut and RealVis are admin additions, documented in `docs/image-models/`
- * and registered by hand — so their entries are what makes the reviewed
- * correction apply the moment somebody adds one, and are also why the overlay
- * cannot simply be deleted once the seeded models are migrated.
+ * field.
+ *
+ * Owner ruling (2026-08-16): the reviewed set is the Qwen family plus the
+ * 2026-08-10/11 seeded additions, and every slug here therefore HAS a seeded
+ * `image_models` row. Juggernaut XL v9, RealVis Hyper LoRA and Pony Realism v2.3
+ * were dropped from it: they are unseeded community checkpoints an admin adds by
+ * hand, they remain catalog pages in `docs/image-models/`, and an admin who adds
+ * one now gets the wrapper's own defaults with no reviewed correction. That is
+ * accepted rather than overlooked.
+ *
+ * The consequence worth knowing: this table can no longer contain a model that
+ * has no row to seed, so a reviewed setting stated here is always reproducible
+ * as a task profile's controls.
  */
 const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy>> = {
   "qwen/qwen-image-edit-2511": {
@@ -80,30 +93,6 @@ const REVIEWED_IMAGE_QUALITY: Readonly<Record<string, ReviewedImageQualityPolicy
     controlDefaults: {},
     providerOverrides: { go_fast: false },
     controlFields: {},
-  },
-  "lucataco/juggernaut-xl-v9": {
-    // Normal Juggernaut v9 is a full-step SDXL checkpoint. The Replicate cog's
-    // 5-step / CFG-2 defaults are a fast wrapper preset, not the model's native
-    // quality configuration. The empty negative replaces the wrapper's
-    // media-biased default with the checkpoint creator's little/no-negative
-    // starting point.
-    controlDefaults: { steps: 35, guidance: 5, negativePrompt: "", resolution: "custom", width: 832, height: 1216 },
-    providerOverrides: { scheduler: "KarrasDPM" },
-    controlFields: {
-      steps: "num_inference_steps",
-      guidance: "guidance_scale",
-      negativePrompt: "negative_prompt",
-      width: "width",
-      height: "height",
-    },
-  },
-  "nsfw-api/realvis-hyper-lora": {
-    // Native 3:4, and an empty negative replacing the wrapper's long generic
-    // anatomy/style boilerplate. HyperLoRA/InstantID strengths stay at provider
-    // defaults until trialed.
-    controlDefaults: { negativePrompt: "", resolution: "custom", width: 768, height: 1024 },
-    providerOverrides: {},
-    controlFields: { negativePrompt: "negative_prompt", width: "width", height: "height" },
   },
   "aisha-ai-official/nsfw-flux-dev": {
     // The wrapper defaults to a 1024×1024 square, so every render would be

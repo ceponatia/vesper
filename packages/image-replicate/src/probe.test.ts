@@ -170,11 +170,11 @@ describe("probeReplicateModel", () => {
     expect(official.ok && official.probe.isOfficial).toBe(true);
 
     stubFetch(() => ({
-      name: "juggernaut-xl-v9",
+      name: "likereality-pony-v1",
       is_official: false,
       latest_version: { id: "v-community", openapi_schema: openapi({ properties: { prompt: { type: "string" } } }) },
     }));
-    const community = await probeReplicateModel("lucataco/juggernaut-xl-v9");
+    const community = await probeReplicateModel("aisha-ai-official/likereality-pony-v1");
     expect(community.ok && community.probe.isOfficial).toBe(false);
 
     stubFetch(() => ({
@@ -187,10 +187,10 @@ describe("probeReplicateModel", () => {
 
   it("registers a model whose description is null", async () => {
     // Replicate sends `"description": null` for a model with no blurb. Rejecting
-    // the record over it refused two otherwise-fine models
-    // (`nsfw-api/pony-realism-v2.3`, `nsfw-api/realvis-hyper-lora`).
+    // the record over it refused two otherwise-fine community models when this
+    // was first hit (owner report 2026-08-05).
     stubFetch(() => ({
-      name: "realvis-hyper-lora",
+      name: "hyper-identity",
       owner: "nsfw-api",
       description: null,
       latest_version: {
@@ -205,7 +205,7 @@ describe("probeReplicateModel", () => {
       },
     }));
 
-    const result = await probeReplicateModel("nsfw-api/realvis-hyper-lora");
+    const result = await probeReplicateModel("nsfw-api/hyper-identity");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.probe.referenceField).toBe("reference_image");
@@ -260,10 +260,10 @@ describe("probeReplicateModel", () => {
   });
 
   it("switches off a watermark the model would otherwise apply", async () => {
-    // Juggernaut XL v9 defaults `apply_watermark` to true, which would mark
-    // every image Vesper renders on it.
+    // SDXL-family community wrappers commonly default `apply_watermark` to true,
+    // which would mark every image Vesper renders on one.
     stubFetch(() => ({
-      name: "juggernaut-xl-v9",
+      name: "sdxl-community",
       latest_version: {
         id: "v1",
         openapi_schema: openapi({
@@ -276,7 +276,7 @@ describe("probeReplicateModel", () => {
       },
     }));
 
-    const result = await probeReplicateModel("lucataco/juggernaut-xl-v9");
+    const result = await probeReplicateModel("someone/sdxl-community");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.probe.extraInput).toEqual({ apply_watermark: false, disable_safety_checker: true });

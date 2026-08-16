@@ -39,8 +39,8 @@ import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../ref
  *    unless it entered the payload. The old trial hash was assembled
  *    independently of the render call and drifted from it immediately.
  * 2. **The EFFECTIVE model is what counts.** `withReviewedImageQuality` rewrites
- *    `extraInput` at the render boundary (Qwen Edit's `go_fast`, Juggernaut's
- *    step/CFG correction). Hashing the raw row let that table change the
+ *    `extraInput` at the render boundary (Qwen Edit's `go_fast`, PuLID's
+ *    `method` pin). Hashing the raw row let that table change the
  *    provider payload with no `cell_conflict` to show for it — a silent change
  *    to what a pinned comparison sends.
  * 3. **Nothing is guessed and nothing is silently dropped.** Controls map only

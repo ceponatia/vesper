@@ -38,15 +38,12 @@
 -- three of these six models are community checkpoints whose rows carry a
 -- `:version` pin.
 --
--- THREE OF THE SIX MATCH NOTHING ON A STOCK DATABASE, and that is expected rather
--- than a bug. `lucataco/juggernaut-xl-v9`, `nsfw-api/realvis-hyper-lora` and
--- `nsfw-api/pony-realism-v2.3` have no seeded `image_models` row at all — they are
--- documented in docs/image-models/ and added by an admin at runtime. Their
--- entries here are what makes a hand-added row pick the reviewed controls up
--- (this migration having run, a later-added model gets nothing, which is why the
--- overlay is the durable answer for them and why it cannot be deleted when the
--- seeded models finish migrating). Pony Realism has no reviewed override at all
--- and so has no row below.
+-- EVERY SLUG BELOW HAS A SEEDED ROW, so this statement is complete rather than
+-- partly aspirational. Owner ruling (2026-08-16) scoped the reviewed set to the
+-- Qwen family plus the 2026-08-10/11 additions and dropped Juggernaut XL v9,
+-- RealVis Hyper LoRA and Pony Realism v2.3 — the three unseeded community
+-- checkpoints an admin adds by hand. They keep their catalog pages in
+-- docs/image-models/ and now run on their wrappers' own defaults.
 UPDATE "image_model_profiles" p
 SET "control_defaults" = v."controls" || p."control_defaults",
     "provider_overrides" = v."overrides" || p."provider_overrides"
@@ -57,18 +54,6 @@ FROM (VALUES
   ('qwen/qwen-image-edit-2511',
    '{}'::jsonb,
    '{"go_fast":false}'::jsonb),
-  -- Juggernaut XL v9 — normal v9, not the Lightning build: full steps, CFG 5, the
-  -- wrapper's KarrasDPM scheduler, native 832x1216, and the media-biased wrapper
-  -- negative cleared to the creator's little/no-negative starting point.
-  ('lucataco/juggernaut-xl-v9',
-   '{"steps":35,"guidance":5,"negativePrompt":"","resolution":"custom","width":832,"height":1216}'::jsonb,
-   '{"scheduler":"KarrasDPM"}'::jsonb),
-  -- RealVis Hyper LoRA — native 3:4, and the wrapper's long generic anatomy/style
-  -- boilerplate negative cleared. HyperLoRA/InstantID strengths stay at provider
-  -- defaults until trialed.
-  ('nsfw-api/realvis-hyper-lora',
-   '{"negativePrompt":"","resolution":"custom","width":768,"height":1024}'::jsonb,
-   '{}'::jsonb),
   -- NSFW FLUX Dev — its own default is a 1024x1024 square, so every render would
   -- lose a quarter of the frame to the 3:4 crop.
   ('aisha-ai-official/nsfw-flux-dev',
