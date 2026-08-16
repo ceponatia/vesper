@@ -13,7 +13,7 @@ import {
   sceneSpecSchema,
 } from "@/server/images";
 import { type Beat, BEATS } from "./orientation-ab";
-import { type ComposerExpectation, gradeComposer } from "./composer-model-score";
+import { type ComposerExpectation, gradeComposer, UNSCORED_CHECKS } from "./composer-model-score";
 
 /**
  * Composer-model A/B (composer-model.plan.md, NOT a test gate).
@@ -406,11 +406,18 @@ function printSummary(summaries: readonly ArmSummary[]): void {
 function printBeatDetail(beatId: string, rows: readonly RunResult[]): void {
   console.log(`\n--- ${beatId} ---`);
   for (const row of rows) {
-    const failed = Object.entries(row.checks)
-      .filter(([, value]) => value === false)
-      .map(([name]) => name);
+    // Split by whether the axis moves the score. A framing miss is worth seeing and is NOT a
+    // failure — printing the two in one list is what made the 2026-08-15 run read as though
+    // every model was broken at the camera, when the scored axes were largely right.
+    const unscored: readonly string[] = UNSCORED_CHECKS;
+    const missed = Object.entries(row.checks).filter(([, value]) => value === false);
+    const failed = missed.filter(([name]) => !unscored.includes(name)).map(([name]) => name);
+    const framing = missed.filter(([name]) => unscored.includes(name)).map(([name]) => name);
     const verdict = !row.answered ? "REFUSED/DEGRADED" : failed.length === 0 ? "pass" : `fail: ${failed.join(", ")}`;
-    console.log(`  ${row.arm.padEnd(16)} run ${row.run}  ${pct(row.score).padStart(4)}  ${ms(row.latencyMs)}  ${verdict}`);
+    const framingNote = framing.length > 0 ? `  (framing: ${framing.join(", ")})` : "";
+    console.log(
+      `  ${row.arm.padEnd(16)} run ${row.run}  ${pct(row.score).padStart(4)}  ${ms(row.latencyMs)}  ${verdict}${framingNote}`,
+    );
     if (row.prose) console.log(`      prose: ${row.prose}`);
     if (row.spec?.staging?.id) console.log(`      staging: ${row.spec.staging.id} ← "${row.spec.staging.evidence}"`);
     if (row.spec?.camera) {

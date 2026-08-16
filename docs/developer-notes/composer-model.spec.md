@@ -157,6 +157,17 @@ because there it plays the `old` arm of an image A/B. The answer key is the
 beat's `camera` and `staging` — the shot the story establishes — plus a small
 `EXPECTED_VIEWER_BODY` table for the one thing `Beat` cannot supply.
 
+**`oral` and `oral_guided` must tell two different stories** (fixed 2026-08-15).
+They shared one narration verbatim — hand on her head included — and expected
+two different answers from it. That is unanswerable: the two registry entries
+describe the same act and differ only by the viewer's hand resting on her head,
+so a story stating the hand supports the guided entry and contradicts the plain
+one. The A/B scored the consequence rather than the model: `oral_guided` 0/16
+across eight arms, every one of them answering the plain sibling. The guided beat
+now states the hand and the plain beat does not, and each carries the quote that
+establishes its own entry rather than the act they share. A fixture pair that
+differs only in its answer key is a broken instrument.
+
 ### Arms
 
 Eight: the control, the two other Aion models, DeepSeek 4 Flash **twice**
@@ -179,27 +190,41 @@ call option the production seam does not already carry.
 
 The load-bearing decision: **scoring runs the spec through `resolveScenePlan`**,
 the function production calls, rather than re-implementing its rules. A model
-cannot pass by satisfying a paraphrase of the pipeline. Nine checks, each `true`,
-`false`, or `null` when the beat does not grade that axis; the score is passed
-over applicable.
+cannot pass by satisfying a paraphrase of the pipeline. Eleven checks, each
+`true`, `false`, or `null` when the beat does not grade that axis; the score is
+passed over applicable, **excluding the framing axis below**.
 
-| Check            | Passes when                                             |
-| ---------------- | ------------------------------------------------------- |
-| `answered`       | Not a refusal, transport failure, or all-defaulted spec |
-| `focal`          | The right roster member, with no focal clamp            |
-| `camera`         | The resolved camera is the ids the story establishes    |
-| `staging`        | The right staging id survived every gate                |
-| `viewerBody`     | Every expected viewer part was proposed                 |
-| `groundedParts`  | No ungrounded, off-vocabulary or unrequested part       |
-| `noInventedCast` | Nobody was invented into the frame                      |
-| `noBannedWords`  | `scrubBlush` leaves every authored field unchanged      |
-| `concrete`       | The pose and activity are not the documented hedge      |
+| Check               | Passes when                                              |
+| ------------------- | -------------------------------------------------------- |
+| `answered`          | Not a refusal, transport failure, or all-defaulted spec  |
+| `focal`             | The right roster member, with no focal clamp             |
+| `cameraOrientation` | Which way she is turned is the id the story establishes  |
+| `cameraHeight`      | Where the camera sits is the id the story establishes    |
+| `cameraDistance`    | The frame holds what the beat wants — reported, unscored |
+| `staging`           | The right staging id survived every gate                 |
+| `viewerBody`        | Every expected viewer part was proposed                  |
+| `groundedParts`     | No ungrounded, off-vocabulary or unrequested part        |
+| `noInventedCast`    | Nobody was invented into the frame                       |
+| `noBannedWords`     | `scrubBlush` leaves every authored field unchanged       |
+| `concrete`          | The pose and activity are not the documented hedge       |
 
-Three of these need their reasoning stated:
+Four of these need their reasoning stated:
 
-- **`camera` is graded only on unstaged beats.** A surviving staging's camera
+- **The camera is three checks, not one, and only two of them score.**
+  Orientation and height are **spatial correctness**: a front-facing shot of a
+  character with her back to the room contradicts the text. Distance is
+  **framing quality**, and the registry says so in the vocabulary itself — shot
+  distance carries no `evidenceRequired` field, "because a wrong distance is a
+  taste miss and a wrong orientation is a contradiction", and nothing in
+  production degrades one. So `cameraDistance` is recorded per run and printed as
+  `(framing: …)` rather than a failure, and `UNSCORED_CHECKS` keeps it out of the
+  score. The 2026-08-15 run is why: a single combined check put every arm at
+  2/14 and read as "no model can work the camera", when orientation and height
+  were largely right and distance was disagreeing almost everywhere.
+- **The camera is graded only on unstaged beats.** A surviving staging's camera
   replaces the composer's in `resolveScenePlan`, so grading it on a staged beat
-  would grade the registry.
+  would grade the registry. Unchanged by the split — all three axes are `null`
+  on a staged beat.
 - **`viewerBody` is scored against the raw proposal, not the resolved plan.** A
   surviving staging unions its own registry parts into the plan, which would make
   this pass for a model that proposed nothing at all.
@@ -261,6 +286,51 @@ The owner entrypoint then adds a second table with:
 It writes the same per-arm economics to `ladder-summary.json`. If a filtered run
 omits the fallback arm and the fallback actually fires, effective cost remains
 unknown rather than substituting a price-table estimate.
+
+## What the composer is told (changed 2026-08-15)
+
+The first paid run measured the prompt as much as the models, and two of its
+findings were the prompt's fault rather than any arm's. Both fixes are
+**registry-owned**, so the vocabulary the composer reads and the vocabulary the
+backend resolves cannot drift: a new id is a type error until it carries its
+description.
+
+- **Stagings are listed with a selection hint, not as bare ids.**
+  `SceneStaging.hint` is one clause naming the geometry that makes an entry the
+  right answer and its siblings wrong, rendered as `id — hint`. An id is a
+  label, not a definition, and `kneeling_before_viewer_guided` differs from its
+  sibling by one adjective whose meaning lived only in the render template. The
+  hint is **not** the template and never reaches an image prompt: templates are
+  explicit because a render needs explicit words, hints are recognition cues for
+  a planner, and keeping them apart lets templates be tuned for render quality
+  without silently retraining selection. A test pins that no template appears in
+  the composer's system prompt.
+- **The camera vocabulary is defined, not merely named.** Distance and height
+  ids render as `"id" (what it means)` from `SceneShotDistance.hint` /
+  `SceneCameraHeight.hint`. Distance is stated as *how much of the body the
+  frame holds*, never as how near the viewer stands — the confusion the bare
+  list invited, since "he stops right behind her" reads as `close` while the
+  beat wants a medium two-body frame.
+- **Sibling variants must be quoted apart.** The staging rule now says that when
+  entries differ by one detail — whose hands are where, whether she is bare,
+  which way she faces — the evidence quote must establish *that detail*, not the
+  act they share, and that an unstated detail means picking the plainer entry.
+
+### Deferred: variant refinement from committed facts
+
+Rejected 2026-08-15: resolving `kneeling_before_viewer` → `..._guided` in code
+whenever the surviving `viewerBody` contains `hands`. A visible hand does not
+prove hand-on-head geometry — the plain entry already puts the viewer's body in
+frame — so the rule would silently promote correct plain answers into a
+different act.
+
+What could work later is narrower: the chat's **committed scene facts**
+(`contracts/images/scene-committed.ts`) already carry authoritative pair
+contacts, and a contact naming the viewer's hand on the subject's *head* would
+be evidence for exactly this variant and no other. That is a per-variant
+mapping over committed contacts, not a generic limb heuristic, and it needs the
+contact vocabulary to distinguish the body location before it can be written.
+Not scoped here.
 
 ## Results
 
