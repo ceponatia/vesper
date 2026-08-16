@@ -19,11 +19,13 @@
  * JSON is no better: it degrades to the schema defaults, which parse and look exactly
  * like a composition.
  *
- * So every entry here must clear BOTH bars, and the A/B that measures them is
+ * This list is the owner-approved **candidate shortlist**, not a claim that every row
+ * has already passed the A/B. The probe that validates a candidate is
  * `scripts/eval/scene-images/composer-model-ab.ts` — it runs the real system prompt,
  * the real schema and the real evidence gates over the seven fixture beats, four of
- * them explicitly intimate. **An id belongs on this list once that probe has run it**,
- * with the verdict recorded in `docs/developer-notes/composer-model.spec.md`.
+ * them explicitly intimate. **Promotion to the app default requires a recorded A/B
+ * verdict** in `docs/developer-notes/composer-model.spec.md`; admin/eval candidates may
+ * exist here before that verdict so they can be tried without a deploy.
  *
  * Nothing here needs tool calling or `response_format`: `generateChecked` sends the
  * JSON Schema as TEXT and parses the reply locally, deliberately not using
@@ -46,9 +48,11 @@ export interface SceneComposerModelOption {
 }
 
 /**
- * The curated set. Ordered cheapest-blended-cost LAST is deliberately NOT the rule:
- * the control sits first because it is the model every other row is measured against,
- * and the rest run roughly fastest-first, which is the axis an operator is switching on.
+ * The curated candidate set. Ordered cheapest-blended-cost LAST is deliberately NOT
+ * the rule: the control sits first because it is the model every other row is measured
+ * against, and the rest run roughly fastest-first, which is the axis an operator is
+ * switching on. Floating aliases are allowed here for evaluation/admin use; the app
+ * default is separately required to be pinned.
  */
 export const SCENE_COMPOSER_MODELS: readonly SceneComposerModelOption[] = [
   {
@@ -101,6 +105,11 @@ export const SCENE_COMPOSER_MODELS: readonly SceneComposerModelOption[] = [
  * for a reasoning trace nothing reads. Moving this default is what
  * `scripts/eval/scene-images/composer-model-ab.ts` exists to justify; until that probe
  * has an owner verdict, the default stays where the ruling put it.
+ *
+ * Production defaults are pinned deliberately. Floating aliases such as `~...-latest`
+ * may be evaluated above, but the exact snapshot that wins must be pinned before it is
+ * promoted so a provider-side model update cannot silently change scene composition.
+ * `composer-models.test.ts` enforces that contract.
  */
 export const DEFAULT_SCENE_COMPOSER_MODEL_ID = "aion-labs/aion-3.0";
 
