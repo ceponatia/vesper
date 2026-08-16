@@ -3,7 +3,7 @@
 **Slug:** `nsfw-api/pony-realism-v2.3`
 **Registered as:** `nsfw-api/pony-realism-v2.3:7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
 **Probed:** 2026-08-05, version `7d1b41807ba3094e6d88e8eeeeb97425514bbbac00fc1aabc935612942a9cd7f`
-**Quality ruling:** experimental identity-specialist candidate; no transitional runtime override
+**Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 The model page carries no descriptive README. Its schema exposes an InstantID /
 IP-Adapter / ControlNet pipeline over a Pony Realism checkpoint: one image

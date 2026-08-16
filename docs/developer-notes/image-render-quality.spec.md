@@ -148,39 +148,21 @@ task begins using it, task profiles must replace this global override.
 - no runtime override today;
 - no negative content is invented without task/style context.
 
-**Juggernaut XL v9**
+**Juggernaut XL v9, Pony Realism v2.3, RealVis Hyper LoRA** — **no entry.**
 
-- `num_inference_steps: 35`;
-- `guidance_scale: 5`;
-- `scheduler: "KarrasDPM"`;
-- `width: 832`;
-- `height: 1216`;
-- `negative_prompt: ""` to clear the wrapper's media-biased default.
+Owner ruling (2026-08-16) removed these three from the reviewed set. They are the
+unseeded community checkpoints an admin adds by hand; they keep their catalog
+pages in `docs/image-models/` and now run on their wrappers' own defaults, with
+no reviewed dimensions, no cleared negative, and no seeded profile controls.
+Juggernaut therefore renders at its cog's 5-step, guidance-2, 1024-square preset
+again, and RealVis sends its boilerplate negative — accepted, because neither is
+a model this plan invests in.
 
-Normal v9 is not the Lightning model. The creator's published quality guidance
-supports a full-step starting point and recommends beginning with little or no
-negative prompt.
-
-The registry has no generic width/height aspect mode. These dimensions travel
-through `extraInput`; `chooseAspect` returns no provider shape and
-`cropToTargetAspect` normalizes the returned 832×1216 image. At 3:4 the crop
-removes a modest strip from top and bottom rather than discarding a quarter of a
-square render's width.
-
-**Pony Realism v2.3**
-
-- no runtime override today;
-- provider negative default is already empty;
-- score/source/rating tags, identity scales, pose strength, steps, and guidance
-  remain trial-controlled.
-
-**RealVis Hyper LoRA**
-
-- `width: 768`;
-- `height: 1024`;
-- `negative_prompt: ""` to clear the wrapper's long generic anatomy/style
-  boilerplate;
-- HyperLoRA/InstantID strengths remain at provider defaults until trialed.
+The registry has no generic width/height aspect mode, which is why the surviving
+dimension pins below travel through `extraInput` rather than an aspect key:
+`chooseAspect` returns no provider shape and `cropToTargetAspect` normalizes the
+returned image. At 3:4 a 832×1216 render loses a modest strip from top and bottom
+rather than a quarter of a square render's width.
 
 **NSFW FLUX Dev** (registered 2026-08-11)
 
@@ -190,7 +172,7 @@ square render's width.
 - steps and guidance remain at the wrapper's defaults until trialed.
 
 Its own default is a 1024×1024 square, so every render would lose a quarter of
-the frame to the 3:4 crop. Same mechanism as Juggernaut above.
+the frame to the 3:4 crop.
 
 **LikeReality Pony v1** (registered 2026-08-11)
 
@@ -198,8 +180,8 @@ the frame to the 3:4 crop. Same mechanism as Juggernaut above.
 - `height: 1216`;
 - `negative_prompt: ""`.
 
-The negative clearing is the consequential one here and differs in kind from
-Juggernaut's and RealVis's: this wrapper's provider default is literally
+The negative clearing is the consequential one, and it is the only one left in
+the reviewed set: this wrapper's provider default is literally
 `"nsfw, naked"`, which suppresses the output an adult-content app exists to
 render and contradicts the authored wardrobe and exposure state — invisibly,
 because an unsent field never appears in the payload. `prepend_preprompt` stays
@@ -277,13 +259,14 @@ zero references is not rewritten. Every non-Qwen prompt remains byte-identical.
 
 - pinned community slugs resolve to their base path;
 - unknown models return the same object and inputs;
-- Qwen Image 2512, SD 3.5, and Pony receive no guessed negative or other runtime
-  override;
+- Qwen Image 2512, SD 3.5, and Pony Realism receive no guessed negative or other
+  runtime override;
 - Qwen Edit's stored `go_fast: true` is overridden without mutating the row;
-- Juggernaut receives the reviewed full-step settings and an empty negative;
-- RealVis receives native 3:4 dimensions and an empty negative;
-- both cleared negatives survive `buildRegistryModelInput` as an empty string
-  rather than being dropped and restored to the provider default;
+- NSFW FLUX Dev is pinned off its 1024-square default;
+- the demoted three return the same object, so an admin who adds one gets the
+  wrapper's own configuration;
+- LikeReality Pony v1's cleared negative survives `buildRegistryModelInput` as an
+  empty string rather than being dropped and restored to the provider default;
 - single- and multi-reference Qwen locks are selected correctly and never grow
   the fitted prompt;
 - the rewrite is idempotent across a doubled legacy lock;
@@ -404,16 +387,20 @@ run: `compileProfileRenderPlan` always applies `withReviewedImageQuality`, so th
 only way to observe the profile route alone is a model the reviewed table has
 never heard of.
 
-### What blocks step 4, beyond the probe
+### What blocks step 4
 
-Three of the six reviewed slugs have **no seeded `image_models` row at all**.
-`lucataco/juggernaut-xl-v9`, `nsfw-api/realvis-hyper-lora` and
-`nsfw-api/pony-realism-v2.3` are documented in `docs/image-models/` and added by
-an admin at runtime, so no migration can seed profile controls for them. Their
-entries in migration 0110 catch a row that already exists; a model added after it
-runs gets nothing. Until profile seeding happens at admin-add time, the overlay
-is the only thing that corrects those models, and deleting it would silently
-return Juggernaut to 5 steps at CFG 2 and restore RealVis's boilerplate negative.
+The probe, and only the probe. Owner ruling (2026-08-16) scoped the reviewed set
+to the Qwen family plus the 2026-08-10/11 seeded additions, dropping the three
+community checkpoints — Juggernaut XL v9, RealVis Hyper LoRA and Pony Realism
+v2.3 — that had no seeded `image_models` row for a migration to reach. Every
+remaining reviewed slug has a row, so **every reviewed setting is now
+reproducible as a task profile's controls**, and step 4 turns entirely on whether
+a model's version has been probed.
+
+That also removes the regression that made step 6 unsafe. Deleting the overlay no
+longer risks returning a model to a harmful wrapper default behind Vesper's back:
+the demoted models are meant to run on their wrapper defaults now, and every
+model that is not is one a profile can carry once probed.
 
 ## Effective prompt context: measured, not guessed
 
@@ -655,9 +642,10 @@ Trial arms:
 
 1. no-repair baseline;
 2. Qwen Edit with canonical portrait + face crop;
-3. Pony identity input + source image as `pose_image`;
-4. RealVis identity input + scene description;
-5. regional masked editor when a suitable registered model exists.
+3. a full-frame identity specialist from the seeded catalog, given the identity
+   crop — SDXL PuLID is the leading candidate, being the only seeded model that
+   takes a face reference for identity adaptation, and the choice is open;
+4. regional masked editor when a suitable registered model exists.
 
 Refuse in v1 when:
 
@@ -851,10 +839,10 @@ When profiles reach the production render path:
 
 Status of each, after slice 2:
 
-- **Step 1 — done** for every reviewed model with a seeded row (migration 0110,
-  values derived from `reviewed-profile-controls.ts`). Juggernaut, RealVis and
-  Pony Realism have no row to seed, so step 1 cannot complete for them at all
-  until profile seeding happens at admin-add time.
+- **Step 1 — done**, for the whole reviewed set (migration 0110, values derived
+  from `reviewed-profile-controls.ts`). The 2026-08-16 ruling is what completed
+  it: the models with no seeded row to write controls onto are no longer in the
+  set.
 - **Step 2 — done.** `reviewed-profile-parity.test.ts` compares the two routes at
   the provider payload.
 - **Step 3 — already true before this slice.** Every production lane crossed
@@ -866,8 +854,7 @@ Status of each, after slice 2:
   probed.
 - **Step 4 — blocked, and not on parity.** Removing an override needs the
   profile route to actually deliver the setting, which needs the model's version
-  probed; nothing probes at seed time. It is additionally blocked outright for
-  the three unseeded models above.
+  probed; nothing probes at seed time. That is now the only blocker.
 - **Step 5 — already satisfied.** `ResolvedImageAttempt` carries
   `appliedControls` and `droppedControls`, and `renderImageIntent` writes them to
   the image row's `meta.render`. No new work was needed and none was added.
@@ -896,8 +883,7 @@ Held by slice 1:
 - the context-free seam adds no negative content;
 - reviewed non-empty provider negatives are explicitly cleared rather than
   silently inherited;
-- Juggernaut runs full-step at native portrait dimensions rather than its cog's
-  fast square defaults.
+- no reviewed model renders a square it then crops a quarter off.
 
 Held by slice 2 (built 2026-08-16, unaccepted):
 
@@ -924,11 +910,11 @@ acceptance criteria and are already met there.
 
 No owner ruling is pending. The implementation still needs evidence for:
 
-- the best Juggernaut sampler/CFG within the full-step band;
+- the best steps/guidance for the seeded adult/identity checkpoints;
 - which contextual negative blocks improve quality without erasing intended
   text, style, or morphology;
 - Qwen's quality-versus-fast gain with the reference held fixed;
-- whether Pony/RealVis improve identity without unacceptable full-frame drift;
+- whether SDXL PuLID improves identity without unacceptable full-frame drift;
 - which advisory QA scores correlate strongly enough with owner review to gate
   promotion rather than merely annotate output.
 

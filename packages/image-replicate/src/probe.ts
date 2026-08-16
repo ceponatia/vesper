@@ -95,8 +95,8 @@ const modelResponseSchema = z
     // model whose page has no blurb, and an absent field and a null one must
     // both be tolerated. Requiring a string here rejected the whole record and
     // refused the save — the opposite of this module's rule that only an
-    // unreadable INPUT SCHEMA is worth failing on (owner report 2026-08-05:
-    // `nsfw-api/pony-realism-v2.3` and `nsfw-api/realvis-hyper-lora`).
+    // unreadable INPUT SCHEMA is worth failing on (owner report 2026-08-05, two
+    // community checkpoints with no blurb).
     name: z.string().nullish(),
     owner: z.string().nullish(),
     description: z.string().nullish(),
@@ -125,10 +125,9 @@ const modelResponseSchema = z
  *
  * `POST /models/{owner}/{name}/predictions`, the endpoint a bare slug uses, is
  * **official models only**. A community model posted there returns 404 with no
- * hint as to why (owner report 2026-08-05: `lucataco/juggernaut-xl-v9`,
- * `nsfw-api/pony-realism-v2.3` and `nsfw-api/realvis-hyper-lora` all registered
- * cleanly and then 404'd on every render). Community models must go through
- * `POST /predictions` with a version id, which is what a pinned
+ * hint as to why (owner report 2026-08-05: three community checkpoints
+ * registered cleanly and then 404'd on every render). Community models must go
+ * through `POST /predictions` with a version id, which is what a pinned
  * `owner/name:version` slug does.
  *
  * Defaults to FALSE when the field is missing. The asymmetry is deliberate:
@@ -515,10 +514,10 @@ function deriveExtraInput(properties: Record<string, unknown>): Record<string, u
   if ("disable_safety_checker" in properties) extra.disable_safety_checker = true;
   if ("output_quality" in properties) extra.output_quality = 95;
   if ("go_fast" in properties) extra.go_fast = true;
-  // Juggernaut XL v9 defaults `apply_watermark` to TRUE, stamping a provenance
-  // mark into every output. Same category as the group-generation pins below: a
-  // model default that silently degrades the image, switched off wherever the
-  // input exists.
+  // SDXL-family community wrappers commonly default `apply_watermark` to TRUE,
+  // stamping a provenance mark into every output. Same category as the
+  // group-generation pins below: a model default that silently degrades the
+  // image, switched off wherever the input exists.
   if ("apply_watermark" in properties) extra.apply_watermark = false;
   // Group/sequential generation defaults differ per model and would return an
   // image SET rather than one image; pin them off wherever they exist.

@@ -3,7 +3,7 @@
 **Slug:** `lucataco/juggernaut-xl-v9`
 **Registered as:** `lucataco/juggernaut-xl-v9:bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
 **Probed:** 2026-08-05, version `bea09cf018e513cef0841719559ea86d2299e05448633ac8fe270b5d5cd6777e`
-**Quality ruling:** 2026-08-05
+**Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 > Juggernaut XL v9
 
@@ -34,8 +34,7 @@ checkpoint is normal Juggernaut XL v9. The separately published Lightning build
 is a different model.
 
 The creator's v9 guidance uses full-step SDXL settings and recommends a portrait
-bucket of 832×1216, roughly 30–40 steps, and moderate CFG. Vesper's reviewed
-starting point is:
+bucket of 832×1216, roughly 30–40 steps, and moderate CFG:
 
 - `width: 832`;
 - `height: 1216`;
@@ -44,27 +43,28 @@ starting point is:
 - `scheduler: "KarrasDPM"`;
 - `negative_prompt: ""`.
 
-These values are applied by `packages/image-core/src/models/quality-presets.ts` at the shared
-render seam. They overlay the probed row because provider defaults describe what
-the cog will do, not the quality policy Vesper wants.
+**Vesper does not send these.** This model is outside the reviewed set, so
+`packages/image-core/src/models/quality-presets.ts` has no entry for it and an
+admin who registers it gets the cog's own defaults — 5 steps at guidance 2, a
+1024-square render, and the wrapper's media-biased negative. The values above are
+recorded as the creator's recommendation, for an admin who wants to configure
+this endpoint themselves through the row's `extra_input` or a task profile.
 
-The fixed trial may tune the sampler and numeric values. It does not revisit
-whether this is a Lightning checkpoint.
+This is normal Juggernaut XL v9, not the separately published Lightning build;
+the cog's fast defaults are a wrapper preset rather than the checkpoint's
+intended configuration.
 
 ## Shape behavior
 
-The registry's generic aspect modes do not yet represent free width/height
-inputs. The reviewed runtime policy sends 832×1216 through `extraInput` anyway.
-`chooseAspect` has no aspect key to send, and `renderWithModel` normalizes the
-returned image to the lane target afterward.
+The registry's generic aspect modes do not represent free width/height inputs, so
+`chooseAspect` has no aspect key to send here and the model renders at whatever
+its own `width`/`height` defaults say. `renderWithModel` normalizes the returned
+image to the lane target afterward.
 
-For Vesper's 3:4 portrait output, 832×1216 is slightly taller than target and
-requires a modest top/bottom crop. This is a substantial improvement over the
-old behavior: 1024×1024 followed by discarding about a quarter of the width.
-
-The capabilities plan should eventually model explicit dimensions and focal-aware
-cropping as profile controls. Until then, the exact-slug quality policy owns this
-endpoint's native portrait size.
+At the cog's 1024×1024 default that crop discards about a quarter of the width to
+reach Vesper's 3:4 portrait. Rendering the 832×1216 bucket instead costs only a
+modest top/bottom trim — an admin who wants that has to set it on the row, since
+no reviewed policy sets it for this model.
 
 ## Negative prompt policy
 
@@ -75,19 +75,21 @@ CGI, Unreal, Airbrushed, Digital
 ```
 
 That hidden default makes assumptions about rendering media and conflicts with
-the creator's recommendation to begin with little or no negative prompt. Vesper
-therefore sends an explicit empty string. `buildRegistryModelInput` preserves the
-empty value, so the provider cannot silently restore its default.
+the creator's recommendation to begin with little or no negative prompt. It is
+sent on every render unless an admin clears it: outside the reviewed set nothing
+overrides it. Setting `negative_prompt` to an empty string on the row clears it,
+and `buildRegistryModelInput` preserves an empty value rather than dropping the
+key and letting the provider restore its own default.
 
-No anatomy or production terms are added at this context-free seam. Printed
-clothing, graphic marks, unusual morphology, or authored absences can all make a
-generic block wrong. A later portrait profile may add conflict-checked terms and
-compare them against the empty baseline.
+Vesper never adds anatomy or production terms of its own at the context-free
+render seam. Printed clothing, graphic marks, unusual morphology, or authored
+absences can all make a generic block wrong.
 
 ## The watermark default
 
-`apply_watermark` defaults to `true`. The capability probe pins it to `false`, and
-the reviewed quality policy preserves that override.
+`apply_watermark` defaults to `true`. The capability probe pins it to `false` on
+every model that declares the input, this one included — that is a probe rule
+rather than a reviewed-set one, so it still applies here.
 
 ## Inputs
 

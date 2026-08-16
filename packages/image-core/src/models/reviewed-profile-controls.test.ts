@@ -17,19 +17,21 @@ import {
  */
 const SPEC_EFFECTIVE_VALUES: Record<string, Record<string, unknown>> = {
   "qwen/qwen-image-edit-2511": { go_fast: false },
-  "lucataco/juggernaut-xl-v9": {
-    num_inference_steps: 35,
-    guidance_scale: 5,
-    scheduler: "KarrasDPM",
-    width: 832,
-    height: 1216,
-    negative_prompt: "",
-  },
-  "nsfw-api/realvis-hyper-lora": { width: 768, height: 1024, negative_prompt: "" },
   "aisha-ai-official/nsfw-flux-dev": { width: 832, height: 1216 },
   "aisha-ai-official/likereality-pony-v1": { width: 832, height: 1216, negative_prompt: "" },
   "nsfw-api/sdxl-pulid": { width: 832, height: 1216, method: "fidelity" },
 };
+
+/**
+ * Models the 2026-08-16 ruling dropped from the reviewed set. They keep their
+ * catalog pages and an admin can still add them; what they must not have is a
+ * reviewed correction, because nothing seeds a profile to reproduce it.
+ */
+const DEMOTED_SLUGS = [
+  "lucataco/juggernaut-xl-v9",
+  "nsfw-api/realvis-hyper-lora",
+  "nsfw-api/pony-realism-v2.3",
+];
 
 describe("the reviewed policy in both vocabularies", () => {
   it("covers exactly the models the spec reviews", () => {
@@ -89,20 +91,31 @@ describe("the reviewed policy in both vocabularies", () => {
     expect(reviewedImageProfileControls("operator/added-yesterday")).toBeNull();
   });
 
+  it("says nothing about a demoted model, which now runs on wrapper defaults", () => {
+    for (const slug of DEMOTED_SLUGS) {
+      expect(reviewedImageQualityPolicy(slug), slug).toBeNull();
+      expect(reviewedImageQualityInputs[slug], slug).toBeUndefined();
+    }
+  });
+
+  it("reviews only models that have a seeded row to put the profile controls on", () => {
+    // What the demotion bought: the reviewed set no longer contains a model the
+    // seed migration cannot reach, so every reviewed setting is reproducible as a
+    // task profile's controls rather than being overlay-only forever.
+    expect(reviewedImageQualitySlugs).not.toContain("lucataco/juggernaut-xl-v9");
+    expect(reviewedImageQualitySlugs).not.toContain("nsfw-api/realvis-hyper-lora");
+    expect(reviewedImageQualitySlugs).toHaveLength(4);
+  });
+
   it("puts a setting with no normalized control in provider overrides", () => {
-    // The three that genuinely have no word in the control vocabulary.
+    // The two that genuinely have no word in the control vocabulary.
     expect(reviewedImageProfileControls("qwen/qwen-image-edit-2511")?.providerOverrides).toEqual({ go_fast: false });
-    expect(reviewedImageProfileControls("lucataco/juggernaut-xl-v9")?.providerOverrides).toEqual({
-      scheduler: "KarrasDPM",
-    });
     expect(reviewedImageProfileControls("nsfw-api/sdxl-pulid")?.providerOverrides).toEqual({ method: "fidelity" });
   });
 
   it("prefers a normalized control wherever the vocabulary has one", () => {
-    const juggernaut = reviewedImageProfileControls("lucataco/juggernaut-xl-v9");
-    expect(juggernaut?.controlDefaults).toEqual({
-      steps: 35,
-      guidance: 5,
+    const pony = reviewedImageProfileControls("aisha-ai-official/likereality-pony-v1");
+    expect(pony?.controlDefaults).toEqual({
       negativePrompt: "",
       resolution: "custom",
       width: 832,
@@ -111,6 +124,7 @@ describe("the reviewed policy in both vocabularies", () => {
     // The reviewed empty negative is a VALUE, not an absence: it exists to clear a
     // wrapper default, so it has to survive into the profile representation as an
     // empty string rather than being omitted.
-    expect(juggernaut?.controlDefaults.negativePrompt).toBe("");
+    expect(pony?.controlDefaults.negativePrompt).toBe("");
+    expect(pony?.providerOverrides).toEqual({});
   });
 });

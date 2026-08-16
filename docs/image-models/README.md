@@ -28,7 +28,8 @@ over with one shared mapping:
 - Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
   without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
   have no aspect input whatsoever and are sized by `width`/`height` integers;
-  five of those six carry reviewed dimensions from the runtime quality policy
+  the three of those six that are in the reviewed set carry reviewed dimensions
+  from the runtime quality policy
   (`packages/image-core/src/models/quality-presets.ts`), and every render is cropped to shape
   after download regardless.
 - Output is an array of URIs on twelve of fourteen models, and a bare URI string
@@ -111,6 +112,15 @@ Documented but not seeded — no row, and therefore no reviewed rating:
 
 The last three are community models, so a row for them is stored under a pinned
 `owner/name:version` slug — the bare-slug endpoint is official-models-only.
+
+**These four are outside the reviewed set**, and that is a stronger statement
+than "unrated". An admin can add any of them, and what runs is then the
+wrapper's own configuration: no reviewed dimensions, no cleared negative
+default, no sampler correction, and no seeded task-profile controls. The
+per-model pages below record what each wrapper defaults to and what its creator
+recommends, so an admin adding one knows what they are getting — but nothing in
+Vesper corrects it on their behalf. The reviewed set is the Qwen family plus the
+seeded adult/identity additions.
 
 ## Moderation, by hosting model
 

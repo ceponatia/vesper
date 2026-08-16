@@ -24,7 +24,7 @@ function model(slug: string, extraInput: Record<string, unknown> = {}): ImageMod
 
 describe("baseImageModelSlug", () => {
   it("matches pinned community models by their provider path", () => {
-    expect(baseImageModelSlug("lucataco/juggernaut-xl-v9:abc123")).toBe("lucataco/juggernaut-xl-v9");
+    expect(baseImageModelSlug("nsfw-api/sdxl-pulid:abc123")).toBe("nsfw-api/sdxl-pulid");
     expect(baseImageModelSlug("qwen/qwen-image-edit-2511")).toBe("qwen/qwen-image-edit-2511");
   });
 });
@@ -55,38 +55,27 @@ describe("withReviewedImageQuality", () => {
     expect(input.extraInput.go_fast).toBe(true); // the registry record is never mutated
   });
 
-  it("uses full-step Juggernaut settings and clears its media-biased negative default", () => {
+  it("pins NSFW FLUX Dev off its 1024-square default", () => {
+    // Its own default would lose a quarter of every frame to the 3:4 crop.
     const prepared = withReviewedImageQuality(
-      model("lucataco/juggernaut-xl-v9:bea09c", {
-        num_inference_steps: 5,
-        guidance_scale: 2,
-        apply_watermark: false,
-      }),
+      model("aisha-ai-official/nsfw-flux-dev:version", { width: 1024, height: 1024, output_quality: 95 }),
     );
-    expect(prepared.extraInput).toMatchObject({
-      num_inference_steps: 35,
-      guidance_scale: 5,
-      scheduler: "KarrasDPM",
-      width: 832,
-      height: 1216,
-      negative_prompt: "",
-      apply_watermark: false,
-    });
+    expect(prepared.extraInput).toMatchObject({ width: 832, height: 1216, output_quality: 95 });
   });
 
-  it("pins RealVis dimensions and clears its generic negative boilerplate", () => {
-    const prepared = withReviewedImageQuality(
-      model("nsfw-api/realvis-hyper-lora:version", {
-        width: 512,
-        height: 512,
-        negative_prompt: "bad anatomy, extra limbs, text",
-      }),
-    );
-    expect(prepared.extraInput).toMatchObject({
-      width: 768,
-      height: 1024,
-      negative_prompt: "",
-    });
+  it("leaves a demoted community checkpoint on its wrapper defaults", () => {
+    // Owner ruling (2026-08-16): Juggernaut, RealVis and Pony Realism left the
+    // reviewed set. They are still addable from the admin screens, and an admin
+    // who adds one now gets exactly what the wrapper ships with — no reviewed
+    // dimensions, no cleared negative, and no object copy.
+    for (const slug of [
+      "lucataco/juggernaut-xl-v9:bea09c",
+      "nsfw-api/realvis-hyper-lora:version",
+      "nsfw-api/pony-realism-v2.3:version",
+    ]) {
+      const input = model(slug, { num_inference_steps: 5, negative_prompt: "bad anatomy" });
+      expect(withReviewedImageQuality(input), slug).toBe(input);
+    }
   });
 
   it("clears the Pony wrapper's `nsfw, naked` negative default", () => {
