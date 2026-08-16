@@ -1,5 +1,11 @@
 # Image pipeline consolidation — one path from prompt to saved asset
 
+---
+
+Historical implementation record. Venice-specific portions describe the architecture at ship time and were superseded by the 2026-08-05 image-model registry/Replicate migration. The shared pipeline shell and non-provider-specific consolidations remain current.
+
+---
+
 Status: shipped — 2026-08-02 (all five slices; pulled forward from the later-consolidation
 sequence on owner request the same day. Completion note: the six lanes run on
 `runImagePipeline` in `images/assets.ts`; the shared hash landed golden-pinned first
@@ -39,7 +45,7 @@ loop behind the library's "Generate images" button (**C3**, written twice, byte-
 (**C5**, three times outside the asset module).
 
 **One item is riskier than its size suggests.** A small string hash is hand-rolled five times
-in two different constant spellings (**C10**), and two of those copies are *determinism seams*:
+in two different constant spellings (**C10**), and two of those copies are _determinism seams_:
 the character forge relies on its hash to reproduce the same result from the same input, and
 the chat-look anchor uses its hash as a cache key deciding whether a look is stale. If those
 two ever disagree nothing throws — the forge just stops being reproducible, or every chat
@@ -127,7 +133,7 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
 
 - **Slice 4 is the only broad one.** It touches every lane, and the invariant it must not bend
   is the row-before-file lifecycle in [../images.md](../../character-chat/images.md): the row is inserted
-  *before* the file exists, so every file on disk is always explained by a row. Any change to
+  _before_ the file exists, so every file on disk is always explained by a row. Any change to
   when the row is written relative to when bytes land is out of bounds for this plan.
 - **Slice 3 touches deletion.** The purge helper operates on user data; a predicate
   accidentally wider than the copy it replaced deletes the wrong assets. Highest-consequence
