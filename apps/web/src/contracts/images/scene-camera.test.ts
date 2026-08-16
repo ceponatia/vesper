@@ -62,6 +62,26 @@ describe("the camera registry", () => {
     expect(sceneCameraHeightById("birds_eye")).toBeUndefined();
   });
 
+  it("every distance and height carries a selection hint, distinct from its render phrase", () => {
+    for (const entry of [...sceneShotDistances, ...sceneCameraHeights]) {
+      expect(entry.hint.trim().length, entry.id).toBeGreaterThan(0);
+      // A hint is read by the composer, never rendered, so it carries no `{name}` — and it
+      // is not the phrase: the two have different audiences and are tuned separately.
+      expect(entry.hint, entry.id).not.toContain("{name}");
+      expect(entry.hint, entry.id).not.toBe(entry.phrase);
+    }
+  });
+
+  it("defines distance by how much of the body the frame holds, not by how near the viewer stands", () => {
+    // The confusion the bare id list invited, and the one the hints exist to end: "he stops
+    // right behind her" is a proximity fact and says nothing about the frame.
+    const close = sceneShotDistanceById("close")?.hint ?? "";
+    const medium = sceneShotDistanceById("medium")?.hint ?? "";
+    expect(close).toMatch(/frame/i);
+    expect(medium).toMatch(/frame|waist/i);
+    for (const entry of sceneShotDistances) expect(entry.hint, entry.id).not.toMatch(/\bstand(?:ing|s)? near\b/i);
+  });
+
   // The phrase is a TEMPLATE. Without {name} the subject is never named, and an unbound
   // "back to the camera" is a back the model may hang on anyone in frame.
   it("every phrase is a non-empty {name} template", () => {

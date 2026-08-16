@@ -108,6 +108,24 @@ selected for a conversation.
 - **[composer-model.spec.md](composer-model.spec.md)** — complete for slices 1–2;
   its results section is empty and is what slice 3 fills.
 
+**The first paid run (2026-08-15) found two faults in the instrument, both now
+fixed — the numbers it produced for those axes should not be used.**
+
+- Every arm was marked wrong on the camera because a single check combined three
+  axes, one of which the app deliberately leaves to taste. Orientation, height
+  and distance are now graded separately, and distance is reported without
+  moving the score.
+- `oral_guided` failed every run for every arm because it and `oral` were told
+  the same story and expected different answers. The two beats now differ by the
+  detail that separates them — the viewer's hand on her head.
+
+The composer prompt itself carried a third fault: it named the staging and
+camera vocabularies without defining them, so models chose between ids like
+`kneeling_before_viewer` and `kneeling_before_viewer_guided` on the strength of
+a suffix. Both vocabularies now ship a registry-owned description that the
+prompt renders. **Re-run before writing any verdict** — the previous run graded
+a prompt that no longer exists.
+
 ## Success criteria
 
 - Running the A/B with no provider key prints the exact prompts and spends

@@ -10,6 +10,13 @@ import {
 } from "@/contracts/body/locations";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { viewerBodyPartById } from "@/contracts/images/viewer-body";
+import {
+  sceneCameraHeightIds,
+  sceneCameraHeights,
+  sceneShotDistanceIds,
+  sceneShotDistances,
+} from "@/contracts/images/scene-camera";
+import { sceneStagings } from "@/contracts/images/scene-staging";
 import { attr, makeProfile } from "@/server/test-support";
 import {
   apparentAgeAnchor,
@@ -611,8 +618,10 @@ describe("the composer's camera and staging rules (scene-composition slices 1–
   it("states the camera menu, its default, and the quote requirement in BOTH lanes", () => {
     for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
       expect(system).toContain('"toward_viewer", "three_quarter", "profile", "away_glance_back", "away"');
-      expect(system).toContain('"close", "medium", "full_figure", "wide"');
-      expect(system).toContain('"eye_level", "high", "low"');
+      // Distance and height are stated as `"id" (what it means)` — the menu is still every
+      // id, in registry order, and the definitions are asserted below.
+      for (const id of sceneShotDistanceIds) expect(system).toContain(`"${id}" (`);
+      for (const id of sceneCameraHeightIds) expect(system).toContain(`"${id}" (`);
       expect(system).toContain("MUST carry camera.evidence");
       expect(system).toContain("copied EXACTLY, word for word, from the recent narration or the player's own words");
       expect(system).toContain("Distance never needs a quote");
@@ -637,10 +646,43 @@ describe("the composer's camera and staging rules (scene-composition slices 1–
   it("offers staging only to the embodied lane, as ids plus a quote and never as prose", () => {
     const embodied = sceneComposerSystem(true);
     expect(embodied).toContain("- staging:");
-    expect(embodied).toContain("held_from_behind, held_from_behind_bare, kneeling_before_viewer");
+    expect(embodied).toContain("held_from_behind");
     expect(embodied).toContain("pressed_to_wall_away");
     expect(embodied).toContain("You never write the configuration out in words");
     expect(sceneComposerSystem(false)).not.toContain("staging");
+  });
+
+  it("describes every staging id rather than listing bare ids", () => {
+    const embodied = sceneComposerSystem(true);
+    for (const entry of sceneStagings) {
+      expect(embodied, entry.id).toContain(`${entry.id} — ${entry.hint}`);
+    }
+  });
+
+  it("never shows the composer a render template — the registry owns those words, not the model", () => {
+    const embodied = sceneComposerSystem(true);
+    for (const entry of sceneStagings) {
+      expect(embodied, entry.id).not.toContain(entry.template);
+    }
+  });
+
+  it("tells the composer to quote the detail that separates sibling variants", () => {
+    const embodied = sceneComposerSystem(true);
+    // The rule that makes `kneeling_before_viewer_guided` reachable: quoting "she kneels"
+    // grounds the act both entries share and settles nothing between them.
+    expect(embodied).toContain("differ by one detail");
+    expect(embodied).toContain("quote the hand on her head");
+    expect(embodied).toContain("pick the plainer entry");
+  });
+
+  it("defines the camera vocabulary instead of naming it, in both lanes", () => {
+    for (const system of [sceneComposerSystem(false), sceneComposerSystem(true)]) {
+      for (const entry of [...sceneShotDistances, ...sceneCameraHeights]) {
+        expect(system, entry.id).toContain(`"${entry.id}" (${entry.hint})`);
+      }
+      // Distance is the axis every arm missed in the 2026-08-15 A/B, in both directions.
+      expect(system).toContain("NOT how near the viewer is standing");
+    }
   });
 });
 

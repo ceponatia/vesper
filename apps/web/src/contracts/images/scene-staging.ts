@@ -76,6 +76,25 @@ export interface SceneStaging {
   /** The staging sentence. `{name}` is the subject. Written once, here, never by a model. */
   template: string;
   /**
+   * How the COMPOSER recognises this configuration — one clause naming the geometry that
+   * makes this entry the right answer and its siblings the wrong one.
+   *
+   * It exists because the composer was shown bare ids and nothing else, and an id is not a
+   * definition: `kneeling_before_viewer_guided` differs from `kneeling_before_viewer` by one
+   * adjective whose whole meaning lives in {@link template}, so no model could infer it. In
+   * the 2026-08-15 composer A/B that cost the guided entry every run — 0/16 across eight
+   * models, all of them answering the plain sibling.
+   *
+   * **Not the template, and never rendered into an image prompt.** The template is explicit
+   * because a render needs explicit words; a hint is a recognition cue for a planner that is
+   * choosing between thirteen options, and it stays plain. Keeping them separate is also what
+   * lets the templates be tuned for render quality without silently retraining selection.
+   *
+   * Write it to answer "how do I tell this from its neighbours?" — the distinguishing fact
+   * first, in the vocabulary a narrator would use.
+   */
+  hint: string;
+  /**
    * Overrides the camera orientation's derived `faceVisibility` for the identity-lock
    * adaptation: a face can hide by head angle alone — a crown-of-the-head shot on a subject
    * who faces the viewer squarely. Absent ⇒ the orientation entry's value.
@@ -107,6 +126,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: false,
     template:
       "{name} standing with {name}'s back against the viewer's chest, the viewer's own arms closed around {name} from behind and the viewer's own hands resting on {name}'s stomach",
+    hint: "standing, held from behind — the viewer's arms around her from behind, both still dressed.",
     cast: "solo",
   },
   {
@@ -119,6 +139,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: true,
     template:
       "{name} standing bare-skinned with {name}'s back against the viewer's chest, the viewer's own arms closed around {name} from behind and the viewer's own hands cupping {name}'s bare breasts",
+    hint: "the same hold from behind, but she is bare from the waist up and the viewer's hands are on her bare breasts.",
     cast: "solo",
   },
   {
@@ -136,6 +157,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     // camera — she looked up at nothing from an eye-level shot).
     template:
       "{name} kneeling on the floor below the camera and facing up toward it, {name}'s face tilted up toward the viewer and {name}'s mouth on the viewer's own genitals, {name}'s eyes on the viewer",
+    hint: "she kneels facing the viewer with her mouth on them and her face tilted up, visible — the viewer's hands are NOT on her.",
     cast: "solo",
   },
   {
@@ -202,6 +224,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     template:
       "{name} kneeling before the viewer with {name}'s head bowed, the crown of {name}'s head toward the camera and {name}'s mouth on the viewer's own genitals rising into frame from the lower edge, {name}'s palms on the floor, the viewer's own arm entering frame from the upper edge, close to the lens and strongly foreshortened, and the viewer's own hand resting flat on top of {name}'s head",
     faceVisibility: "hidden",
+    hint: "the same kneeling act, but the viewer's own hand rests on top of her head, guiding — the story must say the hand is on her head.",
     cast: "solo",
   },
   {
@@ -212,6 +235,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: true,
     template:
       "{name} astride the viewer facing the camera, {name}'s knees either side of the viewer and {name}'s bare pelvis lowered onto the viewer's own genitals in penetration, the viewer's own hands on {name}'s waist",
+    hint: "she straddles the viewer facing them, chest to chest, penetration, the viewer's hands on her waist.",
     cast: "solo",
   },
   {
@@ -225,6 +249,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: true,
     template:
       "{name} astride the viewer facing away from the camera, {name}'s back and hips filling the frame above the viewer, penetration where {name}'s bare pelvis meets the viewer's own genitals, the viewer's own hands on {name}'s hips",
+    hint: "she straddles the viewer facing AWAY, her back to them, penetration, the viewer's hands on her hips.",
     cast: "solo",
   },
   {
@@ -235,6 +260,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: true,
     template:
       "{name} bent forward over a waist-high surface with {name}'s back to the camera and {name}'s hips raised toward the viewer, penetration where the viewer's own genitals meet {name}'s bare pelvis from behind, the viewer's own hands entering frame from the lower edge and holding {name}'s hips",
+    hint: "she is bent forward over a waist-high surface, back to the viewer, entered from behind while standing.",
     cast: "solo",
   },
   {
@@ -272,6 +298,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     // the line and were cut for the two levers above. Re-measure before adding a word.
     template:
       "{name} on all fours with {name}'s arms straight ahead and {name}'s palms planted, {name}'s back to the camera and {name}'s bare hips raised toward the viewer, {name}'s head lowered and facing away from the lens, the viewer's own hands and forearms entering frame from the lower corners onto {name}'s waist and hips",
+    hint: "she is on hands and knees on a low surface, back to the viewer, entered from behind — the viewer's hands on her waist or hips.",
     cast: "solo",
   },
   {
@@ -286,6 +313,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: true,
     template:
       "{name} on {name}'s back beneath the viewer with {name}'s face turned up toward the camera, the viewer's own genitals entering frame at the bottom edge in penetration with {name}'s bare pelvis, the viewer's own hands holding {name}'s legs and waist",
+    hint: "she lies on her back beneath the viewer, facing up, penetration from above.",
     cast: "solo",
   },
   {
@@ -296,6 +324,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: false,
     template:
       "{name} lying face down along the bed with {name}'s back to the camera and {name}'s head turned to the side against the pillow, the viewer's own hands resting on {name}'s shoulders",
+    hint: "she lies face down and still, the viewer's hand on her back — resting or being touched, not an act.",
     cast: "solo",
   },
   {
@@ -306,6 +335,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: false,
     template:
       "{name} lying on {name}'s side with {name}'s back curled against the viewer's chest, the viewer's own arm draped over {name}'s waist and the viewer's own hand resting on {name}'s stomach",
+    hint: "both lying on their sides, her back against the viewer's front, the viewer's arm draped over her — dressed, at rest.",
     cast: "solo",
   },
   {
@@ -316,6 +346,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: false,
     template:
       "{name} standing with {name}'s back against the wall facing the camera and {name}'s face tilted up toward the viewer, the viewer's own hands braced on the wall either side of {name}'s shoulders",
+    hint: "she is against a wall FACING the viewer, who is close in front of her.",
     cast: "solo",
   },
   {
@@ -326,6 +357,7 @@ export const sceneStagings: readonly SceneStaging[] = [
     intimate: false,
     template:
       "{name} standing facing the wall with {name}'s back to the camera and {name}'s cheek turned against the wall, the viewer's own hands resting on {name}'s shoulders",
+    hint: "she is against a wall facing INTO it, her back to the viewer, who is close behind her.",
     cast: "solo",
   },
 ];
