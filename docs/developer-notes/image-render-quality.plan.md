@@ -465,11 +465,11 @@ this plan keeps its number as a pointer.
 9. **Advisory QA and promotion gates.** Status: queued. Record
    identity/face-count/blur/text/crop signals and make fixed-matrix regression
    results part of model-version promotion.
-10. **Visual-state consumption.** Status: queued — slice 2's acceptance
-    unblocked it, and it now waits only on the projection itself. Feed the
-    mandatory and optional facts from
-    [visual-state.plan.md](visual-state.plan.md) into image prompt segments.
-    That plan owns the projection; this slice is its image consumer.
+10. **Visual-state consumption.** Status: void — moved 2026-08-16 to
+    [image lane consolidation](image-lane-consolidation.plan.md). The
+    [visual-state plan](visual-state.plan.md) owns the projection; the
+    consolidation plan owns migration of character-bearing image routes onto
+    its digest and semantic prompt segments.
 
 Each slice must be independently useful. No slice introduces automatic
 cross-model fallback.
