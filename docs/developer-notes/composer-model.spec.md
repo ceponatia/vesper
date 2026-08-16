@@ -334,11 +334,19 @@ Not scoped here.
 
 ## Results
 
-Not yet run. Slice 3 of the plan fills this section: the quality summary, the
+No usable run yet. One paid run happened on 2026-08-15, across eight arms and
+seven beats, and it is **superseded in full** — it exposed the two grader faults
+and the prompt fault recorded above, and the fixes for all three change what the
+arms are shown and how they are marked. Its numbers are evidence about the old
+prompt, not about the candidates, so none of them belong in this section.
+
+Slice 3 fills it from a re-run on the current prompt: the quality summary, the
 ladder-economics summary, then one short verdict per arm naming which beats it
 held and which it lost, in the shape
 [finished/scene-composition.spec.md](finished/scene-composition.spec.md)
-§"Probe results" uses.
+§"Probe results" uses. Every arm in that table must come from the same run —
+a filtered run is fine, but arms measured on different prompts are not a
+comparison.
 
 ## Owner decisions — 2026-08-15
 
