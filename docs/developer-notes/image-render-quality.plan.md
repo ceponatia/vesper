@@ -113,7 +113,8 @@ Pony v1 explicitly stays; it is a recent seeded model and is not the same thing
 as Pony Realism v2.3. FLUX.1 dev, Seedream, SD 3.5 Large and Wan are untouched by
 the ruling — neither demoted nor newly in focus.
 
-The three demoted models keep their catalog pages and remain addable from the
+The three demoted models' production registry rows were removed on 2026-08-16;
+they keep their catalog pages and remain addable from the
 admin screens. What they lose is every correction Vesper was making on their
 behalf: reviewed dimensions, cleared wrapper negatives, the sampler correction,
 and any seeded profile controls. An admin who adds one now gets exactly what the
