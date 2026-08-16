@@ -109,6 +109,21 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/**
+ * The degree arithmetic, and the contract it rests on.
+ *
+ * `maxUnit` and `complementUnit` take the `UnitInterval` brand at its word: a
+ * clamped integer in `[0, 10_000]`. Nothing here re-validates, because every
+ * feature reaching this module has been through `validateVisualStateFeature`,
+ * which runs the wire schema and therefore the branded `degree` parser.
+ *
+ * That is a real coupling, so it is worth naming: an adapter that builds a
+ * feature WITHOUT going through the validator can put a float or an
+ * out-of-range number in a `degree`, and the result is an
+ * `effectiveVisibility` of `9999.5` — silently, since nothing downstream
+ * re-checks either. Every adapter in this folder ends in
+ * `validateVisualStateFeature`; a sixth one must too.
+ */
 function maxUnit(left: UnitInterval, right: UnitInterval): UnitInterval {
   return left >= right ? left : right;
 }
@@ -135,9 +150,17 @@ interface CompositionAccumulator {
  * annotations and a byte-equal suppression list on every machine and every
  * replay.
  *
- * Duplicate keys are not this function's problem — `buildVisualStateSnapshot`
- * has already resolved them — but a repeated key would simply keep its first
- * feature, so nothing here can throw on one.
+ * TWO PRECONDITIONS the caller owns, both met by `buildVisualStateSnapshot`,
+ * which is the intended entry point:
+ *
+ * - **Keys are unique.** Duplicates do not throw and do not collapse: they share
+ *   one accumulator and BOTH apply, so a key listed twice with an `attached_to`
+ *   edge lands as `attachedTo: ["b", "b"]`. The snapshot builder deduplicates
+ *   before calling, which is why that is harmless there and why a direct caller
+ *   must deduplicate too.
+ * - **Every feature passed `validateVisualStateFeature`.** The degree arithmetic
+ *   below is fixed point over `UnitInterval`, and it trusts rather than re-checks
+ *   the brand — see the note beside it.
  */
 export function resolveVisualStateComposition(
   features: readonly VisualStateFeature[],

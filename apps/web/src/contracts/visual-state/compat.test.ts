@@ -98,11 +98,14 @@ describe("adaptProjectedAppearanceFeature", () => {
    * passes just as happily when the adapter substitutes its own KIND's family
    * (`appearance_attribute` versus `anatomy`) for the record's authored one —
    * which would silently recalibrate the repetition cooldown slice 5 inherits.
+   *
+   * Only the two kinds whose record family DIFFERS from their kind's are
+   * asserted. Anatomy's record family and its kind's are both `anatomy`, so the
+   * assertion would hold under an adapter that ignored the record entirely.
    */
   it("keeps the authored repeat family a single adapter kind could not carry", () => {
     expect(adaptedBySourceKind("attribute")?.priors.repeatFamily).toBe("facial_geometry");
     expect(adaptedBySourceKind("located_fact")?.priors.repeatFamily).toBe("pigmentation");
-    expect(adaptedBySourceKind("anatomy")?.priors.repeatFamily).toBe("anatomy");
   });
 
   it("marks topology mandatory for identity, so salience can never trade it away", () => {
