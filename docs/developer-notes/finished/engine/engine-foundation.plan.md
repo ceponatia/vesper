@@ -202,19 +202,19 @@ history. One line of status here; [roadmap.md](../../roadmap.md) stays the order
 what to build next.
 
 - **Gate 0 — establish trustworthy evidence** · closed (advance) 2026-07-16 ·
-  [engine.gate0.evidence.md](engine.gate0.evidence.md)
+  [engine.gate0.evidence.md](engine-foundation.gate0.evidence.md)
 - **Gate 1 — minimum authority seam** · closed (advance) 2026-07-16 ·
-  [engine.gate1.authority-seam.md](engine.gate1.authority-seam.md)
+  [engine.gate1.authority-seam.md](engine-foundation.gate1.authority-seam.md)
 - **Gate 2 — production identity, event kernel, scheduler** · closed (advance)
-  2026-07-17, E2.1–E2.6 · [engine.gate2.kernel.md](engine.gate2.kernel.md)
+  2026-07-17, E2.1–E2.6 · [engine.gate2.kernel.md](engine-foundation.gate2.kernel.md)
 - **Gate 3 — space, action, schedules, live-scene arbitration** · closed (advance)
-  2026-07-18, E3.1–E3.5 · [engine.gate3.space-action.md](engine.gate3.space-action.md)
+  2026-07-18, E3.1–E3.5 · [engine.gate3.space-action.md](engine-foundation.gate3.space-action.md)
 - **Gate 4 — perception, knowledge, narration, RAG** · closed 2026-07-19, E4.1–E4.5 ·
-  [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md)
+  [engine.gate4.perception-narration.md](engine-foundation.gate4.perception-narration.md)
 - **Gate 5 — bodies, materials, households, relationships** · closed 2026-07-20,
-  E5.1–E5.6 · [engine.gate5.bodies-materials.md](engine.gate5.bodies-materials.md)
+  E5.1–E5.6 · [engine.gate5.bodies-materials.md](engine-foundation.gate5.bodies-materials.md)
 - **Gate 6 — dual LOD and autonomous background life** · closed 2026-07-21, E6.1–E6.5 ·
-  [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)
+  [engine.gate6.dual-lod.md](engine-foundation.gate6.dual-lod.md)
 - **Gate 7 — optional institutions and macro simulation** · never opened; optional,
   owner-gated · [engine.gate7.institutions.md](../../engine.gate7.institutions.md)
 

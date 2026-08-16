@@ -43,7 +43,7 @@ import { seedDurableSpaceTopology } from "./space-store";
 /**
  * E2.6 — the Gate 2 soak. Drives a deterministic synthetic month of commands
  * and triggers through the durable kernel (E2.1–E2.5), then checks the
- * engine.plan.md §"Required proofs" list against what the database actually
+ * engine-foundation.plan.md §"Required proofs" list against what the database actually
  * recorded. docs/developer-notes/engine-gate2-soak.plan.md holds the proof
  * matrix this implements.
  *

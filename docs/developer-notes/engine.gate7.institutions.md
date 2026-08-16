@@ -4,7 +4,7 @@ Status: **draft — optional, post-foundation, not committed.** Never opened and
 scheduled. Its sequencing precondition — rollout R6 — exited 2026-07-22, so the gate is
 unblocked, but it opens only on the owner's call (see the sequencing ruling below).
 
-Part of the [engine.plan.md](finished/engine/engine.plan.md) gate set (split 2026-07-21; one doc per
+Part of the [engine.plan.md](finished/engine/engine-foundation.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](engine.spec.md) §-index.

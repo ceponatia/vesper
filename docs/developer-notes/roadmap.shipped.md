@@ -17,7 +17,7 @@ detail to buy tidiness. Read them as a log, not as a template.
 ## Shipped (historical record — newest first; see each plan for detail)
 
 - **Successor world engine — gates 0–6** —
-  [plan](finished/engine/engine.plan.md) — 2026-07-21 — an event-sourced world
+  [plan](finished/engine/engine-foundation.plan.md) — 2026-07-21 — an event-sourced world
   that keeps characters living between scenes; its normative contract
   (`engine.spec.md`) and optional Gate 7 stay live outside the archive.
 - **Scene composer model — a fast, cheap shot planner** —
@@ -683,7 +683,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   `pre-r6-legacy-drop`. The legacy CHAT lane is untouched; Gate 7 is now
   unblocked but stays owner-gated.
   successor-engine foundation (gates 0–6) is COMPLETE** —
-  [engine.gate6.dual-lod.md](finished/engine/engine.gate6.dual-lod.md) §"Gate 6 build order" —
+  [engine.gate6.dual-lod.md](finished/engine/engine-foundation.gate6.dual-lod.md) §"Gate 6 build order" —
   2026-07-21 — three deterministic scenarios, zero model calls
   (`test:engine-e6-5`): a promoted actor's existence walked hop-by-hop from
   events alone (sleep → decision → embodiment-armed alarm → materialization →
@@ -699,7 +699,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   467 int green. **Gate 7 is optional/post-foundation; its opening is the
   owner's call.\*\*
 - **World-engine actor promotion, dependency-wake & catch-up (E6.4)** —
-  [engine.gate6.dual-lod.md](finished/engine/engine.gate6.dual-lod.md) §"Gate 6 build order" · contract
+  [engine.gate6.dual-lod.md](finished/engine/engine-foundation.gate6.dual-lod.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.7 (authored this work) — 2026-07-21 —
   `promote_actor_from_cohort` is the only mid-branch path an actor comes to exist:
   a causation-chained reservation debit (`promotion_reservation`) →
@@ -715,7 +715,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   seeds (materials + space). No migration. 3 109 pure + 464 int green;
   CI runs `test:engine-e6-4`. Next: **E6.5**, which closes Gate 6.
 - **World-engine population cohorts (E6.3, slice 2 — E6.3 COMPLETE)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 6 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.6 (authored this work) — 2026-07-21 —
   branch-scoped conserved counts (one row per crowd, migration 0080): existing only
   through `cohort_created`, moving only through `cohort_adjusted` (closed reasons with
@@ -725,7 +725,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   `replayCohortHistory`. Institutions stay households+restock in v1. 3 099 pure +
   462 int green. Next: **E6.4 (actor promotion and catch-up)**.
 - **World-engine dormant lane (E6.3, slice 1)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 6 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27.5 (authored this work) — 2026-07-20 — below
   `event`, an actor provably does no scheduled work: simulation-axis moves retire the
   full body-alarm set and re-arm it fresh only at `event`/`exact`; landing below
@@ -736,7 +736,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   461 int green; CI runs `test:engine-e6-3`. Dependency-wake stays E6.4. Next:
   **E6.3 slice 2 (cohorts)**.
 - **World-engine background-life controller, slice 2 (E6.2 COMPLETE)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 6 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §19.2.1 — 2026-07-20 — `eat_meal` joins the
   closed candidate set (weights `routine-policy-v2`): the `meal` rhythm kind, one
   boundary law for bedtime + meal starts, due-inside-your-window scoring (no
@@ -747,7 +747,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   pure + 460 int green. Aggregate-stock feeding rides E6.3; §21.3 scorer terms
   stay §9 open decision 6. Next: **E6.3**.
 - **World-engine background-life controller, slice 1 (E6.2)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 6 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §19.2.1 (authored this work) — 2026-07-20 —
   autonomous sleep/wake for event-LOD actors: the `routine_policy_due` alarm arms
   on LOD assignment, fires at the actor's own bedtime, scores the closed v1
@@ -758,7 +758,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   itself; zero model calls, zero per-minute work; fork-mid-sleep parity proven.
   Meals join in slice 2. 10 new pure + 2 new int cases (`test:engine-e6-2`).
 - **World-engine actor-LOD ledger (E6.1) — GATE 6 OPENED** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 6 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 6 build order" · contract
   [engine.spec.md](engine.spec.md) §27–§28 — 2026-07-20 — Gate 6 opened on the
   owner's go; the §27.1 simulation-LOD and §28 inference-LOD vocabularies land as
   independent axes on a sparse, fully-evented per-actor ledger (`sim_actor_lods`,
@@ -769,7 +769,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   fixed. 15 new pure + 2 new int cases (`test:engine-e6-1`; 3 063 pure + 456 int
   green). Next: **E6.2**.
 - **World-engine Gate 5 exit corpus + trigger-retirement audit (E5.6) — GATE 5
-  CLOSED** — [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" — 2026-07-20 —
+  CLOSED** — [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" — 2026-07-20 —
   ten deterministic scenarios, zero model calls (`test:engine-e5-6`): four
   explain-why causal chains walked hop-by-hop through §6.4 derivations (body
   wake→escalation→collapse; stock→promotion→consumption→body-source with lot
@@ -789,7 +789,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   green. **Gate 5 closed per the exit-scope precedent; Gate 6 opening is the
   owner's call.**
 - **World-engine consent escalation & pressure acknowledgment (E5.5, slice 3 — E5.5
-  COMPLETE)** — [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  COMPLETE)** — [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §19.3/§21.4 — 2026-07-20 — the ruling-16
   escalation path: `attempt_consent_escalation` through the §19.3 deliberator seam,
   two-phase after the review's critical find (model call moved OUT of the
@@ -804,7 +804,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   443 int green. E5.5 closes with all four carried leftovers landed. Next:
   **E5.6**, which closes Gate 5.
 - **World-engine consent gate & destinationless commitments (E5.5, slice 2)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §21.4/§15.1/§15.4/§16.1 — 2026-07-20 — ruling 16
   becomes enforceable: `consent_covered` as a fail-closed action-definition
   precondition (schema-constrained to one scope per definition, §16.1) evaluated
@@ -818,7 +818,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   the first scope). `test:engine-e5-5` at 195; 3 038 pure, E5.4/E5.3 suites
   unbroken. Next: **E5.5 slice 3**.
 - **World-engine social ledger substrate (E5.5, slice 1)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §21.3–§21.4 (authored this work, whole-feature) —
   2026-07-20 — the persisted relationship ledger the E4.2 derived seam was built to
   feed (that seam now deleted): `sim_relationship_ledger` (migration 0076) under a
@@ -834,7 +834,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   100 cases (`test:engine-e5-5`); 3 005 pure green, E5.4 unbroken. Slices 2–3
   remain in Active. Next: **E5.5 slice 2**.
 - **World-engine households, means, and money at LOD (E5.4, slices 1–2)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §26.8–§26.11 (authored this work) — 2026-07-20 —
   households as first-class evented entities with fail-closed shared-store access;
   fungible lots with fixed-point conserved quantities (same-kind transfers conserve
@@ -850,7 +850,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   real trigger claim/dispatch race — `processing` rows now retire on reconfigure).
   53 new pure + 16 new int cases; CI runs `test:engine-e5-4` (2 927 pure +
   414 int green). Next: **E5.5**.
-- **World-engine material life (E5.3, slices 1–3)** — [engine.plan.md](finished/engine/engine.plan.md)
+- **World-engine material life (E5.3, slices 1–3)** — [engine.plan.md](finished/engine/engine-foundation.plan.md)
   §"Gate 5 build order" · contract [engine.spec.md](engine.spec.md) §26 (expanded
   this work) — 2026-07-19 — §26 over the Gate 1/2 item lane, replacing the stand-ins
   wholesale. Slice 1, the honest material lane: typed holding loci (held / worn /
@@ -872,7 +872,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   `test:engine-e5-3` (2 874 pure + 398 int green; Gate 1 benchmark re-passing at
   p95 0.028 ms over the new lane). Next: **E5.4**.
 - **World-engine chat-parity meters & perception-gated reads (E5.2, slices 1 + 2a + 2b)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §25 — 2026-07-19 — the ruling-15 meter set on the
   E5.1 substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
   Slice 1: authored `sim_body_rhythms` (migration 0068), circadian pressure as a pure
@@ -891,7 +891,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   re-arm (the carried E3.4 note landed). 23 pure + 4 int cases across the slices;
   CI runs `test:engine-e5-2` (2 813 pure + 381 int green). Next: **E5.3**.
 - **World-engine body substrate (E5.1) — GATE 5 OPENED** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 5 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 5 build order" · contract
   [engine.spec.md](engine.spec.md) §25 — 2026-07-19 — Gate 5 opened with both
   rulings resolved same-day (15: full chat parity; 16: ledger-gated fail-closed
   consent) and its first slice shipped: the §25.1–25.3 meter-agnostic machinery — a
@@ -908,7 +908,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   perception per ruling; fork/replay parity end-to-end. 19 pure + 5 int cases; CI
   runs `test:engine-e5-1` (2 790 pure + 377 int green). Next: **E5.2**.
 - **World-engine Gate 4 exit corpus (E4.5) — GATE 4 CLOSED** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 4 exit" + §"Gate 4 build order" — 2026-07-19 —
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 4 exit" + §"Gate 4 build order" — 2026-07-19 —
   four deterministic scenarios, zero model calls (`test:engine-e4-5`; 2 771 pure +
   372 int green): cross-viewpoint leak sweep under knowledge asymmetry across cut,
   serialized prompt input, and retrieval (querying for the secret widens nothing);
@@ -921,7 +921,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs. Next gate:
   **Gate 5** (queued in Next).
 - **World-engine RAG eligibility & memory linkage (E4.4)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 4 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 4 build order" · contract
   [engine.spec.md](engine.spec.md) §24 — 2026-07-19 — redacted memory documents
   (`sim_memory_documents`, migration 0066) with source links, sequence intervals,
   eligibility surfaces, validity/supersedence, and schema/model versions; outbox-driven
@@ -934,7 +934,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   result; authored lore seeded with explicit visibility. 8 pure + 4 int cases; CI runs
   `test:engine-e4-4` (2 771 pure + 368 int green). Next: **E4.5**.
 - **World-engine NarrativeCut v2, narrator boundary & soft canon (E4.3)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 4 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 4 build order" · contract
   [engine.spec.md](engine.spec.md) §22–23 — 2026-07-19 — the full §22.1 cut
   (speaker beliefs, evidence views, activities, typed forbidden claims, failure
   presentations, creative licenses, per-field provenance) persisted immutable in
@@ -947,7 +947,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   versioned world-type value; §19.3 deliberator admission seam wired into departures,
   stub-exercised, zero live calls. 30 pure + 4 int cases; CI runs `test:engine-e4-3`
   (2 763 pure + 364 int green). Next: **E4.4**.
-- **World-engine assertions, beliefs & gossip (E4.2)** — [engine.plan.md](finished/engine/engine.plan.md)
+- **World-engine assertions, beliefs & gossip (E4.2)** — [engine.plan.md](finished/engine/engine-foundation.plan.md)
   §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §21 — 2026-07-19 —
   the §21 knowledge substrate: `sim_assertions` + `sim_beliefs` (migration 0064) as
   derived ledgers with provenance and both status machines; the new `disclosure_made`
@@ -967,7 +967,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   scene imagery), autosave for location/social-card editors, Dialog height cap,
   SaveBar over the tab bar, and the audited touch/overflow defect list; PR #17,
   verified live on Fly v92.
-- **World-engine perception & observation (E4.1)** — [engine.plan.md](finished/engine/engine.plan.md)
+- **World-engine perception & observation (E4.1)** — [engine.plan.md](finished/engine/engine-foundation.plan.md)
   §"Gate 4 build order" · contract [engine.spec.md](engine.spec.md) §20 — 2026-07-18 —
   the first Gate 4 slice, started the day Gate 3 closed (verdict: advance; rulings 14 +
   exit scope resolved the same day): typed `Observation` rows (`sim_observations`,
@@ -982,7 +982,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   `observed` member fires only on real perception, failing closed. 9 pure + 4 int cases;
   CI runs `test:engine-e4-1` (2 718 pure + 355 int green). Next: **E4.2**.
 - **World-engine live-scene arbiter + access & Gate 3 corpus (E3.4 slice 2 + E3.5)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 3 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-18 — the deterministic §18.3 turn seam
   (`prepareEngagementTurn`: drain → pressure look-ahead → policy departures that interrupt
   the scene → one perspective-safe `Gate3NarrativeCut`; rerender re-reads the same cut,
@@ -994,7 +994,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   351 int tests) — corpus caught + fixed the E3.3 `actBy` derivation bug and an id-length
   stacking bug. **Gate 3 closed with the owner's advance verdict, 2026-07-18.**
 - **World-engine engagement substrate (E3.4 slice 1)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 3 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — conversations become world activities
   (§18.1–18.2, §11.3): `Engagement` rows (`sim_engagements`, migration 0061) with the §18.2
   state machine, claiming **full** attention for a co-present scene and **partial** for a
@@ -1008,7 +1008,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   Remaining for E3.4 slice 2: the §18.3 arbiter, NarrativeCut, ArmedEffects (ruling 9),
   narrator-failure presentation (ruling 8).
 - **World-engine commitments & temporal pressure (E3.3)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 3 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — the third Gate 3 slice, and the one that
   makes the spec's 4pm-shift arc real: commitments with the ruled per-commitment firmness
   dial and the §15.4 status machine (`sim_commitments`, migration 0060), the §15.2
@@ -1024,7 +1024,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   triggers and resolve independently. 11 pure + 7 integration cases (kept/late/missed arcs
   end-to-end); CI runs `test:engine-e3-3`. Gate 3 continues: E3.4 engagements are next.
 - **World-engine typed actions, activities & claims (E3.2)** —
-  [engine.plan.md](finished/engine/engine.plan.md) §"Gate 3 build order" · contract
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 3 build order" · contract
   [engine.spec.md](engine.spec.md) — 2026-07-17 — the second Gate 3 slice: authored
   `SimulationActionDefinition`s (versioned; typed enforced preconditions; body/attention
   claims; interruptibility; obvious/private noticeability) seeded per branch
@@ -1040,7 +1040,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   ledger. Also extracts the shared `runSimulationCommand` transaction shell (§11.1) that
   later commands build on. 13 pure + 6 integration cases; CI runs `test:engine-e3-2`.
   Gate 3 continues: E3.3 commitments are next.
-- **World-engine authoritative space (E3.1)** — [engine.plan.md](finished/engine/engine.plan.md) §"Gate 3
+- **World-engine authoritative space (E3.1)** — [engine.plan.md](finished/engine/engine-foundation.plan.md) §"Gate 3
   build order" · contract [engine.spec.md](engine.spec.md) — 2026-07-17 — the first Gate 3
   slice: branch-scoped topology (`sim_locations`/`sim_zones`/`sim_links`, migration 0058),
   one-locus-per-actor `sim_physical_loci` (the §3.1 invariant enforced as the primary key +

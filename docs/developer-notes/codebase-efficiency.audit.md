@@ -63,7 +63,7 @@ isn't scanned at all; see F1).
   `forkBranch` refolds **all** inherited events (`branch-store.ts:981`) — the
   moment a space/scheduler event type joins a recorder list, live and forked
   rows silently disagree, surfacing only at fork time. **This cleanup exists
-  nowhere on the roadmap** (only prose at `engine.plan.md:477` + 2 code
+  nowhere on the roadmap** (only prose at `engine-foundation.plan.md:477` + 2 code
   comments) — per the house rule, that's itself a bug.
 - **A3 · Eleven byte-identical `replayXHistory` fold loops.** S/low. `cohorts.ts:288`,
   `lod.ts:400`, `materials.ts:873`, `engagements.ts:574`, `commitments.ts:910`,
