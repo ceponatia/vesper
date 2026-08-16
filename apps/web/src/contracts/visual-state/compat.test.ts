@@ -92,10 +92,20 @@ describe("adaptProjectedAppearanceFeature", () => {
     expect(adapted?.priors.baseUniqueness ?? 0).toBeLessThanOrEqual(AFFORDANCE_UNIT_ONE);
   });
 
+  /**
+   * The exact families, not merely different ones. Three adapter kinds carry
+   * three dozen upstream families, and asserting only that two of them differ
+   * passes just as happily when the adapter substitutes its own KIND's family
+   * (`appearance_attribute` versus `anatomy`) for the record's authored one —
+   * which would silently recalibrate the repetition cooldown slice 5 inherits.
+   *
+   * Only the two kinds whose record family DIFFERS from their kind's are
+   * asserted. Anatomy's record family and its kind's are both `anatomy`, so the
+   * assertion would hold under an adapter that ignored the record entirely.
+   */
   it("keeps the authored repeat family a single adapter kind could not carry", () => {
-    const attribute = adaptedBySourceKind("attribute");
-    const anatomy = adaptedBySourceKind("anatomy");
-    expect(attribute?.priors.repeatFamily).not.toBe(anatomy?.priors.repeatFamily);
+    expect(adaptedBySourceKind("attribute")?.priors.repeatFamily).toBe("facial_geometry");
+    expect(adaptedBySourceKind("located_fact")?.priors.repeatFamily).toBe("pigmentation");
   });
 
   it("marks topology mandatory for identity, so salience can never trade it away", () => {

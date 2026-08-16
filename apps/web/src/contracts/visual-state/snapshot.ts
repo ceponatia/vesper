@@ -1,8 +1,10 @@
 import { diag, type DiagnosticSink } from "../diagnostics";
-import type { VisualMemoryScopeRef } from "../affordances/recognition";
+import { resolveVisualStateComposition, type VisualStateComposition } from "./composition";
 import { VISUAL_STATE_DUPLICATE_KEY } from "./diagnostics";
 import { visualStateLocusKey } from "./locus";
 import type { VisualStateFeature } from "./feature";
+import type { VisualStateScopeRef } from "./scope";
+import type { VisualStateSuppression } from "./suppression";
 import { visualStateAdapterRank, visualStateLayerRank, type VisualStateAdapterId } from "./vocabulary";
 
 /**
@@ -14,23 +16,6 @@ import { visualStateAdapterRank, visualStateLayerRank, type VisualStateAdapterId
  * never leak backward into an earlier one.
  */
 
-/**
- * Which continuity a snapshot belongs to. This is deliberately the SAME type
- * observer visual memory is scoped by (`chat` memory group / `world_branch`
- * branch) rather than a second lane vocabulary — a snapshot and the memory read
- * against it must agree on which continuity they are in, and two types that must
- * always agree are one type.
- */
-export type VisualStateScopeRef = VisualMemoryScopeRef;
-
-/** A feature that did not make the snapshot, and the code that says why. */
-export interface VisualStateSuppression {
-  readonly key: string;
-  /** A `visual_state.*` diagnostic code — the machine-readable reason. */
-  readonly code: string;
-  readonly detail?: string;
-}
-
 export interface VisualStateSnapshot {
   readonly version: 1;
   readonly scope: VisualStateScopeRef;
@@ -38,6 +23,20 @@ export interface VisualStateSnapshot {
   readonly cutId: string;
   readonly subjects: readonly string[];
   readonly features: readonly VisualStateFeature[];
+  /**
+   * The resolved composition, one entry per feature and in the same order.
+   *
+   * It is a sibling of `features` rather than a field on each feature because a
+   * feature is a read of ONE owner and composition is a statement about the set:
+   * folding "a coat is over this shirt" into the shirt's own record would make
+   * the shirt's fingerprint depend on what else the character happens to be
+   * wearing, and change detection would start firing on the wrong thing.
+   */
+  readonly composition: VisualStateComposition;
+  /**
+   * Everything the projection dropped: features that lost a duplicate key, then
+   * composition edges that named a missing target or closed a cycle.
+   */
   readonly suppressions: readonly VisualStateSuppression[];
 }
 
@@ -109,6 +108,12 @@ function contributionsInAdapterOrder(
  * A dropped feature is recorded twice on purpose: as a diagnostic (for the
  * developer) and as a suppression on the snapshot (for the inspector, which must
  * be able to show why something is missing without re-running the read).
+ *
+ * Composition runs LAST, over the sorted, deduplicated feature list — the spec's
+ * data flow (`source adapters → features → composition resolver → snapshot`).
+ * Resolving before deduplication would let an edge point at a feature that never
+ * made the snapshot; resolving before the sort would make the annotation order
+ * depend on the call site.
  */
 export function buildVisualStateSnapshot(input: VisualStateSnapshotInput): VisualStateSnapshot {
   const seen = new Set<string>();
@@ -134,13 +139,17 @@ export function buildVisualStateSnapshot(input: VisualStateSnapshotInput): Visua
     }
   }
 
+  const features = kept.sort(compareVisualStateFeatures);
+  const composition = resolveVisualStateComposition(features, input.sink);
+
   return {
     version: 1,
     scope: input.scope,
     atMinutes: input.atMinutes,
     cutId: input.cutId,
     subjects: [...subjects].sort(compareStrings),
-    features: kept.sort(compareVisualStateFeatures),
-    suppressions,
+    features,
+    composition,
+    suppressions: [...suppressions, ...composition.suppressions],
   };
 }
