@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
+import { DEFAULT_SCENE_COMPOSER_MODEL_ID } from "@/lib/composer-models";
 import { DEFAULT_NARRATIVE_MODEL_ID } from "@/lib/narrative-models";
 import { agentModelId, narrativeModelId, narrativeProviderOptions, providerRouting } from "./provider";
 
@@ -33,6 +34,17 @@ describe("providerRouting", () => {
 
   it("drops the per-model bad endpoint (DeepInfra on GLM 5.2)", () => {
     expect(providerRouting("z-ai/glm-5.2")).toEqual({ ignore: ["deepinfra"] });
+  });
+
+  it("prefers the cheap fp8 endpoints for the pinned composer, without making it a restriction", () => {
+    // Unrouted, OpenRouter picks this snapshot by its own price/latency/uptime blend and
+    // lands on endpoints at ~2× the cheapest available — on the model that runs for every
+    // scene image. `allow_fallbacks` keeps a total outage of both a routing miss rather
+    // than a failed composition.
+    expect(providerRouting(DEFAULT_SCENE_COMPOSER_MODEL_ID)).toEqual({
+      order: ["gmicloud/fp8", "deepinfra/fp8"],
+      allow_fallbacks: true,
+    });
   });
 });
 

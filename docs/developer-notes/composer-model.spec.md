@@ -23,13 +23,21 @@ everything OpenRouter sells.
 
 | Id                                   | In / out $ per M | Why it is a candidate                   |
 | ------------------------------------ | ---------------- | --------------------------------------- |
-| `aion-labs/aion-3.0`                 | 3.000 / 6.000    | The shipped default; the control        |
+| `deepseek/deepseek-v4-flash-0731`    | 0.070 / 0.140    | **The shipped default**; the A/B winner |
+| `aion-labs/aion-3.0`                 | 3.000 / 6.000    | The A/B control; the former default     |
 | `aion-labs/aion-3.0-mini`            | 0.700 / 1.400    | Same lab, ~4× cheaper                   |
 | `aion-labs/aion-2.0`                 | 0.800 / 1.600    | The session narrator; proven permissive |
-| `~deepseek/deepseek-v4-flash-latest` | 0.068 / 0.135    | The in-session agent default            |
+| `~deepseek/deepseek-v4-flash-latest` | 0.068 / 0.135    | Same weights, floating; tries a newer snapshot |
 | `qwen/qwen3.7-flash`                 | 0.030 / 0.130    | Cheapest capable                        |
 | `z-ai/glm-4.7-flash`                 | 0.060 / 0.400    | Flash sibling of the curated narrator   |
 | `inclusionai/ling-3.0-flash`         | 0.021 / 0.063    | The price floor                         |
+
+The default and the alias are the **same weights** — the alias resolved to
+`deepseek-v4-flash-0731` when the default was promoted — and both are listed on
+purpose: the pin is what production is measured on, the alias is how a newer
+snapshot gets tried on one conversation before it is promoted. The default's
+price is the routed one (see [Provider routing](#provider-routing-for-the-pinned-default));
+OpenRouter lists the dated slug at 0.140/0.280, which is its *unrouted* price.
 
 **No entry needs tool calling or `response_format`.** `generateChecked` sends the
 JSON Schema as prompt text and parses the reply locally — provider-side
@@ -68,6 +76,54 @@ call, the diagnostic message, the diagnostic context, the fallback's collision
 check). Re-resolving would let a mid-composition default change split the ladder
 across two models nobody chose.
 
+### The reasoning policy is per rung
+
+`composerDisablesReasoning(modelId)` (`server/ai/provider.ts`) owns the winning
+arm's second half: a `COMPOSER_REASONING_OFF` set of model ids asked with
+`generateChecked`'s existing `disableReasoning` knob, which sends OpenRouter
+`reasoning:{enabled:false}`.
+
+**It is an opt-in set rather than a flag on the composer call**, and that is
+load-bearing rather than fastidious: the AionLabs endpoints *reject* the option
+("Reasoning is mandatory for this endpoint" — it killed all 12 `off` cells of the
+narrator eval), and an Aion model is both a curated composer option and the
+ladder's refusal rung. So each rung resolves its own policy from its own id.
+A DeepSeek primary runs reasoning-off while its Aion 2.0 fallback is asked
+without the option; a chat switched onto Aion 3.0 sends it on neither call.
+A model absent from the set sends no reasoning option at all, which is exactly
+how every arm was measured.
+
+**Parity check (2026-08-15).** Direct probes against the pinned snapshot
+confirmed the endpoint accepts `reasoning:{enabled:false}` and returns
+`reasoning_tokens: 0` under it — the failure this guards against is an endpoint
+that rejects the option outright, as the AionLabs ones do. What that does **not**
+cover is a full composition through `composeSceneSpec` on the deployed build;
+that is the first scene render after deploy, and it is named on the plan's Status
+line as one of the two things acceptance waits on.
+
+### Provider routing for the pinned default
+
+`PROVIDER_ORDER` (`server/ai/provider.ts`) routes the pinned snapshot to
+`gmicloud/fp8` then `deepinfra/fp8`, with `allow_fallbacks` on.
+
+This exists because pinning has a price consequence that pinning alone does not
+solve. OpenRouter prices a slug by its cheapest endpoint but routes an
+unconstrained call by its own price/latency/uptime blend: an unrouted probe of
+the dated slug landed on CoreWeave at $0.13/$0.28 per M while endpoints at
+$0.07/$0.14 were up. The composer runs on every scene image, so that factor of
+two is most of the cost case for the move.
+
+The list is **fp8-or-better and US-hosted on purpose.** Two endpoints undercut
+these by ~2% (Decart, OpenInference) and both serve fp4; the composer's whole
+output is a structured object that has to parse, and this repo already refused
+provider-side constrained decoding because models degenerate under it
+(followups.phase2.md #20). Two more (StreamLake, Baidu) are ~2% cheaper and
+CN-hosted, and the composer is handed the most explicit stretch of a
+conversation. Neither exclusion is a capability judgement, and 2% is not enough
+to spend on either question. `allow_fallbacks` stays on because the alternative
+to a pricier DeepSeek endpoint is not a cheaper one — it is the ladder degrading
+to its Aion 2.0 rung at ~20× the token price.
+
 ## Persistence and the admin surface
 
 `character_chats.scene_composer_model`, text, default `""` (migration
@@ -104,11 +160,13 @@ is "Default (follows the app)" bound to `""`; the description line always
 describes the **effective** model, since on "Default" the operator's open
 question is which model that currently is.
 
-The persisted/admin value is **model id only**. It does not carry a composer
-reasoning profile. That matters for the DeepSeek A/B arms below: selecting
-DeepSeek in a live chat exercises the model's normal production call, not the
-probe's explicit `reasoning: off` or `reasoning: low` variants. Those variants
-are diagnostic until Slice 4 deliberately encodes the winning reasoning policy.
+The persisted/admin value is **model id only** — the reasoning policy is not per
+chat and never was. It is keyed by model id in code
+([The reasoning policy is per rung](#the-reasoning-policy-is-per-rung)), so
+switching a conversation onto either DeepSeek row selects the reasoning-off
+configuration the A/B measured, and switching it onto any Aion row selects none.
+An admin picks a model; what that model's call looks like is a code decision
+backed by the probe, not a second dropdown.
 
 ## The A/B harness
 
@@ -177,14 +235,13 @@ the three remaining flash-tier candidates. `AB_ARMS`, `AB_BEAT`, `AB_RUNS` and
 `EVAL_OUT` scope a run. Full matrix: 8 × 7 × 2 = 112 calls, well under $2,
 dominated almost entirely by the control.
 
-**DeepSeek's two rows are not directly promotable as-is.** Production currently
-persists only the model id and `composeSceneSpec` supplies neither the A/B's
-`disableReasoning` option nor its `reasoning.effort="low"` option. If either
-DeepSeek reasoning arm wins, Slice 4 must first encode that exact setting as a
-composer-specific model policy, then rerun a targeted parity check through the
-production call. Merely changing `DEFAULT_SCENE_COMPOSER_MODEL_ID` would test one
-product and ship another. The same rule applies to any future A/B arm that adds a
-call option the production seam does not already carry.
+**DeepSeek's two rows were not directly promotable as-is, and the winner was
+promoted with its call configuration.** The reasoning-off arm won, so Slice 4
+encoded that exact setting as a composer-specific model policy
+([The reasoning policy is per rung](#the-reasoning-policy-is-per-rung)) rather
+than changing `DEFAULT_SCENE_COMPOSER_MODEL_ID` alone, which would have tested
+one product and shipped another. The same rule applies to any future A/B arm
+that adds a call option the production seam does not already carry.
 
 ### Grading
 
@@ -334,19 +391,89 @@ Not scoped here.
 
 ## Results
 
-No usable run yet. One paid run happened on 2026-08-15, across eight arms and
-seven beats, and it is **superseded in full** — it exposed the two grader faults
-and the prompt fault recorded above, and the fixes for all three change what the
-arms are shown and how they are marked. Its numbers are evidence about the old
-prompt, not about the candidates, so none of them belong in this section.
+Two paid runs happened on 2026-08-15. **Both were measured on the pre-fix
+instrument**, and the second is the one the promotion rests on.
 
-Slice 3 fills it from a re-run on the current prompt: the quality summary, the
-ladder-economics summary, then one short verdict per arm naming which beats it
-held and which it lost, in the shape
-[finished/scene-composition.spec.md](finished/scene-composition.spec.md)
-§"Probe results" uses. Every arm in that table must come from the same run —
-a filtered run is fine, but arms measured on different prompts are not a
-comparison.
+### What was measured, and on which instrument
+
+- **Run 1** — eight arms, seven beats, `data/eval/composer-model-ab/`.
+- **Run 2** — four arms (control, DeepSeek off, DeepSeek low, Qwen3.7 Flash),
+  seven beats, two runs each, `data/eval/composer-model-ab-r2/`.
+
+Neither run carries the fixes recorded in
+[What the composer is told](#what-the-composer-is-told-changed-2026-08-15). Both
+`results.csv` files carry a single `camera` column where the current grader
+emits three, and `oral_guided` staging is 0 across every arm in both — the exact
+fixture fault the same commit repaired. So Run 2 re-ran the superseded
+instrument with a narrower arm set rather than re-running on the current prompt.
+
+**What that does and does not license.** It does not license a per-axis reading:
+staging and camera answers move when the vocabularies are described, so no arm's
+`staging` or `camera` number here is evidence about that arm. It does license the
+promotion, on two grounds the prompt cannot reach:
+
+- **The ranking is stable across two independent runs.** DeepSeek reasoning-off
+  scored 0.939 against the control's 0.928 in Run 1 and tied it at 0.939 in Run 2.
+  An arm that matches or beats the control on both runs of a handicap every arm
+  carried equally is not a prompt artifact.
+- **The latency and cost gaps are structural, not graded.** Aion 3.0's endpoint
+  mandates reasoning; that is where its 45-second mean comes from, and no prompt
+  wording closes a 12× latency gap or an 88× cost gap.
+
+A re-run on the current prompt is still the thing that would make this a clean
+verdict, and it would cost roughly $0.19 at Run 2's arm set. Until then, treat
+every per-axis number below as instrument-bound.
+
+### Run 2 summary — 14 calls per arm
+
+| Arm                   | Score | Latency mean / median | $ per 1k |
+| --------------------- | ----- | --------------------- | -------- |
+| Aion 3.0 (control)    | 0.939 | 45.4s / 44.4s         | $12.46   |
+| DeepSeek 4 Flash, off | 0.939 | 3.6s / 2.3s           | $0.14    |
+| DeepSeek 4 Flash, low | 0.949 | 13.0s / 9.5s          | $0.33    |
+| Qwen3.7 Flash         | 0.949 | 28.4s / 28.2s         | $0.49    |
+
+DeepSeek's $ per 1k is quoted at the **routed** price the app now pays
+(`PROVIDER_ORDER`, $0.07/$0.14 per M), not at the alias price the probe was
+billed; the control's is its measured spend.
+
+### The reasoning question, settled
+
+**The +1% for reasoning-low is one check, in one run, on one beat.** Summed over
+14 runs the two DeepSeek arms differ by 0.143, and one check on a seven-check
+beat is worth exactly 0.143 — the entire margin is `behind`, run 1, where
+reasoning-low got the viewer's body right and reasoning-off did not. Every other
+beat scored identically on both arms. Qwen3.7 Flash's matching 0.949 comes the
+same way, and it pays 8× the latency for it.
+
+That margin bought a 3.6× mean and 4.1× median latency increase. Owner ruling
+(2026-08-15): **reasoning off.** The composer runs before the player sees
+anything, so seconds there are seconds of nothing happening on screen, and a
+one-run difference is not a quality signal to buy them with.
+
+### Per-arm verdicts
+
+- **DeepSeek 4 Flash, reasoning off — promoted.** Held all four intimate beats
+  (`doggy`, `oral`, `missionary` at 1.000; `oral_guided` at the 0.857 every arm
+  scored, including the control). Never degraded, so the refusal rung stayed
+  unexercised. Its prose is the tersest on the board — one run answered `oral`
+  with "kneeling, looking up; performing oral sex", which passes every mechanical
+  check and is thinner than the control's equivalent. Nothing in the score
+  captures that, and it is the one thing to watch on the deployed build.
+- **DeepSeek 4 Flash, reasoning low — not promoted.** See above: the margin is a
+  single check, the cost is 3.6× the latency.
+- **Qwen3.7 Flash — not promoted.** Ties reasoning-low on score at 8× DeepSeek's
+  latency and 3.5× its cost. It also emitted the run's only
+  `viewer_body_unrequested` diagnostic and its only sub-0.857 run (`kneel`, 0.714).
+- **Aion 3.0 — demoted to a curated option.** Never refused and never degraded;
+  it simply has no measured quality advantage to justify 45 seconds and 88× the
+  cost. It stays selectable per chat.
+
+### Fallback rung — no change
+
+The owner's 10% review threshold is not approached: `images.scene_composer.degraded`
+fired **0 times in 56 calls**, on every arm. Aion 2.0 stays the second rung, and
+the promotion does not create a collision — the two rungs remain distinct ids.
 
 ## Owner decisions — 2026-08-15
 
@@ -356,6 +483,17 @@ comparison.
   newer second rung before promoting that primary; below 10%, keep Aion 2.0 rather
   than optimizing a rare path pre-emptively. DeepSeek is expected to refuse rarely,
   but the measured `degraded` rate decides this, not the expectation.
+- **Reasoning off for the composer (resolved 2026-08-15):** the reasoning-low arm
+  scored 1% higher, and that margin is one check in one run of fourteen. The
+  composer runs before the player sees anything, so the 3.6× latency it costs is
+  not worth a difference that small. Reasoning is off for the DeepSeek rows and
+  unset everywhere else.
+- **Cheap-provider routing (resolved 2026-08-15):** pin the snapshot *and* route
+  it, preferring the cheapest endpoints that are fp8-or-better; a list is fine
+  where one provider would be fragile. ZDR is preferred but not required, which
+  is why the ~2% cheaper CN-hosted endpoints are skipped rather than the routing
+  being made conditional on a policy field OpenRouter does not expose per
+  endpoint.
 - **Pinning and call parity:** if the winner is reached through a floating alias,
   pin the exact snapshot that was tested before assigning it to
   `DEFAULT_SCENE_COMPOSER_MODEL_ID`. Floating aliases remain valid admin/eval
