@@ -128,7 +128,7 @@ Before the forge's parallel sections run, it infers the species from text (`infe
 
 ### The species catalog
 
-Species live **one file per species** under `species/catalog/` — parity with attribute categories: a `defineSpecies(...)` per file, listed in `catalog/index.ts`. `registry.ts` derives everything from that array (`speciesById`, `isSpeciesId`, `inferSpeciesFromText`, `speciesAppearancePhrase`, `speciesLorePhrase`, `heritageFor`, `heritagesForSpecies`, `inferHeritageFromText`), so **adding a species is normally a single new file.** Android is the first species with a default subtype: an absent/unknown `heritageId` resolves to Synthetic Android; Organic Android is an explicit overlay. Both use the complete humanoid plan, while species rules keep synthetic-only sensory enum members out of every biological humanoid's vocabulary.
+Species live **one file per species** under `species/catalog/` — parity with attribute categories: a `defineSpecies(...)` per file, listed in `catalog/index.ts`. `registry.ts` derives everything from that array (`speciesById`, `isSpeciesId`, `inferSpeciesFromText`, `speciesLabelPhrase`, `speciesLorePhrase`, `speciesIntimacyNote`, `heritageFor`, `heritagesForSpecies`, `inferHeritageFromText`), so **adding a species is normally a single new file.** Android is the first species with a default subtype: an absent/unknown `heritageId` resolves to Synthetic Android; Organic Android is an explicit overlay. Both use the complete humanoid plan, while species rules keep synthetic-only sensory enum members out of every biological humanoid's vocabulary.
 
 What ships:
 
@@ -146,10 +146,10 @@ A further humanoid variant is a data add once its feature groups exist; true non
 
 Each species carries three optional, **model-facing** notes — all empty by default, all distinct from the internal `description`. Each has one audience and one surfacing rule:
 
-- **`appearance`** — audience: image.
+- **`appearance`** — audience: the character forge.
   - *Contents:* A generic, image-safe description of the species' default morphology (pointed ears, a greenish skin cast, wings/horns/tail, broad stature) — **not** any one character's specific attribute values.
-  - *Surfaced via:* `speciesForgeDescriptor` (forge), reading `species.appearance` directly — `speciesAppearancePhrase(speciesId)` is retained but **currently unused**.
-  - *Feeds:* The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology; `speciesAppearancePhrase` is kept for a possible re-enable.
+  - *Surfaced via:* `speciesForgeDescriptor`, which reads `species.appearance` (combined with the heritage's) directly. There is no registry phrase for it.
+  - *Feeds:* The character forge's species-context prompt (`authoring/character-forge.ts`), which folds the generic look into the prompt to guide per-character attribute inference. **Not** sent to image prompts — those name the species via `speciesLabelPhrase` (name only) and let the character's feature attributes carry the morphology.
 - **`lore`** — audience: narrator (**always**).
   - *Contents:* Cultural / identity backstory — temperament, standing, relations.
   - *Surfaced via:* `speciesLorePhrase(speciesId)`.

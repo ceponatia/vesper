@@ -5,7 +5,6 @@ import {
   heritagesForSpecies,
   inferHeritageFromText,
   inferSpeciesFromText,
-  speciesAppearancePhrase,
   speciesCatalog,
   speciesIntimacyNote,
   speciesLorePhrase,
@@ -106,32 +105,6 @@ describe("species catalog invariants", () => {
       }
     });
   }
-});
-
-describe("speciesAppearancePhrase", () => {
-  it("is empty for the default species and unknown ids", () => {
-    expect(speciesAppearancePhrase("human")).toBe("");
-    expect(speciesAppearancePhrase("not_a_species")).toBe("");
-  });
-
-  it("is label + authored appearance for a non-default species", () => {
-    const succubus = speciesCatalog.find((s) => s.id === "succubus");
-    expect(succubus?.appearance).toBeTruthy();
-    expect(speciesAppearancePhrase("succubus")).toBe(`Succubus — ${succubus?.appearance}`);
-  });
-
-  it("uses the heritage label and COMBINES species + heritage appearance", () => {
-    const elf = speciesCatalog.find((s) => s.id === "elf");
-    const dark = elf?.heritages.find((h) => h.id === "dark_elf");
-    const phrase = speciesAppearancePhrase("elf", "dark_elf");
-    expect(phrase.startsWith("Dark Elf — ")).toBe(true); // heritage label wins
-    expect(phrase).toContain(elf?.appearance ?? "__none__"); // species base look kept
-    expect(phrase).toContain(dark?.appearance ?? "__none__"); // heritage specifics appended
-  });
-
-  it("ignores an unknown heritage id (falls back to the bare species)", () => {
-    expect(speciesAppearancePhrase("elf", "nope")).toBe(speciesAppearancePhrase("elf"));
-  });
 });
 
 describe("speciesLorePhrase", () => {
