@@ -34,13 +34,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   false-premise fences and mandatory action outcomes, live in production; slice 4
   needs a design decision, slices 5–6 need instruments that don't exist.
 
-- **Intimate-scene LoRA — the acts render in the app** —
-  [plan](intimate-scene-lora.plan.md) · [spec](intimate-scene-lora.spec.md) —
-  intimate staged scene renders route through the probe-proven anatomy LoRA on
-  the Replicate Qwen LoRA wrapper, live in production since 2026-08-15;
-  everything else renders exactly as today; a `staged_scene` lab kind benches
-  the same wording and weights without a chat.
-
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, visual

@@ -16,6 +16,10 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Intimate-scene LoRA — the acts render in the app** —
+  [plan](finished/intimate-scene-lora.plan.md) — 2026-08-16 — intimate staged
+  scene renders route through the probe-proven anatomy LoRA, accepted on the
+  first `staged_scene` bench (a 1.0/0.75 scale sweep, both `act_depicted`).
 - **Successor world engine — gates 0–6** —
   [plan](finished/engine/engine-foundation.plan.md) — 2026-07-21 — an event-sourced world
   that keeps characters living between scenes; its normative contract
@@ -28,8 +32,8 @@ detail to buy tidiness. Read them as a log, not as a template.
   [plan](finished/scene-composition.plan.md) — 2026-08-15 — the shot follows
   the fiction: probe-hardened camera and staging prompts, committed scene
   facts clamping the camera, accepted with oral-contact geometry knowingly
-  open; the act-rendering LoRA's production wiring continues in
-  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md).
+  open; the act-rendering LoRA's production wiring continued in
+  [intimate-scene-lora.plan.md](finished/intimate-scene-lora.plan.md).
 
 - **Image model capabilities — profiles, shared controls, and richer
   workflows** — [plan](finished/image-model-capabilities.plan.md) — 2026-08-14 —

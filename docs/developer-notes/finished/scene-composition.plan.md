@@ -6,7 +6,7 @@ the probe-hardened prompts are the versions the app uses from the next
 deploy, accepted with one element knowingly open — oral-contact geometry
 renders the moment before contact, not contact itself (the evidence trail and
 do-not-retry levers are in the spec §Probe results). Successor work:
-[intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md) carries the
+[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md) carries the
 owner-directed production incorporation of the act-rendering LoRA (plus the
 staged prompts driving the expanded admin image lab, and the
 intimate-anatomy-on-away-shots tension as its open question).
@@ -157,7 +157,7 @@ Four things cause this, and none of them is the image model misbehaving:
   attribution probe-verified through five hardening rounds; accepted
   2026-08-15 with oral-contact geometry knowingly open; the act-rendering
   LoRA's production incorporation is
-  [intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md)'s build.
+  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md)'s build.
 
   The staging catalog with per-entry camera setup, implied viewer-body parts,
   and explicit phrasing emitted only on the uncensored route; evidence,
@@ -219,7 +219,7 @@ Four things cause this, and none of them is the image model misbehaving:
 
 None remaining in this plan. Both questions it carried moved with the
 close-out (owner acceptance ruling, 2026-08-15) to
-[intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md): the LoRA choice
+[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md): the LoRA choice
 is settled by the probes (detail in [the spec](scene-composition.spec.md)
 §Probe results) and its production incorporation is that plan's build;
 whether intimate-anatomy phrasing should be suppressed on from-behind shots

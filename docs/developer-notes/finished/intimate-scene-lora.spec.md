@@ -32,11 +32,12 @@ changes the token append, which stays app-side.
   band 0.5–1.5 around the probed default 1, `allowed_tasks: ["scene"]`
   fail-closed, no trigger words — the probe graded the unchanged prompt). 49
   tests. Production evidence: [the live-route run](#live-route-verification-2026-08-15).
-- **Slice 2 — lab adoption**: built 2026-08-15, **not yet accepted** — the kind
-  renders and records a verdict, and no owner bench run has happened. Scoped
-  that day (owner ruling) as a first-class `staged_scene` lab kind rather than
-  waiting on the lab expansion; design below. No migration. The parity pin runs
-  as a census over all 13 registry stagings.
+- **Slice 2 — lab adoption**: built 2026-08-15, **accepted 2026-08-16** — the
+  owner's first bench run, a two-point LoRA-scale sweep with both renders
+  graded `act_depicted` ([the acceptance bench](#acceptance-bench-run-2026-08-16)).
+  Scoped 2026-08-15 (owner ruling) as a first-class `staged_scene` lab kind
+  rather than waiting on the lab expansion; design below. No migration. The
+  parity pin runs as a census over all 13 registry stagings.
 
 ## Live-route verification (2026-08-15)
 
@@ -84,6 +85,43 @@ template describes penetration. A render that comes back LoRA-free with **no**
 `lora_unavailable` line was dropped there, and the composer's staging-drop
 diagnostics never reach the process log on the chat path (`queueChatScene`
 passes no sink), so `meta.staging` is the only signal.
+
+## Acceptance bench run (2026-08-16)
+
+The owner's first `staged_scene` bench — the acceptance the plan was waiting
+on — ran on the live deploy as a two-point LoRA-scale sweep: one staging, one
+identity input (Sabrina Vale's canonical portrait, `xzna63o0l1v46tkag8o37hvn`),
+scene fields held constant, and the scale as the only variable. The two rows'
+`finalPrompt`, ordered inputs, staging block, and model+version were verified
+byte-identical server-side.
+
+| Field        | Run A                      | Run B                      |
+| ------------ | -------------------------- | -------------------------- |
+| Experiment   | `lugvn6mqcu7yf8g7zcz0m8vd` | `y5w9094by94ozp6ac72p67x9` |
+| LoRA scale   | 1.0 (curated default)      | 0.75                       |
+| Verdict      | `act_depicted`             | `act_depicted`             |
+| Result image | `qulvw4eorzyr6q6oa6z4qxkd` | `j4ac5y4kook95iujeu47m510` |
+| Render time  | 28.4 s                     | 28.5 s                     |
+
+Shared: staging `astride_viewer_facing`; model `qwen/qwen-image-edit-plus-lora`
+resolved by the kind with the model box blank; the builtin
+`imglorqwennsfwallinclv20` LoRA seeded automatically at the row's default.
+Verdicts and their sweep-pair notes are recorded on the experiment rows. The
+graded renders:
+[scale 1.0](../../../evidence/intimate-scene-lora/staged-scene-bench-scale-1.0.webp) ·
+[scale 0.75](../../../evidence/intimate-scene-lora/staged-scene-bench-scale-0.75.webp).
+
+Two rulings the run settled:
+
+- **Owner ruling (2026-08-16): the curated default scale stays 1.0.** Both
+  sweep points depicted the act; nothing pushed the ruling off the probed
+  default.
+- **Owner ruling (2026-08-16): the subject's intimate-anatomy phrasing stays on
+  from-behind shots — no suppression.** Closes the question carried from
+  scene-composition's close-out (detail: scene-composition.spec.md §Known
+  tensions). The bench does not retest it — its staging is viewer-facing — so a
+  from-behind regression re-opens the question through a new plan, not this
+  one.
 
 ## Decisions (probe-settled, 2026-08-15)
 

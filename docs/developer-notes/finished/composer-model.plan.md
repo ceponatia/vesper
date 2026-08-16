@@ -103,7 +103,7 @@ selected for a conversation.
   "Where the work stands").
 - **The image model.** Which model *paints* the scene is a separate, already-live
   per-chat setting, and its own comparison lives in
-  [intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md).
+  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md).
 - **Judging the prose with another model.** An LLM judge was considered and
   declined (owner ruling 2026-08-15): the mechanical checks plus a printed
   side-by-side are the instrument, and a judge would add a second model's

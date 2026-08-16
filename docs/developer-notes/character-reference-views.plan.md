@@ -17,7 +17,7 @@ Related work, and the boundary with each:
   the evidence gate, the staging catalog. This plan owns **what the app has to
   show the model** once that shot says "from behind". The two meet at one
   lookup: a resolved camera picks a view.
-- [intimate-scene LoRA](intimate-scene-lora.plan.md) owns **which model renders
+- [intimate-scene LoRA](finished/intimate-scene-lora.plan.md) owns **which model renders
   an intimate act** — staged intimate scenes route through the probe-proven
   anatomy LoRA. This plan owns **what reference that model is handed**. They are
   complementary and land on the same renders: the LoRA fixes what the model
