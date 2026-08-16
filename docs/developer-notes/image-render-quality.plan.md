@@ -2,8 +2,9 @@
 
 Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
 exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
-through 2026-08-06; slice 2 unblocked since the capabilities plan's shared
-render intent shipped 2026-08-07; reference preparation left this plan for
+through 2026-08-06; slice 2 — prompt segments and the reviewed settings moved
+into task profiles — built 2026-08-16 and awaiting review and the parity run;
+reference preparation left this plan for
 [image-identity-packs.plan.md](finished/image-identity-packs.plan.md) on 2026-08-05;
 nothing else in the slice list exists in code)
 
@@ -85,42 +86,59 @@ Where a reviewed wrapper has a non-empty provider default that can contradict
 Vesper's state, the transitional policy explicitly clears it to the empty string.
 All authored negative steering waits for task profiles and conflict checking.
 
-**Pony Realism and RealVis Hyper LoRA are candidates, not proven winners.** Their
-InstantID/HyperLoRA machinery makes them worth testing for identity retention,
-but the registered community models have limited usage evidence and no Vesper
-trial verdict. They must not be described as the best face technology in the
-registry until the fixed matrix demonstrates it.
+**Pony Realism and RealVis Hyper LoRA were candidates, and are now out of
+scope.** Their InstantID/HyperLoRA machinery made them worth testing for identity
+retention, but neither ever earned a Vesper trial verdict, and **owner ruling
+(2026-08-16)** removed them from consideration along with Juggernaut XL v9. They
+keep their catalog pages and an admin can still add them; they get no reviewed
+settings, no seeded profile controls, and no place in this plan's trials.
 
 **A full-frame “fix the face” pass is risky.** A second generative pass can change
 pose, clothing, body, lighting, or setting while improving a face. Regional
-repair or inpainting is the preferred production direction. Full-frame
-Pony/RealVis re-rendering remains a useful admin comparison arm, not the assumed
-final workflow.
+repair or inpainting is the preferred production direction. A full-frame
+re-render by an identity specialist remains a useful admin comparison arm, not
+the assumed final workflow.
 
 ## Settled rulings
 
 These replace the former open questions.
 
-### Juggernaut v9 is the full-step checkpoint
+### The reviewed set is the Qwen family plus the seeded adult/identity models
 
-The registered `lucataco/juggernaut-xl-v9` model is normal Juggernaut XL v9, not
-the separately published Lightning build. Its cog's 5-step, guidance-2 defaults
-are a fast wrapper preset, not the checkpoint's intended quality configuration.
+**Owner ruling (2026-08-16).** Juggernaut XL v9, RealVis Hyper LoRA and Pony
+Realism v2.3 are irrelevant to this plan going forward. What this plan tunes,
+trials and corrects is the Qwen family plus the models seeded on 2026-08-10/11 —
+NSFW FLUX Dev, LikeReality Pony v1, SDXL PuLID and Pruna P-Image. LikeReality
+Pony v1 explicitly stays; it is a recent seeded model and is not the same thing
+as Pony Realism v2.3. FLUX.1 dev, Seedream, SD 3.5 Large and Wan are untouched by
+the ruling — neither demoted nor newly in focus.
 
-Vesper's reviewed starting configuration is:
+The three demoted models' production registry rows were removed on 2026-08-16;
+they keep their catalog pages and remain addable from the
+admin screens. What they lose is every correction Vesper was making on their
+behalf: reviewed dimensions, cleared wrapper negatives, the sampler correction,
+and any seeded profile controls. An admin who adds one now gets exactly what the
+wrapper ships with, and that is accepted.
 
-- 832×1216 source render;
-- 35 inference steps;
-- guidance scale 5;
-- the wrapper's `KarrasDPM` scheduler;
-- an explicitly empty negative prompt, replacing the wrapper's media-biased
-  default and following the creator's little/no-negative starting guidance.
+The consequence that mattered for delivery: the demoted three were exactly the
+models with no seeded registry row, so every model in the reviewed set now has a
+row a migration can reach. Slice 2's profile seeding is complete for the whole
+reviewed set rather than partly impossible.
 
-Vesper still normalizes the result to the lane's requested ratio. For a 3:4
-portrait, 832×1216 requires a modest top/bottom crop, but it preserves far more
-portrait detail than rendering 1024×1024 and discarding a quarter of the width.
-The fixed trial matrix may tune the sampler and numeric values, but the
-Lightning-versus-base question is closed.
+### Juggernaut v9 is the full-step checkpoint — superseded
+
+Superseded by the 2026-08-16 ruling above, and kept only because it is why slice
+1 shipped what it shipped. Juggernaut is no longer a model this plan configures,
+so none of the settings below are sent any more.
+
+The finding itself was sound and is recorded on the model's catalog page for any
+admin who registers it: the endpoint is normal Juggernaut XL v9 rather than the
+separately published Lightning build, so its cog's 5-step, guidance-2 defaults
+are a fast wrapper preset rather than the checkpoint's intended quality
+configuration. Slice 1 corrected that with a 832×1216 render at 35 steps and
+guidance 5 on the wrapper's `KarrasDPM` scheduler, plus an explicitly empty
+negative prompt. Those corrections were removed when the model left the reviewed
+set.
 
 ### Face crops are derived assets, and they are somebody else's product now
 
@@ -180,14 +198,16 @@ fast profile independently.
 
 ### Negative prompts require structured context
 
-The transitional shared-seam policy adds no negative content to Qwen Image 2512,
-SD 3.5, or Pony, whose provider defaults are already empty. It also does not add
-Pony score tags before the fixed trial establishes that they help the pinned
-version.
+The transitional shared-seam policy adds no negative content to Qwen Image 2512
+or SD 3.5, whose provider defaults are already empty. It also does not add Pony
+score tags before the fixed trial establishes that they help the pinned version.
 
-Juggernaut and RealVis expose non-empty provider defaults that can silently
-contradict requested style or morphology. Their reviewed runtime overrides send
-`negative_prompt: ""` to neutralize that hidden behavior.
+LikeReality Pony v1 is the one model in the reviewed set exposing a non-empty
+provider default that silently contradicts Vesper's authored state — literally
+`"nsfw, naked"`, which suppresses the output this app exists to render. Its
+reviewed settings send `negative_prompt: ""` to neutralize that hidden behavior.
+Models outside the reviewed set keep whatever their wrapper defaults to, which is
+now true of the boilerplate negatives Juggernaut and RealVis ship with.
 
 Future photoreal blocks, anatomy blocks, single-subject blocks, hand emphasis,
 framing terms, and Pony score/source/rating conventions are composed only when
@@ -196,28 +216,33 @@ absences, and intended morphology.
 
 ## Slice 1 — the reviewed settings that are live today
 
-The profile rows introduced by the capabilities plan are still dormant, so the
-first code slice was deliberately small and centralized. It shipped 2026-08-05
-and is in every render the app makes.
+The profile rows introduced by the capabilities plan were still dormant when this
+slice was written, so the first code slice was deliberately small and
+centralized. It shipped 2026-08-05 and is still in every render the app makes.
 
 A small reviewed policy applies exact-slug overrides at the one seam every image
-lane already crosses. It:
+lane already crosses. As shipped it:
 
-- turns Qwen Image Edit fast mode off;
-- gives Juggernaut the full-step settings above and clears its wrapper negative;
-- pins RealVis to its native 768×1024 3:4 size and clears its long generic
+- turned Qwen Image Edit fast mode off;
+- gave Juggernaut the full-step settings above and cleared its wrapper negative;
+- pinned RealVis to its native 768×1024 3:4 size and cleared its long generic
   negative boilerplate;
-- rewrites the existing provider-neutral identity lock into compact Qwen
+- rewrote the existing provider-neutral identity lock into compact Qwen
   numbered-image wording that does not expand the already-fitted edit prompt;
-- leaves Qwen Image 2512, SD 3.5, Pony, and every unknown or operator-added model
-  byte-identical.
+- left Qwen Image 2512, SD 3.5, Pony Realism, and every unknown or
+  operator-added model byte-identical.
 
-Pinned community slugs are matched without their version suffix.
+The 2026-08-16 ruling removed the Juggernaut and RealVis entries; the seeded
+models registered on 2026-08-10/11 gained their own. Everything else about the
+mechanism is unchanged, including that pinned community slugs are matched without
+their version suffix.
 
 This is a transitional compatibility layer, not a second configuration system.
-It exists because the profile machinery is not called by the production render
-path yet. As shared render intent and control mapping land, each reviewed
-override moves into a profile and the exact-slug policy shrinks to zero. Exact
+Slice 2 wrote the same settings onto the task profiles that should own them, so
+the two now say one thing rather than two — but this layer is still what actually
+delivers them, and will be until each model's exact provider version has been
+inspected. Two of the models it corrects have no registered row at all; someone
+adds them by hand, and only this layer knows to fix them when they do. Exact
 settings, matching rules, and the retirement sequence are in
 [the spec](image-render-quality.spec.md).
 
@@ -247,8 +272,7 @@ The initial dialect vocabulary remains:
 
 - `prose` for Qwen, Seedream, Wan, FLUX, and SD 3.5 unless a trial rules
   otherwise;
-- `sdxl_tag` for compact community SDXL checkpoints such as Juggernaut and
-  RealVis;
+- `sdxl_tag` for compact community SDXL checkpoints such as SDXL PuLID;
 - `pony_tag` for Pony-lineage checkpoints.
 
 Each pinned model version records a measured effective prompt budget. The test
@@ -313,10 +337,13 @@ rolled sleeve, and smudged makeup are exactly the kind of fact this plan's
 prompts want and cannot currently obtain.
 [visual-state.plan.md](visual-state.plan.md) owns that projection.
 
-**From capabilities:** ordered semantic prompt segments, resolved controls, seeds,
-and role-aware reference transport. Its shared render intent shipped 2026-08-07,
-so this plan's slice 2 has its seam; the segment vocabulary and control
-transports it still lists as remaining are what slices 3 and beyond wait on.
+**From capabilities:** resolved controls, seeds, and role-aware reference
+transport, all of which shipped with its shared render intent on 2026-08-07 —
+which is the seam this plan's slice 2 then built on. The ordered semantic prompt
+segments are this plan's own work and arrived with slice 2. What slices 3 and
+beyond still wait on from capabilities is the probing that gives a stored control
+a provider field to travel through: until a model's version is probed, a profile
+can state a setting but cannot send it.
 
 ## Face repair strategy
 
@@ -328,12 +355,13 @@ The preferred production path is local repair:
 4. edit only the masked region;
 5. compare identity and seam quality before saving a new asset.
 
-Until a suitable regional editor is registered, the admin trial compares:
-
-- Qwen Edit with canonical portrait plus face crop;
-- Pony Realism with the identity crop and rendered scene as pose control;
-- RealVis Hyper LoRA with the identity crop;
-- no-repair baseline.
+Until a suitable regional editor is registered, the admin trial compares Qwen
+Edit with canonical portrait plus face crop against a no-repair baseline, plus
+one or more full-frame identity specialists drawn from the seeded catalog. SDXL
+PuLID is the obvious candidate there — it is the only seeded model that takes a
+face reference for identity adaptation — but which specialists the trial runs is
+still open, and the 2026-08-16 ruling took Pony Realism and RealVis Hyper LoRA
+out of the running.
 
 Full-frame specialist outputs are judged on composition drift as well as face
 likeness. A better face with a changed outfit or body is a failure, not a partial
@@ -400,12 +428,15 @@ this plan keeps its number as a pointer.
    with every unreviewed model unchanged. The corrections made the prompt
    rewrite idempotent so a compiled comparison cell cannot conflict with its own
    prompt.
-2. **Shared render intent and profile controls.** Status: queued — unblocked;
-   the capabilities slice 2 it waited on shipped 2026-08-07. Lanes now resolve
-   task profiles and common controls; what remains here is moving the
-   transitional exact-slug inputs into profiles and the ordered semantic prompt
-   segments.
-3. **Dynamic dialects and negatives.** Status: blocked on slice 2. Compile
+2. **Shared render intent and profile controls.** Status: built 2026-08-16 —
+   awaiting review and the parity run. The reviewed settings now have one
+   definition that produces both the transitional overlay and the task profiles'
+   own controls, and a render can be described as ordered semantic segments that
+   survive a prompt budget in priority order. Nothing renders differently yet:
+   the profile route needs each model's version probed before it can carry a
+   setting, so the transitional layer is still what delivers them.
+3. **Dynamic dialects and negatives.** Status: blocked on slice 2's acceptance —
+   the segment vocabulary it compiles from now exists. Compile
    prose/SDXL/Pony prompts from segments, measure effective prompt budgets per
    pinned version, and compose task/style/subject/morphology/text-aware negative
    blocks with conflict linting.
@@ -417,11 +448,13 @@ this plan keeps its number as a pointer.
    comparison cells and is the tool this slice uses. Reference-strategy
    questions (portrait alone versus portrait plus face crop, detector versus
    heuristic crop) belong to that plan's trial. What stays here is model tuning
-   with the reference held fixed: fast versus quality mode, sampler and CFG
-   within Juggernaut's full-step band, and dialect choice per pinned version.
+   with the reference held fixed, across the reviewed set only: Qwen's fast
+   versus quality mode, steps and guidance on the seeded adult/identity models,
+   and dialect choice per pinned version.
 6. **Admin face repair.** Status: queued. Ship the single-person, explicit,
    provenance-preserving trial action; compare regional repair when available
-   against full-frame Pony/RealVis candidates.
+   against a full-frame identity specialist from the seeded catalog — SDXL PuLID
+   is the leading candidate, and the choice is still open.
 7. **Dimension and framing profiles.** Status: queued. Generalize width/height
    negotiation, native size tiers, focal-aware cropping, and per-task output
    shapes instead of relying on model defaults.
@@ -431,11 +464,11 @@ this plan keeps its number as a pointer.
 9. **Advisory QA and promotion gates.** Status: queued. Record
    identity/face-count/blur/text/crop signals and make fixed-matrix regression
    results part of model-version promotion.
-10. **Visual-state consumption.** Status: blocked on slice 2. Feed the mandatory
-    and optional facts from [visual-state.plan.md](visual-state.plan.md) into
-    image prompt segments. That plan owns the projection; this slice is its
-    image consumer and cannot start before slice 2 gives it somewhere to put
-    the segments.
+10. **Visual-state consumption.** Status: blocked on slice 2's acceptance — the
+    somewhere-to-put-them it waited on now exists. Feed the mandatory and
+    optional facts from [visual-state.plan.md](visual-state.plan.md) into image
+    prompt segments. That plan owns the projection; this slice is its image
+    consumer.
 
 Each slice must be independently useful. No slice introduces automatic
 cross-model fallback.
@@ -446,11 +479,10 @@ Met by slice 1:
 
 - Qwen identity-critical renders use compact numbered identity instructions and
   quality mode unless a task profile explicitly says otherwise.
-- Juggernaut no longer runs its normal checkpoint at 5 steps/CFG 2 or wastes a
-  square render before portrait cropping.
+- No reviewed model wastes a square render before portrait cropping.
 - The context-free seam never invents a negative prompt; reviewed non-empty
   wrapper defaults are neutralized explicitly instead.
-- Unknown and operator-added models remain unchanged until reviewed.
+- Unknown, demoted, and operator-added models remain unchanged.
 
 Still to prove:
 
@@ -473,13 +505,13 @@ plan's own criteria, not restated here.
 The owner decisions are settled. These are trial questions, not blockers to
 beginning implementation:
 
-- which Juggernaut sampler and CFG within the full-step band best fit Vesper's
-  prompts;
+- which steps and guidance values suit the seeded adult/identity checkpoints;
 - which context-aware negative blocks improve quality without erasing intended
   text, style, or morphology;
 - how much Qwen's fast-versus-quality mode changes identity on its own, with the
   reference held fixed;
-- whether Pony or RealVis can improve identity without composition drift;
+- whether SDXL PuLID can improve identity without composition drift, and which
+  seeded model serves as the face-repair specialist;
 - which advisory QA metrics correlate well enough with owner judgment to gate a
   version rather than merely annotate it.
 

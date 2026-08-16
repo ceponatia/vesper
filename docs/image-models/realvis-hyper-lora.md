@@ -3,7 +3,7 @@
 **Slug:** `nsfw-api/realvis-hyper-lora`
 **Registered as:** `nsfw-api/realvis-hyper-lora:9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
 **Probed:** 2026-08-05, version `9b1951176565c8f810f28ed140787a81c8f49b49e2d40d0a135d9491b95782bd`
-**Quality ruling:** experimental identity-specialist candidate
+**Quality ruling:** outside the reviewed set — runs on the wrapper's own defaults
 
 The model page carries no descriptive README. Its schema exposes a HyperLoRA +
 InstantID pipeline over a RealVisXL checkpoint: a face reference plus a prompt,
@@ -39,23 +39,17 @@ The capability probe checks the common image names first and then falls back to
 any URI-typed input. `reference_image` is found by that fallback. The stored
 field name is therefore essential; a hardcoded generic `image` key would fail.
 
-## Explicit native dimensions
+## Native dimensions
 
-The provider defaults to 768×1024, but relying on a remote default would let a
-future wrapper update change Vesper's shape silently.
+The provider defaults to 768×1024, which is already Vesper's 3:4 portrait shape —
+`cropToTargetAspect` returns the buffer unchanged at that size.
 
-`packages/image-core/src/models/quality-presets.ts` sends:
-
-```json
-{
-  "width": 768,
-  "height": 1024
-}
-```
-
-The generic registry still has no free width/height aspect mode. The values ride
-through the reviewed runtime policy, and `cropToTargetAspect` verifies the output
-ratio. At 768×1024 the buffer returns unchanged.
+Vesper does not pin those values. This model is outside the reviewed set, so
+`packages/image-core/src/models/quality-presets.ts` has no entry for it and the
+generic registry has no free width/height aspect mode to negotiate one either.
+The shape therefore rides on the wrapper's own default, and a future wrapper
+update that changed it would change Vesper's output shape with nothing to catch
+it. An admin who wants the size fixed sets `width`/`height` on the row.
 
 ## Identity/detail controls
 
@@ -73,17 +67,11 @@ The wrapper has a long generic quality/anatomy/style default. Omitting the field
 would silently activate that boilerplate even though the shared render seam does
 not know intended style, text, blur, morphology, or authored absences.
 
-Vesper therefore sends:
-
-```json
-{
-  "negative_prompt": ""
-}
-```
-
-`buildRegistryModelInput` preserves the empty string, so this neutralizes the
-remote default. A later identity-repair profile may compose conflict-checked
-terms from the actual visual intent and compare them against the empty baseline.
+Vesper does not clear it. Outside the reviewed set nothing overrides the wrapper,
+so that boilerplate reaches every render. An admin who wants it gone sets
+`negative_prompt` to an empty string on the row; `buildRegistryModelInput`
+preserves an empty value rather than dropping the key and letting the provider
+restore its default.
 
 ## Safety input
 

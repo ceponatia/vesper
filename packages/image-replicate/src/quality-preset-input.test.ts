@@ -26,32 +26,22 @@ function model(slug: string, extraInput: Record<string, unknown> = {}): ImageMod
 }
 
 describe("reviewed quality presets reaching the provider payload", () => {
-  it("keeps Juggernaut's media-biased negative default cleared", () => {
-    const prepared = withReviewedImageQuality(
-      model("lucataco/juggernaut-xl-v9:bea09c", {
-        num_inference_steps: 5,
-        guidance_scale: 2,
-        apply_watermark: false,
-      }),
-    );
-    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
-  });
-
-  it("keeps RealVis's generic negative boilerplate cleared", () => {
-    const prepared = withReviewedImageQuality(
-      model("nsfw-api/realvis-hyper-lora:version", {
-        width: 512,
-        height: 512,
-        negative_prompt: "bad anatomy, extra limbs, text",
-      }),
-    );
-    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
-  });
-
   it("keeps the Pony wrapper's `nsfw, naked` negative default cleared", () => {
     const prepared = withReviewedImageQuality(
       model("aisha-ai-official/likereality-pony-v1:version", { negative_prompt: "nsfw, naked" }),
     );
     expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe("");
+  });
+
+  it("sends an unreviewed model's own negative default untouched", () => {
+    // The other half of the same seam: outside the reviewed set nothing guesses,
+    // so a wrapper's negative survives into the payload rather than being
+    // cleared on its behalf.
+    const prepared = withReviewedImageQuality(
+      model("operator/added-yesterday", { negative_prompt: "bad anatomy, extra limbs, text" }),
+    );
+    expect(buildRegistryModelInput(prepared, "portrait", [], null, true).negative_prompt).toBe(
+      "bad anatomy, extra limbs, text",
+    );
   });
 });
