@@ -47,11 +47,42 @@ describe("visualStateFeatureKey", () => {
   });
 
   /**
-   * Both id schemas permit a colon, and the separator is a colon, so an
-   * unescaped key would give two different garment parts one identity — a
-   * silent cross-wiring of composition edges and memory rows rather than
-   * anything that reports itself.
+   * Both id schemas permit a colon and a slash — the separator inside a locus
+   * and the separator between a key's three segments — so an unescaped key
+   * would give two different places one identity: a silent cross-wiring of
+   * composition edges and memory rows rather than anything that reports itself.
    */
+  it("cannot alias an item id that swallows the aspect separator", () => {
+    const inTheId = visualStateFeatureKey("s1", { kind: "item", itemInstanceId: "i1/held" }, "x");
+    const inTheAspect = visualStateFeatureKey("s1", { kind: "item", itemInstanceId: "i1" }, "held/x");
+    expect(inTheId).not.toBe(inTheAspect);
+    expect(inTheAspect).toBe("s1/item:i1/held/x");
+  });
+
+  it("cannot alias a garment part id that swallows the aspect separator", () => {
+    const inTheId = visualStateFeatureKey(
+      "s1",
+      { kind: "garment_part", garmentInstanceId: "g1", partId: "cuff/left" },
+      "roll",
+    );
+    const inTheAspect = visualStateFeatureKey(
+      "s1",
+      { kind: "garment_part", garmentInstanceId: "g1", partId: "cuff" },
+      "left/roll",
+    );
+    expect(inTheId).not.toBe(inTheAspect);
+  });
+
+  /**
+   * The subject and aspect segments stay UNESCAPED. `appearanceFeatureKey`
+   * escapes nothing, and byte-identity with `ProjectedFeatureTruth.key` is what
+   * keeps live observer-memory rows matching — escaping the outer segments would
+   * turn a latent aliasing bug into an active orphaning one.
+   */
+  it("leaves the subject and aspect segments exactly as the appearance projection writes them", () => {
+    expect(visualStateFeatureKey("s/1", { kind: "item", itemInstanceId: "i1" }, "a/b")).toBe("s/1/item:i1/a/b");
+  });
+
   it("cannot alias two different garment parts whose ids contain the separator", () => {
     const splitLate = visualStateFeatureKey(
       "subject",
