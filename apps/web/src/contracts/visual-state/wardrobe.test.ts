@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { expectCleanSink } from "@/test/diagnostics";
-import { AFFORDANCE_UNIT_ONE } from "../affordances/core";
+import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
+import { AFFORDANCE_UNIT_ONE, toUnitInterval } from "../affordances/core";
 import { crookedNoseAttributes, projectFixture } from "../appearance-features";
 import { DiagnosticCollector } from "../diagnostics";
 import { adaptProjectedAppearanceTruth } from "./compat";
 import { visualStateCompositionFor, resolveVisualStateComposition } from "./composition";
+import { VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
 import type { VisualStateFeature } from "./feature";
 import {
   visualStateGarmentFixture,
   visualStateGroomedPresentation,
+  visualStateNonHumanBody,
   VISUAL_STATE_FIXTURE_ACTOR,
   VISUAL_STATE_FIXTURE_SUBJECT_ID,
 } from "./fixtures";
 import { projectPresentationFeatures } from "./presentation";
+import { buildVisualStateSnapshot } from "./snapshot";
+import { projectSpeciesFeatureGroups } from "./species";
 import { projectWardrobeFeatures, type VisualStateGarmentInput } from "./wardrobe";
 
 /**
@@ -148,9 +152,74 @@ describe("projectWardrobeFeatures", () => {
     expect(feature?.value).toMatchObject({ subtypeId: "nose_ring" });
   });
 
+  it("stamps a change time only for a change this projection's value reflects", () => {
+    // A garment that only got damp carries `lastChange.kind === "condition"`,
+    // which touches nothing in this value. Stamping it would make an unchanged
+    // fingerprint read as a change candidate.
+    const damp = visualStateGarmentFixture();
+    const dampened = {
+      ...damp,
+      instance: { ...damp.instance, lastChange: { kind: "condition", atMinutes: 90 } as const },
+    };
+    const [dry] = project([damp]);
+    const [wet] = project([dampened]);
+    expect(wet?.truthFingerprint).toBe(dry?.truthFingerprint);
+    expect(wet?.changedAtMinutes).toBeUndefined();
+  });
+
+  it("stamps a change time when the garment actually moved", () => {
+    const moved = visualStateGarmentFixture();
+    const transferred = {
+      ...moved,
+      instance: { ...moved.instance, lastChange: { kind: "transfer", atMinutes: 90 } as const },
+    };
+    expect(project([transferred])[0]?.changedAtMinutes).toBe(90);
+  });
+
+  it("degrades a garment whose value its kind rejects, rather than throwing", () => {
+    const sink = new DiagnosticCollector();
+    const oversized = visualStateGarmentFixture();
+    const broken = { ...oversized, instance: { ...oversized.instance, name: "x".repeat(200) } };
+    expect(project([broken], [], sink)).toEqual([]);
+    expectDiagnostic(sink, VISUAL_STATE_VALUE_INVALID);
+  });
+
   it("produces byte-equal output from the same wardrobe", () => {
     const build = () => project([visualStateGarmentFixture(), visualStateGarmentFixture({ id: "g_hat", categoryId: "headwear" })]);
     expect(JSON.stringify(build())).toBe(JSON.stringify(build()));
+  });
+
+  /**
+   * Determinism against a REORDERED input, not the same input twice — the latter
+   * is a tautology that holds for any pure function. What has to be true is that
+   * the order the caller happened to load garments in cannot reach the snapshot.
+   */
+  it("produces a byte-equal snapshot however the garments were ordered", () => {
+    const garments = [
+      visualStateGarmentFixture({ id: "g_shirt", categoryId: "top", layer: 1 }),
+      visualStateGarmentFixture({ id: "g_coat", categoryId: "outerwear", layer: 3 }),
+      visualStateGarmentFixture({ id: "g_hat", categoryId: "headwear", layer: 2 }),
+      visualStateGarmentFixture({
+        id: "g_jacket",
+        categoryId: "outerwear",
+        locus: { kind: "scene", placeName: "the study", anchor: "over the chair" },
+      }),
+    ];
+    const snapshotOf = (ordered: readonly VisualStateGarmentInput[]) =>
+      buildVisualStateSnapshot({
+        scope: { kind: "chat", memoryGroupId: "group_fixture" },
+        atMinutes: 120,
+        cutId: "cut_fixture",
+        contributions: [
+          { adapterId: "presentation", features: presentationFeatures() },
+          { adapterId: "wardrobe", features: project(ordered, presentationFeatures()) },
+        ],
+      });
+    const forward = snapshotOf(garments);
+    const reversed = snapshotOf([...garments].reverse());
+    const rotated = snapshotOf([...garments.slice(2), ...garments.slice(0, 2)]);
+    expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
+    expect(JSON.stringify(rotated)).toBe(JSON.stringify(forward));
   });
 });
 
@@ -215,13 +284,85 @@ describe("projectWardrobeFeatures — composition edges", () => {
     expect(shirtFeature?.relationships).toEqual([]);
   });
 
-  it("reports partial occlusion as a share of what is underneath", () => {
+  /**
+   * The EXACT fixed-point share, not merely "less than full".
+   *
+   * A coat reaches five of the eleven wardrobe-slot locations a dress covers, so
+   * the degree is 5/11 in units. Asserting only `< 10000` passed just as happily
+   * when the denominator was the raw body-tree expansion — which swept in
+   * locations no garment can occupy and understated the same overlap as 3076.
+   */
+  it("reports partial occlusion as an exact share of the wardrobe slots underneath", () => {
     const dress = visualStateGarmentFixture({ id: "g_dress", categoryId: "dress", layer: 1 });
     const coat = visualStateGarmentFixture({ id: "g_coat", categoryId: "outerwear", layer: 3 });
     const coatFeature = project([dress, coat]).find((feature) => feature.key.includes("g_coat"));
-    const [edge] = coatFeature?.relationships ?? [];
-    expect(edge?.kind).toBe("occludes");
-    expect(edge && "degree" in edge ? edge.degree : AFFORDANCE_UNIT_ONE).toBeLessThan(AFFORDANCE_UNIT_ONE);
+    expect(coatFeature?.relationships).toEqual([
+      {
+        kind: "occludes",
+        targetKey: `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/item:g_dress/wardrobe.garment`,
+        degree: toUnitInterval(4_545),
+      },
+    ]);
+  });
+
+  /**
+   * The failure W1 was really about: a plain shirt claiming full coverage of the
+   * wings and tail this slice marks mandatory for identity, because body-tree
+   * expansion walked into locations no garment can occupy.
+   */
+  it("never covers a body location clothing cannot sit on", () => {
+    const wingsAndHorns = projectSpeciesFeatureGroups({
+      subjectId: VISUAL_STATE_FIXTURE_SUBJECT_ID,
+      realizedBody: visualStateNonHumanBody(),
+    });
+    const shirt = visualStateGarmentFixture({ id: "g_top", categoryId: "top" });
+    const trousers = visualStateGarmentFixture({ id: "g_pants", categoryId: "pants" });
+    expect(project([shirt, trousers], wingsAndHorns).flatMap((feature) => feature.relationships)).toEqual([]);
+  });
+
+  it("emits no body edges for a garment that is merely held", () => {
+    const hat = visualStateGarmentFixture({
+      id: "g_hat",
+      categoryId: "headwear",
+      locus: { kind: "held", actorId: VISUAL_STATE_FIXTURE_ACTOR },
+    });
+    const [feature] = project([hat], presentationFeatures());
+    expect(feature?.relationships).toEqual([]);
+  });
+
+  it("emits no body edges for a garment lying in the room", () => {
+    const hat = visualStateGarmentFixture({
+      id: "g_hat",
+      categoryId: "headwear",
+      locus: { kind: "scene", placeName: "the study", anchor: "on the desk" },
+    });
+    // The scene subject is the character here, which is the case that used to
+    // let a hat on a desk cover the hair of the person standing next to it.
+    const features = projectWardrobeFeatures({
+      garments: [hat],
+      subjectsByActor: SUBJECTS,
+      sceneSubjectId: VISUAL_STATE_FIXTURE_SUBJECT_ID,
+      composeAgainst: presentationFeatures(),
+    });
+    expect(features[0]?.relationships).toEqual([]);
+  });
+
+  it("matches a category id that was never normalized upstream", () => {
+    const ring = visualStateGarmentFixture({
+      id: "g_ring",
+      categoryId: "jewelry",
+      subtypeId: "nose_ring",
+      coverage: ["nose"],
+    });
+    // The stored `category` is free text and only the forge normalizes it, so a
+    // row reading "  Jewelry " exists — and used to flip the piece to a
+    // full-degree `covers` that hid the nose it hangs from.
+    const shouty = { ...ring, categoryId: "  Jewelry " };
+    const [feature] = project([shouty], identityFeatures());
+    expect(feature?.kindId).toBe("wardrobe.item");
+    expect(feature?.relationships).toEqual([
+      { kind: "attached_to", targetKey: `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/nose/shape` },
+    ]);
   });
 
   it("asserts no stacking order when the caller supplied no layers", () => {

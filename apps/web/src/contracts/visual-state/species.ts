@@ -2,7 +2,7 @@ import { affordanceEvidence, type AffordanceEvidence } from "../affordances/core
 import { bodyLocationRegistry, FEATURE_GROUPS, type FeatureGroup } from "../body/locations";
 import { diag, type DiagnosticSink } from "../diagnostics";
 import type { RealizedBody } from "../species";
-import { VISUAL_STATE_SOURCE_UNAVAILABLE } from "./diagnostics";
+import { VISUAL_STATE_FEATURE_GROUP_UNPLACED, VISUAL_STATE_KIND_UNKNOWN } from "./diagnostics";
 import {
   validateVisualStateFeature,
   visualStateFeatureKey,
@@ -90,14 +90,25 @@ export function projectSpeciesFeatureGroups(
 ): readonly VisualStateFeature[] {
   const path = input.path ?? "visual_state.species";
   const kind = visualStateKindRegistry.byId(VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID);
-  if (!kind) return [];
+  if (!kind) {
+    input.sink?.push(
+      diag("warn", VISUAL_STATE_KIND_UNKNOWN, `${VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID} is not registered`, {
+        path,
+        context: { subjectId: input.subjectId },
+      }),
+    );
+    return [];
+  }
 
   const projected: VisualStateFeature[] = [];
   for (const { group, locationId } of FEATURE_GROUP_LOCATIONS) {
     if (!input.realizedBody.hasFeature(group)) continue;
     if (!input.realizedBody.isLocationPresent(locationId)) {
+      // Its own code, not `source.unavailable`: that one means "an owner exists
+      // upstream and this projection has no kind for it yet". This is the
+      // opposite — the kind exists and the owner answered, contradicting itself.
       input.sink?.push(
-        diag("warn", VISUAL_STATE_SOURCE_UNAVAILABLE, `${group} is realized with no ${locationId} location`, {
+        diag("warn", VISUAL_STATE_FEATURE_GROUP_UNPLACED, `${group} is realized with no ${locationId} location`, {
           path,
           context: { subjectId: input.subjectId, group, locationId },
         }),

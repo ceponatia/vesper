@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 import { realizeBody } from "../species";
 import { DiagnosticCollector } from "../diagnostics";
-import { VISUAL_STATE_SOURCE_UNAVAILABLE } from "./diagnostics";
+import { VISUAL_STATE_FEATURE_GROUP_UNPLACED } from "./diagnostics";
 import { visualStateHumanBody, visualStateNonHumanBody, VISUAL_STATE_FIXTURE_SUBJECT_ID } from "./fixtures";
 import { projectSpeciesFeatureGroups } from "./species";
 
@@ -83,6 +83,6 @@ describe("projectSpeciesFeatureGroups", () => {
       sink,
     });
     expect(features.map((feature) => feature.value)).toEqual([{ group: "horns" }, { group: "tail" }]);
-    expectDiagnostic(sink, VISUAL_STATE_SOURCE_UNAVAILABLE, { times: 1 });
+    expectDiagnostic(sink, VISUAL_STATE_FEATURE_GROUP_UNPLACED, { times: 1 });
   });
 });
