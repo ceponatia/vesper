@@ -80,8 +80,8 @@ detail to buy tidiness. Read them as a log, not as a template.
   sweep surfaced.
 - **Image identity packs — slice 6 harness: fixed identity-reference trial,
   built dark and hardened** —
-  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
-  [trial spec](image-identity-packs.spec.trial.md) — 2026-08-06 — the admin
+  [image-identity-packs.plan.md](finished/image-identity-packs.plan.md) ·
+  [trial spec](finished/image-identity-packs.spec.trial.md) — 2026-08-06 — the admin
   trial runner (runs/cells/grades/verdicts tables, budget-charged bounded
   execution, hidden `identity_trial_output` assets, blinded pairwise review,
   per-(profile, strategy) verdicts), then a pre-spend correctness pass over
@@ -104,8 +104,8 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 - **Image identity packs — slices 1–4 and 5A: durable owner-scoped face
   references** —
-  [image-identity-packs.plan.md](image-identity-packs.plan.md) ·
-  [spec](image-identity-packs.spec.md) — 2026-08-06 — one current revisioned pack
+  [image-identity-packs.plan.md](finished/image-identity-packs.plan.md) ·
+  [spec](finished/image-identity-packs.spec.md) — 2026-08-06 — one current revisioned pack
   per character derived from its canonical portrait and keyed by a SHA-256 over
   the stored bytes: the hidden `identity_face_crop` kind that `HIDDEN_IMAGE_KINDS`
   keeps out of the gallery, the portrait studio, character clones and public file
@@ -126,8 +126,8 @@ detail to buy tidiness. Read them as a log, not as a template.
   [roadmap.md](roadmap.md) under Next.
 
 - **Image model capabilities — slice 1: capability vocabulary and profiles** —
-  [image-model-capabilities.plan.md](image-model-capabilities.plan.md) ·
-  [spec](image-model-capabilities.spec.md) §"Slice 1 implementation rulings" —
+  [image-model-capabilities.plan.md](finished/image-model-capabilities.plan.md) ·
+  [spec](finished/image-model-capabilities.spec.md) §"Slice 1 implementation rulings" —
   2026-08-05 — the reviewed capability fields no schema can supply (`editKind`,
   `identityPreservation`, `operatorWarning`, never overwritten by a re-probe) plus
   `probedVersionId` and a reserved `advancedCapabilities`; the
@@ -150,7 +150,7 @@ detail to buy tidiness. Read them as a log, not as a template.
   (migration 0099), a probe that wrongly rejected a model with no field
   description, and automatic version pinning for community models. Everything past
   the smallest useful model record moved to
-  [image-model-capabilities.plan.md](image-model-capabilities.plan.md).
+  [image-model-capabilities.plan.md](finished/image-model-capabilities.plan.md).
 
 - **Replicate Qwen image providers (opt-in, `*`-marked)** —
   [images/providers.md](../images/providers.md) — 2026-08-05 — a first-class Replicate
