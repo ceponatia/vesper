@@ -19,7 +19,7 @@ threads — but **wardrobe** reached full parity with the old session model as t
 test-bed step (chat-wardrobe-parity, shipped 2026-07-14: structured worn
 item state, computed exposure via the shared wardrobe classifier, an equip/unequip Character sheet
 — see [state.md](state.md) §Wardrobe and
-[developer-notes/chat-wardrobe-parity.plan.md](../developer-notes/chat-wardrobe-parity.plan.md)).
+[developer-notes/chat-wardrobe-parity.plan.md](../developer-notes/finished/chat-wardrobe-parity.plan.md)).
 **Direction (R6 rollout complete 2026-07-22):** chat was the **test bed the successor
 simulation engine grew out of**. The original world/session model it was proving a
 replacement for is now **retired** (its play pages, turn pipeline, and world CRUD are

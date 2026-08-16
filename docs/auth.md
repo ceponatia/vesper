@@ -42,8 +42,8 @@ The posture is safe **because** sign-up is off and the app runs a single
 instance: the only accounts are seeded/approved ones. Opening self-service sign-up
 changes who can reach these surfaces, so this list is the gate on that flag — every
 item must hold before `ALLOW_SIGNUP` is `true` for anything but a brief, supervised
-window ([security-authz.plan.md](developer-notes/security-authz.plan.md) owns the
-work to close the open ones).
+window. The hardening behind these items was built under
+[security-authz.plan.md](developer-notes/finished/security-authz.plan.md).
 
 1. **Required email verification** — `emailAndPassword.requireEmailVerification` plus a
    real transport, so an address can't be claimed without proving control of it.
@@ -157,7 +157,7 @@ the user + sign-out, or a sign-in link.
 ### Magic link (dev-only until a transport exists)
 
 A magic link **is a temporary password**, so it must never reach log retention
-([security-authz.plan.md](developer-notes/security-authz.plan.md)).
+([security-authz.plan.md](developer-notes/finished/security-authz.plan.md)).
 `apps/web/src/server/auth/magic-link.ts` owns the whole
 policy:
 

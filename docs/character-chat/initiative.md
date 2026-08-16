@@ -5,7 +5,7 @@ player reopens the conversation, and surfacing an old shared moment unprompted.
 
 ## Initiative (the character reaches out first)
 
-The reopen opener ([developer-notes/chat-initiative.plan.md](../developer-notes/chat-initiative.plan.md)):
+The reopen opener ([developer-notes/chat-initiative.plan.md](../developer-notes/finished/chat-initiative.plan.md)):
 the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
 exchange with `initiative: true` — the server builds the cue
 (`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
