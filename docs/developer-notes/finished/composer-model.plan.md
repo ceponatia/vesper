@@ -1,7 +1,18 @@
 # Scene composer model — a fast, cheap shot planner
 
-Status: awaiting acceptance — a confirming A/B re-run on the current prompt, and
-the first scene renders on the deployed build
+Status: shipped — 2026-08-15. All four slices built, and accepted by owner
+ruling (2026-08-15): the A/B re-run already taken is the verdict, and the
+confirming re-run this plan had reserved is **waived** rather than pending.
+Accepted with one element knowingly open — both paid runs were measured on the
+pre-fix prompt and grader, so their per-axis staging and camera numbers stay
+instrument-bound (the reasoning why the promotion survives that, and what it
+rests on instead, is in the spec's Results section). Two things outlived the
+plan and neither blocks it: the deployed build has not yet been watched for the
+terser composer prose recorded in
+[composer-model.spec.md](composer-model.spec.md) §"Per-arm verdicts", and the
+`~deepseek/deepseek-v4-flash-latest` row stays curated as the way to try a newer
+snapshot on one conversation. A regression in either becomes
+`composer-model.followups.md`.
 
 Outcome: The owner can run one command that scores every candidate shot-planning
 model against today's on the same intimate scenes, and can switch a live
@@ -115,7 +126,10 @@ selected for a conversation.
   paid runs happened; both were measured on the **pre-fix** prompt and grader,
   so neither is the clean re-run this plan asked for. The verdict and the exact
   limits of what those numbers support are recorded in the spec's results
-  section. A confirming re-run on the current prompt costs roughly $0.19.
+  section. Owner ruling (2026-08-15): **that verdict is accepted and the
+  confirming re-run is waived** — the ranking held across both runs and the
+  latency and cost gaps are structural, so the ~$0.19 would buy tidier evidence
+  for a decision it could not plausibly reverse.
 - **Slice 4 — the default moves, or is deliberately kept.** Status: complete —
   2026-08-15. The default moved to DeepSeek 4 Flash, pinned to the tested
   snapshot (`deepseek/deepseek-v4-flash-0731`, which is what the probe's floating
@@ -168,8 +182,10 @@ The promotion was made anyway, deliberately and on the record, because the two
 grounds it rests on are ones the prompt cannot reach: the winner matched or beat
 the control on **both** runs, and its 12× latency and 88× cost advantages come
 from the control's mandatory reasoning rather than from anything the composer is
-asked. A confirming re-run on the current prompt is still worth its ~$0.19, and
-until it happens the per-axis numbers stay caveated where they are quoted.
+asked. Owner ruling (2026-08-15): those two grounds are accepted as the verdict
+and the confirming re-run is waived. The per-axis numbers stay caveated wherever
+they are quoted — that limit is a property of the data, and accepting the
+decision does not retire it.
 
 ## Success criteria
 

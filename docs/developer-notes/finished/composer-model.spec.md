@@ -420,9 +420,16 @@ promotion, on two grounds the prompt cannot reach:
   mandates reasoning; that is where its 45-second mean comes from, and no prompt
   wording closes a 12× latency gap or an 88× cost gap.
 
-A re-run on the current prompt is still the thing that would make this a clean
-verdict, and it would cost roughly $0.19 at Run 2's arm set. Until then, treat
-every per-axis number below as instrument-bound.
+**Owner ruling (2026-08-15): this is the accepted verdict; the confirming re-run
+is waived.** A re-run on the current prompt would have cost roughly $0.19 at Run
+2's arm set and would have made the evidence tidier, but it could not plausibly
+reverse a decision resting on a ranking that held across two runs and on gaps
+that come from the control's endpoint rather than its answers.
+
+That ruling accepts the decision, not the data: every per-axis number below stays
+instrument-bound, because that is a property of how it was measured. Anyone
+reopening this — to move the default again, or to read an arm's staging or camera
+behaviour — starts from a fresh run rather than from these cells.
 
 ### Run 2 summary — 14 calls per arm
 
