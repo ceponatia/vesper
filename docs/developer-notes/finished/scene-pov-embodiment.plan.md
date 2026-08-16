@@ -312,9 +312,9 @@ it before slice 3 ships, since that's the slice that can regress it.
   coverage this consumes. **Hard dependency for slices 2–4.**
 - `docs/images.md` §Scene images — the POV hard rule, the reference ladder, the
   `imageReveal` tag, and the "chat path only" precedent. **Update it here.**
-- [finished/chat-selfies.plan.md](finished/chat-selfies.plan.md) — `SELFIE_FRAMING`,
+- [finished/chat-selfies.plan.md](../finished/chat-selfies.plan.md) — `SELFIE_FRAMING`,
   the POV rule's existing inverse.
-- [finished/chat-scene-fidelity.plan.md](finished/chat-scene-fidelity.plan.md) —
+- [finished/chat-scene-fidelity.plan.md](../finished/chat-scene-fidelity.plan.md) —
   identity anchors + the state-aware chat scene (`visualStateNote`'s home).
 - `docs/scene-image-eval/index.md` — the eval harness to extend.
 </content>

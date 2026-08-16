@@ -29,7 +29,7 @@ legacy action chips (`chat-conversation.tsx:1465`) and photo attachments
   editable via the API too (UI hides the action bar, `chat-message.tsx:174-183`).
 - **Another take** shows for the last assistant line unconditionally
   (`chat-conversation.tsx:1038-1040`) even when the reply is solo/`cutId:""`
-  and retake predictably 409s — see [solo-retake.plan.md](solo-retake.plan.md) (A3).
+  and retake predictably 409s — see [solo-retake.plan.md](../deferred/solo-retake.plan.md) (A3).
 
 (HIGH · M — the manifest itself is S; the per-control server guards are the rest)
 

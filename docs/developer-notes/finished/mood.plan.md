@@ -4,7 +4,7 @@ Status: **shipped — 2026-06-24**. All of mood's **own** scope landed: the proj
 `EmotionLabel`, welcome/unwelcome touch, the condition + scene-atmosphere baseline shifts,
 and the mood chip on both the cast card and the character-chat strip (see _Shipped_
 below). The two ideas once parked under "remainder" belong to **other** plans, not this
-one — the relationship/meter timeline ([deferred.plan.md](deferred.plan.md) #4) and the
+one — the relationship/meter timeline ([deferred.plan.md](../deferred.plan.md) #4) and the
 avatar's consumption of the projection ([avatar-3d.plan.md](avatar-3d.plan.md)) — so the
 mood topic itself is complete and archived to `finished/`. Settled (open questions
 resolved 2026-06-24; see _Decisions_). Graduated the **event→mood table** that
@@ -126,7 +126,7 @@ invented — is in [mood.spec.md](mood.spec.md) §3.)
   **relationship & meter timeline** (`deferred.plan.md` #4) charting mood over a
   session.
 - **Character-chat** — chat-scale mood **already ships**
-  ([character-chat-state.plan.md](finished/character-chat-state.plan.md), shipped
+  ([character-chat-state.plan.md](../finished/character-chat-state.plan.md), shipped
   2026-06-24): its reaction pulse moves the `mood` meter via the same §6 curve and
   surfaces `deriveMoodDescriptor` in the prompt. Mood adds the **labeled projection**
   (a chat mood chip / avatar) and the richer event inputs on top — one system, not a
@@ -212,9 +212,9 @@ No open questions remain — the rulings, with detail recorded in the spec:
   the deferred event→mood table this graduates, and the design truth.
 - [avatar-3d.plan.md](avatar-3d.plan.md) / [avatar-3d.notes.md](avatar-3d.notes.md)
   — the avatar consumes the labeled-emotion projection + reaction beat.
-- [character-chat-state.plan.md](finished/character-chat-state.plan.md) (shipped) —
+- [character-chat-state.plan.md](../finished/character-chat-state.plan.md) (shipped) —
   chat-scale mood reuses this system.
 - [intimacy-notes.plan.md](intimacy-notes.plan.md),
   [social-reaction-cards.plan.md](social-reaction-cards.plan.md) — feed mood inputs.
-- [deferred.plan.md](deferred.plan.md) "Relationship & meter timeline" (#4) — mood
+- [deferred.plan.md](../deferred.plan.md) "Relationship & meter timeline" (#4) — mood
   surfacing; `npc-puppeting.deferred.md` — a downstream consumer.

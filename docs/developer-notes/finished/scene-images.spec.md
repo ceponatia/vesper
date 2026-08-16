@@ -32,7 +32,7 @@ Decisions from the PM pass:
   production). The fix is fully designed below so it's ready to drop in.
 
 This is my review of the feedback, grounded in the current pipeline
-([../images.md](../../images.md), `src/server/images/`, `src/server/ai/`).
+([../images.md](../../character-chat/images.md), `src/server/images/`, `src/server/ai/`).
 
 ## 1. What we actually have today (the baseline the feedback describes)
 
@@ -150,7 +150,7 @@ anatomy text. When the gate comes due, the chosen rule is:
 **Centralize it.** When built, add `isSyntheticAvatar(row): boolean` next to the
 asset helpers, used by both the scene render and the provider router, with a unit
 test that an uploaded row is never synthetic and a generated row is. This is
-exactly the "shared predicate" lesson [../images.md](../../images.md) already records
+exactly the "shared predicate" lesson [../images.md](../../character-chat/images.md) already records
 for `intimateAttrRendersExposed` — don't let the rule diverge across call sites.
 
 ## 4. Provider-capability abstraction, multi-reference plumbing & the join table (build now)
@@ -192,7 +192,7 @@ location" is a query worth having available from day one. So:
   `entity`), `image_id` (the actual reference asset used). Written at render in
   `renderSceneImage` alongside the asset insert.
 - Make the table the **queryable source of truth** for "what a scene featured."
-  The Gallery filter ([../images.md](../../images.md) §Gallery), today a client-side
+  The Gallery filter ([../images.md](../../character-chat/images.md) §Gallery), today a client-side
   pass over `meta.references`, can move to a server-side query against the table —
   cleaner and it scales.
 - Keep `source_image_id` on `images` for edit lineage (unchanged). The JSONB
@@ -405,7 +405,7 @@ space moves fast):**
   Network Volume** (async `/run` → poll, scale-to-zero, cost leader ~$1.9–2.5/hr
   A100-class, ~30 s cold start) maps directly onto the queue/poll shape image
   jobs already use — and is exactly the GPU background worker that
-  [monorepo-evaluation.md](../monorepo-evaluation.md) parks the split behind. **Modal**
+  `monorepo-evaluation.md` parks the split behind. **Modal**
   if cold-start latency hurts UX (~2–5 s, pricier); Replicate/fal easiest but
   costliest; **confirm each provider's adult-content ToS first.**
 - **End-to-end:** ComfyUI on RunPod Serverless → Chroma (or Qwen-Edit-2511) →
@@ -427,7 +427,7 @@ Two codebase-specific hooks:
   `maxReferenceImages: N, supportsAdultFictionalNudity: true,
   supportsReferenceRoles: true`," not a rewrite of `scene.ts`.
 - **It is plausibly the trigger for the deferred monorepo split.** The
-  [monorepo-evaluation.md](../monorepo-evaluation.md) note parks the split behind
+  `monorepo-evaluation.md` note parks the split behind
   "the first second deployable… most likely a background worker." A GPU
   ComfyUI/diffusion worker is exactly that second deployable — and the cloud-GPU
   target above makes it a separate service. Make the two decisions together.
@@ -436,7 +436,7 @@ Two codebase-specific hooks:
 
 1. **First-person player POV is a hard rule.** Every scene is from the player's
    eyes; the player never appears and the player's appearance/wardrobe is never
-   fed to the composer or render ([../images.md](../../images.md), `SCENE_POV_RULE`).
+   fed to the composer or render ([../images.md](../../character-chat/images.md), `SCENE_POV_RULE`).
    A multi-reference provider makes this _easier to break_ — you're now handing it
    2+ character refs + a location, and must guarantee the player's avatar is never
    among them. (It isn't today: refs come from present NPCs + location only,
@@ -527,6 +527,6 @@ section is a pointer so the two don't diverge). As of the 2026-06-19 pivot:
 - The §3 guard stays tracked here as a pre-production gate (deferred while in
   dev). When the app nears accepting real user uploads, lift it into the plan's
   active work / a fix PR and check the §9 safety row.
-- When §4 ships (it's "build now"), update [../images.md](../../images.md) +
+- When §4 ships (it's "build now"), update [../images.md](../../character-chat/images.md) +
   [../database.md](../../database.md) for the join table in the same change, per the
   doc-update convention.

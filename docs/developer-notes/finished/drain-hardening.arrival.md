@@ -58,7 +58,7 @@ by design headroom the engine deliberately reserved (the
    must always be the same second** — today that shared second is
    `expectedArrivalAt`, whatever values the authoring system later writes into
    a route. The authoring system itself is parked separately:
-   [deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md).
+   [deferred/travel-duration-authoring.plan.md](../deferred/travel-duration-authoring.plan.md).
 2. **Safety net: re-aim + post-drain arrival check.** Beyond retargeting the
    drain, every travel choreography verifies after the drain that the
    traveller's locus actually left `in_transit`; if not, log a stable

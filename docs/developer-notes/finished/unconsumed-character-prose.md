@@ -1,7 +1,7 @@
 # Authored character prose that never reaches a prompt
 
 Status: **analysis / proposal** (2026-06-15). Supplement to
-[character-schema-audit.md](finished/character-schema-audit.md) findings **C1** and **C2**.
+[character-schema-audit.md](../finished/character-schema-audit.md) findings **C1** and **C2**.
 The character forge spends model effort drafting a `personality` sketch and
 free-text `voice` notes for every character; neither field is ever read by a
 prompt builder. Only `bio` reaches the narrator. This doc traces exactly what is

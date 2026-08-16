@@ -15,7 +15,7 @@ simulation engine stops growing the web application it used to live inside.
 
 ## Why
 
-The first monorepo pass ([finished/monorepo-image-core.plan.md](finished/monorepo-image-core.plan.md))
+The first monorepo pass ([finished/monorepo-image-core.plan.md](../finished/monorepo-image-core.plan.md))
 moved the application to `apps/web` and extracted the image engine into
 packages, but it left three frictions behind:
 
@@ -69,7 +69,7 @@ application-side splits of the image lifecycle files and simulation stores.
   provider gateways remains `apps/web` code.
 - **The other giant files stay where they are for now.** The chat pipeline,
   chat state, database schema, chat UI, and client API splits remain owned by
-  [codebase-modularity.audit.md](codebase-modularity.audit.md) for a later
+  [codebase-modularity.audit.md](../codebase-modularity.audit.md) for a later
   plan; the schema split in particular needs a human migration check this plan
   does not attempt.
 - **No behavior changes.** Every slice is structure-only; the app on Fly

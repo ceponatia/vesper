@@ -6,8 +6,8 @@ See the Completion note at the foot.
 Design/decisions: [character-chat-state-narration.spec.md](character-chat-state-narration.spec.md)
 — read it first; it is the truth (types, the overlay guard, the anti-repetition algorithm,
 the collected open questions). This plan is the task list and build order. It builds on the shipped **light state**
-([character-chat-state.plan.md](finished/character-chat-state.plan.md) · spec
-[character-chat-state.spec.md](finished/character-chat-state.spec.md), the truth for
+([character-chat-state.plan.md](../finished/character-chat-state.plan.md) · spec
+[character-chat-state.spec.md](../finished/character-chat-state.spec.md), the truth for
 the tracked meters/affinity/conditions/mindNote) and the shipped **opportunistic
 sensory cues** ([character-chat-sensory.plan.md](character-chat-sensory.plan.md)),
 whose "surface a cue only when the beat earns it" rule this generalizes from scent to
@@ -136,13 +136,13 @@ defaults — flag if you want them revisited.
 
 ## Related
 
-- Spec it leans on: [character-chat-state.spec.md](finished/character-chat-state.spec.md)
+- Spec it leans on: [character-chat-state.spec.md](../finished/character-chat-state.spec.md)
   (the tracked meters/conditions/affinity mechanics).
 - Pattern it generalizes: [character-chat-sensory.plan.md](character-chat-sensory.plan.md)
   ("surface a cue only when the beat earns it").
 - Deferrals it graduates: scenario plan's narrator-sees-outfit/cards
-  ([finished/character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md)) and
-  the state-aware chat scene image ([deferred.plan.md](deferred.plan.md)).
+  ([finished/character-chat-scenario.plan.md](../finished/character-chat-scenario.plan.md)) and
+  the state-aware chat scene image ([deferred.plan.md](../deferred.plan.md)).
 - Reused contracts: `contracts/meters/registry.ts`, `contracts/conditions/condition.ts`
   (`attributeEffects`/`senseEffects`), `contracts/registry/provenance.ts` (the `condition`
   source), `contracts/attributes/value.ts` (`overlaySourceMayChange`),

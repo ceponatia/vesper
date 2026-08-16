@@ -4,13 +4,13 @@ Status: **shipped — 2026-07-17** (verdict: **advance** — Gate 2 closed; Gate
 and remains blocked on its 10 product rulings, engine.plan.md §"Product rulings needed
 before Gate 3")
 
-The closing target of Gate 2 in [engine.plan.md](engine.plan.md) §"Gate 2 build order".
+The closing target of Gate 2 in [engine.plan.md](../../engine.plan.md) §"Gate 2 build order".
 Unlike E2.1–E2.5 this builds no new kernel capability: it stress-runs everything the
 previous five targets shipped against the §"Required proofs" list, then records the
 owner's **advance / revise / hold / stop** ruling before any Gate 3 (movement,
 actions, live-scene) work is permitted to start.
 
-Contract: [engine.spec.md](engine.spec.md) §12.4 (partition invariance), §33
+Contract: [engine.spec.md](../../engine.spec.md) §12.4 (partition invariance), §33
 (diagnostics), §35 (observability), §36.2 (property tests). Prior targets:
 [engine-durable-branch-transaction.plan.md](engine-durable-branch-transaction.plan.md)
 (E2.2), [engine-outbox-rebuildable-consumers.plan.md](engine-outbox-rebuildable-consumers.plan.md)

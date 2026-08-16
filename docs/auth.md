@@ -43,7 +43,7 @@ instance: the only accounts are seeded/approved ones. Opening self-service sign-
 changes who can reach these surfaces, so this list is the gate on that flag — every
 item must hold before `ALLOW_SIGNUP` is `true` for anything but a brief, supervised
 window. The hardening behind these items was built under
-[security-authz.plan.md](developer-notes/finished/security-authz.plan.md).
+`security-authz.plan.md`.
 
 1. **Required email verification** — `emailAndPassword.requireEmailVerification` plus a
    real transport, so an address can't be claimed without proving control of it.
@@ -53,7 +53,7 @@ window. The hardening behind these items was built under
 3. **Shared (cross-instance) rate limiting** on sign-in, password reset, and magic-link
    requests. **Not in place, by ruling**: `apps/web/src/server/api/rate-limit.ts` is deliberately
    process-local
-   ([finished/security-hardening.plan.md](developer-notes/finished/security-hardening.plan.md))
+   (`security-hardening.plan.md`)
    while Vesper runs a single instance. A second instance re-opens it, not sign-up.
 4. **Admin MFA / WebAuthn** — a second factor on `role: "admin"` accounts (Better Auth
    `twoFactor` / `passkey` plugin). **Not in place.**
@@ -157,7 +157,7 @@ the user + sign-out, or a sign-in link.
 ### Magic link (dev-only until a transport exists)
 
 A magic link **is a temporary password**, so it must never reach log retention
-([security-authz.plan.md](developer-notes/finished/security-authz.plan.md)).
+(`security-authz.plan.md`).
 `apps/web/src/server/auth/magic-link.ts` owns the whole
 policy:
 
@@ -286,7 +286,7 @@ because the edit surfaces need every column; everyone else gets the projection.
 
 ### Copy-on-use, not live references
 
-Because of the [world-instances copy cascade](developer-notes/finished/world-instances.plan.md),
+Because of the `world-instances.plan.md`,
 **using** a public entity *copies* it — there are **no live cross-owner
 references**. `cloneToLibrary` (`server/api/clone.ts`) deep-copies a viewable
 source into a new owned, private row. The source author can't push changes or
@@ -401,4 +401,4 @@ Expansion is plugins, not rewrites: a public **browse/discovery** gallery (the
 read rule already supports it — only the list query + UI are missing), user
 profiles, an `unlisted` tier, selective update **propagation** to copies, and
 Better Auth plugins (organizations, 2FA, passkeys, API keys, more OAuth). Tracked
-in [auth.plan.md](developer-notes/finished/auth.plan.md).
+in `auth.plan.md`.

@@ -6,7 +6,7 @@ registration-review corrections and the Neon backfill (2026-07-30), and the
 final foot side/unsided regressions closed in the slice-3A pass (2026-07-31).
 
 Nothing here is outstanding. The live sequencing that governs what happens next
-is in the [plan](romantic-contact-affordances.plan.md) §"Slice 3A" and its
+is in the [plan](../romantic-contact-affordances.plan.md) §"Slice 3A" and its
 continuation order — this document is now history, kept for the record of what
 each fix was and why.
 
@@ -37,7 +37,7 @@ that pass. See "Done" below._
   verified), with the foot registry defaults deployed. **The production-registration
   gate now waits only on slice-3 wiring order**, not on any correction or data
   migration. Full order: the
-  [plan](romantic-contact-affordances.plan.md) §Slice 3 sequencing.
+  [plan](../romantic-contact-affordances.plan.md) §Slice 3 sequencing.
 
 ## Done
 
@@ -78,7 +78,7 @@ that pass. See "Done" below._
      gate — each axis omits only its own surfaces (arch subtree / toenail /
      interdigital spaces), pressure needs no `feet.*` attribute, and the
      compiler never substitutes a default. Detail:
-     [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+     [foot spec](../romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
   3. *Optional-invalid dependency law.* Core `unmetDependencies`: optional +
      unavailable continues; optional + invalid now SUPPRESSES with the invalid
      code and diagnostic (an unparseable "trapped" support no longer reads as
@@ -88,21 +88,21 @@ that pass. See "Done" below._
   `footwearHidesDeformation`, marks a dropped detail with
   `pose_hidden_by_footwear`, and always keeps the externally observable
   `restricted_by_*` tag. The fixture matrix's flexible-fabric row became a full
-  case (`sockTransmittedToeCurl`). Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  case (`sockTransmittedToeCurl`). Detail: [foot spec](../romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Side-specific conditions** — 2026-07-30. The coarse condition read carries an
   optional `side` and the payload is a set with at most one answer per foot;
   effective mechanics became per-foot blocks and `footSurfaceMechanics` looks up
   by side. A foot nobody answered for reads unknown rather than borrowing the
   other foot's answer, and each foot's own pose now drives its own interdigital
-  closure. Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  closure. Detail: [foot spec](../romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Lifecycle material fingerprinting** — 2026-07-30. `contentKey` fingerprints
   each layer's content rather than its id, so a layer that changes under a stable
   id produces `contact_updated` with the fresh material; array order and evidence
-  are deliberately not content. Detail: [contact-core spec](romantic-contact-affordances.spec.contact-core.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  are deliberately not content. Detail: [contact-core spec](../romantic-contact-affordances.spec.contact-core.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Duplicate-layer canonicalization** — 2026-07-30. `compileFootwearContact`
   merges rows sharing a `layerId` by a stated rule per field and reports the
   repair as a `FootwearAnomalyRead`, which the domain files as a
-  `foot.footwear.anomaly` warning. Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  `foot.footwear.anomaly` warning. Detail: [foot spec](../romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Per-side residuals (owner review)** — 2026-07-30. The unsided-locus closure
   modifier now applies only when **two distinct feet are supplied and agree**;
   zero poses, one pose, and disagreement are all the structural-neutral `0` — a
@@ -110,10 +110,10 @@ that pass. See "Done" below._
   may be the right foot. The support and articulation payloads gained
   `footSupportSetSchema` / `footArticulationSetSchema`, so a repeated side fails
   the schema (⇒ `invalid`) instead of letting whichever entry was read first win.
-  Detail: [foot spec](romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
+  Detail: [foot spec](../romantic-contact-affordances.spec.foot.md#deltas-from-the-draft-above--this-section-is-the-authority).
 - **Stale ruling comments** — 2026-07-30. `contact/decisions.ts`,
   `contact/state.ts`, and the foot fixtures/tests now state the owner's
   2026-07-30 rulings (permission scope split and contact storage home) as
   settled law and point at the
-  [audit](romantic-contact-affordances.audit.md#owner-decisions-needed).
+  [audit](../romantic-contact-affordances.audit.md#owner-decisions-needed).
   Comments only — no behaviour change.

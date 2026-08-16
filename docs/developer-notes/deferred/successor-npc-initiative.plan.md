@@ -24,7 +24,7 @@ feel like it has a person in it, not a prompt waiting for input.
 ## Sketch
 
 Port the legacy cue pattern into the successor lane, grounded in the commitments
-seeded by [starter-world-seeds.plan.md](starter-world-seeds.plan.md) so her
+seeded by [starter-world-seeds.plan.md](../finished/starter-world-seeds.plan.md) so her
 reach-outs are anchored to real obligations and plans. Pairs naturally with
 [remote-channels.plan.md](remote-channels.plan.md) — her initiative is what
 carries a reach-out while the two are apart.

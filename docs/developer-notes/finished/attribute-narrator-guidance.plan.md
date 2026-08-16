@@ -94,8 +94,8 @@ salty — see [sensory-grounding.followups.md](sensory-grounding.followups.md)):
 - **Slice 6 (docs):** contracts/attributes.md (field + orthogonality rule),
   prompts.md (render sites), authoring.md (authoring guidance).
 
-Reference docs: [../contracts/attributes.md](../contracts/attributes.md) (the
-definition schema this extends), [../prompts.md](../prompts.md) (the blocks that
+Reference docs: [../contracts/attributes.md](../../contracts/attributes.md) (the
+definition schema this extends), [../prompts.md](../../character-chat/prompts.md) (the blocks that
 render it). No separate spec — decisions are recorded inline here.
 
 ## Goal

@@ -136,9 +136,26 @@ close-out also:
   followups, detail docs) into `finished/` together, so their mutual relative
   links keep resolving.
 - Removes the plan's entry from `roadmap.md` entirely, and writes its single
-  line in `roadmap.shipped.md` pointing at the `finished/…` path. Every other
-  inbound link stays on the old path per the root `CLAUDE.md` archiving rule
-  (and don't fix the moved doc's own outbound links either).
+  line in `roadmap.shipped.md` pointing at the `finished/…` path.
+- **Repoints every link the move broke** (owner ruling 2026-08-15, reversing the
+  old "leave them stale" rule):
+  - **Inbound** — every link to the moved docs from anywhere under
+    `docs/developer-notes/`, including from docs already in `finished/`.
+  - **Outbound** — the moved docs' own relative links. Dropping a level into
+    `finished/` breaks every one of them; each needs one more `../`. This is the
+    single biggest source of rot, and it is invisible unless you check.
+  - Reference docs need no repointing, because they no longer link here at all
+    (see below).
+
+  The old rule assumed a shipped doc's stale links were harmless. They compound:
+  the 2026-08-15 sweep found **355 broken links across `docs/`**, 291 of them
+  inside `finished/` docs whose outbound paths broke when they were archived.
+
+- **Never link from `docs/` into this folder.** A reference doc contains the
+  information it needs; naming the governing doc is fine as **plain text**
+  (`` `chat-initiative.plan.md` ``), never as a link. Working docs are dated and
+  archivable, so a reference doc that defers to one goes wrong the moment the
+  plan ships — and it goes wrong in a way a path fix does not catch.
 - Trims the idea's `deferred.plan.md` entry if it graduated from the parking
   lot (a one-line tombstone at most), and updates its line in
   `deferred/CLAUDE.md`'s stub index if it started as a stub there.

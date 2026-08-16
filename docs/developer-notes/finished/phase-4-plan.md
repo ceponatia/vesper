@@ -128,7 +128,7 @@ remain:
   forehead → `face`) into Vesper's coarse groups (recommended), or match aionchat
   **1:1** with a group per region? The field data is identical either way; only
   the `category`/file layout differs. Defaults to fold; confirm before the port.
-- **Housekeeping** (tracked in [deferred.plan.md](deferred.plan.md) §"Phase-4/5
+- **Housekeeping** (tracked in [deferred.plan.md](../deferred.plan.md) §"Phase-4/5
   resequencing — deeper prose sweep"): whether to chase the remaining historical
   "phase 4" prose mentions (dated phase-3 docs, the `phase-3-to-4.md` body,
   gpt-review snapshots, ~11 `src/` code comments) now meaning phase 5, or leave

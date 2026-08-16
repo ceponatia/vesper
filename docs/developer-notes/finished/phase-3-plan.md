@@ -5,7 +5,7 @@ all waves landed (W0 contracts + T1 merge/witness+comms, T2 pre-turn
 prompt blocks, T3 agent prompts, T4 integration); gates at completion:
 typecheck + lint clean, 937 pure + 89 integration tests green; no DB
 migration (all state is JSONB). System documented in
-[../perception.md](../perception.md). Leftovers all deferred by design to
+`perception.md`. Leftovers all deferred by design to
 phase 4+ (full sound channel, NPC-initiated comms + escalation, per-pair
 proximity tracking / engagement / movement lock / contested transitions,
 banded ambient light, player-unperceived hidden acts v2) — tracked in
@@ -157,7 +157,7 @@ The nine questions raised across the phase-3 doc set were answered
   ([presence-and-perception-spec.phase3.md](presence-and-perception-spec.phase3.md)
   §Gaps & opportunities).
 - **Comms scope** (group calls / voicemail / text history) → tracked in
-  [deferred.plan.md](deferred.plan.md).
+  [deferred.plan.md](../deferred.plan.md).
 - **Area path hierarchy / Owner↔private-link / Banded vocabulary /
   Item-instance ownership** → all resolved
   ([location-design-spec.phase3.md](location-design-spec.phase3.md)
@@ -178,7 +178,7 @@ Phase-start questions, resolved 2026-06-13:
   §Gaps & opportunities).
 - **Observer / god-mode sessions** → deferred (omniscient mode is less
   relevant to the romance scope but wanted eventually); tracked in
-  [deferred.plan.md](deferred.plan.md).
+  [deferred.plan.md](../deferred.plan.md).
 
 ## Naming note
 

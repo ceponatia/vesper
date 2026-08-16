@@ -5,7 +5,7 @@ them; the access, privacy, and consent layers that gate movement and entry; and
 the journeys actors take to cross the space. Commitments, actions, activities,
 and live-scene arbitration are a separate concern — see
 [activities.md](activities.md). The normative contract for everything below is
-[engine.spec.world.md](../developer-notes/engine.spec.world.md); citations here
+`engine.spec.world.md`; citations here
 are plain-text `engine.spec §N` pointers into it.
 
 ## How it works
@@ -210,7 +210,7 @@ the same fail-closed, diagnostic-over-exception pattern documented in
 
 - [activities.md](activities.md) — commitments, temporal pressure, actions,
   activities, and live-scene reconciliation (engine.spec §15–§18).
-- [engine.spec.world.md](../developer-notes/engine.spec.world.md) — the
+- `engine.spec.world.md` — the
   normative source for this doc, §13, §14, and §17.
 - [resilience.md](../resilience.md) — the fail-closed, diagnostic-first
   pattern this doc's access rules follow.

@@ -2,7 +2,7 @@
 
 Status: **Superseded** (read-only force-directed graph); slices 2–3
 (editable layout, play-screen minimap) deferred. Graduated from
-[deferred.plan.md](deferred.plan.md) 2026-06-16; bumped via the UX-audit (feature #5).
+[deferred.plan.md](../deferred.plan.md) 2026-06-16; bumped via the UX-audit (feature #5).
 
 ## Slice 1 — shipped (2026-06-18)
 
@@ -35,7 +35,7 @@ would have made **M2** obvious at a glance — a hot-spring world forged with **
 bath**, three location links pointing at a non-existent "The Grand Onsen Bath" that
 went unnoticed in the flat card list. The audit recommends bumping this plan's
 priority alongside the forge-canon reconciler
-([ux-audit.plan.md](finished/ux-audit.plan.md) §2, which fixes the _cause_; this view
+([ux-audit.plan.md](../finished/ux-audit.plan.md) §2, which fixes the _cause_; this view
 surfaces the _symptom_).
 
 ## Current state

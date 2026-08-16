@@ -60,7 +60,7 @@ Details: `docs/character-chat/pipeline.md` §Reply failures.
 - ~~**Durable chat diagnostics.**~~ **Closed 2026-07-14 for the failure half** —
   every failed agent leg is now recorded durably (an `events` row, `type =
   "agent_failure"`) with a suspected cause, and tallied in the inspector's
-  **Agent health** panel; see [../resilience.md](../resilience.md)
+  **Agent health** panel; see [../resilience.md](../../resilience.md)
   §Agent-failure telemetry. What remains un-persisted is the *non-failure*
   chat diagnostic stream (the `info`-level codes) — still `log.info`'d and
   dropped, with no chat equivalent of `turns.diagnostics`. Lower value now that

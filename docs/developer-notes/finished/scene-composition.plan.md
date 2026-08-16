@@ -6,7 +6,7 @@ the probe-hardened prompts are the versions the app uses from the next
 deploy, accepted with one element knowingly open — oral-contact geometry
 renders the moment before contact, not contact itself (the evidence trail and
 do-not-retry levers are in the spec §Probe results). Successor work:
-[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md) carries the
+[intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md) carries the
 owner-directed production incorporation of the act-rendering LoRA (plus the
 staged prompts driving the expanded admin image lab, and the
 intimate-anatomy-on-away-shots tension as its open question).
@@ -20,21 +20,21 @@ Technical companion: [scene-composition.spec.md](scene-composition.spec.md)
 
 Related work, and the boundary with each:
 
-- [image render quality](image-render-quality.plan.md) owns **how each model is
+- [image render quality](../image-render-quality.plan.md) owns **how each model is
   told** things — per-model prompt dialects, negative steering, identity-lock
   wording per model. This plan owns **what the shot contains**: where the
   camera stands, which way the subject faces, what act is being staged. The two
   meet at the identity-lock wording, which this plan adapts when a face is
   partly hidden and that plan translates per model.
-- [visual state and attention](visual-state.plan.md) owns the lane-neutral
+- [visual state and attention](../visual-state.plan.md) owns the lane-neutral
   projection of what a character looks like right now, including body language
   read from committed scene facts. This plan does not build a second
   projection: its committed-state slice reads those facts directly as an
   interim, and migrates onto the visual-state image digest when that ships.
-- [romantic contact affordances](romantic-contact-affordances.plan.md) owns the
+- [romantic contact affordances](../romantic-contact-affordances.plan.md) owns the
   committed scene facts themselves — posture, who faces whom, distance, active
   contact. This plan only reads them, and writes nothing back.
-- [spatially controlled scene images](spatial-scene-images.plan.md) owns the
+- [spatially controlled scene images](../spatial-scene-images.plan.md) owns the
   long-horizon structural route: real pose and depth control derived from a 3D
   frame. This plan is the prompt-level treatment of the same complaint,
   reachable now without new providers or paid gates; whatever it proves about
@@ -120,11 +120,11 @@ Four things cause this, and none of them is the image model misbehaving:
 ### Non-goals
 
 - **No pose maps, depth maps, control inputs, or new providers.**
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) and
+  [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) and
   [qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)
   own structural control; this plan changes only text.
 - **No per-model prompt dialects or negative steering** —
-  [image-render-quality.plan.md](image-render-quality.plan.md) owns those.
+  [image-render-quality.plan.md](../image-render-quality.plan.md) owns those.
 - **No new state, no writes.** The shot planner's spatial guesses live and die
   inside one render job; they never become scene facts, and narration never
   becomes physical authority. The committed-state slice is read-only.
@@ -134,7 +134,7 @@ Four things cause this, and none of them is the image model misbehaving:
   govern explicit content — the uncensored render route, the exposure state,
   and the narration itself. A staging the fiction didn't describe never fires.
 - **Not the visual-state projection.** Body-language projection stays with
-  [visual-state.plan.md](visual-state.plan.md); this plan keeps its committed
+  [visual-state.plan.md](../visual-state.plan.md); this plan keeps its committed
   state read small so it can migrate onto that digest.
 
 ## Slices
@@ -157,7 +157,7 @@ Four things cause this, and none of them is the image model misbehaving:
   attribution probe-verified through five hardening rounds; accepted
   2026-08-15 with oral-contact geometry knowingly open; the act-rendering
   LoRA's production incorporation is
-  [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md)'s build.
+  [intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md)'s build.
 
   The staging catalog with per-entry camera setup, implied viewer-body parts,
   and explicit phrasing emitted only on the uncensored route; evidence,
@@ -219,7 +219,7 @@ Four things cause this, and none of them is the image model misbehaving:
 
 None remaining in this plan. Both questions it carried moved with the
 close-out (owner acceptance ruling, 2026-08-15) to
-[intimate-scene-lora.plan.md](intimate-scene-lora.plan.md): the LoRA choice
+[intimate-scene-lora.plan.md](../intimate-scene-lora.plan.md): the LoRA choice
 is settled by the probes (detail in [the spec](scene-composition.spec.md)
 §Probe results) and its production incorporation is that plan's build;
 whether intimate-anatomy phrasing should be suppressed on from-behind shots

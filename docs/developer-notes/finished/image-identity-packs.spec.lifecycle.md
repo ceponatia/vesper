@@ -216,7 +216,7 @@ Gallery-visible images after character deletion does not apply to hidden identit
 assets.
 
 The canonical source image continues to follow the Gallery-retention decision in
-[data-lifecycle.plan.md](data-lifecycle.plan.md). The same deletion can therefore
+[data-lifecycle.plan.md](../data-lifecycle.plan.md). The same deletion can therefore
 remove the pack/crop while preserving the user-visible source image.
 
 ## Superseded and failed revision cleanup

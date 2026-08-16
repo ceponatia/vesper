@@ -8,7 +8,7 @@ fix. Feature-sized work goes to the next phase's plan, not here.
 ## 1. Image prompts: richer clothing text; waist-up portraits omit below-the-waist garments (2026-06-13)
 
 **Request (user).** Two changes to the image prompt builders
-([../images.md](../images.md)):
+([../images.md](../../character-chat/images.md)):
 
 1. *Clothing phrasing.* For every garment, pass its **description** and
    **sensory appearance, untruncated** — not the bare item name. The
@@ -305,7 +305,7 @@ remains.
 
 **Investigation.** Not a regression — nothing in the image/wardrobe path
 or the image-model defaults changed since the early commits
-([../images.md](../images.md)). The cause is a design gap: both the scene
+([../images.md](../../character-chat/images.md)). The cause is a design gap: both the scene
 composer prompt and the render prompt **only ever enumerate worn
 garments** (`wardrobeOutfitSummary`), and never assert that a body region
 is *bare*. Image models default every subject to fully clothed, and the

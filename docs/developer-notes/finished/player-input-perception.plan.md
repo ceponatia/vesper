@@ -313,7 +313,7 @@ filter to `NARRATOR_VISIBLE_FACT_CHANNELS` in SQL before the cap, so `private`/`
 reach the narrator and never eat a retrieval slot) — `buildMemorySection` is unchanged; the
 pulse + dev inspector (`listFactsForScope`, channel-labeled) still read every channel.
 `parseFactChannel` degrades unknown channels to `perceived` with a `parse.boundary_failed`
-diagnostic at the read + write boundaries. Full detail: [docs/memory.md](../memory.md)
+diagnostic at the read + write boundaries. Full detail: [docs/memory.md](../../memory.md)
 §Fact channel. Session-lane classification is deferred to slice 7 (it writes the `perceived`
 default for now).
 

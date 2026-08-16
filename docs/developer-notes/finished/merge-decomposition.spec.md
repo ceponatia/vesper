@@ -5,7 +5,7 @@ deviation from this proposal). The design + evidence behind
 [merge-decomposition.plan.md](merge-decomposition.plan.md). Subject: the former
 `src/server/engine/merge.ts` (2655 lines), now the `merge/` folder. Produced by the Code
 Complete "complete review" framework (`docs/prompts/complete-review.md`). System doc:
-[turn-engine.md](../turn-engine.md) §"Merge reducer".
+`turn-engine.md` §"Merge reducer".
 
 ---
 

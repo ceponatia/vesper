@@ -8,7 +8,7 @@ how to get a 3:4 output out of it, and what it returns.
 These files describe **the provider's API**, not Vesper's configuration. Which
 models are actually offered, and on which surfaces, is data in the `image_models`
 table and is managed from the admin page at `/settings/image-models` — see
-[developer-notes/image-model-registry.plan.md](../developer-notes/finished/image-model-registry.plan.md).
+`image-model-registry.plan.md`.
 Adding a model to the app does not require adding a file here, but doing so is
 the difference between a model we understand and one we merely call.
 
@@ -163,7 +163,7 @@ and on the four seeded rows whose slugs name it. The six original seeded rows
 carry none: they predate the column. `advanced_capabilities` (the optional
 control bindings each file's Inputs section lists in prose) is `{}` on every row;
 the column was introduced by
-[image-model-capabilities.plan.md](../developer-notes/finished/image-model-capabilities.plan.md).
+`image-model-capabilities.plan.md`.
 
 ## Seeded profiles
 

@@ -780,7 +780,7 @@ identity alongside pack references, its whole pipeline is proven end to end —
 dataset, training, durable hosting, curated library row, prompt additions,
 isolation arm — and the open question about how good a character LoRA can get
 is handed to a **LoRA training tool in the admin dashboard**, parked in
-[deferred.plan.md](deferred.plan.md) §"Character-LoRA training as an in-app
+[deferred.plan.md](../deferred.plan.md) §"Character-LoRA training as an in-app
 tool" and wanted specifically so a more sophisticated LoRA can be trained.
 
 **Operational finding — a 500 from trainings-create may still have created the
@@ -1729,7 +1729,7 @@ five Stage 6 arms.
 **Blocker: there is no production source of a depth map.** Extraction needs a
 source image that already depicts the arrangement wanted, which an ordinary scene
 render does not have. That supply problem is
-[spatial-scene-images.plan.md](spatial-scene-images.plan.md)'s ground, and that
+[spatial-scene-images.plan.md](../spatial-scene-images.plan.md)'s ground, and that
 plan is a draft with nothing built. Depth in ordinary scenes is blocked on work
 that has not started.
 
@@ -1741,7 +1741,7 @@ without it, and one run in three collapsed composition.
 **Three independent blockers**, each owned by a different plan:
 
 - The appearance text does not exist. Characters carry no authored facial or hair
-  attributes, and [character-schema.plan.md](character-schema.plan.md) is a draft
+  attributes, and [character-schema.plan.md](../character-schema.plan.md) is a draft
   awaiting owner review of its vocabulary.
 - Pack references are dark in production. `IMAGE_IDENTITY_PACK_REFERENCES`
   defaults off and no ordinary lane consumes a pack, which a finishing pass does
@@ -1749,7 +1749,7 @@ without it, and one run in three collapsed composition.
 - The result screen its own acceptance condition names does not exist. The
   collapse was not predictable from the input, so the check has to run on the
   output; that check is
-  [image-render-quality.plan.md](image-render-quality.plan.md)'s queued advisory
+  [image-render-quality.plan.md](../image-render-quality.plan.md)'s queued advisory
   QA slice, with nothing in code.
 
 The pass also cannot compose with candidate A: a finishing pass refines one face
@@ -1767,7 +1767,7 @@ plan's model-specific-profiles slice, which is queued.
 **Character LoRA.** Training is an operator errand: a hand-run script, a
 hand-curated dataset, and hand-extracted weights re-hosted at a durable public
 address before a library row can point at them. The tool that would make it
-routine is parked in [deferred.plan.md](deferred.plan.md) with its hosting
+routine is parked in [deferred.plan.md](../deferred.plan.md) with its hosting
 question unresolved.
 
 **A constraint both halves share.** The model the ordinary lanes run on takes no
@@ -1871,7 +1871,7 @@ Two rulings the P1 review settled (2026-08-12, PR #95):
   this outright as `characters_share_name`, which is right for an experiment
   whose output is evidence. A player-facing render draws the first of the pair
   and logs instead: refusing would mean no picture at all, and
-  [resilience.md](../resilience.md) puts a degraded default above a failed
+  [resilience.md](../../resilience.md) puts a degraded default above a failed
   render. The remedy — renaming one character — is the same either way.
 
 **P2 — edge-controlled portrait variants.** Two design rulings are owed before

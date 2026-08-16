@@ -1,7 +1,7 @@
 # World UI — the player-facing surface of the successor world
 
 Status: shipped — 2026-07-23 (planned 2026-07-23 from the owner's world-UI design pass;
-owner rulings 20–21 recorded in [engine.spec.operations.md](engine.spec.operations.md)
+owner rulings 20–21 recorded in [engine.spec.operations.md](../engine.spec.operations.md)
 §39. **Slices 0, 1, 2, 3, 4, and 5 all shipped 2026-07-23.** Slice 4 closed the NL-move
 parity that was deferred out of slice 1; slice 5 delivered walk-with-me v1 — see each
 slice's "How it shipped". Leftovers: the §19.3-deliberator upgrade of the acceptance seam

@@ -37,9 +37,9 @@ inline-by-license.
   (`applyOpenerPulse` — folds only `sentPhoto` + mindNote; no
   regard/meter/feeling moves). The send records an `offer` ring entry.
 
-Docs: [character-chat/initiative.md](../character-chat/initiative.md) §Initiative + [character-chat/images.md](../character-chat/images.md) §Selfies,
-[authoring.md](../authoring.md) §Character forge + §Manual editing,
-[prompts.md](../prompts.md), [ui.md](../ui.md).
+Docs: [character-chat/initiative.md](../../character-chat/initiative.md) §Initiative + [character-chat/images.md](../../character-chat/images.md) §Selfies,
+[authoring.md](../../authoring.md) §Character forge + §Manual editing,
+[prompts.md](../../character-chat/prompts.md), [ui.md](../../ui.md).
 
 The character only ever responds — the biggest engagement gap in the lane.
 Every piece already exists in fragments: the `open` exchange kind (synthetic
@@ -47,7 +47,7 @@ cue, no player line), `open_loops`, the skip note's "a life meanwhile" license,
 the `*Name: …*` comms grammar, and the shipped §8.4 v1 **"has something to
 say"** marker (open-loops-keyed, tap → cued continue beat via `/chat/:id?say=1`
 — see
-[finished/character-chat-standalone.spec.md](finished/character-chat-standalone.spec.md)
+[finished/character-chat-standalone.spec.md](../finished/character-chat-standalone.spec.md)
 §8.4). This plan grows §8.4 v1 into real initiative while staying inside the
 standing rulings: **D8** (no wall-clock in the fiction) and **D3** (wall-clock
 absence is deliberately not a trigger) — initiative anchors to reopen/skip
@@ -79,7 +79,7 @@ generation, no push; a notification lane is out of scope here).
    grid) so meanwhile-lines, openers, and life events can draw on it ("just got
    off shift"). Chat-side consumption only; the session movement engine already
    reads the field.
-5. **Selfie attach** (after [chat-selfies.plan.md](finished/chat-selfies.plan.md)): a
+5. **Selfie attach** (after [chat-selfies.plan.md](../finished/chat-selfies.plan.md)): a
    warm opener may attach one — the "thinking of you" photo, the strongest
    reopen hook.
 
@@ -108,6 +108,6 @@ _All resolved:_
 
 - [character-drives.plan.md](character-drives.plan.md) — drives give openers
   and life events their material; sequence drives first if possible.
-- [chat-selfies.plan.md](finished/chat-selfies.plan.md) — slice 5's attach hook.
+- [chat-selfies.plan.md](../finished/chat-selfies.plan.md) — slice 5's attach hook.
 - [multi-character-chat.plan.md](multi-character-chat.plan.md) — openers stay
   primary-participant-only until the ensemble frame lands.

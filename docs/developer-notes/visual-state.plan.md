@@ -22,11 +22,11 @@ Related work:
   scene / body-relations layer this plan reads for body language;
 - [narrator physical guidance](narrator-physical-guidance.plan.md) owns binding
   constraints and premise correction;
-- [image model capabilities](image-model-capabilities.plan.md) owns the shared
+- [image model capabilities](finished/image-model-capabilities.plan.md) owns the shared
   render intent that will consume visual state;
 - [image render quality](image-render-quality.plan.md) owns model-specific
   prompting, reference quality, render QA, and image trials;
-- [scene composition](scene-composition.plan.md) owns the scene image's camera,
+- [scene composition](finished/scene-composition.plan.md) owns the scene image's camera,
   subject orientation, and intimate staging; its interim read of the scene /
   body-relations owner migrates onto this plan's image digest when slice 8
   ships.
@@ -44,12 +44,12 @@ One later slice has a real prerequisite:
 
 - **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
 - **Slice 8** feeds the shared render intent, which shipped with the
-  [capabilities plan's](image-model-capabilities.plan.md) slice 2 on
+  [capabilities plan's](finished/image-model-capabilities.plan.md) slice 2 on
   2026-08-07 — that gate is open, and the intent's role-carrying references
   are waiting for this plan's image digest.
 
 This plan does **not** depend on
-[image identity packs](image-identity-packs.plan.md). A pack is a stored picture
+[image identity packs](finished/image-identity-packs.plan.md). A pack is a stored picture
 of a face; visual state is a computed description of a person right now. They
 meet only inside a render request, where the pack supplies the reference image
 and this plan's image digest supplies the facts, and neither reads the other.

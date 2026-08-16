@@ -4,7 +4,7 @@ Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
 exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
 through 2026-08-06; slice 2 unblocked since the capabilities plan's shared
 render intent shipped 2026-08-07; reference preparation left this plan for
-[image-identity-packs.plan.md](image-identity-packs.plan.md) on 2026-08-05;
+[image-identity-packs.plan.md](finished/image-identity-packs.plan.md) on 2026-08-05;
 nothing else in the slice list exists in code)
 
 Outcome: A player can generate a portrait or scene that still shows their own
@@ -17,17 +17,17 @@ Sibling plans:
 
 - [image model registry](finished/image-model-registry.plan.md) owns which provider models
   exist and the mechanical facts needed to call them;
-- [image model capabilities](image-model-capabilities.plan.md) owns profiles,
+- [image model capabilities](finished/image-model-capabilities.plan.md) owns profiles,
   shared controls, role-aware references, version promotion, seeds, and
   multi-output machinery;
-- [image identity packs](image-identity-packs.plan.md) owns the face reference
+- [image identity packs](finished/image-identity-packs.plan.md) owns the face reference
   itself — derivation, quality measurement, correction, invalidation, and the
   reference-strategy trial;
 - [visual state and attention](visual-state.plan.md) owns the appearance
   projection an image prompt should eventually read;
-- [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) owns the
+- [Qwen advanced image subsystem](finished/qwen-advanced-image-subsystem.plan.md) owns the
   proposed controlled laboratory for pose/depth/LoRA experiments;
-- [scene composition](scene-composition.plan.md) owns what a scene shot
+- [scene composition](finished/scene-composition.plan.md) owns what a scene shot
   contains — camera vantage, subject facing, intimate staging — which this
   plan's dialects then translate per model (the two meet at the identity-lock
   wording);
@@ -128,7 +128,7 @@ A canonical portrait compiles into an **identity pack** when it is saved, rather
 than being recropped independently on every render.
 
 That ruling grew into a system of its own on 2026-08-05 and left this plan.
-[image-identity-packs.plan.md](image-identity-packs.plan.md) owns derivation,
+[image-identity-packs.plan.md](finished/image-identity-packs.plan.md) owns derivation,
 source hashing, quality measurement, manual correction, invalidation, deletion,
 and the reference-strategy trial; its pack-side slices shipped 2026-08-06. This
 plan no longer states how a face crop is produced or judged — it only consumes a
@@ -304,7 +304,7 @@ has a usable face reference, which reference roles are available, and enough
 provenance to reproduce the choice later. A failed verdict must reach the player
 as an explanation, not a silently substituted reference, and must stop the render
 before provider money is spent. Derivation, thresholds, correction, and the
-reference-strategy trial are [that plan's](image-identity-packs.plan.md).
+reference-strategy trial are [that plan's](finished/image-identity-packs.plan.md).
 
 **From visual state:** the appearance facts a render must not drop — identity,
 intended morphology, subject count, authoritative wardrobe — separated from the
@@ -410,7 +410,7 @@ this plan keeps its number as a pointer.
    pinned version, and compose task/style/subject/morphology/text-aware negative
    blocks with conflict linting.
 4. **Identity packs.** Status: void — moved out 2026-08-05. Now
-   [image-identity-packs.plan.md](image-identity-packs.plan.md), whose pack-side
+   [image-identity-packs.plan.md](finished/image-identity-packs.plan.md), whose pack-side
    slices shipped 2026-08-06.
 5. **Model-fidelity trials.** Status: queued — the harness it uses shipped
    2026-08-06. The identity-pack plan's trial subsystem runs blinded pairwise

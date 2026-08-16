@@ -14,11 +14,11 @@ chat lane's meter-economy/body-needs plans still port through the Gate 5
 contracts, queued in roadmap §Next. Gate 7 stays optional and owner-gated, now
 unblocked by this exit.)
 
-Companion to [engine.plan.md](engine.plan.md) (whose §"Migration and rollout"
+Companion to [engine.plan.md](../engine.plan.md) (whose §"Migration and rollout"
 this plan turns into scheduled, sliced work) and successor to the closed
-foundation gates 0–6 ([engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)
+foundation gates 0–6 ([engine.gate6.dual-lod.md](../engine.gate6.dual-lod.md)
 closed 2026-07-21). Normative contracts stay in the
-[engine.spec.md](engine.spec.md) §-index; this plan owns delivery sequence only.
+[engine.spec.md](../engine.spec.md) §-index; this plan owns delivery sequence only.
 
 ## Why this plan exists
 
@@ -136,7 +136,7 @@ is the cleanup that makes the migration real.
    deliberator live behind its budget and deterministic fallback. Model
    routing per ruling 4: Aion 3.0 default, resolved through the shared
    `NARRATIVE_MODELS` picker. The
-   owner-gated paired eval rides here ([deferred.plan.md](deferred.plan.md)
+   owner-gated paired eval rides here ([deferred.plan.md](../deferred.plan.md)
    §Owner-gated live eval runs — the Gate 4/5/6 deferred quality checks become
    runnable against this leg on request). Exit: a full narrated turn against the
    internal test world within the latency/model-call budget, degradation paths
@@ -572,12 +572,12 @@ recorded, and the internal test world + one migrated chat world stable on Fly.
 All hold as of 2026-07-22 — the R4 parity report closed at zero findings with
 every divergence fixed or ruled, the owner's live played sessions on Fly
 through R3–R5 are the recorded live evals (the deeper owner-gated eval spend
-stays parked in [deferred.plan.md](deferred.plan.md)), and the internal rollout
+stays parked in [deferred.plan.md](../deferred.plan.md)), and the internal rollout
 world plus the owner's standing successor chats run live on machine v114.
 
 ## After completion — Gate 7 (optional, owner ruling 2026-07-21)
 
-[Gate 7 — institutions and macro simulation](engine.gate7.institutions.md)
+[Gate 7 — institutions and macro simulation](../engine.gate7.institutions.md)
 is explicitly sequenced **after** this plan completes and is tested, and stays
 **optional**: admit a package (employers, markets, weather, law, factions…)
 only when a world type and scenario corpus justify it, per that doc's

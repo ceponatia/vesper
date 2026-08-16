@@ -2,7 +2,7 @@
 
 Status: **draft** — parked in [deferred.plan.md](../deferred.plan.md); not
 committed work. Parked 2026-07-23 from an owner ruling recorded during
-[../drain-hardening.arrival.md](../drain-hardening.arrival.md)'s flesh-out
+[../drain-hardening.arrival.md](../finished/drain-hardening.arrival.md)'s flesh-out
 (then backlog item A7); promote per [CLAUDE.md](CLAUDE.md) before building.
 
 Outcome (provisional): The owner can state how long the trip between two places
@@ -40,8 +40,8 @@ in seed/config data now, a player world-builder edits them through whatever
 authoring UI that lane grows later. **Tripwire:** this (or any
 nonzero-uncertainty travel) MUST NOT ship before the drain-hardening plan has
 — promoted 2026-07-23, see
-[../drain-hardening.plan.md](../drain-hardening.plan.md) (§Tripwire) and
-[../drain-hardening.arrival.md](../drain-hardening.arrival.md) ruling 4.
+[../drain-hardening.plan.md](../finished/drain-hardening.plan.md) (§Tripwire) and
+[../drain-hardening.arrival.md](../finished/drain-hardening.arrival.md) ruling 4.
 *(Tripwire satisfied — drain-hardening shipped 2026-07-23; the gate no longer
 blocks promotion. Verified 2026-08-02: `space.ts` still hardcodes
 `uncertaintySeconds: 0`, so the work itself is untouched.)*

@@ -6,9 +6,9 @@ the ensemble prompt frame, and the per-conversation relationship matrix.
 ## Multi-character (the ensemble)
 
 A conversation holds up to **4 full characters**
-([developer-notes/multi-character-chat.plan.md](../developer-notes/finished/multi-character-chat.plan.md) +
+(`multi-character-chat.plan.md` +
 the matrix slice of
-[developer-notes/relationship-model.plan.md](../developer-notes/finished/relationship-model.plan.md),
+`relationship-model.plan.md`,
 both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-1
 (asserted in `prompts/character-chat.test.ts`); everything below arms only at roster > 1.
 
@@ -34,7 +34,7 @@ both shipped 2026-07-12). A roster of one is byte-identical to the classic 1-on-
   Off-screen **NPC↔NPC developments** (the meanwhile pass's two-name entries) file as
   relationship FACTS to both members' own memory groups — the shipped v2 pattern; the
   authored matrix is never machine-edited
-  ([chat-offscreen-life.spec.md](../developer-notes/finished/chat-offscreen-life.spec.md)).
+  (`chat-offscreen-life.spec.md`).
 - **Ensemble prompt** (`buildChatPromptPartsForRoster` → `buildEnsembleChatPromptParts`):
   one continuous narrative, the narrator omniscient over the roster; THIRD-person member
   sheets (full / quiet-compressed at `ENSEMBLE_QUIET_EXCHANGES` / away-dropped while

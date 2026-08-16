@@ -12,10 +12,10 @@ the test-bed affordances (a **state-tools modal** for all owners — inspect/edi
 affinity/meters/conditions/mindNote/premise + the read-only last-turn debug trace —
 generalized `PATCH …/chat/state` + a `POST …/chat/state {action}`, and the
 **Prompt Character** opening beat via `POST …/chat {open:true}`). The one deferred
-piece is the **state-aware chat scene image** → [deferred.plan.md](deferred.plan.md).
+piece is the **state-aware chat scene image** → [deferred.plan.md](../deferred.plan.md).
 The mechanics are fixed in [character-chat-state.spec.md](character-chat-state.spec.md).
 Grow the sessionless 1-on-1 chat
-([finished/character-chat.plan.md](finished/character-chat.plan.md)) from a
+([finished/character-chat.plan.md](../finished/character-chat.plan.md)) from a
 stateless transcript into a **light, fun, state-aware** quick chat that reuses
 the contracts (meters incl. **hygiene**, affinity, conditions) without dragging
 in the full session engine.
@@ -46,7 +46,7 @@ The chat is "becoming quite fun as a 1-on-1 quick chat" but is **stateless**: a
 flat `character_chat_messages` log, the lightweight `streamCharacterChat` path,
 no meters / conditions / affinity. Light state makes the same chat feel **alive**
 for near-zero cost and realises the deferred **relationship & meter timeline**
-(UX-audit feature #4, [deferred.plan.md](deferred.plan.md)) at chat scale. It is
+(UX-audit feature #4, [deferred.plan.md](../deferred.plan.md)) at chat scale. It is
 also the cheapest possible testbed for the personality §6 likes/dislikes curve
 (`personality-and-state`) — no session machinery to fight.
 
@@ -216,7 +216,7 @@ placement — is resolved in the spec §10.)
 
 - [character-chat-state.spec.md](character-chat-state.spec.md) — the settled v1
   mechanics (schema, drift, pulse, surfacing, tests).
-- [finished/character-chat.plan.md](finished/character-chat.plan.md) — the
+- [finished/character-chat.plan.md](../finished/character-chat.plan.md) — the
   stateless v1 this builds on.
 - [player-character.plan.md](player-character.plan.md) — the embodied player
   (shipped), whose `resolvePlayerPersona` this consumes.
@@ -224,5 +224,5 @@ placement — is resolved in the spec §10.)
   recap the `mindNote` complements.
 - `docs/contracts/meters-actions.md`, `relationships.md`, `conditions.md`;
   `personality-and-state` §6 (the curve) — the contracts reused.
-- [deferred.plan.md](deferred.plan.md) "Relationship & meter timeline" — the
+- [deferred.plan.md](../deferred.plan.md) "Relationship & meter timeline" — the
   surfacing idea, here at chat scale.

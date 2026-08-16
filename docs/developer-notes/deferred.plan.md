@@ -62,7 +62,7 @@ retention sweep) is the substrate a full account cascade composes from.
 ## Character-LoRA training as an in-app tool
 
 _Owner direction 2026-08-11, taken when the Stage 5 character-LoRA pilot closed
-([qwen-advanced-image-subsystem.plan.md](qwen-advanced-image-subsystem.plan.md)).
+([qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md)).
 The Qwen plan lists automatic LoRA training inside Vesper as out of scope for
 its first implementation, and this is where that lands. **Wanted so a more
 sophisticated LoRA can be trained** — the pilot proved a character LoRA
@@ -149,7 +149,7 @@ What it has to settle:
   something it was told to leave alone; ten chained edits will drift further
   than one. Identity-pack references and the appearance instruction are the
   known mitigations, and the connector's own recrop habit
-  ([qwen-advanced-image-subsystem.spec.md](qwen-advanced-image-subsystem.spec.md)
+  ([qwen-advanced-image-subsystem.spec.md](finished/qwen-advanced-image-subsystem.spec.md)
   §"Stage 4 verdicts") is the first thing to watch.
 - **Who gets it.** Admin-only first, like the lab; a player-facing version is a
   separate decision about how much freedom an ordinary editing surface should
@@ -229,7 +229,7 @@ close-out ruling (2026-08-13) parked it unbuilt._
 
 Selection, validation, refusal and reproducibility are proven end to end in the
 lab. What remains is machinery owned by
-[image-model-capabilities.plan.md](image-model-capabilities.plan.md): a curated
+[image-model-capabilities.plan.md](finished/image-model-capabilities.plan.md): a curated
 LoRA-bearing profile is that plan's model-specific-profiles slice, and
 `image_model_profiles` has no write path today, so any profile is a migration.
 
@@ -282,7 +282,7 @@ permissive terms, video LoRA trainers); and the identity-safe path to long
 video is image-model keyframes — identity-pack-anchored stills — with the
 video model interpolating first→last between them, so drift cannot compound.
 This is also where the Seedream-to-Seedance video handoff idea
-([image-model-capabilities.plan.md](image-model-capabilities.plan.md)) lands
+([image-model-capabilities.plan.md](finished/image-model-capabilities.plan.md)) lands
 when a video pipeline exists.
 
 **Trigger:** owner scheduling. Promotion starts with a lane ruling (SFW-first
@@ -473,7 +473,7 @@ See [location-design-spec.phase3.md](finished/location-design-spec.phase3.md)
 
 ## Monorepo split — GRADUATED 2026-08-12
 
-Graduated to [monorepo-image-core.plan.md](monorepo-image-core.plan.md). The
+Graduated to [monorepo-image-core.plan.md](finished/monorepo-image-core.plan.md). The
 2026-06-16 permanent deferral was correct for the question it answered —
 packaging for its own sake, gated on a second deployable. The question that
 reopened it is different: the image subsystem grew into its own product and

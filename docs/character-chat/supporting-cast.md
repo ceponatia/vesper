@@ -2,13 +2,13 @@
 
 Recurring named side characters who are not character entities — and the composer
 register that lets the player author story narration in their own right
-([developer-notes/chat-supporting-cast.plan.md](../developer-notes/finished/chat-supporting-cast.plan.md)).
+(`chat-supporting-cast.plan.md`).
 
 ## Supporting cast
 
 Recurring named side characters — the player's coworker, the character's sister — who are
 NOT character entities and NOT roster members
-([developer-notes/chat-supporting-cast.plan.md](../developer-notes/finished/chat-supporting-cast.plan.md),
+(`chat-supporting-cast.plan.md`,
 2026-07-13). Before this, rule 3's incidental-person discipline kept every non-roster person
 "unnamed and passing," so a recurring friend like Abby was reacted to but never *written for*.
 The scene-memory pattern applied to people:

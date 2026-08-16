@@ -51,7 +51,7 @@ documentation that the code does not honor.
 - **`temporary`** (0) — declared, never used. The phase-4 spec's Decision 2
   routed live transient state (erect / lubricated / aroused / disheveled) to the
   **arousal meter + conditions** and explicitly chose **no new mutability tier**
-  ([phase-4-plan.md](finished/phase-4-plan.md) §Live state). So `temporary` is vestigial:
+  ([phase-4-plan.md](../finished/phase-4-plan.md) §Live state). So `temporary` is vestigial:
   a value with no members and no consumer.
 
 The crucial observation: **`inherent` vs `mutable` is precisely the gate the

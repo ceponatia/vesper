@@ -3,7 +3,7 @@
 Status: **shipped — 2026-06-24** (slices 1 + 3 + 4; see
 [character-chat-state.plan.md](character-chat-state.plan.md) for the build summary +
 clarification rulings. Only the state-aware chat scene image was deferred →
-[deferred.plan.md](deferred.plan.md)).
+[deferred.plan.md](../deferred.plan.md)).
 Settled mechanics for the v1 slice: a small persisted state row per chat, a free
 deterministic time-drift spine, and one optional structured reaction pulse that
 moves state *from the conversation* by reusing the personality §6 curve. The

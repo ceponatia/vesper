@@ -5,7 +5,7 @@ behind character creation — the attribute registry, the body model, species,
 the realized-body filter, and `CharacterProfile` — looking for unenforced
 invariants, dead or aspirational schema, drift between docs and code, and gaps
 worth filling. Not a phase plan: findings that graduate into work should move
-into the relevant phase plan (or [deferred.plan.md](deferred.plan.md)) and be
+into the relevant phase plan (or [deferred.plan.md](../deferred.plan.md)) and be
 struck from here.
 
 Every claim below was checked against the code, not inferred from the docs.
@@ -70,7 +70,7 @@ The alias index is built (`registry.ts:64-69`) and the method exists
 test. Every alias array is dead weight today. *Verified: `rg resolveAlias`.*
 
 **B2 🟠 `ConditionEffect.attributeEffects` is inert.**
-*(Full write-up + fix, jointly with B3: [condition-attribute-effects.md](condition-attribute-effects.md).)* `condition.ts:40` defines
+*(Full write-up + fix, jointly with B3: [condition-attribute-effects.md](../condition-attribute-effects.md).)* `condition.ts:40` defines
 `attributeEffects: ConditionEffect[]`, and `contracts/conditions.md` §Conditions states they
 are *"overlaid while active with source: condition, sourceId: condition id."*
 That overlay step does not exist: the only place conditions are constructed in
@@ -114,7 +114,7 @@ exercise it is absent. *Verified: `rg` across `groups/` → no occurrences.*
 This is the highest-value cluster: the forge spends model calls (and the author
 spends effort) producing fields that never influence a turn. *(Full write-ups:
 [unconsumed-character-prose.md](unconsumed-character-prose.md) for C1/C2,
-[schedule-authoring-gap.md](schedule-authoring-gap.md) for C3.)*
+`schedule-authoring-gap.md` for C3.)*
 
 **C1 🟠 `profile.personality` never reaches a prompt.** The forge profile section
 explicitly generates *"a personality sketch (quirks, humor, flaws)"*
@@ -174,7 +174,7 @@ item schema. No shared source of truth; they can drift independently.
 ### E. Structural gaps & fragilities
 
 **E1 🟠 Gender→`intimateRegions` seeding is fragile.**
-*(Full write-up + fixes: [intimate-defaulting.md](intimate-defaulting.md).)* `defaultIntimateRegionsForGender`
+*(Full write-up + fixes: [intimate-defaulting.md](../intimate-defaulting.md).)* `defaultIntimateRegionsForGender`
 seeds the body-config from `identity.gender` at forge time. But `identity.gender`
 is flagged `identityAnchor` and **not** `coreVisual` (`groups/identity.ts`) — so
 unlike hair/eye color it is *not* force-filled. If the model never emits gender
@@ -252,7 +252,7 @@ exceptions, degraded defaults).
    yet, say so and stop the movement system depending on a field nothing can
    write. The current state — a live consumer with no producer — is the worst of
    both. **Detailed proposal (incl. the world-location binding wrinkle):
-   [schedule-authoring-gap.md](schedule-authoring-gap.md).**
+   `schedule-authoring-gap.md`.**
 
 5. **Resolve the condition/overlay story (B2 + B3)** — either implement
    `attributeEffects` materialization (walk active conditions, emit
@@ -262,7 +262,7 @@ exceptions, degraded defaults).
    sources down to what's produced. Implementing is the more valuable path for an
    intimacy engine (arousal/dishevelment as real overlays); pruning is the
    honest minimum. **Detailed proposal (idempotent rebuild, label-map, shared
-   mutability gate): [condition-attribute-effects.md](condition-attribute-effects.md).**
+   mutability gate): [condition-attribute-effects.md](../condition-attribute-effects.md).**
 
 ### Larger / future (fold into a phase plan when picked up)
 
@@ -271,13 +271,13 @@ exceptions, degraded defaults).
    `defaultValue`, which is phase 4's own stated success test ("a second humanoid
    species should be a single data file"). Today it's a data file *plus* teaching
    `realizeBody` to consume `required`/`defaultValue` narrowing. Tracked-adjacent
-   in [non-human-species.spec.md](finished/non-human-species.spec.md).
+   in [non-human-species.spec.md](../finished/non-human-species.spec.md).
 
 7. **Decouple intimate defaulting from a fragile gender read (E1)** — make
    `identity.gender` `coreVisual` (so it's always filled), or re-derive
    `intimateRegions` from the resolved gender at *save* time, or surface an
    explicit author prompt when both gender and body-config are empty. **Detailed
-   proposal (why force-fill alone doesn't fix it): [intimate-defaulting.md](intimate-defaulting.md).**
+   proposal (why force-fill alone doesn't fix it): [intimate-defaulting.md](../intimate-defaulting.md).**
 
 8. **Decide the fate of attribute `aliases` (B1)** — wire `resolveAlias` into
    fact/mention extraction (the merge/memory layer already does fuzzy *name*
@@ -291,17 +291,17 @@ exceptions, degraded defaults).
 To avoid double-planning, these adjacent items are already recorded:
 
 - **Additive features + non-human species** —
-  [non-human-species.spec.md](finished/non-human-species.spec.md) (shipped 2026-06-18;
+  [non-human-species.spec.md](../finished/non-human-species.spec.md) (shipped 2026-06-18;
   image prompting + species/heritage rules landed). Leftovers are incremental
   per-species attribute-rule **data** and wardrobe accommodation; Recommendation 6
   above overlaps that "richer species rules" data work.
 - **Anatomy port granularity / supplemental anatomy** (buttocks, groin, abdomen,
-  nose …) — [supplemental-anatomy.phase4.md](finished/supplemental-anatomy.phase4.md). The
+  nose …) — [supplemental-anatomy.phase4.md](../finished/supplemental-anatomy.phase4.md). The
   D1 nesting fix should land *before* this port so the new groups slot in as data.
-- **Pubic hair, anus attributes, demo body-config** — [followups.phase4.md](finished/followups.phase4.md)
+- **Pubic hair, anus attributes, demo body-config** — [followups.phase4.md](../finished/followups.phase4.md)
   §2–4.
 - **`runtime` mutability tier, `requiresAttributes`/`conflictsWithAttributes`,
-  `itemSchema`/`collection`** — explicitly deferred in [phase-4-plan.md](finished/phase-4-plan.md)
+  `itemSchema`/`collection`** — explicitly deferred in [phase-4-plan.md](../finished/phase-4-plan.md)
   §Out of scope. Note these are *deferred* (a known parking lot); the A–B
   findings above are *drift* (built and advertised as live, but inert) — a
   different category that warrants enforce-or-delete now.

@@ -94,7 +94,7 @@ cannot honor it at scale.
     the job state and turn away (`world_catching_up` face) while a time job
     is active on the branch. The composer/UI block (the open question below)
     is presentation on top of this, not the mechanism. The A2 tolerant turn
-    advance ([turn-clock-race](deferred/turn-clock-race.plan.md) ruling 1)
+    advance (`turn-clock-race.plan.md` ruling 1)
     remains the semantic backstop if a gap slips through.
 - **Client staged catch-up (ruling 1):** while a job runs, the world card
   polls (world read or a small job-status read) and renders progress; the

@@ -3,7 +3,7 @@
 Status: **supplemental analysis** — not a plan, carries no roadmap line, commits nothing.
 
 Companion to [gpt-sim-design.plan.md](gpt-sim-design.plan.md) (GPT Sol, 2026-07-16) and
-[world-engine-refactor.plan.md](world-engine-refactor.plan.md) (Claude, same day, same
+[world-engine-refactor.plan.md](../world-engine-refactor.plan.md) (Claude, same day, same
 brief). Two independent passes at "design a realistic world simulation for Vesper." This
 doc is the diff: what survives contact between them, what each missed, and the one
 reframing that I think resolves the disagreement.
@@ -23,7 +23,7 @@ The interesting question neither doc asks is in §6.
 them). Both change its standing. Rather than silently revise, here is what they overturn:
 
 **(a) The owner answered OQ1–OQ7** inline in
-[world-engine-refactor.plan.md](world-engine-refactor.plan.md) §8. **My §8 below is
+[world-engine-refactor.plan.md](../world-engine-refactor.plan.md) §8. **My §8 below is
 obsolete** — see §8′ for what actually remains open. The rulings land **substantially
 GPT's way**, which repricing this whole comparison:
 
@@ -483,7 +483,7 @@ they did **not** touch — ordered by how much they gate:
    any doc. `chat-clock-calendar.plan.md` OQ-C ("right-aside tenants") is the waiting seam.
    A causally perfect world the player cannot query is set dressing with a replay test.
 4. **Do these four documents consolidate, and under whose roadmap line?** There are now
-   two north-star plans ([world-engine-refactor.plan.md](world-engine-refactor.plan.md),
+   two north-star plans ([world-engine-refactor.plan.md](../world-engine-refactor.plan.md),
    [gpt-sim-design.plan.md](gpt-sim-design.plan.md)) and two supplementals (this,
    [world-engine-refactor.gpt.md](world-engine-refactor.gpt.md)) — ~2,400 lines pointing in
    two directions. Only one carries a roadmap line; `gpt-sim-design.plan.md` also carries
@@ -500,10 +500,10 @@ they did **not** touch — ordered by how much they gate:
 
 Independent of any decision above, these are findings that should reach their owners:
 
-- **[chat-body-needs.plan.md](chat-body-needs.plan.md)** — the hunger/mealtime conflation
+- **[chat-body-needs.plan.md](../chat-body-needs.plan.md)** — the hunger/mealtime conflation
   (§4) and the bladder/needs-channel mismatch (§4). Both land while it's still **draft**,
   which is the cheapest moment they will ever be worth.
-- **[world-engine-refactor.plan.md](world-engine-refactor.plan.md)** (mine) — law #3 is
+- **[world-engine-refactor.plan.md](../world-engine-refactor.plan.md)** (mine) — law #3 is
   aspirational, not descriptive (§2). The doc should say so rather than cite the playbook
   as settled fact.
 - **`CLAUDE.md` / `finished/`** — the folder asserts "shipped" over inherited phase-3 specs

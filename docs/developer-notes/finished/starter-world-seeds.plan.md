@@ -81,9 +81,9 @@ tuning specific items/zones is implementer's choice within the boundaries._
 
 ## Cross-links
 
-- [deferred/primary-lod-ruling.plan.md](deferred/primary-lod-ruling.plan.md)
+- [deferred/primary-lod-ruling.plan.md](../deferred/primary-lod-ruling.plan.md)
   (B9) — seeds give the vignette MUSTs regardless of how the LOD ruling
   lands; still parked.
-- [deferred/autonomous-npc-travel.plan.md](deferred/autonomous-npc-travel.plan.md)
+- [deferred/autonomous-npc-travel.plan.md](../deferred/autonomous-npc-travel.plan.md)
   (B13) — travel toward seeded commitments is that stub's scope, not this
   one's.

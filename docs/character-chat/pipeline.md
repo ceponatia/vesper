@@ -89,7 +89,7 @@ exchange:
    (D14, flavor-only v1). Lazily seeds from the authored defaults when no row exists.
    A qualifying skip (cumulative ≥ one story day since the last pass) also fires the
    detached **meanwhile pass** (`chat_meanwhile` job — chat-offscreen-life,
-   [the spec](../developer-notes/finished/chat-offscreen-life.spec.md)): one call proposing the
+   `chat-offscreen-life.spec.md`): one call proposing the
    cast's off-screen developments, folded into facts / drives / cast / plans /
    whereabouts + the one-shot meanwhile note. Fire-and-forget: the next exchange
    proceeds on grounded improvisation if it hasn't landed.
@@ -116,7 +116,7 @@ exchange:
    other's state — that independence is what keeps either trial interpretable).
 
    **Affectionate contact** (`CHAT_CONTACT_ACTIONS`, `engine/chat-contact-adapter.ts` —
-   [romantic-contact-affordances.plan.md](../developer-notes/romantic-contact-affordances.plan.md)
+   `romantic-contact-affordances.plan.md`
    §"Continuation order" 1). Regex-only over the player's own line: no model call and no
    extraction leg, the `chat-intent.ts` precedent. It **seeds the scenario's scene** (a
    participant per player + PRESENT roster member, an authored controller each, and a
@@ -190,7 +190,7 @@ exchange:
 
    **The `romantic_touch` permission owner** (`CHAT_ROMANTIC_PERMISSION`, composed over
    `CHAT_CONTACT_ACTIONS` but independent of the optional general-constraints experiment —
-   [romantic-contact-affordances.spec.permission.md](../developer-notes/romantic-contact-affordances.spec.permission.md),
+   `romantic-contact-affordances.spec.permission.md`,
    plan item 5, built 2026-08-04). Four pieces, all flag-off byte-identical. (1) The
    **policy read**: the chat's `chat_permission_events` ledger (migration 0096 — the
    contact ledger's sibling: idempotent on `(chat, event ref, sequence)`, guard-pruned

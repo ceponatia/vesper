@@ -4,7 +4,7 @@ Status: **shipped — 2026-07-12** — the owner's leftover-closure pass over th
 three 2026-07-12 ships
 ([multi-character-chat.plan.md](multi-character-chat.plan.md),
 [relationship-model.plan.md](relationship-model.plan.md),
-[finished/character-sheet-forge.plan.md](finished/character-sheet-forge.plan.md)).
+[finished/character-sheet-forge.plan.md](../finished/character-sheet-forge.plan.md)).
 All 13 rulings built: 1–2 (`d19c467`), 4 (`e9a02a8`), 5 (`ad91f4f`),
 6 (`d9adbf5`), 8–9 (`1116f9c` — migrations 0041/0042), 10–11 (`a8c741a`),
 12 (`0bb3d02`), 13 (`553fd3b`). Leftovers: only ruling 7's paid enactment/eval

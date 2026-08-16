@@ -76,7 +76,7 @@ Each region below is tagged **[NEW GROUP]**, **[FOLD → group]**, or **[COVERED
 
 aionchat uses `physical | biological | condition`. Vesper uses
 `physical | biological | presentation | cultural | sensory`
-([contracts.md](../contracts.md) §Attribute system). Mapping:
+(`contracts.md` §Attribute system). Mapping:
 
 | aionchat `kind` | Vesper home | note |
 | --- | --- | --- |

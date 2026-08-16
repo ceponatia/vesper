@@ -21,7 +21,7 @@ Status: **shipped — 2026-06-19**. All three slices landed; `pnpm verify` green
 
 Spec: [attribute-mutability.spec.md](attribute-mutability.spec.md). Re-analysis
 (2026-06-19) of [attribute-mutability.md](attribute-mutability.md) +
-[attribute-mutability-user-notes.md](attribute-mutability-user-notes.md); the design
+`attribute-mutability-user-notes.md`; the design
 half of the user notes mostly shipped with **non-human-species** (2026-06-18), so this
 plan covers only what is still unbuilt — see the spec's §1 reconciliation table.
 

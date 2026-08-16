@@ -11,7 +11,7 @@
 
 > **Resequenced 2026-06-14:** this work is now **phase 5**. A standalone **phase 4**
 > (the body-model build) was inserted ahead of it — see
-> [intimate-anatomy-sensory-and-species-spec.phase4.md](finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
+> [intimate-anatomy-sensory-and-species-spec.phase4.md](../finished/intimate-anatomy-sensory-and-species-spec.phase4.md).
 > This file was renamed from `*.phase4.md` and its body now reads "phase 5" throughout.
 
 Status: **findings / draft for discussion** (2026-06-14). Phase 5 ("the world
@@ -42,13 +42,13 @@ asked to honor. It is a sibling of
 > retrieval re-seeding (Stack B), and the mid-stream tag gate (Stack C). Docs
 > updated per §10. Open questions B/C (authority owner, appointment creation
 > site) remain for those consuming specs.
-[movement-authority.spec.md](movement-authority.spec.md) and
-[scheduled-arrivals.spec.md](scheduled-arrivals.spec.md): those
+`movement-authority.spec.md` and
+`scheduled-arrivals.spec.md`: those
 two specs each end with a gap that an input-side understanding layer is the
 natural place to close.
 
 `phase-5-plan.md` does not exist yet (step 3 of the
-[phase-3→4 migration](finished/phase-3-to-4.md)). When it is authored, the open questions
+[phase-3→4 migration](../finished/phase-3-to-4.md)). When it is authored, the open questions
 at the bottom fold into its `## Open questions` per the docs convention.
 
 ---
@@ -109,7 +109,7 @@ concert with the guards that already exist.
 
 ## 2. Current state — how a turn flows today
 
-Full detail in [turn-engine.md](../turn-engine.md) and [prompts.md](../prompts.md);
+Full detail in `turn-engine.md` and [prompts.md](../../character-chat/prompts.md);
 the parts that matter for this proposal:
 
 ### 2.1 The critical path to first token has no LLM in it
@@ -153,10 +153,10 @@ recognises a fixed verb vocabulary and cannot:
   bartender", "follow him out") — only by literal name match.
 - Tell **flavor from command** ("Eleanor steps out of the meeting" reads
   identically to "Eleanor, come with me") — the precise distinction
-  [movement-authority-spec](movement-authority.spec.md) §Root-cause #2
+  `movement-authority.spec.md` §Root-cause #2
   identifies as the corruption that broke session `pyfb0…`.
 - Recognise a *negotiated* outcome ("it's a date — my place at 5:30") — the
-  trigger [scheduled-arrivals-spec](scheduled-arrivals.spec.md) needs.
+  trigger `scheduled-arrivals.spec.md` needs.
 - Classify an action's **type or stakes** ("I try to pick the lock", "I make my
   case to her father") — needed for any attribute-relevant resolution.
 
@@ -168,7 +168,7 @@ what it can cheaply express.
 `engine/prompts/` is the one place all prompt text lives; builders are pure
 functions of typed inputs (`narrative.ts`, `agents.ts`). The turn context is
 assembled block-by-block in `assemblePreTurn` and authority-ordered
-([prompts.md](../prompts.md) §Authority ordering). Crucially, the proactive
+([prompts.md](../../character-chat/prompts.md) §Authority ordering). Crucially, the proactive
 guardrail already exists in deterministic form:
 
 - **`scene.buildTurnDigest`** — the "This turn" digest, the first block the
@@ -239,7 +239,7 @@ What those entries did not have in front of them, and what changes the calculus:
   the input** the regex cannot parse and the post-turn director sees only after
   the fact.
 - The romance-core "consequence loop" (a rebuffed advance → affinity hit +
-  memory; [phase-3-to-4.md](finished/phase-3-to-4.md) Bucket 1) — the first system that
+  memory; [phase-3-to-4.md](../finished/phase-3-to-4.md) Bucket 1) — the first system that
   needs *"what attributes are most relevant"* decided **before** the narrator
   resolves the beat.
 
@@ -484,7 +484,7 @@ shipping A first, then the tag gate, independently.
 
 Sequencing note: intake is also the cleanest substrate for the **attribute /
 skill-check** work the user flagged ("what attributes are most relevant"). That
-system (the romance "consequence loop", [phase-3-to-4.md](finished/phase-3-to-4.md)
+system (the romance "consequence loop", [phase-3-to-4.md](../finished/phase-3-to-4.md)
 Bucket 1) is not yet specced; intake's `check` field is where it plugs in when
 it is. Don't build the resolver now — just leave the seam.
 
@@ -601,6 +601,6 @@ the consumer list), `prompts.md` (intake system prompt + state slice; the digest
 now consumes intake's `allowed`), `contracts/turns.md` (`IntentBrief` schema, the
 `tool`-model role), `resilience.md` (intake's timeout→regex fallback as a worked
 example of a new trust boundary), and cross-links from
-[movement-authority-spec](movement-authority.spec.md) §1/§3 and
-[scheduled-arrivals-spec](scheduled-arrivals.spec.md) §A (intake supplies
+`movement-authority.spec.md` §1/§3 and
+`scheduled-arrivals.spec.md` §A (intake supplies
 the input-side recognition both assume someone does).
