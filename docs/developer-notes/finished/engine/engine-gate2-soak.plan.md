@@ -4,7 +4,7 @@ Status: **shipped — 2026-07-17** (verdict: **advance** — Gate 2 closed; Gate
 and remains blocked on its 10 product rulings, engine.plan.md §"Product rulings needed
 before Gate 3")
 
-The closing target of Gate 2 in [engine.plan.md](../../engine.plan.md) §"Gate 2 build order".
+The closing target of Gate 2 in [engine.plan.md](../../finished/engine/engine.plan.md) §"Gate 2 build order".
 Unlike E2.1–E2.5 this builds no new kernel capability: it stress-runs everything the
 previous five targets shipped against the §"Required proofs" list, then records the
 owner's **advance / revise / hold / stop** ruling before any Gate 3 (movement,

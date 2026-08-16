@@ -169,7 +169,9 @@ re-derivation — belongs under character schema).
 
 Gates 0–6 and rollout R0–R6 shipped 2026-07-21/22; the engine is the live world
 authority for successor chats and the legacy world/session model is deleted.
-Plan [engine.plan.md](engine.plan.md) · contract [engine.spec.md](engine.spec.md).
+How it works: [docs/engine/](../engine/README.md). Normative contract, still live
+and cited from source: [engine.spec.md](engine.spec.md). Build history:
+[finished/engine/engine.plan.md](finished/engine/engine.plan.md) and its gate docs.
 What remains on this track: optional Gate 7 (queued above), the owner-gated live
 paired evals, product ruling 12 (route-estimate uncertainty exposure), and the
 parked backlog under `deferred/`.

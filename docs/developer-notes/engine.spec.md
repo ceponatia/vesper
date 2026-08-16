@@ -3,7 +3,7 @@
 Status: **living contract reference for the shipped engine** — the authoritative § index
 for the six `engine.spec.<cluster>.md` files.
 
-Companion to [engine.plan.md](engine.plan.md), which owns the closed gate history and the
+Companion to [engine.plan.md](finished/engine/engine.plan.md), which owns the closed gate history and the
 goals the build was judged against. This set defines the contracts and invariants of the
 engine that is now the world authority for successor chats; it owes nothing to the
 retired session model, whose code and tables were deleted at rollout R6 (2026-07-22).

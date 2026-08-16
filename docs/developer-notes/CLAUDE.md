@@ -162,9 +162,23 @@ close-out also:
 
 Two kinds of docs stay in this folder despite shipped work: plans with any slice
 still queued, however much of them has landed (their progress lives in their
-spec, not in the shipped history), and living reference sets cited from code and
-live docs (the engine hub/spec/gate family). When in doubt: if `roadmap.md`
-still lists it, it stays.
+spec, not in the shipped history), and **normative contracts for systems that are
+still running**. When in doubt: if `roadmap.md` still lists it, it stays.
+
+The engine family is the worked example of that split, and the distinction is
+what a doc *is*, not which topic it belongs to (2026-08-16):
+
+- **`engine.spec.md` + its six cluster files stay.** A contract for a live system
+  is not history, and source cites it as `engine.spec §N` at 147 call sites
+  against a § index that never renumbers.
+- **`engine.gate7.institutions.md` stays** — never opened, still on `roadmap.md`.
+- **`engine.plan.md` and the gate-0–6 docs are archived** to `finished/engine/`.
+  They are the build history of a closed scope, and code cites them by name
+  rather than by §, so `grep` finds them wherever they sit.
+
+Before the reference tier existed, the whole family was exempt because it was the
+only place the engine was written down. `docs/engine/` now owns everyday reading,
+so the exemption narrowed to the contract alone.
 
 ## Engine gate docs (split 2026-07-21)
 
@@ -174,8 +188,11 @@ edited whole:
 - **One doc per gate: `engine.gateN.<slug>.md`** (e.g. `engine.gate6.dual-lod.md`),
   where the slug names what the gate delivers. Each holds that gate's full plan
   section — scope, build order, and the shipped E-package histories.
-  [engine.plan.md](engine.plan.md) stays the hub: goals, the gate index list
+  [engine.plan.md](finished/engine/engine.plan.md) is the hub: goals, the gate index list
   (one-line status + link per gate), dependency order, and cost/quality material.
+  The hub and gates 0–6 were archived to `finished/engine/` on 2026-08-16 as the
+  build history of a closed scope; **`engine.gate7.institutions.md` stays live**,
+  and a gate reopened later comes back out of the archive with it.
   **Future gates get their own file at planning time** (Gate 7 already has one) —
   never grow a new gate inline in the hub. Gate numbers in filenames are NOT the
   deprecated `phase-N` pattern: gate numbers are stable architectural identities
@@ -197,5 +214,5 @@ edited whole:
 Vesper is a fork of Reverie, a role playing game. Vesper is more romance focused while Reverie is general.
 Vesper began with a "World Model" system which had characters, locations, items, etc. and attempted to use map locations and schedules to have NPCs move around the world. This system became somewhat _broken_ and we weren't able to get characters to move to locations in a timely fashion to keep the story going, which broke the narrative aspect of the game.
 Because of this, we stepped back and created a 1-on-1 character chat which was initially run from within Character forms in the library. This worked quite well and after further development, we broke it out into its own flow and added multiple character chats to it. It lacks some features the World Model had such as locations-as-entitites and map navigation, but narratively it is greatly expanded over the World Model.
-The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate under [engine.plan.md](engine.plan.md) (gates 0–6) — rolled out through [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6), and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
+The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate under [engine.plan.md](finished/engine/engine.plan.md) (gates 0–6) — rolled out through [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6), and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
 Two lanes remain: legacy character chat (the live product for ordinary chats) and successor chats — a character chat bound to its own simulated world, created from the `/worlds` front door, with the engine authoritative per the `engine_authority` flag. New patterns still prove out in the chat lane first.

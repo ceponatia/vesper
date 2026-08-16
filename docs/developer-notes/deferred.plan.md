@@ -336,7 +336,7 @@ runs aren't tracked as roadmap items for now). Each is built and dry-run
 validated; run when the owner asks, then record results in the owning plan._
 
 - **Gate 4 paired voice/chemistry eval** (deferred at gate close, 2026-07-19) —
-  the fifth [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md)
+  the fifth [engine.gate4.perception-narration.md](finished/engine/engine.gate4.perception-narration.md)
   §"Gate 4 exit" criterion: a live paired
   eval showing the E4.x context (typed cuts, beliefs, licensed soft canon, memory
   recall) improves causal enactment without degrading median voice or chemistry.

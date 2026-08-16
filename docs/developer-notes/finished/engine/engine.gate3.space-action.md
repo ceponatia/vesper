@@ -9,8 +9,8 @@ route-uncertainty ruling 12 → travel polish; interpersonal consent → Gate 5)
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
+[roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](../../engine.spec.md) §-index.
 
 ## Gate 3 — space, action, schedules, and live-scene arbitration
 

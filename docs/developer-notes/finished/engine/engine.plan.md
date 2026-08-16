@@ -2,22 +2,31 @@
 
 Status: **shipped — 2026-07-21** (committed scope: gates 0–6, closed 2026-07-16 →
 2026-07-21). The migration that put the engine under the live product closed 2026-07-22
-in [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md). Gate 7 was never
-committed and stays optional. This family deliberately does **not** archive to
-`finished/`: it is the living reference set the running engine is cited against
-(`docs/developer-notes/CLAUDE.md` §"Ship close-out").
+in [engine.rollout.plan.md](../engine.rollout.plan.md). Archived 2026-08-16 with the
+gate-0–6 docs: this hub and its closed gates are build history, and the reference layer
+that replaced them for everyday reading is [docs/engine/](../../../engine/README.md).
+
+**Two parts of the family deliberately stay live and are NOT archived**, because
+neither is history:
+
+- **[engine.spec.md](../../engine.spec.md) and its six cluster files** — the normative
+  contract of a running system, cited from source as `engine.spec §N` at 147 call sites
+  against a § index that never renumbers. Archiving it would point every one of those
+  into a history folder.
+- **[engine.gate7.institutions.md](../../engine.gate7.institutions.md)** — optional,
+  never opened, and still carrying a `roadmap.md` line under Next.
 
 Outcome: A player can talk to characters who keep living their own lives between scenes
 — sleeping, eating, working, travelling, and hearing news from one another — so that a
 character who is across town arrives late instead of appearing on cue, and knows only
 what they actually saw or were told.
 
-Companion to [engine.spec.md](engine.spec.md), which owns the normative contracts. This
+Companion to [engine.spec.md](../../engine.spec.md), which owns the normative contracts. This
 document is the hub of the gate set: the goals the build was judged against, the gate
 index, the standing decisions that produced the architecture, and the budgets it still
 runs under. Each gate's own scope, build order, and shipped record lives in its
 `engine.gateN.*.md` doc. The architectural argument this plan was written from is
-[finished/world-engine-refactor.gpt.md](finished/world-engine-refactor.gpt.md).
+[finished/world-engine-refactor.gpt.md](../../finished/world-engine-refactor.gpt.md).
 
 The one-line direction:
 
@@ -38,16 +47,16 @@ What is still open on this track:
 - **Gate 7** — institutions and macro simulation. Optional and never opened. Its
   sequencing precondition (rollout R6) exited 2026-07-22, so it is unblocked, but it
   opens only on the owner's call.
-  ([engine.gate7.institutions.md](engine.gate7.institutions.md))
+  ([engine.gate7.institutions.md](../../engine.gate7.institutions.md))
 - **The live paired quality evals.** Every gate from 4 onward closed on its deterministic
   exit corpus per the owner's 2026-07-18 exit-scope ruling; the human-scored comparison
   was never run and rides the owner-gated spend list in
-  [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
+  [deferred.plan.md](../../deferred.plan.md) §Owner-gated live eval runs.
 - **Product ruling 12** — route-estimate uncertainty exposure. The one ruling still open;
   deferred to the travel work that needs it.
 - **The parked improvement backlog.** Post-rollout review findings live as draft stubs
   under `deferred/` and graduate one at a time on the owner's go, never in bulk
-  ([deferred/CLAUDE.md](deferred/CLAUDE.md)).
+  ([deferred/CLAUDE.md](../../deferred/CLAUDE.md)).
 
 ## Standing decisions
 
@@ -189,7 +198,7 @@ owner-gated spend list instead of holding the verdict.
 ## The gates
 
 Each gate has its own doc carrying that gate's scope, build order, and shipped E-package
-history. One line of status here; [roadmap.md](roadmap.md) stays the ordered index of
+history. One line of status here; [roadmap.md](../../roadmap.md) stays the ordered index of
 what to build next.
 
 - **Gate 0 — establish trustworthy evidence** · closed (advance) 2026-07-16 ·
@@ -207,7 +216,7 @@ what to build next.
 - **Gate 6 — dual LOD and autonomous background life** · closed 2026-07-21, E6.1–E6.5 ·
   [engine.gate6.dual-lod.md](engine.gate6.dual-lod.md)
 - **Gate 7 — optional institutions and macro simulation** · never opened; optional,
-  owner-gated · [engine.gate7.institutions.md](engine.gate7.institutions.md)
+  owner-gated · [engine.gate7.institutions.md](../../engine.gate7.institutions.md)
 
 ## Dependency order, as executed
 
@@ -224,7 +233,7 @@ The critical path the build actually followed:
 8. bodies, inventories, households, relationships, and material traces (Gate 5);
 9. dual LOD and autonomous background behavior (Gate 6);
 10. migration and rollout under the live product
-    ([finished/engine.rollout.plan.md](finished/engine.rollout.plan.md), R0–R6).
+    ([finished/engine.rollout.plan.md](../../finished/engine.rollout.plan.md), R0–R6).
 
 Optional macro packages (Gate 7) sit after all of it and were never scheduled.
 
@@ -310,7 +319,7 @@ failure behavior, and budget owner.
 ## Migration and rollout
 
 **Complete.** The strategy this section once described became
-[finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6, shipped
+[finished/engine.rollout.plan.md](../../finished/engine.rollout.plan.md) (R0–R6, shipped
 2026-07-21/22). Its ground rules still govern the running system:
 
 - **Authority is assigned per world or branch by flag, never per row.** A chat carries
@@ -377,7 +386,7 @@ pipeline contract: engine.spec §24.
 ## Product rulings
 
 Every product ruling is recorded normatively in **engine.spec §39**
-([engine.spec.operations.md](engine.spec.operations.md)), which is their canonical owner
+([engine.spec.operations.md](../../engine.spec.operations.md)), which is their canonical owner
 and the only place their wording lives. Rulings 1–11 and 13 were resolved 2026-07-17 (the
 Gate 3 unblock pass), 14 on 2026-07-18 (Gate 4), 15–16 on 2026-07-19 (Gate 5), and 17–33
 across the rollout and the work that followed it, 2026-07-22 → 2026-07-27.
@@ -417,8 +426,8 @@ awaits the owner-gated live paired eval.
   corpora cover its ground piecewise; running it as one arc would need the live paired
   eval to supply the quality half of a verdict.
 - **How the queued chat-lane meter plans relate to Gate 5.** The roadmap and the rollout
-  close-out both describe [chat-meter-economy.plan.md](chat-meter-economy.plan.md) and
-  [chat-body-needs.plan.md](chat-body-needs.plan.md) as porting through the Gate 5
+  close-out both describe [chat-meter-economy.plan.md](../../chat-meter-economy.plan.md) and
+  [chat-body-needs.plan.md](../../chat-body-needs.plan.md) as porting through the Gate 5
   contracts, but neither plan names an engine contract, and Gate 5 took its semantics
   from the chat spec rather than the reverse. Whether those plans build in the chat lane,
   adapt onto §25, or are superseded by the successor lane is undecided.
