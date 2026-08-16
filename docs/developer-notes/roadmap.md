@@ -34,28 +34,30 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   false-premise fences and mandatory action outcomes, live in production; slice 4
   needs a design decision, slices 5–6 need instruments that don't exist.
 
+- **Visual state and attention** — [plan](visual-state.plan.md) ·
+  [spec](visual-state.spec.md) — one lane-neutral projection over the existing
+  appearance, wardrobe, body-condition and scene owners; the appearance audit
+  and the core contract are in, and every remaining build slice up to the
+  narrator proving release is unblocked.
+
+- **Image render quality — per-model prompts, negative steering, and face
+  fidelity** — [plan](image-render-quality.plan.md) ·
+  [spec](image-render-quality.spec.md) — the content and tuning companion to the
+  shipped capabilities plan, now scoped to the Qwen family and the recent seeded
+  models; prompt segments and profile-control parity are in, the seeded controls
+  activate as model rows are probed, and the dialect compilers are the next code
+  slice.
+
 ## Next (queued, in dependency order)
 
-**Unblocked today — only scheduling gates these:** data lifecycle, visual
-state, the shadow-measurement enable, resilience closures, `ConfirmDialog`,
-clothing slice 7, and wiring the affordance layer to the scene owner.
+**Unblocked today — only scheduling gates these:** data lifecycle, the
+shadow-measurement enable, resilience closures, `ConfirmDialog`, clothing
+slice 7, and wiring the affordance layer to the scene owner.
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
   chat-flow data gets a real `chat_id` FK and dies with its chat, with images the
   one deliberate survivor so the Gallery keeps them.
-
-- **Visual state and attention** — [plan](visual-state.plan.md) ·
-  [spec](visual-state.spec.md) — one lane-neutral projection over the existing
-  appearance, wardrobe, body-condition and scene owners, keeping identity,
-  presentation, current state and body language separate for narrator, image and
-  inspector digests; its image slice is unblocked now that references carry roles.
-
-- **Image render quality — per-model prompts, negative steering, and face
-  fidelity** — [plan](image-render-quality.plan.md) ·
-  [spec](image-render-quality.spec.md) — the content and tuning companion to the
-  shipped capabilities plan; its control transports now exist, so past slice 1
-  it needs a paid tuning trial and the face-repair model decision.
 
 - **Character reference views — accepting a portrait, and the angles it
   unlocks** — [plan](character-reference-views.plan.md) ·
