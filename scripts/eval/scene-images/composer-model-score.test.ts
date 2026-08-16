@@ -94,7 +94,10 @@ describe("gradeComposer — the right answer", () => {
   });
 
   it("does not grade the camera on a staged beat — a staging's camera outranks the composer's", () => {
-    expect(grade().checks.camera).toBeNull();
+    const checks = grade().checks;
+    expect(checks.cameraOrientation).toBeNull();
+    expect(checks.cameraHeight).toBeNull();
+    expect(checks.cameraDistance).toBeNull();
   });
 });
 
@@ -211,20 +214,20 @@ describe("camera grading (unstaged beats)", () => {
   it("passes a grounded non-default camera", () => {
     expect(
       cameraGrade({ orientation: "away", distance: "medium", height: "eye_level", evidence: "stop right behind her" })
-        .checks.camera,
+        .checks.cameraOrientation,
     ).toBe(true);
   });
 
   it("fails a camera the transcript never grounded — the resolver degrades it to the default", () => {
     const result = cameraGrade({ orientation: "away", distance: "medium", height: "eye_level", evidence: "" });
-    expect(result.checks.camera).toBe(false);
+    expect(result.checks.cameraOrientation).toBe(false);
     expect(result.diagnosticCodes).toContain("images.scene_composer.camera_ungrounded");
   });
 
   it("fails a composer that simply left the default in place", () => {
-    expect(cameraGrade({ orientation: "toward_viewer", distance: "medium", height: "eye_level" }).checks.camera).toBe(
-      false,
-    );
+    expect(
+      cameraGrade({ orientation: "toward_viewer", distance: "medium", height: "eye_level" }).checks.cameraOrientation,
+    ).toBe(false);
   });
 
   it("does not grade staging on a beat that stages nothing", () => {
@@ -242,8 +245,45 @@ describe("scoreOf", () => {
       noBannedWords: true,
       concrete: true,
     };
-    expect(scoreOf({ ...base, camera: null, staging: null, viewerBody: null })).toBe(1);
-    expect(scoreOf({ ...base, camera: false, staging: null, viewerBody: null })).toBeCloseTo(6 / 7);
+    const noCamera = { cameraOrientation: null, cameraHeight: null, cameraDistance: null } as const;
+    expect(scoreOf({ ...base, ...noCamera, staging: null, viewerBody: null })).toBe(1);
+    expect(
+      scoreOf({ ...base, ...noCamera, cameraOrientation: false, staging: null, viewerBody: null }),
+    ).toBeCloseTo(6 / 7);
+  });
+
+  it("does not let framing quality move the score — a wrong distance is a taste miss, not a contradiction", () => {
+    const base = {
+      answered: true,
+      focal: true,
+      groundedParts: true,
+      noInventedCast: true,
+      noBannedWords: true,
+      concrete: true,
+      staging: null,
+      viewerBody: null,
+      cameraOrientation: true,
+      cameraHeight: true,
+    };
+    expect(scoreOf({ ...base, cameraDistance: false })).toBe(1);
+    expect(scoreOf({ ...base, cameraDistance: true })).toBe(1);
+  });
+
+  it("still scores the two spatial axes, which a contradiction does move", () => {
+    const base = {
+      answered: true,
+      focal: true,
+      groundedParts: true,
+      noInventedCast: true,
+      noBannedWords: true,
+      concrete: true,
+      staging: null,
+      viewerBody: null,
+      cameraDistance: true,
+    };
+    expect(scoreOf({ ...base, cameraOrientation: true, cameraHeight: true })).toBe(1);
+    expect(scoreOf({ ...base, cameraOrientation: false, cameraHeight: true })).toBeCloseTo(7 / 8);
+    expect(scoreOf({ ...base, cameraOrientation: false, cameraHeight: false })).toBeCloseTo(6 / 8);
   });
 });
 

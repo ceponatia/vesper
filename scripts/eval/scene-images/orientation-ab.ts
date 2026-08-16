@@ -140,8 +140,14 @@ export const BEATS = new Map<string, () => Beat>([
   ["glance", glanceBeat],
   ["kneel", kneelBeat],
   ["doggy", doggyBeat],
-  ["oral", () => oralBeat("kneeling_before_viewer", "her face visible, looking up mid-act")],
-  ["oral_guided", () => oralBeat("kneeling_before_viewer_guided", "the top of her head under the viewer's own hand")],
+  ["oral", () => oralBeat("kneeling_before_viewer", "her face visible, looking up mid-act", { guidingHand: false })],
+  [
+    "oral_guided",
+    () =>
+      oralBeat("kneeling_before_viewer_guided", "the top of her head under the viewer's own hand", {
+        guidingHand: true,
+      }),
+  ],
   ["missionary", missionaryBeat],
 ]);
 
@@ -335,9 +341,30 @@ function doggyBeat(): Beat {
  * purpose — the entry carries `requiresBare: []` because the bare anatomy this shot needs is
  * the VIEWER's, and that is gated against the player's own coverage.
  */
-function oralBeat(id: SceneStagingId, composition: string): Beat {
-  const narration =
-    "She sinks to her knees in front of you, takes you into her mouth, and your hand comes to rest on the top of her head.";
+/**
+ * The two oral compositions, and the ONE sentence that separates them.
+ *
+ * Both beats used to share this narration verbatim, hand-on-head included, and expected two
+ * different answers from it. That is unanswerable: `kneeling_before_viewer` and
+ * `kneeling_before_viewer_guided` describe the same act and differ only by the viewer's hand
+ * resting on her head, so a single story that states the hand supports the guided entry and
+ * contradicts the plain one. The 2026-08-15 composer A/B scored the consequence rather than
+ * the model — `oral_guided` 0/16 across eight arms, every one of them answering the plain
+ * sibling off a story that read as either.
+ *
+ * So the guided beat states the hand and the plain beat does not, and each expects the entry
+ * its own story establishes. `guidingHand` is what makes them a real discrimination test:
+ * the composer must notice the distinguishing detail, not merely recognise kneeling.
+ */
+function oralBeat(id: SceneStagingId, composition: string, opts: { guidingHand: boolean }): Beat {
+  const narration = opts.guidingHand
+    ? "She sinks to her knees in front of you, takes you into her mouth, and your hand comes to rest on the top of her head."
+    : "She sinks to her knees in front of you and takes you into her mouth, her eyes lifting to yours.";
+  // The quote must be the phrase establishing THIS entry rather than the act both share —
+  // the discrimination the composer rule now asks for, held to by the fixture that grades it.
+  const evidence = opts.guidingHand
+    ? "your hand comes to rest on the top of her head"
+    : "she sinks to her knees in front of you";
   const context: SceneComposerContext = {
     present: [subject({ outfitDescription: "an unbuttoned shirt, nothing under it" })],
     locationName: "the bedroom",
@@ -364,7 +391,7 @@ function oralBeat(id: SceneStagingId, composition: string): Beat {
       setting: context.locationDescription,
       lighting: "one lamp, low",
       mood: "intimate",
-      staging: { id, evidence: "she sinks to her knees in front of you" },
+      staging: { id, evidence },
     }),
     camera: DEFAULT_SCENE_CAMERA,
     staging: stagingEntry(id),

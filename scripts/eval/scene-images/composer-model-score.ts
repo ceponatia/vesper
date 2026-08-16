@@ -84,8 +84,22 @@ export interface ComposerChecks {
   answered: boolean;
   /** The shot centers on the roster member the story centers on, with no focal clamp. */
   focal: boolean | null;
-  /** The proposed camera survived the evidence gate as the ids the story establishes. */
-  camera: boolean | null;
+  /**
+   * Which way the story says she is turned, survived the evidence gate. **Spatial
+   * correctness**: a front-facing shot of a character with her back to the room contradicts
+   * the text, so this is scored.
+   */
+  cameraOrientation: boolean | null;
+  /**
+   * Where the camera sits relative to her, survived the evidence gate. Spatial correctness
+   * for the same reason, and gated the same way in the registry.
+   */
+  cameraHeight: boolean | null;
+  /**
+   * How much of the body the frame holds. **Framing quality, deliberately NOT scored** — see
+   * {@link UNSCORED_CHECKS}. Reported per run so a framing regression stays visible.
+   */
+  cameraDistance: boolean | null;
   /** The staging the story explicitly describes survived every gate. */
   staging: boolean | null;
   /** Every expected viewer part was proposed. */
@@ -162,7 +176,9 @@ export function gradeComposer(input: {
     const checks: ComposerChecks = {
       answered: false,
       focal: null,
-      camera: gradesCamera ? false : null,
+      cameraOrientation: gradesCamera ? false : null,
+      cameraHeight: gradesCamera ? false : null,
+      cameraDistance: gradesCamera ? false : null,
       staging: gradesStaging ? false : null,
       viewerBody: gradesViewerBody ? false : null,
       groundedParts: false,
@@ -180,18 +196,23 @@ export function gradeComposer(input: {
   const codes = sink.items.map((item) => item.code);
   const fired = (code: string): boolean => codes.includes(code);
 
-  const camera = gradesCamera
-    ? plan.camera.orientation === expectation.camera?.orientation &&
-      plan.camera.distance === expectation.camera.distance &&
-      plan.camera.height === expectation.camera.height
-    : null;
+  // Three axes, not one boolean. They fail for different reasons and mean different things:
+  // the 2026-08-15 run showed every arm at 2/14 on the combined check, which read as "no
+  // model can work the camera" when what was actually happening was that orientation and
+  // height were largely right and distance was disagreeing on nearly every beat.
+  const expected = expectation.camera;
+  const cameraOrientation = expected ? plan.camera.orientation === expected.orientation : null;
+  const cameraHeight = expected ? plan.camera.height === expected.height : null;
+  const cameraDistance = expected ? plan.camera.distance === expected.distance : null;
 
   const prose = [spec.pose, spec.activity].map((part) => part.trim()).filter(Boolean).join("; ");
 
   const checks: ComposerChecks = {
     answered: true,
     focal: plan.focal?.name === expectation.focalName && !fired("images.scene_composer.focal_clamped"),
-    camera,
+    cameraOrientation,
+    cameraHeight,
+    cameraDistance,
     staging: gradesStaging ? plan.staging?.id === expectation.stagingId : null,
     // Scored against the RAW proposal, not the resolved plan: a surviving staging unions its
     // own registry parts into the plan, which would make this pass for a model that proposed
@@ -208,9 +229,35 @@ export function gradeComposer(input: {
   return { checks, score: scoreOf(checks), diagnosticCodes: codes, prose };
 }
 
-/** Graded checks passed / graded checks applicable. `null` axes are not counted either way. */
+/**
+ * Checks that are REPORTED but do not move the score.
+ *
+ * `cameraDistance` is framing quality, and the registry says so in the vocabulary itself:
+ * shot distance carries no `evidenceRequired` field at all, "because a wrong distance is a
+ * taste miss and a wrong orientation is a contradiction" (`scene-camera.ts`). Nothing in
+ * production degrades a distance, so scoring one as correctness would rank arms on an axis
+ * the app deliberately leaves loose — and in the 2026-08-15 run it did exactly that, dragging
+ * every arm to 2/14 on the combined camera check and hiding the differences that matter.
+ *
+ * It stays in {@link ComposerChecks}, printed per run and written to the CSV, because a model
+ * that framed every beat wrong would still be worth seeing. It just does not decide the
+ * ranking.
+ */
+export const UNSCORED_CHECKS = ["cameraDistance"] as const satisfies readonly (keyof ComposerChecks)[];
+
+/**
+ * Scored checks passed / scored checks applicable. `null` axes are not counted either way,
+ * and {@link UNSCORED_CHECKS} are excluded however they landed.
+ */
 export function scoreOf(checks: ComposerChecks): number {
-  const graded = Object.values(checks).filter((value): value is boolean => value !== null);
+  // Keyed rather than `Object.entries`, which widens the value to `any` and would let a
+  // non-boolean axis added later slip through the filter untyped.
+  const unscored: readonly string[] = UNSCORED_CHECKS;
+  const names = Object.keys(checks) as (keyof ComposerChecks)[];
+  const graded = names
+    .filter((name) => !unscored.includes(name))
+    .map((name) => checks[name])
+    .filter((value): value is boolean => value !== null);
   if (graded.length === 0) return 0;
   return graded.filter(Boolean).length / graded.length;
 }

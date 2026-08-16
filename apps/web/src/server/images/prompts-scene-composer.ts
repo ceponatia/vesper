@@ -1,12 +1,8 @@
 import { z } from "zod";
 import type { AttributeValue } from "@/contracts/attributes";
-import {
-  sceneCameraHeightIds,
-  sceneShotDistanceIds,
-  sceneSubjectOrientationIds,
-} from "@/contracts/images/scene-camera";
+import { sceneCameraHeights, sceneShotDistances, sceneSubjectOrientationIds } from "@/contracts/images/scene-camera";
 import { describeCommittedFacts, type CommittedSceneFacts } from "@/contracts/images/scene-committed";
-import { sceneStagingIds } from "@/contracts/images/scene-staging";
+import { sceneStagings } from "@/contracts/images/scene-staging";
 import type { RegionExposure } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { excerpt, formatGarment } from "./prompts-format";
@@ -260,6 +256,18 @@ const COMPOSER_EMBODIED_RULES = [
 const quotedIds = (ids: readonly string[]): string => ids.map((id) => `"${id}"`).join(", ");
 
 /**
+ * A vocabulary rendered as `"id" (what it means)` instead of a bare id list.
+ *
+ * An id is a label, not a definition, and the 2026-08-15 composer A/B measured what that
+ * costs: eight models across five families answered the distance axis wrong on nearly every
+ * beat, in both directions, because "close" and "medium" were handed over as bare words with
+ * no rubric. The hints come off the registry entries themselves, so a new id cannot reach the
+ * prompt undescribed — the type requires one.
+ */
+const describedIds = (entries: readonly { id: string; hint: string }[]): string =>
+  entries.map((entry) => `"${entry.id}" (${entry.hint})`).join("; ");
+
+/**
  * The camera rule (scene-composition.plan.md slice 1) — stated to BOTH lanes, because where
  * the camera stands is a fact about the shot rather than about whether the viewer's own body
  * is in it.
@@ -274,9 +282,9 @@ const quotedIds = (ids: readonly string[]): string => ids.map((id) => `"${id}"`)
  * "she looked back" is a separate physical claim from "the player is behind her".
  */
 const COMPOSER_CAMERA_RULE =
-  `- camera: where this shot is taken from, as three ids — orientation (which way the focal character is turned relative to the viewer): ${quotedIds(sceneSubjectOrientationIds)}; distance: ${quotedIds(sceneShotDistanceIds)}; height: ${quotedIds(sceneCameraHeightIds)}. ` +
+  `- camera: where this shot is taken from, as three ids — orientation (which way the focal character is turned relative to the viewer): ${quotedIds(sceneSubjectOrientationIds)}; distance (how much of the body the frame holds, NOT how near the viewer is standing): ${describedIds(sceneShotDistances)}; height (where the camera sits relative to her): ${describedIds(sceneCameraHeights)}. ` +
   'The defaults are "toward_viewer" / "medium" / "eye_level", and they are the right answer unless the story actually says otherwise. Any OTHER orientation or height MUST carry camera.evidence: a short phrase copied EXACTLY, word for word, from the recent narration or the player\'s own words, establishing where the viewer is standing relative to that character or which way she is facing. If nothing establishes it, keep the defaults — an unquoted camera is dropped in code, so a guess costs you the shot. ' +
-  'Evidence that puts the viewer behind her, or her back to them, is "away": away means fully away, her back to the camera. Propose "away_glance_back" ONLY when the history actually describes her looking or glancing back, and the quote must be that glance itself, not the behind-position. Distance never needs a quote — simply match the beat.';
+  'Evidence that puts the viewer behind her, or her back to them, is "away": away means fully away, her back to the camera. Propose "away_glance_back" ONLY when the history actually describes her looking or glancing back, and the quote must be that glance itself, not the behind-position. Distance never needs a quote — simply match the beat, and remember that standing near someone is not a "close" frame: two bodies in contact almost always need "medium".';
 
 /**
  * The staging rule (slice 2) — **embodied lane only**, because every entry in the catalog is
@@ -289,8 +297,10 @@ const COMPOSER_CAMERA_RULE =
  * and a cautious one cannot water down an act it did.
  */
 const COMPOSER_STAGING_RULE =
-  `- staging: the physical configuration the story has just put the character and the viewer in, as ONE id from exactly: ${sceneStagingIds.join(", ")}. ` +
-  "Set staging.id ONLY when the recent story EXPLICITLY describes that configuration between the focal character and the viewer, and set staging.evidence to a short phrase copied EXACTLY, word for word, from that history. Leave both empty whenever you are in any doubt — which is most of the time; an unquoted or merely-implied staging is dropped in code. " +
+  "- staging: the physical configuration the story has just put the character and the viewer in, as ONE id from exactly this list:\n" +
+  sceneStagings.map((entry) => `    ${entry.id} — ${entry.hint}`).join("\n") +
+  "\n  Set staging.id ONLY when the recent story EXPLICITLY describes that configuration between the focal character and the viewer, and set staging.evidence to a short phrase copied EXACTLY, word for word, from that history. Leave both empty whenever you are in any doubt — which is most of the time; an unquoted or merely-implied staging is dropped in code. " +
+  "Several entries describe the SAME act and differ by one detail — whose hands are where, whether she is bare, which way she faces. When you pick one of those, your quote must be the phrase that establishes THAT detail, not the phrase establishing the act they share: for a kneeling act with the viewer's hand on her head, quote the hand on her head. If the story does not state the distinguishing detail, pick the plainer entry. " +
   "You never write the configuration out in words: the wording is composed in code from the id you pick, so your entire job here is the id and the quote.";
 
 const composerRules = (embodied: boolean): readonly string[] => {
