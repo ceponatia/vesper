@@ -283,8 +283,10 @@ the Node execution (`cropToTargetAspect`) stays in
 
 ## Current implementation (slice 2, built 2026-08-16)
 
-Built and unaccepted: it waits on review and on the parity run, which cannot
-happen until a reviewed model's version is probed. Two things landed.
+Built 2026-08-16 and accepted the same day: the independent review passed it
+(§"Slice 2 review (2026-08-16)"), every reviewed row was probed on the deployed
+build, and parity was verified on a live render
+(§"Probe and live parity (2026-08-16)"). Two things landed.
 
 **The reviewed policy now has one source of truth, in both vocabularies.**
 `packages/image-core/src/models/reviewed-profile-controls.ts` states each
@@ -305,25 +307,33 @@ compiles them into the base prompt the profile's strategy then reads.
 Neither changes a byte of any current payload, and both reasons are the same
 fact wearing two hats — see below.
 
-### Why nothing renders differently yet
+### Why nothing rendered differently at build time
 
-Every seeded `image_models` row still carries `advanced_capabilities = '{}'`.
-That single fact defeats both halves of the profile route:
+At build time every seeded `image_models` row still carried
+`advanced_capabilities = '{}'`. That single fact defeated both halves of the
+profile route:
 
 - a normalized control has no probed binding to map through, so it drops as
   `no_binding` (`mapImageRenderControls`);
 - a `providerOverrides` entry fails closed against an empty `knownInputFields`,
   so it drops as `unknown_field` (`validateProviderOverrides`).
 
-So a profile carrying the reviewed controls contributes **nothing** to the
-payload today, and the transitional overlay is still what delivers those settings
-— through `extraInput`, which needs no probe. This is the same two-speed rollout
+So a profile carrying the reviewed controls contributed **nothing** to the
+payload, and the transitional overlay was what delivered those settings —
+through `extraInput`, which needs no probe. This is the same two-speed rollout
 migration 0107 documented for the curated profiles: the row states the intent
 now, the probe activates it.
 
-The same fact defeats prompt fitting, harmlessly. A budget comes only from the
-version's probed prompt binding (`maxChars` / `recommendedChars`), no seeded row
-has one, so every budget resolves empty and no prompt is trimmed.
+That state ended with the 2026-08-16 probe
+(§"Probe and live parity (2026-08-16)"): the profile route now delivers on the
+whole reviewed set, and the overlay remains beside it — byte-identical by the
+parity test — until migration step 4 retires it per model.
+
+Prompt fitting stays defeated even after the probe, harmlessly. A budget comes
+only from the version's probed prompt binding (`maxChars` / `recommendedChars`),
+and a Replicate schema does not state one, so no probed row carries a budget and
+no prompt is trimmed. Budgets arrive with slice 3's measured effective-context
+protocol, not with probing.
 
 ### Structured prompt segments as built
 
@@ -388,20 +398,88 @@ run: `compileProfileRenderPlan` always applies `withReviewedImageQuality`, so th
 only way to observe the profile route alone is a model the reviewed table has
 never heard of.
 
-### What blocks step 4
+### Probe and live parity (2026-08-16)
 
-The probe, and only the probe. Owner ruling (2026-08-16) scoped the reviewed set
-to the Qwen family plus the 2026-08-10/11 seeded additions, dropping the three
-community checkpoints — Juggernaut XL v9, RealVis Hyper LoRA and Pony Realism
-v2.3 — that had no seeded `image_models` row for a migration to reach. Every
-remaining reviewed slug has a row, so **every reviewed setting is now
-reproducible as a task profile's controls**, and step 4 turns entirely on whether
-a model's version has been probed.
+Every reviewed row was re-probed through the admin `reprobe` endpoint on the
+first deployed build carrying migration 0110, and the results were verified
+against the stored rows and one live render:
 
-That also removes the regression that made step 6 unsafe. Deleting the overlay no
-longer risks returning a model to a harmful wrapper default behind Vesper's back:
-the demoted models are meant to run on their wrapper defaults now, and every
-model that is not is one a profile can carry once probed.
+- **every seeded control now has a provider field to travel through.** Qwen Edit
+  2511 exposes `go_fast` in `knownInputFields` (plus a `seed` binding); NSFW
+  FLUX Dev binds `customWidth`/`customHeight` → `width`/`height`; LikeReality
+  Pony v1 binds those plus `negativePrompt` → `negative_prompt`; SDXL PuLID
+  binds dimensions plus `guidance` → `cfg` and exposes `method`;
+- Pruna P-Image's stored version moved with the provider (`79bbabc3…` →
+  `f41909de…`) — the re-probe refreshing it alongside the capability columns is
+  the intended freshness behaviour;
+- **the live check:** portrait-variant image `c0mk931f44qv1v0jiqbi9ex5` (QA
+  account) compiled through profile `imgprf2511variantaaaaaaa` and recorded
+  `appliedControls: { seed: … }` with `droppedControls: []` — the first
+  production render in which the profile route delivered a control instead of
+  dropping it `no_binding`;
+- the provider payload for that render (prediction `0m0s7d190srmw0d01k1vjq3yrc`)
+  carried `go_fast: false` with both routes live — the golden parity test's
+  both-live arm, observed in production.
+
+### Slice 2 review (2026-08-16)
+
+An independent review of the merged slice verified every claimed property: the
+derived overlay matches §"Effective values by model" byte for byte, migration
+0110 is idempotent, NULL-safe and a no-op on absent rows, empty-string negatives
+survive all three merge points, the mandatory floor and both fitting phases
+hold, and the parity arms compare real provider payloads. Verdict: safe to
+deploy, safe to build slice 3 on after three fixes.
+
+**Fix before slice 3** (all small, all cheaper before slice 3 writes code
+against the current claims):
+
+1. a `controlDefaults` entry with no `controlFields` mapping is invisible to
+   the overlay while fully live in the profile representation — the one
+   remaining one-way drift channel, and no current test catches it (the parity
+   fixture synthesizes its probe *from* `controlFields`, so the drift cancels).
+   Add the assertion that every non-`resolution` control key carries a mapping;
+2. the "no provider field is claimed by both channels" test is unfalsifiable —
+   `reviewedImageQualityControlFields` is defined as the complement of
+   `providerOverrides`, so the assertion cannot fail. Replace it with a real
+   collision guard: a collision silently loses the mapped value to the
+   `providerOverrides` spread;
+3. an all-optional segment list can compile to an empty prompt that is then
+   sent (`resolveIntentPrompt` guards `segments.length === 0`, not "the compile
+   produced nothing"). A blank prompt must not reach a provider once slice 3
+   lanes start emitting segments.
+
+Recorded, not blocking: a caller-declared `mandatory: true` on an optional kind
+is protected from removal but emits no `mandatory_segment_compressed` warn when
+phase 2 shortens it; the two image-lab planner callers pass no diagnostics sink,
+so lab prompt-fitting diagnostics are swallowed; `createImageModelProfile` seeds
+no reviewed controls (the step-4 trap below); the parity test synthesizes its
+probe from `controlFields` and stops at the payload — crop equivalence between
+the two routes was verified by hand, not by the test; migration 0110's JSON is a
+hand copy of the TS table with no tripwire, all four rows verified matching.
+
+### Step 4 readiness
+
+Nothing blocks it since the 2026-08-16 probe. Owner ruling (2026-08-16) scoped
+the reviewed set to the Qwen family plus the 2026-08-10/11 seeded additions,
+dropping the three community checkpoints — Juggernaut XL v9, RealVis Hyper LoRA
+and Pony Realism v2.3 — that had no seeded `image_models` row for a migration to
+reach. Every remaining reviewed slug has a row, **every reviewed setting is
+reproducible as a task profile's controls**, and the probe gave every one of
+those controls a live binding.
+
+What remains of step 4 is the code change itself: retire reviewed entries from
+the overlay model by model, keep the golden parity test green while doing it,
+and settle the create-time gap first — `createImageModelProfile` inserts the
+admin's request verbatim, so a profile added to a reviewed model after
+migration 0110 carries none of the reviewed controls. Invisible while the
+overlay lives; once the overlay is gone such a profile silently reverts to
+wrapper defaults (LikeReality's is the hidden `"nsfw, naked"` negative). Seed
+reviewed controls at profile-create time from the same table, or step 4 waits.
+
+That ruling also removed the regression that made step 6 unsafe. Deleting the
+overlay no longer risks returning a model to a harmful wrapper default behind
+Vesper's back: the demoted models are meant to run on their wrapper defaults
+now, and every model that is not is one a profile carries with a live binding.
 
 ## Effective prompt context: measured, not guessed
 
@@ -853,9 +931,10 @@ Status of each, after slice 2:
   step 1. The one-task-at-a-time sequencing this step imagined is therefore
   moot — the seam is shared, and the staging now lives in which models are
   probed.
-- **Step 4 — blocked, and not on parity.** Removing an override needs the
-  profile route to actually deliver the setting, which needs the model's version
-  probed; nothing probes at seed time. That is now the only blocker.
+- **Step 4 — unblocked 2026-08-16, not yet coded.** The probe ran on every
+  reviewed row and live parity held (§"Probe and live parity (2026-08-16)").
+  The removal itself remains, and it settles the profile-create gap first —
+  §"Step 4 readiness".
 - **Step 5 — already satisfied.** `ResolvedImageAttempt` carries
   `appliedControls` and `droppedControls`, and `renderImageIntent` writes them to
   the image row's `meta.render`. No new work was needed and none was added.
@@ -886,7 +965,7 @@ Held by slice 1:
   silently inherited;
 - no reviewed model renders a square it then crops a quarter off.
 
-Held by slice 2 (built 2026-08-16, unaccepted):
+Held by slice 2 (built and accepted 2026-08-16):
 
 - effective controls are recorded in production render provenance;
 - a reviewed setting has one definition, rendered into both the overlay and the

@@ -115,4 +115,4 @@ There is no `disable_safety_checker` and no `output_quality` field.
 ```
 
 The returned 4:5 image is centre-cropped to 3:4 after download. No
-`negative_prompt` key is added by `quality-presets.ts`.
+`negative_prompt` key is added by the reviewed policy (`reviewed-profile-controls.ts`).

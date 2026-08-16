@@ -29,8 +29,8 @@ over with one shared mapping:
   without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
   have no aspect input whatsoever and are sized by `width`/`height` integers;
   the three of those six that are in the reviewed set carry reviewed dimensions
-  from the runtime quality policy
-  (`packages/image-core/src/models/quality-presets.ts`), and every render is cropped to shape
+  from the reviewed policy
+  (`packages/image-core/src/models/reviewed-profile-controls.ts`), and every render is cropped to shape
   after download regardless.
 - Output is an array of URIs on twelve of fourteen models, and a bare URI string
   on the other two.

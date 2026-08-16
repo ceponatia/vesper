@@ -66,7 +66,7 @@ crop and far below Vesper's 768×1024 canonical portrait. `method` defaults to
 `fidelity`, which is already the setting Vesper wants, but pinning it
 explicitly means a provider-side default change cannot silently move this
 model from identity preservation to style transfer.
-`packages/image-core/src/models/quality-presets.ts` sends:
+The reviewed policy (`packages/image-core/src/models/reviewed-profile-controls.ts`) sends:
 
 ```json
 {

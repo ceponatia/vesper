@@ -124,4 +124,4 @@ takes the first result.
 ```
 
 With a reference, add `"image": "<single url>"`. No `negative_prompt` key is
-added by `quality-presets.ts`.
+added by the reviewed policy (`reviewed-profile-controls.ts`).

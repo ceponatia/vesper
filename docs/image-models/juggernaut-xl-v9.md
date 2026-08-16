@@ -44,7 +44,7 @@ bucket of 832×1216, roughly 30–40 steps, and moderate CFG:
 - `negative_prompt: ""`.
 
 **Vesper does not send these.** This model is outside the reviewed set, so
-`packages/image-core/src/models/quality-presets.ts` has no entry for it and an
+the reviewed policy (`packages/image-core/src/models/reviewed-profile-controls.ts`) has no entry for it and an
 admin who registers it gets the cog's own defaults — 5 steps at guidance 2, a
 1024-square render, and the wrapper's media-biased negative. The values above are
 recorded as the creator's recommendation, for an admin who wants to configure
