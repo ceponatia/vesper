@@ -16,6 +16,10 @@ detail to buy tidiness. Read them as a log, not as a template.
 
 ## Shipped (historical record — newest first; see each plan for detail)
 
+- **Scene composer model — a fast, cheap shot planner** —
+  [plan](finished/composer-model.plan.md) — 2026-08-15 — the shot planner moved
+  from Aion 3.0 to DeepSeek 4 Flash, pinned and reasoning-off, so a scene image
+  waits about three seconds on it instead of forty-five, at ~1/88 the cost.
 - **Scene image composition — camera, facing, and intimate staging** —
   [plan](finished/scene-composition.plan.md) — 2026-08-15 — the shot follows
   the fiction: probe-hardened camera and staging prompts, committed scene

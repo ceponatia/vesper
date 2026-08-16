@@ -41,13 +41,6 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   everything else renders exactly as today; a `staged_scene` lab kind benches
   the same wording and weights without a chat.
 
-- **Scene composer model — a fast, cheap shot planner** —
-  [plan](composer-model.plan.md) · [spec](composer-model.spec.md) — every slice
-  is built and the default has moved to DeepSeek 4 Flash, pinned and reasoning
-  off: scene images now wait about three seconds on the shot planner instead of
-  forty-five. Waiting on a confirming A/B re-run and the first renders on the
-  deployed build.
-
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, visual
