@@ -2,7 +2,7 @@
 
 Status: shipped — 2026-07-16 (squash commit [`f8c7040b`](https://github.com/ceponatia/vesper/commit/f8c7040bfebba823a95bfa211aa00ffb686733f1))
 
-Parent: [engine.plan.md](../../engine.plan.md) · Contract: [engine.spec.md](../../engine.spec.md)
+Parent: [engine.plan.md](../../finished/engine/engine.plan.md) · Contract: [engine.spec.md](../../engine.spec.md)
 
 ## Stable target
 

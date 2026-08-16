@@ -5,15 +5,15 @@ see §"Gate 4 build order") and the deterministic exit corpus ran green (4 scena
 zero model calls, 2 771 pure + 372 integration tests) — which closes the gate per the
 owner's 2026-07-18 exit-scope ruling. The one non-deterministic criterion (the live
 paired voice/chemistry eval — the only human-in-the-loop check) is deferred to
-[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs and does not hold the
+[deferred.plan.md](../../deferred.plan.md) §Owner-gated live eval runs and does not hold the
 verdict. Both Gate 4-blocking decisions were resolved by the owner on 2026-07-18:
 ruling 14 (soft-canon promotion → safe documented auto-promotion; normative wording in
-[engine.spec.md](engine.spec.md) §39) and that exit scope.
+[engine.spec.md](../../engine.spec.md) §39) and that exit scope.
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
+[roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](../../engine.spec.md) §-index.
 
 ## Gate 4 — perception, knowledge, narration, and RAG
 
@@ -242,7 +242,7 @@ long-lived `engine` branch.
    retraction reaching only its earshot while downstream believers keep the old
    story. The fifth exit criterion (live paired voice/chemistry eval) is the only
    human-in-the-loop item and is deferred to
-   [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
+   [deferred.plan.md](../../deferred.plan.md) §Owner-gated live eval runs.
 
 E4.2 consumes E4.1's observations; E4.3 consumes both; E4.4 consumes the E4.1–E4.3
 ledgers and the persisted cuts; E4.5 closes the gate. Deferred design notes: pressure

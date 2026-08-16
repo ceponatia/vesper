@@ -14,9 +14,9 @@ chat lane's meter-economy/body-needs plans still port through the Gate 5
 contracts, queued in roadmap §Next. Gate 7 stays optional and owner-gated, now
 unblocked by this exit.)
 
-Companion to [engine.plan.md](../engine.plan.md) (whose §"Migration and rollout"
+Companion to [engine.plan.md](../finished/engine/engine.plan.md) (whose §"Migration and rollout"
 this plan turns into scheduled, sliced work) and successor to the closed
-foundation gates 0–6 ([engine.gate6.dual-lod.md](../engine.gate6.dual-lod.md)
+foundation gates 0–6 ([engine.gate6.dual-lod.md](../finished/engine/engine.gate6.dual-lod.md)
 closed 2026-07-21). Normative contracts stay in the
 [engine.spec.md](../engine.spec.md) §-index; this plan owns delivery sequence only.
 

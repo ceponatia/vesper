@@ -4,7 +4,7 @@ Status: **CLOSED — 2026-07-21** (opened 2026-07-20 on the owner's go; E6.1–E
 shipped within two days). Closed per the Gate 4/5 exit-scope precedent: the
 deterministic exit corpus plus the instrumented scaling proof (`test:engine-e6-5`,
 detail under E6.5 below) — any live-model quality check rides the owner-gated spend
-list in [deferred.plan.md](deferred.plan.md). **With Gate 6 closed, every committed
+list in [deferred.plan.md](../../deferred.plan.md). **With Gate 6 closed, every committed
 foundation gate (0–6) is closed; Gate 7 remains optional/post-foundation and its
 opening is the owner's call.** No blocking product rulings were identified at
 opening: every product-flavored knob in this gate (LOD defaults, utility weights,
@@ -14,8 +14,8 @@ migration. The build order lives in §"Gate 6 build order" below.
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
+[roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](../../engine.spec.md) §-index.
 
 ## Gate 6 — dual LOD and autonomous background life
 
@@ -53,7 +53,7 @@ consistent with their aggregate history.
 
 Per the Gate 4/5 precedent (the 2026-07-18 exit-scope ruling), the deterministic exit
 corpus plus the instrumented scaling proof close the gate; any live-model quality check
-rides the owner-gated spend list in [deferred.plan.md](deferred.plan.md) §Owner-gated
+rides the owner-gated spend list in [deferred.plan.md](../../deferred.plan.md) §Owner-gated
 live eval runs.
 
 ### Gate 6 build order

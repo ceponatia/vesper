@@ -2,20 +2,20 @@
 
 Status: **CLOSED — 2026-07-20** (opened 2026-07-19; both opening rulings resolved by
 the owner the same day: ruling 15 — v1 body meters = **full chat parity**, with
-[chat-meter-economy.spec.md](chat-meter-economy.spec.md) OQ1–OQ3 as the normative
+[chat-meter-economy.spec.md](../../chat-meter-economy.spec.md) OQ1–OQ3 as the normative
 semantics source; ruling 16 — interpersonal consent = **ledger-gated fail-closed
 preconditions + a §19.3 policy escalation path**; normative wording in
-[engine.spec.md](engine.spec.md) §39). The build order lives in §"Gate 5 build order"
+[engine.spec.md](../../engine.spec.md) §39). The build order lives in §"Gate 5 build order"
 below; **E5.1–E5.3 shipped 2026-07-19; E5.4, E5.5, and E5.6 shipped 2026-07-20 —
 the green deterministic exit corpus closes the gate per the Gate 4 exit-scope
 precedent** (any live-model quality check rides
-[deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs). Opening Gate 6
+[deferred.plan.md](../../deferred.plan.md) §Owner-gated live eval runs). Opening Gate 6
 is an owner call, as every gate opening has been.
 
 Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
-[roadmap.md](roadmap.md) and the hub; normative contracts live in the
-[engine.spec.md](engine.spec.md) §-index.
+[roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
+[engine.spec.md](../../engine.spec.md) §-index.
 
 ## Gate 5 — bodies, materials, households, and relationships
 
@@ -55,7 +55,7 @@ or believe.
 
 Per the Gate 4 precedent (the 2026-07-18 exit-scope ruling), the deterministic exit
 corpus closes the gate; any live-model quality check rides the owner-gated spend list
-in [deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs.
+in [deferred.plan.md](../../deferred.plan.md) §Owner-gated live eval runs.
 
 ### Gate 5 build order
 
@@ -110,7 +110,7 @@ resumed-activity completion re-arm (E5.2), E3.5's interpersonal-consent precondi
    derivation chain stays inside the compact-id cap. Next: **E5.2**.
 2. **E5.2 — chat-parity resolution and perception-gated reads (ruling 15).** Status:
    **shipped — 2026-07-19 (slices 1, 2a, 2b).** The ruled meter set on the E5.1
-   substrate, semantics per [chat-meter-economy.spec.md](chat-meter-economy.spec.md).
+   substrate, semantics per [chat-meter-economy.spec.md](../../chat-meter-economy.spec.md).
    **Slice 1 (shipped)** — the OQ1/OQ3 core: authored `sim_body_rhythms` rows
    (migration 0068; sleep + wash windows in minutes-of-day, seeded like action
    definitions, copied to fork children); circadian pressure as a pure function of

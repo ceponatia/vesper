@@ -2,7 +2,7 @@
 
 Status: shipped — 2026-07-16 (Gate 1 ADVANCE; squash commit [`0455560e`](https://github.com/ceponatia/vesper/commit/0455560e4a8c6f93aef76c571c8bc8b56f944d23))
 
-Parent: [engine.plan.md](../../engine.plan.md) · Contract: [engine.spec.md](../../engine.spec.md)
+Parent: [engine.plan.md](../../finished/engine/engine.plan.md) · Contract: [engine.spec.md](../../engine.spec.md)
 
 ## Purpose
 
