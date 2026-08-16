@@ -76,6 +76,20 @@ import { emptyCharacterDraft, type CharacterDraft } from "./drafts";
  * regenerate alone. The forge returns a draft; it never saves.
  */
 
+/**
+ * Latency knobs shared by every forge leg (2026-08-16). The legs run on the
+ * state model (DeepSeek 4 Flash) with reasoning OFF: they are the same genre
+ * of closed-vocabulary structured JSON as the in-session agents, whose ruled
+ * default is reasoning-off (lib/agent-reasoning.ts), and reasoning tokens on
+ * the profile leg's large output were the forge's wall-clock (the legs run in
+ * parallel, so the profile leg IS the forge's latency). The grounding passes
+ * below and the human-reviewed draft absorb any marginal quality dip.
+ * Latency-sorted routing for the same reason intake uses it: the floating
+ * `~…-latest` alias has no PROVIDER_ORDER entry, and unconstrained routing
+ * intermittently lands cold endpoints with multi-second TTFT.
+ */
+const FORGE_LEG_OPTIONS = { disableReasoning: true, lowLatencyRouting: true } as const;
+
 export const characterForgeSections = ["profile", "attributes", "outfit"] as const;
 export const characterForgeSectionSchema = z.enum(characterForgeSections);
 export type CharacterForgeSection = (typeof characterForgeSections)[number];
@@ -685,6 +699,7 @@ function profilePrompt(context: CharacterForgeContext): string {
 
 async function forgeProfileSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
   const { value } = await generateChecked({
+    ...FORGE_LEG_OPTIONS,
     schema: profileSectionSchema,
     system: PROFILE_SYSTEM,
     prompt: profilePrompt(context),
@@ -988,6 +1003,7 @@ function attributesPrompt(context: CharacterForgeContext): string {
 
 async function forgeAttributesSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
   const { value } = await generateChecked({
+    ...FORGE_LEG_OPTIONS,
     schema: buildAttributeSectionSchema(context),
     system: ATTRIBUTES_SYSTEM,
     prompt: attributesPrompt(context),
@@ -1346,6 +1362,7 @@ async function forgeOutfitSection(context: CharacterForgeContext): Promise<Chara
   }
 
   const { value } = await generateChecked({
+    ...FORGE_LEG_OPTIONS,
     schema: outfitSectionSchema,
     system: OUTFIT_SYSTEM,
     prompt: outfitPrompt(context, candidates),
