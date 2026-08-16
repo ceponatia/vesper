@@ -7,7 +7,7 @@ zero model calls, 2 709 pure + 351 integration tests), and the owner ruled advan
 order below (interim witness rule → Gate 4; hazards/`journey_delayed`, trespass texture,
 route-uncertainty ruling 12 → travel polish; interpersonal consent → Gate 5).
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+Part of the [engine.plan.md](engine-foundation.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](../../engine.spec.md) §-index.
@@ -209,7 +209,7 @@ GitHub PR numbers; each stayed reviewable on its own and shipped to the long-liv
    gates); interpersonal-consent preconditions beyond privacy zones join Gate 5's social
    layer. **Verdict: ADVANCE (owner, 2026-07-18) — Gate 3 is closed; the Gate 4 build
    order lives in
-   [engine.gate4.perception-narration.md](engine.gate4.perception-narration.md).**
+   [engine.gate4.perception-narration.md](engine-foundation.gate4.perception-narration.md).**
 
 E3.2 and E3.3 both consume E3.1; E3.4 consumes E3.1–E3.3; E3.5 layers access and privacy
 over all of them and runs the exit corpus.

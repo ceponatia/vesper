@@ -172,9 +172,11 @@ what a doc *is*, not which topic it belongs to (2026-08-16):
   is not history, and source cites it as `engine.spec §N` at 147 call sites
   against a § index that never renumbers.
 - **`engine.gate7.institutions.md` stays** — never opened, still on `roadmap.md`.
-- **`engine.plan.md` and the gate-0–6 docs are archived** to `finished/engine/`.
-  They are the build history of a closed scope, and code cites them by name
-  rather than by §, so `grep` finds them wherever they sit.
+- **The old hub and the gate-0–6 docs are archived** to `finished/engine/` and
+  renamed `engine-foundation.*`. They are the build history of a closed scope.
+  The rename freed the `engine.` prefix so the live contract and Gate 7 nest
+  under a live `engine.plan.md`; it cost 4 code comments, where renaming the
+  spec cluster would have cost 156 `engine.spec §N` citations.
 
 Before the reference tier existed, the whole family was exempt because it was the
 only place the engine was written down. `docs/engine/` now owns everyday reading,
@@ -188,7 +190,7 @@ edited whole:
 - **One doc per gate: `engine.gateN.<slug>.md`** (e.g. `engine.gate6.dual-lod.md`),
   where the slug names what the gate delivers. Each holds that gate's full plan
   section — scope, build order, and the shipped E-package histories.
-  [engine.plan.md](finished/engine/engine.plan.md) is the hub: goals, the gate index list
+  [engine.plan.md](finished/engine/engine-foundation.plan.md) is the hub: goals, the gate index list
   (one-line status + link per gate), dependency order, and cost/quality material.
   The hub and gates 0–6 were archived to `finished/engine/` on 2026-08-16 as the
   build history of a closed scope; **`engine.gate7.institutions.md` stays live**,
@@ -205,6 +207,10 @@ edited whole:
   and docs — the index resolves them. A new section joins the file owning its
   range; a genuinely new domain gets a new cluster file plus an index row. Owner
   rulings stay in §39 (engine.spec.operations.md).
+  **`scripts/engine-spec-citations.test.ts` gates this** — it runs in `pnpm test`
+  and fails if any `engine.spec §N` citation in code or docs stops resolving, so
+  renumbering a heading or deleting a numbered invariant is caught at push time
+  rather than by whoever next follows the reference.
 - When finishing gate work, update: the gate doc (status + package history), the
   hub's gate index row, and roadmap.md — in that order of detail (full record in
   the gate doc, one line in each index).
@@ -214,5 +220,5 @@ edited whole:
 Vesper is a fork of Reverie, a role playing game. Vesper is more romance focused while Reverie is general.
 Vesper began with a "World Model" system which had characters, locations, items, etc. and attempted to use map locations and schedules to have NPCs move around the world. This system became somewhat _broken_ and we weren't able to get characters to move to locations in a timely fashion to keep the story going, which broke the narrative aspect of the game.
 Because of this, we stepped back and created a 1-on-1 character chat which was initially run from within Character forms in the library. This worked quite well and after further development, we broke it out into its own flow and added multiple character chats to it. It lacks some features the World Model had such as locations-as-entitites and map navigation, but narratively it is greatly expanded over the World Model.
-The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate under [engine.plan.md](finished/engine/engine.plan.md) (gates 0–6) — rolled out through [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6), and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
+The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate under [engine.plan.md](finished/engine/engine-foundation.plan.md) (gates 0–6) — rolled out through [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6), and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
 Two lanes remain: legacy character chat (the live product for ordinary chats) and successor chats — a character chat bound to its own simulated world, created from the `/worlds` front door, with the engine authoritative per the `engine_authority` flag. New patterns still prove out in the chat lane first.

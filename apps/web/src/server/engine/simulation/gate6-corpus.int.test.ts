@@ -26,7 +26,7 @@ import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 
 /**
- * The Gate 6 exit corpus + scaling proof (engine.gate6.dual-lod.md §"Gate 6
+ * The Gate 6 exit corpus + scaling proof (engine-foundation.gate6.dual-lod.md §"Gate 6
  * exit", E6.5): deterministic scenarios, ZERO model calls — no model client
  * exists anywhere in this suite, and the routine controller is structurally
  * deterministic (§19.2.1: the §19.3 deliberator is never consulted) — proving

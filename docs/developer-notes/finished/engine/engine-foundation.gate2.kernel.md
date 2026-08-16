@@ -7,7 +7,7 @@ accepted caveat about schedule-time trigger templates going stale under live loa
 §Verdict) and the owner ruled advance. This status permitted Gate 3 design; its build
 waited on the ten product rulings the owner resolved the same day (engine.spec §39).
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+Part of the [engine.plan.md](engine-foundation.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](../../engine.spec.md) §-index.
