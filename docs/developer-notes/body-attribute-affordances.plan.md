@@ -1,19 +1,6 @@
 # Body-attribute visual affordances
 
 Status: active — every slice is closed; one release-contract item remains.
-**Shipped:** slices 0–4 and 6 on 2026-07-28, slice 7 on 2026-07-29. **Closed
-without shipping a feature:** slice 5 (the cue trial failed its own decision
-rule, 2026-07-29) and slice 8 (image consumer ruled a named follow-up,
-2026-07-29). **Live in production:** the shared read itself — it runs on every
-chat exchange as the perception and committed-state source for
-[constraint-first narrator guidance](narrator-physical-guidance.plan.md), whose
-flag was enabled in production on 2026-08-02. **Built but dark:** the cue path
-(`CHAT_AFFORDANCE_CUES`, parked OFF by the trial's decision rule) and
-recognizable features (`CHAT_RECOGNITION_CUES`, OFF and production-inert for
-want of an exposure owner). **Remaining before this plan closes:** the
-successor-lane adapter follow-up — the per-companion rulings it was paired with
-are now recorded in §"Companion spec rulings". Follow-up work that is newly
-unblocked but not part of the release contract is listed in §"What remains".
 
 Outcome: A player can see a character's body, hair, and clothing described in a
 way that matches the rain, the outfit, and the pose already established in the
@@ -367,7 +354,7 @@ turn, and retakes rebuild the identical read. Details in the
   recognition, and repetition control before adding acquired fine anatomy.
 
 **Shipped 2026-07-29.** Recognizability stayed a view of existing truth, as
-ruled. One new area records how identity details are *owned* — a fine body
+ruled. One new area records how identity details are _owned_ — a fine body
 locus with a finite left/right hand schema, a registry of feature kinds
 (freckle cluster, birthmark, mole, scar), located appearance facts with
 validity windows and supersedence, evented anatomy state, and a short list of
@@ -387,7 +374,7 @@ Honest silences that remain by design:
 
 - **Nothing can fire in production yet.** The chat lane asserts exposure only
   for garment-covered locations and hair, so a nose, a face, or a forearm
-  reads *unknown* — and recognition fails closed on unknown. A body-exposure
+  reads _unknown_ — and recognition fails closed on unknown. A body-exposure
   owner (or an adapter overlay declaring uncovered, coverage-relevant
   locations visible) is the single change that lights the trial up. This is
   the same shape of gap as slice 6's missing garment fit, and is deliberately
