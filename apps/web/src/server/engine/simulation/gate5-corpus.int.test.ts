@@ -98,7 +98,7 @@ import { loadRelationshipLedgerProjection } from "./social-recorder";
 import { submitDurableAttemptConsentEscalation } from "./social-store";
 
 /**
- * The Gate 5 exit corpus (engine.plan.md §"Gate 5 exit" / §"Gate 5 build
+ * The Gate 5 exit corpus (engine-foundation.plan.md §"Gate 5 exit" / §"Gate 5 build
  * order" item 6, E5.6): deterministic scenarios, ZERO model calls, proving
  * "the engine can explain why a body, item, household, or relationship is in
  * its current state from causal records, while the narrator sees only what

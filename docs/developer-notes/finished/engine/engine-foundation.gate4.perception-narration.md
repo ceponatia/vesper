@@ -10,7 +10,7 @@ verdict. Both Gate 4-blocking decisions were resolved by the owner on 2026-07-18
 ruling 14 (soft-canon promotion → safe documented auto-promotion; normative wording in
 [engine.spec.md](../../engine.spec.md) §39) and that exit scope.
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+Part of the [engine.plan.md](engine-foundation.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](../../engine.spec.md) §-index.

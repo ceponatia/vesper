@@ -99,7 +99,7 @@ clothing slice 7, and wiring the affordance layer to the scene owner.
   initiative channel; depends on the meter economy landing first.
 
 - **Successor world engine — Gate 7: optional institutions & macro simulation** —
-  [gate 7](engine.gate7.institutions.md) — employers, schools, markets, law and
+  [plan](engine.plan.md) · [gate 7](engine.gate7.institutions.md) — employers, schools, markets, law and
   weather admitted only as declared packages; unblocked, but explicitly optional
   and opens only on the owner's call.
 
@@ -171,7 +171,8 @@ Gates 0–6 and rollout R0–R6 shipped 2026-07-21/22; the engine is the live wo
 authority for successor chats and the legacy world/session model is deleted.
 How it works: [docs/engine/](../engine/README.md). Normative contract, still live
 and cited from source: [engine.spec.md](engine.spec.md). Build history:
-[finished/engine/engine.plan.md](finished/engine/engine.plan.md) and its gate docs.
+[finished/engine/engine-foundation.plan.md](finished/engine/engine-foundation.plan.md)
+and its gate docs. What is still open lives in [engine.plan.md](engine.plan.md).
 What remains on this track: optional Gate 7 (queued above), the owner-gated live
 paired evals, product ruling 12 (route-estimate uncertainty exposure), and the
 parked backlog under `deferred/`.

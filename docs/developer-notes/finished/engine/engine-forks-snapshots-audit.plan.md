@@ -10,7 +10,7 @@ with capture/discard, rebuild-from-zero/from-snapshot hash comparison, and
 E2.6 (Gate 2 soak and verdict) is next.
 
 Depends on E2.4 at `04b7325` (PR #14, merged). The fifth Gate 2 target
-([engine.plan.md](../../finished/engine/engine.plan.md) §"Gate 2 build order"). It adds branch ancestry, fork
+([engine.plan.md](../../finished/engine/engine-foundation.plan.md) §"Gate 2 build order"). It adds branch ancestry, fork
 boundaries, checksummed snapshots, projection comparison, and causal explanation queries
 on top of the stable event store (E2.2–E2.4). It adds no movement, bodies, live-scene
 arbitration, model call, or live-chat authority — those are Gate 3+.

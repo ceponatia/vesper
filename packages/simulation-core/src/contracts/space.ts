@@ -21,7 +21,7 @@ import {
 } from "./identity";
 
 /**
- * E3.1 — authoritative space (engine.plan.md §"Gate 3 build order").
+ * E3.1 — authoritative space (engine-foundation.plan.md §"Gate 3 build order").
  *
  * The first Gate 3 slice: topology, one physical locus per actor, deterministic
  * route planning with lower-bound durations, and the movement event family. It

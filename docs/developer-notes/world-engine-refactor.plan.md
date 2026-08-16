@@ -2,7 +2,7 @@
 
 Status: draft — an umbrella, never a build item. Written 2026-07-16 as a brainstorming
 superset; **its architectural half was then built**, as the successor engine
-([engine.plan.md](finished/engine/engine.plan.md), gates 0–6, closed 2026-07-21, rolled out 2026-07-22).
+([engine.plan.md](finished/engine/engine-foundation.plan.md), gates 0–6, closed 2026-07-21, rolled out 2026-07-22).
 Re-audited against the tree 2026-08-07 and rewritten so the catalog says where each idea
 actually lives. Nothing is committed *as* this doc; its remaining pieces promote out into
 their own plans.
@@ -655,7 +655,7 @@ plans build toward, plus the ledger of what nobody owns.
 - [character-schema.plan.md](character-schema.plan.md) owns the authored fields this doc
   keeps naming: typed rhythm kinds (C.1), birthdays (C.5), the attraction band (E.1) and
   the means band (G.1).
-- [engine.plan.md](finished/engine/engine.plan.md) and [engine.spec.md](engine.spec.md) own the successor
+- [engine.plan.md](finished/engine/engine-foundation.plan.md) and [engine.spec.md](engine.spec.md) own the successor
   lane, where much of this catalog was built. Read them for *how* an entry marked "built"
   works; this doc only records that it does.
 - [finished/chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md) owns the
