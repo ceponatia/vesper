@@ -25,6 +25,9 @@ Related work:
   render intent that will consume visual state;
 - [image render quality](image-render-quality.plan.md) owns model-specific
   prompting, reference quality, render QA, and image trials;
+- [image lane consolidation](image-lane-consolidation.plan.md) owns migration of
+  character-bearing image routes onto this plan's digest, final reference
+  ownership, and deletion of superseded image prompt machinery;
 - [scene composition](finished/scene-composition.plan.md) owns the scene image's camera,
   subject orientation, and intimate staging; its interim read of the scene /
   body-relations owner migrates onto this plan's image digest when slice 8
@@ -361,16 +364,16 @@ revealed selections into narration. Keep binding constraints separate from
 optional positive detail. Run a paired trial over contradiction, repetition,
 grounded specificity, naturalness, and hidden-detail leakage.
 
-### Slice 8 — image-render-intent integration
+### Slice 8 — image digest and render-intent seam
 
 Status: queued.
 
 The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
-Feed mandatory and optional visual
-facts into it, record keys, fingerprints, source versions, and camera visibility
-in provenance, and add morphology/negative-steering conflict checks plus paired
-trials across human, non-human, altered anatomy, realistic, and stylized
-characters.
+Produce the required and optional image digest, its camera-relative selection,
+and the provenance inputs character-bearing image routes need. The
+[image lane consolidation plan](image-lane-consolidation.plan.md) owns cutting
+those routes over, deleting their old builders, and running the combined
+human/non-human, altered-anatomy, realistic, and stylized acceptance matrix.
 
 ### Slice 9 — reference-image compiler
 
@@ -381,13 +384,15 @@ offline. Store source hash, extractor version, confidence, and diffs. Require
 review before accepted facts reach canonical owners, and preserve manual edits
 when a better extractor is run later.
 
-### Slice 10 — consolidation
+### Slice 10 — narrator consolidation and successor parity
 
 Status: queued.
 
-Remove duplicate appearance summaries only after their consumers use the shared
-snapshot. Complete successor capture parity, update live docs, and record
-unsupported sensory or advanced-pose work as named follow-ups.
+Remove duplicate narrator appearance summaries only after their consumers use
+the shared snapshot. Complete successor capture parity, update live docs, and
+record unsupported sensory or advanced-pose work as named follow-ups. Image
+prompt and image-lane deletion belong to
+[image lane consolidation](image-lane-consolidation.plan.md).
 
 ## Trial matrix
 
