@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
+import { AFFORDANCE_UNIT_ONE } from "../affordances/core";
 import { DiagnosticCollector } from "../diagnostics";
-import { VISUAL_STATE_DUPLICATE_KEY } from "./diagnostics";
+import { visualStateCompositionFor } from "./composition";
+import { VISUAL_STATE_DUPLICATE_KEY, VISUAL_STATE_RELATIONSHIP_TARGET_MISSING } from "./diagnostics";
 import { visualStateFeatureFixture } from "./fixtures";
-import { buildVisualStateSnapshot, type VisualStateScopeRef, type VisualStateSnapshotInput } from "./snapshot";
+import type { VisualStateScopeRef } from "./scope";
+import { buildVisualStateSnapshot, type VisualStateSnapshotInput } from "./snapshot";
 
 /**
  * Slice 1's ordering contract: one committed cut produces one byte-equal
@@ -121,5 +124,78 @@ describe("buildVisualStateSnapshot", () => {
     const second = snapshotOf({ contributions: [{ adapterId: "appearance", features: [...features].reverse() }] });
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
     expectCleanSink(sink);
+  });
+});
+
+/**
+ * Composition is the last step of the build (`source adapters → features →
+ * composition resolver → snapshot`), so these assert the WIRING rather than the
+ * resolver's own semantics, which `composition.test.ts` owns.
+ */
+describe("buildVisualStateSnapshot — composition", () => {
+  it("annotates every feature the snapshot kept, in the same order", () => {
+    const snapshot = snapshotOf({
+      contributions: [
+        {
+          adapterId: "appearance",
+          features: [
+            visualStateFeatureFixture({ subjectId: "zoe" }),
+            visualStateFeatureFixture({ subjectId: "ana" }),
+          ],
+        },
+      ],
+    });
+    expect(snapshot.composition.entries.map((entry) => entry.key)).toEqual(
+      snapshot.features.map((feature) => feature.key),
+    );
+  });
+
+  it("resolves edges against the deduplicated feature list, not the raw contributions", () => {
+    const sink = new DiagnosticCollector();
+    // The wardrobe copy loses the duplicate key, so its edge must be resolved
+    // against the appearance copy that survived rather than reported missing.
+    const target = visualStateFeatureFixture({ aspect: "shape" });
+    const cover = visualStateFeatureFixture({
+      aspect: "hairstyle",
+      relationships: [{ kind: "covers", targetKey: target.key, degree: AFFORDANCE_UNIT_ONE }],
+    });
+    const snapshot = snapshotOf({
+      contributions: [
+        { adapterId: "appearance", features: [target] },
+        { adapterId: "wardrobe", features: [target, cover] },
+      ],
+      sink,
+    });
+    expect(snapshot.suppressions.map((entry) => entry.code)).toEqual([VISUAL_STATE_DUPLICATE_KEY]);
+    expect(visualStateCompositionFor(snapshot.composition, target.key)?.coverage).toBe(AFFORDANCE_UNIT_ONE);
+  });
+
+  it("lists feature suppressions before composition suppressions", () => {
+    const orphan = visualStateFeatureFixture({
+      aspect: "hairstyle",
+      relationships: [{ kind: "modifies", targetKey: "nobody/nowhere/nothing" }],
+    });
+    const duplicated = visualStateFeatureFixture();
+    const snapshot = snapshotOf({
+      contributions: [
+        { adapterId: "appearance", features: [duplicated, orphan] },
+        { adapterId: "wardrobe", features: [duplicated] },
+      ],
+    });
+    expect(snapshot.suppressions.map((entry) => entry.code)).toEqual([
+      VISUAL_STATE_DUPLICATE_KEY,
+      VISUAL_STATE_RELATIONSHIP_TARGET_MISSING,
+    ]);
+  });
+
+  it("keeps a covered feature in the snapshot", () => {
+    const covered = visualStateFeatureFixture({ aspect: "shape" });
+    const cover = visualStateFeatureFixture({
+      aspect: "hairstyle",
+      relationships: [{ kind: "covers", targetKey: covered.key, degree: AFFORDANCE_UNIT_ONE }],
+    });
+    const snapshot = snapshotOf({ contributions: [{ adapterId: "appearance", features: [covered, cover] }] });
+    expect(snapshot.features.map((feature) => feature.key)).toContain(covered.key);
+    expect(visualStateCompositionFor(snapshot.composition, covered.key)?.effectiveVisibility).toBe(0);
   });
 });

@@ -6,6 +6,7 @@ import {
   VISUAL_STATE_KIND_ID_PATTERN,
   type VisualStateKindDefinition,
 } from "./definitions";
+import { presentationOwnedKindIds } from "./presentation";
 import { visualStateKindRegistry } from "./registry";
 import { visualStateLayers, visualStateStabilities } from "./vocabulary";
 import type { VisualStateAttentionPriors } from "./priors";
@@ -72,8 +73,45 @@ describe("defineVisualStateKind", () => {
 });
 
 describe("visualStateKindRegistry", () => {
-  it("registers the three appearance adapter kinds", () => {
-    expect(visualStateKindRegistry.definitions).toHaveLength(3);
+  // Named rather than counted: a count says nothing about WHICH kind went
+  // missing, and the catalog is the extension point every later slice edits.
+  it("registers exactly the first-release catalog", () => {
+    expect(visualStateKindRegistry.definitions.map((definition) => definition.id)).toEqual([
+      "appearance.attribute",
+      "appearance.located_fact",
+      "appearance.anatomy",
+      "species.feature_group",
+      "wardrobe.garment",
+      "wardrobe.item",
+      "presentation.hairstyle",
+      "presentation.makeup",
+      "presentation.grooming",
+      "presentation.nail_finish",
+      "presentation.cosmetic_mark",
+    ]);
+  });
+
+  it("keeps every item-backed kind out of the non-item presentation owner", () => {
+    for (const id of ["wardrobe.garment", "wardrobe.item"]) {
+      expect(presentationOwnedKindIds).not.toContain(id);
+      expect(visualStateKindRegistry.byId(id)?.layer).toBe("presentation");
+    }
+  });
+
+  it("refuses a species feature group anywhere but a body locus", () => {
+    expect(visualStateKindRegistry.allowsLocus("species.feature_group", "body")).toBe(true);
+    expect(visualStateKindRegistry.allowsLocus("species.feature_group", "item")).toBe(false);
+  });
+
+  it("hangs wardrobe at an item locus and never on the body", () => {
+    expect(visualStateKindRegistry.allowsLocus("wardrobe.garment", "item")).toBe(true);
+    expect(visualStateKindRegistry.allowsLocus("wardrobe.garment", "body")).toBe(false);
+  });
+
+  it("marks species feature groups mandatory, so salience can never trade morphology away", () => {
+    const definition = visualStateKindRegistry.byId("species.feature_group");
+    expect(definition?.priors.mandatoryForIdentity).toBe(true);
+    expect(definition?.priors.mandatoryForContinuity).toBe(true);
   });
 
   it("gives every kind a well-formed id, a known layer, and a known stability", () => {
