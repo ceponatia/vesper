@@ -1,7 +1,7 @@
 # Visual state and attention
 
-Status: active (planned 2026-08-05; slices 0–1 reviewed 2026-08-16, slice 2 built
-2026-08-16 and awaiting review, slices 3–10 queued)
+Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
+with every review finding fixed in the same merge; slices 3–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -313,7 +313,8 @@ renaming or breaking its frozen recognition seam.
 
 ### Slice 2 — identity and presentation
 
-Status: built 2026-08-16 — awaiting review.
+Status: complete — 2026-08-16 (built and reviewed the same day; every review
+finding fixed in the same merge).
 
 Project attributes, located facts, anatomy, species feature groups, and garment
 and item loci. Add the small typed owner deliberate non-item choices never had —
