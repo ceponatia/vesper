@@ -40,6 +40,17 @@ That stability is a constraint on editing, not just a convenience. A new section
 joins the cluster file owning its range; a genuinely new domain gets its own
 cluster file plus an index row. Sections are never renumbered to close a gap.
 
+**`scripts/engine-spec-citations.test.ts` enforces it.** The check runs in
+`pnpm test`, so it is part of `pnpm verify` and the pre-push gate. It resolves
+every `engine.spec §N` citation in `apps/`, `packages/`, `scripts/` and
+[docs/engine/](../engine/README.md) against the spec's own headings, and fails
+naming the dead section and the files that cite it.
+
+A citation also resolves by indexing into a numbered list inside its parent
+section — §3.1 holds eight numbered invariants, and citing §3.1.4 to mean the
+fourth is more precise than citing §3.1. That precision stays checkable:
+deleting an invariant breaks the citation, exactly as renumbering a heading does.
+
 Owner rulings live in §39 (`engine.spec.operations.md`) and nowhere else.
 
 ## What remains open

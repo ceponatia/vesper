@@ -207,6 +207,10 @@ edited whole:
   and docs — the index resolves them. A new section joins the file owning its
   range; a genuinely new domain gets a new cluster file plus an index row. Owner
   rulings stay in §39 (engine.spec.operations.md).
+  **`scripts/engine-spec-citations.test.ts` gates this** — it runs in `pnpm test`
+  and fails if any `engine.spec §N` citation in code or docs stops resolving, so
+  renumbering a heading or deleting a numbered invariant is caught at push time
+  rather than by whoever next follows the reference.
 - When finishing gate work, update: the gate doc (status + package history), the
   hub's gate index row, and roadmap.md — in that order of detail (full record in
   the gate doc, one line in each index).
