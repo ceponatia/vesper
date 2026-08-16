@@ -1,6 +1,7 @@
 # Scene composer model — a fast, cheap shot planner
 
-Status: active (planned 2026-08-15)
+Status: awaiting acceptance — a confirming A/B re-run on the current prompt, and
+the first scene renders on the deployed build
 
 Outcome: The owner can run one command that scores every candidate shot-planning
 model against today's on the same intimate scenes, and can switch a live
@@ -48,8 +49,9 @@ good is checkable in code — which means this is measurable, and cheaply.
 - **A per-conversation switch.** The chat menu gains an admin-only picker for
   which model plans the shot. A candidate model can be tried on a real
   conversation without a deploy, and switched back the same way. The picker
-  selects the model ID only; DeepSeek's reasoning-off/low A/B variants are
-  probe-only configurations until Slice 4 encodes a winning reasoning policy.
+  selects the model only; how that model is called — whether it reasons before
+  answering — follows from the probe and lives in code, so an operator cannot
+  accidentally select a configuration nobody measured.
 - **The numbers to decide with.** Primary cost and effective primary-plus-fallback
   cost are reported per thousand compositions, alongside the measured production
   fallback rate, so a cheap model that leans heavily on Aion 2.0 cannot look
@@ -108,26 +110,41 @@ selected for a conversation.
   answer key cannot be satisfied, or if the control is missing from the run. The
   owner entrypoint adds production fallback-rate and effective ladder-cost
   reporting without changing that grading path.
-- **Slice 3 — the comparison is run and a verdict recorded.** Status: next —
-  owner action, needs an OpenRouter key and costs roughly $2. The result table and
-  the per-model verdict land in the spec's results section.
-- **Slice 4 — the default moves, or is deliberately kept.** Status: blocked on
-  slice 3. Either outcome is a result: if nothing matches Aion 3.0 on the intimate
-  beats, "it stays, and here is the evidence" closes this plan just as well. A
-  winning floating candidate is pinned to the exact tested snapshot before it
-  becomes the production default. If the winning arm also used a non-default
-  reasoning profile (the DeepSeek off/low arms), that exact profile is encoded in
-  the composer call and parity-probed before promotion; changing only the model
-  slug would not reproduce the winning arm.
+- **Slice 3 — the comparison is run and a verdict recorded.** Status: complete —
+  2026-08-15, with a caveat that is written down rather than smoothed over. Two
+  paid runs happened; both were measured on the **pre-fix** prompt and grader,
+  so neither is the clean re-run this plan asked for. The verdict and the exact
+  limits of what those numbers support are recorded in the spec's results
+  section. A confirming re-run on the current prompt costs roughly $0.19.
+- **Slice 4 — the default moves, or is deliberately kept.** Status: complete —
+  2026-08-15. The default moved to DeepSeek 4 Flash, pinned to the tested
+  snapshot (`deepseek/deepseek-v4-flash-0731`, which is what the probe's floating
+  alias resolved to) and carrying the winning arm's **reasoning-off** call
+  configuration, because the model slug alone would not reproduce the arm that
+  won. Aion 2.0 stays the refusal rung: the measured fallback rate was 0 in 56
+  calls, against the owner's 10% review threshold. Aion 3.0 remains selectable
+  per conversation.
 
 ## Where the work stands
 
-- **[composer-model.spec.md](composer-model.spec.md)** — complete for slices 1–2;
-  its results section is empty and is what slice 3 fills.
+- **[composer-model.spec.md](composer-model.spec.md)** — complete for all four
+  slices. Its results section carries the verdict, the numbers, and the
+  instrument caveat below.
 
-**The first paid run (2026-08-15) is superseded in full. No number from it may
-be quoted or compared against a later run.** It found three faults, two in the
-instrument and one in the prompt, and all three are fixed:
+**Both paid runs (2026-08-15) were measured on the pre-fix prompt and grader.**
+The second run re-ran the superseded instrument with a narrower arm set rather
+than re-running on the current prompt, which is not what this plan asked for and
+is recorded as such. The rule that follows is therefore about *which* comparisons
+are legitimate, not about discarding the runs: **no number from either run may be
+compared against a run on the current prompt.** The two runs may be compared with
+each other, because they carried the same handicap.
+
+The promotion rests on the two things that survive that limit — a ranking stable
+across both runs, and latency and cost gaps no prompt wording can close. Every
+per-axis number remains instrument-bound until a re-run.
+
+The first run found three faults, two in the instrument and one in the prompt,
+and all three are fixed:
 
 - Every arm was marked wrong on the camera because a single check combined three
   axes, one of which the app deliberately leaves to taste. Orientation, height
@@ -141,12 +158,18 @@ instrument and one in the prompt, and all three are fixed:
   `kneeling_before_viewer_guided` on the strength of a suffix. Both vocabularies
   now ship a registry-owned description that the prompt renders.
 
-Superseded **in full**, not axis by axis: the third fix changes what every arm
-is shown on every beat, so it can move any staging or camera answer anywhere in
-the matrix. The run was internally fair — every arm carried the same handicap —
-but it ranked models on a prompt that no longer exists, which makes it evidence
-about that prompt rather than about the candidates. A verdict comes from a
-re-run, and a re-run's arms must all have been measured on the current prompt.
+Instrument-bound **in full**, not axis by axis: the third fix changes what every
+arm is shown on every beat, so it can move any staging or camera answer anywhere
+in the matrix. Both runs were internally fair — every arm carried the same
+handicap — but they ranked models on a prompt that no longer exists, which makes
+each of them evidence about that prompt wherever the prompt could reach.
+
+The promotion was made anyway, deliberately and on the record, because the two
+grounds it rests on are ones the prompt cannot reach: the winner matched or beat
+the control on **both** runs, and its 12× latency and 88× cost advantages come
+from the control's mandatory reasoning rather than from anything the composer is
+asked. A confirming re-run on the current prompt is still worth its ~$0.19, and
+until it happens the per-axis numbers stay caveated where they are quoted.
 
 ## Success criteria
 
