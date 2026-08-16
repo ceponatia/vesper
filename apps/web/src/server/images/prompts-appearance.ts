@@ -239,42 +239,15 @@ const INTIMATE_CATEGORY_EXPOSURE: Record<string, keyof RegionExposure> = {
 /**
  * Whether an intimate-anatomy attribute should surface in an IMAGE prompt: its
  * region must read exposed (bare/sheer, not covered by a garment) and sensory
- * scent/taste attributes never render visually. Shared by the avatar prompt
- * (`buildAvatarPrompt`) and the scene render's intimate phrase
- * (`intimateSceneAppearance`) so the two image paths gate intimate anatomy by
- * the SAME rule — they diverged once (the avatar path skipped this entirely;
- * see docs/images/pipelines.md §Avatar generation).
+ * scent/taste attributes never render visually. The exposure rule the untagged
+ * intimate attributes take in `sceneRevealAppearance` — the one place image
+ * paths gate intimate anatomy, after the avatar path was made intimate-free by
+ * rule (see docs/images/pipelines.md §Avatar generation).
  */
 function intimateAttrRendersExposed(def: AttributeDefinition, exposure: RegionExposure): boolean {
   if (def.kind === "sensory") return false; // scent/taste don't render in an image
   const axis = INTIMATE_CATEGORY_EXPOSURE[def.category];
   return axis !== undefined && exposure[axis] !== "covered";
-}
-
-/**
- * Visible intimate-anatomy phrase for a scene render, gated by **exposure**:
- * a region's descriptive attributes are included only when that region reads
- * `bare`/`sheer` (not `covered`). Sensory attributes (scent/taste) are skipped —
- * they don't render. This is carried in the plan and emitted into the final
- * render prompt only on the uncensored route (body-model spec Decision 3; the
- * scene composer itself, a moderation-prone text model, never sees it).
- */
-export function intimateSceneAppearance(
-  attributes: ReadonlyArray<AttributeValue>,
-  exposure?: RegionExposure,
-  maxChars = APPEARANCE_SUMMARY_CHARS,
-): string {
-  if (!exposure) return "";
-  const parts: string[] = [];
-  for (const value of attributes) {
-    const def = attributeRegistry.byId(value.id);
-    if (!def || !isIntimateAttribute(def)) continue;
-    if (def.excludeFromPrompts) continue; // tracked but not wired into prompts yet (e.g. identity.natal_sex)
-    if (!intimateAttrRendersExposed(def, exposure)) continue; // only an exposed, visual region surfaces
-    const formatted = formatAttribute(def, value.value);
-    if (formatted) parts.push(formatted);
-  }
-  return excerpt(parts.join("; "), maxChars);
 }
 
 /** Non-intimate body regions a waist-up portrait can't show — the scene subject's "shape" line draws from these. */

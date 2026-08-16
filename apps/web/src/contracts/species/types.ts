@@ -8,8 +8,9 @@ import { attributeRuleSchema } from "../rules/attribute-rule";
  * additive-only and stays inside the species' body plan). It may add feature
  * groups, override attribute rules per `attributeId` (heritage wins), and carry
  * its own model-facing `appearance` (combined with the species' look) and `lore`
- * (replaces the species' culture note). Realized via `realizeBody`'s `heritageId`
- * and surfaced through `speciesAppearancePhrase` / `speciesLorePhrase`.
+ * (replaces the species' culture note). Realized via `realizeBody`'s `heritageId`;
+ * the look is surfaced by the character forge's `speciesForgeDescriptor` and the
+ * culture note by `speciesLorePhrase`.
  */
 export const heritageDefinitionSchema = z.object({
   id: z.string().min(1),
@@ -80,11 +81,12 @@ export const speciesDefinitionSchema = z.object({
    * Generic, image-safe visual description of the species' default morphology —
    * what *any* member looks like (pointed ears, a greenish skin cast, wings /
    * horns / tail, broad stature), NOT one character's specific attribute values.
-   * Surfaced to the image models (images/prompts-*.ts) and the character forge
-   * (authoring/character-forge.ts) via `speciesAppearancePhrase`; the forge turns
-   * this generic look into concrete per-character attribute values. Keep it to a
-   * sentence — it shares the image prompt's length budget. Empty ⇒ only the label
-   * is surfaced (human, the unmarked baseline, ships empty).
+   * Surfaced to the **character forge** (`speciesForgeDescriptor` in
+   * authoring/character-forge.ts), which turns this generic look into concrete
+   * per-character attribute values. Image prompts deliberately do NOT read it —
+   * they name the species with `speciesLabelPhrase` and let those per-character
+   * attributes carry the morphology. Keep it to a sentence. Empty ⇒ only the
+   * label is surfaced (human, the unmarked baseline, ships empty).
    */
   appearance: z.string().default(""),
   /**

@@ -23,7 +23,6 @@ import {
   characterAppearanceSummary,
   identityAnchorSummary,
   imageAgeWord,
-  intimateSceneAppearance,
   sceneRevealAppearance,
 } from "./prompts-appearance";
 import { buildAvatarPrompt, visibleAvatarOutfit } from "./prompts-avatar";
@@ -833,29 +832,13 @@ describe('prompt-side "none" elision (renderNoneInPrompts)', () => {
   });
 
   it('keeps a flagged none — bare pubic hair is itself the look (renderNoneInPrompts)', () => {
-    const exposed = intimateSceneAppearance(
+    const exposed = sceneRevealAppearance(
       [baseAttr("vulva.pubic_hair_density", "none")],
       { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" },
+      makeProfile({ intimateRegions: ["vulva"] }),
+      { intimate: true },
     );
     expect(exposed).toContain("Pubic hair density: none");
-  });
-});
-
-describe("intimateSceneAppearance (exposure-gated)", () => {
-  const attrs: AttributeValue[] = [
-    baseAttr("penis.size", "average"),
-    baseAttr("breasts.size", "full"),
-    baseAttr("vulva.scent", "musky"), // sensory — never visual
-  ];
-  it("includes intimate detail only for an exposed region, skipping covered regions and sensory", () => {
-    const exposed = intimateSceneAppearance(attrs, { torso: "covered", pelvis: "bare", legs: "bare", feet: "bare" });
-    expect(exposed).toContain("Penis size: average"); // pelvis bare → shown
-    expect(exposed).not.toContain("Breast size"); // torso covered → hidden
-    expect(exposed).not.toContain("scent"); // sensory never renders
-  });
-  it("returns nothing when everything is covered or exposure is unknown", () => {
-    expect(intimateSceneAppearance(attrs, { torso: "covered", pelvis: "covered", legs: "covered", feet: "covered" })).toBe("");
-    expect(intimateSceneAppearance(attrs, undefined)).toBe("");
   });
 });
 
@@ -865,6 +848,7 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
     baseAttr("breasts.shape", "round"), // shape
     baseAttr("breasts.nipples", "large"), // skin (torso)
     baseAttr("vulva.labia_minora", "protruding"), // untagged intimate → exposure-only
+    baseAttr("vulva.scent", "musky"), // sensory — never visual, whatever is bared
     baseAttr("waist.definition", "defined"), // shape
     baseAttr("hips.width", "wide"), // shape
     baseAttr("legs.build", "toned"), // shape
@@ -914,6 +898,7 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
 
     const bareBelow = sceneRevealAppearance(attrs, { ...covered, pelvis: "bare" }, profile, { intimate: true });
     expect(bareBelow).toContain("Labia minora: protruding"); // untagged intimate falls back to the exposure gate
+    expect(bareBelow).not.toContain("scent"); // sensory never renders, however exposed the region
   });
 
   it("returns nothing without exposure state", () => {
@@ -921,12 +906,12 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
   });
 });
 
-describe("excludeFromPrompts holds on the scene-appearance builders", () => {
+describe("excludeFromPrompts holds on the scene-appearance builder", () => {
   // Written registry-first rather than against a single fixture id. Today the only
   // definition carrying the flag is `identity.natal_sex`, whose `identity` category can
-  // reach neither the intimate loop nor the lower-body loop — so for those two this
-  // passes without exercising the guard. That is the point: the day an intimate or
-  // lower-body attribute is marked `excludeFromPrompts`, this fails instead of silently
+  // reach neither the intimate half nor the lower-body half — so this passes without
+  // exercising the guard. That is the point: the day an intimate or lower-body
+  // attribute is marked `excludeFromPrompts`, this fails instead of silently
   // shipping it to an image model.
   const excluded = attributeRegistry.definitions.filter((def) => def.excludeFromPrompts);
   const bare = { torso: "bare", pelvis: "bare", legs: "bare", feet: "bare" } as const;
@@ -941,7 +926,6 @@ describe("excludeFromPrompts holds on the scene-appearance builders", () => {
     const profile = makeProfile({ intimateRegions: ["breasts", "vulva", "penis", "testicles"] });
     for (const def of excluded) {
       const attrs = [probe(def)];
-      expect(intimateSceneAppearance(attrs, bare)).not.toContain(def.label);
       expect(sceneRevealAppearance(attrs, bare, profile, { intimate: true })).not.toContain(def.label);
       expect(sceneRevealAppearance(attrs, bare, profile, { intimate: false })).not.toContain(def.label);
     }

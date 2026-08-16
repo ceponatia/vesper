@@ -1,6 +1,6 @@
 # Image lane consolidation
 
-Status: next (planned 2026-08-16)
+Status: active (planned 2026-08-16)
 
 Outcome: A developer can change how a character is visually described in one
 place, so that portraits, scene images, edits, and chat images stop disagreeing
@@ -129,13 +129,21 @@ dynamic, barrel, or persisted-format consumer.
 
 ### Stage 1 — guardrails and immediate dead-code deletion
 
-Status: next.
+Status: complete — 2026-08-16.
 
 Freeze representative current outputs and invariants for each character-bearing
 lane. Delete `intimateSceneAppearance` and `speciesAppearancePhrase` after a
 fresh full-tree check confirms the audit's zero-consumer finding. Remove tests,
 exports, and comments that exist only for those APIs. Preserve experimental
 helpers that still have a preview, evaluation, or live call path.
+
+The freeze renders one character through all six lanes and records which of that
+character's facts each prompt actually states. It reads facts rather than
+wording, so the later stages are free to rewrite prompts and are still caught the
+moment a lane loses, duplicates, or newly exposes a fact. It also puts two
+existing disagreements on the record: the text-to-image lane describes skin a
+garment covers where the reference lanes do not, and the chat-look and variant
+lanes carry no identity or morphology fact at all.
 
 ### Stage 2 — one image visual digest
 
@@ -203,7 +211,7 @@ image documentation, and record the owner verdict.
 
 ## Delivery order and parallel work
 
-Stage 1 is independent and may land immediately.
+Stage 1 was independent and has landed.
 
 Stages 2–4 consume visual-state work; they do not take ownership of it. Stage 5
 coordinates with image-render-quality dialect work. A coding change must land
@@ -251,7 +259,7 @@ Before a legacy path is removed:
 
 ## Open questions
 
-No owner decision blocks Stage 1.
+No owner decision blocks Stage 2.
 
 The following are evidence questions governed by the named neighboring plans,
 not reasons to invent local defaults:

@@ -189,7 +189,6 @@ export {
   characterAppearanceSummary,
   identityAnchorSummary,
   imageAgeWord,
-  intimateSceneAppearance,
   sceneRevealAppearance,
   viewerBodyAppearance,
 } from "./prompts-appearance";
