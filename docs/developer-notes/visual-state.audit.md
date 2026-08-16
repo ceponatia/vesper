@@ -3,9 +3,11 @@
 Status: reference (audit run 2026-08-16)
 
 A snapshot of the code as it stood on the date above. It records findings; it
-does not plan the fixes. Consolidation is owned by slice 10 of
-[visual-state.plan.md](visual-state.plan.md); anything outside that plan's scope
-is named as such at the end of its finding.
+does not plan the fixes. Lane-neutral projection and narrator consolidation stay
+with [visual-state.plan.md](visual-state.plan.md); image-route migration and
+verified deletion are owned by
+[image-lane-consolidation.plan.md](image-lane-consolidation.plan.md). Anything
+outside those plans' scope is named as such at the end of its finding.
 
 ## Scope
 
