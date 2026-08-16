@@ -7,6 +7,7 @@ import {
   VISUAL_STATE_KIND_UNKNOWN,
   VISUAL_STATE_LOCUS_INVALID,
   VISUAL_STATE_LOCUS_NOT_ALLOWED,
+  VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED,
   VISUAL_STATE_PRESENTATION_ENTRY_UNKNOWN,
   VISUAL_STATE_PRESENTATION_OPERATION_INVALID,
   VISUAL_STATE_VALUE_INVALID,
@@ -17,7 +18,10 @@ import {
   emptyCharacterPresentationState,
   parseCharacterPresentationState,
   parsePresentationOperations,
+  presentationAspect,
   projectPresentationFeatures,
+  PRESENTATION_MAX_ENTRIES,
+  PRESENTATION_MAX_OPERATIONS,
   type CharacterPresentationState,
   type PresentationOperation,
 } from "./presentation";
@@ -43,6 +47,17 @@ function applyHair(overrides: Partial<Extract<PresentationOperation, { kind: "ap
     atMinutes: 10,
     ...overrides,
   };
+}
+
+/** One grooming choice — the kind whose value discriminates several facts at one locus. */
+function grooming(entryId: string, area: string, state: string, atMinutes = 10): PresentationOperation {
+  return applyHair({
+    entryId,
+    kindId: "presentation.grooming",
+    locus: FACE_LOCUS,
+    value: { area, state },
+    atMinutes,
+  });
 }
 
 function reduce(
@@ -113,11 +128,14 @@ describe("applyPresentationOperations", () => {
     expect(state.entries[0]?.changedAtMinutes).toBe(60);
   });
 
+  // A registered-but-item-backed kind is a different failure from an
+  // unregistered one, and reporting both as "unknown kind" sent a reader looking
+  // for a missing registry row that is right there.
   it("refuses an item-backed kind, so a garment cannot be applied as a bare choice", () => {
     const sink = new DiagnosticCollector();
     const state = reduce([applyHair({ kindId: "wardrobe.garment", value: { name: "coat", locus: { kind: "worn", actorId: "c:x" } } })], sink);
     expect(state.entries).toEqual([]);
-    expectDiagnostic(sink, VISUAL_STATE_KIND_UNKNOWN);
+    expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_OPERATION_INVALID);
   });
 
   it("refuses a kind nothing registers", () => {
@@ -179,6 +197,98 @@ describe("applyPresentationOperations", () => {
     expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_OPERATION_INVALID);
   });
 
+  /**
+   * The grooming vocabulary discriminates four areas and the body registry has
+   * no `brows` location, so brow grooming and facial-hair grooming both sit at
+   * `face`. Without a discriminator in the slot, applying the second silently
+   * deleted the first — two distinct facts, one slot, empty sink.
+   */
+  it("keeps two groomings of different areas at one body location", () => {
+    const sink = new DiagnosticCollector();
+    const state = reduce([grooming("pres_brows", "brows", "shaped"), grooming("pres_beard", "facial_hair", "trimmed")], sink);
+    expect(state.entries.map((entry) => entry.id)).toEqual(["pres_beard", "pres_brows"]);
+    expectCleanSink(sink);
+  });
+
+  it("still supersedes within one grooming area", () => {
+    const state = reduce([grooming("pres_brows", "brows", "shaped"), grooming("pres_brows_2", "brows", "natural")]);
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0]?.supersedesEntryId).toBe("pres_brows");
+  });
+
+  it("refuses an entry id the record schema rejects", () => {
+    const sink = new DiagnosticCollector();
+    const state = reduce([applyHair({ entryId: "p".repeat(200) })], sink);
+    expect(state.entries).toEqual([]);
+    expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED);
+  });
+
+  it("refuses a story minute before the beginning of the conversation", () => {
+    const sink = new DiagnosticCollector();
+    expect(reduce([applyHair({ atMinutes: -5 })], sink).entries).toEqual([]);
+    expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED);
+  });
+
+  /**
+   * The write path and the reload path have to produce the SAME entry. When only
+   * the reload path ran the record schema, a padded subject id was admitted
+   * untrimmed, projected under one key, and came back from storage under
+   * another — with nothing reported at either end.
+   */
+  it("normalizes a padded subject id on the way in, not only on the way back", () => {
+    const state = reduce([applyHair({ subjectId: "  padded_subject  " })]);
+    expect(state.entries[0]?.subjectId).toBe("padded_subject");
+    expect(parseCharacterPresentationState(JSON.parse(JSON.stringify(state)) as unknown)).toEqual(state);
+  });
+
+  it("does not stamp a change time for a restore that restores nothing", () => {
+    const state = reduce([applyHair(), { kind: "restore", entryId: "pres_hair", atMinutes: 60 }]);
+    expect(state.entries[0]?.changedAtMinutes).toBeUndefined();
+  });
+
+  it("does not stamp a change time for a rearrange to the arrangement already in force", () => {
+    const state = reduce([applyHair(), { kind: "rearrange", entryId: "pres_hair", arrangement: "loose", atMinutes: 60 }]);
+    expect(state.entries[0]?.changedAtMinutes).toBeUndefined();
+  });
+
+  it("refuses to restore something that cannot be disturbed", () => {
+    const sink = new DiagnosticCollector();
+    const state = reduce([grooming("pres_brows", "brows", "shaped"), { kind: "restore", entryId: "pres_brows", atMinutes: 20 }], sink);
+    expect(state.entries[0]?.value).toEqual({ area: "brows", state: "shaped" });
+    expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_OPERATION_INVALID);
+  });
+
+  it("evicts the oldest choice when the entry cap is reached", () => {
+    const operations = Array.from({ length: PRESENTATION_MAX_ENTRIES + 2 }, (_, index) =>
+      grooming(`pres_${String(index).padStart(2, "0")}`, "brows", "shaped", index),
+    );
+    // Every one of these supersedes the last (same subject, locus and area), so
+    // the cap is reached with a mark fixture instead.
+    const marks = Array.from({ length: PRESENTATION_MAX_ENTRIES + 2 }, (_, index) =>
+      applyHair({
+        entryId: `pres_mark_${String(index).padStart(2, "0")}`,
+        kindId: "presentation.cosmetic_mark",
+        locus: FACE_LOCUS,
+        value: { mark: index % 2 === 0 ? "glitter" : "bindi" },
+        atMinutes: index,
+      }),
+    );
+    expect(operations).toHaveLength(PRESENTATION_MAX_ENTRIES + 2);
+    const state = reduce(marks);
+    expect(state.entries.length).toBeLessThanOrEqual(PRESENTATION_MAX_ENTRIES);
+  });
+
+  /** Nothing enforces copy-on-write, so it is asserted rather than assumed. */
+  it("never mutates the state it was given", () => {
+    const before = visualStateGroomedPresentation();
+    const snapshot = JSON.stringify(before);
+    applyPresentationOperations(before, [
+      { kind: "smudge", entryId: "pres_makeup", disturbance: "smudged", atMinutes: 90 },
+      { kind: "remove", entryId: "pres_hair", atMinutes: 95 },
+    ]);
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+
   it("orders entries the same way whatever order the operations arrived in", () => {
     const hair = applyHair();
     const makeup = applyHair({ entryId: "pres_makeup", kindId: "presentation.makeup", locus: FACE_LOCUS, value: { style: "natural" } });
@@ -209,9 +319,70 @@ describe("parsePresentationOperations", () => {
     expect(parsed).toEqual([]);
     expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_OPERATION_INVALID);
   });
+
+  // Reported, unlike the entry cap's documented silence: part of what a model
+  // asked for did not happen, and a caller has to be able to see that.
+  it("reports the surplus when a proposal exceeds the operation cap", () => {
+    const sink = new DiagnosticCollector();
+    const many = Array.from({ length: PRESENTATION_MAX_OPERATIONS + 3 }, (_, index) =>
+      applyHair({ entryId: `pres_${index}` }),
+    );
+    expect(parsePresentationOperations(many, sink)).toHaveLength(PRESENTATION_MAX_OPERATIONS);
+    expectDiagnostic(sink, VISUAL_STATE_PRESENTATION_OPERATION_INVALID, { times: 1 });
+  });
 });
 
 describe("parseCharacterPresentationState", () => {
+  /**
+   * A HAND-WRITTEN literal, not a reducer-produced fixture. The reducer only
+   * emits records it already built, so a round-trip over its own output cannot
+   * catch a field the write path never checked — which is exactly how an
+   * over-long id and a padded subject stayed invisible.
+   */
+  it("refuses a stored entry whose own record is out of contract", () => {
+    const sink = new DiagnosticCollector();
+    const parsed = parseCharacterPresentationState(
+      {
+        version: 1,
+        entries: [
+          {
+            id: "p".repeat(200),
+            subjectId: VISUAL_STATE_FIXTURE_SUBJECT_ID,
+            kindId: "presentation.hairstyle",
+            locus: HAIR_LOCUS,
+            value: { arrangement: "loose" },
+            appliedAtMinutes: 10,
+          },
+        ],
+      },
+      sink,
+    );
+    expect(parsed.entries).toEqual([]);
+    expect(sink.items.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a hand-written entry the write path would also accept", () => {
+    const sink = new DiagnosticCollector();
+    const parsed = parseCharacterPresentationState(
+      {
+        version: 1,
+        entries: [
+          {
+            id: "pres_hair",
+            subjectId: VISUAL_STATE_FIXTURE_SUBJECT_ID,
+            kindId: "presentation.hairstyle",
+            locus: HAIR_LOCUS,
+            value: { arrangement: "loose" },
+            appliedAtMinutes: 10,
+          },
+        ],
+      },
+      sink,
+    );
+    expect(parsed.entries).toEqual(reduce([applyHair()]).entries);
+    expectCleanSink(sink);
+  });
+
   it("round-trips a reduced state through JSON", () => {
     const sink = new DiagnosticCollector();
     const state = visualStateGroomedPresentation();
@@ -250,6 +421,21 @@ describe("projectPresentationFeatures", () => {
       expect(feature.stability).toBe("presentation");
     }
     expectCleanSink(sink);
+  });
+
+  it("gives each grooming area its own key, so one cannot drop the other", () => {
+    const state = reduce([grooming("pres_brows", "brows", "shaped"), grooming("pres_beard", "facial_hair", "trimmed")]);
+    const keys = projectPresentationFeatures({ state }).map((feature) => feature.key);
+    expect(keys).toEqual([
+      `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/face/presentation.grooming:facial_hair`,
+      `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/face/presentation.grooming:brows`,
+    ]);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("leaves a kind with nothing to discriminate on a bare aspect", () => {
+    expect(presentationAspect("presentation.hairstyle", { arrangement: "loose" })).toBe("presentation.hairstyle");
+    expect(presentationAspect("presentation.cosmetic_mark", { mark: "bindi" })).toBe("presentation.cosmetic_mark:bindi");
   });
 
   it("carries the entry as the source, so the owner is traceable", () => {

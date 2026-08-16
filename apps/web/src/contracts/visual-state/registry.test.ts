@@ -128,16 +128,14 @@ describe("visualStateKindRegistry", () => {
     expect(visualStateKindRegistry.allowsLocus("nowhere.kind", "body")).toBe(false);
   });
 
+  // Named, not `definitions[0]`: a positional reference silently starts testing
+  // a different kind the moment the catalog is reordered.
   it("gates loci per kind", () => {
-    const [first] = visualStateKindRegistry.definitions;
-    expect(first).toBeDefined();
-    expect(visualStateKindRegistry.allowsLocus(first?.id ?? "", "body")).toBe(true);
-    expect(visualStateKindRegistry.allowsLocus(first?.id ?? "", "relation")).toBe(false);
+    expect(visualStateKindRegistry.allowsLocus("appearance.attribute", "body")).toBe(true);
+    expect(visualStateKindRegistry.allowsLocus("appearance.attribute", "relation")).toBe(false);
   });
 
   it("reports a value failure as issues, not an exception", () => {
-    const [first] = visualStateKindRegistry.definitions;
-    const result = visualStateKindRegistry.parseValue(first?.id ?? "", 42);
-    expect(result.ok).toBe(false);
+    expect(visualStateKindRegistry.parseValue("appearance.attribute", 42).ok).toBe(false);
   });
 });
