@@ -1,8 +1,7 @@
 # Visual state and attention
 
-Status: next (planned 2026-08-05; not started — verified 2026-08-07, no
-`VisualStateFeature` contract, adapter, flag, or diagnostic exists in the
-codebase)
+Status: active (planned 2026-08-05; slices 0–1 built 2026-08-16 and awaiting
+review, slices 2–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -290,6 +289,9 @@ consumer digests. It is read-only and never spends notice or mention state.
 
 ### Slice 0 — source and duplication audit
 
+Status: built 2026-08-16 — awaiting review. Findings in
+[visual-state.audit.md](visual-state.audit.md).
+
 Inventory every appearance summary, image prompt builder, narrator appearance
 block, recognition projection, wardrobe digest, body-state read, and scene
 relation used by either lane. Record authoritative, derived, unavailable, and
@@ -298,12 +300,16 @@ will eventually disappear.
 
 ### Slice 1 — core contract and compatibility adapter
 
+Status: built 2026-08-16 — awaiting review.
+
 Add pure `VisualStateFeature`, source, locus, stability, layer, evidence, kind
 registry, key/fingerprint helpers, deterministic snapshot ordering, parsing,
 and diagnostics. Adapt existing `ProjectedFeatureTruth` records without
 renaming or breaking its frozen recognition seam.
 
 ### Slice 2 — identity and presentation
+
+Status: next.
 
 Project attributes, located facts, anatomy, signature presentation, garment and
 item loci. Add typed non-item presentation for hairstyle, makeup, grooming, and
@@ -312,12 +318,16 @@ occlusion relationships.
 
 ### Slice 3 — current state
 
+Status: queued.
+
 Add adapters for body-surface state, garment gradients and presentation,
 supported physical-affordance observations, active conditions, change stamps,
 validity windows, semantic bands, and lazy time integration. Unsupported
 physiology, contamination, contact, and fit remain explicit suppressions.
 
 ### Slice 4 — body language and visibility
+
+Status: queued.
 
 Consume the shipped scene / body-relations owner for posture, support,
 orientation, hand occupation, gaze, and committed motion. Add observer/camera
@@ -326,12 +336,16 @@ Include non-human and altered-anatomy fixtures before enabling image use.
 
 ### Slice 5 — attention and memory integration
 
+Status: queued.
+
 Reuse existing fixed-point salience and visual-memory laws. Add change
 significance, action relevance, and consumer relevance without rewriting stored
 uniqueness or importance. Produce separate narrator and image selections with
 strict budgets and preserved observer isolation.
 
 ### Slice 6 — shadow adapters and inspector
+
+Status: queued.
 
 Run the new snapshot and selections beside current inputs in character chat and
 successor chat without changing prompts, images, state, or memory. Add the
@@ -340,12 +354,16 @@ with current summaries.
 
 ### Slice 7 — narrator proving release
 
+Status: queued.
+
 Behind a default-off flag, feed only change-gated, action-relevant, or newly
 revealed selections into narration. Keep binding constraints separate from
 optional positive detail. Run a paired trial over contradiction, repetition,
 grounded specificity, naturalness, and hidden-detail leakage.
 
 ### Slice 8 — image-render-intent integration
+
+Status: queued.
 
 The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
 Feed mandatory and optional visual
@@ -356,12 +374,16 @@ characters.
 
 ### Slice 9 — reference-image compiler
 
+Status: queued.
+
 Allow canonical images to propose structured identity and presentation facts
 offline. Store source hash, extractor version, confidence, and diffs. Require
 review before accepted facts reach canonical owners, and preserve manual edits
 when a better extractor is run later.
 
 ### Slice 10 — consolidation
+
+Status: queued.
 
 Remove duplicate appearance summaries only after their consumers use the shared
 snapshot. Complete successor capture parity, update live docs, and record
