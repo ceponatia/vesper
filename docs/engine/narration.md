@@ -155,21 +155,34 @@ keeps a flaky or evasive model response from ever rolling back world state.
 ### Armed effects
 
 An armed effect is for a semantic outcome that exists only if it is actually
-expressed — a promise, an invitation, a disclosure, a warning, a boundary, a
-question, or an apology (engine.spec §23.3):
+expressed — a promise offered or accepted, an invitation, a disclosure, a
+warning, a boundary, a question, an apology, or a permission granted or
+withdrawn (engine.spec §23.3):
 
 ```ts
 type ArmedEffect = {
   id: string;
   cutId: string;
-  effectType: string;
+  preconditionVersion: number;
+  effectType: SpeechActType;
   actorId: string;
   targetActorIds: string[];
-  payload: unknown;
-  expiresAfterCut: boolean;
-  preconditionVersion: number;
+  detail: string;
+  disclosureContent?: DisclosureContent;
+  consentScopeKey?: ConsentScopeKey;
 };
 ```
+
+`detail` is a short human-readable summary of the content, and the only part of
+an effect the prompt shows the narrator; it is never parsed back into state.
+The two optional fields carry structure free text cannot. `disclosureContent`
+is legal only on a `disclosure_made` effect: enacting one appends a real
+knowledge event alongside the speech act, so gossip spoken in prose enters the
+belief ledgers with full provenance. `consentScopeKey` names the scope a
+boundary or permission covers, and is required on exactly the three
+consent-scoped types — `boundary_expressed`, `permission_granted`, and
+`permission_withdrawn` — and rejected on every other (engine.spec §21.3,
+§23.3).
 
 After narration, each ID the narrator claims to have enacted is filtered
 against the cut's own `armedEffects` membership; unlisted IDs are ignored and
