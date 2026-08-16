@@ -7,7 +7,8 @@ legacy-deletion procedure, and post-migration architectural tripwires.
 
 ## Implementation status
 
-- Immediate dead-symbol verification/deletion: remaining.
+- Immediate dead-symbol verification/deletion: **done 2026-08-16**. See
+  [Immediate deletion candidates](#immediate-deletion-candidates).
 - Final reference ownership: remaining.
 - Superseded helper retirement: remaining.
 - Architecture enforcement: remaining.
@@ -37,19 +38,38 @@ once.
 
 ## Immediate deletion candidates
 
-The audit identified these zero-consumer symbols:
+**Deleted 2026-08-16.** The audit identified these zero-consumer symbols, and a
+fresh full-tree search across packages, scripts, tests, barrels and
+documentation confirmed the finding before removal:
 
 - `intimateSceneAppearance`, superseded by `sceneRevealAppearance`;
 - `speciesAppearancePhrase`, while live species label/morphology machinery
   remains.
 
-Before deletion, repeat a full-tree search including packages, scripts, tests,
-barrels, dynamic registries, and documentation. Delete:
+Removed with each: the implementation, the `server/images` barrel entry, and the
+tests that existed only to preserve the dead API.
 
-- implementations;
-- exports/barrel entries;
-- tests that exist only to preserve the dead API;
-- comments/docs that falsely describe the API as shared or live.
+Every **live** site naming either symbol as the analogue for a behavior now names
+the surviving one — `sceneRevealAppearance` or `speciesLabelPhrase`. That covers
+source comments, the reference docs below, and one queued working spec
+(`character-reference-views.spec.md`, whose intimate-gate rule cited
+`intimateSceneAppearance` as the shape to copy and would otherwise have pointed
+its implementer at a deleted API). Dated audits keep their original wording:
+`visual-state.audit.md` and `codebase-modularity.audit.md` record what the code
+was on the day they ran, and rewriting a finding is not the same as fixing it.
+
+Two pieces of real coverage were migrated rather than deleted, because their
+subject was the behavior and not the API: the `renderNoneInPrompts` case for an
+authored bare-pubic-hair value, and the "sensory attributes never render"
+assertion. Both moved onto `sceneRevealAppearance`.
+
+Two documentation claims were wrong before this change and are corrected with
+it: `docs/images/pipelines.md` credited the scene composer's species phrase to
+`speciesAppearancePhrase` when the code has long used `speciesLabelPhrase`, and
+`docs/contracts/body.md` described the deleted phrase as retained for a possible
+re-enable. A species' authored `appearance` text reaches the character forge
+through `speciesForgeDescriptor`, which reads it directly; no registry phrase
+carries it.
 
 Do not delete `renderChatAffordanceCues` under this plan while preview,
 evaluation, or pipeline callers remain. “Parked” is not “dead.”

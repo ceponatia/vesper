@@ -149,7 +149,7 @@ export interface ScenePresentCharacter {
    * skin-level detail gated by exposure. Emitted for the identity-locked subject.
    */
   lowerBody?: string;
-  /** Visible intimate-anatomy phrase (intimateSceneAppearance), exposure-gated; emitted only on the uncensored route. */
+  /** Visible intimate-anatomy phrase (sceneRevealAppearance, `{intimate: true}`), exposure-gated; emitted only on the uncensored route. */
   intimateAppearance?: string;
   /** Per-region coverage (exposedRegions) — drives explicit bare-skin phrasing. */
   exposure?: RegionExposure;
@@ -244,7 +244,7 @@ const COMPOSER_DISEMBODIED_RULES = [
  * **Genitals are absent from its vocabulary on purpose** — this composer runs with
  * `allowIntimate: false` whatever model its seam picks (exposure gating is code's job
  * however bold the composer is — owner ruling 2026-08-10), so intimate anatomy is derived
- * at render assembly instead, exactly as `intimateSceneAppearance` always has been.
+ * at render assembly instead, exactly as `sceneRevealAppearance` always has been.
  */
 const COMPOSER_EMBODIED_RULES = [
   "The image is rendered from the player's first-person POV — shot through their own eyes, so their face and head are NEVER in frame. Their own hands, arms, lap or legs MAY enter the foreground when the scene actually puts them there — that is what `viewerBody` is for. Never describe the player's clothing, and never place the player as a person standing in the scene.",

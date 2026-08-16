@@ -288,7 +288,7 @@ function doggyBeat(): Beat {
   const context: SceneComposerContext = {
     present: [
       // `intimateAppearance` rides along on BOTH variants, unchanged, because that is what the
-      // pipeline really emits — `intimateSceneAppearance` is derived from her sheet and knows
+      // pipeline really emits — `sceneRevealAppearance` is derived from her sheet and knows
       // nothing about which way she is facing. On this shot it is defensible (a high angle
       // from behind on all fours can show her front); on a fully-away standing shot it would
       // be a prompt contradicting itself, which is why the away FIXTURE rows omit it.

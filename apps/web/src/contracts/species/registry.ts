@@ -51,8 +51,10 @@ export function heritagesForSpecies(speciesId: string): readonly HeritageDefinit
  * to name the species ("Succubus") — the morphology that the `appearance` text
  * describes (wings, horns, tail) is already carried by the character's feature
  * attributes, so repeating it is redundant and bloats the prompt. Same
- * ""/human-is-unmarked rules as the fuller phrases. This is the image default
- * now; `speciesAppearancePhrase` keeps the appearance-bearing phrase for re-enable.
+ * ""/human-is-unmarked rules as `speciesLorePhrase`. This is the ONLY species
+ * phrase image prompts use; the authored generic `appearance` reaches the
+ * character forge through `speciesForgeDescriptor`, which reads
+ * `species.appearance` directly.
  */
 export function speciesLabelPhrase(speciesId: string, heritageId?: string): string {
   if (speciesId === DEFAULT_SPECIES_ID) return "";
@@ -62,29 +64,9 @@ export function speciesLabelPhrase(speciesId: string, heritageId?: string): stri
 }
 
 /**
- * The species *visual* phrase: the label with the authored generic `appearance`
- * appended when present. Returns "" for the default species (human is the
- * unmarked baseline) or an unknown id; label-only when `appearance` is unauthored.
- * When a `heritageId` resolves, its label replaces the species label and its
- * `appearance` is **combined** with the species' look. **Currently not sent to
- * image prompts** — they use `speciesLabelPhrase` (name only) since the feature
- * attributes carry the morphology; this fuller phrase is retained for re-enable.
- * Companion to `speciesLorePhrase` (narrator culture).
- */
-export function speciesAppearancePhrase(speciesId: string, heritageId?: string): string {
-  if (speciesId === DEFAULT_SPECIES_ID) return "";
-  const species = byId.get(speciesId);
-  if (!species) return "";
-  const heritage = heritageFor(speciesId, heritageId);
-  const label = heritage?.label ?? species.label;
-  const look = [species.appearance, heritage?.appearance ?? ""].map((p) => p.trim()).filter(Boolean).join(" ");
-  return look ? `${label} — ${look}` : label;
-}
-
-/**
  * The species *cultural/identity* phrase for the narrator's canonical facts: the
  * label with the authored `lore` appended when present. Same "" / label-only
- * rules as `speciesAppearancePhrase`. When a `heritageId` resolves, its label
+ * rules as `speciesLabelPhrase`. When a `heritageId` resolves, its label
  * replaces the species label and its `lore` **replaces** the species' (falling
  * back to the species' lore when the heritage has none) — the two split the old
  * single phrase by audience so neither consumer is fed text meant for the other.
@@ -103,7 +85,7 @@ export function speciesLorePhrase(speciesId: string, heritageId?: string): strin
  * The species/heritage *intimate disposition* note for the narrator, surfaced ONLY at
  * the intimate exposure tier (`buildIntimateDispositionBlock`): how members of this
  * kind tend to read as lovers. Returns the resolved **bare** text — unlike
- * `speciesLorePhrase` / `speciesAppearancePhrase` it carries **no `Label — ` prefix**,
+ * `speciesLabelPhrase` / `speciesLorePhrase` it carries **no `Label — ` prefix**,
  * because the narrator block already names the character. "" for the default species
  * (human, the unmarked baseline), an unknown id, or an unauthored note. When a
  * `heritageId` resolves, its note **replaces** the species' (falling back to the

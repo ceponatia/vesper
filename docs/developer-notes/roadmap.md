@@ -47,6 +47,17 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   models; prompt segments and profile controls are live end-to-end on the probed
   reviewed rows, and the dialect compilers are the next code slice.
 
+- **Image lane consolidation — one visual digest, one prompt path, verified
+  legacy deletion** —
+  [plan](image-lane-consolidation.plan.md) ·
+  [visual-state spec](image-lane-consolidation.spec.visual-state.md) ·
+  [prompt spec](image-lane-consolidation.spec.prompts.md) ·
+  [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
+  every character-bearing image route onto semantic visual facts, then remove
+  the duplicated appearance, reference-numbering, and prompt-budget machinery;
+  the per-lane fact freeze and the two dead-symbol deletions are in, and the
+  digest itself waits on visual-state slices 2–5.
+
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, the
@@ -57,15 +68,6 @@ slice 7, and wiring the affordance layer to the scene owner.
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
   chat-flow data gets a real `chat_id` FK and dies with its chat, with images the
   one deliberate survivor so the Gallery keeps them.
-
-- **Image lane consolidation — one visual digest, one prompt path, verified
-  legacy deletion** —
-  [plan](image-lane-consolidation.plan.md) ·
-  [visual-state spec](image-lane-consolidation.spec.visual-state.md) ·
-  [prompt spec](image-lane-consolidation.spec.prompts.md) ·
-  [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
-  every character-bearing image route onto semantic visual facts, then remove
-  the duplicated appearance, reference-numbering, and prompt-budget machinery.
 
 - **Character reference views — accepting a portrait, and the angles it
   unlocks** — [plan](character-reference-views.plan.md) ·
