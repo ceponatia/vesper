@@ -58,6 +58,15 @@ slice 7, and wiring the affordance layer to the scene owner.
   chat-flow data gets a real `chat_id` FK and dies with its chat, with images the
   one deliberate survivor so the Gallery keeps them.
 
+- **Image lane consolidation — one visual digest, one prompt path, verified
+  legacy deletion** —
+  [plan](image-lane-consolidation.plan.md) ·
+  [visual-state spec](image-lane-consolidation.spec.visual-state.md) ·
+  [prompt spec](image-lane-consolidation.spec.prompts.md) ·
+  [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
+  every character-bearing image route onto semantic visual facts, then remove
+  the duplicated appearance, reference-numbering, and prompt-budget machinery.
+
 - **Character reference views — accepting a portrait, and the angles it
   unlocks** — [plan](character-reference-views.plan.md) ·
   [spec](character-reference-views.spec.md) — accepting a canonical portrait
