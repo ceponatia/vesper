@@ -8,6 +8,7 @@ import {
   VISUAL_STATE_KIND_UNKNOWN,
   VISUAL_STATE_LOCUS_INVALID,
   VISUAL_STATE_LOCUS_NOT_ALLOWED,
+  VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED,
   VISUAL_STATE_PRESENTATION_ENTRY_UNKNOWN,
   VISUAL_STATE_PRESENTATION_OPERATION_INVALID,
   VISUAL_STATE_VALUE_INVALID,
@@ -79,6 +80,49 @@ export const presentationOwnedKindIds = [
 
 const OWNED_KIND_IDS: ReadonlySet<string> = new Set(presentationOwnedKindIds);
 
+/**
+ * Kinds that hold SEVERAL distinct facts at one body locus, and the value field
+ * that tells them apart.
+ *
+ * A character has one hairstyle on their hair and one makeup on their face, so
+ * those kinds need nothing here. Grooming and cosmetic marks are different: the
+ * grooming vocabulary discriminates four areas and the mark vocabulary six
+ * marks, and the body registry has no `brows` or `forehead` location, so brow
+ * grooming and facial-hair grooming both land at `face`. Without a
+ * discriminator, applying the second silently supersedes the first, and a state
+ * holding both projects two features under one key for the snapshot to drop.
+ *
+ * The fix is a discriminator in the key, not a new body location — the body
+ * registry belongs to another owner, and the same reasoning that kept a `wig`
+ * subtype out of the wardrobe vocabulary applies here.
+ */
+const PRESENTATION_DISCRIMINATOR_FIELDS: ReadonlyMap<string, string> = new Map([
+  [VISUAL_STATE_PRESENTATION_GROOMING_KIND_ID, "area"],
+  [VISUAL_STATE_PRESENTATION_COSMETIC_MARK_KIND_ID, "mark"],
+]);
+
+/**
+ * The aspect an entry projects under: its kind id, plus the discriminator when
+ * the kind has one (`presentation.grooming:brows`).
+ *
+ * The separator is safe without escaping because every discriminator is a member
+ * of a closed enum in `./kinds` — no vocabulary member contains a `:` or a `/`,
+ * and one that did would be caught by the kind's own value schema before it ever
+ * reached a key.
+ *
+ * The discriminator is fixed for an entry's whole life: `rearrange` writes
+ * `arrangement` and `smudge` writes `disturbance`, neither of which is a
+ * discriminator, so an entry's key cannot move out from under an observer's
+ * memory row.
+ */
+export function presentationAspect(kindId: string, value: unknown): string {
+  const field = PRESENTATION_DISCRIMINATOR_FIELDS.get(kindId);
+  if (field === undefined) return kindId;
+  const record = presentationRecord(value);
+  const discriminator = record?.[field];
+  return typeof discriminator === "string" ? `${kindId}:${discriminator}` : kindId;
+}
+
 /** Kinds whose value carries an `arrangement` that `rearrange` may move. */
 const REARRANGEABLE_KIND_IDS: ReadonlySet<string> = new Set([VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID]);
 
@@ -110,6 +154,16 @@ export interface PresentationEntry<TValue = unknown> {
    */
   readonly changedAtMinutes?: number;
   readonly sourceEventId?: string;
+  /**
+   * PROVENANCE ONLY: the entry this one replaced when it was applied.
+   *
+   * `apply` deletes the entry it supersedes, so the referent is normally gone by
+   * the time anyone reads this — it answers "what was here before" for an
+   * inspector, not "follow the chain". There is no chain: nothing walks it,
+   * nothing requires it to resolve, and the boundary parser deliberately admits
+   * any value (a dangling id, a self-reference, a loop between two entries)
+   * rather than validating a graph no reader traverses.
+   */
   readonly supersedesEntryId?: string;
 }
 
@@ -189,31 +243,67 @@ function capPresentationEntries(entries: readonly PresentationEntry[]): Presenta
 /**
  * Accept one candidate entry, or `null` with a diagnostic.
  *
- * Every path that can create an entry runs through here, so "what a valid
- * presentation entry is" has exactly one definition and the reducer cannot admit
- * something the boundary parser would refuse.
+ * Every path that can create an entry runs through here — the reducer and the
+ * boundary parser both — so "what a valid presentation entry is" has exactly one
+ * definition, and the two paths cannot produce different entries from the same
+ * facts.
+ *
+ * That second guarantee is why the ENTRY SCHEMA runs here and why the accepted
+ * entry is rebuilt from its output rather than from the caller's object. Without
+ * it the write path checked the kind and the value but not the record: an
+ * over-long id or a negative story minute was admitted, projected for one turn,
+ * and then silently dropped on reload; a subject id with surrounding whitespace
+ * was admitted untrimmed, projected under one key, and came back from storage
+ * under another. Nothing reported either, because the disagreement was between
+ * two code paths rather than inside one.
  */
 function acceptPresentationEntry(
   candidate: PresentationEntry,
   sink: DiagnosticSink | undefined,
   path: string,
 ): PresentationEntry | null {
-  if (!OWNED_KIND_IDS.has(candidate.kindId)) {
+  const shape = presentationEntrySchema.safeParse(candidate);
+  if (!shape.success) {
     sink?.push(
-      diag("warn", VISUAL_STATE_KIND_UNKNOWN, `${candidate.kindId} is not a non-item presentation kind`, {
+      diag(
+        "warn",
+        VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED,
+        shape.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; "),
+        { path, context: { entryId: candidate.id, kindId: candidate.kindId } },
+      ),
+    );
+    return null;
+  }
+  const row = shape.data;
+
+  const kind = visualStateKindRegistry.byId(row.kindId);
+  if (!kind) {
+    sink?.push(
+      diag("warn", VISUAL_STATE_KIND_UNKNOWN, `Unknown visual state kind ${row.kindId}`, {
         path,
-        context: { entryId: candidate.id, kindId: candidate.kindId },
+        context: { entryId: row.id, kindId: row.kindId },
       }),
     );
     return null;
   }
+  // A registered kind this owner does not own is a different failure from an
+  // unregistered one: `wardrobe.garment` exists and is perfectly valid — it is
+  // just item-backed, and applying it here would create a second, item-less copy
+  // of a garment the wardrobe already owns.
+  if (!OWNED_KIND_IDS.has(row.kindId)) {
+    rejectOperation(sink, path, `${row.kindId} is item-backed and is not written by this owner`, {
+      entryId: row.id,
+      kindId: row.kindId,
+    });
+    return null;
+  }
 
-  const locusKind = visualStateLocusKind(candidate.locus);
-  if (!visualStateKindRegistry.allowsLocus(candidate.kindId, locusKind)) {
+  const locusKind = visualStateLocusKind(row.locus);
+  if (!visualStateKindRegistry.allowsLocus(row.kindId, locusKind)) {
     sink?.push(
-      diag("warn", VISUAL_STATE_LOCUS_NOT_ALLOWED, `${candidate.kindId} may not sit at a ${locusKind} locus`, {
+      diag("warn", VISUAL_STATE_LOCUS_NOT_ALLOWED, `${row.kindId} may not sit at a ${locusKind} locus`, {
         path,
-        context: { entryId: candidate.id, locusKind },
+        context: { entryId: row.id, locusKind },
       }),
     );
     return null;
@@ -222,31 +312,41 @@ function acceptPresentationEntry(
   // The same rule the feature contract applies: a body locus must survive
   // registry validation UNCHANGED, because the projected feature's key is built
   // from the fine locus and a healed one would describe a different place.
-  if (candidate.locus.kind === "body") {
-    const validation = validateBodyLocusRef(candidate.locus.locus, sink, path);
+  if (row.locus.kind === "body") {
+    const validation = validateBodyLocusRef(row.locus.locus, sink, path);
     if (!validation.ok || validation.coarsened) {
       sink?.push(
         diag("warn", VISUAL_STATE_LOCUS_INVALID, "Presentation body locus is not usable as written", {
           path,
-          context: { entryId: candidate.id },
+          context: { entryId: row.id },
         }),
       );
       return null;
     }
   }
 
-  const parsed = visualStateKindRegistry.parseValue(candidate.kindId, candidate.value);
+  const parsed = visualStateKindRegistry.parseValue(row.kindId, row.value);
   if (!parsed.ok) {
     sink?.push(
       diag("warn", VISUAL_STATE_VALUE_INVALID, parsed.issues.join("; "), {
         path,
-        context: { entryId: candidate.id, kindId: candidate.kindId },
+        context: { entryId: row.id, kindId: row.kindId },
       }),
     );
     return null;
   }
 
-  return { ...candidate, value: parsed.value };
+  return {
+    id: row.id,
+    subjectId: row.subjectId,
+    kindId: row.kindId,
+    locus: row.locus,
+    value: parsed.value,
+    appliedAtMinutes: row.appliedAtMinutes,
+    ...(row.changedAtMinutes === undefined ? {} : { changedAtMinutes: row.changedAtMinutes }),
+    ...(row.sourceEventId === undefined ? {} : { sourceEventId: row.sourceEventId }),
+    ...(row.supersedesEntryId === undefined ? {} : { supersedesEntryId: row.supersedesEntryId }),
+  };
 }
 
 /**
@@ -347,6 +447,20 @@ export function parsePresentationOperations(
     }
     kept.push(operation);
   }
+  if (kept.length > PRESENTATION_MAX_OPERATIONS) {
+    // Reported, unlike the entry cap's silence. An entry cap evicting the oldest
+    // choice is bounded storage doing its job; a proposal arriving with more
+    // operations than the contract accepts means part of what a model asked for
+    // never happened, and the caller has to be able to see that.
+    sink?.push(
+      diag(
+        "warn",
+        VISUAL_STATE_PRESENTATION_OPERATION_INVALID,
+        `Proposal carried ${kept.length} operations; only the first ${PRESENTATION_MAX_OPERATIONS} were kept`,
+        { path, context: { received: kept.length, cap: PRESENTATION_MAX_OPERATIONS } },
+      ),
+    );
+  }
   return kept.slice(0, PRESENTATION_MAX_OPERATIONS);
 }
 
@@ -412,11 +526,19 @@ function editableValue(
 }
 
 /**
- * Re-validate an entry whose value one operation changed, and stamp the change.
+ * Re-validate an entry whose value one operation changed, and stamp the change
+ * ONLY when the value actually moved.
  *
  * The whole value goes back through the kind's schema rather than the changed
  * field being trusted: a `rearrange` that produced a shape the kind rejects must
  * leave the entry exactly as it was, not half-edited.
+ *
+ * The stamp is conditional because `changedAtMinutes` exists to answer "when did
+ * this value last move" for slice 5's change significance. A restore of an entry
+ * that was never disturbed, or a rearrange from `loose` to `loose`, changes
+ * nothing — stamping it would advance the clock against an identical fingerprint
+ * and make an unchanged feature look like a change candidate, which is the exact
+ * failure the field was added to prevent.
  */
 function reviseEntry(
   entries: readonly PresentationEntry[],
@@ -427,7 +549,12 @@ function reviseEntry(
   sink: DiagnosticSink | undefined,
   path: string,
 ): PresentationEntry[] {
-  const revised = acceptPresentationEntry({ ...entry, value, changedAtMinutes: atMinutes }, sink, path);
+  const moved = visualStateFingerprint(value) !== visualStateFingerprint(entry.value);
+  const revised = acceptPresentationEntry(
+    { ...entry, value, ...(moved ? { changedAtMinutes: atMinutes } : {}) },
+    sink,
+    path,
+  );
   if (revised === null) return [...entries];
   const next = [...entries];
   next[index] = revised;
@@ -446,15 +573,18 @@ function applyOperation(
         rejectOperation(sink, path, `Entry ${operation.entryId} already exists`, { entryId: operation.entryId });
         return [...entries];
       }
-      // Superseding is per (subject, kind, locus): a character has one hairstyle
-      // and one makeup on one face at a time, so a second application replaces
-      // the first and records which entry it replaced rather than stacking.
+      // Superseding is per (subject, locus, aspect) — the same identity the
+      // projected feature key carries, so the slot a new choice takes and the key
+      // it lands on can never disagree. A character has one hairstyle on their
+      // hair, and one BROW grooming on their face beside one FACIAL-HAIR
+      // grooming, because the aspect carries the discriminator.
       const locusKey = visualStateLocusKey(operation.locus);
+      const aspect = presentationAspect(operation.kindId, operation.value);
       const superseded = entries.find(
         (entry) =>
           entry.subjectId === operation.subjectId &&
-          entry.kindId === operation.kindId &&
-          visualStateLocusKey(entry.locus) === locusKey,
+          visualStateLocusKey(entry.locus) === locusKey &&
+          presentationAspect(entry.kindId, entry.value) === aspect,
       );
       const accepted = acceptPresentationEntry(
         {
@@ -627,9 +757,10 @@ export function projectPresentationFeatures(
     }));
     const candidate: VisualStateFeature = {
       version: 1,
-      // The aspect is the kind id, so one subject can carry a hairstyle and a
-      // makeup at the same locus without either claiming the other's key.
-      key: visualStateFeatureKey(entry.subjectId, entry.locus, entry.kindId),
+      // The aspect is the kind id plus any discriminator, so one subject can
+      // carry a hairstyle and a makeup — or two different groomings — at the
+      // same locus without either claiming the other's key.
+      key: visualStateFeatureKey(entry.subjectId, entry.locus, presentationAspect(entry.kindId, entry.value)),
       subjectId: entry.subjectId,
       kindId: entry.kindId,
       layer: kind.layer,
