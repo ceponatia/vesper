@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * R1 (engine.rollout.plan.md) — per-world engine authority. Which lane owns a
  * character chat's world truth is decided by ONE flag on the chat row and
- * nothing else (engine.plan.md §"Migration and rollout": authority is
+ * nothing else (engine-foundation.plan.md §"Migration and rollout": authority is
  * assigned per world or branch by feature flag, never per row by accident).
  *
  * The four lanes are rollout STAGES, ordered — a chat normally walks left to

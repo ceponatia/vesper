@@ -4,7 +4,7 @@ Status: **ADVANCE — closed 2026-07-16.** See the exact evidence and bounded fo
 [finished/engine/gate0.closeout.md](../../finished/engine/gate0.closeout.md). This status
 permitted Gate 1 only; no spike was promoted to production.
 
-Part of the [engine.plan.md](engine.plan.md) gate set (split 2026-07-21; one doc per
+Part of the [engine.plan.md](engine-foundation.plan.md) gate set (split 2026-07-21; one doc per
 gate — see the hub's gate index). Sequencing and current status live in
 [roadmap.md](../../roadmap.md) and the hub; normative contracts live in the
 [engine.spec.md](../../engine.spec.md) §-index.
