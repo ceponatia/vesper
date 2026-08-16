@@ -7,7 +7,8 @@ import {
   type UnitInterval,
 } from "../affordances/core";
 import { bodyLocationRegistry } from "../body/locations";
-import type { DiagnosticSink } from "../diagnostics";
+import { diag, type DiagnosticSink } from "../diagnostics";
+import { VISUAL_STATE_KIND_UNKNOWN } from "./diagnostics";
 import type { GarmentBlueprint } from "../items/garment-blueprint";
 import type { GarmentInstanceState, GarmentLocus } from "../items/garment-instance";
 import { subtypedClothingCategoryIds } from "../items/subtypes";
@@ -100,8 +101,13 @@ export interface VisualStateWardrobeProjectionInput {
    *
    * A jacket over a chair belongs to nobody — `garmentLocusActorId` returns
    * `undefined` for a scene locus — but every feature needs a subject, so the
-   * caller names the one the scene's own facts are filed under. Absent ⇒ loose
-   * garments are not projected.
+   * caller names the one the scene's own facts are filed under.
+   *
+   * Absent ⇒ loose garments are not projected, SILENTLY. That is right when the
+   * caller is projecting one character and does not want the room, and wrong
+   * when the field was simply forgotten — in which case the jacket on the chair
+   * disappears with nothing to say so. There is no way to tell those apart from
+   * inside a pure function; a caller that means to include the room passes it.
    */
   readonly sceneSubjectId?: string;
   /**
@@ -118,12 +124,27 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-/** Everything one garment reaches, its blueprint's baseline coverage expanded down the body tree. */
+/**
+ * Everything one garment reaches: its blueprint's baseline coverage, expanded
+ * down the body tree and filtered to the locations clothing can actually sit on.
+ *
+ * The `coverageRelevant` filter is the wardrobe owner's own rule, applied by
+ * every other coverage read in the app (`items/coverage.ts`,
+ * `garment-coverage.ts`'s storable ids, `items/visibility.ts`), and skipping it
+ * here was not a cosmetic difference. Expansion walks into locations no garment
+ * covers, so a plain shirt claimed `covers` at full degree over WINGS and a TAIL
+ * — driving the composed visibility of the exact features this slice marks
+ * mandatory for identity to zero — and every non-slot id it swept up inflated
+ * the occlusion denominator, understating a coat over a dress by about a third.
+ */
 function coveredLocations(blueprint: GarmentBlueprint): ReadonlySet<string> {
   const covered = new Set<string>();
   for (const node of blueprint.nodes) {
     for (const locationId of node.baselineCoverage) {
-      for (const expanded of bodyLocationRegistry.expand(locationId)) covered.add(expanded);
+      for (const expanded of bodyLocationRegistry.expand(locationId)) {
+        if (bodyLocationRegistry.byId(expanded)?.coverageRelevant === false) continue;
+        covered.add(expanded);
+      }
     }
   }
   return covered;
@@ -153,6 +174,24 @@ interface ResolvedGarment {
   readonly covered: ReadonlySet<string>;
   /** True for `worn` and `held` — the loci a render must not silently change. */
   readonly onBody: boolean;
+  /** True only for `worn` — the one locus at which a piece touches a body surface. */
+  readonly isWorn: boolean;
+  /** The library category, trimmed and lower-cased the way `clothingCategoryById` matches. */
+  readonly categoryId?: string;
+}
+
+/**
+ * Normalize a library category id before any membership test.
+ *
+ * `clothingCategoryById` matches on `id.trim().toLowerCase()`, and the stored
+ * `category` field is free text that only the forge normalizes at its own call
+ * site — so unnormalized rows exist. A raw `Set.has` on `"Jewelry"` misses,
+ * which silently flips a nose ring from `attached_to` to a full-degree `covers`
+ * and hides the nose it hangs from.
+ */
+function normalizeCategoryId(categoryId: string | undefined): string | undefined {
+  const normalized = categoryId?.trim().toLowerCase();
+  return normalized === undefined || normalized.length === 0 ? undefined : normalized;
 }
 
 function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGarment[] {
@@ -160,8 +199,9 @@ function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGar
   for (const garment of input.garments) {
     const subjectId = subjectForLocus(garment.instance.locus, input);
     if (subjectId === undefined) continue;
+    const categoryId = normalizeCategoryId(garment.categoryId);
     const kindId =
-      garment.categoryId !== undefined && ACCESSORY_CATEGORY_IDS.has(garment.categoryId)
+      categoryId !== undefined && ACCESSORY_CATEGORY_IDS.has(categoryId)
         ? VISUAL_STATE_WARDROBE_ITEM_KIND_ID
         : VISUAL_STATE_WARDROBE_GARMENT_KIND_ID;
     const locus: VisualStateLocusRef = { kind: "item", itemInstanceId: garment.instance.id };
@@ -173,6 +213,8 @@ function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGar
       locus,
       covered: coveredLocations(garment.blueprint),
       onBody: garment.instance.locus.kind === "worn" || garment.instance.locus.kind === "held",
+      isWorn: garment.instance.locus.kind === "worn",
+      ...(categoryId === undefined ? {} : { categoryId }),
     });
   }
   return resolved;
@@ -181,11 +223,18 @@ function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGar
 /**
  * The body features this piece sits on: the identity and presentation facts of
  * its own subject that fall inside its coverage.
+ *
+ * WORN only. A garment's coverage describes where it sits when someone is
+ * wearing it; a hat in a hand covers nothing, and a jacket over a chair covers
+ * nothing even when the caller files loose garments under a character's own
+ * subject id. Without this gate a held hat asserted full coverage of the
+ * hairstyle it was nowhere near.
  */
 function bodyTargets(
   garment: ResolvedGarment,
   composeAgainst: readonly VisualStateFeature[],
 ): readonly string[] {
+  if (!garment.isWorn) return [];
   const keys: string[] = [];
   for (const target of composeAgainst) {
     if (target.subjectId !== garment.subjectId) continue;
@@ -200,10 +249,14 @@ function bodyTargets(
  * How much of the lower piece the upper one hides: the share of the lower
  * piece's covered locations the upper one also reaches.
  *
- * Baseline coverage, not effective coverage. An unbuttoned coat still occludes
- * the shirt behind it as far as composition is concerned; how much of the shirt
- * that leaves READABLE is the effective-coverage read's answer, and slice 3
- * owns feeding it in.
+ * The denominator is the lower piece's `coverageRelevant`-filtered baseline
+ * coverage — the same wardrobe-slot set every other coverage read uses, and not
+ * the raw body-tree expansion, which would pad it with locations no garment can
+ * occupy.
+ *
+ * Baseline, not effective. An unbuttoned coat still occludes the shirt behind it
+ * as far as composition is concerned; how much of the shirt that leaves READABLE
+ * is the effective-coverage read's answer, and slice 3 owns feeding it in.
  */
 function overlapDegree(upper: ResolvedGarment, lower: ResolvedGarment): UnitInterval | null {
   if (lower.covered.size === 0) return null;
@@ -229,12 +282,12 @@ function overlapDegree(upper: ResolvedGarment, lower: ResolvedGarment): UnitInte
  */
 function occlusionEdges(garment: ResolvedGarment, all: readonly ResolvedGarment[]): VisualStateRelationship[] {
   const layer = garment.input.layer;
-  if (layer === undefined || garment.input.instance.locus.kind !== "worn") return [];
+  if (layer === undefined || !garment.isWorn) return [];
   const edges: { targetKey: string; degree: UnitInterval }[] = [];
   for (const other of all) {
     if (other.key === garment.key) continue;
     if (other.subjectId !== garment.subjectId) continue;
-    if (other.input.instance.locus.kind !== "worn") continue;
+    if (!other.isWorn) continue;
     const otherLayer = other.input.layer;
     if (otherLayer === undefined || otherLayer >= layer) continue;
     const degree = overlapDegree(garment, other);
@@ -289,9 +342,27 @@ function wardrobePriors(garment: ResolvedGarment, base: VisualStateAttentionPrio
 
 function wardrobeTags(garment: ResolvedGarment): string[] {
   const tags: string[] = [garment.input.instance.locus.kind];
-  if (garment.input.categoryId !== undefined) tags.push(garment.input.categoryId);
+  if (garment.categoryId !== undefined) tags.push(garment.categoryId);
   if (garment.input.subtypeId !== undefined) tags.push(garment.input.subtypeId);
   return tags;
+}
+
+/**
+ * The change kinds whose effect this slice's VALUE actually reflects.
+ *
+ * `garmentChangeKinds` also covers `presentation`, `condition`, `damage` and
+ * `repair`, and none of those touch a garment's name, locus, definition or
+ * subtype — they are slice 3's facts. Stamping `changedAtMinutes` from a
+ * condition change would advance the clock against an identical fingerprint and
+ * make a shirt that merely got damp read as a change candidate: the same wrong
+ * contract the presentation owner's conditional stamp exists to avoid.
+ */
+const VALUE_BEARING_CHANGE_KINDS: ReadonlySet<string> = new Set(["mint", "transfer"]);
+
+/** The story minute this feature's own value last moved, or absent when nothing it carries did. */
+function wardrobeChangedAt(garment: ResolvedGarment): number | undefined {
+  const change = garment.input.instance.lastChange;
+  return VALUE_BEARING_CHANGE_KINDS.has(change.kind) ? change.atMinutes : undefined;
 }
 
 /**
@@ -299,11 +370,19 @@ function wardrobeTags(garment: ResolvedGarment): string[] {
  * their coverage proves.
  *
  * The edge an ordinary garment asserts is `covers`; the edge jewelry and eyewear
- * assert is `attached_to`. Both are computed from the same baseline coverage —
+ * assert is `attached_to`. Both come from the same filtered baseline coverage —
  * the difference is what the piece DOES to the surface it reaches, and the
  * distinction matters downstream: a covered feature loses composed visibility,
  * an attached one does not, so a nose ring can never hide the nose it hangs
  * from.
+ *
+ * An accessory only produces an edge when its definition carries AUTHORED
+ * coverage. The jewelry category template is `coverage: []` — the subtype's
+ * anchor (`earring` → ears) is an editor pre-fill, not something the mint path
+ * stores — so a piece instantiated straight from the template covers nothing and
+ * attaches to nothing. It is still projected, with its own identity and locus;
+ * it simply asserts no relationship, which is the honest read of a garment
+ * nobody said where to put.
  *
  * `replaces_visible_surface` and `derived_from` are not emitted. Nothing in the
  * wardrobe vocabulary distinguishes a hairpiece from a hat — there is no `wig`
@@ -321,15 +400,22 @@ export function projectWardrobeFeatures(
 
   for (const garment of resolved) {
     const kind = visualStateKindRegistry.byId(garment.kindId);
-    if (!kind) continue;
-    const attaches =
-      garment.input.categoryId !== undefined && ATTACHING_CATEGORY_IDS.has(garment.input.categoryId);
+    if (!kind) {
+      input.sink?.push(
+        diag("warn", VISUAL_STATE_KIND_UNKNOWN, `Wardrobe kind ${garment.kindId} is not registered`, {
+          path,
+          context: { key: garment.key, kindId: garment.kindId },
+        }),
+      );
+      continue;
+    }
+    const attaches = garment.categoryId !== undefined && ATTACHING_CATEGORY_IDS.has(garment.categoryId);
     const surfaceEdges: VisualStateRelationship[] = bodyTargets(garment, composeAgainst).map((targetKey) =>
       attaches
         ? { kind: "attached_to", targetKey }
         : { kind: "covers", targetKey, degree: AFFORDANCE_UNIT_ONE },
     );
-    const value = wardrobeValue(garment);
+    const changedAtMinutes = wardrobeChangedAt(garment);
     const candidate: VisualStateFeature = {
       version: 1,
       key: garment.key,
@@ -338,17 +424,22 @@ export function projectWardrobeFeatures(
       layer: kind.layer,
       locus: garment.locus,
       sourceRef: wardrobeSourceRef(garment),
-      value,
-      truthFingerprint: visualStateFingerprint(value),
+      value: wardrobeValue(garment),
+      // Filled in below from the PARSED value, once the kind's schema has had
+      // its say — a name the schema trims must not fingerprint differently from
+      // the identical name that arrived already trimmed.
+      truthFingerprint: "pending",
       semanticTags: wardrobeTags(garment),
       stability: kind.stability,
       relationships: [...surfaceEdges, ...occlusionEdges(garment, resolved)],
       priors: wardrobePriors(garment, kind.priors),
       evidence: wardrobeEvidence(garment),
-      changedAtMinutes: garment.input.instance.lastChange.atMinutes,
+      ...(changedAtMinutes === undefined ? {} : { changedAtMinutes }),
     };
     const accepted = validateVisualStateFeature(candidate, input.sink, path);
-    if (accepted !== null) projected.push(accepted);
+    if (accepted !== null) {
+      projected.push({ ...accepted, truthFingerprint: visualStateFingerprint(accepted.value) });
+    }
   }
 
   return projected;

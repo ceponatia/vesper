@@ -554,7 +554,18 @@ Only the codes slices 1 and 2 emit exist. From slice 1:
 `visual_state.snapshot.duplicate_key`, `visual_state.source.unavailable`. From
 slice 2: `visual_state.relationship.missing_target`,
 `visual_state.relationship.cycle`, `visual_state.presentation.entry_unknown`,
-`visual_state.presentation.operation_invalid`. The visibility, detail-tier,
+`visual_state.presentation.operation_invalid`,
+`visual_state.presentation.entry_malformed`,
+`visual_state.species.feature_group_unplaced`.
+
+Two FOREIGN codes also reach a caller's sink from this family, because the sink
+is handed straight to a shared helper rather than wrapped:
+`appearance.locus.unknown_location` from `validateBodyLocusRef` and
+`parse.boundary_failed` from `parseOr`. That is deliberate — a reader wants the
+upstream reason, not a re-labelled one — so a caller asserting on codes should
+expect a namespaced pair rather than a single `visual_state.*` entry.
+
+The visibility, detail-tier,
 intimate-gate, missing-mandatory-fact, stale-snapshot and extraction-conflict
 codes join with the slices that emit them; a declared but unreachable code reads
 like coverage that does not exist.
@@ -615,23 +626,75 @@ rather than of an iteration order. Composition suppressions are appended to
 `VisualStateSnapshot.suppressions` after the duplicate-key ones, keyed by the
 source feature and detailed as `<relationship kind>:<target key>`.
 
-**Adapters emit edges only against features they were handed.** Each adapter
-takes an optional `composeAgainst` list — the features earlier adapters
-produced — and asserts a relationship only when the target is in it. An adapter
-that cannot see its target says nothing, so the resolver's missing-target path
-guards replay and hand-built input rather than firing on ordinary projection.
+**Adapters emit edges only against features they were handed.** The wardrobe and
+presentation adapters take an optional `composeAgainst` list — the features
+earlier adapters produced — and assert a relationship only when the target is in
+it. An adapter that cannot see its target says nothing, so the resolver's
+missing-target path guards replay and hand-built input rather than firing on
+ordinary projection. The species adapter takes no such list: a feature group
+asserts nothing about other features.
+
+**A garment reaches only the locations clothing can sit on, and only while it is
+worn.** Coverage is the blueprint's baseline set expanded down the body tree and
+then filtered by `coverageRelevant`, the same rule `items/coverage.ts`,
+`garment-coverage.ts` and `items/visibility.ts` all apply. Skipping the filter is
+not cosmetic: expansion reaches locations no garment covers, so a plain shirt
+claimed full coverage of wings and a tail — zeroing the composed visibility of
+the features this slice marks mandatory for identity — and the same stray ids
+inflated the occlusion denominator by about a third. Body-surface edges are
+additionally gated on the `worn` locus; a hat in a hand and a jacket on a chair
+cover nothing, whatever subject the caller files them under.
+
+**Two change stamps are conditional, for one reason.** `changedAtMinutes` answers
+"when did this value last move", so it is written only when the value did.
+A presentation `restore` of an entry that was never disturbed and a `rearrange`
+to the arrangement already in force leave it alone; a garment stamps only for the
+change kinds this slice's value reflects (`mint` and `transfer`), never for the
+`presentation`, `condition`, `damage` and `repair` kinds whose facts are slice
+3's. Stamping either would advance the clock against an identical fingerprint and
+make an unchanged feature read as a change candidate.
+
+**One presentation slot per (subject, locus, aspect), where the aspect carries a
+discriminator.** `presentation.grooming` distinguishes four areas and
+`presentation.cosmetic_mark` six marks inside the value, and the body registry
+has no `brows` location — so brow grooming and facial-hair grooming both sit at
+`face`. With the slot keyed on kind alone, applying the second silently deleted
+the first, and a state holding both projected two features under one key for the
+snapshot to drop. Those two kinds therefore project under
+`presentation.grooming:brows` and supersede on the same identity; the three kinds
+with nothing to discriminate keep the bare aspect. The separator needs no
+escaping because every discriminator is a closed-enum member. The alternative —
+adding `brows` to the body registry — was rejected on the same grounds as the
+`wig` subtype: it is another owner's vocabulary.
+
+**`supersedesEntryId` is provenance only.** `apply` deletes the entry it
+supersedes, so the referent is normally already gone; the field answers "what was
+here before" for an inspector and nothing walks it. The boundary parser
+deliberately admits a dangling id, a self-reference, or a loop rather than
+validating a graph no reader traverses.
+
+**Recognition eligibility is not a recognition floor.** All five presentation
+kinds are `recognitionEligible` while the two wardrobe kinds are not — a
+hairstyle is something an observer registers, today's shirt is continuity rather
+than identity. Neither can earn a long-term recognition floor regardless: all
+seven are `presentation` stability, and slice 5 gates the floor on stability
+(inherent and persistent only), exactly as the shipped memory law already does.
 
 **Three relationship kinds have no slice-2 owner.**
 `replaces_visible_surface` needs something that distinguishes a hairpiece from a
 hat, and the wardrobe vocabulary has no `wig` subtype — adding one to
 `clothingSubtypesByCategory` would have been a change to another plan's registry
 for this plan's convenience. `derived_from` needs the material and wetness reads
-slice 3 brings. `attached_to` DOES have an owner and is emitted: jewelry and
+slice 3 brings. `attached_to` DOES have an owner and is emitted — jewelry and
 eyewear attach to the body feature at their anchor location rather than covering
 it, because a ring does not hide a finger and the eyewear registry says as much
-about glasses. Headwear is deliberately on the covering side — a hat covers hair,
-which is the plan's own worked example. The resolver implements all six kinds
-regardless; the two unowned ones are exercised by hand-built fixtures.
+about glasses — but only for an accessory whose definition carries AUTHORED
+coverage. The jewelry category template is `coverage: []`, and a subtype's anchor
+is an editor pre-fill rather than something the mint path stores, so a piece
+instantiated straight from the template is projected with its identity and locus
+and asserts no edge at all. Headwear is deliberately on the covering side: a hat
+covers hair, which is the plan's own worked example. The resolver implements all
+six kinds regardless; the two unowned ones are exercised by hand-built fixtures.
 
 **The garment store carries no category and no layer, so both are adapter
 inputs.** A `GarmentInstanceState` deliberately does not depend on the library
@@ -641,8 +704,12 @@ and `layer` as optional caller-supplied facts. Both degrade to silence rather
 than a guess: no category means the piece is treated as ordinary clothing, and
 no layer means no occlusion edge at all — an invented stacking order would tell
 an image compiler that a visible garment is hidden, which is the one wardrobe
-error a player cannot miss. Occlusion degree is the share of the lower piece's
-baseline coverage the upper one also reaches; effective coverage replaces
+error a player cannot miss. The category is trimmed and lower-cased before any
+membership test, matching `clothingCategoryById`: the stored field is free text
+that only the forge normalizes, so a row reading `"Jewelry"` exists and used to
+flip a nose ring from an attachment to a full-degree cover. Occlusion degree is
+the share of the lower piece's `coverageRelevant`-filtered baseline coverage that
+the upper one also reaches; the captured effective-coverage read replaces
 baseline coverage in slice 3.
 
 **Four smaller shapes deviate from the spec as written**, all for reasons the
