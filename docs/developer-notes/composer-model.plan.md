@@ -64,9 +64,26 @@ selected for a conversation.
 
 ### Non-goals
 
-- **Changing what the composer is asked.** The system prompt, the schema, the
-  evidence gates and the staging registry are all untouched. This plan changes
-  who answers the question, never the question.
+- **Changing what the composer is asked.** This plan changes who answers the
+  question, never the question: the schema and the evidence gates are untouched,
+  and no arm is compared against a different rulebook than another.
+
+  **Scoped exception, 2026-08-15 — the vocabularies were described.** The first
+  paid run showed the composer had been handed bare ids for the staging catalog
+  and the camera axes, which is not a question so much as a missing definition:
+  `kneeling_before_viewer_guided` differed from its sibling by one adjective
+  explained nowhere the model could see. Every arm failed the same way, so the
+  run was measuring the prompt. The registries now carry selection hints and the
+  prompt renders them, and the staging rule asks for the quote that separates
+  sibling variants. What the composer is *asked to decide* is unchanged — the
+  same ids, the same gates, the same authority — but it can now tell the options
+  apart.
+
+  The cost of the exception is stated plainly because it is the reason for the
+  non-goal: **runs from before and after this change are not comparable.** The
+  fix is not to compare them. Every arm re-runs on the current prompt, and the
+  earlier numbers stand only where the change cannot reach them (see
+  "Where the work stands").
 - **The image model.** Which model *paints* the scene is a separate, already-live
   per-chat setting, and its own comparison lives in
   [intimate-scene-lora.plan.md](intimate-scene-lora.plan.md).
@@ -108,8 +125,9 @@ selected for a conversation.
 - **[composer-model.spec.md](composer-model.spec.md)** — complete for slices 1–2;
   its results section is empty and is what slice 3 fills.
 
-**The first paid run (2026-08-15) found two faults in the instrument, both now
-fixed — the numbers it produced for those axes should not be used.**
+**The first paid run (2026-08-15) is superseded in full. No number from it may
+be quoted or compared against a later run.** It found three faults, two in the
+instrument and one in the prompt, and all three are fixed:
 
 - Every arm was marked wrong on the camera because a single check combined three
   axes, one of which the app deliberately leaves to taste. Orientation, height
@@ -118,13 +136,17 @@ fixed — the numbers it produced for those axes should not be used.**
 - `oral_guided` failed every run for every arm because it and `oral` were told
   the same story and expected different answers. The two beats now differ by the
   detail that separates them — the viewer's hand on her head.
+- The prompt named the staging and camera vocabularies without defining them, so
+  models chose between ids like `kneeling_before_viewer` and
+  `kneeling_before_viewer_guided` on the strength of a suffix. Both vocabularies
+  now ship a registry-owned description that the prompt renders.
 
-The composer prompt itself carried a third fault: it named the staging and
-camera vocabularies without defining them, so models chose between ids like
-`kneeling_before_viewer` and `kneeling_before_viewer_guided` on the strength of
-a suffix. Both vocabularies now ship a registry-owned description that the
-prompt renders. **Re-run before writing any verdict** — the previous run graded
-a prompt that no longer exists.
+Superseded **in full**, not axis by axis: the third fix changes what every arm
+is shown on every beat, so it can move any staging or camera answer anywhere in
+the matrix. The run was internally fair — every arm carried the same handicap —
+but it ranked models on a prompt that no longer exists, which makes it evidence
+about that prompt rather than about the candidates. A verdict comes from a
+re-run, and a re-run's arms must all have been measured on the current prompt.
 
 ## Success criteria
 
