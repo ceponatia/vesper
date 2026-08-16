@@ -2,8 +2,9 @@
 
 Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
 exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
-through 2026-08-06; slice 2 unblocked since the capabilities plan's shared
-render intent shipped 2026-08-07; reference preparation left this plan for
+through 2026-08-06; slice 2 — prompt segments and the reviewed settings moved
+into task profiles — built 2026-08-16 and awaiting review and the parity run;
+reference preparation left this plan for
 [image-identity-packs.plan.md](finished/image-identity-packs.plan.md) on 2026-08-05;
 nothing else in the slice list exists in code)
 
@@ -196,9 +197,9 @@ absences, and intended morphology.
 
 ## Slice 1 — the reviewed settings that are live today
 
-The profile rows introduced by the capabilities plan are still dormant, so the
-first code slice was deliberately small and centralized. It shipped 2026-08-05
-and is in every render the app makes.
+The profile rows introduced by the capabilities plan were still dormant when this
+slice was written, so the first code slice was deliberately small and
+centralized. It shipped 2026-08-05 and is still in every render the app makes.
 
 A small reviewed policy applies exact-slug overrides at the one seam every image
 lane already crosses. It:
@@ -215,9 +216,11 @@ lane already crosses. It:
 Pinned community slugs are matched without their version suffix.
 
 This is a transitional compatibility layer, not a second configuration system.
-It exists because the profile machinery is not called by the production render
-path yet. As shared render intent and control mapping land, each reviewed
-override moves into a profile and the exact-slug policy shrinks to zero. Exact
+Slice 2 wrote the same settings onto the task profiles that should own them, so
+the two now say one thing rather than two — but this layer is still what actually
+delivers them, and will be until each model's exact provider version has been
+inspected. Two of the models it corrects have no registered row at all; someone
+adds them by hand, and only this layer knows to fix them when they do. Exact
 settings, matching rules, and the retirement sequence are in
 [the spec](image-render-quality.spec.md).
 
@@ -313,10 +316,13 @@ rolled sleeve, and smudged makeup are exactly the kind of fact this plan's
 prompts want and cannot currently obtain.
 [visual-state.plan.md](visual-state.plan.md) owns that projection.
 
-**From capabilities:** ordered semantic prompt segments, resolved controls, seeds,
-and role-aware reference transport. Its shared render intent shipped 2026-08-07,
-so this plan's slice 2 has its seam; the segment vocabulary and control
-transports it still lists as remaining are what slices 3 and beyond wait on.
+**From capabilities:** resolved controls, seeds, and role-aware reference
+transport, all of which shipped with its shared render intent on 2026-08-07 —
+which is the seam this plan's slice 2 then built on. The ordered semantic prompt
+segments are this plan's own work and arrived with slice 2. What slices 3 and
+beyond still wait on from capabilities is the probing that gives a stored control
+a provider field to travel through: until a model's version is probed, a profile
+can state a setting but cannot send it.
 
 ## Face repair strategy
 
@@ -400,12 +406,15 @@ this plan keeps its number as a pointer.
    with every unreviewed model unchanged. The corrections made the prompt
    rewrite idempotent so a compiled comparison cell cannot conflict with its own
    prompt.
-2. **Shared render intent and profile controls.** Status: queued — unblocked;
-   the capabilities slice 2 it waited on shipped 2026-08-07. Lanes now resolve
-   task profiles and common controls; what remains here is moving the
-   transitional exact-slug inputs into profiles and the ordered semantic prompt
-   segments.
-3. **Dynamic dialects and negatives.** Status: blocked on slice 2. Compile
+2. **Shared render intent and profile controls.** Status: built 2026-08-16 —
+   awaiting review and the parity run. The reviewed settings now have one
+   definition that produces both the transitional overlay and the task profiles'
+   own controls, and a render can be described as ordered semantic segments that
+   survive a prompt budget in priority order. Nothing renders differently yet:
+   the profile route needs each model's version probed before it can carry a
+   setting, so the transitional layer is still what delivers them.
+3. **Dynamic dialects and negatives.** Status: blocked on slice 2's acceptance —
+   the segment vocabulary it compiles from now exists. Compile
    prose/SDXL/Pony prompts from segments, measure effective prompt budgets per
    pinned version, and compose task/style/subject/morphology/text-aware negative
    blocks with conflict linting.
@@ -431,11 +440,11 @@ this plan keeps its number as a pointer.
 9. **Advisory QA and promotion gates.** Status: queued. Record
    identity/face-count/blur/text/crop signals and make fixed-matrix regression
    results part of model-version promotion.
-10. **Visual-state consumption.** Status: blocked on slice 2. Feed the mandatory
-    and optional facts from [visual-state.plan.md](visual-state.plan.md) into
-    image prompt segments. That plan owns the projection; this slice is its
-    image consumer and cannot start before slice 2 gives it somewhere to put
-    the segments.
+10. **Visual-state consumption.** Status: blocked on slice 2's acceptance — the
+    somewhere-to-put-them it waited on now exists. Feed the mandatory and
+    optional facts from [visual-state.plan.md](visual-state.plan.md) into image
+    prompt segments. That plan owns the projection; this slice is its image
+    consumer.
 
 Each slice must be independently useful. No slice introduces automatic
 cross-model fallback.

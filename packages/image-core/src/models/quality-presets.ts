@@ -1,4 +1,5 @@
 import type { ImageModel } from "./image-models";
+import { reviewedImageQualityInputs } from "./reviewed-profile-controls";
 
 const LEGACY_PORTRAIT_IDENTITY_LOCK =
   "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
@@ -13,74 +14,30 @@ export const QWEN_MULTI_REFERENCE_IDENTITY_LOCK =
 
 /**
  * The registry's raw probe defaults describe what a provider accepts, not the
- * reviewed settings Vesper wants. Until task profiles reach the render path,
- * this small built-in policy corrects only settings that are safe without task,
- * style, subject-count, or morphology context.
+ * reviewed settings Vesper wants. Until every reviewed model's task profiles
+ * carry these settings AND its version is probed, this small built-in policy
+ * corrects only settings that are safe without task, style, subject-count, or
+ * morphology context.
  *
  * There is deliberately no universal negative block here. Text, logos, blur,
  * low-resolution media, unusual appendages, and absent body parts can all be
- * intentional. The two reviewed community wrappers with non-empty provider
- * defaults are explicitly cleared so those hidden defaults cannot contradict
- * Vesper's authored state. Contextual negatives belong to task profiles.
+ * intentional. The reviewed community wrappers with non-empty provider defaults
+ * are explicitly cleared so those hidden defaults cannot contradict Vesper's
+ * authored state. Contextual negatives belong to task profiles.
  *
  * Exact provider slugs are intentional. We never send a guessed field to an
  * operator-added model, and pinned community slugs are normalized before the
- * lookup. These overrides are expected to dissolve into profile controls once
- * image-model-capabilities slice 2/4 is live.
+ * lookup.
+ *
+ * The VALUES no longer live here. They are derived from
+ * `reviewed-profile-controls.ts`, which states each reviewed setting once and
+ * renders it into both the raw provider fields this overlay merges and the
+ * normalized controls a task profile stores. The migration needs both spellings
+ * live simultaneously — an override is removed only after parity is demonstrated
+ * for it — and two hand-maintained copies of one table is precisely how a parity
+ * migration ships a silent difference.
  */
-const REVIEWED_QUALITY_INPUTS: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
-  "qwen/qwen-image-edit-2511": {
-    // This model currently serves only identity-critical variants/scenes. Its
-    // provider default optimizes speed on the surface where fidelity matters.
-    go_fast: false,
-  },
-  "lucataco/juggernaut-xl-v9": {
-    // Normal Juggernaut v9 is a full-step SDXL checkpoint. The Replicate cog's
-    // 5-step / CFG-2 defaults are a fast wrapper preset, not the model's native
-    // quality configuration.
-    num_inference_steps: 35,
-    guidance_scale: 5,
-    scheduler: "KarrasDPM",
-    width: 832,
-    height: 1216,
-    // The wrapper's default forbids several rendering media. Start from the
-    // checkpoint creator's recommended little/no-negative baseline instead.
-    negative_prompt: "",
-  },
-  "nsfw-api/realvis-hyper-lora": {
-    width: 768,
-    height: 1024,
-    // Replaces the wrapper's long generic anatomy/style boilerplate. A later
-    // profile may add conflict-checked terms using the actual visual intent.
-    negative_prompt: "",
-  },
-  "aisha-ai-official/nsfw-flux-dev": {
-    // The wrapper defaults to a 1024×1024 square, so every render would be
-    // cropped to 3:4 and lose a quarter of the frame. 832×1216 is the portrait
-    // bucket this architecture is trained on; `cropToTargetAspect` trims the
-    // remainder, exactly as for Juggernaut above.
-    width: 832,
-    height: 1216,
-  },
-  "aisha-ai-official/likereality-pony-v1": {
-    width: 832,
-    height: 1216,
-    // The wrapper's provider default is literally `"nsfw, naked"` — a hidden
-    // negative that suppresses the output this app exists to produce and
-    // silently contradicts the authored wardrobe and exposure state. The Pony
-    // score-tag preamble is separate and stays on (`prepend_preprompt`).
-    negative_prompt: "",
-  },
-  "nsfw-api/sdxl-pulid": {
-    // 512×512 is the wrapper's default: both off-shape and far below the
-    // 768×1024 canonical portrait.
-    width: 832,
-    height: 1216,
-    // Vesper runs this model for identity preservation, never style transfer.
-    // Pinned so a changed provider default cannot move it off `fidelity`.
-    method: "fidelity",
-  },
-};
+const REVIEWED_QUALITY_INPUTS = reviewedImageQualityInputs;
 
 /** Strip a pinned `owner/name:version` suffix without touching ordinary slugs. */
 export function baseImageModelSlug(slug: string): string {

@@ -83,6 +83,12 @@ map is deleted. Until then, diagnostics and future provenance must report the
 
 ## Transitional reviewed settings
 
+The values below are stated once, in
+`packages/image-core/src/models/reviewed-profile-controls.ts`, and rendered into
+both the raw provider fields this overlay merges and the normalized controls a
+task profile stores. Editing a reviewed value means editing that table; the
+overlay is derived from it.
+
 `withReviewedImageQuality(model)` returns the original model object when no
 reviewed policy exists. For a reviewed slug it returns a shallow copy:
 
@@ -289,10 +295,125 @@ because that is where a violation would show up as a refused cell.
 
 The crop math is pinned by `packages/image-core/src/geometry/crop.test.ts`;
 the Node execution (`cropToTargetAspect`) stays in
-`apps/web/src/server/images/models.ts`. Future
-shared-render-intent tests should assert the final provider payload, including
-profile controls, so the transitional and profile paths cannot diverge during
-migration.
+`apps/web/src/server/images/models.ts`.
+
+## Current implementation (slice 2, built 2026-08-16)
+
+Built and unaccepted: it waits on review and on the parity run, which cannot
+happen until a reviewed model's version is probed. Two things landed.
+
+**The reviewed policy now has one source of truth, in both vocabularies.**
+`packages/image-core/src/models/reviewed-profile-controls.ts` states each
+reviewed setting once and renders it into the two forms the migration needs
+simultaneously: the raw provider fields the transitional overlay merges into
+`extraInput`, and the normalized `controlDefaults` + `providerOverrides` a task
+profile stores. `REVIEWED_QUALITY_INPUTS` in `quality-presets.ts` is now derived
+from that table rather than being a second copy of it, so a value cannot move in
+one representation without moving in the other. Migration 0110 writes the profile
+half onto every task profile of every reviewed model.
+
+**Ordered semantic prompt segments exist and reach the render path.**
+`packages/image-core/src/render-intent/prompt-segments.ts` owns the kind union,
+the segment shape, the mandatory floor, ordering and fitting;
+`ImageRenderIntentCore.promptSegments` carries them, and `planImageRender`
+compiles them into the base prompt the profile's strategy then reads.
+
+Neither changes a byte of any current payload, and both reasons are the same
+fact wearing two hats — see below.
+
+### Why nothing renders differently yet
+
+Every seeded `image_models` row still carries `advanced_capabilities = '{}'`.
+That single fact defeats both halves of the profile route:
+
+- a normalized control has no probed binding to map through, so it drops as
+  `no_binding` (`mapImageRenderControls`);
+- a `providerOverrides` entry fails closed against an empty `knownInputFields`,
+  so it drops as `unknown_field` (`validateProviderOverrides`).
+
+So a profile carrying the reviewed controls contributes **nothing** to the
+payload today, and the transitional overlay is still what delivers those settings
+— through `extraInput`, which needs no probe. This is the same two-speed rollout
+migration 0107 documented for the curated profiles: the row states the intent
+now, the probe activates it.
+
+The same fact defeats prompt fitting, harmlessly. A budget comes only from the
+version's probed prompt binding (`maxChars` / `recommendedChars`), no seeded row
+has one, so every budget resolves empty and no prompt is trimmed.
+
+### Structured prompt segments as built
+
+The kind union and segment shape are as specified below. The rules the
+implementation adds, where the spec left latitude:
+
+- **Canonical emission order is the union's declaration order.** The plan's prose
+  groups `framing` with lighting and atmosphere; the union puts it between `age`
+  and `pose`, and the union is what code implements. Dialects may reorder — the
+  `sdxl_tag` order below leads with the rendering medium — so this is the order a
+  segment list means *before* a dialect touches it.
+- **Priority ranks within a kind, never across kinds.** A high-priority
+  atmosphere segment cannot push identity down the prompt. Across kinds, priority
+  decides only who is given up first.
+- **The mandatory floor is enforced, not trusted.** `operation`, `identity`,
+  `morphology`, `age`, `wardrobe` and `exposure` are structurally mandatory; a
+  segment of those kinds arriving `mandatory: false` is promoted with
+  `image_prompt.segment_mandatory_promoted`. Person count has no kind of its own
+  and travels in `identity`. The classification is an exhaustive switch, so a
+  fifteenth kind is a compile error until somebody classifies it.
+- **The budget is in CHARACTERS.** The spec's effective-context protocol measures
+  a per-version budget and has not been run; a token count invented here would be
+  a second guess wearing a measurement's name. Characters are countable, and both
+  halves come off the probed prompt binding rather than from a family-wide rule.
+- **Fitting is two-phase.** Optional material is trimmed toward
+  `recommendedChars` — the weakest segment gives up its last sentence, and is
+  removed once it is down to one. Only a breach of the hard `maxChars` may
+  shorten a mandatory segment, by whole sentences, never below its last one, and
+  never before optional material is exhausted. A mandatory floor that still
+  exceeds the ceiling is reported as `image_model.prompt_too_long_required` (the
+  code `imagePromptBindingSchema` already named for this case) and sent anyway —
+  an over-long prompt beats a bisected identity lock.
+- **`source` cannot reach a provider structurally.** `joinImagePromptSegments` is
+  the only thing that turns segments into prompt text and it reads `text` alone.
+  `tagText` is carried and deliberately unread: emitting tag syntax into prose
+  would corrupt the models the `prose` dialect serves. Both are pinned by canary
+  tests.
+
+### Tests for slice 2
+
+- `packages/image-core/src/render-intent/prompt-segments.test.ts` — the mandatory
+  classification, canonical order, priority-within-kind, the promotion and empty
+  diagnostics, both fitting phases, the never-mid-sentence property, the
+  advisory-versus-hard distinction, and the two canaries.
+- `packages/image-core/src/render-intent/plan-image-render.test.ts` — a
+  segmentless intent is byte-identical, segments outrank the flat prompt, an
+  unprobed model fits nothing, a declared ceiling drops optional detail rather
+  than the identity lock.
+- `packages/image-core/src/models/reviewed-profile-controls.test.ts` — the
+  derived overlay equals §"Effective values by model" literally, no provider
+  field is claimed by both channels, and every pinned dimension pair carries its
+  `resolution: "custom"` gate.
+- `apps/web/src/server/images/reviewed-profile-parity.test.ts` — the
+  final-payload golden test migration step 2 asks for. Three arms per reviewed
+  slug (overlay only, profile only against an unreviewed twin slug, both live)
+  must produce equal payloads, plus the degradation cases: an unprobed model
+  drops every control with `no_binding`/`unknown_field` and still renders
+  correctly because the overlay is live.
+
+The twin-slug device is what lets the profile-only arm exist before step 4 has
+run: `compileProfileRenderPlan` always applies `withReviewedImageQuality`, so the
+only way to observe the profile route alone is a model the reviewed table has
+never heard of.
+
+### What blocks step 4, beyond the probe
+
+Three of the six reviewed slugs have **no seeded `image_models` row at all**.
+`lucataco/juggernaut-xl-v9`, `nsfw-api/realvis-hyper-lora` and
+`nsfw-api/pony-realism-v2.3` are documented in `docs/image-models/` and added by
+an admin at runtime, so no migration can seed profile controls for them. Their
+entries in migration 0110 catch a row that already exists; a model added after it
+runs gets nothing. Until profile seeding happens at admin-add time, the overlay
+is the only thing that corrects those models, and deleting it would silently
+return Juggernaut to 5 steps at CFG 2 and restore RealVis's boilerplate negative.
 
 ## Effective prompt context: measured, not guessed
 
@@ -315,7 +436,8 @@ measured limit, compilers order load-bearing content first.
 ## Structured prompt segments
 
 A robust dialect compiler consumes semantics, not a finished paragraph. Shared
-render intent should expose ordered segments similar to:
+render intent exposes ordered segments (built 2026-08-16 — see §"Structured
+prompt segments as built" for the rules the implementation settled):
 
 ```ts
 export type ImagePromptSegmentKind =
@@ -602,9 +724,19 @@ their false-positive rate is measured on Vesper's corpus.
 
 ## Render provenance
 
-None of this exists in code. The identity-pack trial harness records its own
+Partly built. `ResolvedImageAttempt` (`packages/image-core/src/render-intent/`)
+already carries the model, profile, task, prompt strategy, requested version,
+resolved seed, `appliedControls`, `droppedControls`, sent reference roles, and
+the provider's prediction and executed-version ids; `renderImageIntent` writes it
+to the image row's `meta.render` on success and failure alike. That covers the
+migration's step 5 — resolved controls are in production provenance.
+
+The record below is still the target, and what it adds over the attempt is the
+measurement half: prompt and negative hashes, latency, render units and
+estimated cost, source-versus-final dimensions and the crop, warnings, and the
+per-reference identity fields. The identity-pack trial harness records its own
 resolved controls and prompt/control hashes per cell, which is the pattern to
-generalize, not a production render record.
+generalize.
 
 The per-reference identity fields are owned by
 [image-identity-packs.spec.integration.md](finished/image-identity-packs.spec.integration.md)
@@ -717,6 +849,30 @@ When profiles reach the production render path:
 5. expose resolved controls in provenance/admin diagnostics;
 6. delete `quality-presets.ts` when no reviewed exact-slug behavior remains.
 
+Status of each, after slice 2:
+
+- **Step 1 — done** for every reviewed model with a seeded row (migration 0110,
+  values derived from `reviewed-profile-controls.ts`). Juggernaut, RealVis and
+  Pony Realism have no row to seed, so step 1 cannot complete for them at all
+  until profile seeding happens at admin-add time.
+- **Step 2 — done.** `reviewed-profile-parity.test.ts` compares the two routes at
+  the provider payload.
+- **Step 3 — already true before this slice.** Every production lane crossed
+  `renderImageIntent` → `planImageRender` → `compileProfileRenderPlan` from
+  capabilities slice 2 (2026-08-07), so there was no per-task routing left to do.
+  What was missing was profiles that *carried* the reviewed controls, which is
+  step 1. The one-task-at-a-time sequencing this step imagined is therefore
+  moot — the seam is shared, and the staging now lives in which models are
+  probed.
+- **Step 4 — blocked, and not on parity.** Removing an override needs the
+  profile route to actually deliver the setting, which needs the model's version
+  probed; nothing probes at seed time. It is additionally blocked outright for
+  the three unseeded models above.
+- **Step 5 — already satisfied.** `ResolvedImageAttempt` carries
+  `appliedControls` and `droppedControls`, and `renderImageIntent` writes them to
+  the image row's `meta.render`. No new work was needed and none was added.
+- **Step 6 — untouched**, and still carries the trial-harness second gate below.
+
 Step 6 has a second gate that did not exist when this sequence was written:
 `compileProfileRenderPlan` calls the same two functions, so the trial harness must
 be migrated in the same change or it will grade a configuration production no
@@ -743,11 +899,20 @@ Held by slice 1:
 - Juggernaut runs full-step at native portrait dimensions rather than its cog's
   fast square defaults.
 
+Held by slice 2 (built 2026-08-16, unaccepted):
+
+- effective controls are recorded in production render provenance;
+- a reviewed setting has one definition, rendered into both the overlay and the
+  profile representation, so the two cannot drift during the migration;
+- the two routes are compared at the provider payload, not upstream of it;
+- prompt fitting drops the lowest-priority optional segment first and never cuts
+  through a mandatory sentence;
+- a segment's diagnostic `source` cannot reach a provider.
+
 Not yet held:
 
 - dynamic negatives are not sent until text/style/subject/morphology conflicts
   can be evaluated;
-- effective controls are recorded in production render provenance;
 - repair remains explicit, single-character-first, and non-destructive;
 - cost, latency, and model-license gates are enforced before a quality feature
   becomes a default.
