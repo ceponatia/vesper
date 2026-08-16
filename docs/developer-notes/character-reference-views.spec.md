@@ -78,7 +78,8 @@ Each wardrobe entry carries its own prompt fragment and one flag: `intimate`,
 true for `bare`. That flag is the single gate deciding whether a view may be
 built on a censored profile, whether its render emits intimate anatomy text, and
 whether a lane running with `allowIntimate: false` may receive it — the same
-shape `intimateSceneAppearance` already uses, so there is one rule and not three.
+shape `sceneRevealAppearance`'s `{intimate: true}` half already uses, so there is
+one rule and not three.
 
 **Growing the set is a data edit.** If the slice-4 trial argues for
 three-quarter angles they join `referenceViewAngleIds` and the selection table

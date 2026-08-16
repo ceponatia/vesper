@@ -81,10 +81,24 @@ function scenePlan(member: SceneCastMember = castMember()) {
 
 const bareMember = castMember({ outfit: "", exposure: bareExposure });
 
+/**
+ * Freeze one lane: exactly these facts, and none of them stated twice.
+ *
+ * The two halves are one assertion because `presentVisualFacts` collapses every
+ * positive count to a key, so a lane that starts emitting the age or the garment
+ * twice would slip through a presence-only freeze — and duplication is a stated
+ * migration failure mode in its own right (spec.prompts: "fail on lost,
+ * duplicated, newly exposed … facts"). Two builders that both describe a person
+ * read as emphasis to an image model and spend the budget twice.
+ */
+function expectLaneFacts(prompt: string, expected: readonly string[]): void {
+  expect(presentVisualFacts(prompt)).toEqual(expected);
+  expect(duplicatedVisualFacts(prompt)).toEqual([]);
+}
+
 describe("image lane characterization — dressed subject", () => {
   it("avatar: sheet identity, morphology, age and wardrobe; nothing below the waist", () => {
-    const prompt = buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed);
-    expect(presentVisualFacts(prompt)).toEqual([
+    expectLaneFacts(buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed), [
       "gender",
       "ethnicity",
       "species",
@@ -97,12 +111,10 @@ describe("image lane characterization — dressed subject", () => {
       "apparentAge",
       "garment",
     ]);
-    expect(duplicatedVisualFacts(prompt)).toEqual([]);
   });
 
   it("scene, text-to-image: the appearance summary carries the sheet, exposure-blind", () => {
-    const prompt = buildSceneRenderPrompt(scenePlan(), {});
-    expect(presentVisualFacts(prompt)).toEqual([
+    expectLaneFacts(buildSceneRenderPrompt(scenePlan(), {}), [
       "gender",
       "ethnicity",
       "species",
@@ -124,12 +136,10 @@ describe("image lane characterization — dressed subject", () => {
       // that the two disagree.
       "toenails",
     ]);
-    expect(duplicatedVisualFacts(prompt)).toEqual([]);
   });
 
   it("scene, single reference: identity anchors replace the full appearance summary", () => {
-    const prompt = buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME });
-    expect(presentVisualFacts(prompt)).toEqual([
+    expectLaneFacts(buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }), [
       "hairColor",
       "eyeColor",
       "skinTone",
@@ -138,7 +148,6 @@ describe("image lane characterization — dressed subject", () => {
       // Shape reads through clothing; the covered `skin` facts do not.
       "legBuild",
     ]);
-    expect(duplicatedVisualFacts(prompt)).toEqual([]);
   });
 
   it("scene, multi reference: the same anchors through the second assembler", () => {
@@ -151,15 +160,7 @@ describe("image lane characterization — dressed subject", () => {
     // Identical to the single-reference lane's fact set, which is the one thing
     // the two assemblers currently agree on — they reach it through different
     // wording, ordering and budgets (audit finding 4).
-    expect(presentVisualFacts(prompt)).toEqual([
-      "hairColor",
-      "eyeColor",
-      "skinTone",
-      "apparentAge",
-      "garment",
-      "legBuild",
-    ]);
-    expect(duplicatedVisualFacts(prompt)).toEqual([]);
+    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "apparentAge", "garment", "legBuild"]);
   });
 
   it("chat look: apparent age and the requested outfit, and no other character fact", () => {
@@ -168,7 +169,7 @@ describe("image lane characterization — dressed subject", () => {
       outfitExposed: false,
       ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
     });
-    expect(presentVisualFacts(prompt)).toEqual(["apparentAge", "garment"]);
+    expectLaneFacts(prompt, ["apparentAge", "garment"]);
   });
 
   it("portrait variant: apparent age and the requested change, and no other character fact", () => {
@@ -177,14 +178,13 @@ describe("image lane characterization — dressed subject", () => {
       "wearing a floor-length wine-red silk kimono",
       apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
     );
-    expect(presentVisualFacts(prompt)).toEqual(["apparentAge", "garment"]);
+    expectLaneFacts(prompt, ["apparentAge", "garment"]);
   });
 });
 
 describe("image lane characterization — bare subject", () => {
   it("scene, text-to-image: exposure is stated, intimate anatomy is not (censored route)", () => {
-    const prompt = buildSceneRenderPrompt(scenePlan(bareMember), {});
-    expect(presentVisualFacts(prompt)).toEqual([
+    expectLaneFacts(buildSceneRenderPrompt(scenePlan(bareMember), {}), [
       "gender",
       "ethnicity",
       "species",
@@ -209,7 +209,7 @@ describe("image lane characterization — bare subject", () => {
       referenceName: LANE_PROBE_NAME,
       allowIntimate: true,
     });
-    expect(presentVisualFacts(prompt)).toEqual([
+    expectLaneFacts(prompt, [
       "hairColor",
       "eyeColor",
       "skinTone",

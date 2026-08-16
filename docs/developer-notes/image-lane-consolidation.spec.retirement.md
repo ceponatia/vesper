@@ -46,10 +46,17 @@ documentation confirmed the finding before removal:
 - `speciesAppearancePhrase`, while live species label/morphology machinery
   remains.
 
-Removed with each: the implementation, the `server/images` barrel entry, the
-tests that existed only to preserve the dead API, and every comment naming it as
-the live analogue for a behavior — those now name `sceneRevealAppearance` and
-`speciesLabelPhrase`.
+Removed with each: the implementation, the `server/images` barrel entry, and the
+tests that existed only to preserve the dead API.
+
+Every **live** site naming either symbol as the analogue for a behavior now names
+the surviving one — `sceneRevealAppearance` or `speciesLabelPhrase`. That covers
+source comments, the reference docs below, and one queued working spec
+(`character-reference-views.spec.md`, whose intimate-gate rule cited
+`intimateSceneAppearance` as the shape to copy and would otherwise have pointed
+its implementer at a deleted API). Dated audits keep their original wording:
+`visual-state.audit.md` and `codebase-modularity.audit.md` record what the code
+was on the day they ran, and rewriting a finding is not the same as fixing it.
 
 Two pieces of real coverage were migrated rather than deleted, because their
 subject was the behavior and not the API: the `renderNoneInPrompts` case for an
