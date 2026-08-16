@@ -150,13 +150,14 @@ task begins using it, task profiles must replace this global override.
 
 **Juggernaut XL v9, Pony Realism v2.3, RealVis Hyper LoRA** — **no entry.**
 
-Owner ruling (2026-08-16) removed these three from the reviewed set. They are the
-unseeded community checkpoints an admin adds by hand; they keep their catalog
-pages in `docs/image-models/` and now run on their wrappers' own defaults, with
-no reviewed dimensions, no cleared negative, and no seeded profile controls.
-Juggernaut therefore renders at its cog's 5-step, guidance-2, 1024-square preset
-again, and RealVis sends its boilerplate negative — accepted, because neither is
-a model this plan invests in.
+Owner ruling (2026-08-16) removed these three from the reviewed set, and their
+production registry rows — admin-added during the probe work, all with zero
+profile rows — were deleted from Neon the same day, so nothing can select them.
+They keep their catalog pages in `docs/image-models/`; an admin who re-adds one
+gets the wrapper's own defaults, with no reviewed dimensions, no cleared
+negative, and no seeded profile controls — Juggernaut at its cog's 5-step,
+guidance-2, 1024-square preset, RealVis with its boilerplate negative sent.
+Accepted, because neither is a model this plan invests in.
 
 The registry has no generic width/height aspect mode, which is why the surviving
 dimension pins below travel through `extraInput` rather than an aspect key:
