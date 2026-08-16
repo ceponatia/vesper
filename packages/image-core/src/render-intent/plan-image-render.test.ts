@@ -1,3 +1,4 @@
+import { DiagnosticCollector } from "@vesper/contracts";
 import { describe, expect, it } from "vitest";
 import { imageModelSchema, type ImageModel } from "../models/image-models";
 import {
@@ -11,6 +12,7 @@ import {
   type ImageRenderReference,
   type ImageRenderRuntimeFacts,
 } from "./plan-image-render";
+import { type ImagePromptSegment, isMandatoryImagePromptSegmentKind } from "./prompt-segments";
 
 /**
  * The deployment facts every case plans under. They are an ARGUMENT now rather
@@ -721,5 +723,68 @@ describe("required control inputs", () => {
       }),
     );
     expect(plan.controlReferences).toHaveLength(1);
+  });
+});
+
+describe("prompt segments", () => {
+  const segment = (kind: ImagePromptSegment["kind"], text: string, priority = 0): ImagePromptSegment => ({
+    kind,
+    text,
+    mandatory: isMandatoryImagePromptSegmentKind(kind),
+    priority,
+  });
+
+  it("leaves a segmentless intent byte-identical — every lane today", () => {
+    expect(planned(intent()).prompt).toBe("a scene in a warm room");
+    expect(planned(intent({ promptSegments: [] })).prompt).toBe("a scene in a warm room");
+  });
+
+  it("compiles segments in canonical order and ignores the flat prompt", () => {
+    const plan = planned(
+      intent({
+        prompt: "IGNORED-CANARY",
+        promptSegments: [segment("setting", "A warm room."), segment("identity", "Preserve Mira's exact face.")],
+      }),
+    );
+    expect(plan.prompt).toBe("Preserve Mira's exact face. A warm room.");
+    expect(plan.prompt).not.toContain("IGNORED-CANARY");
+  });
+
+  it("does not fit a prompt on a model whose version declared no prompt limits", () => {
+    // Every seeded model is in this state, which is why segments arriving cannot
+    // shorten anything today.
+    const long = "A warm room. ".repeat(200);
+    const plan = planned(intent({ promptSegments: [segment("setting", long)] }));
+    expect(plan.prompt).toBe(long.trim());
+  });
+
+  it("drops optional detail — not the identity lock — against a declared ceiling", () => {
+    const sink = new DiagnosticCollector();
+    const result = planImageRender(
+      intent({
+        profile: resolved({
+          advancedCapabilities: { ...CAPABILITIES, prompt: { field: "prompt", maxChars: 40 } },
+        }),
+        promptSegments: [
+          segment("identity", "Preserve Mira's exact face."),
+          segment("atmosphere", "Quiet and unhurried, late in the day."),
+        ],
+      }),
+      RUNTIME,
+      sink,
+    );
+    if (!result.ok) throw new Error(`[render-intent] unexpected refusal: ${result.refusal.code}`);
+    expect(result.plan.prompt).toBe("Preserve Mira's exact face.");
+    expect(sink.items.map((entry) => entry.code)).toContain("image_prompt.segments_trimmed");
+  });
+
+  it("never lets a segment's diagnostic source reach the payload", () => {
+    const plan = planned(
+      intent({
+        promptSegments: [{ ...segment("identity", "Preserve Mira's face."), source: "SOURCE-CANARY" }],
+      }),
+    );
+    expect(plan.prompt).toBe("Preserve Mira's face.");
+    expect(JSON.stringify(plan.controlInput)).not.toContain("SOURCE-CANARY");
   });
 });

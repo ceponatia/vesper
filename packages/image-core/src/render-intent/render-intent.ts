@@ -11,6 +11,7 @@ import type {
   ImageReferencePolicy,
   ImageRenderControls,
 } from "../models/image-model-profiles";
+import type { ImagePromptSegment } from "./prompt-segments";
 
 /**
  * The normalized render request every image lane speaks
@@ -114,8 +115,33 @@ export interface ImageRenderTarget {
  * would let them disagree.
  */
 export interface ImageRenderIntentCore {
-  /** The lane's prompt, BEFORE the profile's prompt strategy compiles it. */
+  /**
+   * The lane's prompt, BEFORE the profile's prompt strategy compiles it.
+   *
+   * The fallback rather than the only channel since prompt segments arrived: a
+   * lane that supplies {@link ImageRenderIntentCore.promptSegments} has said the
+   * same thing in a form the render path can reason about, and that form wins.
+   * Every lane still sets this, and every lane still sends exactly it.
+   */
   prompt: string;
+  /**
+   * The same prompt said semantically — ordered segments the render path may
+   * order, fit and (later) compile into a model's own dialect
+   * (image-render-quality.spec.md §"Structured prompt segments").
+   *
+   * AUTHORITATIVE over `prompt` when present and non-empty, because the two are
+   * two spellings of one request and a render that merged them would say
+   * everything twice. Absent on every lane today, which is what keeps the field's
+   * arrival payload-neutral: with no segments there is nothing to compile, and
+   * `prompt` travels exactly as it always did.
+   *
+   * The point of carrying them rather than the finished paragraph is what fitting
+   * can then promise. A budget squeeze on a string removes whatever happened to
+   * be last, which is where the identity lock and the age anchor were appended; a
+   * squeeze on segments removes the lowest-priority OPTIONAL one and leaves the
+   * mandatory floor standing.
+   */
+  promptSegments?: readonly ImagePromptSegment[];
   target: ImageRenderTarget;
   /**
    * Per-render control overrides, merged over the profile's stored defaults. No

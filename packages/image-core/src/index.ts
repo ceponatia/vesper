@@ -94,6 +94,11 @@ export {
   providerVersionsDisagree,
   referenceCapacity,
   resolveImageProfile,
+  reviewedImageProfileControls,
+  reviewedImageQualityControlFields,
+  reviewedImageQualityInputs,
+  reviewedImageQualityPolicy,
+  reviewedImageQualitySlugs,
   validateImageProfileConfiguration,
   withReviewedImageQuality,
 } from "./models";
@@ -119,6 +124,8 @@ export type {
   ImageResolutionTier,
   ImageSeedPolicy,
   ResolvedImageProfile,
+  ReviewedImageControlDefaults,
+  ReviewedImageQualityPolicy,
 } from "./models";
 export {
   IMAGE_LORA_INCOMPATIBLE,
@@ -146,15 +153,27 @@ export type {
   ImageLoraUpdateRequest,
 } from "./loras";
 export {
+  compileImagePromptSegments,
+  fitImagePromptSegments,
   identityCandidateReferenceSpecs,
+  imagePromptBudgetFromBinding,
+  imagePromptSegmentKinds,
+  isMandatoryImagePromptSegmentKind,
+  joinImagePromptSegments,
   missingRequiredControlInputs,
   missingRequiredReferenceRoles,
+  normalizeImagePromptSegments,
+  orderImagePromptSegments,
   planImageRender,
   planIntentReferences,
 } from "./render-intent";
 export type {
   DroppedImageReference,
+  FittedImagePromptSegments,
   IdentityReferenceSpec,
+  ImagePromptBudget,
+  ImagePromptSegment,
+  ImagePromptSegmentKind,
   ImageRenderIntent,
   ImageRenderIntentCore,
   ImageRenderReference,

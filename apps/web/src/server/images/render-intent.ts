@@ -232,7 +232,11 @@ export async function renderImageIntent(
   const prepared = await resolveIntentLora(intent, sink);
   if (!prepared.ok) return { ok: false, error: prepared.error };
   const seeded = resolveIntentSeed(withLoraCredential(prepared.intent));
-  const planned = planImageRender(seeded.intent, currentRuntimeFacts());
+  // The sink reaches the planner because prompt fitting reports there: an intent
+  // carrying segments can lose optional detail, or a mandatory sentence, to a
+  // version's declared prompt ceiling, and that is a degradation an operator has
+  // to be able to see.
+  const planned = planImageRender(seeded.intent, currentRuntimeFacts(), sink);
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
     sink?.push(diag("warn", code, message, { path: "image_model_profiles", context }));
