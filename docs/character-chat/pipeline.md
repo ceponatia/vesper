@@ -89,7 +89,7 @@ exchange:
    (D14, flavor-only v1). Lazily seeds from the authored defaults when no row exists.
    A qualifying skip (cumulative ≥ one story day since the last pass) also fires the
    detached **meanwhile pass** (`chat_meanwhile` job — chat-offscreen-life,
-   [the spec](../developer-notes/chat-offscreen-life.spec.md)): one call proposing the
+   [the spec](../developer-notes/finished/chat-offscreen-life.spec.md)): one call proposing the
    cast's off-screen developments, folded into facts / drives / cast / plans /
    whereabouts + the one-shot meanwhile note. Fire-and-forget: the next exchange
    proceeds on grounded improvisation if it hasn't landed.

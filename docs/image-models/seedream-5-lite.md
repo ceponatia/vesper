@@ -7,9 +7,8 @@
 > editing, and deep domain knowledge.
 
 Replicate publishes only the "lite" edition of Seedream 5 — there is no plain
-`bytedance/seedream-5`. Verified end to end in a live trial on 2026-08-05:
-[seedream-5-lite.trial.md](../developer-notes/images/seedream-5-lite.trial.md).
-Identity held across a scene change; output was natively 3:4. Not a Vesper
+`bytedance/seedream-5`. It is verified end to end against a live scene: identity
+held across a scene change, and output came back natively 3:4. Not a Vesper
 default because it is slow.
 
 ## Measured behaviour
