@@ -437,7 +437,7 @@ start.
 | ----- | ---------------------------------- | ---------------------------- |
 | 0     | reviewed 2026-08-16                | Source + duplication audit   |
 | 1     | reviewed 2026-08-16                | Contract + compat adapter    |
-| 2     | built 2026-08-16 — awaiting review | Identity + presentation      |
+| 2     | reviewed 2026-08-16                | Identity + presentation      |
 | 3–10  | not started                        | Everything else in this spec |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
