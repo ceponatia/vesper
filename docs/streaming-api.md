@@ -30,7 +30,7 @@ Creates return 201 with the row. Deleting an entity still referenced by another 
 
 The four shareable detail GETs (`characters`/`locations`/`items`/`social-cards`) carry a `mine` flag and shape the entity to it: the owner gets the full row, a **foreign viewer of a public row gets the allow-listed public representation** — no `ownerId`, no embedding/authoring internals, portraits reduced to `{ id, kind, entityKind, entityId, createdAt }`. See [auth.md](auth.md) §"Public" is a representation, not the row.
 
-The character-chat lane's HTTP surface (`/api/chats/*` — the transcript GET, the send/rerun SSE, scene/relationship/time-skip routes, and its diagnostic codes) is documented in [character-chat/api.md](character-chat/api.md). The successor engine's routes live under `/api/chats` and `/api/admin/*` (see [contracts/simulation.md](contracts/simulation.md)).
+The character-chat lane's HTTP surface (`/api/chats/*` — the transcript GET, the send/rerun SSE, scene/relationship/time-skip routes, and its diagnostic codes) is documented in [character-chat/api.md](character-chat/api.md). The successor engine's routes live under `/api/chats` and `/api/admin/*` (see [engine/boundaries.md](engine/boundaries.md)).
 
 ### Misc
 ```
