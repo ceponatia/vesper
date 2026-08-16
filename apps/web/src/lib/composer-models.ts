@@ -49,16 +49,26 @@ export interface SceneComposerModelOption {
 
 /**
  * The curated candidate set. Ordered cheapest-blended-cost LAST is deliberately NOT
- * the rule: the control sits first because it is the model every other row is measured
- * against, and the rest run roughly fastest-first, which is the axis an operator is
- * switching on. Floating aliases are allowed here for evaluation/admin use; the app
- * default is separately required to be pinned.
+ * the rule: the **shipped default sits first**, the A/B control second (it is the row
+ * every other one was measured against), and the rest run roughly fastest-first, which
+ * is the axis an operator is switching on. Floating aliases are allowed here for
+ * evaluation/admin use; the app default is separately required to be pinned.
+ *
+ * The pinned default and the `~…-latest` alias below are the SAME weights today
+ * (the alias resolved to `deepseek-v4-flash-0731` when the default was promoted).
+ * They are both listed on purpose: the pin is what production is measured on, and the
+ * alias is how a newer snapshot gets tried on one conversation before it is promoted.
  */
 export const SCENE_COMPOSER_MODELS: readonly SceneComposerModelOption[] = [
   {
+    id: "deepseek/deepseek-v4-flash-0731",
+    label: "DeepSeek 4 Flash (default)",
+    description: "The shipped default. Matched Aion 3.0's score in the A/B at ~1/12 the latency and ~1/45 the cost; runs with reasoning off.",
+  },
+  {
     id: "aion-labs/aion-3.0",
-    label: "Aion 3.0 (control)",
-    description: "The shipped default. Most permissive, most expensive, and slowest — reasoning is mandatory on this endpoint.",
+    label: "Aion 3.0 (former default)",
+    description: "The A/B control. Most permissive, most expensive, and slowest — reasoning is mandatory on this endpoint.",
   },
   {
     id: "aion-labs/aion-3.0-mini",
@@ -72,8 +82,8 @@ export const SCENE_COMPOSER_MODELS: readonly SceneComposerModelOption[] = [
   },
   {
     id: "~deepseek/deepseek-v4-flash-latest",
-    label: "DeepSeek 4 Flash",
-    description: "The in-session agent default — fast, ~44× cheaper than the control on tokens, and already trusted with structured JSON.",
+    label: "DeepSeek 4 Flash (latest)",
+    description: "The floating alias the agent lane rides. Same family as the default, but follows new releases — for trying a newer snapshot without a deploy.",
   },
   {
     id: "qwen/qwen3.7-flash",
@@ -95,23 +105,29 @@ export const SCENE_COMPOSER_MODELS: readonly SceneComposerModelOption[] = [
 /**
  * The composer model used when the chat has no admin override.
  *
- * Aion 3.0 is the character-chat narrative default (narrative-models.ts), so it is
- * already proven on this repo's most explicit text. Flipped onto the composer's own
- * seam ahead of the slice-2 probe on owner instruction (2026-08-14).
+ * **DeepSeek 4 Flash, pinned, reasoning off** (owner ruling 2026-08-15, promoted from
+ * Aion 3.0). The A/B scored it level with the control across seven beats — four of them
+ * explicitly intimate — at roughly a twelfth of the latency and a forty-fifth of the
+ * cost, and it never once degraded, so the Aion 2.0 refusal rung stays unexercised
+ * (0/14 measured, against the owner's 10% review threshold). Aion 3.0's reasoning is
+ * mandatory on its endpoint, so every composition it planned paid for a trace nothing
+ * read; the winning arm turns reasoning off instead, which is why promoting it is a
+ * model id **plus** a call policy — see `composerDisablesReasoning` in
+ * `server/ai/provider.ts`. Changing this constant alone would ship a different product
+ * from the one that was measured.
  *
- * **It is also the slowest and priciest option by a wide margin** — $3/$6 per M against
- * DeepSeek 4 Flash's $0.0675/$0.135, and the AionLabs endpoint mandates reasoning
- * (`reasoning:{enabled:false}` is rejected there), so every composer call silently pays
- * for a reasoning trace nothing reads. Moving this default is what
- * `scripts/eval/scene-images/composer-model-ab.ts` exists to justify; until that probe
- * has an owner verdict, the default stays where the ruling put it.
+ * Pinned to the dated snapshot rather than `~deepseek/deepseek-v4-flash-latest`, which
+ * is the id the A/B actually asked: the alias resolved to this exact snapshot at
+ * promotion time, and pinning is what stops a provider-side release from silently
+ * changing scene composition. `composer-models.test.ts` rejects a `~`-prefixed or
+ * `-latest` default so the pin cannot be undone by accident.
  *
- * Production defaults are pinned deliberately. Floating aliases such as `~...-latest`
- * may be evaluated above, but the exact snapshot that wins must be pinned before it is
- * promoted so a provider-side model update cannot silently change scene composition.
- * `composer-models.test.ts` enforces that contract.
+ * The dated slug is listed at ~2× the alias's price because OpenRouter prices a slug by
+ * its cheapest endpoint and the alias reaches a cheaper pool. `PROVIDER_ORDER`
+ * (`server/ai/provider.ts`) closes that gap by routing this snapshot to the cheap fp8
+ * endpoints directly, so the pin costs what the tested alias cost.
  */
-export const DEFAULT_SCENE_COMPOSER_MODEL_ID = "aion-labs/aion-3.0";
+export const DEFAULT_SCENE_COMPOSER_MODEL_ID = "deepseek/deepseek-v4-flash-0731";
 
 /**
  * Resolve a persisted/over-the-wire composer id to a curated one. STRICT, for the

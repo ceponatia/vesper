@@ -42,10 +42,11 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   the same wording and weights without a chat.
 
 - **Scene composer model — a fast, cheap shot planner** —
-  [plan](composer-model.plan.md) · [spec](composer-model.spec.md) — the model
-  that plans every scene image is the slowest and priciest in the app; the
-  self-grading A/B and the per-chat picker are built, and the paid comparison
-  run is the next step.
+  [plan](composer-model.plan.md) · [spec](composer-model.spec.md) — every slice
+  is built and the default has moved to DeepSeek 4 Flash, pinned and reasoning
+  off: scene images now wait about three seconds on the shot planner instead of
+  forty-five. Waiting on a confirming A/B re-run and the first renders on the
+  deployed build.
 
 ## Next (queued, in dependency order)
 

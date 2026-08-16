@@ -74,6 +74,34 @@ const PROVIDER_IGNORE: Readonly<Record<string, readonly string[]>> = {
   "z-ai/glm-5.2": ["deepinfra"],
 };
 
+/**
+ * Per-model OpenRouter provider **preference order**, keyed by model id. Entries are
+ * `provider/quantization` tags, tried left to right before OpenRouter's own choice.
+ *
+ * Why this exists at all: OpenRouter prices a model slug by its cheapest endpoint but
+ * routes an unconstrained call by its own blend of price, latency and uptime. For
+ * `deepseek-v4-flash-0731` that difference is a factor of two — an unrouted probe landed
+ * on CoreWeave at $0.13/$0.28 per M when endpoints at $0.07/$0.14 were up. The composer
+ * runs on every scene image, so that gap is the whole cost case for moving off Aion 3.0.
+ *
+ * The list is **fp8-or-better on purpose.** Two endpoints undercut these by ~2%
+ * (Decart, OpenInference) and both serve fp4; the composer's entire output is a
+ * structured object that has to parse, this repo already refused provider-side
+ * constrained decoding because models degenerate under it (followups.phase2.md #20), and
+ * 2% is not worth spending on the most aggressive quantization on the board. US-hosted
+ * endpoints are preferred over the two marginally cheaper CN-hosted ones (StreamLake,
+ * Baidu) for the same reason: the saving is ~2% and the composer is handed the most
+ * explicit stretch of a conversation. Neither exclusion is a capability judgement —
+ * both would serve the model fine.
+ *
+ * `allow_fallbacks` stays ON. If every listed endpoint is down, a pricier DeepSeek
+ * endpoint is still far better than what the alternative actually is: the composer
+ * ladder degrading to its Aion 2.0 refusal rung at ~20× the token price.
+ */
+const PROVIDER_ORDER: Readonly<Record<string, readonly string[]>> = {
+  "deepseek/deepseek-v4-flash-0731": ["gmicloud/fp8", "deepinfra/fp8"],
+};
+
 /** OpenRouter `provider` routing block (the subset of knobs we set), shaped as a JSON object for `providerOptions`. */
 export type OpenRouterRouting = Record<string, JSONValue>;
 
@@ -117,6 +145,14 @@ export function providerRouting(
   if (opts.sortLatency) routing.sort = "latency";
   const ignore = PROVIDER_IGNORE[modelId];
   if (ignore && ignore.length > 0) routing.ignore = [...ignore];
+  const order = PROVIDER_ORDER[modelId];
+  if (order && order.length > 0) {
+    routing.order = [...order];
+    // Explicit rather than relying on the API default: a preference that silently became
+    // a restriction would turn a cheap-routing tweak into an outage the day both
+    // endpoints are down.
+    routing.allow_fallbacks = true;
+  }
   return Object.keys(routing).length > 0 ? routing : undefined;
 }
 
@@ -214,6 +250,36 @@ export function sceneComposerModelId(chatComposerModel?: string | null): string 
     MODEL_DEFAULTS.sceneComposer,
     "ai.scene_composer_model",
   );
+}
+
+/**
+ * Composer models that are asked with `reasoning:{enabled:false}` — the winning A/B
+ * arm's call configuration, not a preference.
+ *
+ * The composer's job is a short structured extraction over a transcript, so a reasoning
+ * trace is latency and tokens nobody reads. The `dsflash-off` arm scored level with the
+ * `dsflash-low` arm's +1% at roughly a third of its latency, and the owner took the
+ * time over the point (2026-08-15).
+ *
+ * **Opt-in per model, never a blanket flag**, because the option is not universally
+ * accepted: the AionLabs endpoints REJECT it outright ("Reasoning is mandatory for this
+ * endpoint" — it killed all 12 `off` cells of the narrator eval), and Aion 2.0 is both a
+ * curated composer option and the ladder's refusal rung. A model absent from this set
+ * sends no reasoning option at all, which is exactly how it was measured.
+ */
+const COMPOSER_REASONING_OFF: ReadonlySet<string> = new Set([
+  "deepseek/deepseek-v4-flash-0731",
+  "~deepseek/deepseek-v4-flash-latest",
+]);
+
+/**
+ * Whether this composer model is asked with reasoning disabled. Applied per RUNG by
+ * `composeSceneSpec`: the primary and the refusal fallback resolve independently, so a
+ * DeepSeek primary can run reasoning-off while its Aion 2.0 rung — which would reject
+ * the option — is asked without it.
+ */
+export function composerDisablesReasoning(modelId: string): boolean {
+  return COMPOSER_REASONING_OFF.has(modelId);
 }
 
 /**
