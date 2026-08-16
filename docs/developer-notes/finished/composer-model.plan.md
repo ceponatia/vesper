@@ -6,13 +6,17 @@ confirming re-run this plan had reserved is **waived** rather than pending.
 Accepted with one element knowingly open — both paid runs were measured on the
 pre-fix prompt and grader, so their per-axis staging and camera numbers stay
 instrument-bound (the reasoning why the promotion survives that, and what it
-rests on instead, is in the spec's Results section). Two things outlived the
-plan and neither blocks it: the deployed build has not yet been watched for the
-terser composer prose recorded in
-[composer-model.spec.md](composer-model.spec.md) §"Per-arm verdicts", and the
+rests on instead, is in the spec's Results section). **Confirmed on the deployed
+build (owner, 2026-08-16): the composer runs on Fly and scene images generate
+substantially faster.** That closes the promotion's last open check — the A/B
+predicted the speed-up from a bench, and the running app shows it.
+
+One thing outlived the plan and does not block it: the
 `~deepseek/deepseek-v4-flash-latest` row stays curated as the way to try a newer
-snapshot on one conversation. A regression in either becomes
-`composer-model.followups.md`.
+snapshot on one conversation before pinning it. The terser composer prose
+recorded in [composer-model.spec.md](composer-model.spec.md) §"Per-arm verdicts"
+drew no complaint on the deployed build and is left as a known trait rather than
+a defect. A regression in either becomes `composer-model.followups.md`.
 
 Outcome: The owner can run one command that scores every candidate shot-planning
 model against today's on the same intimate scenes, and can switch a live
