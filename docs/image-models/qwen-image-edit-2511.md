@@ -45,9 +45,10 @@ identity checks should remain separate from the coarse eligibility rating.
 
 ## Quality policy at the render seam
 
-The provider defaults `go_fast` to `true`. This model's seeded profiles carry
-empty control defaults, so `packages/image-core/src/models/quality-presets.ts`
-applies the reviewed effective setting at the shared render seam:
+The provider defaults `go_fast` to `true`. The reviewed policy
+(`packages/image-core/src/models/reviewed-profile-controls.ts`) pins it off,
+carried both by this model's task profiles (as a provider override) and by the
+transitional overlay at the shared render seam:
 
 ```json
 {

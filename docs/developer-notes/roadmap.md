@@ -44,9 +44,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   fidelity** — [plan](image-render-quality.plan.md) ·
   [spec](image-render-quality.spec.md) — the content and tuning companion to the
   shipped capabilities plan, now scoped to the Qwen family and the recent seeded
-  models; prompt segments and profile-control parity are in, the seeded controls
-  activate as model rows are probed, and the dialect compilers are the next code
-  slice.
+  models; prompt segments and profile controls are live end-to-end on the probed
+  reviewed rows, and the dialect compilers are the next code slice.
 
 ## Next (queued, in dependency order)
 

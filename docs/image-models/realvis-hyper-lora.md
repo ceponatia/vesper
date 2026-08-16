@@ -45,7 +45,7 @@ The provider defaults to 768×1024, which is already Vesper's 3:4 portrait shape
 `cropToTargetAspect` returns the buffer unchanged at that size.
 
 Vesper does not pin those values. This model is outside the reviewed set, so
-`packages/image-core/src/models/quality-presets.ts` has no entry for it and the
+the reviewed policy (`packages/image-core/src/models/reviewed-profile-controls.ts`) has no entry for it and the
 generic registry has no free width/height aspect mode to negotiate one either.
 The shape therefore rides on the wrapper's own default, and a future wrapper
 update that changed it would change Vesper's output shape with nothing to catch
