@@ -12,6 +12,7 @@ import {
   sceneStagings,
   stagingEvidenceFromContacts,
   type SceneContactPairRead,
+  type SceneStagingId,
 } from "./scene-staging";
 import { viewerBodyPartById } from "./viewer-body";
 
@@ -49,6 +50,38 @@ describe("the staging registry", () => {
     for (const id of sceneStagingIds) expect(sceneStagingById(id)?.id).toBe(id);
     expect(sceneStagingById("carried_bridal")).toBeUndefined();
     expect(sceneStagingById("")).toBeUndefined();
+  });
+
+  it("every entry carries a selection hint, and no two are the same sentence", () => {
+    for (const entry of sceneStagings) {
+      expect(entry.hint.trim().length, entry.id).toBeGreaterThan(0);
+      // The hint is read by a planner choosing an id, not rendered into a prompt, so it
+      // carries no `{name}` placeholder — a stray one would reach a model as literal braces.
+      expect(entry.hint, entry.id).not.toContain("{name}");
+    }
+    const hints = sceneStagings.map((entry) => entry.hint);
+    expect(new Set(hints).size).toBe(hints.length);
+  });
+
+  it("gives sibling variants hints that name what separates them", () => {
+    // The pairs that cost the 2026-08-15 A/B: each differs from its sibling by one detail,
+    // and a hint that omitted that detail would leave the composer guessing between two
+    // entries that describe the same act.
+    const hint = (id: SceneStagingId): string => sceneStagingById(id)?.hint.toLowerCase() ?? "";
+
+    // Hand on her head is the whole of the difference here.
+    expect(hint("kneeling_before_viewer_guided")).toContain("head");
+    expect(hint("kneeling_before_viewer")).not.toContain("on top of her head");
+
+    // Bare-ness is the whole of the difference here.
+    expect(hint("held_from_behind_bare")).toContain("bare");
+    expect(hint("held_from_behind")).toContain("dressed");
+
+    // Facing is the whole of the difference in these two pairs.
+    expect(hint("astride_viewer_facing")).toContain("facing");
+    expect(hint("astride_viewer_away")).toContain("away");
+    expect(hint("pressed_to_wall_facing")).toContain("facing");
+    expect(hint("pressed_to_wall_away")).toContain("back to the viewer");
   });
 
   it("every template is a non-empty {name} template", () => {

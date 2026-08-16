@@ -123,13 +123,39 @@ export interface SceneShotDistance {
   id: SceneShotDistanceId;
   /** The shot-line fragment; a `{name}` template like every phrase in this file. */
   phrase: string;
+  /**
+   * What the id MEANS, for the composer choosing between them — see {@link SceneCameraHeight.hint}
+   * for why the two audiences get two fields.
+   *
+   * Stated as how much of the body the frame holds, never as how physically near the viewer
+   * is standing. That is the confusion the bare id list invited: "he stops right behind her,
+   * close enough to feel the heat off the pan" reads as `close`, and the shot that beat wants
+   * is a medium two-body frame.
+   */
+  hint: string;
 }
 
 export const sceneShotDistances: readonly SceneShotDistance[] = [
-  { id: "close", phrase: "a close shot of {name}, tight in the frame" },
-  { id: "medium", phrase: "a medium shot of {name}, head and torso in the frame" },
-  { id: "full_figure", phrase: "a full-figure shot with the whole of {name} inside the frame" },
-  { id: "wide", phrase: "a wide shot with {name} small in the frame and the surrounding space open around {name}" },
+  {
+    id: "close",
+    phrase: "a close shot of {name}, tight in the frame",
+    hint: "head and shoulders fill the frame; one body, little room around it",
+  },
+  {
+    id: "medium",
+    phrase: "a medium shot of {name}, head and torso in the frame",
+    hint: "head to roughly the waist — the default, and what two bodies in contact usually need",
+  },
+  {
+    id: "full_figure",
+    phrase: "a full-figure shot with the whole of {name} inside the frame",
+    hint: "the whole body head to foot, when the pose is the point",
+  },
+  {
+    id: "wide",
+    phrase: "a wide shot with {name} small in the frame and the surrounding space open around {name}",
+    hint: "the body small in the frame with the room around it, when the place is the point",
+  },
 ];
 
 export function sceneShotDistanceById(id: string): SceneShotDistance | undefined {
@@ -158,6 +184,18 @@ export interface SceneCameraHeight {
    * rule; the resolver states the one exception to it.
    */
   evidenceRequired: boolean;
+  /**
+   * What the id MEANS, for the composer choosing between them — the recognition cue, stated
+   * as the bodily arrangement that makes this the right answer.
+   *
+   * Separate from {@link phrase} because the two have different audiences and different
+   * jobs. `phrase` is render text, tuned against what image models obey (frame-anchored,
+   * "high-angle shot", where the subject sits in the frame — see the note above this array);
+   * a hint is read by a planner deciding which id the story establishes. Tuning one for its
+   * own audience must not silently retrain the other, and keeping both in the registry is
+   * what stops the composer prompt and the render vocabulary drifting apart.
+   */
+  hint: string;
 }
 
 /*
@@ -171,18 +209,25 @@ export interface SceneCameraHeight {
  * (an arm entering from the top edge, a body receding from the bottom) anchored it.
  */
 export const sceneCameraHeights: readonly SceneCameraHeight[] = [
-  { id: "eye_level", phrase: "the camera at eye level with {name}", evidenceRequired: false },
+  {
+    id: "eye_level",
+    phrase: "the camera at eye level with {name}",
+    evidenceRequired: false,
+    hint: "the two are level — standing together, sitting together, lying together",
+  },
   {
     id: "high",
     phrase:
       "a high-angle shot from above, the camera looking down on {name} from the viewer's standing height, {name} framed below the camera in the lower half of the frame",
     evidenceRequired: true,
+    hint: "the viewer is above her, looking down — she is kneeling, sitting, lying, or bent while they are not",
   },
   {
     id: "low",
     phrase:
       "a low-angle shot from below, the camera under {name}'s eye line looking up, {name} rising above the camera toward the top of the frame",
     evidenceRequired: true,
+    hint: "the viewer is below her, looking up — she is above them, astride or standing over",
   },
 ];
 
