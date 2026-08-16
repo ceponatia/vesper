@@ -6,10 +6,10 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0 and 1 are built (see [Implementation status](#implementation-status));
-everything from slice 2 onward — every adapter, flag, visibility read, salience
-score and consumer digest below — is still a design rather than a description of
-code. The modules it reuses are all live:
+Slices 0–2 are built (see [Implementation status](#implementation-status));
+everything from slice 3 onward — every remaining adapter, flag, visibility read,
+salience score and consumer digest below — is still a design rather than a
+description of code. The modules it reuses are all live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -433,11 +433,12 @@ start.
 
 ## Implementation status
 
-| Slice | State                                  | Owns                          |
-| ----- | -------------------------------------- | ----------------------------- |
-| 0     | built 2026-08-16 — awaiting review     | Source + duplication audit    |
-| 1     | built 2026-08-16 — awaiting review     | Contract + compat adapter     |
-| 2–10  | not started                            | Everything else in this spec  |
+| Slice | State                              | Owns                         |
+| ----- | ---------------------------------- | ---------------------------- |
+| 0     | reviewed 2026-08-16                | Source + duplication audit   |
+| 1     | reviewed 2026-08-16                | Contract + compat adapter    |
+| 2     | built 2026-08-16 — awaiting review | Identity + presentation      |
+| 3–10  | not started                        | Everything else in this spec |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -447,6 +448,23 @@ parser, the snapshot builder with its deterministic order, and the
 `ProjectedFeatureTruth` compatibility adapter. Nothing outside that folder
 changed except one line adding it to the `contracts` barrel — no adapter, no
 flag, no consumer, no schema.
+
+Slices 0–1 were reviewed on 2026-08-16. Every invariant held and the compatibility
+seam was confirmed preserved. The review raised four corrections, all of which
+landed inside slice 2 rather than as a separate change: the feature validator did
+not actually run its own wire schema, so an adapter could mint a record the
+boundary parser would refuse; the canonical-JSON fingerprint decision was
+unpinned, so the whole suite stayed green when the fingerprint was swapped for a
+hash; the compatibility adapter's repeat-family test was tautological; and the
+`garment_part` locus key could alias two different parts whose ids contain a
+colon — unreachable in slice 1, reachable the moment a garment adapter exists.
+
+Slice 2 added, in the same folder: the composition resolver and its snapshot
+wiring, the non-item presentation owner with its typed operations and reducer,
+adapters for species feature groups and for garment/item loci, eight new
+registered kinds, a scope leaf, a suppression leaf, and four diagnostics. Still
+nothing outside the folder: no adapter under `server/`, no flag, no consumer, no
+schema, no persistence.
 
 ### What the audit changed about later slices
 
@@ -529,11 +547,190 @@ The compatibility adapter is judged on preservation. For each
 
 ### Diagnostics declared so far
 
-Only the codes slice 1 emits exist: `visual_state.kind.unknown`,
-`visual_state.value.invalid`, `visual_state.locus.invalid`,
-`visual_state.locus.not_allowed`, `visual_state.feature.malformed`,
-`visual_state.tag.rejected`, `visual_state.snapshot.duplicate_key`,
-`visual_state.source.unavailable`. The visibility, detail-tier, intimate-gate,
-missing-mandatory-fact, stale-snapshot and extraction-conflict codes join with
-the slices that emit them; a declared but unreachable code reads like coverage
-that does not exist.
+Only the codes slices 1 and 2 emit exist. From slice 1:
+`visual_state.kind.unknown`, `visual_state.value.invalid`,
+`visual_state.locus.invalid`, `visual_state.locus.not_allowed`,
+`visual_state.feature.malformed`, `visual_state.tag.rejected`,
+`visual_state.snapshot.duplicate_key`, `visual_state.source.unavailable`. From
+slice 2: `visual_state.relationship.missing_target`,
+`visual_state.relationship.cycle`, `visual_state.presentation.entry_unknown`,
+`visual_state.presentation.operation_invalid`,
+`visual_state.presentation.entry_malformed`,
+`visual_state.species.feature_group_unplaced`.
+
+Two FOREIGN codes also reach a caller's sink from this family, because the sink
+is handed straight to a shared helper rather than wrapped:
+`appearance.locus.unknown_location` from `validateBodyLocusRef` and
+`parse.boundary_failed` from `parseOr`. That is deliberate — a reader wants the
+upstream reason, not a re-labelled one — so a caller asserting on codes should
+expect a namespaced pair rather than a single `visual_state.*` entry.
+
+The visibility, detail-tier,
+intimate-gate, missing-mandatory-fact, stale-snapshot and extraction-conflict
+codes join with the slices that emit them; a declared but unreachable code reads
+like coverage that does not exist.
+
+### Decisions slice 2 settled
+
+Nine places where this spec left latitude, could not be implemented as written,
+or ran into a missing owner. Each is recorded in the code that owns it.
+
+**"Signature presentation" resolved to the non-item presentation owner, and
+nothing else.** Slice 2's scope line names it, and it has no owner anywhere in
+the codebase: a search for `signature` finds a faerie's signature wing shape (a
+species attribute rule), a signature scent (the `presentation.scent_baseline`
+attribute), signature feature morphology in the avatar prompt (wings and tails
+again), and the forge's advice about signature garments. Not one of them is a
+structured "signature look". Two of the four are species feature groups, which
+this slice projects as identity; the scent is non-visual and stays where it is;
+the forge line is authoring advice. What remained — a deliberate, currently
+maintained, non-item look — is exactly the owner §"Presentation owner" already
+called for, so it was built as that rather than as a second concept beside it.
+No separate `signature.*` kind exists, and inventing one would have produced
+vocabulary with no writer and no reader.
+
+**Kind ids.** `species.feature_group`; `wardrobe.garment` and `wardrobe.item`;
+`presentation.hairstyle`, `presentation.makeup`, `presentation.grooming`,
+`presentation.nail_finish`, `presentation.cosmetic_mark`. The split between the
+two wardrobe kinds follows the plan's "jewelry, glasses, hats … remain
+item-backed": a piece in a subtyped clothing category (jewelry, headwear,
+eyewear) is `wardrobe.item` with an `item_locus` source, everything else is
+`wardrobe.garment` with a `garment` source. That is what gives the spec's
+`item_locus` source arm a real user, since accessories in Vesper are garment
+instances like any other.
+
+**`presentation.grooming` is not the `presentation.grooming` attribute.** The
+canonical attribute is the character's habitual standard ("she keeps herself
+immaculate"); the presentation kind is one area's deliberate state right now
+("the beard is trimmed"), typed as `{ area, state }`. Neither derives from the
+other, and the shared name is a coincidence of two owners choosing the same
+English word for adjacent facts.
+
+**Composition annotates, in a sibling of the feature list.** The resolver emits
+one `VisualStateCompositionEntry` per feature — accepted edges, `modifiedBy`,
+`replacedBy`, `coverage`, `occlusion`, `attachedTo`, `derivedFrom`, and an
+`effectiveVisibility` of `0` when something replaces the surface and
+`1 − max(coverage, occlusion)` otherwise. It lives on the snapshot beside
+`features`, not on each feature: folding "a coat is over this shirt" into the
+shirt's record would make the shirt's fingerprint depend on what else the
+character is wearing, and change detection would start firing on the wrong
+thing. `effectiveVisibility` is composition only — lighting, distance, angle,
+motion and framing multiply into it in slice 4.
+
+**A broken edge is dropped at the edge, not at the feature.** A relationship
+naming a key the snapshot does not hold, one that names its own feature, and one
+that closes a cycle are each suppressed with a diagnostic while the feature and
+its other edges survive. Cycles are broken by a single depth-first walk in
+snapshot order, so which edge of a cycle is blamed is a property of the contract
+rather than of an iteration order. Composition suppressions are appended to
+`VisualStateSnapshot.suppressions` after the duplicate-key ones, keyed by the
+source feature and detailed as `<relationship kind>:<target key>`.
+
+**Adapters emit edges only against features they were handed.** The wardrobe and
+presentation adapters take an optional `composeAgainst` list — the features
+earlier adapters produced — and assert a relationship only when the target is in
+it. An adapter that cannot see its target says nothing, so the resolver's
+missing-target path guards replay and hand-built input rather than firing on
+ordinary projection. The species adapter takes no such list: a feature group
+asserts nothing about other features.
+
+**A garment reaches only the locations clothing can sit on, and only while it is
+worn.** Coverage is the blueprint's baseline set expanded down the body tree and
+then filtered by `coverageRelevant`, the same rule `items/coverage.ts`,
+`garment-coverage.ts` and `items/visibility.ts` all apply. Skipping the filter is
+not cosmetic: expansion reaches locations no garment covers, so a plain shirt
+claimed full coverage of wings and a tail — zeroing the composed visibility of
+the features this slice marks mandatory for identity — and the same stray ids
+inflated the occlusion denominator by about a third. Body-surface edges are
+additionally gated on the `worn` locus; a hat in a hand and a jacket on a chair
+cover nothing, whatever subject the caller files them under.
+
+**Two change stamps are conditional, for one reason.** `changedAtMinutes` answers
+"when did this value last move", so it is written only when the value did.
+A presentation `restore` of an entry that was never disturbed and a `rearrange`
+to the arrangement already in force leave it alone; a garment stamps only for the
+change kinds this slice's value reflects (`mint` and `transfer`), never for the
+`presentation`, `condition`, `damage` and `repair` kinds whose facts are slice
+3's. Stamping either would advance the clock against an identical fingerprint and
+make an unchanged feature read as a change candidate.
+
+**One presentation slot per (subject, locus, aspect), where the aspect carries a
+discriminator.** `presentation.grooming` distinguishes four areas and
+`presentation.cosmetic_mark` six marks inside the value, and the body registry
+has no `brows` location — so brow grooming and facial-hair grooming both sit at
+`face`. With the slot keyed on kind alone, applying the second silently deleted
+the first, and a state holding both projected two features under one key for the
+snapshot to drop. Those two kinds therefore project under
+`presentation.grooming:brows` and supersede on the same identity; the three kinds
+with nothing to discriminate keep the bare aspect. The separator needs no
+escaping because every discriminator is a closed-enum member. The alternative —
+adding `brows` to the body registry — was rejected on the same grounds as the
+`wig` subtype: it is another owner's vocabulary.
+
+**`supersedesEntryId` is provenance only.** `apply` deletes the entry it
+supersedes, so the referent is normally already gone; the field answers "what was
+here before" for an inspector and nothing walks it. The boundary parser
+deliberately admits a dangling id, a self-reference, or a loop rather than
+validating a graph no reader traverses.
+
+**Recognition eligibility is not a recognition floor.** All five presentation
+kinds are `recognitionEligible` while the two wardrobe kinds are not — a
+hairstyle is something an observer registers, today's shirt is continuity rather
+than identity. Neither can earn a long-term recognition floor regardless: all
+seven are `presentation` stability, and slice 5 gates the floor on stability
+(inherent and persistent only), exactly as the shipped memory law already does.
+
+**Three relationship kinds have no slice-2 owner.**
+`replaces_visible_surface` needs something that distinguishes a hairpiece from a
+hat, and the wardrobe vocabulary has no `wig` subtype — adding one to
+`clothingSubtypesByCategory` would have been a change to another plan's registry
+for this plan's convenience. `derived_from` needs the material and wetness reads
+slice 3 brings. `attached_to` DOES have an owner and is emitted — jewelry and
+eyewear attach to the body feature at their anchor location rather than covering
+it, because a ring does not hide a finger and the eyewear registry says as much
+about glasses — but only for an accessory whose definition carries AUTHORED
+coverage. The jewelry category template is `coverage: []`, and a subtype's anchor
+is an editor pre-fill rather than something the mint path stores, so a piece
+instantiated straight from the template is projected with its identity and locus
+and asserts no edge at all. Headwear is deliberately on the covering side: a hat
+covers hair, which is the plan's own worked example. The resolver implements all
+six kinds regardless; the two unowned ones are exercised by hand-built fixtures.
+
+**The garment store carries no category and no layer, so both are adapter
+inputs.** A `GarmentInstanceState` deliberately does not depend on the library
+row it was minted from, and clothing category and layer live on the item
+definition. `VisualStateGarmentInput` therefore takes `categoryId`, `subtypeId`
+and `layer` as optional caller-supplied facts. Both degrade to silence rather
+than a guess: no category means the piece is treated as ordinary clothing, and
+no layer means no occlusion edge at all — an invented stacking order would tell
+an image compiler that a visible garment is hidden, which is the one wardrobe
+error a player cannot miss. The category is trimmed and lower-cased before any
+membership test, matching `clothingCategoryById`: the stored field is free text
+that only the forge normalizes, so a row reading `"Jewelry"` exists and used to
+flip a nose ring from an attachment to a full-degree cover. Occlusion degree is
+the share of the lower piece's `coverageRelevant`-filtered baseline coverage that
+the upper one also reaches; the captured effective-coverage read replaces
+baseline coverage in slice 3.
+
+**Four smaller shapes deviate from the spec as written**, all for reasons the
+code states:
+
+- `VisualStateSourceRef` gains a `species_feature` arm. Feature groups come from
+  `realizeBody`, not from an attribute, a located fact, or anatomy state, and
+  filing them under an existing arm would name a provenance row that was never
+  written.
+- `PresentationEntry` gains an optional `changedAtMinutes`. The spec's shape
+  carries only `appliedAtMinutes`, and bumping that on a smudge would claim the
+  makeup was reapplied; slice 5's change significance needs to know when the
+  value actually moved.
+- `VisualStateScopeRef` is declared locally rather than aliased to
+  `VisualMemoryScopeRef`. Recognition consumes this projection from slice 5
+  onward, so an import from `visual-state` into `affordances/recognition` becomes
+  a circular import at exactly the wrong moment. The two unions are structurally
+  identical, and the place they meet in slice 5 is a compile error if they ever
+  diverge.
+- `visualStateLocusKey` percent-escapes every non-body id segment. Garment part
+  and instance ids may legally contain the key's own separator, and without
+  escaping `{g1, "cuff:left"}` and `{"g1:cuff", left}` render one key. Body loci
+  stay bare and unescaped, because they are a closed registry vocabulary and the
+  byte-identical adapted key is load-bearing.

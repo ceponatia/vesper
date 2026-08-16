@@ -79,9 +79,16 @@ export type VisualStateLocusKind = (typeof visualStateLocusKinds)[number];
  * and anatomy in that relative order behind one call, so the compatibility
  * adapter contributes them as one entry. `anatomy` stays listed for the day a
  * separate anatomy adapter contributes outside that projection.
+ *
+ * `species` sits beside them rather than under `anatomy` on purpose: wings,
+ * horns and a tail are static species/heritage feature groups realized by
+ * `realizeBody`, not evented anatomy state — `anatomyPartStateValues` has no
+ * `extra` member, so a character can never gain or lose one as an event
+ * (visual-state.audit.md finding 11).
  */
 export const visualStateAdapterIds = [
   "appearance",
+  "species",
   "anatomy",
   "presentation",
   "wardrobe",

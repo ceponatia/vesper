@@ -31,12 +31,44 @@ export function visualStateLocusKind(ref: VisualStateLocusRef): VisualStateLocus
 }
 
 /**
+ * Percent-escape an id before it becomes a key segment.
+ *
+ * Garment part ids, instance ids and relation ids are opaque authoring slugs
+ * that may legally contain either separator this key uses — the colon inside a
+ * locus and the slash between a feature key's three segments. Without escaping:
+ *
+ * - `{garmentInstanceId: "g1", partId: "cuff:left"}` and
+ *   `{garmentInstanceId: "g1:cuff", partId: "left"}` both render
+ *   `garment_part:g1:cuff:left`;
+ * - `key("s1", {itemInstanceId: "i1/held"}, "x")` and
+ *   `key("s1", {itemInstanceId: "i1"}, "held/x")` both render
+ *   `s1/item:i1/held/x`.
+ *
+ * Two different places with one key is a silent cross-wiring of composition
+ * edges and observer memory rows rather than an error anything would report.
+ *
+ * ONLY the id inside a locus is escaped. The subject and aspect segments are
+ * left exactly as `appearanceFeatureKey` writes them, because byte-identity with
+ * `ProjectedFeatureTruth.key` is what keeps live observer-memory rows matching —
+ * escaping the outer segments would turn a latent aliasing bug into an active
+ * orphaning one.
+ *
+ * The escape character is escaped first, so the encoding is injective: two
+ * different id pairs can never produce one segment.
+ */
+function encodeLocusSegment(value: string): string {
+  return value.replaceAll("%", "%25").replaceAll(":", "%3A").replaceAll("/", "%2F");
+}
+
+/**
  * Deterministic key for a locus — the middle segment of every feature key.
  *
- * The `body` case is DELIBERATELY unprefixed: it renders exactly
+ * The `body` case is DELIBERATELY unprefixed AND unescaped: it renders exactly
  * `bodyLocusKey(locus)`, so an adapted `ProjectedFeatureTruth` keeps a
  * byte-identical feature key and observer visual memory — which is keyed on
- * that string and holds rows for real conversations — keeps matching. Every
+ * that string and holds rows for real conversations — keeps matching. That is
+ * safe where `encodeLocusSegment` is needed elsewhere because body locations are
+ * registry-validated members of a closed vocabulary, not free-form ids. Every
  * locus kind the appearance projection never produced carries its kind as a
  * prefix, so the namespaces cannot collide.
  */
@@ -45,12 +77,12 @@ export function visualStateLocusKey(ref: VisualStateLocusRef): string {
     case "body":
       return bodyLocusKey(ref.locus);
     case "garment_part":
-      return `garment_part:${ref.garmentInstanceId}:${ref.partId}`;
+      return `garment_part:${encodeLocusSegment(ref.garmentInstanceId)}:${encodeLocusSegment(ref.partId)}`;
     case "item":
-      return `item:${ref.itemInstanceId}`;
+      return `item:${encodeLocusSegment(ref.itemInstanceId)}`;
     case "subject":
-      return `subject:${ref.subjectId}`;
+      return `subject:${encodeLocusSegment(ref.subjectId)}`;
     case "relation":
-      return `relation:${ref.relationId}`;
+      return `relation:${encodeLocusSegment(ref.relationId)}`;
   }
 }

@@ -185,16 +185,35 @@ export const visualStateFeatureSchema = z.object({
  * source adapter — so "what a valid feature is" has exactly one definition and
  * an adapter cannot accidentally admit something the parser would refuse.
  *
- * It fails CLOSED, without exception: an unknown kind, a locus the kind does not
- * allow, a body locus the registry cannot validate, a value the kind's schema
- * rejects, or a key that disagrees with the record's own subject and locus all
- * suppress the feature. Unknown is never treated as permission.
+ * It fails CLOSED, without exception: a record the wire schema rejects, an
+ * unknown kind, a locus the kind does not allow, a body locus the registry
+ * cannot validate, a value the kind's schema rejects, or a key that disagrees
+ * with the record's own subject and locus all suppress the feature. Unknown is
+ * never treated as permission.
+ *
+ * The wire schema runs HERE rather than only in the boundary parser, so an
+ * adapter and a replayed record are held to identical constraints. When it did
+ * not, an adapter could mint a feature with an empty `truthFingerprint` that the
+ * parser would have refused — and an empty fingerprint compares equal to a
+ * memory row whose own fingerprint failed to parse, which reads as "unchanged"
+ * and is invisible.
  */
 export function validateVisualStateFeature(
   candidate: VisualStateFeature,
   sink?: DiagnosticSink,
   path = "visual_state.feature",
 ): VisualStateFeature | null {
+  const shape = visualStateFeatureSchema.safeParse(candidate);
+  if (!shape.success) {
+    sink?.push(
+      diag("warn", VISUAL_STATE_FEATURE_MALFORMED, shape.error.issues.map((issue) => issue.message).join("; "), {
+        path,
+        context: { key: candidate.key, kindId: candidate.kindId },
+      }),
+    );
+    return null;
+  }
+
   const kind = visualStateKindRegistry.byId(candidate.kindId);
   if (!kind) {
     sink?.push(
@@ -277,6 +296,12 @@ export function validateVisualStateFeature(
  * The trust boundary: a raw feature record — a persisted debug snapshot, a
  * replayed cut — becomes a validated feature or `null` (docs/resilience.md §1).
  * Never throws.
+ *
+ * The wire schema runs twice on this path, once here and once inside
+ * `validateVisualStateFeature`. That is deliberate: this call also unwraps a
+ * JSON string and reports the standard boundary diagnostic, while the one in the
+ * validator is what makes an ADAPTER answer to the same constraints. Neither can
+ * be dropped without one of the two paths losing a check.
  */
 export function parseVisualStateFeature(
   raw: unknown,

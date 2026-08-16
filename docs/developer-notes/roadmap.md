@@ -36,9 +36,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Visual state and attention** — [plan](visual-state.plan.md) ·
   [spec](visual-state.spec.md) — one lane-neutral projection over the existing
-  appearance, wardrobe, body-condition and scene owners; the appearance audit
-  and the core contract are in, and every remaining build slice up to the
-  narrator proving release is unblocked.
+  appearance, wardrobe, body-condition and scene owners; the appearance audit,
+  the core contract and the identity/presentation projection are in, and every
+  remaining build slice up to the narrator proving release is unblocked.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
