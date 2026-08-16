@@ -1,9 +1,12 @@
 # Intimate-scene LoRA — the acts render in the app
 
-Status: awaiting acceptance — the owner's first `staged_scene` bench run.
-Both slices are built; slice 1 is verified live in production, and nothing is
-left to code. (Owner-directed 2026-08-15, graduating the routing question from
-[finished/scene-composition.plan.md](finished/scene-composition.plan.md).)
+Status: shipped — 2026-08-16. Accepted on the owner's first `staged_scene`
+bench run: a two-point LoRA-scale sweep, both renders graded `act_depicted`,
+and the curated default scale confirmed at 1.0 — the record is in the spec. No
+leftovers: nothing remained to code, and the one open question closed "no
+suppression" (ruling recorded in the spec). (Owner-directed 2026-08-15,
+graduating the routing question from
+[scene-composition.plan.md](scene-composition.plan.md).)
 
 Outcome: A player whose chat stages an intimate act gets a scene image that
 actually depicts it — rendered through the anatomy-trained LoRA the probes
@@ -67,10 +70,10 @@ prompts only when its planned expansion happens (slice 2).
 
 - **Slice 2 — the admin image lab drives the staged prompts.**
 
-  Status: built 2026-08-15 — awaiting the owner's first bench run, which is
-  what records the kind as accepted. Scoped that day (owner ruling) as its own
-  `staged_scene` lab kind, which removed the dependency on the image-lab
-  expansion the slice was originally queued behind.
+  Status: complete — built 2026-08-15, accepted 2026-08-16 on the owner's
+  first bench run (verdict record in the spec). Scoped 2026-08-15 (owner
+  ruling) as its own `staged_scene` lab kind, which removed the dependency on
+  the image-lab expansion the slice was originally queued behind.
 
   The owner picks an intimate staging outright and renders it on the bench —
   the same words and the same LoRA a chat would send, with no chat, no
@@ -98,10 +101,3 @@ composer. The first render of the verification took the stock model with every
 LoRA leg healthy, because the composer proposed no staging for prose that
 described the act only glancingly. Detail in the spec.
 
-## Open questions
-
-- **Should the subject's intimate-anatomy phrasing be suppressed on
-  from-behind shots?** Carried from the scene-composition close-out; detail
-  in finished/scene-composition.spec.md §Known tensions. The LoRA may change
-  the answer — re-grade on post-LoRA renders.
-  - No for now.
