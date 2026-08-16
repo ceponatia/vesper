@@ -2,6 +2,7 @@ export * from "./diagnostics";
 export * from "./appearance-features";
 export * from "./attributes";
 export * from "./affordances";
+export * from "./visual-state";
 export * from "./body/locations";
 export * from "./body/plans";
 export * from "./rules/attribute-rule";
