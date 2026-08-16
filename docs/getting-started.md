@@ -51,9 +51,11 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 > role: per OpenRouter's `supported_parameters` it advertises `tools` +
 > `tool_choice` (function/tool calling) and `response_format` (structured JSON) —
 > unlike most narrator picks. That makes it a candidate for the **tool model**
-> (`MODEL_DEFAULTS.tool`, backing the scene composer — the leg that needs
-> reliable tool/structured calls) and for the post-turn agent list
-> (`lib/agent-models.ts`). Tool-calling **reliability in our pipeline is unverified**
+> (`MODEL_DEFAULTS.tool` — the leg that needs reliable structured calls) and for
+> the post-turn agent list (`lib/agent-models.ts`). The scene composer is no
+> longer downstream of either: it has its own seam and its own curated list
+> (`lib/composer-models.ts`), settled by the A/B in
+> `developer-notes/composer-model.spec.md`. Tool-calling **reliability in our pipeline is unverified**
 > (Aion is a multi-model roleplay/storytelling system on the GLM family, and
 > OpenRouter's advertised params don't guarantee behavior) — **test with it before
 > promoting it to a tool/agent role.** Context 131K, $3/$6 per 1M in/out.

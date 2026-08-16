@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
   classifyImageFailure,
+  composerDisablesReasoning,
   composerFallbackModelId,
   generateChecked,
   isDemoMode,
@@ -82,7 +83,11 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
   // and the fallback's collision check), and re-resolving would let a mid-compose default
   // change split the ladder across two models nobody chose.
   const primaryModelId = sceneComposerModelId(composerModel);
-  const primary = await generateChecked({ ...request, modelId: primaryModelId });
+  const primary = await generateChecked({
+    ...request,
+    modelId: primaryModelId,
+    disableReasoning: composerDisablesReasoning(primaryModelId),
+  });
   if (!primary.degraded && primary.value) return resolveScenePlan(primary.value, context, sink);
   // Demo mode degrades every model call by design, so a second one buys nothing but noise —
   // and the primary's own `.degraded` diagnostic has already said what happened.
@@ -93,7 +98,14 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
       context: { primary: primaryModelId, fallback: fallbackModelId },
     }),
   );
-  const retry = await generateChecked({ ...request, modelId: fallbackModelId, fallback });
+  const retry = await generateChecked({
+    ...request,
+    modelId: fallbackModelId,
+    fallback,
+    // Resolved for the RUNG, not inherited from the primary: the fallback is an Aion
+    // endpoint, which rejects `reasoning:{enabled:false}` outright.
+    disableReasoning: composerDisablesReasoning(fallbackModelId),
+  });
   return resolveScenePlan(retry.value ?? fallback(), context, sink);
 }
 
