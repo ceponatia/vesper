@@ -86,9 +86,12 @@ engine adds on top of that baseline (engine.spec §33):
   the original result instead of re-executing.
 - A failed async projection retries idempotently; a failed narrator render
   retries the same cut rather than producing a second one.
-- An event payload that is structurally impossible quarantines the branch
-  and produces an operator diagnostic instead of corrupting projections
-  silently.
+- A stored event payload that fails its schema on read throws rather than
+  resolving to a diagnostic (`branch-store.ts` parses it directly). There is
+  no branch-level quarantine state to fall back to: `simWorlds.status` is
+  `active`/`paused` only and `simBranches` has no status column at all.
+  "Quarantine" in this codebase names per-obligation retry exhaustion in the
+  outbox, scheduler, time-job, and memory-index stores — never a branch.
 
 Diagnostics carry branch, sequence, command, event, derivation, and ruleset
 identifiers wherever available, and user-facing failure text stays
@@ -136,38 +139,51 @@ projection (engine.spec §34.4).
 ### Privacy
 
 The context compiler redacts private data before it reaches the model.
-Denials render through `FailurePresentation` rather than leaking their
-private cause. Audit systems may retain the private cause behind a denial;
-ordinary prompts, logs, embeddings, and UI errors may not
+Denials render through `PublicFailurePresentation` rather than leaking
+their private cause. Audit systems may retain the private cause behind a
+denial; ordinary prompts, logs, embeddings, and UI errors may not
 (engine.spec §34.5).
 
 ## Observability
 
 ### Per-command trace
 
-Every command records admission and authorization result, starting and
-ending branch version, due-trigger count, kernel and projection duration,
-event count and types, outbox count, the selected policy candidate, model
-calls/tokens/latency, the NarrativeCut ID and hash, and any retries,
-degraded paths, or rejection code (engine.spec §35.1).
+engine.spec §35.1 describes a per-command trace: admission and
+authorization result, starting and ending branch version, due-trigger
+count, kernel and projection duration, event count and types, outbox
+count, the selected policy candidate, model calls/tokens/latency, the
+NarrativeCut ID and hash, and any retries, degraded paths, or rejection
+code. None of it is collected — `command-runner.ts` contains no logging or
+tracing calls. The only durable record of a command is its `sim_commands`
+row: branch ID, idempotency key, command ID, type, schema version,
+expected version, principal kind, the command envelope, status
+(`accepted`/`rejected`/`conflict`), result, and submitted/completed
+timestamps — a replay and idempotency record, not a trace.
 
 ### System metrics
 
-Standing metrics cover command and narrator p50/p95, branch lock wait,
-scheduler queue depth and overdue age, triggers processed per story day,
-projection lag and rebuild time, outbox retry age, event and snapshot
-growth, memory eligibility set size and top-k latency, model calls and
-tokens per turn and per actor-day, deterministic fallback frequency, and
-perspective-leak / impossible-claim test failures (engine.spec §35.2).
+engine.spec §35.2 describes standing metrics: command and narrator p50/p95,
+branch lock wait, scheduler queue depth and overdue age, triggers processed
+per story day, projection lag and rebuild time, outbox retry age, event and
+snapshot growth, memory eligibility set size and top-k latency, model calls
+and tokens per turn and per actor-day, deterministic fallback frequency,
+and perspective-leak / impossible-claim test failures. None of these are
+collected as standing metrics. The only related computation
+(`summarizeLatency`, `openQueueDepths`) lives in `soak-harness.ts`, a soak-test
+harness that reports on one run rather than a running collector. No metrics library —
+prom-client, statsd, OpenTelemetry — is a dependency anywhere in the
+workspace.
 
 ### Explainability
 
-The trace and metrics exist so an operator can answer questions like: why
-is this actor here, why did this NPC leave, why was entry denied, why does
-this actor believe this, why did this commitment become late, why did this
-memory enter the prompt, and what changed between two branch sequences.
-Every answer references events, observations, ruleset versions, and the
-public/private boundary that shaped it (engine.spec §35.3).
+engine.spec §35.3 describes explain answers for why an actor is present,
+why an NPC left, why entry was denied, why an actor holds a belief, why a
+commitment became late, why a memory entered the prompt, and what changed
+between two branch sequences. `audit-store.ts` implements exactly one of
+these: `explainItemPlacement`, which walks a projection fact back through
+the event that placed it, the command that produced the event, and — when
+the event was scheduler-dispatched — the trigger and the event and command
+that set it. The other explain surfaces do not exist.
 
 ## Testing
 
@@ -239,10 +255,12 @@ or body event on its own (engine.spec §37.2).
 
 ### Events
 
-Every event type carries a schema version and a pure upcaster. When
-semantics can't be upcast safely, the old branch freezes on its original
-ruleset, or an explicit migration runs that emits its own auditable events
-(engine.spec §37.3).
+Every event type carries a schema version, stamped as a fixed `z.literal`
+on the envelope. engine.spec §37.3 describes a pure upcaster per event
+type; none exists — there is no upcast or migration hook anywhere in the
+engine. When semantics change, the practical options are freezing the old
+branch on its original ruleset or running an explicit migration that
+emits its own auditable events.
 
 ### Projections and RAG
 
@@ -252,10 +270,13 @@ domain history (engine.spec §37.4).
 
 ### Feature flags
 
-Authority flags apply per world or branch: `legacy_chat`,
-`successor_shadow`, `successor_authoritative`, `successor_narrative_view`,
-and `successor_rag_eligibility`. The application displays or logs which
-authority served each turn (engine.spec §37.5).
+The `engine_authority` column lives on `character_chats` — a per-chat
+flag, not a per-world or per-branch one; `sim_worlds` and `sim_branches`
+carry no authority column. It holds one of four values: `legacy_chat`,
+`successor_shadow`, `successor_narrative_view`, `successor_authoritative`.
+A separate boolean column on the same table, `successor_rag_eligibility`,
+is read independently of the authority flag (engine.spec §37.5). The
+application displays or logs which authority served each turn.
 
 ## Validating a migration before it ships
 

@@ -145,10 +145,14 @@ access — those are settled upstream, in steps 1–3, before a single embedding
 comparison runs. A fact nobody in the scene witnessed cannot surface just
 because it reads as semantically close to the query.
 
-Eligible source classes include authored lore explicitly available to the
-viewpoint, observed events, active assertions and beliefs, dialogue episodes
-the actor participated in or learned about, relationship evidence, public
-world records, and bounded soft canon (engine.spec §24.2). Projection rows
+There are exactly six eligible source classes: observed events, active
+assertions, beliefs, dialogue episodes the actor participated in or learned
+about, bounded soft canon, and authored lore explicitly available to the
+viewpoint (engine.spec §24.2). Public world records are not a seventh class —
+`public` is a *visibility* mode over soft-canon and lore documents. Relationship
+facts are not a class either: they become recallable only when someone witnessed
+the underlying event, and then only as a generic observation carrying a redacted
+phrase, never as relationship detail. Projection rows
 like a character's current location normally enter the compiled scene
 directly ([narration.md](narration.md)) rather than being embedded as a
 competing memory candidate — recall is for what a character knows or

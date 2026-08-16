@@ -38,7 +38,8 @@ has gotten. Flexibility runs from `soft` through `negotiable` and `firm` to
 buffer, and a notice lead — shape how much slack the actor gets before the
 deadline actually bites.
 
-A commitment carries a `knowledgeSourceId` that proves the actor has a
+A commitment carries a `knowledgeSource` — a tagged record of how the actor came
+to know, not a bare id — that proves the actor has a
 reason to know about it — a memory, an observation, an assertion, or a
 belief the actor could plausibly hold. A calendar entry the player can see
 is not automatically something the NPC knows; if the source becomes
@@ -64,9 +65,9 @@ Commitment status moves through a fixed lifecycle:
 
 | From        | Legal next states                              |
 | ----------- | ---------------------------------------------- |
-| planned     | noticed, accepted, declined, cancelled, missed |
-| noticed     | accepted, declined, cancelled, missed          |
-| accepted    | in_progress, cancelled, missed                 |
+| planned     | noticed, accepted, declined, cancelled, missed, kept, late |
+| noticed     | accepted, declined, cancelled, missed, kept, late          |
+| accepted    | in_progress, cancelled, missed, kept, late                 |
 | declined    | cancelled, or accepted again if renegotiated   |
 | in_progress | kept, late, missed, cancelled                  |
 | kept        | terminal                                       |
@@ -83,8 +84,8 @@ repair is additional evidence, not a correction of the record (engine.spec
 ### Pressure
 
 Pressure is what turns a commitment into something an actor actually acts
-on. Each pressure names a source (a commitment, a need, a hazard, or an
-access window), and carries three points in time — when the actor first
+on. Each pressure names its source commitment — the only source kind there is —
+and carries three points in time — when the actor first
 notices it, the latest moment a decision is still meaningful, and the
 latest moment acting is still possible — plus a severity that climbs from
 `background` through `salient` and `urgent` to `hard`.
@@ -117,8 +118,10 @@ deadline repeats the same warning.
 An action definition is the reusable template for something an actor can
 do: which kinds of principal can control it, how long it takes, its
 preconditions and required claims, its resource costs, how interruptible it
-is (`free`, `pausable`, `abort_only`, or `locked`), its privacy and consent
-requirements, and the effects it fires on start, completion, and failure.
+is (`free`, `pausable`, `abort_only`, or `locked`), and its privacy and consent
+requirements. There is no authored `effects` field: starting acquires claims and
+reserves items, completion spends or wears the resource costs the definition
+already names, and failure applies nothing.
 Privacy and consent gating on an action is the same access/consent model
 [world.md](world.md) owns; an action definition just names which
 requirement applies.
@@ -155,30 +158,17 @@ An activity's phase moves through:
 | paused      | active, interrupted, cancelled, failed            |
 | interrupted | active, cancelled, failed                         |
 | completed   | terminal                                          |
-| failed      | terminal                                          |
-| cancelled   | terminal                                          |
+| failed ### Compatibility while an activity is underway
 
-### Compatibility while an activity is underway
+The graded matrix §16.4 describes — conversation-while-cooking, hands-free calls
+while driving, messages queuing unread for a sleeping actor — is **not built**.
+The engine enforces one generic rule instead: a full-attention claim, on the body
+or on attention, blocks joining any engagement on any channel, and a partial or
+absent claim does not. Nothing distinguishes driving from cooking, and nothing
+separates text from voice.
 
-What a running activity permits depends on both the activity and the
-channel trying to reach it — a driving actor can take a hands-free call
-under a policy but never read a text, while a sleeping actor can have a
-message queue unread without the activity itself changing:
-
-| Activity             | Co-present conversation                   | Text or call                         |
-| -------------------- | ----------------------------------------- | ------------------------------------ |
-| walking              | usually allowed, reduced attention        | allowed                              |
-| cooking              | allowed unless a hazardous phase          | usually allowed                      |
-| desk work            | limited                                   | limited                              |
-| driving              | limited if there's a passenger            | text forbidden; hands-free may apply |
-| showering            | only with legal access and consent        | delivery occurs; response optional   |
-| toileting / changing | normally unavailable                      | delivery occurs; response optional   |
-| sleeping             | unavailable until a wake cue is perceived | may queue unread                     |
-| intimate activity    | participants and consent only             | interruption is policy-specific      |
-
-Message delivery and an actor perceiving that message are different events
-— a delivered text does not mean a sleeping or showering actor has read it
-(engine.spec §16.4).
+Message delivery and an actor perceiving that message remain different events, so
+a delivered message never implies it was read (engine.spec §16.4).
 
 ## Engagements and live-scene arbitration
 
@@ -186,8 +176,9 @@ Message delivery and an actor perceiving that message are different events
 
 An engagement is the live social frame a scene runs inside: its
 participants, its channel (co-present, text, voice, video, or mixed), an
-optional location and zone, its own attention claims, which pressures it
-has already surfaced to the player, and a branch version. A co-present
+optional location and zone, its own attention claims, and which pressures it
+has already surfaced to the player. Branch version is not one of its fields — it
+is pinned onto the compiled NarrativeCut instead. A co-present
 engagement needs the participants to actually share a compatible physical
 locus; a remote one needs channel access and message delivery but not
 co-location (engine.spec §18.1).

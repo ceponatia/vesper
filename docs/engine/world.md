@@ -59,17 +59,19 @@ history:
 
     type AccessGrant = {
       id: string;
-      branchId: string;
       granteeActorId: string;
-      issuerActorId?: string;
-      scope: { locationId: string; zoneIds?: string[] };
-      basis: "owner" | "resident" | "employee" | "invitation" | "key" | "public";
-      permissions: ("enter" | "remain" | "bring_guest" | "use_item")[];
+      locationId: string;
+      zoneIds?: string[];
+      basis: "owner" | "resident" | "employee" | "invitation" | "key" | "forced";
       validFrom: number;
       validUntil?: number;
-      revocable: boolean;
       revokedAt?: number;
     };
+
+A grant carries no permission list and no revocable flag — revocation is
+expressed by stamping `revokedAt`. Public access needs no grant at all, which is
+why `public` is not a basis; `forced` is, so a trespass records the basis it
+entered on.
 
 `basis` is a closed set of literals, not an open vocabulary like Location/Zone
 `kind` — adding a new basis is a spec change. An `AccessGrant` is scoped
@@ -90,23 +92,25 @@ or — where the world type enables it — attempt trespass (engine.spec §14.1)
 
 ### NPC movement
 
-The mirror instruction, "Mara comes here," cannot directly relocate Mara. It
-resolves to a request — `InviteActor`, `RequestVisit`, `CallActor`, or
-`AskActorToLeave`, depending on language and channel — that Mara's controller
-evaluates against her locus, current activity, route, commitments,
-relationship, safety, and preference. Acceptance produces a chain of
-preparation, departure, journey, and arrival events; it never produces instant
-co-location (engine.spec §14.2). This is the same reason a shift's "the NPC
+The mirror instruction, "Mara comes here," cannot directly relocate Mara. §14
+describes a request family a controller would evaluate against her locus,
+activity, route, commitments, relationship, safety and preference; **no such
+command exists in code**. The only NPC-inclusive movement command is
+`move_together`, and it requires the NPC to already share the player's zone —
+nothing can summon a remote NPC today. Where movement does happen it still
+produces a chain of preparation, departure, journey and arrival events rather
+than instant co-location (engine.spec §14.2). This is the same reason a shift's "the NPC
 comes back at 4pm" still consumes real travel time, covered in
 [activities.md](activities.md).
 
 ### Trespass and forced entry
 
-Where a world type permits transgressive entry attempts, they are modeled as
-explicit activities carrying duration, noise, required tools or skill, the
-lock and obstacle state, witnesses and observation channels, interruption, and
-legal, social, and safety consequences — trespass is a played-out activity,
-not a flag flip. Where the product disallows it, the attempt is rejected at
+Where a world type permits transgressive entry attempts, `attempt_entry` carries
+a boolean `forced` and resolves synchronously in one step: it checks the link
+state and the world's trespass permission, then emits one `zone_entered` event
+with basis `forced`, recording witnesses. §13 describes trespass as a played-out
+activity with duration, noise, tools and interruption; that is **not built** —
+witnesses are the only part of it that exists. Where the product disallows it, the attempt is rejected at
 admission with a public rule reason; the door is never presented as physically
 impossible just to hide a product restriction (engine.spec §14.3).
 
@@ -114,22 +118,23 @@ impossible just to hide a product restriction (engine.spec §14.3).
 
 Every denied movement or entry produces a structured failure:
 
-    type FailurePresentation = {
+    type PublicFailurePresentation = {
       code: string;
       publicReason: string;
       publicEvidence: string[];
       legalAlternatives: string[];
-      privateCauseEventId?: string;
     };
 
-`privateCauseEventId` exists for audit and authorized systems only — the
-narrator sees it, and can narrate from it, only when the acting viewpoint
-could actually perceive or know that cause. "She doesn't answer" is legal
-narration on its own; "she doesn't answer because she is naked in the shower"
-is only legal if the viewpoint has evidence for it. The type the narrator
-actually renders from, `PublicFailurePresentation`, is the same shape with
-`privateCauseEventId` omitted entirely — the private cause cannot leak by
-accident (engine.spec §14.4).
+This is the only failure type there is. §14.4 describes it as the public
+projection of a richer record carrying a `privateCauseEventId` for audit; **no
+such paired private type exists** — callers construct the public shape directly,
+so there is no private cause to leak in the first place.
+
+The perspective rule the design was reaching for still holds, and is enforced
+upstream in what the cut carries rather than by omitting a field here: "She
+doesn't answer" is legal narration on its own, while "she doesn't answer because
+she is naked in the shower" is legal only where the viewpoint has evidence for it
+(engine.spec §14.4).
 
 ### Journeys
 
@@ -170,8 +175,8 @@ by itself changes when the actor arrives (engine.spec §17.1).
 ## Invariants
 
 - Malformed, missing, or unknown private access data never degrades to public
-  visibility — the engine fails closed, emits a diagnostic, and offers a safe
-  boundary such as the exterior or doorstep instead (engine.spec §13.1).
+  visibility — a grant row that fails its schema parse is dropped, so entry is
+  denied (engine.spec §13.1). No diagnostic is emitted on that path today.
 - An actor resolves to exactly one `PhysicalLocus` at any query, even mid-
   journey (engine.spec §13.2).
 - The six access layers are evaluated independently; clearing one is never
@@ -179,9 +184,9 @@ by itself changes when the actor arrives (engine.spec §17.1).
 - An `AccessGrant` never implies interpersonal consent to conversation, touch,
   intimacy, or interruption — those preconditions live with the action, not
   the grant (engine.spec §14).
-- NPC relocation always routes through a controller-evaluated request
-  (`InviteActor`, `RequestVisit`, `CallActor`, `AskActorToLeave`); nothing
-  moves an NPC directly (engine.spec §14.2).
+- Nothing relocates an NPC directly. `move_together` is the only NPC-inclusive
+  movement command, and it requires the NPC to already share the player's zone
+  (engine.spec §14.2).
 - A disallowed trespass attempt is rejected at admission with a public rule
   reason rather than faked as a physical impossibility (engine.spec §14.3).
 - The narrator only receives a failure's private cause when the acting
@@ -201,10 +206,11 @@ defined in the spec; extending either is a contract change, not a data edit.
 
 Access data is a trust boundary: a private access record that is malformed,
 missing, or of unknown shape is treated as denied, never as public, and the
-engine emits a diagnostic and falls back to a safe boundary such as the
-exterior or doorstep rather than guessing (engine.spec §13.1). This follows
-the same fail-closed, diagnostic-over-exception pattern documented in
-[resilience.md](../resilience.md).
+unparseable grant row is simply excluded (engine.spec §13.1). It fails closed,
+but it does so silently: the access store uses a bare schema parse rather than
+the diagnostic-emitting `parseOr` pattern that
+[resilience.md](../resilience.md) prescribes, so nothing records that a row was
+dropped.
 
 ## Related
 
