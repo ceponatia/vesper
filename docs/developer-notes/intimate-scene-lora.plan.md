@@ -1,7 +1,9 @@
 # Intimate-scene LoRA — the acts render in the app
 
-Status: active (owner-directed 2026-08-15, graduating the routing question
-from [finished/scene-composition.plan.md](finished/scene-composition.plan.md))
+Status: awaiting acceptance — the owner's first `staged_scene` bench run.
+Both slices are built; slice 1 is verified live in production, and nothing is
+left to code. (Owner-directed 2026-08-15, graduating the routing question from
+[finished/scene-composition.plan.md](finished/scene-composition.plan.md).)
 
 Outcome: A player whose chat stages an intimate act gets a scene image that
 actually depicts it — rendered through the anatomy-trained LoRA the probes
@@ -54,31 +56,47 @@ prompts only when its planned expansion happens (slice 2).
 - **Slice 1 — the render path routes intimate staged scenes through the
   LoRA.**
 
-  Status: built 2026-08-15 — awaiting the two deploy-time pieces the spec
-  names (the wrapper model row on the production registry, and the Fly
-  secret) before a production render can take the route.
+  Status: complete — 2026-08-15. Verified on the live deploy: an intimate
+  staged chat render reached Replicate as the LoRA wrapper, and the scene
+  before it — same chat, no surviving staging — rendered on the stock model
+  untouched. Evidence in the spec.
 
   The wrapper model + LoRA binding replace the stock model for exactly the
   intimate-staged uncensored renders; the builtin library row and the token
   seam land with it; degradations named and tested.
 
-- **Slice 2 — the expanded admin image lab drives the staged prompts.**
+- **Slice 2 — the admin image lab drives the staged prompts.**
 
-  Status: blocked on the image-lab expansion (owner: "when we expand that")
-  — the lab's staged-scene recipes adopt the staging registry and the same
-  LoRA binding when that work is planned.
+  Status: built 2026-08-15 — awaiting the owner's first bench run, which is
+  what records the kind as accepted. Scoped that day (owner ruling) as its own
+  `staged_scene` lab kind, which removed the dependency on the image-lab
+  expansion the slice was originally queued behind.
+
+  The owner picks an intimate staging outright and renders it on the bench —
+  the same words and the same LoRA a chat would send, with no chat, no
+  composer, and no narration to steer. It answers a question the chat lane
+  structurally cannot: whether the LoRA's scale is right, graded across a
+  sweep on one staging.
 
 ## Success criteria
 
-- An intimate staged chat render on the uncensored route reaches Replicate
-  as the LoRA wrapper model with `lora_weights` set (verifiable on the image
-  row's recorded model + meta).
-- A non-intimate or unstaged render's request is byte-identical to today's.
-- With `CIVITAI_API_TOKEN` unset, every render still succeeds on the stock
-  model and the skip is diagnosed.
-- The next `fly deploy` checklist includes setting the `CIVITAI_API_TOKEN`
-  Fly secret — without it production quietly renders as today, which is the
-  designed degradation but not the owner's intent.
+- **Met 2026-08-15.** An intimate staged chat render on the uncensored route
+  reaches Replicate as the LoRA wrapper model with `lora_weights` set
+  (verifiable on the image row's recorded model + meta).
+- **Met 2026-08-15.** A non-intimate or unstaged render's request is
+  byte-identical to today's.
+- **Met at build time.** With `CIVITAI_API_TOKEN` unset, every render still
+  succeeds on the stock model and the skip is diagnosed — covered by the
+  degradation tests, not re-run against production.
+- **Met 2026-08-15.** The `CIVITAI_API_TOKEN` Fly secret is set; without it
+  production quietly renders as today, which is the designed degradation but
+  not the owner's intent.
+
+One thing the run exposed that no criterion asked for: the route's practical
+gate is not the LoRA machinery at all, but whether a staging survives the
+composer. The first render of the verification took the stock model with every
+LoRA leg healthy, because the composer proposed no staging for prose that
+described the act only glancingly. Detail in the spec.
 
 ## Open questions
 

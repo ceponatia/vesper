@@ -12,6 +12,8 @@ import {
   imageLabRecipeKey,
   imageLabRecipeProfile,
   imageLabRecipeTask,
+  imageLabStagedSceneRecipeKey,
+  imageLabStagedSceneRecipeProfile,
   imageLabTwoCharacterRecipeKey,
   imageLabTwoCharacterRecipeProfile,
   isImageLabControlledKind,
@@ -358,10 +360,101 @@ describe("imageLabFinishableKinds", () => {
       "controlled_scene",
     ]);
     for (const kind of imageLabExperimentKinds) {
-      // A probe is not production-shaped, a chain has no bottom, and a
-      // two-character render has two faces where the pass improves one.
-      const refused = kind === "control_probe" || kind === "finishing_pass" || kind === "two_character_scene";
+      // A probe is not production-shaped, a chain has no bottom, a two-character
+      // render has two faces where the pass improves one, and finishing a staged
+      // render would ask a stock model with no LoRA to redraw the anatomy the
+      // whole intimate-scene work exists to get drawn.
+      const refused =
+        kind === "control_probe" ||
+        kind === "finishing_pass" ||
+        kind === "two_character_scene" ||
+        kind === "staged_scene";
       expect(isImageLabFinishableKind(kind)).toBe(!refused);
     }
+  });
+});
+
+describe("imageLabStagedSceneRecipeProfile", () => {
+  it("keys itself per staging, because the staging IS the experiment", () => {
+    expect(imageLabStagedSceneRecipeKey("astride_viewer_facing")).toBe("staged_scene/astride_viewer_facing");
+    // Two acts are two geometries and two things a model can fail at; one shared
+    // key would leave a month-old outcome unable to say which was asked for.
+    expect(imageLabStagedSceneRecipeKey("bent_over_surface")).not.toBe(
+      imageLabStagedSceneRecipeKey("astride_viewer_facing"),
+    );
+  });
+
+  it("names itself under the recipe id prefix, labelled by the id the package can see", () => {
+    const profile = imageLabStagedSceneRecipeProfile("mdl_x", "astride_viewer_facing");
+    expect(profile.id).toBe(`${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}staged_scene/astride_viewer_facing`);
+    expect(profile.key).toBe("staged_scene/astride_viewer_facing");
+    expect(profile.imageModelId).toBe("mdl_x");
+    // The raw id, not a sentence: the registry that knows this entry as prose is
+    // app-side, so an id is the only fact this package holds about it.
+    expect(profile.label).toBe("Staged scene — astride_viewer_facing");
+  });
+
+  it("requires the identity and nothing else, because the structure arrives as words", () => {
+    const policy = imageLabStagedSceneRecipeProfile("mdl_x", "on_all_fours").referencePolicy;
+    expect(policy.requiredRoles).toEqual(["identity"]);
+    expect(policy.roleOrder).toEqual(["identity", "location"]);
+    expect(policy.maxPerRole).toEqual({ identity: 1, location: 1 });
+  });
+
+  it("allows a location beside the face and refuses every other content role", () => {
+    // Where the act happens is a scene fact an image says better than a phrase.
+    // An outfit or a style reference would fight a staging that describes bare
+    // regions and a specific geometry.
+    const policy = imageLabStagedSceneRecipeProfile("mdl_x", "on_all_fours").referencePolicy;
+    expect(policy.allowedRoles).toEqual(["identity", "location"]);
+    for (const role of ["outfit", "style", "object", "before", "pose", "depth", "edge", "control"] as const) {
+      expect(policy.allowedRoles).not.toContain(role);
+    }
+  });
+
+  it("screens as a scene on the compose strategy, and holds every knob where the other recipes do", () => {
+    const profile = imageLabStagedSceneRecipeProfile("mdl_x", "lying_beneath_viewer");
+    expect(profile.task).toBe("scene");
+    // The compiled staging sentence is the base prompt; compose is what names the
+    // identity slot around it without paraphrasing a registry-owned template.
+    expect(profile.promptStrategy).toBe("multi_reference_compose");
+    // The rest is asserted AGAINST the two-character recipe rather than restated,
+    // because "the same request shape every other lab recipe declares" is the
+    // claim itself — a recipe fixes the shape and the experiment's own settings
+    // overlay moves the numbers within it.
+    const sibling = imageLabTwoCharacterRecipeProfile("mdl_x", null);
+    expect(profile.operation).toBe(sibling.operation);
+    expect(profile.controlDefaults).toEqual(sibling.controlDefaults);
+    expect(profile.providerOverrides).toEqual(sibling.providerOverrides);
+    expect(profile.timeoutMs).toBe(sibling.timeoutMs);
+    expect(profile.enabled).toBe(sibling.enabled);
+    expect(profile.isDefault).toBe(sibling.isDefault);
+    expect(profile.builtin).toBe(sibling.builtin);
+    expect(profile.sort).toBe(sibling.sort);
+  });
+
+  it("is a valid profile row in every way but storage", () => {
+    const profile = imageLabStagedSceneRecipeProfile("mdl_x", "astride_viewer_facing");
+    expect(imageModelProfileSchema.parse(profile)).toEqual(profile);
+  });
+
+  it("passes eligibility on an edit model and refuses one that would render a stranger", () => {
+    const model = qwen2511();
+    expect(profileEligibility(imageLabStagedSceneRecipeProfile(model.id, "astride_viewer_facing"), model)).toEqual({
+      ok: true,
+    });
+    expect(
+      profileEligibility(
+        imageLabStagedSceneRecipeProfile("mdl_x", "astride_viewer_facing"),
+        qwen2511({ identityPreservation: "weak" }),
+      ),
+    ).toEqual({ ok: false, reason: "identity_too_weak" });
+  });
+
+  it("stays out of the controlled-kind list, whose recipes are indexed by a required control", () => {
+    // `imageLabRecipeKey` takes a NON-NULL control kind, and this kind declares
+    // none at all — its structure is the staging's own wording.
+    expect(isImageLabControlledKind("staged_scene")).toBe(false);
+    expect(imageLabControlledKinds).not.toContain("staged_scene");
   });
 });

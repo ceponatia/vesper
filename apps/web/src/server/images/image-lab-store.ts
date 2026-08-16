@@ -12,6 +12,8 @@ import {
   type ImageLabRecordVerdictRequest,
   type ImageLabSettings,
   imageLabSettingsSchema,
+  type ImageLabStaging,
+  imageLabStagingSchema,
   isImageLabFinishableKind,
   isImageLabVerdictForKind,
   isImageLabVerdictKind,
@@ -55,6 +57,11 @@ import { deleteOwnedImage, imageMeta } from "./assets";
  * reference per character beside an optional control — the one kind whose
  * references carry a subject into the prompt, because it is the one kind whose
  * references would otherwise be indistinguishable from each other.
+ * `staged_scene` rides it as well, and is the one kind whose PROMPT is compiled
+ * rather than typed: the lane assembles a scene render plan around one staging
+ * registry entry and hands the chat lane's own builder the job of wording it, so
+ * the bench sends the sentence production sends (intimate-scene-lora.spec.md
+ * §"Slice 2").
  *
  * The job seam lives at the ROUTE, not here: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from this module would close an import
@@ -172,6 +179,7 @@ export function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSi
     outcome: storedOutcome(row, sink),
     sourceExperimentId: storedSourceExperimentId(row, sink),
     finishingVariant: storedFinishingVariant(row, sink),
+    staging: storedStaging(row, sink),
     status: row.status,
     failureCode: row.failureCode,
     verdict: row.verdict,
@@ -228,6 +236,27 @@ export function storedSourceExperimentId(row: ImageLabExperimentRow, sink?: Diag
   const raw = imageMeta(row.meta)["sourceExperimentId"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(sourceExperimentIdSchema, raw, sink, "image_lab_experiments.meta.sourceExperimentId");
+}
+
+/**
+ * What a staged scene STAGES, out of the same meta bag — the registry id and the
+ * scene facts a bench row has to state for itself.
+ *
+ * The staged lane reads this rather than the create request, which is why it
+ * lives on the row at all: the runner sees a row and nothing else, so a staging
+ * that did not survive the write would leave the kind unrunnable. Meta rather
+ * than `settings` for the reason the contract gives — `settings` is the per-run
+ * knobs, and the staging is the SUBJECT of the run, the same category as a
+ * finishing pass's source experiment.
+ *
+ * Null on every other kind (the create schema refuses the field there), and null
+ * on a bag that no longer parses — which costs the display its staging and the
+ * run its refusal, never the row.
+ */
+export function storedStaging(row: ImageLabExperimentRow, sink?: DiagnosticSink): ImageLabStaging | null {
+  const raw = imageMeta(row.meta)["staging"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(imageLabStagingSchema, raw, sink, "image_lab_experiments.meta.staging");
 }
 
 /**

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  baseImageModelSlug,
   compileReferenceRolePrompt,
   IMAGE_LAB_MAX_INPUTS,
   type ImageLabControl,
@@ -20,6 +21,9 @@ import {
   isImageLabControlledKind,
   isImageLabFinishableKind,
 } from "@vesper/image-core";
+import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
+import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
+import type { DaylightBand } from "@/lib/clock";
 import {
   chatsApi,
   imageLabApi,
@@ -36,9 +40,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import {
   imageLabControlKindLabel,
+  imageLabExperimentKindDescription,
   imageLabExperimentKindLabel,
   imageLabModeLabel,
   imageLabRoleLabel,
+  imageLabStagingBareSummary,
+  imageLabStagingCameraSummary,
+  imageLabStagingOptionLabel,
+  imageLabStagingViewerPartsSummary,
 } from "./image-lab-copy";
 import {
   ImageChoiceGrid,
@@ -111,10 +120,47 @@ import {
  * the weights contribute can be read without the pack contributing to the same
  * face. The checkbox appears only once a LoRA is chosen, because the arm without
  * weights is not a comparison — it is the source image rendered twice.
+ *
+ * A STAGED SCENE is the second kind offered the LoRA picker, and the one it
+ * matters most on (intimate-scene-lora.spec.md §"Slice 2"). It writes no
+ * instruction at all: the staging registry owns every explicit word of the act,
+ * the runner compiles the same scene prompt the chat lane sends, and byte-parity
+ * with that prompt is the entire reason this bench answers anything — a sentence
+ * typed here would make it answer a different question. So the instruction box is
+ * replaced by the staging's own sentence, read out of the registry with the
+ * chosen character's name substituted, exactly as the render will state it.
+ *
+ * What the admin picks instead is the ACT (a registry id), the scene facts no
+ * chat exists to supply (setting, lighting, time of day), the character, their
+ * identity render, and the weights — where the SCALE is the knob the bench
+ * exists to move, since "is scale 1 right?" is a question the chat lane cannot
+ * ask at all.
  */
 
 /** What the runner uses when the form names no model. Shown, never sent. */
 const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
+
+/**
+ * A staged scene's default model, and the one kind whose blank Model box IS
+ * sent rather than left to the runner.
+ *
+ * The ordinary default cannot carry a LoRA at all — `qwen-image-edit-2511`
+ * exposes no `lora_weights` input, which is the entire reason the wrapper row
+ * exists (docs/image-models/qwen-image-edit-plus-lora.md). A staged run seeds
+ * the builtin intimate LoRA below, so defaulting the model the way every other
+ * kind does would pair weights with a model that cannot load them and settle
+ * the run `image_lora.incompatible` before rendering — a form that queues a
+ * request it knows will fail.
+ *
+ * So the staged kind defaults its own model and SENDS it. An admin who names
+ * another slug still overrides it; this only fills the blank.
+ *
+ * It is the SAME constant the chat render route resolves, imported rather than
+ * retyped: a second spelling here would drift the day the wrapper is
+ * re-registered, and a bench that ran a different model than production would
+ * quietly stop being evidence about production.
+ */
+const STAGED_DEFAULT_MODEL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;
 
 /**
  * The send order a finishing pass compiles its numbered bindings over: the base
@@ -168,6 +214,31 @@ function extraRoleHint(role: ExtraReferenceRole): string {
       return "The place the scene is set — one of this conversation's scene renders.";
   }
 }
+
+/**
+ * The acts a staged scene may bench: the registry's INTIMATE entries, filtered
+ * here rather than listed here.
+ *
+ * `intimate: true` is the same flag the render layer gates the staged sentence
+ * behind — those entries are emitted only on the uncensored route — so the two
+ * lists cannot disagree about which acts exist. The non-intimate entries are left
+ * out because they are not what this kind is for: an embrace or a spooned pose
+ * renders perfectly well on the stock model, and benching one would spend a paid
+ * render measuring a LoRA on a picture that never needed it.
+ */
+const INTIMATE_STAGINGS: readonly SceneStaging[] = sceneStagings.filter((staging) => staging.intimate);
+
+/**
+ * The chat lane's own time-of-day shorthand, which is what an absent lighting
+ * phrase is derived from (`heuristicLighting`, server/images/scene.ts). Typed
+ * against `DaylightBand` so a renamed band is a compile error here rather than a
+ * silently unrecognised word that falls back to neutral light.
+ *
+ * A select rather than a text box: any other string is accepted by the contract
+ * and simply derives nothing, so offering free text would offer four words that
+ * work and every other one that quietly does not.
+ */
+const STAGED_TIME_OF_DAY = ["dawn", "day", "dusk", "night"] as const satisfies readonly DaylightBand[];
 
 /** The scene-sourced pickers' empty states, in the noun the admin actually failed to choose. */
 const SCENE_EMPTY_HINTS = {
@@ -327,6 +398,14 @@ export function ImageLabExperimentForm({
   const [extraRole, setExtraRole] = useState<ExtraReferenceRole | "">("");
   const [extraImageId, setExtraImageId] = useState<string | null>(null);
   const [modelSlug, setModelSlug] = useState("");
+  // A staged scene's own four fields: the act, and the three scene facts no chat
+  // exists here to supply. Kept as their own state rather than folded into the
+  // instruction, because they are structured values the request carries under
+  // `staging` — the runner reads them, nothing parses them back out of prose.
+  const [stagingId, setStagingId] = useState("");
+  const [stagingSetting, setStagingSetting] = useState("");
+  const [stagingLighting, setStagingLighting] = useState("");
+  const [stagingTimeOfDay, setStagingTimeOfDay] = useState("");
   const [loraId, setLoraId] = useState("");
   const [loraScale, setLoraScale] = useState("");
   const [loraOnly, setLoraOnly] = useState(false);
@@ -338,6 +417,9 @@ export function ImageLabExperimentForm({
   const isProbe = kind === "control_probe";
   const isFinishing = kind === "finishing_pass";
   const isTwoCharacter = kind === "two_character_scene";
+  const isStaged = kind === "staged_scene";
+  /** The act itself, or null while nothing is chosen (and for an id no entry answers to). */
+  const staging = INTIMATE_STAGINGS.find((entry) => entry.id === stagingId) ?? null;
   /** Kinds whose send order REQUIRES a control fixture. */
   const sendsFixture = isProbe || controlledKind !== null;
   /**
@@ -369,7 +451,15 @@ export function ImageLabExperimentForm({
   // resolution time (`image_lora.unreachable_configuration`), so listing one
   // would sell an admin a queued experiment that can only fail.
   const enabledLoras = (loras.data ?? []).filter((lora) => lora.enabled);
-  const selectedLora = enabledLoras.find((lora) => lora.id === loraId) ?? null;
+  // A staged scene's recipe declares task `scene`, and the library refuses a row
+  // that does not allow the task outright (`image_lora.incompatible`) — so the
+  // same rule that keeps switched-off rows out of this select keeps out rows this
+  // KIND could only be refused for. The filter is scoped to the staged kind
+  // because it is the one place the task is known here: a finishing pass runs the
+  // identity recipe, and narrowing its list on a guess about the task would hide
+  // rows that work today.
+  const offerableLoras = enabledLoras.filter((lora) => !isStaged || lora.allowedTasks.includes("scene"));
+  const selectedLora = offerableLoras.find((lora) => lora.id === loraId) ?? null;
   // A LoRA that left the library — deleted, or switched off since the list
   // loaded — must not ride into a request as an id nothing matches. Guarded on
   // the fetch having ANSWERED, so the first render's empty list cannot clear a
@@ -390,6 +480,50 @@ export function ImageLabExperimentForm({
     setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
     setLoraOnly(false);
   }
+  // A staged scene ARRIVES with the intimate builtin already chosen, at its own
+  // curated default — the chat lane sends those weights on every intimate staged
+  // render, and a bench that started at none would answer a question the lane
+  // never asks. `builtin` is what names it: a seeded row is the one the migration
+  // wrote for this route, where anything hand-curated is somebody's own arm.
+  //
+  // Seeded ONCE (render-adjust with a latch, never a setState inside an effect),
+  // so an admin who clears it back to none — the no-weights control arm, and a
+  // legitimate one — is not overruled on the next keystroke.
+  //
+  // The latch remembers WHICH id it seeded, so leaving the kind can take it back:
+  // a pick this form made on the admin's behalf must not ride into a finishing
+  // pass as if it had been chosen there. A row they picked themselves is left
+  // alone, like every other field that survives a change of kind.
+  const stagedDefaultLora = isStaged ? (offerableLoras.find((lora) => lora.builtin) ?? null) : null;
+  const [seededLoraId, setSeededLoraId] = useState<string | null>(null);
+  if (isStaged && seededLoraId === null && loraId === "" && stagedDefaultLora !== null) {
+    setSeededLoraId(stagedDefaultLora.id);
+    setLoraId(stagedDefaultLora.id);
+  }
+  if (!isStaged && seededLoraId !== null) {
+    setSeededLoraId(null);
+    if (loraId === seededLoraId) setLoraId("");
+  }
+  // The model the run will actually resolve — what the admin named, or the
+  // kind's own default when the box is blank. A staged scene's default is the
+  // LoRA wrapper, because its seeded weights have nowhere else to load.
+  const blankModelDefault = isStaged ? STAGED_DEFAULT_MODEL_SLUG : DEFAULT_MODEL_SLUG;
+  const effectiveModelSlug = modelSlug.trim() === "" ? blankModelDefault : modelSlug.trim();
+  // Whether the chosen weights can reach that model at all. The library compares
+  // BASE slugs (a version suffix is not a different model), so this asks the same
+  // question the same way, and a mismatch is the run's only possible outcome:
+  // `image_lora.incompatible`, before any spend.
+  //
+  // It WARNS rather than disabling the button, unlike the scale check beside it.
+  // The scale is judged against the row's own numbers and cannot be wrong about
+  // itself; the model is free text resolved through the registry, so a slug this
+  // list does not recognise may still be the right one, and a disabled submit
+  // would be this form overruling the registry about a name it cannot see.
+  const loraModelMismatch =
+    selectedLora !== null &&
+    !selectedLora.compatibleModelSlugs.some(
+      (compatible) => baseImageModelSlug(compatible) === baseImageModelSlug(effectiveModelSlug),
+    );
   // The arm as the request will state it. Guarded on the pick rather than trusted
   // from the checkbox alone, so the one render between a vanished LoRA and the
   // latch above cannot describe an arm with no weights in it.
@@ -493,7 +627,12 @@ export function ImageLabExperimentForm({
   // reachable (render-adjust, never a setState inside an effect). No
   // previous-value latch: clearing the pick extinguishes the condition, so this
   // cannot run twice.
-  const fixtureSourceId = control?.meta.sourceImageId ?? null;
+  //
+  // Gated on the kind OFFERING a fixture, because a fixture pick survives a
+  // change of kind and the refusal it protects against does not: a staged scene
+  // sends no control at all, so a leftover pick from a probe must not grey out —
+  // let alone silently clear — a perfectly good identity render on it.
+  const fixtureSourceId = offersFixture ? (control?.meta.sourceImageId ?? null) : null;
   if (fixtureSourceId !== null && sourceImageId === fixtureSourceId) {
     setSourceImageId(null);
   }
@@ -557,6 +696,20 @@ export function ImageLabExperimentForm({
     }
     if (controlledKind !== null && extraRole !== "" && extraImageId !== null) {
       inputs.push({ position: inputs.length + 1, role: extraRole, imageId: extraImageId });
+    }
+  } else if (isStaged) {
+    // One identity and nothing else. The staged recipe's only other role is an
+    // optional `location`, and no picker offers one here on purpose: the lab's
+    // location imagery is a conversation's own scene renders, and this kind
+    // refuses a chat outright — so a location select would have no list to draw
+    // from, and where the act happens is already said in words below. When a
+    // chat-free source of place imagery exists, it is one more picker.
+    //
+    // The input is UNBOUND — no `characterId` on it — because only a
+    // two-character scene binds a subject to a slot; this kind names its
+    // character at the top level, and the contract refuses the other spelling.
+    if (sourceImageId !== null) {
+      inputs.push({ position: inputs.length + 1, role: "identity", imageId: sourceImageId });
     }
   }
 
@@ -650,6 +803,14 @@ export function ImageLabExperimentForm({
         );
       case "finishing_pass":
         return sourceExperimentId !== "" && loraReady;
+      case "staged_scene":
+        // The act, the person, and a face to keep. The scene fields are all
+        // optional — each has a default the lane owns — and the LoRA is checked
+        // only for a scale inside its own band, the same rail a finishing pass
+        // gets. The staging id is guaranteed to be a real entry because the
+        // select is built from the registry, so nothing here re-checks it; the
+        // lane does that anyway, against rows that may arrive from anywhere.
+        return characterId !== "" && sourceImageId !== null && stagingId !== "" && loraReady;
     }
   })();
 
@@ -672,7 +833,12 @@ export function ImageLabExperimentForm({
   const submit = async () => {
     if (!ready) return;
     const sendsCharacter = kind === "control_probe" || kind === "baseline_portrait" || kind === "controlled_portrait";
-    const namedModel = modelSlug.trim() === "" ? undefined : modelSlug.trim();
+    // Blank normally means "let the runner resolve the plan's model". The staged
+    // kind is the exception and fills its own blank (STAGED_DEFAULT_MODEL_SLUG):
+    // its seeded LoRA cannot load on the ordinary default, so a blank box there
+    // would queue a run whose only outcome is `image_lora.incompatible`.
+    const namedModel =
+      modelSlug.trim() === "" ? (isStaged ? STAGED_DEFAULT_MODEL_SLUG : undefined) : modelSlug.trim();
     // A finishing pass sends its source and nothing else: the subject is
     // inherited from that run and the references are resolved by the runner, so
     // every other field here would be a value the server refuses.
@@ -703,26 +869,61 @@ export function ImageLabExperimentForm({
                 ...(loraOnlyArm ? { finishingVariant: "lora_only" as const } : {}),
               }),
         }
-      : {
-          kind,
-          instruction: instruction.trim(),
-          inputs,
-          modelSlug: namedModel,
-          // Each kind names only its own subject: a scene run carrying a leftover
-          // character id would record a subject it never rendered, and vice versa.
-          characterId: sendsCharacter && characterId !== "" ? characterId : undefined,
-          chatId: needsChat && chatId !== "" ? chatId : undefined,
-          // A control image and its kind are recorded together or not at all — half
-          // a pointer names a fixture nothing can check. Guarded on the kind
-          // OFFERING a fixture, so a pick left over from a kind that sends one
-          // cannot ride into a request from a kind that does not.
-          controlImageId: offersFixture && control !== null ? control.imageId : undefined,
-          controlKind: offersFixture && control !== null ? control.meta.controlKind : undefined,
-          // The bias knob belongs to the controlled recipes alone: a probe or
-          // baseline declaring one would claim a recipe existed to be biased, and
-          // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
-          mode: controlledKind !== null ? mode : undefined,
-        };
+      : isStaged
+        ? {
+            kind: "staged_scene",
+            // Deliberately empty, and the one field on this form with no control
+            // behind it. The prompt is compiled from the staging registry by the
+            // runner, byte for byte as the chat lane compiles it; a sentence sent
+            // from here would be appended to that and the bench would stop being
+            // a bench. The panel below shows what goes instead of this.
+            instruction: "",
+            inputs,
+            modelSlug: namedModel,
+            characterId,
+            // Each optional scene field is sent only when the admin filled it: an
+            // empty string is a value, and a stored `setting: ""` would claim a
+            // backdrop was specified and left blank, where an ABSENT one means
+            // the lane's own default — which is the fact the record should keep.
+            staging: {
+              id: stagingId,
+              ...(stagingSetting.trim() === "" ? {} : { setting: stagingSetting.trim() }),
+              ...(stagingLighting.trim() === "" ? {} : { lighting: stagingLighting.trim() }),
+              ...(stagingTimeOfDay === "" ? {} : { timeOfDay: stagingTimeOfDay }),
+            },
+            // The same rule the finishing pass sends its weights under, and the
+            // same shape: a library id and the scale, never a locator. No
+            // `finishingVariant` — no other kind's runner reads one, and the
+            // contract refuses it here.
+            ...(selectedLora === null || effectiveLoraScale === null
+              ? {}
+              : {
+                  settings: {
+                    controls: { lora: { id: selectedLora.id, scale: effectiveLoraScale } },
+                    controlInput: {},
+                  },
+                }),
+          }
+        : {
+            kind,
+            instruction: instruction.trim(),
+            inputs,
+            modelSlug: namedModel,
+            // Each kind names only its own subject: a scene run carrying a leftover
+            // character id would record a subject it never rendered, and vice versa.
+            characterId: sendsCharacter && characterId !== "" ? characterId : undefined,
+            chatId: needsChat && chatId !== "" ? chatId : undefined,
+            // A control image and its kind are recorded together or not at all — half
+            // a pointer names a fixture nothing can check. Guarded on the kind
+            // OFFERING a fixture, so a pick left over from a kind that sends one
+            // cannot ride into a request from a kind that does not.
+            controlImageId: offersFixture && control !== null ? control.imageId : undefined,
+            controlKind: offersFixture && control !== null ? control.meta.controlKind : undefined,
+            // The bias knob belongs to the controlled recipes alone: a probe or
+            // baseline declaring one would claim a recipe existed to be biased, and
+            // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
+            mode: controlledKind !== null ? mode : undefined,
+          };
     setSubmitting(true);
     const result = await imageLabApi.experiments.create(body);
     setSubmitting(false);
@@ -755,6 +956,17 @@ export function ImageLabExperimentForm({
   const extraSource: "portraits" | "scenes" =
     controlledKind !== null && extraRole !== "" ? extraReferenceSource(controlledKind, extraRole) : "portraits";
 
+  // The staged sentence as the render will state it: the registry's own template
+  // with the subject's name substituted, and never a paraphrase of it — this form
+  // reads the words, it does not write them. Before a character is chosen a
+  // placeholder stands in, so the shape of the sentence is readable while the cast
+  // is still being decided.
+  const stagedSubjectName = characterRows.find((character) => character.id === characterId)?.name ?? "";
+  const stagedSentence =
+    staging === null
+      ? ""
+      : staging.template.replaceAll("{name}", stagedSubjectName === "" ? "the character" : stagedSubjectName);
+
   // The identity column probes and controlled kinds share — one JSX value so
   // the character-scoped and chat-scoped layouts cannot drift apart.
   const identityColumn = (
@@ -764,7 +976,9 @@ export function ImageLabExperimentForm({
         hint={
           isProbe
             ? "The render whose face the output must keep. Optional — a probe may test structure alone."
-            : "The render whose face the output must keep. Required — the controlled recipes refuse to run without one."
+            : isStaged
+              ? "The render whose face this act is performed by. Required — a staged render with no likeness in it is the act happening to a stranger."
+              : "The render whose face the output must keep. Required — the controlled recipes refuse to run without one."
         }
         scopeId={identityCharacterId}
         images={portraits}
@@ -781,6 +995,105 @@ export function ImageLabExperimentForm({
         </p>
       ) : null}
     </div>
+  );
+
+  /**
+   * The curated-LoRA control, shared by the two kinds that offer one — one JSX
+   * value for the same reason the identity column is one: the band, the default,
+   * and the compatibility warning must not come to differ between them.
+   *
+   * The two kinds ask different questions of the same control. A finishing pass
+   * asks whether blending weights in fixes a face; a staged scene asks whether
+   * the SCALE is right for this act, which is the question the chat lane cannot
+   * ask at all — it sends the row's default and has nowhere to say otherwise. The
+   * LoRA-only checkbox stays finishing-only, because `finishingVariant` is a
+   * finishing pass's field and the contract refuses it anywhere else.
+   */
+  const loraFields = (
+    <>
+      <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
+        <Field
+          label="LoRA"
+          hint={
+            offerableLoras.length === 0
+              ? isStaged
+                ? "No enabled library row allows scene renders, so there are no weights to offer. Curate one under Settings → Image models → LoRA library — without them the act is drawn by the stock model, which is the thing this bench measures the absence of."
+                : "None in the library yet. Curate one under Settings → Image models → LoRA library; only enabled rows are offered here."
+              : isStaged
+                ? "The weights the act is rendered with. The intimate builtin is chosen for you because it is what the chat lane sends on every intimate staged render — clear it to none to see the same act without them."
+                : "Optional. Blends a curated weights file into this pass — the library row decides which models, versions, and strengths it may run at."
+          }
+        >
+          {(id) => (
+            <Select id={id} value={loraId} onChange={(e) => setLoraId(e.target.value)}>
+              <option value="">— None —</option>
+              {offerableLoras.map((lora) => (
+                <option key={lora.id} value={lora.id}>
+                  {lora.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {selectedLora !== null ? (
+          <Field label="Scale">
+            {(id) => (
+              <Input
+                id={id}
+                type="number"
+                step={0.05}
+                min={selectedLora.minimumScale}
+                max={selectedLora.maximumScale}
+                value={loraScale}
+                onChange={(e) => setLoraScale(e.target.value)}
+              />
+            )}
+          </Field>
+        ) : null}
+      </div>
+      {selectedLora !== null ? (
+        <>
+          {/* String-expression children throughout: this prose straddles
+              expressions, and a wrapped boundary is where the space goes missing. */}
+          <p className="text-xs text-paper-500">
+            {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
+            {"A scale outside it is refused before any spend rather than clamped. The row's trigger words and "}
+            {"prompt additions are woven into the compiled prompt automatically."}
+            {isStaged
+              ? " Moving this number is what a scale sweep is: too low reads as withheld anatomy, too high as wrong geometry, and the ruling on each run says which way to go next."
+              : " Nothing to type below."}
+          </p>
+          {loraModelMismatch ? (
+            <p className="text-xs text-danger-300">
+              {`These weights are not curated for ${effectiveModelSlug}. `}
+              {selectedLora.compatibleModelSlugs.length === 0
+                ? "The library row lists no compatible model at all, "
+                : `The row lists ${selectedLora.compatibleModelSlugs.join(", ")}, `}
+              {"so as it stands the run is refused before any spend and nothing is rendered. Name a listed model in "}
+              {"the Model box above, or widen the row in the LoRA library."}
+            </p>
+          ) : null}
+          {isFinishing ? (
+            <>
+              <label className="flex items-center gap-2 text-sm text-paper-300">
+                <input
+                  type="checkbox"
+                  checked={loraOnly}
+                  onChange={() => setLoraOnly((on) => !on)}
+                  className="accent-accent-500"
+                />
+                LoRA-only arm — send no identity reference
+              </label>
+              <p className="text-xs text-paper-500">
+                {loraOnly
+                  ? "This pass sends the base render alone, so what the weights do to the face is not shared with the identity pack. The compiled prompt below changes to match — it names no reference image."
+                  : "Leave it off and the pack's reference goes too. Tick it to measure the LoRA on its own: the pass sends the base render and nothing else, which is the only arm that can attribute an improved face to the weights."}
+              </p>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </>
   );
 
   return (
@@ -802,10 +1115,10 @@ export function ImageLabExperimentForm({
 
       <div className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Kind"
-            hint="A probe asks whether the model obeys a control at all; a controlled run asks whether that holds production-shaped; a baseline re-runs a lane's own settings beside it; a two-character scene asks whether two identities survive one render; a finishing pass re-edits one of those results to fix the face."
-          >
+          {/* The hint describes the SELECTED kind rather than listing all of them:
+              the old enumeration was already a run-on at seven kinds, and an admin
+              in this select is asking about the one in the box. */}
+          <Field label="Kind" hint={imageLabExperimentKindDescription(kind)}>
             {(id) => (
               <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as ImageLabExperimentKind)}>
                 {imageLabExperimentKinds.map((entry) => (
@@ -816,13 +1129,20 @@ export function ImageLabExperimentForm({
               </Select>
             )}
           </Field>
-          <Field label="Model" hint={`Blank runs the plan's model (${DEFAULT_MODEL_SLUG}). Name another to probe a fallback connector.`}>
+          <Field
+            label="Model"
+            hint={
+              isStaged
+                ? `Blank runs the LoRA wrapper (${STAGED_DEFAULT_MODEL_SLUG}) — the only Qwen edit model that loads weights. Name another to probe a fallback connector.`
+                : `Blank runs the plan's model (${DEFAULT_MODEL_SLUG}). Name another to probe a fallback connector.`
+            }
+          >
             {(id) => (
               <Input
                 id={id}
                 value={modelSlug}
                 onChange={(e) => setModelSlug(e.target.value)}
-                placeholder={DEFAULT_MODEL_SLUG}
+                placeholder={blankModelDefault}
                 // Italic on top of the shared muted placeholder colour: this
                 // placeholder is a model slug, and a slug sitting in the box
                 // reads exactly like one somebody typed. Blank means the plan's
@@ -877,67 +1197,7 @@ export function ImageLabExperimentForm({
                   : "The runner sends that run's result as the base image and the character's identity-pack reference beside it. Nothing else is picked here: the pack decides which image its identity is."}
             </p>
 
-            <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
-              <Field
-                label="LoRA"
-                hint={
-                  enabledLoras.length === 0
-                    ? "None in the library yet. Curate one under Settings → Image models → LoRA library; only enabled rows are offered here."
-                    : "Optional. Blends a curated weights file into this pass — the library row decides which models, versions, and strengths it may run at."
-                }
-              >
-                {(id) => (
-                  <Select id={id} value={loraId} onChange={(e) => setLoraId(e.target.value)}>
-                    <option value="">— None —</option>
-                    {enabledLoras.map((lora) => (
-                      <option key={lora.id} value={lora.id}>
-                        {lora.label}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
-              {selectedLora !== null ? (
-                <Field label="Scale">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      type="number"
-                      step={0.05}
-                      min={selectedLora.minimumScale}
-                      max={selectedLora.maximumScale}
-                      value={loraScale}
-                      onChange={(e) => setLoraScale(e.target.value)}
-                    />
-                  )}
-                </Field>
-              ) : null}
-            </div>
-            {selectedLora !== null ? (
-              <>
-                {/* String-expression children throughout: this prose straddles
-                    expressions, and a wrapped boundary is where the space goes missing. */}
-                <p className="text-xs text-paper-500">
-                  {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
-                  {"A scale outside it is refused before any spend rather than clamped. The row's trigger words and "}
-                  {"prompt additions are woven into the compiled prompt automatically — nothing to type below."}
-                </p>
-                <label className="flex items-center gap-2 text-sm text-paper-300">
-                  <input
-                    type="checkbox"
-                    checked={loraOnly}
-                    onChange={() => setLoraOnly((on) => !on)}
-                    className="accent-accent-500"
-                  />
-                  LoRA-only arm — send no identity reference
-                </label>
-                <p className="text-xs text-paper-500">
-                  {loraOnly
-                    ? "This pass sends the base render alone, so what the weights do to the face is not shared with the identity pack. The compiled prompt below changes to match — it names no reference image."
-                    : "Leave it off and the pack's reference goes too. Tick it to measure the LoRA on its own: the pass sends the base render and nothing else, which is the only arm that can attribute an improved face to the weights."}
-                </p>
-              </>
-            ) : null}
+            {loraFields}
           </div>
         ) : needsChat ? (
           <div className="grid gap-4 sm:grid-cols-[16rem_1fr]">
@@ -973,7 +1233,9 @@ export function ImageLabExperimentForm({
                   ? "Whose identity the probe must preserve."
                   : kind === "controlled_portrait"
                     ? "The character this evidence is filed against — whose identity the render must keep."
-                    : "The character whose portrait settings are re-run."
+                    : isStaged
+                      ? "Who performs the act. Named here rather than bound to the reference below, because only a two-character scene binds its subjects to their inputs."
+                      : "The character whose portrait settings are re-run."
               }
             >
               {(id) => (
@@ -985,7 +1247,7 @@ export function ImageLabExperimentForm({
                 />
               )}
             </Field>
-            {isProbe || kind === "controlled_portrait" ? identityColumn : null}
+            {isProbe || kind === "controlled_portrait" || isStaged ? identityColumn : null}
           </div>
         )}
 
@@ -1019,6 +1281,103 @@ export function ImageLabExperimentForm({
               {`${DEFAULT_MODEL_SLUG} accepts at most 3 reference images, which the two identities and one control `}
               {"fixture fill exactly."}
             </p>
+          </>
+        ) : null}
+
+        {isStaged ? (
+          <>
+            <Field
+              label="Staging"
+              hint="The act this render is of. Every option is an entry in the scene-staging registry, which owns its exact wording; the id shown is what the row records, what the recipe key carries, and what a written-up ruling cites."
+            >
+              {(id) => (
+                <Select id={id} value={stagingId} onChange={(e) => setStagingId(e.target.value)}>
+                  <option value="">— Choose a staging —</option>
+                  {INTIMATE_STAGINGS.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {imageLabStagingOptionLabel(entry)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+
+            <div className="rounded-card border border-ink-700 bg-ink-950/40 px-3 py-2">
+              <p className="text-[11px] tracking-wide text-paper-500 uppercase">
+                Staged sentence (owned by the registry)
+              </p>
+              {staging === null ? (
+                <p className="mt-1 text-xs text-paper-500">
+                  Choose a staging to read the sentence this render is compiled around.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-xs whitespace-pre-wrap text-paper-300">{stagedSentence}</p>
+                  <dl className="mt-2 grid gap-2 text-[11px] text-paper-300 sm:grid-cols-3">
+                    <div>
+                      <dt className="tracking-wide text-paper-500 uppercase">Camera</dt>
+                      <dd>{imageLabStagingCameraSummary(staging.camera)}</dd>
+                    </div>
+                    <div>
+                      <dt className="tracking-wide text-paper-500 uppercase">Subject bare</dt>
+                      <dd>{imageLabStagingBareSummary(staging)}</dd>
+                    </div>
+                    <div>
+                      <dt className="tracking-wide text-paper-500 uppercase">Viewer&apos;s own body in frame</dt>
+                      <dd>{imageLabStagingViewerPartsSummary(staging)}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-2 text-xs text-paper-500">
+                    {"The camera is the staging's own and overrides anything a composer would have proposed — the "}
+                    {"geometry is entailed by the act. The runner compiles the rest of the prompt around this "}
+                    {"sentence exactly as the chat lane does: appearance, setting, lighting, and the shot line. That "}
+                    {"parity is what makes this a bench, so no words are typed on this form."}
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-[1fr_1fr_10rem]">
+              <Field
+                label="Setting"
+                hint="Where the act happens. There is no conversation here to supply a room, so blank renders against the lane's own empty backdrop."
+              >
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={stagingSetting}
+                    onChange={(e) => setStagingSetting(e.target.value)}
+                    placeholder="a dim hotel room, sheets rumpled"
+                    maxLength={300}
+                  />
+                )}
+              </Field>
+              <Field label="Lighting" hint="Blank is derived from the time of day, by the rule the chat lane uses.">
+                {(id) => (
+                  <Input
+                    id={id}
+                    value={stagingLighting}
+                    onChange={(e) => setStagingLighting(e.target.value)}
+                    placeholder="warm dusk light"
+                    maxLength={200}
+                  />
+                )}
+              </Field>
+              <Field label="Time of day" hint="The lane's own shorthand — what an empty lighting box is derived from.">
+                {(id) => (
+                  <Select id={id} value={stagingTimeOfDay} onChange={(e) => setStagingTimeOfDay(e.target.value)}>
+                    <option value="">— None —</option>
+                    {STAGED_TIME_OF_DAY.map((band) => (
+                      <option key={band} value={band}>
+                        {band}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
+
+            <div className="flex flex-col gap-2">{loraFields}</div>
           </>
         ) : null}
 
@@ -1127,7 +1486,9 @@ export function ImageLabExperimentForm({
                       ? loraOnlyArm
                         ? "Resolved at run time — the source run's result, and nothing else. The LoRA-only arm sends no identity reference at all."
                         : "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
-                      : "None — a baseline resolves the lane's own references itself."}
+                      : isStaged
+                        ? "Nothing ordered yet — a staged scene sends one identity reference and no fixture, because its structure arrives as the staging's own words rather than as an image."
+                        : "None — a baseline resolves the lane's own references itself."}
             </p>
           ) : (
             <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
@@ -1166,45 +1527,63 @@ export function ImageLabExperimentForm({
           </div>
         ) : null}
 
-        <Field
-          label="Instruction"
-          hint={
-            isProbe
-              ? "Pre-filled from the numbered-role template; the numbers match the list above. Sent exactly as written."
-              : controlledKind !== null
-                ? "The base prompt only. The runner prefixes the numbered bindings shown above and records the full text as the final prompt."
-                : isTwoCharacter
-                  ? "Describe the scene, naming both characters and what each is doing. The base prompt only — the runner prefixes the numbered bindings shown above, which name each face themselves, so don't number the images here."
-                  : isFinishing
-                    ? "Optional — appended after the rule above to narrow it (“the left eye is wrong”), never to replace it."
-                    : "Optional — a baseline renders the lane's own compiled prompt."
-          }
-        >
-          {(id) => (
-            <Textarea
-              id={id}
-              rows={5}
-              value={instruction}
-              spellCheck={false}
-              onChange={(e) => {
-                setInstructionEdited(true);
-                setInstructionText(e.target.value);
-              }}
-              placeholder={
-                isProbe
-                  ? "Pick a control fixture to fill the template."
-                  : controlledKind !== null
-                    ? "What the render should be, past the bindings — sent after the prefix."
-                    : isTwoCharacter
-                      ? "Name both characters and say what each is doing — “Sabrina sits at the bar; Wren leans against it, talking to her.”"
-                      : isFinishing
-                        ? "Leave blank to send the rule alone."
-                        : ""
-              }
-              maxLength={8000}
-            />
-          )}
-        </Field>
+        {/* A staged scene has NO instruction box, and that is the kind's defining
+            constraint rather than a simplification. Its prompt is compiled from
+            the staging registry byte for byte as the chat lane compiles it, and
+            the byte-parity is the whole reason a ruling made here transfers to
+            production — a sentence typed on this form would be appended to that
+            prompt and the bench would be measuring something else. A field the
+            runner ignored would be worse still. */}
+        {isStaged ? (
+          <div className="rounded-card border border-ink-700 bg-ink-950/40 px-3 py-2">
+            <p className="text-[11px] tracking-wide text-paper-500 uppercase">Instruction</p>
+            <p className="mt-1 text-xs text-paper-500">
+              {"None, on this kind alone. The registry owns every word of the act and the runner compiles the same "}
+              {"scene prompt production sends, so there is nothing to write and nothing that could be written "}
+              {"without making this run answer a different question. Choose the act above; the render states it."}
+            </p>
+          </div>
+        ) : (
+          <Field
+            label="Instruction"
+            hint={
+              isProbe
+                ? "Pre-filled from the numbered-role template; the numbers match the list above. Sent exactly as written."
+                : controlledKind !== null
+                  ? "The base prompt only. The runner prefixes the numbered bindings shown above and records the full text as the final prompt."
+                  : isTwoCharacter
+                    ? "Describe the scene, naming both characters and what each is doing. The base prompt only — the runner prefixes the numbered bindings shown above, which name each face themselves, so don't number the images here."
+                    : isFinishing
+                      ? "Optional — appended after the rule above to narrow it (“the left eye is wrong”), never to replace it."
+                      : "Optional — a baseline renders the lane's own compiled prompt."
+            }
+          >
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={5}
+                value={instruction}
+                spellCheck={false}
+                onChange={(e) => {
+                  setInstructionEdited(true);
+                  setInstructionText(e.target.value);
+                }}
+                placeholder={
+                  isProbe
+                    ? "Pick a control fixture to fill the template."
+                    : controlledKind !== null
+                      ? "What the render should be, past the bindings — sent after the prefix."
+                      : isTwoCharacter
+                        ? "Name both characters and say what each is doing — “Sabrina sits at the bar; Wren leans against it, talking to her.”"
+                        : isFinishing
+                          ? "Leave blank to send the rule alone."
+                          : ""
+                }
+                maxLength={8000}
+              />
+            )}
+          </Field>
+        )}
         {instructionEdited && template !== "" && instruction !== template ? (
           <div>
             <Button

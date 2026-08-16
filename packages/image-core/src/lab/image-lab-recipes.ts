@@ -17,7 +17,8 @@ import {
  * The Advanced Image Lab's recipes — code-defined `ImageModelProfile` values for
  * the `controlled_portrait` / `controlled_scene` experiment kinds
  * (qwen-advanced-image-subsystem.spec.md, Stages 1–2), for the Stage 3
- * `finishing_pass`, and for the Stage 6 `two_character_scene`.
+ * `finishing_pass`, for the Stage 6 `two_character_scene`, and for the
+ * `staged_scene` bench (intimate-scene-lora.spec.md §"Slice 2").
  *
  * A recipe is CODE, deliberately not a row in `image_model_profiles`, for two
  * reasons that outweigh the convenience of editing it on the admin page:
@@ -42,13 +43,14 @@ import {
  * subset of the experiment kinds (the `satisfies` is the tie) so a renamed kind
  * breaks here at compile time instead of silently orphaning its recipe.
  *
- * Not "every kind that runs on the render-intent path" — the finishing pass and
- * the two-character scene both do, and neither is here. What this list selects is
- * the kinds {@link imageLabRecipeProfile} serves: the ones that always declare a
- * control, so their recipe is indexed by a non-null control kind. A
- * `two_character_scene` is deliberately absent because its control is OPTIONAL
- * and it has a runner and a recipe of its own; adding it would make
- * `imageLabRecipeKey`'s non-null `controlKind` a lie for one member.
+ * Not "every kind that runs on the render-intent path" — the finishing pass, the
+ * two-character scene and the staged scene all do, and none is here. What this
+ * list selects is the kinds {@link imageLabRecipeProfile} serves: the ones that
+ * always declare a control, so their recipe is indexed by a non-null control
+ * kind. A `two_character_scene` is deliberately absent because its control is
+ * OPTIONAL, and a `staged_scene` because it declares none at all; both have a
+ * runner and a recipe of their own, and admitting either would make
+ * `imageLabRecipeKey`'s non-null `controlKind` a lie for that member.
  */
 export const imageLabControlledKinds = [
   "controlled_portrait",
@@ -487,7 +489,7 @@ export function imageLabFinishingRecipeProfile(
  * comparison holds, and "does a second pass earn its cost?" is asked of it on
  * exactly the same terms.
  *
- * Two kinds are refused, each for its own reason:
+ * Three kinds are refused, each for its own reason:
  *
  * - `control_probe`, because a probe is not a production-shaped render of
  *   anybody. Its inputs are hand-ordered, it may carry a raw provider bag, and
@@ -497,6 +499,12 @@ export function imageLabFinishingRecipeProfile(
  *   one's output, so drift accumulates with nothing to attribute it to, and the
  *   plan's promotion rule — improves identity, changes nothing else — is a
  *   judgment about ONE pass over a known base.
+ * - `staged_scene`, because the pass would undo the render it was handed. A
+ *   finishing pass runs the identity recipe on the pinned identity model with no
+ *   LoRA in the send, so finishing a staged render means asking a stock model to
+ *   redraw explicit anatomy it demonstrably cannot draw — the trade the whole
+ *   intimate-scene work exists to avoid. The result would launder the bench's own
+ *   evidence into a picture of the thing the bench was measuring the absence of.
  */
 export const imageLabFinishableKinds = [
   "baseline_portrait",
@@ -509,4 +517,110 @@ export type ImageLabFinishableKind = (typeof imageLabFinishableKinds)[number];
 /** Whether a finishing pass may be run over this kind's result. */
 export function isImageLabFinishableKind(kind: ImageLabExperimentKind): kind is ImageLabFinishableKind {
   return imageLabFinishableKinds.some((finishable) => finishable === kind);
+}
+
+// ---------------------------------------------------------------------------
+// The staged-scene recipe
+// ---------------------------------------------------------------------------
+
+/**
+ * The staged-scene recipe's stable name — one per STAGING, the way the controlled
+ * recipes are one per control kind and the two-character recipe one per control
+ * arm.
+ *
+ * A key per staging rather than one flat `staged_scene`, because the staging is
+ * the whole experiment: `astride_viewer_facing` and `bent_over_surface` are two
+ * different geometries, two different sentences and two different things a model
+ * can fail at, and a recorded outcome that cited the same recipe for both would
+ * make a month-old row unreadable — "this one came out wrong" with no way to say
+ * which act was asked for. It is a function of a plain string for the reason
+ * `imageLabStagingSchema` carries one: the staging registry is app-side and a
+ * package may not reach it, so this file mints the key and the lane vouches for
+ * the id.
+ */
+export function imageLabStagedSceneRecipeKey(stagingId: string): string {
+  return `staged_scene/${stagingId}`;
+}
+
+/**
+ * The staged scene's reference policy: ONE identity, required, and an OPTIONAL
+ * location beside it.
+ *
+ * Required identity, because the bench renders a named character performing a
+ * named act — a staged render with no likeness in the send is a picture of the
+ * act happening to a stranger, which settles nothing about a cast the chat lane
+ * would have used. It is the only required role: unlike the controlled recipes
+ * there is no fixture to pair it with, since the structure of this render arrives
+ * as WORDS the staging registry owns rather than as an image the admin ordered.
+ *
+ * The location is optional and it is the only optional role here. It is the one
+ * content reference a staged bench can honestly use — where the act happens is a
+ * scene fact the row already states in `staging.setting`, and an image says it
+ * better than a phrase — while an outfit or a style reference would fight the
+ * staging itself, which describes bare regions and a specific geometry that a
+ * wardrobe photo would contradict. Optional rather than required because the
+ * bench must be runnable with nothing but a face: the questions it exists to ask
+ * are about the act and the LoRA's scale, and neither needs a room photograph.
+ *
+ * Every role is capped at one. Two identities would be a second person the
+ * staging's own `cast: "solo"` entries cannot honestly place, and two locations
+ * would put the act in two rooms.
+ */
+function imageLabStagedScenePolicy(): ImageReferencePolicy {
+  const ordered: ImageReferenceRole[] = ["identity", "location"];
+  const maxPerRole: Partial<Record<ImageReferenceRole, number>> = {};
+  for (const role of ordered) maxPerRole[role] = 1;
+  // Each field gets its own array, for the reason the controlled policy gives:
+  // the policy type is mutable, and two fields sharing one instance would let an
+  // edit to either silently rewrite both.
+  return {
+    requiredRoles: ["identity"],
+    allowedRoles: [...ordered],
+    roleOrder: [...ordered],
+    maxPerRole,
+    identityStrategy: "canonical_only",
+  };
+}
+
+/**
+ * The fully-shaped profile one staged run executes.
+ *
+ * Task `scene`, because a named person performing an act somewhere IS a scene,
+ * and because the scene screening is the one whose composition demands match what
+ * is being asked — the same reasoning the two-character recipe gives. `edit` on
+ * `multi_reference_compose` like every other recipe here, which matters more than
+ * usual: the compiled staging sentence arrives as the base prompt, and the
+ * compose strategy is what names the identity slot around it without paraphrasing
+ * a template the registry owns.
+ *
+ * The LABEL carries the raw staging id, which reads unlike every other label in
+ * this file and is the honest thing to write: the registry that knows this entry
+ * as a sentence lives app-side, so an id is the only fact this package holds
+ * about it. The admin surface, which can reach the registry, names it properly.
+ *
+ * `imageModelId` leads the parameter list, matching the two-character and
+ * finishing recipes: the second argument selects the arm rather than the kind.
+ * The model it is pointed at is the LoRA wrapper the chat lane resolves by slug,
+ * and the LoRA itself rides the experiment's `settings.controls.lora` — a recipe
+ * fixes the SHAPE of the request, never the weights.
+ */
+export function imageLabStagedSceneRecipeProfile(imageModelId: string, stagingId: string): ImageModelProfile {
+  const key = imageLabStagedSceneRecipeKey(stagingId);
+  return {
+    id: `${IMAGE_LAB_RECIPE_PROFILE_ID_PREFIX}${key}`,
+    imageModelId,
+    key,
+    label: `Staged scene — ${stagingId}`,
+    task: "scene",
+    operation: "edit",
+    promptStrategy: "multi_reference_compose",
+    referencePolicy: imageLabStagedScenePolicy(),
+    controlDefaults: emptyImageControlDefaults(),
+    providerOverrides: {},
+    timeoutMs: null,
+    enabled: true,
+    isDefault: false,
+    builtin: false,
+    sort: 0,
+  };
 }
