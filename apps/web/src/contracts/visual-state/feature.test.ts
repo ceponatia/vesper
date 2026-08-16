@@ -45,6 +45,32 @@ describe("visualStateFeatureKey", () => {
     expect(garment).toBe("subject/garment_part:g1:cuff/roll");
     expect(item).toBe("subject/item:i1/held");
   });
+
+  /**
+   * Both id schemas permit a colon, and the separator is a colon, so an
+   * unescaped key would give two different garment parts one identity — a
+   * silent cross-wiring of composition edges and memory rows rather than
+   * anything that reports itself.
+   */
+  it("cannot alias two different garment parts whose ids contain the separator", () => {
+    const splitLate = visualStateFeatureKey(
+      "subject",
+      { kind: "garment_part", garmentInstanceId: "g1", partId: "cuff:left" },
+      "roll",
+    );
+    const splitEarly = visualStateFeatureKey(
+      "subject",
+      { kind: "garment_part", garmentInstanceId: "g1:cuff", partId: "left" },
+      "roll",
+    );
+    expect(splitLate).not.toBe(splitEarly);
+  });
+
+  it("cannot alias an id that already contains the escape character", () => {
+    const escaped = visualStateFeatureKey("subject", { kind: "item", itemInstanceId: "i%3A1" }, "held");
+    const literal = visualStateFeatureKey("subject", { kind: "item", itemInstanceId: "i:1" }, "held");
+    expect(escaped).not.toBe(literal);
+  });
 });
 
 describe("visualStateFingerprint", () => {
@@ -54,6 +80,20 @@ describe("visualStateFingerprint", () => {
 
   it("separates two different values", () => {
     expect(visualStateFingerprint({ density: "dense" })).not.toBe(visualStateFingerprint({ density: "sparse" }));
+  });
+
+  /**
+   * The literal form, pinned (visual-state.audit.md finding 9). Every other
+   * property here — order insensitivity, separation, determinism — is equally
+   * true of a hash, so without this assertion the fingerprint could be swapped
+   * for `fnv1aHex` with the whole suite still green. It cannot: observer memory
+   * holds stored fingerprints in exactly this form, and a hashed one would stop
+   * matching every one of them without anything throwing.
+   */
+  it("is canonical sorted-key JSON, not a hash", () => {
+    expect(visualStateFingerprint({ density: "dense" })).toBe('{"density":"dense"}');
+    expect(visualStateFingerprint({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
+    expect(visualStateFingerprint("crooked")).toBe('"crooked"');
   });
 });
 
@@ -134,6 +174,25 @@ describe("validateVisualStateFeature", () => {
     });
     expect(validateVisualStateFeature(candidate, sink)).toBeNull();
     expectDiagnostic(sink, VISUAL_STATE_LOCUS_INVALID);
+  });
+
+  /**
+   * The validator runs the wire schema, so an adapter answers to exactly the
+   * constraints the boundary parser enforces. An empty `truthFingerprint` is the
+   * case that matters: it compares EQUAL to a stored memory row whose own
+   * fingerprint failed to parse and fell back to `""`, which reads as
+   * "unchanged" and is invisible.
+   */
+  it("suppresses an empty fingerprint, which would compare equal to an unparseable stored one", () => {
+    const sink = new DiagnosticCollector();
+    expect(validateVisualStateFeature(visualStateFeatureFixture({ truthFingerprint: "" }), sink)).toBeNull();
+    expectDiagnostic(sink, VISUAL_STATE_FEATURE_MALFORMED);
+  });
+
+  it("holds an adapter to the same shape the boundary parser enforces", () => {
+    const candidate = { ...visualStateFeatureFixture(), evidence: [{ kind: "adapter", ref: "" } as const] };
+    expect(validateVisualStateFeature(candidate)).toBeNull();
+    expect(parseVisualStateFeature(JSON.parse(JSON.stringify(candidate)) as unknown)).toBeNull();
   });
 
   it("suppresses a value the kind's schema rejects", () => {

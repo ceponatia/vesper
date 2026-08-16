@@ -21,6 +21,19 @@ import { appearanceSourceRefSchema, type AppearanceSourceRef } from "../appearan
  */
 export const visualStateSourceRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("appearance"), ref: appearanceSourceRefSchema }),
+  /**
+   * SPEC ADDITION. Species and heritage feature groups (wings, horns, a tail)
+   * are a real owner the spec's union does not name: they come from
+   * `realizeBody`, not from an attribute, a located fact, or anatomy state
+   * (visual-state.audit.md finding 11). Filing them under any existing arm would
+   * claim a provenance that does not exist and would send a reader looking for
+   * an attribute row that was never written.
+   */
+  z.object({
+    kind: z.literal("species_feature"),
+    speciesId: z.string().min(1),
+    featureGroup: z.string().min(1),
+  }),
   z.object({
     kind: z.literal("body_surface"),
     subjectId: z.string().min(1),
@@ -65,6 +78,8 @@ export function visualStateSourceKey(ref: VisualStateSourceRef): string {
   switch (ref.kind) {
     case "appearance":
       return `appearance:${appearanceSourceKey(ref.ref)}`;
+    case "species_feature":
+      return `species_feature:${ref.speciesId}:${ref.featureGroup}`;
     case "body_surface":
       return `body_surface:${ref.subjectId}:${ref.locationId}`;
     case "body_condition":

@@ -1,7 +1,7 @@
 # Visual state and attention
 
-Status: active (planned 2026-08-05; slices 0–1 built 2026-08-16 and awaiting
-review, slices 2–10 queued)
+Status: active (planned 2026-08-05; slices 0–1 reviewed 2026-08-16, slice 2 built
+2026-08-16 and awaiting review, slices 3–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -289,7 +289,7 @@ consumer digests. It is read-only and never spends notice or mention state.
 
 ### Slice 0 — source and duplication audit
 
-Status: built 2026-08-16 — awaiting review. Findings in
+Status: reviewed 2026-08-16. Findings in
 [visual-state.audit.md](visual-state.audit.md).
 
 Inventory every appearance summary, image prompt builder, narrator appearance
@@ -300,7 +300,8 @@ will eventually disappear.
 
 ### Slice 1 — core contract and compatibility adapter
 
-Status: built 2026-08-16 — awaiting review.
+Status: reviewed 2026-08-16. Four corrections the review raised landed inside
+slice 2.
 
 Add pure `VisualStateFeature`, source, locus, stability, layer, evidence, kind
 registry, key/fingerprint helpers, deterministic snapshot ordering, parsing,
@@ -309,12 +310,20 @@ renaming or breaking its frozen recognition seam.
 
 ### Slice 2 — identity and presentation
 
-Status: next.
+Status: built 2026-08-16 — awaiting review.
 
-Project attributes, located facts, anatomy, signature presentation, garment and
-item loci. Add typed non-item presentation for hairstyle, makeup, grooming, and
-similar choices. Add typed replacement, modification, attachment, and
-occlusion relationships.
+Project attributes, located facts, anatomy, species feature groups, and garment
+and item loci. Add the small typed owner deliberate non-item choices never had —
+how the hair is worn, whether there is makeup on, how one area is groomed, what
+is on the nails, a temporary cosmetic mark — with named operations for applying,
+removing, rearranging, smudging and restoring them. Add typed replacement,
+modification, attachment and occlusion between all of it, so a hat can cover a
+hairstyle without erasing it and a coat can sit over a shirt that is still known
+to be there.
+
+Two of those relationships are built but unused: nothing in the wardrobe tells a
+hairpiece from a hat, and a derived effect needs the material reads slice 3
+brings. Both are recorded as missing owners rather than guessed at.
 
 ### Slice 3 — current state
 
