@@ -115,7 +115,7 @@ components →  contracts (types only), never server/*
 Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` files —
 [character-chat/](character-chat/README.md)) and the **successor simulation engine**
 (`sim-*` files + `simulation/`, an event-sourced world model — contracts in
-[contracts/simulation.md](contracts/simulation.md), design in `docs/developer-notes/engine.*`).
+[engine/](engine/README.md), normative contract in `docs/developer-notes/engine.spec.md`).
 These are the only two lanes — there is no world/session lane. The simulation lane's
 pure half — its identities, envelopes, projection contracts and replay kernels — is
 the `@vesper/simulation-core` package; `server/engine/simulation/` keeps everything
@@ -150,7 +150,7 @@ finalize: state row + facts (+supersedence) + episode, then jobs
 
 The full lifecycle is [character-chat/pipeline.md](character-chat/pipeline.md). The
 successor engine's request flow (command → event → synchronous projection → NarrativeCut) is
-[contracts/simulation.md](contracts/simulation.md).
+[engine/commands-events.md](engine/commands-events.md).
 
 ## Naming
 

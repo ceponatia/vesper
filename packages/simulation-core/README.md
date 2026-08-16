@@ -12,7 +12,7 @@ returns events, or an honest refusal.
 | `src/test-support/` | Envelope, space and material fixtures the suites share          |
 
 Design and rationale: [engine.spec.md](../../docs/developer-notes/engine.spec.md).
-Current contracts, in prose: [docs/contracts/simulation.md](../../docs/contracts/simulation.md).
+Current contracts, in prose: [docs/engine/](../../docs/engine/README.md).
 The extraction that produced this package:
 [monorepo-simulation-core.spec.md](../../docs/developer-notes/monorepo-simulation-core.spec.md).
 

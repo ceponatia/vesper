@@ -7,7 +7,7 @@ They live in `contracts/world/` and `contracts/state/`, and each
 exports an `empty*()` default used as the `parseOr` fallback. The character-chat lane's own tracked
 shapes (`character_chat_state`, the scenario, scene memory, plans) are covered by
 [../character-chat/state.md](../character-chat/state.md); the successor engine's shapes by
-[simulation.md](simulation.md).
+[../engine/README.md](../engine/README.md).
 
 ## Where each shape is stored
 
