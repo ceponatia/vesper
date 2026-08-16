@@ -15,11 +15,13 @@ import {
   imageLabOutcomeSchema,
   imageLabRecordVerdictRequestSchema,
   imageLabSettingsSchema,
+  imageLabStagingSchema,
   imageLabStoredInputListSchema,
   imageLabStoredSettingsSchema,
   imageLabUploadControlRequestSchema,
   imageLabFinishingVerdicts,
   imageLabProbeVerdicts,
+  imageLabStagedSceneVerdicts,
   imageLabTwoCharacterVerdicts,
   imageLabVerdictKinds,
   imageLabVerdictOptions,
@@ -210,6 +212,7 @@ describe("imageLabExperimentSchema", () => {
       outcome: null,
       sourceExperimentId: null,
       finishingVariant: null,
+      staging: null,
       status: "succeeded",
       failureCode: null,
       verdict: "honours_control",
@@ -391,8 +394,11 @@ describe("imageLabVerdictKinds", () => {
       "controlled_scene",
       "two_character_scene",
       "finishing_pass",
+      "staged_scene",
     ]);
     for (const kind of imageLabExperimentKinds) {
+      // Baselines are the only kinds that rule on nothing: a run that declares no
+      // control, refines nothing and depicts one person settles no question.
       const isBaseline = kind === "baseline_portrait" || kind === "baseline_scene";
       expect(isImageLabVerdictKind(kind)).toBe(!isBaseline);
     }
@@ -439,11 +445,74 @@ describe("imageLabVerdictOptions", () => {
     expect(imageLabVerdictOptions("baseline_scene")).toBeNull();
   });
 
-  it("keeps the union a superset of all three vocabularies, with inconclusive shared once", () => {
-    for (const verdict of [...imageLabProbeVerdicts, ...imageLabFinishingVerdicts, ...imageLabTwoCharacterVerdicts]) {
+  it("offers the act vocabulary to a staged scene, which sends no fixture at all", () => {
+    // The staging says what should be happening, in words the registry owns; the
+    // ruling says what came back instead. Order is the reader's own narrowing —
+    // what the picture is OF, how explicit it is, how the bodies sit, who they are.
+    expect(imageLabVerdictOptions("staged_scene")).toEqual([
+      "act_depicted",
+      "act_substituted",
+      "anatomy_withheld",
+      "geometry_wrong",
+      "identity_lost",
+      "inconclusive",
+    ]);
+  });
+
+  it("keeps the two opposite-correction rulings apart, which is the point of having both", () => {
+    // `anatomy_withheld` and `geometry_wrong` are the two the bench exists to
+    // tell apart: coy anatomy says the weights are absent or too weak, mangled
+    // limbs say the scale is too high. A single "the picture is wrong" ruling
+    // would point at both fixes at once and therefore at neither.
+    expect(isImageLabVerdictForKind("staged_scene", "anatomy_withheld")).toBe(true);
+    expect(isImageLabVerdictForKind("staged_scene", "geometry_wrong")).toBe(true);
+    // And apart from the wording failure, which says nothing about the LoRA.
+    expect(isImageLabVerdictForKind("staged_scene", "act_substituted")).toBe(true);
+    expect(new Set(imageLabStagedSceneVerdicts).size).toBe(imageLabStagedSceneVerdicts.length);
+  });
+
+  it("keeps the staged rulings inside their own kind, and borrows none from the others", () => {
+    // A fixture judgment on a run that sent no fixture is the confusion every
+    // split here exists to prevent, and `identity_degraded` is a sentence about
+    // two faces crowding one model — neither can be filed on a staged bench.
+    for (const verdict of ["honours_control", "improves_identity", "identity_degraded"] as const) {
+      expect(isImageLabVerdictForKind("staged_scene", verdict)).toBe(false);
+    }
+    // The reverse: an act ruling filed against a probe or a two-character run
+    // would describe a staging neither of them ever compiled.
+    for (const kind of ["control_probe", "controlled_scene", "two_character_scene", "finishing_pass"] as const) {
+      for (const verdict of ["act_depicted", "anatomy_withheld", "geometry_wrong", "identity_lost"] as const) {
+        expect(isImageLabVerdictForKind(kind, verdict)).toBe(false);
+      }
+    }
+    // Shared by all four, refused by none of them — and still refused on a baseline.
+    expect(isImageLabVerdictForKind("staged_scene", "inconclusive")).toBe(true);
+    expect(isImageLabVerdictForKind("baseline_scene", "act_depicted")).toBe(false);
+  });
+
+  it("keeps the union a superset of all four vocabularies, with inconclusive shared once", () => {
+    for (const verdict of [
+      ...imageLabProbeVerdicts,
+      ...imageLabFinishingVerdicts,
+      ...imageLabTwoCharacterVerdicts,
+      ...imageLabStagedSceneVerdicts,
+    ]) {
       expect(imageLabVerdicts).toContain(verdict);
     }
     expect(new Set(imageLabVerdicts).size).toBe(imageLabVerdicts.length);
+  });
+
+  it("gives every kind that rules a vocabulary, and every vocabulary a kind", () => {
+    // The pairing the record rests on: a stored verdict is read back against the
+    // row's kind, so a kind with no options could never be ruled and a vocabulary
+    // no kind offers could never be recorded.
+    for (const kind of imageLabExperimentKinds) {
+      expect(imageLabVerdictOptions(kind) !== null).toBe(isImageLabVerdictKind(kind));
+    }
+    const offered = new Set(imageLabExperimentKinds.flatMap((kind) => imageLabVerdictOptions(kind) ?? []));
+    for (const verdict of imageLabVerdicts) {
+      expect(offered.has(verdict)).toBe(true);
+    }
   });
 
   it("keeps the two-character rulings inside their own kind", () => {
@@ -777,6 +846,198 @@ describe("imageLabCreateExperimentRequestSchema — two-character scenes", () =>
     expect(twoCharacter({ controlImageId: "img_skeleton" }).success).toBe(false);
     expect(twoCharacter({ controlKind: "pose" }).success).toBe(false);
     expect(twoCharacter({ controlImageId: "img_elsewhere", controlKind: "pose" }).success).toBe(false);
+  });
+});
+
+describe("imageLabStagingSchema", () => {
+  it("keeps the registry id a plain string, because the registry lives app-side", () => {
+    // `SceneStagingId` is unreachable from a package — the registry sits in the
+    // app beside the templates and the camera overrides — so the wire carries the
+    // id and the lane settles `subject_invalid` on one nothing answers to.
+    const parsed = imageLabStagingSchema.parse({ id: "astride_viewer_facing" });
+    expect(parsed.id).toBe("astride_viewer_facing");
+    // An id no registry entry could possibly hold still parses here: refusing it
+    // would put the registry's membership rule in the one place that cannot read it.
+    expect(imageLabStagingSchema.parse({ id: "not_a_real_staging" }).id).toBe("not_a_real_staging");
+  });
+
+  it("carries the scene facts a bench row must state for itself, and defaults none of them", () => {
+    // There is no chat here, so nothing else can say where the act happens; but
+    // each field has a default the lane already owns, so absent is a real state.
+    const full = imageLabStagingSchema.parse({
+      id: "bent_over_surface",
+      setting: "  a dim hotel room, rain on the window  ",
+      lighting: "warm dusk light",
+      timeOfDay: "dusk",
+    });
+    expect(full.setting).toBe("a dim hotel room, rain on the window");
+    expect(full.lighting).toBe("warm dusk light");
+    expect(full.timeOfDay).toBe("dusk");
+
+    const bare = imageLabStagingSchema.parse({ id: "bent_over_surface" });
+    expect(bare.setting).toBeUndefined();
+    expect(bare.lighting).toBeUndefined();
+    expect(bare.timeOfDay).toBeUndefined();
+  });
+
+  it("refuses a staging that names nothing, in either spelling of nothing", () => {
+    expect(imageLabStagingSchema.safeParse({}).success).toBe(false);
+    expect(imageLabStagingSchema.safeParse({ id: "   " }).success).toBe(false);
+  });
+
+  it("holds the scene fields to what the scene lane already accepts", () => {
+    // The composer truncates a setting at 300 characters; a lighting phrase and a
+    // time-of-day word are shorter still. The caps restate those rather than
+    // inventing new ones here.
+    expect(imageLabStagingSchema.safeParse({ id: "on_all_fours", setting: "x".repeat(301) }).success).toBe(false);
+    expect(imageLabStagingSchema.safeParse({ id: "on_all_fours", setting: "x".repeat(300) }).success).toBe(true);
+    expect(imageLabStagingSchema.safeParse({ id: "on_all_fours", lighting: "x".repeat(201) }).success).toBe(false);
+    expect(imageLabStagingSchema.safeParse({ id: "on_all_fours", timeOfDay: "x".repeat(61) }).success).toBe(false);
+  });
+
+  it("carries no LoRA scale, because that binding already has one home", () => {
+    // The bench's own question — "is scale 1 right?" — is asked by moving
+    // `settings.controls.lora.scale`, which reaches `resolveImageLoraForRender`
+    // through the seam the chat route uses. A scale here would be a second path.
+    expect(Object.keys(imageLabStagingSchema.parse({ id: "spooned_from_behind" }))).toEqual(["id"]);
+    const withLora = imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "staged_scene",
+      characterId: "chr_sabrina",
+      staging: { id: "astride_viewer_facing" },
+      settings: { controls: { lora: { id: "imglorqwennsfwallinclv20", scale: 1 } } },
+    });
+    expect(withLora.success).toBe(true);
+    if (withLora.success) expect(withLora.data.settings?.controls.lora).toEqual({ id: "imglorqwennsfwallinclv20", scale: 1 });
+  });
+});
+
+describe("imageLabCreateExperimentRequestSchema — staged scenes", () => {
+  const identityInput = [{ position: 1, role: "identity" as const, imageId: "img_face" }];
+
+  function stagedScene(overrides: Record<string, unknown> = {}) {
+    return imageLabCreateExperimentRequestSchema.safeParse({
+      kind: "staged_scene",
+      characterId: "chr_sabrina",
+      staging: { id: "astride_viewer_facing", setting: "a dim hotel room", timeOfDay: "night" },
+      inputs: identityInput,
+      ...overrides,
+    });
+  }
+
+  it("accepts a staging on a named character with one identity reference", () => {
+    const result = stagedScene();
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.staging?.id).toBe("astride_viewer_facing");
+      expect(result.data.characterId).toBe("chr_sabrina");
+    }
+  });
+
+  it("accepts a bench row that orders no location, because a face is all it needs", () => {
+    expect(stagedScene({ inputs: [] }).success).toBe(true);
+    expect(
+      stagedScene({ inputs: [...identityInput, { position: 2, role: "location", imageId: "img_room" }] }).success,
+    ).toBe(true);
+  });
+
+  it("refuses a staged scene with no staging — an ordinary render wearing the kind's name", () => {
+    expect(stagedScene({ staging: undefined }).success).toBe(false);
+  });
+
+  it("refuses a staging on every other kind, whose runner compiles none", () => {
+    // A stored staging on a controlled scene would leave the row claiming a
+    // staged render and the image not being one.
+    const staging = { id: "astride_viewer_facing" };
+    const elsewhere: Record<string, unknown>[] = [
+      { kind: "control_probe", inputs: probeInputs, controlImageId: "img_skeleton", controlKind: "pose" },
+      { kind: "baseline_portrait", characterId: "chr_1" },
+      { kind: "baseline_scene", chatId: "cht_1" },
+      { kind: "controlled_portrait", characterId: "chr_1", inputs: probeInputs, controlImageId: "img_skeleton", controlKind: "pose" },
+      { kind: "controlled_scene", chatId: "cht_1", inputs: probeInputs, controlImageId: "img_skeleton", controlKind: "pose" },
+      { kind: "finishing_pass", sourceExperimentId: "exp_controlled" },
+    ];
+    for (const request of elsewhere) {
+      // Each payload is valid on its own — the staging is the only thing wrong.
+      expect(imageLabCreateExperimentRequestSchema.safeParse(request).success).toBe(true);
+      expect(imageLabCreateExperimentRequestSchema.safeParse({ ...request, staging }).success).toBe(false);
+    }
+  });
+
+  it("refuses a staged scene that names no character to stage", () => {
+    // Only a two-character scene binds its subjects to the inputs, so a staged
+    // scene has nowhere else to say whose act this is.
+    expect(stagedScene({ characterId: undefined }).success).toBe(false);
+    expect(
+      stagedScene({
+        characterId: undefined,
+        inputs: [{ position: 1, role: "identity", imageId: "img_face", characterId: "chr_sabrina" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a chat, because the composer is exactly what this bench does without", () => {
+    expect(stagedScene({ chatId: "cht_1" }).success).toBe(false);
+  });
+
+  it("refuses a control fixture, which its recipe has no slot to send", () => {
+    expect(
+      stagedScene({
+        inputs: [...identityInput, { position: 2, role: "pose", imageId: "img_skeleton" }],
+        controlImageId: "img_skeleton",
+        controlKind: "pose",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a second identity and a source experiment, like every non-finishing kind", () => {
+    expect(
+      stagedScene({
+        inputs: [...identityInput, { position: 2, role: "identity", imageId: "img_face_b" }],
+      }).success,
+    ).toBe(false);
+    expect(stagedScene({ sourceExperimentId: "exp_controlled" }).success).toBe(false);
+    expect(stagedScene({ finishingVariant: "lora_only" }).success).toBe(false);
+  });
+});
+
+describe("imageLabExperimentSchema — the staged row", () => {
+  it("reports the staging the run compiled, because the runner reads the row", () => {
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_staged",
+      kind: "staged_scene",
+      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      status: "succeeded",
+      characterId: "chr_sabrina",
+      staging: { id: "astride_viewer_facing", setting: "a dim hotel room" },
+      createdAt: "2026-08-15T12:00:00.000Z",
+    });
+    expect(parsed.staging).toEqual({ id: "astride_viewer_facing", setting: "a dim hotel room" });
+  });
+
+  it("reports no staging on every other kind, and never a placeholder", () => {
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_controlled",
+      kind: "controlled_scene",
+      modelSlug: "qwen/qwen-image-edit-2511",
+      status: "pending",
+      createdAt: "2026-08-15T12:00:00.000Z",
+    });
+    expect(parsed.staging).toBeNull();
+  });
+
+  it("costs a bad staging bag the field, never the row", () => {
+    // It rides the meta bag beside `sourceExperimentId` and answers to the same
+    // rule: a bag that no longer parses must not take the experiment with it.
+    const parsed = imageLabExperimentSchema.parse({
+      id: "exp_staged_bad",
+      kind: "staged_scene",
+      modelSlug: "qwen/qwen-image-edit-plus-lora",
+      status: "succeeded",
+      staging: { id: "" },
+      createdAt: "2026-08-15T12:00:00.000Z",
+    });
+    expect(parsed.staging).toBeNull();
+    expect(parsed.id).toBe("exp_staged_bad");
   });
 });
 

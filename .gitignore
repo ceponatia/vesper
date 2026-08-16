@@ -8,10 +8,11 @@ data/
 # Local-only UI/QA artifacts — Playwright scratch + audit screenshots embed
 # app-generated imagery; keep them on the server, never commit/push.
 .playwright-mcp/
-# Playwright/manual UI-testing screenshots and probe renders live in
-# screenshots/ (never the repo root or docs/). Tracked since 2026-08-15
-# (owner ask): probe A/B renders are review evidence, and reviewing them
-# remotely needs them in the repo.
+# Playwright/manual UI-testing screenshots live in screenshots/ (never the repo
+# root or docs/) and stay LOCAL — they are ephemeral working artifacts.
+# Graded render evidence goes in the tracked evidence/ folder instead, so a
+# verdict can be reviewed from another workstation; see evidence/README.md.
+screenshots/
 docs/developer-notes/ux-audit-assets/
 docs/prompts/
 

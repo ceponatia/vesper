@@ -69,6 +69,14 @@ import type { ImageLabExperimentPrefill } from "./image-lab-experiment-form";
  * character binding names it, because the rulings this kind offers ("identities
  * swapped", "character duplicated") are claims about which reference was supposed
  * to produce which person.
+ *
+ * A STAGED SCENE shows the staging it was told to render — the registry id and
+ * the scene facts the row states around it — and shows NO control panel, because
+ * it declares no fixture and the empty box would read as a missing input on a
+ * kind that cannot have one. Its final prompt carries more weight here than
+ * anywhere else on this page: the row's instruction is empty by construction, so
+ * the compiled prompt is the only place the words that were actually sent exist,
+ * and every staged ruling is a ruling about what those words produced.
  */
 
 const POLL_MS = 3000;
@@ -262,6 +270,14 @@ export function ImageLabExperimentDetail({
   const verdictOptions = imageLabVerdictOptions(experiment.kind);
   const isFinishing = experiment.kind === "finishing_pass";
   const isTwoCharacter = experiment.kind === "two_character_scene";
+  const isStaged = experiment.kind === "staged_scene";
+  // What this run staged, as the ROW holds it. Deliberately not resolved back
+  // against the staging registry for the reason the LoRA selection below is not
+  // resolved against the library: the registry is code that moves between
+  // deploys, and a display that went and looked would describe the entry as it is
+  // TODAY rather than the act this render was asked for. The id is the citation,
+  // and the compiled final prompt further down is the words as sent.
+  const staging = experiment.staging;
   // A finishing pass is read as a before/after pair, so the panel that holds a
   // control fixture on every other kind holds the render being refined here.
   const beforeInput = experiment.inputs.find((input) => input.role === "before") ?? null;
@@ -299,7 +315,11 @@ export function ImageLabExperimentDetail({
   // control panel rather than an empty one — a dashed box captioned "no control
   // fixture was sent" reads as a missing input on the one kind where sending none
   // is a deliberate arm.
-  const showsControlPanel = !isFinishing && !(isTwoCharacter && experiment.controlImageId === null);
+  // A staged scene declares no fixture at all — its recipe has no slot to send one
+  // under — so it is excluded for the same reason, one step further: not "sent
+  // none this time" but "never sends one".
+  const showsControlPanel =
+    !isFinishing && !isStaged && !(isTwoCharacter && experiment.controlImageId === null);
   const panelCount = (isFinishing ? 1 : 0) + identityPanels.length + (showsControlPanel ? 1 : 0) + 1;
 
   // What this kind's ruling is ABOUT, and what it decides. Both are read before
@@ -309,7 +329,9 @@ export function ImageLabExperimentDetail({
     ? "Read the after against the before, in that order: did the face get closer to the identity reference, and did anything else move? A pass is only promotable when the first is yes and the second is no."
     : isTwoCharacter
       ? "Count the people first, then match each face to its own reference: both characters present exactly once, each rendered from the reference bound to them."
-      : "Judge the output against the fixture: limb for limb, and identity preserved.";
+      : isStaged
+        ? "Read the picture against the act the staging named, narrowing in that order: is it that act at all, is the anatomy the act needs actually drawn, are the bodies arranged the way the words say, and is it this character. The first question that answers no is the ruling."
+        : "Judge the output against the fixture: limb for limb, and identity preserved.";
   const verdictStake =
     experiment.kind === "control_probe"
       ? "This ruling decides whether the plan runs on this model or on a second connector."
@@ -317,7 +339,9 @@ export function ImageLabExperimentDetail({
         ? "This ruling decides whether a finishing pass earns its render at all."
         : isTwoCharacter
           ? "This ruling says whether two identities can share one render without swapping, duplicating, or losing one."
-          : "This ruling says whether the control still held in a production-shaped run.";
+          : isStaged
+            ? "This ruling decides where the next run goes: withheld anatomy says try a higher scale, wrong geometry a lower one, and a substituted act says the wording is the problem and the weights are not."
+            : "This ruling says whether the control still held in a production-shaped run.";
 
   // The paired direct-edit arm: pre-fill only, submitted by the admin. The
   // instruction travels VERBATIM because the shared text is what makes the two
@@ -371,6 +395,10 @@ export function ImageLabExperimentDetail({
           {experiment.controlKind !== null ? (
             <Tag tone="accent">{imageLabControlKindLabel(experiment.controlKind)}</Tag>
           ) : null}
+          {/* The act, beside the kind, in the place the control kind sits on the
+              kinds that declare one: on a staged row it is the single fact that
+              says what this render was for, and "staged scene" alone does not. */}
+          {staging !== null ? <Tag tone="accent">{staging.id}</Tag> : null}
           {verdictChip ? <Tag tone={verdictChip.tone}>{verdictChip.label}</Tag> : null}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-paper-500">
@@ -499,6 +527,20 @@ export function ImageLabExperimentDetail({
           <Fact label="Control fixture">
             <code className="break-all">{experiment.controlImageId ?? "—"}</code>
           </Fact>
+          {/* The staged row's own four facts. The three scene fields are shown
+              even when absent, saying what the lane defaulted them to instead of
+              hiding the question: an admin comparing two staged runs has to be
+              able to see that one stated a room and the other did not. */}
+          {staging !== null ? (
+            <>
+              <Fact label="Staging">
+                <code className="break-all">{staging.id}</code>
+              </Fact>
+              <Fact label="Setting">{staging.setting ?? "— (the lane's own empty backdrop)"}</Fact>
+              <Fact label="Lighting">{staging.lighting ?? "— (derived from the time of day)"}</Fact>
+              <Fact label="Time of day">{staging.timeOfDay ?? "— (none stated)"}</Fact>
+            </>
+          ) : null}
           {loraSelection !== null ? (
             <Fact label="LoRA">
               <code className="break-all">
@@ -651,7 +693,11 @@ export function ImageLabExperimentDetail({
         <div>
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Instruction (as approved)</h2>
           <p className="mt-1 rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2 text-sm whitespace-pre-wrap text-paper-300">
-            {experiment.instruction.trim() === "" ? "—" : experiment.instruction}
+            {experiment.instruction.trim() !== ""
+              ? experiment.instruction
+              : isStaged
+                ? "— none, and none was possible: a staged scene writes no instruction, because the registry owns the act's wording and the runner compiles it."
+                : "—"}
           </p>
         </div>
         <div>
@@ -659,13 +705,32 @@ export function ImageLabExperimentDetail({
           <p className="mt-1 rounded-card border border-ink-600 bg-ink-950/40 px-3 py-2 text-sm whitespace-pre-wrap text-paper-300">
             {experiment.finalPrompt ?? "— not recorded yet"}
           </p>
+          {/* On every other kind this is a record of what the admin's text became.
+              Here it is the only place the words exist at all — the row's
+              instruction is empty by construction — and it is what the chat lane
+              would have sent for the same staging, which is the claim the whole
+              bench rests on. */}
+          {isStaged ? (
+            <p className="mt-1 text-[11px] text-paper-500">
+              {"The whole of what was sent, compiled from the staging registry the way the chat lane compiles it: "}
+              {"the staged sentence, the character's appearance, the setting and lighting above, and the shot line "}
+              {"the staging's own camera fixes. No model wrote any of it, so a ruling above is a ruling on this "}
+              {"text and the weights it ran with."}
+            </p>
+          ) : null}
         </div>
       </section>
 
       {verdictOptions !== null && experiment.status === "succeeded" ? (
         <section className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">
-            {isFinishing ? "Finishing verdict" : isTwoCharacter ? "Two-character verdict" : "Control verdict"}
+            {isFinishing
+              ? "Finishing verdict"
+              : isTwoCharacter
+                ? "Two-character verdict"
+                : isStaged
+                  ? "Staged-act verdict"
+                  : "Control verdict"}
           </h2>
           <p className="mt-1 mb-3 text-sm text-paper-400">{`${verdictLead} ${verdictStake}`}</p>
           <div className="grid gap-4 sm:grid-cols-2">

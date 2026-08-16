@@ -6,6 +6,7 @@ import { runControlled, runControlProbe } from "./image-lab-control";
 import { runFinishingPass } from "./image-lab-finishing";
 import { settleFailed } from "./image-lab-render";
 import { runTwoCharacterScene } from "./image-lab-scene";
+import { runStagedScene } from "./image-lab-staged";
 import { type ImageLabExperimentRow, type ImageLabRunPayload, LAB_RUN_THREW, ownedExperiment } from "./image-lab-store";
 
 /**
@@ -57,9 +58,9 @@ export async function runImageLabExperiment(
 }
 
 /**
- * The kind dispatch, EXHAUSTIVE over {@link ImageLabExperimentKind} — so an
- * eighth kind is a compile error here rather than a silent fall-through to
- * whatever the last arm did.
+ * The kind dispatch, EXHAUSTIVE over {@link ImageLabExperimentKind} — so a ninth
+ * kind is a compile error here rather than a silent fall-through to whatever the
+ * last arm did. The eighth, `staged_scene`, arrived exactly that way.
  */
 function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink): Promise<ImageLabRunPayload> {
   switch (row.kind) {
@@ -76,5 +77,7 @@ function runExperimentOfKind(row: ImageLabExperimentRow, sink?: DiagnosticSink):
       return runTwoCharacterScene(row, sink);
     case "finishing_pass":
       return runFinishingPass(row, sink);
+    case "staged_scene":
+      return runStagedScene(row, sink);
   }
 }

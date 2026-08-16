@@ -17,7 +17,7 @@ installIdentityPackMaintenance();
 // accident (nor silently vanish from this barrel when a second module happens to
 // export the same name — an ambiguous `export *` name is dropped, not reported).
 // Modules absent below export nothing public: the pack service's derivation and
-// promotion halves, the lab's four lanes, and the prompt format kit.
+// promotion halves, the lab's five lanes, and the prompt format kit.
 
 export * from "./assets";
 

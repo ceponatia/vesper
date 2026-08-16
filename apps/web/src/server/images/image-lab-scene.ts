@@ -19,6 +19,7 @@ import {
   resolvePinnedLabModel,
   runRecipeIntent,
   settleFailed,
+  UNDECLARED_CONTROL_ROLE,
 } from "./image-lab-render";
 import {
   type ImageLabExperimentRow,
@@ -49,11 +50,6 @@ import {
  */
 const TWO_CHARACTER_SUBJECT_RULE =
   "a two-character scene sends exactly two identity references, each naming a different character it depicts";
-
-/** The refusal for a control-role image on a run that declares no fixture. */
-const UNDECLARED_CONTROL_ROLE =
-  "this experiment sends a structural control image but declares none; the record would not say what the render was " +
-  "controlled by, so no verdict about the control could be filed against it";
 
 /** Half a control pointer on a row the create schema would have refused whole. */
 const HALF_CONTROL_POINTER =

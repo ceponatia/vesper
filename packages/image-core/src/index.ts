@@ -375,6 +375,10 @@ export {
   imageLabRecordVerdictRequestSchema,
   imageLabReviewControlRequestSchema,
   imageLabSettingsSchema,
+  imageLabStagedSceneRecipeKey,
+  imageLabStagedSceneRecipeProfile,
+  imageLabStagedSceneVerdicts,
+  imageLabStagingSchema,
   imageLabTwoCharacterRecipeProfile,
   imageLabTwoCharacterVerdicts,
   imageLabUploadControlRequestSchema,
@@ -406,6 +410,7 @@ export type {
   ImageLabOutcomeDrop,
   ImageLabRecordVerdictRequest,
   ImageLabSettings,
+  ImageLabStaging,
   ImageLabUploadControlRequest,
   ImageLabVerdict,
 } from "./lab";

@@ -201,6 +201,20 @@ export function labFailure(code: ImageLabFailureCode): string {
 // --- shared control-fixture gates ------------------------------------------
 
 
+/**
+ * The refusal for a control-role image on a run that declares no fixture.
+ *
+ * Shared by the two kinds that can legitimately send no control at all — the
+ * two-character scene's uncontrolled arm, and a staged scene, which declares
+ * none by construction — because the failure and its wording are one failure:
+ * the record would not say what the render was controlled by, and no verdict
+ * about the control could be filed against it. Two spellings would let one kind
+ * start tolerating a stowaway skeleton while the other refused it.
+ */
+export const UNDECLARED_CONTROL_ROLE =
+  "this experiment sends a structural control image but declares none; the record would not say what the render was " +
+  "controlled by, so no verdict about the control could be filed against it";
+
 /** Why a named control fixture cannot be run against — the code and its reason. */
 interface ControlFixtureRefusal {
   code: ImageLabFailureCode;

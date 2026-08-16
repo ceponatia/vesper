@@ -36,10 +36,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Intimate-scene LoRA — the acts render in the app** —
   [plan](intimate-scene-lora.plan.md) · [spec](intimate-scene-lora.spec.md) —
-  owner-directed 2026-08-15: intimate staged scene renders route through the
-  probe-proven anatomy LoRA on the Replicate Qwen LoRA wrapper; everything
-  else renders exactly as today; lab adoption queued behind the lab
-  expansion.
+  intimate staged scene renders route through the probe-proven anatomy LoRA on
+  the Replicate Qwen LoRA wrapper, live in production since 2026-08-15;
+  everything else renders exactly as today; a `staged_scene` lab kind benches
+  the same wording and weights without a chat.
 
 - **Scene composer model — a fast, cheap shot planner** —
   [plan](composer-model.plan.md) · [spec](composer-model.spec.md) — the model

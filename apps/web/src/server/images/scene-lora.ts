@@ -7,6 +7,7 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { resolveImageLoraForRender } from "./image-loras";
 import { civitaiApiToken, loraLocatorNeedsCivitaiToken } from "./lora-credentials";
 import { loadImageModels } from "./models";
@@ -43,30 +44,14 @@ import type { SceneRenderPlan } from "./prompts-scene-plan";
  */
 
 /**
- * The seeded library row this route asks for (`drizzle/0108_intimate-scene-lora.sql`)
- * — "Qwen Image Edit 2511 NSFW all inclusive" v2.0, the one LoRA whose training
- * covers every acceptance act.
- *
- * Named by ID rather than searched for by label because the row is ordinary
- * after seeding: an admin may retune its scale band or switch it off, and this
- * route must follow those edits rather than re-find a row that looks similar.
- * A deleted row resolves to nothing and degrades, which is the documented
- * behavior of every stored image selection.
+ * The row and the endpoint this route asks for are defined in contracts
+ * (`@/contracts/images/intimate-scene-lora`) and re-exported here, because the
+ * lab's staged-scene form needs the same two names and cannot import
+ * `server/*`. Re-exported rather than moved outright so every existing
+ * `from "./scene-lora"` import — the probe's `lora` arm included, which
+ * `scene-lora.test.ts` pins against production — keeps resolving.
  */
-export const INTIMATE_SCENE_LORA_ID = "imglorqwennsfwallinclv20";
-
-/**
- * The LoRA-capable Qwen edit endpoint, as a BASE slug.
- *
- * Base, because the registered row carries a version pin (community models must
- * — the bare-slug endpoint is official-models-only), and the pin is the
- * operator's to change through the admin screens without this constant chasing
- * it. Resolution matches base-slug to base-slug, the image lab's own rule.
- *
- * The probe's `lora` arm sends this same wrapper; `scene-lora.test.ts` pins the
- * two together so production and the evidence cannot drift apart.
- */
-export const INTIMATE_SCENE_LORA_WRAPPER_SLUG = "qwen/qwen-image-edit-plus-lora";
+export { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG };
 
 /** An intimate staged render is going out through the LoRA wrapper. */
 export const SCENE_LORA_ROUTE_CODE = "images.scene_render.lora_route";
