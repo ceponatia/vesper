@@ -1,7 +1,7 @@
 # Security & ownership hardening — 2026-07-25 review follow-ups
 
 Status: **shipped — 2026-07-26** (promoted 2026-07-25 from
-[deferred/security-authz.plan.md](deferred/CLAUDE.md), built 2026-07-26)
+[deferred/security-authz.plan.md](../deferred/CLAUDE.md), built 2026-07-26)
 
 **Completion note (2026-07-26):** all seven slices landed in one batch (five
 parallel implementation agents; gates run serially green — lint, cycles,
@@ -81,7 +81,7 @@ Remaining open: OQ1 (RLS) and OQ3 (transport-before-signup) below. Not
 deployed — Fly deploys stay manual.
 
 Successor to the shipped 2026-06-23 sweep
-([finished/security-hardening.plan.md](finished/security-hardening.plan.md)).
+([finished/security-hardening.plan.md](../finished/security-hardening.plan.md)).
 Source: an external static security review of main (auth, authorization,
 cross-user access, public-library behavior, destructive ops), every finding
 re-verified against the code at parking time. File:line refs below were

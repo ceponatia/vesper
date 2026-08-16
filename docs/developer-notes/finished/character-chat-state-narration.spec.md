@@ -4,7 +4,7 @@ Status: **implemented — 2026-06-30** (all mechanics built; this stays the desi
 The Decisions section below records the rulings as shipped). Read with
 [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md) — that
 plan is the build order; **this is the truth** for how each piece works. Leans on the
-shipped light-state mechanics ([character-chat-state.spec.md](finished/character-chat-state.spec.md))
+shipped light-state mechanics ([character-chat-state.spec.md](../finished/character-chat-state.spec.md))
 and generalizes the opportunistic-cue discipline from
 [character-chat-sensory.plan.md](character-chat-sensory.plan.md).
 
@@ -256,7 +256,7 @@ shared).
 attributes to make them dirtier." Crucially it reuses the **same** §2/§3/§4 derivations (the
 condition overlays and graded bands), so prose, the standing companion avatar (which already
 reflects mood via `chatStateSnapshot.avatarCue`), and the scene image all agree rather than
-drifting. This removes the entry from [deferred.plan.md](deferred.plan.md) (leave a one-line
+drifting. This removes the entry from [deferred.plan.md](../deferred.plan.md) (leave a one-line
 "graduated → character-chat-state-narration" tombstone there).
 
 ## 9. Debug surface

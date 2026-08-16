@@ -14,7 +14,7 @@ image-message presentation); paste-to-attach was dropped from v1 (file pick +
 the client downscale covers the flow — add on request).)
 
 Chat is text-only inbound while the vision seam already exists
-([images.md](../images.md) §Image understanding: `generateChecked` takes an
+([images.md](../../character-chat/images.md) §Image understanding: `generateChecked` takes an
 `images` option, `visionModelId()` is the code default, first consumer is the
 portrait→attributes pass). A character who genuinely reacts to a photo the
 player shows her — and remembers it — is a large realism jump for one bounded
@@ -46,7 +46,7 @@ vision call.
   the Gallery (it is kind-filtered to scenes already).
 - **Safety**: uploads are input-only — never an identity anchor or edit
   reference. The parked uploaded-avatar intimate guard
-  ([deferred.plan.md](deferred.plan.md), scene-images.spec §3) remains the
+  ([deferred.plan.md](../deferred.plan.md), scene-images.spec §3) remains the
   launch blocker for any future reference use of user uploads.
 
 ## Slices

@@ -202,7 +202,7 @@ world-model kept location = Main Hallway (and the scene image correctly rendered
 hallway — state, not prose). Options: constrain narration to known locations, snap to the
 nearest node, mint an ad-hoc location, or at minimum emit a continuity diagnostic.
 **Route to** the movement/world-simulation work
-([movement-authority.spec.md](movement-authority.spec.md), roadmap "Next") rather than
+(`movement-authority.spec.md`, roadmap "Next") rather than
 solving in isolation — it's the same authority problem.
 
 ## 8. Item-placement → world-state surfacing — _P6; verify_
@@ -239,15 +239,15 @@ Low-risk, ship in one pass (fold into the next major commit per `CLAUDE.md` git 
 | #1 Player setup in session wizard | **Relocated to §1a** (world-level, per PM notes). |
 | #2 Forge consistency + remediation | **§2.** |
 | #3 Background-work progress | **§3.** |
-| #4 Relationship & meter timeline | **Defer** → [deferred.plan.md](deferred.plan.md). Agent outputs already carry per-turn affinity/meter deltas; render a Cast-panel sparkline. Pairs with the affinity-levels work in [personality-and-state.plan.md](personality-and-state.plan.md) §4, but that plan is **mid-build** — parked separately, promote alongside it. |
+| #4 Relationship & meter timeline | **Defer** → [deferred.plan.md](../deferred.plan.md). Agent outputs already carry per-turn affinity/meter deltas; render a Cast-panel sparkline. Pairs with the affinity-levels work in [personality-and-state.plan.md](personality-and-state.plan.md) §4, but that plan is **mid-build** — parked separately, promote alongside it. |
 | #5 Map view | **Route** → existing [world-map.plan.md](world-map.plan.md) (roadmap "Next"). Would have made **M2** obvious; bump its priority given the forge-canon work. |
 | #6 High-contrast theme | **§4.** |
 | #7 Dev turn HUD | **§6.** |
-| #8 Transcript export | **Defer** → [deferred.plan.md](deferred.plan.md). |
-| #9 Scene "pin / set as cover" | **Defer** → [deferred.plan.md](deferred.plan.md). |
-| #10 First-run guided tour | **Defer** → [deferred.plan.md](deferred.plan.md). |
+| #8 Transcript export | **Defer** → [deferred.plan.md](../deferred.plan.md). |
+| #9 Scene "pin / set as cover" | **Defer** → [deferred.plan.md](../deferred.plan.md). |
+| #10 First-run guided tour | **Defer** → [deferred.plan.md](../deferred.plan.md). |
 
-Also recommended by the audit and **parked in [deferred.plan.md](deferred.plan.md)** (not
+Also recommended by the audit and **parked in [deferred.plan.md](../deferred.plan.md)** (not
 blocking): a **production-build** Lighthouse-perf + trace pass on the dashboard and the play
 screen — the audit deliberately skipped perf because the dev Turbopack build isn't
 representative.
@@ -259,7 +259,7 @@ Roadmap owns cross-plan priority — this is the intra-plan proposal: **§9 quic
 canon** → **§3 progress surface** → **§4 contrast** → **§5 lock window** → **§6 intake
 budget/HUD** → **§8 P6 verify**; **§7/M4** rides the movement-authority plan, **feature #5**
 rides world-map, and **features #4/#8/#9/#10** + the perf pass are parked in
-[deferred.plan.md](deferred.plan.md).
+[deferred.plan.md](../deferred.plan.md).
 
 ## Open questions
 

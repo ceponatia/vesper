@@ -17,7 +17,7 @@ The workspace validation surface (root scripts, `vitest` configs,
 workspace, and the in-app splits of the image lifecycle files and simulation
 stores. It leaves alone: the engine's durable stores' behavior, the database
 schema, the chat pipeline/state/UI/client-API splits (owned by
-[codebase-modularity.audit.md](codebase-modularity.audit.md)), and every
+[codebase-modularity.audit.md](../codebase-modularity.audit.md)), and every
 provider gateway.
 
 ## Implementation status
@@ -196,7 +196,7 @@ All 2026-08-13, settled by the extraction build (PR #106):
 ## Slice 4 — image lifecycle and simulation store splits
 
 Follow the split proposals in
-[codebase-modularity.audit.md](codebase-modularity.audit.md) (they were drawn
+[codebase-modularity.audit.md](../codebase-modularity.audit.md) (they were drawn
 from read line numbers; re-verify seams before cutting, since several files
 have grown since the audit):
 

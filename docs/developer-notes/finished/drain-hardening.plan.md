@@ -31,7 +31,7 @@ evidence, rulings, and per-strand sketch:
 | Composition diagnostics (C15) | [drain-hardening.diagnostics.md](drain-hardening.diagnostics.md) | Half-failures recorded durably on both surfaces, admin-only. |
 
 Owner rulings are copied into engine.spec §39 (rulings 22–25,
-[engine.spec.operations.md](engine.spec.operations.md)); the detail docs keep
+[engine.spec.operations.md](../engine.spec.operations.md)); the detail docs keep
 the full versions with alternatives-rejected context.
 
 ## Goal
@@ -147,4 +147,4 @@ recording ownership (diagnostics).
 Travel uncertainty / mid-trip delays MUST NOT ship before this plan has: the
 delay feature must both bump `journey.expectedArrivalAt` and reschedule the
 durable arrival trigger, with ruling-2's check as the net. Recorded in
-[deferred/travel-duration-authoring.plan.md](deferred/travel-duration-authoring.plan.md).
+[deferred/travel-duration-authoring.plan.md](../deferred/travel-duration-authoring.plan.md).

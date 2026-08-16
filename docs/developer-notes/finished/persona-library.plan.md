@@ -2,7 +2,7 @@
 
 Status: **shipped — 2026-07-16** (all eight slices, branch `worktree-persona-library`).
 Written the same day from an owner brainstorm ask. Supersedes the shipped
-[player-character.plan.md](finished/player-character.plan.md), whose own Open
+[player-character.plan.md](../finished/player-character.plan.md), whose own Open
 questions anticipated exactly this ("Multiple saved personas? … a clean future
 extension on the same resolver") and whose `id: null` field was left as the
 graduation seam.
@@ -405,13 +405,13 @@ play as). 6–8 are the chat wiring. The dependent scene work is
 - ~~**Migration number.**~~ **Resolved: this took 0051–0053** — `0051` creates
   `personas`, `0052` adds `default_persona_id` + `player_state` **and backfills the
   blob**, `0053` drops `player_persona`. Split because one users-column add beside a
-  users-column drop is the ambiguous rename case. [chat-meter-economy.plan.md](chat-meter-economy.plan.md)
+  users-column drop is the ambiguous rename case. [chat-meter-economy.plan.md](../chat-meter-economy.plan.md)
   is now **0054+** (its doc still says 0052 — repoint it when that plan starts, rather
   than churning it again from here).
 
 ## Related
 
-- [finished/player-character.plan.md](finished/player-character.plan.md) — the
+- [finished/player-character.plan.md](../finished/player-character.plan.md) — the
   shipped blob this supersedes; its Open questions called this shot.
 - [scene-pov-embodiment.plan.md](scene-pov-embodiment.plan.md) — the dependent
   consumer: persona body + coverage → POV scene images.
@@ -420,6 +420,6 @@ play as). 6–8 are the chat wiring. The dependent scene work is
   `applyWornGarmentChanges` the reducer, both reused whole.
 - `src/server/engine/spawn.ts` (`playerOutfitIds`), `worlds.playerCharacterId` —
   the **session** lane's older answer to player embodiment. Kept separate.
-- [world-engine-refactor.plan.md](world-engine-refactor.plan.md) — the successor
+- [world-engine-refactor.plan.md](../world-engine-refactor.plan.md) — the successor
   umbrella; an embodied player is a piece of that north star.
 </content>

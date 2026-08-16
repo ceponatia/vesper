@@ -86,7 +86,7 @@ These rules override any general appearance or sensory-detail allowances for thi
   direction.
 - **Order is the compiler's**, not the renderer's: premise corrections (≤2) then consistency
   constraints (≤3), which is the shared selection order in
-  [developer-notes/narrator-physical-guidance.spec.md](../developer-notes/narrator-physical-guidance.spec.md)
+  `narrator-physical-guidance.spec.md`
   §"Selection order and budgets".
 - **Two wording laws.** A constraint-only turn contains **no instruction to mention a body
   detail** (the closed experiment's failure mode was raising the number of checkable claims);

@@ -26,7 +26,7 @@ square" true rather than merely narrated.
 
 Give the routine / departure machinery a way to move an NPC toward a due
 commitment's destination on its own. Presupposes
-[starter-world-seeds.plan.md](starter-world-seeds.plan.md) (commitments carrying
+[starter-world-seeds.plan.md](../finished/starter-world-seeds.plan.md) (commitments carrying
 a `destinationZoneId` to travel toward) and interacts with the
 [primary-lod-ruling.plan.md](primary-lod-ruling.plan.md) ruling — whether the
 primary's LOD ever arms routine boundaries decides if she can travel at all.

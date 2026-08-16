@@ -8,7 +8,7 @@ Status: **COMPLETE — ADVANCE**
 - Executed: 2026-07-16
 - Protocol version: 1
 
-This document closes Gate 0 of [engine.plan.md](engine.plan.md). It is an evidence
+This document closes Gate 0 of [engine.plan.md](../../engine.plan.md). It is an evidence
 record, not a new architecture proposal. Results are recorded against exact commits and
 the decision rules declared before execution. **ADVANCE** authorizes work on Gate 1's
 minimum item-transfer authority seam; it does not promote any Gate 0 spike to production

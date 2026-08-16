@@ -2,7 +2,7 @@
 
 Status: **supplemental analysis** — not a plan, carries no roadmap line, commits nothing.
 
-Fourth doc in the thread: [world-engine-refactor.plan.md](world-engine-refactor.plan.md)
+Fourth doc in the thread: [world-engine-refactor.plan.md](../world-engine-refactor.plan.md)
 (mine) → [world-engine-refactor.gpt.md](world-engine-refactor.gpt.md) (GPT's review of it) →
 this. Sibling thread: [gpt-sim-design.plan.md](gpt-sim-design.plan.md) →
 [gpt-sim-design.claude.md](gpt-sim-design.claude.md). Named per the established

@@ -46,7 +46,7 @@ three-scope reset (**Reset All / Reset Chat / Reset State**) into a **single "Cl
 button that wipes messages + summary + state **+ the new chat facts/episodes** (+ the scene
 scrub). _Owner note (verbatim):_ "In testing, there's no benefit to clearing just chat or
 just state." This **supersedes** the reset matrix in
-[finished/character-chat-state.spec.md](finished/character-chat-state.spec.md) §5/§7 (a
+[finished/character-chat-state.spec.md](../finished/character-chat-state.spec.md) §5/§7 (a
 deliberate simplification, not a regression). §4.
 
 **D5 — rolling summary stays as the short-term reinforcement layer.** With RAG landing,
@@ -177,7 +177,7 @@ Consolidate the three shipped scopes into one action that clears everything. Tou
   **"Clear Chat"** (danger tone) → the scopeless reset; collapse `runReset`'s per-scope
   branching + toasts (L299–317) and the `resetting` state var (L89) to the single path.
 
-This supersedes [finished/character-chat-state.spec.md](finished/character-chat-state.spec.md)
+This supersedes [finished/character-chat-state.spec.md](../finished/character-chat-state.spec.md)
 §5/§7 — leave that finished doc as-is (per CLAUDE.md, finished docs aren't repointed); this
 spec is the current truth for chat reset.
 

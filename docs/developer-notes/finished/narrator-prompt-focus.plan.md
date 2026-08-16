@@ -4,7 +4,7 @@ Status: **shipped — 2026-06-29.** Phases 1–3, the behavioral eval harness, t
 default profile + per-model reasoning knobs), and the gated Phase-3 focus A/B (eval Run 3) are all done;
 the plan's goal — focused, proportionate narration without a length floor — is delivered. **Only leftover:**
 an optional self-consistency judge vote to harden Run 2's close calls — parked in
-[deferred.plan.md](deferred.plan.md) (a methodology nicety, not blocking; the rulings already stand on the
+[deferred.plan.md](../deferred.plan.md) (a methodology nicety, not blocking; the rulings already stand on the
 data). The Phase-3 A/B ruled the planner does **not** earn its keep, so the character-chat focus analogue
 it gated is **ruled out** (not built). Archived to `finished/` 2026-06-29. (Historical detail below.)
 
@@ -45,10 +45,10 @@ This is a **prompt-shaping** plan. The strong bias is: change wording in the
 existing pure builders first (Phase 1), add a deterministic derived "shape" line
 second (Phase 2), and only add a new LLM call (Phase 3) if 1–2 prove insufficient.
 
-Related: [prompts.md](../prompts.md) (architecture this plan edits),
+Related: [prompts.md](../../character-chat/prompts.md) (architecture this plan edits),
 [personality-and-state.spec.md](personality-and-state.spec.md) §6 (the reaction
 curve this plan leans on), [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md)
-(the intake brief Phase 2/3 read), [turn-engine.md](../turn-engine.md) (pipeline).
+(the intake brief Phase 2/3 read), `turn-engine.md` (pipeline).
 
 ---
 

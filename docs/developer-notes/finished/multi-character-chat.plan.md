@@ -19,7 +19,7 @@ enactment measurement run (ruling 7 — deferred).)
 
 ## Problem
 
-Chat is deliberately 1-on-1 today ([docs/character-chat.md](../character-chat.md) —
+Chat is deliberately 1-on-1 today (`character-chat.md` —
 its "no multi-character cast" line gets amended when this ships). The
 relationship matrix needs conversations that hold 2–4 full characters, and the
 owner wants group scenes in the chat lane in their own right: characters with

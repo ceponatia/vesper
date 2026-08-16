@@ -306,7 +306,7 @@ is pinned to `apps/web` and a test fails if that pin drifts.
 Technical detail lives in [monorepo-image-core.spec.md](monorepo-image-core.spec.md),
 which indexes one spec per remaining slice and owns their implementation status.
 The package's current contract with the application is
-[packages/image-core/README.md](../../packages/image-core/README.md) §Boundary.
+[packages/image-core/README.md](../../../packages/image-core/README.md) §Boundary.
 
 | Spec                                                               | Covers             | State               |
 | ------------------------------------------------------------------ | ------------------ | ------------------- |

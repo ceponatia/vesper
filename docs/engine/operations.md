@@ -3,7 +3,7 @@
 How the successor simulation engine is run safely once it is live: retakes,
 branches and replay; resilience and security; observability; testing
 approach; and migration practice. The normative source is
-[engine.spec.operations.md](../developer-notes/engine.spec.operations.md)
+`engine.spec.operations.md`
 (§29, §33–§38) — this doc explains current behavior in plain prose and cites
 section numbers rather than restating them. API shape, package boundaries,
 and the TypeScript numeric contract belong to the sibling
@@ -284,5 +284,5 @@ scenarios.
 - [@vesper/simulation-core](../../packages/simulation-core/README.md) — the durable
   authority transaction and the forks/snapshots/audit contract this doc's
   Retakes section describes.
-- [engine.spec.operations.md](../developer-notes/engine.spec.operations.md)
+- `engine.spec.operations.md`
   — the normative source for this entire document.

@@ -7,19 +7,19 @@ conversations (a main story beside a fresh alternate universe), each with its ow
 transcript, rolling summary, and per-participant state, and a **memory group** deciding
 what carries across ([../memory.md](../memory.md) §Memory keying). It began as a voice-tuning test-bed
 and is now a **primary feature** (shipped — see
-[developer-notes/finished/character-chat-standalone.plan.md](../developer-notes/finished/character-chat-standalone.plan.md)):
+`character-chat-standalone.plan.md`):
 it carries its own tracked state, long-term RAG memory, evolving attributes, scenario
 system, a stage-driven relationship arc, in-game time, and scene images. Since 2026-07-12
 a conversation can hold a **roster of up to 4 full characters**
 ([multi-character.md](multi-character.md) —
-[developer-notes/multi-character-chat.plan.md](../developer-notes/finished/multi-character-chat.plan.md)):
+`multi-character-chat.plan.md`):
 narrative presence instead of locations, the one-block ensemble prompt frame, a
 per-conversation relationship matrix. It carries **no** locations, exposure mask, or story
 threads — but **wardrobe** reached full parity with the old session model as the first
 test-bed step (chat-wardrobe-parity, shipped 2026-07-14: structured worn
 item state, computed exposure via the shared wardrobe classifier, an equip/unequip Character sheet
 — see [state.md](state.md) §Wardrobe and
-[developer-notes/chat-wardrobe-parity.plan.md](../developer-notes/finished/chat-wardrobe-parity.plan.md)).
+`chat-wardrobe-parity.plan.md`).
 **Direction (R6 rollout complete 2026-07-22):** chat was the **test bed the successor
 simulation engine grew out of**. The original world/session model it was proving a
 replacement for is now **retired** (its play pages, turn pipeline, and world CRUD are
@@ -81,5 +81,5 @@ there is **one implementation** — the chat lane must never re-fork it.
 
 History: the feature shipped across the `character-chat*` plan family (see
 `developer-notes/finished/` and the roadmap's Shipped list); the shipped standalone plan lives in
-[developer-notes/finished/character-chat-standalone.plan.md](../developer-notes/finished/character-chat-standalone.plan.md).
+`character-chat-standalone.plan.md`.
 Current direction is the relationship-model v2 and multi-character chat plans.

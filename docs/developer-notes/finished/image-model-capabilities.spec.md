@@ -4,8 +4,8 @@ Status: companion to
 [image-model-capabilities.plan.md](image-model-capabilities.plan.md)
 
 Shipped foundation this extends:
-[image-model-registry.plan.md](finished/image-model-registry.plan.md) and
-[image-model-registry.spec.md](finished/image-model-registry.spec.md).
+[image-model-registry.plan.md](../finished/image-model-registry.plan.md) and
+[image-model-registry.spec.md](../finished/image-model-registry.spec.md).
 
 ## Scope
 
@@ -56,7 +56,7 @@ all seven player-facing render lanes call it on every render.
 ## Current anchors
 
 Placement follows the workspace ownership rule
-([docs/images/README.md](../images/README.md)): a provider-neutral image
+([docs/images/README.md](../../images/README.md)): a provider-neutral image
 decision — capability vocabulary, profile resolution, reference planning,
 control mapping, prompt-strategy compilation — belongs in `@vesper/image-core`;
 Replicate network and schema work — probing, payload construction, uploads,
@@ -1759,7 +1759,7 @@ Live Replicate smoke tests are explicit, owner-triggered, and run in no
 automated gate. Record cost, duration, active version, payload summary, output
 dimensions, identity result, and moderation result in a `<topic>.trial.md`
 beside this plan in `docs/developer-notes/`, with per-model observations folded
-into the matching [docs/image-models/](../image-models/README.md) file.
+into the matching [docs/image-models/](../../image-models/README.md) file.
 
 Required first trials:
 

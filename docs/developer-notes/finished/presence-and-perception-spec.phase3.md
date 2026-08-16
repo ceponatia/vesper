@@ -35,14 +35,14 @@ the brainstorm §Presence / §Symmetric perception. Decisions 8, 11, 13,
 > the movement lock, and the staging surface to phase 4. Comms ships its
 > channel + player-side + pending-messages line; NPC-*initiated* comms
 > defers to phase 4. Observer / god-mode POV is deferred (see
-> [deferred.plan.md](deferred.plan.md)).
+> [deferred.plan.md](../deferred.plan.md)).
 >
 > **Shipped 2026-06-13** ([phase-3-plan.md](phase-3-plan.md) completed):
 > presence channels, the attention × salience witness matrix + awareness
 > blocks (incl. pairwise NPC↔NPC lines), the two continuity violation
 > kinds, darkness + `senseEffects`, comms v1 (player-side), and
 > first-impression channel fidelity. System doc:
-> [../perception.md](../perception.md). The §Gaps items above tagged
+> `perception.md`. The §Gaps items above tagged
 > v2 / phase-4 (full sound channel, NPC-initiated comms, player-unperceived
 > path) stayed deferred.
 
@@ -203,7 +203,7 @@ Attention-derivation table, salience defaults, awareness-block budget —
   calls/texts + the pending-messages context line; NPC-*initiated*
   calls/texts (they need the director / world-tick to emit intents)
   defer to phase 4. Group calls, voicemail content, and rereadable text
-  history are parked in [deferred.plan.md](deferred.plan.md).
+  history are parked in [deferred.plan.md](../deferred.plan.md).
 - **"Referenced but not enacted" needs a crisp prompt formulation.**
   The narrator must distinguish talking *about* Mara from Mara talking.
   Easy to state, easy for a model to fumble in reported speech ("Mara

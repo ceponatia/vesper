@@ -10,10 +10,10 @@ character's transient states (mood, affinity, arousal, …) evolve over time*. A
 `personality-and-state.plan.md` should follow before code; open questions are
 restated there at that point.
 
-Reads on: [contracts.md](../contracts.md) §Attribute system / §Meters /
-§Relationship stages, [prompts.md](../prompts.md), [turn-engine.md](../turn-engine.md)
-§Post-turn agents, [resilience.md](../resilience.md). Overlaps and should be
-reconciled with [cast-tiers-and-affinity-spec.phase3.md](finished/cast-tiers-and-affinity-spec.phase3.md)
+Reads on: `contracts.md` §Attribute system / §Meters /
+§Relationship stages, [prompts.md](../../character-chat/prompts.md), `turn-engine.md`
+§Post-turn agents, [resilience.md](../../resilience.md). Overlaps and should be
+reconciled with [cast-tiers-and-affinity-spec.phase3.md](../finished/cast-tiers-and-affinity-spec.phase3.md)
 (affinity is already a state of this shape) and
 [intimacy-notes.spec.md](intimacy-notes.spec.md) (the intimate-disposition note
 is the prose sibling of the intimate *traits* proposed here).
@@ -280,7 +280,7 @@ small explicit table is acceptable; the declarative form is the extension point.
 
 **Why deterministic merge math, not "let the agent decide"** (the load-bearing
 architecture call):
-- Matches [resilience.md](../resilience.md) §3 — clamp everything in the reducer,
+- Matches [resilience.md](../../resilience.md) §3 — clamp everything in the reducer,
   trust nothing from the model; the dynamics hold even when the agent degrades.
 - Flat token cost: no extra agent output, no extra schema fields to validate.
 - Clean separation of duties: **the agent grounds *whether and how much* an event

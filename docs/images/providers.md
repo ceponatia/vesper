@@ -4,7 +4,7 @@
 the app can run are rows in `image_models`, managed from the admin-only
 `/settings/image-models` page; per-model API reference lives in
 [image-models/](../image-models/README.md), design detail in
-[developer-notes/image-model-registry.spec.md](../developer-notes/finished/image-model-registry.spec.md).
+`image-model-registry.spec.md`.
 There is no Venice provider — no `VENICE_*` env, no `server/ai/venice.ts`, no
 `venice_*` provider ids (owner ruling 2026-08-05: Replicate is cheaper and more
 accurate).

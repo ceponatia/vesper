@@ -11,11 +11,11 @@ fixture + an opt-in `sensoryRelevant` deterministic metric (`run.ts`); `docs/pro
 restraint, and the §Follow-up "beat cue" wrapper if prompt-only proves insufficient. (Original plan
 below.)
 
-Related: [prompts.md](../prompts.md) §Exposure gating (the **session-lane** sense machinery
-this deliberately does *not* port yet), [contracts/attributes.md](../contracts/attributes.md)
-(the registry + `kind`), [character-chat.plan.md](finished/character-chat.plan.md) /
-[character-chat-state.spec.md](finished/character-chat-state.spec.md) (the chat prompt this edits),
-[narrator-prompt-focus.plan.md](finished/narrator-prompt-focus.plan.md) §Behavioral eval harness (the
+Related: [prompts.md](../../character-chat/prompts.md) §Exposure gating (the **session-lane** sense machinery
+this deliberately does *not* port yet), [contracts/attributes.md](../../contracts/attributes.md)
+(the registry + `kind`), [character-chat.plan.md](../finished/character-chat.plan.md) /
+[character-chat-state.spec.md](../finished/character-chat-state.spec.md) (the chat prompt this edits),
+[narrator-prompt-focus.plan.md](../finished/narrator-prompt-focus.plan.md) §Behavioral eval harness (the
 `pnpm eval:narration` harness this adds a fixture to), [intimacy-notes.plan.md](intimacy-notes.plan.md)
 (the adjacent intimate-tier work; both ride the same "surface only when earned" discipline).
 

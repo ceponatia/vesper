@@ -1,7 +1,7 @@
 # Intimate anatomy, sensory detail & non-human species — expansion spec
 
 Status: **decided — ready to build (phase 4)** (decided 2026-06-14; drafted
-2026-06-14). This expands [ideas-feedback.md](ideas-feedback.md) **Idea 4**
+2026-06-14). This expands `ideas-feedback.md` **Idea 4**
 (intimate body regions) and folds in **Idea 3** (sensory schema) and **Idea 5**
 (non-human species, as _scaffolding only_). It is the single home for the "body
 model" cluster. Every open question is resolved — the rulings are recorded inline
@@ -677,9 +677,9 @@ this doc focused on the **body model**. When both are ready they ship as the
 
 ## Housekeeping note
 
-The feedback ([ideas-feedback.md](ideas-feedback.md)) assesses "five raw ideas"
+The feedback (`ideas-feedback.md`) assesses "five raw ideas"
 that don't match the _current_ contents of
-[user-guidance/ideas.md](user-guidance/ideas.md) (which now lists different items
+`ideas.md` (which now lists different items
 — NPC field-gating, auto-gen agents, autonomy, model/agent work, a World Forge
 bug, RAG, time/schema). It looks like ideas.md was rewritten after the feedback
 was authored. This doesn't affect the work here — the three ideas are well-defined

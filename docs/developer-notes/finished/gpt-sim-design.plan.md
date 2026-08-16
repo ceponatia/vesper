@@ -50,7 +50,7 @@ life than hundreds of disconnected meters.
 
 The character-chat lane contains several pieces worth carrying forward:
 
-- The [exchange pipeline](../character-chat/pipeline.md) has clear stages: lock,
+- The [exchange pipeline](../../character-chat/pipeline.md) has clear stages: lock,
   clock/drift, retrieval, prompt construction, streaming, persistence, and post-turn
   fan-out.
 - The former monolithic thirteen-field archivist was split into a pulse plus three
@@ -60,8 +60,8 @@ The character-chat lane contains several pieces worth carrying forward:
 - Prompt instructions are ordered into binding, gate, license, and flavor tiers. This
   is an excellent precursor to a real narrator contract.
 - Facts have provenance, retraction on regeneration/edit, pinned memories, and a
-  private/perceived/OOC visibility fence. See [memory.md](../memory.md).
-- The older [off-screen simulation proposal](finished/offscreen-simulation-spec.phase3.md)
+  private/perceived/OOC visibility fence. See [memory.md](../../memory.md).
+- The older [off-screen simulation proposal](../finished/offscreen-simulation-spec.phase3.md)
   contains good ideas around LOD, perception, affordances, lazy backfill, and
   deterministic fallback.
 
@@ -469,7 +469,7 @@ Use distinct state kinds:
 
 The planned clock-keyed meter economy is the right direction, especially separating
 energy reserve from circadian pressure. Parts of the
-[body-needs draft](chat-body-needs.plan.md) should change:
+[body-needs draft](../chat-body-needs.plan.md) should change:
 
 - A usual mealtime can modify expectation, habit, and action selection; it should not
   redefine whether a body is physiologically hungry.
@@ -592,7 +592,7 @@ Vesper's current RAG is competent for conversational recall:
 - a perceived/private/OOC visibility fence.
 
 Those shipped improvements are recorded at the top of
-[RAG-improvements.plan.md](RAG-improvements.plan.md).
+[RAG-improvements.plan.md](../RAG-improvements.plan.md).
 
 It is not yet suitable as the knowledge architecture of a simulated world:
 

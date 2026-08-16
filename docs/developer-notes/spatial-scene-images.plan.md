@@ -17,12 +17,12 @@ Neighbouring plans, all of which moved under it after this one was written:
 - [image model registry](finished/image-model-registry.plan.md) made the model list data
   and **removed Venice entirely** (owner ruling 2026-08-05) — Replicate is the
   only provider, and the fallback ladder is now one model using fewer references;
-- [image model capabilities](image-model-capabilities.plan.md) owns profiles,
+- [image model capabilities](finished/image-model-capabilities.plan.md) owns profiles,
   role-aware references, controls, and seeds — the transport any structural
   control would travel through;
-- [image identity packs](image-identity-packs.plan.md) shipped the single-view
+- [image identity packs](finished/image-identity-packs.plan.md) shipped the single-view
   identity pack this plan assumed it would have to build;
-- [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) proposes
+- [Qwen advanced image subsystem](finished/qwen-advanced-image-subsystem.plan.md) proposes
   a **competing, cheaper first step**: the hosted Qwen edit models accept pose,
   depth, and edge maps as numbered input images, so a controlled experiment may
   be reachable without a GPU worker at all. That plan now runs on the
@@ -33,7 +33,7 @@ Neighbouring plans, all of which moved under it after this one was written:
   images, so Gate 0's spike does not run separately; this plan's remaining
   distinct value is producing consistent controls from a validated spatial
   frame.
-- [scene composition](scene-composition.plan.md) is the **prompt-only near-term
+- [scene composition](finished/scene-composition.plan.md) is the **prompt-only near-term
   treatment** of camera vantage, subject facing, and intimate staging — no
   structural control, reachable without paid gates. Its camera and staging
   vocabularies are candidate inputs to this plan's pose-template intents.
@@ -231,7 +231,7 @@ corrupt keypoint colors, depth, or region ids.
 
 ### Character identity packs
 
-[image-identity-packs.plan.md](image-identity-packs.plan.md) already owns the
+[image-identity-packs.plan.md](finished/image-identity-packs.plan.md) already owns the
 identity pack, its derivation, quality gate, correction path, and provenance. Its
 v1 is deliberately one character, one canonical portrait, one face-detail crop.
 
@@ -291,7 +291,7 @@ character region at a time—then a restrained harmonization pass. A global
 
 ComfyUI is the assumed worker/workflow orchestrator here because it makes
 multi-stage experiments inspectable. That assumption is now contested: the
-[Qwen advanced image subsystem plan](qwen-advanced-image-subsystem.plan.md)
+[Qwen advanced image subsystem plan](finished/qwen-advanced-image-subsystem.plan.md)
 established on 2026-08-06 that the hosted Qwen edit models take pose, depth, and
 edge maps as ordinary numbered input images on Replicate, with no separate
 control field and no GPU worker. Gate 0 must decide between the two before any
@@ -348,7 +348,7 @@ Exit: one workflow materially improves pose/contact without a material identity
 regression. Otherwise park the worker and improve reference editing.
 
 This gate is a **paid spend** and duplicates the question the
-[Qwen advanced image subsystem plan](qwen-advanced-image-subsystem.plan.md) asks.
+[Qwen advanced image subsystem plan](finished/qwen-advanced-image-subsystem.plan.md) asks.
 Running both is buying the same answer twice.
 
 ### Gate 1 — contracts, templates, and renderer
@@ -462,7 +462,7 @@ operation, and identity/contact repair dominate uncertainty.
 ## Open questions
 
 1. Does this plan or the
-   [Qwen advanced image subsystem](qwen-advanced-image-subsystem.plan.md) run the
+   [Qwen advanced image subsystem](finished/qwen-advanced-image-subsystem.plan.md) run the
    controlled-image experiment? They ask the same question and only one should be
    funded. An owner decision, not a research task.
 2. Is single-character control valuable alone, or must v1 include two-person contact?

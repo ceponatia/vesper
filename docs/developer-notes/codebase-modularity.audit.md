@@ -19,7 +19,7 @@ correctness-flavored findings — has no plan and no roadmap line.** Nothing in
 this document is committed work until it does.
 
 **Update 2026-08-13:** a first tranche shipped via
-[monorepo-simulation-core.plan.md](monorepo-simulation-core.plan.md) slice 4
+[monorepo-simulation-core.plan.md](finished/monorepo-simulation-core.plan.md) slice 4
 (PR #107): the four image-lifecycle splits (`identity-packs`,
 `identity-pack-trial`, `image-lab`, `prompts` — note `identity-pack-trial`
 had doubled to 3,139 lines since this audit), the §Engine-sim R4 leaf-module

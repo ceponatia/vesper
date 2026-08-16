@@ -8,7 +8,7 @@ The render pipeline itself lives in [images/pipelines.md](../images/pipelines.md
 
 The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —
 multi-image from the start) and the character genuinely sees them
-([developer-notes/chat-image-input.plan.md](../developer-notes/finished/chat-image-input.plan.md)):
+(`chat-image-input.plan.md`):
 
 - **Upload** (`POST /api/chats/:chatId/attachments`, one photo per call): the composer
   downscales client-side (canvas, ≤1600px → JPEG), the server re-decodes with the
@@ -42,7 +42,7 @@ multi-image from the start) and the character genuinely sees them
 ## Selfies (character-sent photo messages)
 
 The character can send photos back
-([developer-notes/chat-selfies.plan.md](../developer-notes/finished/chat-selfies.plan.md), owner
+(`chat-selfies.plan.md`, owner
 rulings 2026-07-11):
 
 - **Three triggers, one queue decision.** A player **request** (`detectSelfieRequest`,
@@ -90,7 +90,7 @@ rulings 2026-07-11):
 Chat renders used to anchor on the canonical avatar — always in the default outfit —
 so every scene argued the edit model out of repainting the reference's clothes, and
 settings rode a text sketch alone
-([developer-notes/chat-scene-references.plan.md](../developer-notes/finished/chat-scene-references.plan.md),
+(`chat-scene-references.plan.md`,
 owner rulings 2026-07-11):
 
 - **Current look** (`kind: "chat_look"`): an outfit-true, identity-locked variant of

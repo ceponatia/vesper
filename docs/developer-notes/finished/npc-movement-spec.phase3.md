@@ -31,8 +31,8 @@ the brainstorm §Movement / §Stay-follow-approach.
 > **commitment** (a staged NPC overrides its schedule tick); and **NPC-initiated
 > comms** on arrival (`runtime.pendingComms`, surface-once). The narrator is
 > constrained to quick-chat self-initiated texts (no location claims / meet-ups),
-> with a continuity backstop — see [../perception.md](../perception.md) §Comms,
-> [../turn-engine.md](../turn-engine.md) §Director-staged movement. **Still not
+> with a continuity backstop — see `perception.md` §Comms,
+> `turn-engine.md` §Director-staged movement. **Still not
 > started** (the full engine): autonomous drives (schedule-as-drive replacement,
 > needs/affordance/social/goal scoring), approach scores, follow-score changes /
 > "I follow her", companion full-path atomicity, travel-weighted pathfinding,

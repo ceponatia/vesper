@@ -9,7 +9,7 @@ browser + NO time advance, Go-on = no user row + span advance 8:01→8:02 + cont
 held across takes; screenshots in `screenshots/charter-*.png`). Leftovers, parked:
 sensory-allowance port (OQ3) and a sim-lane voice ring (OQ4) below; the LLM-judge
 audit leg and the prose-plus-sidecar A/B ride the owner-gated eval spend
-([deferred.plan.md](deferred.plan.md)); token streaming stays deferred (withhold
+([deferred.plan.md](../deferred.plan.md)); token streaming stays deferred (withhold
 contract); a richer "narrating…" progress state is optional polish — the existing
 typing indicator covered the 30–90s renders legibly. (Planned 2026-07-22 from the
 two-model narrator review — GPT + Fable
@@ -144,7 +144,7 @@ id, or proposition key may appear in prose.
   truly enacted in meaning, forbidden claim absent in paraphrase, speech act actually
   delivered) remains prompt-enforced and is **honestly out of scope** here — an
   LLM-judge audit leg is parked with the owner-gated eval spend
-  ([deferred.plan.md](deferred.plan.md) §Owner-gated live eval runs).
+  ([deferred.plan.md](../deferred.plan.md) §Owner-gated live eval runs).
 - **Bridge demoted to last resort**: only after the feedback retry still misses ≤2
   beats; bridge text lands as its own short paragraph, never glued mid-sentence.
 - **Provider parity**: `narrativeProviderOptions(modelId)` on the narrator call,

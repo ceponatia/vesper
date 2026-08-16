@@ -29,7 +29,7 @@ file.
    rows: editable and deletable like any other.
 5. **Existing chats are not migrated.** The owner deletes them manually. Stored
    picks still parse defensively (`parseOr` at the boundary, per
-   [docs/resilience.md](../resilience.md)) and fall back to the default.
+   [docs/resilience.md](../../resilience.md)) and fall back to the default.
 
 ## Probed Replicate facts (2026-08-05)
 
@@ -294,7 +294,7 @@ whole exchange and released only in `streamExchange`'s `finally`, after `settle`
 and `saveReplyFailure` — and the stream keeps draining after a client
 disconnect by design (`src/server/api/stream.ts`), so the lock outlives the
 browser's view of the exchange. The window itself is tracked as **B14** in
-[chat-reply-latency.plan.md](chat-reply-latency.plan.md) and was not addressed
+[chat-reply-latency.plan.md](../chat-reply-latency.plan.md) and was not addressed
 here.
 
 1. **Gate the control.** `SceneStrip` (`src/components/characters/chat-scene-strip.tsx`)
@@ -336,4 +336,4 @@ Gaps left open at ship, worth closing if this area is reopened: there is no test
 for `cropToTargetAspect`'s geometry, none for `chatBusyResponse`'s holder
 phrasing, and no integration test for the admin CRUD routes, their authz matrix,
 or the migration's six seeded rows. Degradation tests assert both the fallback
-and the diagnostic code, per [docs/testing.md](../testing.md).
+and the diagnostic code, per [docs/testing.md](../../testing.md).

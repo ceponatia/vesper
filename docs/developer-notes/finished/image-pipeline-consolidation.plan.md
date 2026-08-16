@@ -29,7 +29,7 @@ and it is the highest-value consolidation in that area of the codebase.
 The cost is not the line count. It is that the six copies have already drifted in ways nobody
 decided: a failed entity render pushes a warning diagnostic, a failed avatar render does not;
 one lane returns the new asset id on failure, another returns nothing. When a rule about
-images changes — and [../images.md](../images.md) is full of hard-won rules like "row before
+images changes — and [../images.md](../../character-chat/images.md) is full of hard-won rules like "row before
 file" — it has to be re-applied in six places, and any place that gets missed fails silently.
 
 Underneath the six copies sit four smaller repeats with the same shape: unwrapping a Venice
@@ -61,7 +61,7 @@ Consolidation only, in `src/server/images` and `src/server/ai`:
 - **C5** — one purge helper for the select-delete-unlink paths.
 - **C10** — one string hash in `src/lib`, with the two determinism seams pinned by tests.
 
-Also in scope: updating [../images.md](../images.md) §Adding a pipeline so the next image kind
+Also in scope: updating [../images.md](../../character-chat/images.md) §Adding a pipeline so the next image kind
 is written against the shared shell instead of copied from a neighbour.
 
 ## Non-goals
@@ -69,9 +69,9 @@ is written against the shared shell instead of copied from a neighbour.
 - **No behaviour change to any image output.** Same prompts, same models, same rows, same
   files, same failure text. The prompt builders (`images/prompts.ts`) are not touched, and
   neither is the scene provider chain, the router's fallback order, or any model default.
-- **No new features.** [spatial-scene-images.plan.md](spatial-scene-images.plan.md) (draft)
+- **No new features.** [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) (draft)
   owns future pipeline capability — pose and depth control — and the body-affordance
-  scene-image consumer stays parked in [deferred.plan.md](deferred.plan.md). Neither is
+  scene-image consumer stays parked in [deferred.plan.md](../deferred.plan.md). Neither is
   touched here; this plan only makes the ground they land on smaller.
 - **No schema work.** No new columns, no migration, no deploy sequencing.
 - **Not the resilience closures** (**C12**, time-boxing the image-side model calls) and **not
@@ -108,7 +108,7 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
    time**, avatars first (best-covered, simplest) and chat scenes last (most branching).
    Where two lanes disagree today, the difference is either preserved deliberately or fixed
    deliberately with a note saying which — no difference gets normalized by accident.
-5. **Close-out.** Update [../images.md](../images.md) §Adding a pipeline to name the shared
+5. **Close-out.** Update [../images.md](../../character-chat/images.md) §Adding a pipeline to name the shared
    shell as the way to add an image kind, so the seventh lane is written once rather than
    copied a seventh time.
 
@@ -126,7 +126,7 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
 ## Risks & coordination
 
 - **Slice 4 is the only broad one.** It touches every lane, and the invariant it must not bend
-  is the row-before-file lifecycle in [../images.md](../images.md): the row is inserted
+  is the row-before-file lifecycle in [../images.md](../../character-chat/images.md): the row is inserted
   *before* the file exists, so every file on disk is always explained by a row. Any change to
   when the row is written relative to when bytes land is out of bounds for this plan.
 - **Slice 3 touches deletion.** The purge helper operates on user data; a predicate
@@ -134,7 +134,7 @@ Invisible-risk item first, the broad one last. Each slice is independently shipp
   item among the small ones, and it wants the most careful review.
 - **Recent churn in the scene and chat-anchor lanes** (both edited in late July). If either is
   under active edit when this is picked up, take slice 4 after that work settles — and the same
-  applies if [spatial-scene-images.plan.md](spatial-scene-images.plan.md) activates first:
+  applies if [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) activates first:
   landing the shell first makes that plan cheaper, but refactoring a file a feature is being
   built in does not.
 - **Keeping the copies from returning** is a tooling change (**F1** — the duplication gate's

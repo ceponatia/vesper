@@ -16,7 +16,7 @@ portrait, a 4K location, a scene that keeps the same character — so that one
 model can do several different jobs well without a code change.
 
 Content/tuning companion:
-[image-render-quality.plan.md](image-render-quality.plan.md) — per-model prompt
+[image-render-quality.plan.md](../image-render-quality.plan.md) — per-model prompt
 dialects, negative-prompt banks, face-fidelity work, and trial protocol ride on
 this plan's profile/control machinery (its first slices ran ahead of it).
 
@@ -26,7 +26,7 @@ topic. Read its §"Implementation status" for what is built; this plan says what
 the slices are for.
 
 This is a follow-up to the shipped
-[image model registry](finished/image-model-registry.plan.md). The registry solved the
+[image model registry](../finished/image-model-registry.plan.md). The registry solved the
 first problem: image models are now data, Replicate is the only provider, and a
 model can describe enough of its API for Vesper to call it safely. This plan
 solves the next problem: the six models do not merely accept different field
@@ -386,7 +386,7 @@ technical design preserved in the spec.
 6. **Qwen LoRA library.** Status: complete — 2026-08-11; the initial style
    trial ran the same day through the Qwen lab's Stage 4 protocol, and its
    verdicts were accepted when that plan shipped (2026-08-13,
-   [finished/qwen-advanced-image-subsystem.plan.md](finished/qwen-advanced-image-subsystem.plan.md)).
+   [finished/qwen-advanced-image-subsystem.plan.md](../finished/qwen-advanced-image-subsystem.plan.md)).
    Add compatible hosted LoRAs, profile selection, scale validation, trigger or
    prompt additions, and one initial style trial.
 7. **Model-specific profiles.** Status: complete — 2026-08-14. Seven curated

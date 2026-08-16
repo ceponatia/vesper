@@ -459,17 +459,17 @@ spec's **## Decisions** (D1–D15).
 
 - Spec: [character-chat-standalone.spec.md](character-chat-standalone.spec.md) (includes
   the **Decisions** record).
-- Shipped family: [finished/character-chat.plan.md](finished/character-chat.plan.md),
-  [finished/character-chat-summary.plan.md](finished/character-chat-summary.plan.md),
-  [finished/character-chat-state.plan.md](finished/character-chat-state.plan.md),
-  [finished/character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md),
+- Shipped family: [finished/character-chat.plan.md](../finished/character-chat.plan.md),
+  [finished/character-chat-summary.plan.md](../finished/character-chat-summary.plan.md),
+  [finished/character-chat-state.plan.md](../finished/character-chat-state.plan.md),
+  [finished/character-chat-scenario.plan.md](../finished/character-chat-scenario.plan.md),
   [character-chat-sensory.plan.md](character-chat-sensory.plan.md),
   [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md),
-  [finished/character-chat-primary.plan.md](finished/character-chat-primary.plan.md) ·
-  [finished/character-chat-primary.spec.md](finished/character-chat-primary.spec.md).
+  [finished/character-chat-primary.plan.md](../finished/character-chat-primary.plan.md) ·
+  [finished/character-chat-primary.spec.md](../finished/character-chat-primary.spec.md).
 - Absorbed findings: [codebase-review.md](codebase-review.md) §C (chat items) / §D / §E
-  (chat items); [RAG-improvements.plan.md](RAG-improvements.plan.md);
+  (chat items); [RAG-improvements.plan.md](../RAG-improvements.plan.md);
   [personality-enactment.plan.md](personality-enactment.plan.md) (measurement follow-up);
-  [deferred.plan.md](deferred.plan.md) (#4 timeline, #8 export).
+  [deferred.plan.md](../deferred.plan.md) (#4 timeline, #8 export).
 - Coordination: [intimacy-notes.plan.md](intimacy-notes.plan.md) (chat-side gating),
   [avatar-3d.plan.md](avatar-3d.plan.md) (rollback ruling; future avatar plan).

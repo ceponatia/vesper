@@ -17,8 +17,8 @@ Related: [character-chat-sensory.plan.md](character-chat-sensory.plan.md) (the s
 opportunistic-cue discipline this widens), [player-input-perception.plan.md](player-input-perception.plan.md)
 (the queued CHAT_RULES rewrite this must coordinate with — see §Sequencing),
 [attribute-narrator-guidance.plan.md](attribute-narrator-guidance.plan.md) (glosses make the
-visual channel's raw material meaningful), [../prompts.md](../prompts.md) §Character-chat
-sensory cues, [../character-chat.md](../character-chat.md),
+visual channel's raw material meaningful), [../prompts.md](../../character-chat/prompts.md) §Character-chat
+sensory cues, `character-chat.md`,
 [multi-character-chat.plan.md](multi-character-chat.plan.md) ("player-owns-himself narration
 authority" — the same boundary this plan draws must hold there).
 

@@ -3,10 +3,10 @@
 Status: companion to [image-render-quality.plan.md](image-render-quality.plan.md)
 
 Machinery this rides on:
-[image-model-capabilities.spec.md](image-model-capabilities.spec.md) (profiles,
+[image-model-capabilities.spec.md](finished/image-model-capabilities.spec.md) (profiles,
 control mapping, role-aware references, prompt fitting, seeds, and multi-output).
 Reference derivation, quality, and provenance:
-[image-identity-packs.spec.md](image-identity-packs.spec.md). The appearance
+[image-identity-packs.spec.md](finished/image-identity-packs.spec.md). The appearance
 projection a prompt compiler should read:
 [visual-state.spec.md](visual-state.spec.md). Provider schemas and reviewed
 notes: [docs/image-models/](../image-models/).
@@ -491,13 +491,13 @@ sketches are gone rather than kept in sync.
 sub-records, revision/status lifecycle, source hashing, derivation and policy
 versioning, creation triggers, backfill, the heuristic crop and the detector
 promotion rule, and the pre-spend quality gate are owned by
-[image-identity-packs.spec.derivation.md](image-identity-packs.spec.derivation.md)
-and [image-identity-packs.spec.data.md](image-identity-packs.spec.data.md). All of
+[image-identity-packs.spec.derivation.md](finished/image-identity-packs.spec.derivation.md)
+and [image-identity-packs.spec.data.md](finished/image-identity-packs.spec.data.md). All of
 it is implemented.
 
 **Reference selection and capacity.** Role ordering, required-identity precedence,
 capacity refusal, and per-profile identity strategies are owned by
-[image-identity-packs.spec.integration.md](image-identity-packs.spec.integration.md)
+[image-identity-packs.spec.integration.md](finished/image-identity-packs.spec.integration.md)
 §"Reference roles" and §"Required identities and capacity". The rule this spec
 depends on and does not restate: a profile never ejects a required identity to fit
 an optional reference, and a request whose required roles exceed capacity makes
@@ -607,7 +607,7 @@ resolved controls and prompt/control hashes per cell, which is the pattern to
 generalize, not a production render record.
 
 The per-reference identity fields are owned by
-[image-identity-packs.spec.integration.md](image-identity-packs.spec.integration.md)
+[image-identity-packs.spec.integration.md](finished/image-identity-packs.spec.integration.md)
 §"Render provenance" (`IdentityReferenceProvenance`); the entry below carries them
 by reference rather than redefining pack revision, crop method, or effective face
 size.
@@ -649,7 +649,7 @@ selected controls.
 
 No cell of this matrix has been run. The runner, blinded pairwise grading, and
 verdict recording built for
-[image-identity-packs.spec.trial.md](image-identity-packs.spec.trial.md) are the
+[image-identity-packs.spec.trial.md](finished/image-identity-packs.spec.trial.md) are the
 harness; that trial answers reference-strategy questions with the model held
 fixed, and this one answers model-tuning questions with the reference held fixed.
 Neither may vary both at once.

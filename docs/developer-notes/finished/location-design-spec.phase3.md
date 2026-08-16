@@ -81,7 +81,7 @@ structure, not prose.
     design): characters *acquire* items in play — purchases, gifts —
     that become owned at acquisition time, a second provenance path the
     items model doesn't have yet; tracked in
-    [deferred.plan.md](deferred.plan.md).
+    [deferred.plan.md](../deferred.plan.md).
 - **Phase-later consumers:**
   - Norms: taking an owned item / entering an owned space uninvited
     becomes a detectable breach candidate (the continuity agent gets
@@ -176,7 +176,7 @@ above.
    world / `style` for non-Earth time scales.
 4. **Item-instance ownership** — `owner_participant_id`, spawn-only
    writes; play-time acquisition deferred to
-   [deferred.plan.md](deferred.plan.md).
+   [deferred.plan.md](../deferred.plan.md).
 
 ## Testing sketch
 

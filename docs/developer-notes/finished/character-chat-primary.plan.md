@@ -8,10 +8,10 @@ Design/decisions: [character-chat-primary.spec.md](character-chat-primary.spec.m
 it first; it is the truth (the resolved decisions D1–D5, the load-bearing keying design, the
 memory-scope union, the fan-out shape). This plan is the task list and build order. Builds on
 everything the character-chat family already shipped — the sessionless 1-on-1
-([finished/character-chat.plan.md](finished/character-chat.plan.md)), the rolling
-summary ([finished/character-chat-summary.plan.md](finished/character-chat-summary.plan.md)),
-the light state ([finished/character-chat-state.plan.md](finished/character-chat-state.plan.md)),
-and the scenario setup ([finished/character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md)).
+([finished/character-chat.plan.md](../finished/character-chat.plan.md)), the rolling
+summary ([finished/character-chat-summary.plan.md](../finished/character-chat-summary.plan.md)),
+the light state ([finished/character-chat-state.plan.md](../finished/character-chat-state.plan.md)),
+and the scenario setup ([finished/character-chat-scenario.plan.md](../finished/character-chat-scenario.plan.md)).
 Sibling: [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md)
 (the fast prompt-layer slice — it ships first and is partly a prerequisite for the
 "state visibly drives behavior" payoff this arc completes).
@@ -144,15 +144,15 @@ second-order defaults — flag any to revisit.
 
 ## Related
 
-- Prior shipped slices: [finished/character-chat.plan.md](finished/character-chat.plan.md),
-  [finished/character-chat-summary.plan.md](finished/character-chat-summary.plan.md),
-  [finished/character-chat-state.plan.md](finished/character-chat-state.plan.md) ·
-  [character-chat-state.spec.md](finished/character-chat-state.spec.md),
-  [finished/character-chat-scenario.plan.md](finished/character-chat-scenario.plan.md).
+- Prior shipped slices: [finished/character-chat.plan.md](../finished/character-chat.plan.md),
+  [finished/character-chat-summary.plan.md](../finished/character-chat-summary.plan.md),
+  [finished/character-chat-state.plan.md](../finished/character-chat-state.plan.md) ·
+  [character-chat-state.spec.md](../finished/character-chat-state.spec.md),
+  [finished/character-chat-scenario.plan.md](../finished/character-chat-scenario.plan.md).
 - Session-side references to adapt: `engine/pipeline.ts` (`assemblePreTurn`, post-turn job),
   `engine/agents.ts` (`runPostTurnAgents`), `src/server/memory/{retrieval,facts,episodes}.ts`,
   `engine/merge/phases/attributes.ts`, and `engine/inner-note.ts` (the template for running
-  `addFacts` outside a turn). Memory system doc: [../memory.md](../memory.md).
+  `addFacts` outside a turn). Memory system doc: [../memory.md](../../memory.md).
 - Sibling: [character-chat-state-narration.plan.md](character-chat-state-narration.plan.md).
-- Cross-ref: [RAG-improvements.plan.md](RAG-improvements.plan.md) (retrieval-quality work that
+- Cross-ref: [RAG-improvements.plan.md](../RAG-improvements.plan.md) (retrieval-quality work that
   would benefit chat memory once it exists).

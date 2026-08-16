@@ -94,7 +94,7 @@ reason-keyed retry. **Shipped:**
 - The reason-keyed retry / fallback executor (`executeSceneChain`): transient →
   retry once on the same provider; content rejection → no retry, fall down the
   ladder. Per-downgrade diagnostic.
-- Docs updated: [../images.md](../../images.md) + [../database.md](../../database.md).
+- Docs updated: [../images.md](../../character-chat/images.md) + [../database.md](../../database.md).
 
 > **Reconciled (2026-06-19):** the original shipped ladder ended in the
 > `flux_openrouter` text-to-image rung. Task 2 swapped that rung for
@@ -127,7 +127,7 @@ Apache-friendly) or **Qwen-Image-Edit-2511** (native multi-person); identity
 **InfiniteYou**/PuLID-FLUX (Flux) or InstantID+IP-Adapter-FaceID (SDXL);
 composition 2-person OpenPose ControlNet + regional IP-Adapter masks; hosting
 **RunPod Serverless + Network Volume** (the GPU background worker that triggers the
-monorepo split — [monorepo-evaluation.md](../monorepo-evaluation.md)). Gating risks
+monorepo split — `monorepo-evaluation.md`). Gating risks
 are model licensing + provider adult-content ToS, not the tech.
 
 ### Done (the 2026-06-19 pivot)
@@ -196,7 +196,7 @@ rewrite. Touch points (from the codebase sweep):
   upstream still surfaces moderation as a parse error).
 - **Cleanup** — delete `scripts/spikes/flux-multiref.ts`; update the Flux mentions
   in `contracts/attributes/categories/intimate/index.ts` (comment) and
-  [../images.md](../../images.md) (the "Model switch", fallback-ladder, and
+  [../images.md](../../character-chat/images.md) (the "Model switch", fallback-ladder, and
   "moderation surfaces as a parse error" passages).
 
 > **Keep the model-selection seam.** Don't collapse the model-pick infrastructure

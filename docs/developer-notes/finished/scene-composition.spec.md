@@ -19,7 +19,7 @@ packs, per-model prompt rewriting (image-render-quality slice 1's exact-slug
 policy), the selfie framing, and every narrator surface.
 
 Everything this spec adds is deliberately application code, per the workspace
-ownership rule ([docs/images/README.md](../images/README.md)): the camera and
+ownership rule ([docs/images/README.md](../../images/README.md)): the camera and
 staging vocabularies translate Vesper's narrative and scene state into prompt
 text, so they stay in `apps/web` and meet `@vesper/image-core` only at the
 render-intent seam the lane already crosses. Nothing here touches
@@ -240,7 +240,7 @@ generation and is deliberately off every player surface.
   full present cast exactly as before; the cast gate constrains staging only.
 - **No larger spatial abstraction rides this work.** Per-subject orientation,
   generalized multi-character staging, and any 3D/frame abstraction stay out —
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) owns that route.
+  [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) owns that route.
 - **The composer-model flip shipped ahead of its probe.** `sceneComposer`
   defaults to `aion-labs/aion-3.0` (the character-chat narrative default and
   the flagged tool-candidate in `lib/narrative-models.ts`) as of 2026-08-14, on

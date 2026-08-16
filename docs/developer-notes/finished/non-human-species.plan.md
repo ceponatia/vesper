@@ -6,7 +6,7 @@ first species records, **image-gen feature surfacing on every route**, the
 species/heritage editor controls + forge inference, and the docs. Two strands live
 on past this plan, both always scoped as separate later work — **wardrobe
 accommodation** (tail-holes / wing-slits; see _Leftovers_ below and
-[deferred.plan.md](deferred.plan.md)) and **incremental per-species attribute-rule
+[deferred.plan.md](../deferred.plan.md)) and **incremental per-species attribute-rule
 data** (only `succubus` still ships empty rules; finer coloration nudges are
 ordinary data edits, no engine work). True _structural_ body plans
 (mermaid/naga/quadruped) remain out of scope.
@@ -102,7 +102,7 @@ humanoid plus extra parts.
   tail openings) so outfits don't clip or contradict features. Always scoped as its
   own later pass (spec §Wardrobe); features stay `coverageRelevant: false` and the
   `expand`/coverage seam under the `tail` location is where the nuance will live.
-  Parked in [deferred.plan.md](deferred.plan.md).
+  Parked in [deferred.plan.md](../deferred.plan.md).
 - **Incremental per-species attribute rules** — `succubus` still ships empty
   `attributeRules`, and finer species-typical skin/eye/coloration nudges can be
   added to any record. Pure data edits through the `attributeRule` seam, no engine

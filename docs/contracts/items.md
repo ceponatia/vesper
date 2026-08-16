@@ -281,7 +281,7 @@ regions as evidence.
 The vocabulary and persisted shape live here because the wardrobe owns coverage;
 the **derivation** is the affordance layer's, because it needs current
 saturation-dependent opacity (`contracts/affordances/domains/garment` —
-[body-attribute-affordances.spec.garment-interaction.md](../developer-notes/body-attribute-affordances.spec.garment-interaction.md)).
+`body-attribute-affordances.spec.garment-interaction.md`).
 One direction only: items never import affordances.
 
 Two rules worth knowing:

@@ -418,7 +418,7 @@ photo read).
 - **The quality claim is unmeasured.** The split's premise — that 4–5 assignments
   per sheet beats thirteen on the rare fields (a haircut, a trait shift, a new
   cast member) — is a design argument, not a measurement. The comparison rides
-  the owner-gated live eval spend ([deferred.plan.md](deferred.plan.md) §Owner-gated
+  the owner-gated live eval spend ([deferred.plan.md](../deferred.plan.md) §Owner-gated
   live eval runs); the harnesses can carry it whenever that budget opens.
 - **Session-lane agents are untouched.** They remain hand-written
   (`prompts/agents.ts`). The field library is the pattern to reach for when one of

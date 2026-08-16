@@ -309,7 +309,7 @@ the consolidation pass the session pipeline got:
   `user-guidance/` folders that don't exist in vesper** (reverie-local,
   gitignored there) — prune so agents stop being told to read phantom folders.
 - **E-D2 —** [unconsumed-character-prose.md](unconsumed-character-prose.md) and
-  [ideas-feedback.md](ideas-feedback.md) partially predate shipped work
+  `ideas-feedback.md` partially predate shipped work
   (personality sliders now reach prompts; audit C1 closed at `scene.ts:752`) —
   annotate or trim when C1's fix ships.
 

@@ -68,7 +68,7 @@ for the whole roster, D3/D8; away members skip meter decay, never fork the clock
 `skip_history` ring ≤50; one-shot `pending_skip_note`; one-shot **`pending_meanwhile_note`**
 + **`meanwhile_pass_at_minutes`** — the meanwhile pass's narrator line and its
 cumulative-gate origin / idempotency CAS, migration 0050,
-[chat-offscreen-life.spec.md](../developer-notes/finished/chat-offscreen-life.spec.md)), the **story-calendar anchor**
+`chat-offscreen-life.spec.md`), the **story-calendar anchor**
 (`calendar_start` jsonb, migration 0049 — chat-clock-calendar: minute 0 of the chat =
 this date+time; `parseOr` heals `{}`/bad rows to `CHAT_DEFAULT_CALENDAR_START` = Jan 1,
 8:00am; author-editable via `ChatStateEdit.calendarStart` from the clock card, and
@@ -204,8 +204,8 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
 ### The garment store — instances under the projection
 
 Since clothing-state-graph slices 0–4 (2026-07-27,
-[clothing-state-graph.plan.md](../developer-notes/clothing-state-graph.plan.md) · audit:
-[clothing-state-graph.audit.md](../developer-notes/clothing-state-graph.audit.md)) the worn
+`clothing-state-graph.plan.md` · audit:
+`clothing-state-graph.audit.md`) the worn
 lists above are a **derived projection** of a deeper truth: the chat-wide garment store on
 `ChatScenario.garments` (`character_chats.garments` jsonb, migration 0090). Each worn
 definition materializes lazily — on the next state write, never on read — into a
@@ -344,7 +344,7 @@ Moved to [body-state.md](body-state.md) — the scene's weather and body-surface
 
 Emotions used to be meter-derived and reactive-only — a strong beat's deltas started
 decaying on the next tick, and regard moved on a flat ±5/turn clamp with no history.
-Emotional weather ([developer-notes/emotional-weather.plan.md](../developer-notes/finished/emotional-weather.plan.md),
+Emotional weather (`emotional-weather.plan.md`,
 owner rulings 2026-07-11) adds three layers, all in the pure `engine/chat-feeling.ts`:
 
 - **Persistent `feeling`** (`character_chat_state.feeling` jsonb): the pulse proposes a
@@ -383,8 +383,8 @@ Rollback-safe like everything else: `feeling` rides `storedChatStateSchema`, so
 
 Commitments the fiction strikes — "come over Friday", "I'll text you after my shift" —
 become tracked state that comes DUE on the story clock
-([developer-notes/chat-plans-promises.plan.md](../developer-notes/finished/chat-plans-promises.plan.md)
-· [.spec.md](../developer-notes/finished/chat-plans-promises.spec.md)): the chat descendant of the
+(`chat-plans-promises.plan.md`
+· `chat-plans-promises.spec.md`): the chat descendant of the
 retired scheduled-arrivals spec, without the location model. The frame — *the story makes a
 commitment → the system records it deterministically → the clock makes it come due → the
 narration honors it.*
@@ -426,7 +426,7 @@ narration honors it.*
 ## Off-screen life (whereabouts + the meanwhile pass)
 
 The cast keeps living between visits (chat-offscreen-life — rulings in
-[the spec](../developer-notes/finished/chat-offscreen-life.spec.md)):
+`chat-offscreen-life.spec.md`):
 
 - **`character_chat_state.whereabouts`** (text ≤120, migration 0050): where an AWAY
   member is, as a phrase — written by the archivist presence read's optional `where`
@@ -448,7 +448,7 @@ The cast keeps living between visits (chat-offscreen-life — rulings in
 ## Drives (desires & secrets)
 
 The character's motive force
-([developer-notes/character-drives.plan.md](../developer-notes/finished/character-drives.plan.md),
+(`character-drives.plan.md`,
 owner rulings 2026-07-11): ≤3 authored wants on `profile.drives`
 (`contracts/personality/drives.ts` — `want`/`why`/`secrecy: open|guarded|secret` +
 an optional `revealBand`), seeded into `character_chat_state.drives` (migration

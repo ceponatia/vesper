@@ -6,9 +6,9 @@ Design settled for all three slices; open questions resolved 2026-06-19 (§10).
 Plan: [attribute-mutability.plan.md](attribute-mutability.plan.md). This spec is
 the **re-analysis (2026-06-19)** of two 2026-06-15 notes —
 [attribute-mutability.md](attribute-mutability.md) (the enforcement proposal) and
-[attribute-mutability-user-notes.md](attribute-mutability-user-notes.md) (the
+`attribute-mutability-user-notes.md` (the
 schema-design wishlist). Both predate the **non-human-species** work
-([finished/non-human-species.plan.md](finished/non-human-species.plan.md), shipped
+([finished/non-human-species.plan.md](../finished/non-human-species.plan.md), shipped
 2026-06-18), which silently built most of the design wishlist. This spec records
 what is now **already done**, what is **still live**, and the **settled rulings**
 where the shipped design diverged from the notes.

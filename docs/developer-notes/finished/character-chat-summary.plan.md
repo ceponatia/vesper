@@ -257,7 +257,7 @@ stream and the `[Name] "…"` tagging are unchanged.
 
 **Unchanged for v1** — the summary is entirely server-side and invisible. Optional
 later: a small "🧠 remembers earlier" affordance or a debug panel to view/edit
-the running summary (parks in [deferred.plan.md](deferred.plan.md)).
+the running summary (parks in [deferred.plan.md](../deferred.plan.md)).
 
 ## Build order
 
@@ -294,7 +294,7 @@ the running summary (parks in [deferred.plan.md](deferred.plan.md)).
 
 ## Related
 
-- [finished/character-chat.plan.md](finished/character-chat.plan.md) — the
+- [finished/character-chat.plan.md](../finished/character-chat.plan.md) — the
   stateless v1 this extends; the "window IS its only memory" constraint this lifts.
 - [character-chat-state.plan.md](character-chat-state.plan.md) — the light-state
   brainstorm; its `mindNote` is this summary's complement, and its

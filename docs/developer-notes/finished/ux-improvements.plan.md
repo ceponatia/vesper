@@ -32,7 +32,7 @@ Ordered so the trivial fixes land first and the one real gameplay feature
 1. **Fix the stale multi-character copy.** `new-chat-dialog.tsx:180-185` still
    says extra character picks are "groundwork… the others join fully when
    multi-character chat lands" — multi-character chat shipped 2026-07-12
-   ([finished/multi-character-chat.plan.md](finished/multi-character-chat.plan.md)).
+   ([finished/multi-character-chat.plan.md](../finished/multi-character-chat.plan.md)).
    Rewrite the helper text to describe the shipped behavior (all picks join as
    full roster members; the first pick is the primary). Also sweep the stale
    comment at `new-chat-dialog.tsx:26`.
@@ -174,7 +174,7 @@ from name+description — extend that seam into the editor:
    and a distinct affordance for all-empty. This is also what makes
    Forge-the-rest / From-portrait output reviewable at a glance. Extends the
    accordion shipped in
-   [finished/face-jewelry-and-attribute-form.plan.md](finished/face-jewelry-and-attribute-form.plan.md).
+   [finished/face-jewelry-and-attribute-form.plan.md](../finished/face-jewelry-and-attribute-form.plan.md).
 
 ### Slice 8 — named outfit presets (the gameplay feature)
 
@@ -263,9 +263,9 @@ All six open questions ruled; folded into the slices above:
 ## Not in scope (this plan)
 
 - Library keyset pagination past the 100-row cap — explicitly deferred until
-  real catalog scale ([finished/library-ux.plan.md](finished/library-ux.plan.md)).
+  real catalog scale ([finished/library-ux.plan.md](../finished/library-ux.plan.md)).
 - Item image upload/variants (AI-generate only today) — separate idea, park in
-  [deferred.plan.md](deferred.plan.md) if wanted.
+  [deferred.plan.md](../deferred.plan.md) if wanted.
 - Full per-body-location worn-state UI inside standalone chat — out of scope
   *of this plan*, but no longer rejected: ruled 2026-07-13 that chat wardrobe
   eventually reaches full session parity —
@@ -273,9 +273,9 @@ All six open questions ruled; folded into the slices above:
   (part of the chat-as-test-bed direction; see `CLAUDE.md`).
 - In-transcript search / jump-to-date — real gap, but bigger than this batch;
   candidates for a future chat-history plan alongside the relationship/meter
-  timeline ([deferred.plan.md](deferred.plan.md) #4).
+  timeline ([deferred.plan.md](../deferred.plan.md) #4).
 - Merging the three personality-ish tabs (Profile prose / Personality
   attributes / Disposition) — the split is load-bearing for forge legs and
   re-draft scopes; revisit only with a concrete design.
 - Character export/import (character cards) — park in
-  [deferred.plan.md](deferred.plan.md) if wanted.
+  [deferred.plan.md](../deferred.plan.md) if wanted.

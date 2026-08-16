@@ -5,7 +5,7 @@ player reopens the conversation, and surfacing an old shared moment unprompted.
 
 ## Initiative (the character reaches out first)
 
-The reopen opener ([developer-notes/chat-initiative.plan.md](../developer-notes/finished/chat-initiative.plan.md)):
+The reopen opener (`chat-initiative.plan.md`):
 the pickup strip gains **"Let {who} start ✦"**, which runs a `continue`-kind
 exchange with `initiative: true` — the server builds the cue
 (`buildInitiativeCue`, `engine/chat-initiative.ts`): reach out FIRST, with her
@@ -65,7 +65,7 @@ The remainder slices (shipped 2026-07-12):
 
 Fused recall is input-relevance-only, so shared history never resurfaced on its own —
 the character could never say "remember when…" unprompted. The memory-callback cue
-([developer-notes/memory-callbacks.plan.md](../developer-notes/finished/memory-callbacks.plan.md))
+(`memory-callbacks.plan.md`)
 fixes that with one low-frequency, one-turn tail line:
 
 - **Gate first, cost second** (`chat-callback.ts` `chatCallbackEligible`, pure): real

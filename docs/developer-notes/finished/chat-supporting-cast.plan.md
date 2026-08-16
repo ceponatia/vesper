@@ -135,9 +135,9 @@ parked)._
 
 ## Cross-links
 
-- [multi-character-chat.plan.md](finished/multi-character-chat.plan.md) — the
+- [multi-character-chat.plan.md](../finished/multi-character-chat.plan.md) — the
   heavyweight tier this deliberately is not; roster names feed the exclusion.
-- [npc-puppeting.deferred.md](npc-puppeting.deferred.md) — puppet handling is
+- [npc-puppeting.deferred.md](../npc-puppeting.deferred.md) — puppet handling is
   about ROSTER characters; supporting cast is shared-authorship by design
   (narrator input is the sanctioned way to author non-player behavior).
 - `docs/character-chat/supporting-cast.md` — §Supporting cast + §Narrator input (shipped docs).

@@ -129,7 +129,7 @@ Build order for the slice (each step reuses the **items** library as its templat
   drafted, 2026-06-19). This plan fills the live `cards` argument — see
   **Reconciliation with shipped work** below for what that changed.
 
-Context: [finished/personality-and-state.spec.md](finished/personality-and-state.spec.md)
+Context: [finished/personality-and-state.spec.md](../finished/personality-and-state.spec.md)
 §6 (the seam this feeds) / §10 (what this removes). Reference implementation: the
 companion-app `taboo-reaction-engine.ts` + `world-lore-schemas.ts` (`TabooCard`,
 `severityToTabooTier`, `resolveWitnessReaction`) — **adapted, not ported verbatim** (the

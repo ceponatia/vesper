@@ -14,7 +14,7 @@ largest file and the highest-confusion area in the turn engine. Every slice land
 
 Spec (full checklist scoring, target design, test strategy):
 [merge-decomposition.spec.md](merge-decomposition.spec.md). System doc:
-[turn-engine.md](../turn-engine.md) §"Merge reducer".
+`turn-engine.md` §"Merge reducer".
 
 ## Why this exists
 

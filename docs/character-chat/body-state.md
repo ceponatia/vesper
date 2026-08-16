@@ -13,8 +13,8 @@ emotional weather, plans, off-screen life, and drives — is in [state.md](state
 ## Scene environment & body surface
 
 Two authoritative owners the lane simply did not have
-([developer-notes/body-attribute-affordances.plan.md](../developer-notes/body-attribute-affordances.plan.md)
-· [.audit.md](../developer-notes/body-attribute-affordances.audit.md), slice 4, migration
+(`body-attribute-affordances.plan.md`
+· `body-attribute-affordances.audit.md`, slice 4, migration
 0091). Both exist so the visual-affordance layer reads *state*, never prose: the law is
 that **narrator prose is never parsed at read time** — the continuity extraction leg
 proposes typed ops and the fold commits them through `parseOr`, exactly as the garment
@@ -170,7 +170,7 @@ forearm") — standing truth after the physical cues, never competing with them.
 - **Production-silent today**: the perception view asserts exposure only for garment-covered
   locations and hair, so bare skin (nose, face, forearms) reads `unknown` and recognition fails
   closed — the same shape of missing-owner gap as garment fit above. See
-  [developer-notes/body-attribute-affordances.plan.md](../developer-notes/body-attribute-affordances.plan.md)
+  `body-attribute-affordances.plan.md`
   §Slice 7.
 
 ### Narrator physical guidance — constraints and premise checks
@@ -199,7 +199,7 @@ cut it already has —
 Both render as ONE binding-tier prompt block with explicit precedence over the general
 sensory allowances — see [prompts.md](prompts.md) §"Physical consistency". Wording rules,
 the detector's guards, and the verdict laws live in
-[developer-notes/narrator-physical-guidance.spec.md](../developer-notes/narrator-physical-guidance.spec.md)
+`narrator-physical-guidance.spec.md`
 §"Slice 2".
 
 **A standing fence is stated only when the turn is about it.** A braid is true all day, and

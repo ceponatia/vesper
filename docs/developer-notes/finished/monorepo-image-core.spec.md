@@ -92,7 +92,7 @@ required nor sufficient by itself. Until such a seam exists, creating an
 `@vesper/image-vision` package would make the diagram prettier without making
 the code easier to own.
 
-Reference doc for the live path: [docs/images/vision.md](../images/vision.md).
+Reference doc for the live path: [docs/images/vision.md](../../images/vision.md).
 
 ## Conventions every implementation slice follows
 

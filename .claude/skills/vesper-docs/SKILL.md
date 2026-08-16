@@ -93,9 +93,11 @@ Working tier — `docs/developer-notes/`:
   spec, or a bug fix never earns an entry here.
 - **`deferred.plan.md` + `deferred/`** — owns parked ideas that are not
   committed work.
-- **`finished/`** — owns the archived history of shipped topics. Read-only:
-  never edit a `finished/` doc to keep it current, and never repoint its
-  outbound links.
+- **`finished/`** — owns the archived history of shipped topics. Read-only as to
+  **content**: never edit a `finished/` doc to keep its claims current. **Links
+  are the exception** (owner ruling 2026-08-15): a link is navigation, not
+  history, and a broken one is unresolvable to the next reader whether or not
+  the doc is archived. Repoint them, in and out.
 
 Reference tier — `docs/`:
 
@@ -355,7 +357,14 @@ Only when the whole plan is delivered **and accepted**. In one change: set the
 plan's `Status:` to `shipped — <date>` with a note naming leftovers and where
 they went; `git mv` the whole `<topic>.*` family into `finished/`; remove its
 entry from `roadmap.md`; add the single line to `roadmap.shipped.md` pointing at
-the `finished/…` path. Leave every other inbound link alone.
+the `finished/…` path.
+
+Then repoint **every link the move broke** — inbound links from anywhere under
+`docs/developer-notes/` (including from docs already in `finished/`), and the
+moved docs' **own outbound links**, which all need one more `../` now that they
+sit a level deeper. Outbound is the one people forget and the largest single
+source of rot. Reference docs need nothing, because they do not link here.
+Run the link check below rather than trusting a read-through.
 
 If the code is all written but acceptance has not happened, this is not that
 change. Set `Status: awaiting acceptance — <what>`, record it in the spec too,
@@ -380,8 +389,31 @@ There is no automated docs checker in this repo, and a documentation-only change
 runs no code gates — the pre-push hook skips a push whose paths are all under
 `docs/` or end `.md` (root `CLAUDE.md`). Validate by hand before finishing:
 
-- Every relative link resolves — check the ones you touched **and** the ones
-  pointing at files you moved.
+- **Every relative link in `docs/` resolves.** Not just the ones you touched —
+  archiving breaks links in files you never opened. Run it, do not eyeball it:
+
+  ```bash
+  python3 -c "
+  import re,os,glob
+  n=0
+  for f in glob.glob('docs/**/*.md',recursive=True):
+      d=os.path.dirname(f)
+      for m in re.finditer(r'\]\(([^)#]+\.md)(?:#[^)]*)?\)',open(f).read()):
+          t=m.group(1)
+          if not t.startswith('http') and not os.path.exists(os.path.normpath(os.path.join(d,t))):
+              n+=1; print('BROKEN',f,'->',t)
+  print('broken:',n)"
+  ```
+
+  Expected output is `broken: 0`. When a repoint is needed, the fix is almost
+  always one more `../` (the doc moved a level deeper), not a renamed target.
+- **No reference doc links into `docs/developer-notes/`.** A plain-text mention
+  in backticks is the correct form, so the check must match link *targets* only —
+  an unanchored `developer-notes` grep flags the correct form as a violation:
+
+  ```bash
+  grep -rnE '\]\([^)]*developer-notes' docs --include="*.md" | grep -v "^docs/developer-notes/"
+  ```
 - `roadmap.md` links resolve and its entries do not contradict each plan's
   `Status:` line.
 - Every live plan has a Status line and an Outcome line, and every delivery

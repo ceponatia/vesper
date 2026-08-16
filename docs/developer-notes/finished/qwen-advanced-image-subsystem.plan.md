@@ -32,12 +32,12 @@ owner and this one is a consumer.
   validation, and compatibility, and its future-visual-controls slice owns the
   input-binding vocabulary for mask, pose, and depth images. This plan does not
   build a second copy of either.
-- [image-render-quality.plan.md](image-render-quality.plan.md) owns prompt
+- [image-render-quality.plan.md](../image-render-quality.plan.md) owns prompt
   quality, identity trials, result review, and repair policy.
 - [image-identity-packs.plan.md](image-identity-packs.plan.md) owns the canonical
   portrait and face-detail references used to preserve identity, and the
   profile-aware gate that decides whether they may be sent.
-- [spatial-scene-images.plan.md](spatial-scene-images.plan.md) owns producing
+- [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) owns producing
   consistent pose, depth, mask, and segmentation controls from a validated scene
   frame. This plan consumes control maps; it does not invent a competing pose
   representation, and its first fixtures are hand-reviewed stand-ins for that
@@ -664,7 +664,7 @@ identity-pack references (owner ruling; the verdicts and the whole pipeline
 record are in the spec). The LoRA alone drifts, which the owner attributes to a
 training set that was not varied enough rather than to the technique, so how
 good a character LoRA can get is handed to a LoRA training tool in the admin
-dashboard — parked in [deferred.plan.md](deferred.plan.md), wanted so a more
+dashboard — parked in [deferred.plan.md](../deferred.plan.md), wanted so a more
 sophisticated LoRA can be trained. Owner rulings at kickoff (2026-08-11): the pilot subject is Sabrina
 Vale, and the training set is her curated identity-faithful renders plus
 synthesized variants to about twenty images — a training set is assembled only

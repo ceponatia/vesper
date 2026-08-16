@@ -2,7 +2,7 @@
 
 Status: **supplemental architecture review — corrected after adversarial verification**
 
-Companion to [world-engine-refactor.plan.md](world-engine-refactor.plan.md) and
+Companion to [world-engine-refactor.plan.md](../world-engine-refactor.plan.md) and
 [gpt-sim-design.plan.md](gpt-sim-design.plan.md). This document does not replace either
 plan. It identifies where the two analyses reinforce one another, where they imply
 different architectures, and which additional decisions follow from reading them
@@ -288,7 +288,7 @@ creating “Café”, “The Café”, and “Cafe Downtown” as separate place
 ## Schedule semantics — current owner ruling versus successor target
 
 The earlier criticism of `rhythmBodyPatch` attacked a design the queued
-[chat-meter-economy plan](chat-meter-economy.plan.md) no longer contains. Owner ruling OQ3
+[chat-meter-economy plan](../chat-meter-economy.plan.md) no longer contains. Owner ruling OQ3
 already removed the blanket `hygiene = max(current, 0.9)` restore. The proposed patch
 scans the skipped window: a skip landing at 6am before a 7am wash row leaves the character
 unwashed, while an 8am landing credits the crossed row. The unmet need then remains in the
@@ -359,7 +359,7 @@ boundary at which to reconcile the world before prose streams.
 | Chat plans in [chat-plans.ts](../../src/contracts/turns/chat-plans.ts) | Story-clock targets and lifecycle labels | Name/prose matching; a narrator may mark `kept`, and elapsed time can assume NPC↔NPC completion |
 | Chat scene memory in [chat-scene-memory.ts](../../src/contracts/turns/chat-scene-memory.ts) | Durable setting continuity and pre-prompt movement recognition | Places are narrator-imagined names; `switchScenePlace` can change the current scene immediately without route, access, or travel |
 | `StagedIntent` plus [movement.ts](../../src/server/engine/movement.ts) | No teleport from an unplaced NPC; passable path, one-hop movement, arrival-gated payload, and commitment that beats routine | Director-authored, turn-budgeted, hop-count routing; no story-time ETA, activity phases, player interaction, or general schedule arbitration |
-| Presence channels in [perception.md](../perception.md) | Physical sight, remote comms, and absence grant different narrator rights | Needs to become a world-wide projection shared by chat, actions, memory, and access—not prompt guidance alone |
+| Presence channels in `perception.md` | Physical sight, remote comms, and absence grant different narrator rights | Needs to become a world-wide projection shared by chat, actions, memory, and access—not prompt guidance alone |
 | `LinkAccess` in [access.ts](../../src/contracts/world/access.ts) | One pure rule for locks, doors, and opening windows | `private` deliberately does not block the player, malformed access degrades to public, keys are not implemented, and invitation/consent scopes do not exist |
 
 The session movement system is a good source of invariants, not a literal framework to

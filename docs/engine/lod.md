@@ -246,7 +246,7 @@ classifiers, deterministic reducers, and outbox workers do that work instead
 
 ## Related
 
-- [engine.spec.md](../developer-notes/engine.spec.md) — the normative
+- `engine.spec.md` — the normative
   contract; §27–§28 are this doc's source.
 - [@vesper/simulation-core](../../packages/simulation-core/README.md) — the engine's
   broader event-sourced contracts (identities, envelopes, branching).

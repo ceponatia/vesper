@@ -309,7 +309,7 @@ just took what you did_ (the reaction beat). That maps directly onto the cue.
 
 **Mood is now its own plan.** The cross-app mood system — the deferred event→mood
 table _and_ the **labeled-emotion projection** the avatar cue needs — is specced
-separately in [mood.plan.md](finished/mood.plan.md) (it serves the narrator, scene images,
+separately in [mood.plan.md](../finished/mood.plan.md) (it serves the narrator, scene images,
 UI, and chat too, not just the avatar). The avatar **consumes** that projection;
 this plan does not define mood. The shared `EmotionLabel` enum is locked there.
 
@@ -392,8 +392,8 @@ value, then decide whether the Rive fidelity is worth the artist + identity cap
 The rich mood/reaction state lives in **in-session play** today. The
 sessionless **character-chat** (the chosen first surface) is **stateless** — no
 meters/mood. So "react to the chat" there depends on **mood reaching chat**, which
-is now planned in [mood.plan.md](finished/mood.plan.md) (its chat consumer rides
-[character-chat-state.plan.md](finished/character-chat-state.plan.md)'s light-state slice).
+is now planned in [mood.plan.md](../finished/mood.plan.md) (its chat consumer rides
+[character-chat-state.plan.md](../finished/character-chat-state.plan.md)'s light-state slice).
 Sequence: mood-in-chat → avatar in chat (testing) → avatar in session play
 (richest data). Worth confirming the dependency chain is acceptable.
 
@@ -453,10 +453,10 @@ generation or committing to a rig.
   - Yes
 - **Cue source:** purely derived from existing state (zero added tokens,
   recommended) vs an optional refining field on the already-running post-turn
-  agents? (Emotion derivation itself is owned by [mood.plan.md](finished/mood.plan.md).)
+  agents? (Emotion derivation itself is owned by [mood.plan.md](../finished/mood.plan.md).)
   - For now derived from existing state. Note that we may plan out a more robust system later.
 - **Expression/pose vocabulary:** the `emotion` enum is locked in
-  [mood.plan.md](finished/mood.plan.md) (shared `EmotionLabel`); this plan owns the `pose`/
+  [mood.plan.md](../finished/mood.plan.md) (shared `EmotionLabel`); this plan owns the `pose`/
   `reaction` enums and the matching layer set each character generates.
 - **Asset volume per character:** how many expression × pose layers to pre-gen
   (cost vs expressiveness) — start minimal (the 8 emotions + a blink + a few poses)?
@@ -466,7 +466,7 @@ generation or committing to a rig.
 
 - [avatar-3d.notes.md](avatar-3d.notes.md) — GPT's `AvatarCue`/`AvatarDirector`
   design, renderer comparison, Motion/Rive/VRM specifics.
-- [mood.plan.md](finished/mood.plan.md) — the app-wide mood system the avatar consumes
+- [mood.plan.md](../finished/mood.plan.md) — the app-wide mood system the avatar consumes
   (labeled-emotion projection + the `EmotionLabel` enum + event→mood table).
 - `docs/developer-notes/finished/personality-and-state.plan.md` / `.spec.md` — the
   shipped mood/reaction engine the avatar reads.
@@ -474,5 +474,5 @@ generation or committing to a rig.
   `src/contracts/personality/` — the live signals to derive the cue from.
 - `docs/images.md` — the identity-locked image pipeline that generates the
   one-time expression/pose layer sets.
-- [character-chat-state.plan.md](finished/character-chat-state.plan.md) — prerequisite for
+- [character-chat-state.plan.md](../finished/character-chat-state.plan.md) — prerequisite for
   the character-chat surface (supplies mood).

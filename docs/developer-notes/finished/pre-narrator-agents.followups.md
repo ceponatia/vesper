@@ -5,7 +5,7 @@ items in §6). Post-ship fixes for the intake agent shipped per
 [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) §7 (Stack A).
 Triggered by a flood of intake diagnostics in the dev Inspector during session
 `ra2enpex3luvmsrlaafsyn8x` ("Whisperwing Estate"). This is the measurement the
-UX-audit deferred — [ux-audit.plan.md](finished/ux-audit.plan.md) §6 (M5) said "measure
+UX-audit deferred — [ux-audit.plan.md](../finished/ux-audit.plan.md) §6 (M5) said "measure
 the fallback hit-rate first"; this doc is that measurement, the root causes it
 surfaced, and the fixes that landed.
 
@@ -288,7 +288,7 @@ model it returns correct briefs.
 
 This de-risks the **personality** work, which leans harder on intake:
 `socialActs` / `narratedNpcBehaviors` tagging
-([personality-and-state.plan.md](finished/personality-and-state.plan.md) §1.3, already
+([personality-and-state.plan.md](../finished/personality-and-state.plan.md) §1.3, already
 shipped into the brief) only fires when intake **lands**. At the old 91%
 fallback rate those reactions almost never triggered. Reliable intake is a
 prerequisite for the authored likes/dislikes loop working in play.
@@ -315,9 +315,9 @@ prerequisite for the authored likes/dislikes loop working in play.
 
 - Spec: [pre-narrator-agents.spec.md](pre-narrator-agents.spec.md) (§4.1
   latency, §4.2 resilience ladder, Open-question A).
-- M5 tracking: [ux-audit.plan.md](finished/ux-audit.plan.md) §6 — this doc supplies the
+- M5 tracking: [ux-audit.plan.md](../finished/ux-audit.plan.md) §6 — this doc supplies the
   "measure first" data it was gated on.
-- Consumer at risk: [personality-and-state.plan.md](finished/personality-and-state.plan.md) §1.3.
+- Consumer at risk: [personality-and-state.plan.md](../finished/personality-and-state.plan.md) §1.3.
 - Code: `src/lib/agent-models.ts` + `src/lib/narrative-models.ts` (model lists +
   default), `src/server/engine/intake.ts` (`runIntake`/`withTimeout` abort),
   `src/server/ai/generate-checked.ts` (`disableReasoning` / `repair` /

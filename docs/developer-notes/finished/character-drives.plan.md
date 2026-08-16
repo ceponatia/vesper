@@ -15,7 +15,7 @@ Disposition re-draft coverage + `renderSheetLines`, and the
 `chat-secret-hold`/`-reveal` fixtures with the deterministic `secretCue`
 planted-token metric. Leftover: the **live judged fixture run is owner-gated
 spend** — it rides the enactment measurement run
-([deferred.plan.md §Owner-gated live eval runs](deferred.plan.md)).)
+([deferred.plan.md §Owner-gated live eval runs](../deferred.plan.md)).)
 
 The character's interiority is one free-text `mindNote` (pulse-written, 1–3
 sentences) plus `openLoops` (conversational leftovers). There is no want she
@@ -101,5 +101,5 @@ deflects, confesses.
 
 - [chat-initiative.plan.md](chat-initiative.plan.md) — life-event beats draw on
   drives for offscreen texture.
-- [memory-callbacks.plan.md](finished/memory-callbacks.plan.md) — a reveal is a prime
+- [memory-callbacks.plan.md](../finished/memory-callbacks.plan.md) — a reveal is a prime
   callback candidate.

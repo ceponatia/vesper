@@ -18,14 +18,14 @@ Technical companion: [image-identity-packs.spec.md](image-identity-packs.spec.md
 
 Related plans:
 
-- [image-render-quality.plan.md](image-render-quality.plan.md) owns model-native
+- [image-render-quality.plan.md](../image-render-quality.plan.md) owns model-native
   prompting, quality settings, face-fidelity trials, repair, and output review;
 - [image-model-capabilities.plan.md](image-model-capabilities.plan.md) owns
   role-aware reference capacity, profile eligibility, and the shared render
   intent that transports identity references to providers;
-- [spatial-scene-images.plan.md](spatial-scene-images.plan.md) may later consume
+- [spatial-scene-images.plan.md](../spatial-scene-images.plan.md) may later consume
   identity packs alongside pose, depth, and mask controls;
-- [data-lifecycle.plan.md](data-lifecycle.plan.md) owns the broader image
+- [data-lifecycle.plan.md](../data-lifecycle.plan.md) owns the broader image
   retention policy. This plan adds a narrower rule for hidden derived identity
   assets.
 

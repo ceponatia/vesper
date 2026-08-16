@@ -36,7 +36,7 @@ three-lens review. Two live in the state-read surface
    story-hours still reads at its last-written value. The pure integrator exists
    (`integrateMeterValue`, `lib/simulation/bodies.ts` §25.1) and the branch clock
    (`storySecond`) is already in the read's inputs — a wiring gap, not new math.
-   **Prerequisite for [physiology.plan.md](deferred/physiology.plan.md)**, which
+   **Prerequisite for [physiology.plan.md](../deferred/physiology.plan.md)**, which
    reads body state through this same seam.
 
 3. **The turn loop pays for the same reads 3–4× (MED · M), and none of the
@@ -131,7 +131,7 @@ bloat, not latency — note it for a later rollup decision.
    parity test. (HIGH · S) — ship first; unblocks nothing, stops the 500s.
 2. **Integrate-on-read meters** — extract `buildMeterView`, rewire the two
    stores to it, integrate `readSimChatMeters` at `storySecond` via
-   `loadActorBody`. (MED · S) — the [physiology.plan.md](deferred/physiology.plan.md)
+   `loadActorBody`. (MED · S) — the [physiology.plan.md](../deferred/physiology.plan.md)
    prerequisite.
 3. **Turn-loop read consolidation** — load space + authority once, thread
    through the loop, extract pure step-planners. (MED · M)

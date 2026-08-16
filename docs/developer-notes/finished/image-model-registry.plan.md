@@ -75,7 +75,7 @@ several models the owner researched but did not seed — live in
   a portrait from nothing.
 - **Seedream 4.5** — takes a list of references; a strong alternative for scenes.
 - **Seedream 5 Lite** — verified working in a live trial
-  ([seedream-5-lite.trial.md](images/seedream-5-lite.trial.md)). Holds a
+  (`seedream-5-lite.trial.md`). Holds a
   character's face across a scene change. Slower than the default, so it is an
   opt-in pick rather than an everyday one.
 - **Stable Diffusion 3.5 Large** — text-to-image. Its reference input is
@@ -143,7 +143,7 @@ small and sat in the code this work already touched.
 
 The underlying reason the window exists at all — the exchange lock being held
 through the whole settle tail — is tracked as **B14** in
-[chat-reply-latency.plan.md](chat-reply-latency.plan.md) and was not re-solved
+[chat-reply-latency.plan.md](../chat-reply-latency.plan.md) and was not re-solved
 here.
 
 ## Delivery slices

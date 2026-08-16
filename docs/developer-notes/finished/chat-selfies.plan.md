@@ -45,7 +45,7 @@ lens), the player nowhere in frame.
      cue.
 - **Exposure**: identical gates to chat scenes — `outfit_exposed` +
   `intimateSceneAppearance` on the uncensored route only. The parked
-  uploaded-avatar guard ([deferred.plan.md](deferred.plan.md)) applies before
+  uploaded-avatar guard ([deferred.plan.md](../deferred.plan.md)) applies before
   production accepts real uploads.
 - **Display**: an anchored image message rendered SMS-style (the comms bubble
   treatment) when `meta.flavor === "selfie"`, distinct from the scene-moment

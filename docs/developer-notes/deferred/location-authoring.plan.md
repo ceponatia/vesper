@@ -141,8 +141,8 @@ facing what" exists.
   arrivals) that doesn't exist yet.
 - **Tripwire inherited from the sibling:** authored travel durations with
   nonzero uncertainty MUST NOT ship before
-  [../drain-hardening.plan.md](../drain-hardening.plan.md) has (promoted
-  2026-07-23; see [../drain-hardening.arrival.md](../drain-hardening.arrival.md)
+  [../drain-hardening.plan.md](../finished/drain-hardening.plan.md) has (promoted
+  2026-07-23; see [../drain-hardening.arrival.md](../finished/drain-hardening.arrival.md)
   ruling 4).
 
 ## Adopted from the 2026-07-23 GPT review (design requirements at promotion)
@@ -199,7 +199,7 @@ the hybrid incoming-authority refinement in ruling 3.)_
   the thin end? (The review's several-promotions suggestion above sharpens
   this.)
 - **Starter worlds:** does the builder replace the hand-seeded starter world
-  (and B8 [starter-world-seeds.plan.md](starter-world-seeds.plan.md)'s seeds
+  (and B8 [starter-world-seeds.plan.md](../finished/starter-world-seeds.plan.md)'s seeds
   become its first authored content), or do seeds stay a separate lane?
 
 ## Slices

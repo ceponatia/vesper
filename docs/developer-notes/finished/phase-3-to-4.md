@@ -9,7 +9,7 @@
 > migration doc is left as-written; a future cleanup may split it.
 >
 > **Update 2026-06-16:** the project dropped hard phase numbers for a topic-named
-> plan convention ([deferred.plan.md](deferred.plan.md) §"Plan docs: drop hard
+> plan convention ([deferred.plan.md](../deferred.plan.md) §"Plan docs: drop hard
 > phase numbers"). The three world-moves specs were renamed off `*.phase5.md` to
 > `movement-authority.spec.md`, `scheduled-arrivals.spec.md`, and
 > `pre-narrator-agents.spec.md`. The `*.phase5.md` mentions below are the
@@ -148,7 +148,7 @@ witnessed-intimacy); library-character `tier` field.
   traversal/pathfinding/LOD, commitment, world-tick *proposals*, approach scores,
   follow schedule-conflict term, companion travel atomicity. (Player-side access +
   arrival/departure staging already shipped in phase 2.)
-- **movement-authority** ([spec](movement-authority.spec.md), drafted
+- **movement-authority** (`movement-authority.spec.md`, drafted
   2026-06-13 from a broken session): the precondition npc-movement's traversal
   assumes — who may *commit* a movement (player narration must not relocate NPCs),
   implied sub-rooms must not promote to graph hops, and multi-hop player intent
