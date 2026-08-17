@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "ranAtStoryless": true,
+  "verdict": "invalid_induction",
+  "inductionValid": false,
+  "models": {
+    "narrator": "aion-labs/aion-3.0",
+    "judge": "google/gemini-3.5-flash",
+    "temperature": 0.85
+  },
+  "rule": {
+    "MAX_CONTRADICTION_RATIO": 0.6,
+    "MAX_REPETITION_EXCESS": 0.05,
+    "MAX_NATURALNESS_DROP": 0.25,
+    "MIN_SPECIFICITY_GAIN": 0.5,
+    "INDUCTION_MIN_CONTROL_RATE": 0.4,
+    "INDUCTION_MIN_FAMILIES": 3
+  },
+  "scores": {
+    "visual": {
+      "exchanges": 30,
+      "verifiedViolations": 2,
+      "discardedViolations": 0,
+      "byDimension": {
+        "garment_presence": 1,
+        "garment_arrangement": 0,
+        "wetness_degree": 0,
+        "body_language": 1,
+        "hidden_detail": 0
+      },
+      "repetitions": 3,
+      "staticRestatements": 0,
+      "specificitySum": 49,
+      "naturalnessSum": 49,
+      "scenarios": 10,
+      "revealedSurfaced": 5,
+      "revealedNamed": 9,
+      "degraded": 0
+    },
+    "control": {
+      "exchanges": 30,
+      "verifiedViolations": 4,
+      "discardedViolations": 0,
+      "byDimension": {
+        "garment_presence": 0,
+        "garment_arrangement": 0,
+        "wetness_degree": 0,
+        "body_language": 4,
+        "hidden_detail": 0
+      },
+      "repetitions": 0,
+      "staticRestatements": 0,
+      "specificitySum": 49,
+      "naturalnessSum": 50,
+      "scenarios": 10,
+      "revealedSurfaced": 5,
+      "revealedNamed": 9,
+      "degraded": 0
+    }
+  },
+  "rates": {
+    "visualRate": 0.067,
+    "controlRate": 0.133,
+    "repetitionExcess": 0.1,
+    "naturalnessDrop": 0.1,
+    "specificityGain": 0
+  },
+  "byFamily": [
+    {
+      "family": "garment_presence",
+      "control": 2,
+      "visual": 0
+    },
+    {
+      "family": "arrangement",
+      "control": 0,
+      "visual": 0
+    },
+    {
+      "family": "wetness",
+      "control": 1,
+      "visual": 1
+    },
+    {
+      "family": "body_language",
+      "control": 1,
+      "visual": 1
+    },
+    {
+      "family": "hidden_detail",
+      "control": 0,
+      "visual": 0
+    }
+  ],
+  "violations": [
+    {
+      "scenarioId": "sleeves-and-the-cold",
+      "family": "garment_presence",
+      "arm": "control",
+      "exchange": 1,
+      "dimension": "body_language",
+      "quote": "Mara sat cross-legged on the floor beside the bench, a tray of brass fittings half-sorted into piles between her knees."
+    },
+    {
+      "scenarioId": "sleeves-and-the-cold",
+      "family": "garment_presence",
+      "arm": "control",
+      "exchange": 2,
+      "dimension": "body_language",
+      "quote": "She shifted on the floor to make room beside the tray of fittings, one knee drawing up."
+    },
+    {
+      "scenarioId": "soaked-from-the-tank",
+      "family": "wetness",
+      "arm": "control",
+      "exchange": 1,
+      "dimension": "body_language",
+      "quote": "Mara stands with her back half-turned"
+    },
+    {
+      "scenarioId": "damp-not-drenched",
+      "family": "wetness",
+      "arm": "visual",
+      "exchange": 3,
+      "dimension": "body_language",
+      "quote": "Mara settles against the warmth of the heater, shoulder to the wall."
+    },
+    {
+      "scenarioId": "she-is-not-standing",
+      "family": "body_language",
+      "arm": "visual",
+      "exchange": 2,
+      "dimension": "garment_presence",
+      "quote": "untucked hem riding up above the waistband of the canvas trousers."
+    },
+    {
+      "scenarioId": "she-is-not-standing",
+      "family": "body_language",
+      "arm": "control",
+      "exchange": 1,
+      "dimension": "body_language",
+      "quote": "Grey eyes found Sam in the doorway, and the look she gave him was half greeting, half warning"
+    }
+  ],
+  "preferences": [
+    {
+      "scenarioId": "sleeves-and-the-cold",
+      "preferred": "visual",
+      "why": "Transcript B correctly respects the committed state of Mara standing, whereas Transcript A incorrectly places her sitting on the floor."
+    },
+    {
+      "scenarioId": "coat-on-the-chair",
+      "preferred": "visual",
+      "why": "Transcript A integrates the committed state of the jumper naturally into the action of the first exchange, has more realistic dialogue about the drying coat, and uses more accurate terminology for a rope splice in the final exchange."
+    },
+    {
+      "scenarioId": "rolled-to-the-elbow",
+      "preferred": "visual",
+      "why": "Transcript A has much stronger atmospheric details and character beats, particularly the realistic way she yields to the physical touch and the evocative description of her creased linen shirt."
+    },
+    {
+      "scenarioId": "the-open-coat",
+      "preferred": "control",
+      "why": "Transcript B is preferred because its dialogue in the second exchange is much more natural, whereas Transcript A has the character awkwardly narrate her own physical state."
+    },
+    {
+      "scenarioId": "soaked-from-the-tank",
+      "preferred": "control",
+      "why": "Transcript A is preferred because Transcript B contradicts the player's action in the first exchange by having Mara take and turn the stopcock herself."
+    },
+    {
+      "scenarioId": "damp-not-drenched",
+      "preferred": "control",
+      "why": "Transcript A respects the committed state of Mara standing throughout, whereas Transcript B has her sit down in exchange 2 and remain seated/leaning in exchange 3."
+    },
+    {
+      "scenarioId": "she-is-not-standing",
+      "preferred": "visual",
+      "why": "Transcript B is faithful to the committed state of Mara being turned away from Sam, whereas Transcript A has her turn her head to look at him in the first exchange."
+    },
+    {
+      "scenarioId": "one-hand-is-busy",
+      "preferred": "control",
+      "why": "Transcript B better respects the tension of the premise; having Mara refuse the tea because her hand is full feels much more realistic than Transcript A, where she casually drinks it anyway."
+    },
+    {
+      "scenarioId": "back-to-the-room",
+      "preferred": "control",
+      "why": "Transcript B is much more evocative and atmospheric, and it correctly keeps Mara turned away in the second exchange, whereas A violates the state constraint by having her turn her head."
+    },
+    {
+      "scenarioId": "under-the-jumper",
+      "preferred": "control",
+      "why": "Transcript A uses concrete physical actions, like the thumb pressing the collar of the jumper, to convey subtext and character history while perfectly respecting the covered state of her body."
+    }
+  ],
+  "checks": [
+    {
+      "name": "splice: visual prompt = control + the two blocks (+ carve-out)",
+      "ok": true,
+      "detail": "30/30 exchanges"
+    },
+    {
+      "name": "the fence fires",
+      "ok": true,
+      "detail": "30/30 exchanges carry a must-preserve block"
+    },
+    {
+      "name": "cue budget ≤ 2 per exchange",
+      "ok": true,
+      "detail": "max 2 cues in any exchange"
+    },
+    {
+      "name": "the repeat gate quiets an unchanged scene",
+      "ok": true,
+      "detail": "10/10 scenarios offer fewer cues by the last exchange"
+    },
+    {
+      "name": "no covered body location reaches a block",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "name": "all five bait families present",
+      "ok": true,
+      "detail": "garment_presence, arrangement, wetness, body_language, hidden_detail"
+    },
+    {
+      "name": "every scenario arms a bait",
+      "ok": true,
+      "detail": "all armed"
+    }
+  ],
+  "spend": {
+    "generationCalls": 60,
+    "auditCalls": 20,
+    "preferenceCalls": 10,
+    "usageBefore": 50.19717802,
+    "usageAfter": 51.407357901,
+    "spend": 1.2102
+  },
+  "diagnostics": []
+}

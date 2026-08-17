@@ -108,6 +108,11 @@ import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
 import { loadChatVisualCues, saveChatVisualCues } from "./visual-cue-store";
+import {
+  renderChatVisualStateLines,
+  visualStateGarmentNames,
+  type ChatVisualStateLines,
+} from "./chat-visual-state-cues";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -1798,6 +1803,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // describes, and a cue advance for an exchange that never landed is exactly
     // the retake impurity the two-generation store exists to prevent.
     let visualStateBuild: VisualStateShadowBuild | null = null;
+    /** The rendered pair the prompt carries. Null on every path but a flagged, non-empty selection. */
+    let visualStateLines: ChatVisualStateLines | null = null;
     const visualStateNarrationOn = chatVisualStateNarrationEnabled();
     if (chatVisualStateShadowEnabled() || visualStateNarrationOn) {
       const runVisualState = async (): Promise<VisualStateShadowBuild | null> => {
@@ -1900,6 +1907,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       };
       if (visualStateNarrationOn) {
         visualStateBuild = await runVisualState();
+        // The prompt half of slice 7. The subject is the primary character —
+        // the one the prompt describes — and the digest is theirs; a snapshot
+        // that spans the player and the roster still narrates one body here,
+        // matching every other cue block in this pipeline.
+        const digest = visualStateBuild?.narrator.digests.find((entry) => entry.subjectId === characterId);
+        if (visualStateBuild !== null && digest !== undefined) {
+          try {
+            visualStateLines = renderChatVisualStateLines({
+              digest,
+              subject: { characterName, possessive: `${characterName}'s` },
+              garmentNames: visualStateGarmentNames(visualStateBuild.snapshot),
+            });
+          } catch (error) {
+            // A rendering failure costs the block, never the turn — the same
+            // fence the shadow build carries (docs/resilience.md).
+            log.error("engine.chat", "visual-state cue render failed", { error: describeError(error) });
+          }
+        }
       } else {
         // DEFERRED off the turn's critical path: measurement only, and the
         // player waits for none of it. The closure captures the cut this turn
@@ -1974,7 +1999,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       priorSummary: summaryState?.summary,
       memory,
       player: playerPromptSlice(player, playerWardrobe),
-      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, bodyCues),
+      state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, bodyCues, visualStateLines),
       opening,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
@@ -3168,6 +3193,8 @@ function promptStateSlice(
   garments?: ChatGarmentNarration | null,
   /** The affordance cue lines (body-attribute-affordances slice 5); empty/absent renders no block. */
   affordanceCues?: readonly string[],
+  /** The visual-state pair (visual-state slice 7); empty/absent renders neither block. */
+  visualState?: ChatVisualStateLines | null,
 ): NonNullable<CharacterChatPromptInput["state"]> {
   return {
     // Authority + attention (clothing-state-graph slice 6) — flag-gated upstream, so
@@ -3178,6 +3205,12 @@ function promptStateSlice(
     // conditional-spread discipline: absent when the flag is off, so the prompt is
     // byte-identical to the pre-feature build.
     ...(affordanceCues && affordanceCues.length > 0 ? { affordanceCues } : {}),
+    // The visual-state pair (slice 7): a must-not-contradict fence and the
+    // change-gated cues. Same conditional-spread discipline — absent when the
+    // narration flag is off, so the prompt is byte-identical to the pre-feature
+    // build, and absent independently when the selection chose nothing.
+    ...(visualState && visualState.constraints.length > 0 ? { visualConstraints: visualState.constraints } : {}),
+    ...(visualState && visualState.cues.length > 0 ? { visualCues: visualState.cues } : {}),
     meters: state.meters,
     regard: state.regard,
     familiarity: state.familiarity,

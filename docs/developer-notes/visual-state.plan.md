@@ -2,8 +2,8 @@
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
 with every review finding fixed in the same merge; slices 3–6, 8 and 9 built
-2026-08-16, awaiting review; slice 7's two prerequisites built 2026-08-17,
-leaving its prompt wiring and paid trial; slice 10 queued)
+2026-08-16, awaiting review; slice 7 built 2026-08-17 with its first paid round
+run and invalid, awaiting a second; slice 10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -46,9 +46,11 @@ was written, and it has closed.
 
 One later slice has a real prerequisite:
 
-- **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
-  Its two code prerequisites — usable viewing conditions and a repeat /
-  newly-visible record — were built on 2026-08-17.
+- **Slice 7** is a paid narrator trial. Its two code prerequisites — usable
+  viewing conditions and a repeat / newly-visible record — and its prompt wiring
+  were built on 2026-08-17. Round 1 ran the same day and rendered no verdict;
+  [visual-state.trial.md](visual-state.trial.md) owns the record and names what
+  round 2 needs.
 - **Slice 8** feeds the shared render intent, which shipped with the
   [capabilities plan's](finished/image-model-capabilities.plan.md) slice 2 on
   2026-08-07 — that gate is open, and the intent's role-carrying references
@@ -375,8 +377,9 @@ with current summaries.
 
 ### Slice 7 — narrator proving release
 
-Status: unblocked 2026-08-17 — both prerequisites built; the prompt wiring and
-the paid trial remain.
+Status: built 2026-08-17 — prompt wiring in, first paid round run and
+INVALID (no verdict). Awaiting a second round after two named fixes; see
+[visual-state.trial.md](visual-state.trial.md).
 
 Behind a default-off flag, feed only change-gated, action-relevant, or newly
 revealed selections into narration. Keep binding constraints separate from
@@ -407,8 +410,20 @@ things the trial could not have scored around:
   unchanged view stays quiet; one that reappears, or that changes, can earn a
   beat.
 
-What is left in this slice: putting the selected cues into the narrator prompt,
-and running the paired comparison.
+The prompt wiring landed the same day: a must-not-contradict **fence** of the
+visible facts worth not getting wrong, and separately at most two **cues** that
+just changed or just came into view, each carrying the reason it is live.
+
+Round 1 of the paid comparison ran on 2026-08-17 and returned **no verdict**.
+The trial's own pre-registered gate refuses to judge a round in which the
+comparison arm had little to get wrong, and that is what happened: today's
+narrator contradicted committed state 0.13 times per exchange against a 0.40
+bar. Directionally the fence looked right — it cut invented posture and
+orientation from four events to one — but two events against four is not a rate.
+One mechanical finding is solid and actionable: the fence's bulleted form reads
+to the narrator as a list of things to mention, and the visual arm repeated
+itself three times where the control arm never did. Both fixes are named in the
+trial doc; neither changes what the projection selects.
 
 ### Slice 8 — image digest and render-intent seam
 
