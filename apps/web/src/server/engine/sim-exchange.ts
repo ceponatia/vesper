@@ -47,6 +47,7 @@ import { log } from "../log";
 import { narrationShapeId, type NarrationShapeId } from "./prompts/constants";
 import { buildSimSoloRenderPrompt } from "./prompts/sim-solo-render";
 import { buildLiveDeliberation, renderCommittedCut, renderSoloNarration } from "./sim-narrator";
+import { runSimVisualStateShadow } from "./sim-visual-state";
 import {
   readSimChatOutfit,
   readSimChatRelationship,
@@ -1168,6 +1169,19 @@ async function runCoPresentTurn(input: {
   });
   // R5 knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
   void enqueueChatSummary({ chatId });
+  // Visual-state shadow (visual-state.plan.md slice 6, `CHAT_VISUAL_STATE_SHADOW`,
+  // default OFF): the lane-neutral projection built BESIDE the settled turn for
+  // measurement. Fire-and-forget and fenced whole inside — it writes nothing,
+  // feeds nothing, and can never cost the exchange.
+  void runSimVisualStateShadow({
+    chatId,
+    branchId,
+    playerActorId,
+    primaryActorId,
+    cutId: rendered.cutId,
+    storySecond: clock?.storySecond ?? 0,
+    primary: presentation.primary,
+  });
   return {
     ok: true,
     messageId: assistantMessageId,

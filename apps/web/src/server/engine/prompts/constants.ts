@@ -380,6 +380,29 @@ export function chatRecognitionCuesEnabled(): boolean {
   return process.env.CHAT_RECOGNITION_CUES === "on";
 }
 
+/**
+ * The VISUAL-STATE SHADOW switch (visual-state.plan.md slice 6; spec §Flags) —
+ * measurement-only, default-off, the same literal-`on` shape as every flag
+ * above. The spec leaves the shadow default open, so it defaults OFF as the
+ * conservative reading.
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no snapshot assembly, no selections, no extra memory read, no log line.
+ * ON runs the lane-neutral visual-state projection BESIDE each turn — in both
+ * lanes — and emits one structured measurement log line (missing-owner
+ * frequency, duplicate facts, disagreement with the current summaries). Nothing
+ * it computes reaches the prompt, the images, chat state, or observer memory:
+ * the shadow's diagnostics ride a private collector, its memory read is
+ * read-only, and its narrator selection's notice/mention outputs are discarded
+ * (spending them is slice 7's separately flagged work). Env-only, no dev route.
+ *
+ * The inspector panel does NOT obey this flag — it computes read-only either
+ * way and reports the flag's value, per the spec's inspector rule.
+ */
+export function chatVisualStateShadowEnabled(): boolean {
+  return process.env.CHAT_VISUAL_STATE_SHADOW === "on";
+}
+
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;
 /** Max characters of narration echoed inside agent prompts. */

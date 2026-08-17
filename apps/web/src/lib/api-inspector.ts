@@ -221,6 +221,179 @@ export const physicalGuidancePreviewSchema = z.object({
 });
 export type PhysicalGuidancePreview = z.infer<typeof physicalGuidancePreviewSchema>;
 
+/**
+ * The read-only visual-state preview (visual-state.plan.md slice 6): the
+ * source-to-selection staircase — features, composition, suppressions,
+ * attention scores, consumer selections, and the slice's measurements. Every
+ * field heals, like the previews above — a debug surface should show a gap,
+ * never an error page.
+ */
+const visualStateSuppressionSchema = z.object({
+  key: textOr(""),
+  code: textOr(""),
+  detail: textOr(""),
+});
+export type VisualStateSuppressionRow = z.infer<typeof visualStateSuppressionSchema>;
+
+export const visualStateFeatureRowSchema = z.object({
+  key: textOr(""),
+  kindId: textOr(""),
+  layer: textOr(""),
+  stability: textOr(""),
+  locus: textOr(""),
+  source: textOr(""),
+  value: z.unknown(),
+  fingerprint: textOr(""),
+  tags: z.array(z.string()).catch([]),
+  changedAtMinutes: z.number().nullable().catch(null),
+  validUntilMinutes: z.number().nullable().catch(null),
+  relationships: z.array(z.string()).catch([]),
+  evidence: z.array(z.string()).catch([]),
+});
+export type VisualStateFeatureRow = z.infer<typeof visualStateFeatureRowSchema>;
+
+const visualStateCompositionRowSchema = z.object({
+  key: textOr(""),
+  effectiveVisibility: z.number().catch(0),
+  coverage: z.number().catch(0),
+  occlusion: z.number().catch(0),
+  replacedBy: z.string().nullable().catch(null),
+  modifiedBy: z.array(z.string()).catch([]),
+  attachedTo: z.array(z.string()).catch([]),
+  derivedFrom: z.array(z.string()).catch([]),
+});
+export type VisualStateCompositionRow = z.infer<typeof visualStateCompositionRowSchema>;
+
+export const visualStateCandidateRowSchema = z.object({
+  key: textOr(""),
+  layer: textOr(""),
+  priority: z.number().catch(0),
+  visibility: z.number().catch(0),
+  uniqueness: z.number().catch(0),
+  importance: z.number().catch(0),
+  detailTier: z.number().catch(0),
+  novelty: z.number().catch(0),
+  changeSignificance: z.number().catch(0),
+  actionRelevance: z.number().catch(0),
+  consumerRelevance: z.number().catch(0),
+  repetitionCooldown: z.number().catch(0),
+  repeatKey: textOr(""),
+});
+export type VisualStateCandidateRow = z.infer<typeof visualStateCandidateRowSchema>;
+
+const countRecord = z.record(z.string(), z.number()).catch({});
+
+const visualStateSetComparisonSchema = z
+  .object({
+    legacyCount: z.number().catch(0),
+    projectedCount: z.number().catch(0),
+    sharedCount: z.number().catch(0),
+    legacyOnly: z.array(z.string()).catch([]),
+    projectedOnly: z.array(z.string()).catch([]),
+  })
+  .nullable()
+  .catch(null);
+export type VisualStateSetComparisonRow = z.infer<typeof visualStateSetComparisonSchema>;
+
+const visualStateMeasurementsSchema = z
+  .object({
+    featureCount: z.number().catch(0),
+    featuresByLayer: countRecord,
+    featuresByKind: countRecord,
+    suppressionCount: z.number().catch(0),
+    suppressionsByCode: countRecord,
+    missingOwnerCount: z.number().catch(0),
+    duplicateKeyCount: z.number().catch(0),
+    narrator: z
+      .object({
+        candidateCount: z.number().catch(0),
+        selectedCount: z.number().catch(0),
+        suppressionsByCode: countRecord,
+        constraintCount: z.number().catch(0),
+        noticeCount: z.number().catch(0),
+      })
+      .catch({ candidateCount: 0, selectedCount: 0, suppressionsByCode: {}, constraintCount: 0, noticeCount: 0 }),
+    image: z
+      .object({
+        candidateCount: z.number().catch(0),
+        selectedCount: z.number().catch(0),
+        suppressionsByCode: countRecord,
+        mandatoryCount: z.number().catch(0),
+        suppressedOptionalCount: z.number().catch(0),
+      })
+      .catch({
+        candidateCount: 0,
+        selectedCount: 0,
+        suppressionsByCode: {},
+        mandatoryCount: 0,
+        suppressedOptionalCount: 0,
+      }),
+    attributes: visualStateSetComparisonSchema,
+    garments: visualStateSetComparisonSchema,
+  })
+  .catch({
+    featureCount: 0,
+    featuresByLayer: {},
+    featuresByKind: {},
+    suppressionCount: 0,
+    suppressionsByCode: {},
+    missingOwnerCount: 0,
+    duplicateKeyCount: 0,
+    narrator: { candidateCount: 0, selectedCount: 0, suppressionsByCode: {}, constraintCount: 0, noticeCount: 0 },
+    image: {
+      candidateCount: 0,
+      selectedCount: 0,
+      suppressionsByCode: {},
+      mandatoryCount: 0,
+      suppressedOptionalCount: 0,
+    },
+    attributes: null,
+    garments: null,
+  });
+export type VisualStateMeasurementsRow = z.infer<typeof visualStateMeasurementsSchema>;
+
+export const visualStatePreviewSchema = z.object({
+  lane: z.enum(["character_chat", "successor"]).catch("character_chat"),
+  shadowFlagEnabled: z.boolean().catch(false),
+  scopeKey: textOr(""),
+  cutId: textOr(""),
+  atMinutes: z.number().catch(0),
+  subjects: z.array(z.string()).catch([]),
+  features: arrayOf(visualStateFeatureRowSchema),
+  composition: arrayOf(visualStateCompositionRowSchema),
+  suppressions: arrayOf(visualStateSuppressionSchema),
+  staircase: arrayOf(visualStateCandidateRowSchema),
+  narrator: z
+    .object({
+      digests: arrayOf(
+        z.object({
+          subjectId: textOr(""),
+          constraintKeys: z.array(z.string()).catch([]),
+          selected: arrayOf(
+            z.object({ key: textOr(""), reason: textOr(""), repeatKey: textOr(""), priority: z.number().catch(0) }),
+          ),
+          suppressedCount: z.number().catch(0),
+        }),
+      ),
+      noticeCount: z.number().catch(0),
+      changeCount: z.number().catch(0),
+      mentionCommitCount: z.number().catch(0),
+      suppressions: arrayOf(visualStateSuppressionSchema),
+    })
+    .catch({ digests: [], noticeCount: 0, changeCount: 0, mentionCommitCount: 0, suppressions: [] }),
+  image: z
+    .object({
+      mandatoryKeys: z.array(z.string()).catch([]),
+      optional: arrayOf(visualStateCandidateRowSchema),
+      suppressedOptionalCount: z.number().catch(0),
+      suppressions: arrayOf(visualStateSuppressionSchema),
+    })
+    .catch({ mandatoryKeys: [], optional: [], suppressedOptionalCount: 0, suppressions: [] }),
+  measurements: visualStateMeasurementsSchema,
+  diagnostics: arrayOf(z.object({ severity: textOr("info"), code: textOr(""), message: textOr("") })),
+});
+export type VisualStatePreview = z.infer<typeof visualStatePreviewSchema>;
+
 export const episodeScoresSchema = z.object({
   scores: arrayOf(z.object({ id: z.string().min(1), score: z.number().catch(0) })),
   degraded: z.boolean().catch(false),
@@ -358,6 +531,7 @@ export const chatInspectorApi = {
   affordances: (chatId: string) => apiGet(affordancePreviewSchema, `${base(chatId)}/affordances`),
   physicalGuidance: (chatId: string) =>
     apiGet(physicalGuidancePreviewSchema, `${base(chatId)}/physical-guidance`),
+  visualState: (chatId: string) => apiGet(visualStatePreviewSchema, `${base(chatId)}/visual-state`),
   agentFailures: (chatId: string, days?: number) =>
     apiGet(agentHealthSchema, withQuery(`${base(chatId)}/agent-failures`, days ? { days: String(days) } : {})),
   compositionFallbacks: (chatId: string, days?: number) =>
