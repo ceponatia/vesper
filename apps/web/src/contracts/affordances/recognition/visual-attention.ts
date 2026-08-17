@@ -590,9 +590,22 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
       ...(feature.changedAtMinutes === undefined ? {} : { changedAtMinutes: feature.changedAtMinutes }),
       atMinutes,
     });
+    // A stamp says when the WORLD changed. The cue state says whether THIS
+    // observer has already had the family in view, in exactly this state, since
+    // then — and where the two disagree the observer-relative answer wins.
+    //
+    // Without this, a posture settled forty story minutes before the scene
+    // opens reads as a fresh change on every cut for a whole story day: the
+    // stamp stays inside the freshness band, the cue reason tests it before the
+    // cue status, and the narrator is handed "changed from what it was" about
+    // something it described last turn. That is the repetition this lane exists
+    // to prevent, arriving through the one door the cue state does not guard.
+    const steadyInView = cueStatus === "steady";
     const changeSignificance = fingerprintChanged
       ? toUnitInterval(Math.max(stampSignificance, RECOGNITION_CHANGE_SIGNIFICANCE))
-      : stampSignificance;
+      : steadyInView
+        ? AFFORDANCE_UNIT_ZERO
+        : stampSignificance;
 
     const actionRelevance = visualLocusListed(context.actionLoci, feature.locus)
       ? RECOGNITION_ACTION_RELEVANCE

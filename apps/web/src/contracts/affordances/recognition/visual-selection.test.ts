@@ -399,6 +399,59 @@ describe("selectVisualNarratorCues — the cue state", () => {
     expect(back.digests[0]?.selected[0]?.reason).toBe("newly_visible");
   });
 
+  it("fences visible facts the image-mandatory flags would have left open", () => {
+    // The flags are IMAGE requirements (priors.ts). A posture is not one, and
+    // it is exactly the kind of fact prose contradicts, so the narrator fence
+    // must carry it.
+    const selection = selectVisualNarratorCues(narratorInput(snapshotOf([postureFixture()]), memoryOf()));
+    const digest = selection.digests[0];
+    // It rode the cue lane this turn (first sighting), so the fence defers to
+    // the block that says more — but a second, already-said turn fences it.
+    expect(digest?.selected[0]?.kindId).toBe(VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID);
+    const spent = commitVisualNarratorCueMentions(
+      selection.cueStateAfterVisibility,
+      selection.cueMentionCommits,
+    );
+    const second = selectVisualNarratorCues(
+      narratorInput(snapshotOf([postureFixture()]), memoryOf(), { cues: spent }),
+    );
+    expect(second.digests[0]?.selected).toEqual([]);
+    expect(second.digests[0]?.constraints.map((entry) => entry.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    );
+  });
+
+  it("never states one fact in both blocks", () => {
+    const posture = postureFixture();
+    const selection = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    const digest = selection.digests[0];
+    const cued = new Set(digest?.selected.map((cue) => cue.key));
+    expect(digest?.constraints.every((entry) => !cued.has(entry.key))).toBe(true);
+  });
+
+  it("caps the fence and never drops a mandatory fact to fit an optional one", () => {
+    const selection = selectVisualNarratorCues(
+      narratorInput(snapshotOf([...wingsFeatures(), postureFixture()]), memoryOf(), { constraintBudget: 1 }),
+    );
+    const digest = selection.digests[0];
+    expect(digest?.constraints).toHaveLength(1);
+    expect(digest?.constraints[0]?.kindId).toBe("species.feature_group");
+  });
+
+  it("never spends a cue slot on a fact the constraint block already fences", () => {
+    // Wings are mandatory-for-identity, so they ride the constraints list. A
+    // first sighting of them would otherwise take one of the two optional
+    // slots and restate what the must-preserve block says on the same turn.
+    const posture = postureFixture();
+    const selection = selectVisualNarratorCues(
+      narratorInput(snapshotOf([...wingsFeatures(), posture]), memoryOf()),
+    );
+    const digest = selection.digests[0];
+    expect(digest?.constraints.some((entry) => entry.kindId === "species.feature_group")).toBe(true);
+    expect(digest?.selected.every((cue) => cue.kindId !== "species.feature_group")).toBe(true);
+    expect(digest?.selected[0]?.kindId).toBe(VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID);
+  });
+
   it("keeps the two records disjoint — a recognizable feature never enters the cue state", () => {
     const feature = visualStateFeatureFixture();
     const selection = selectVisualNarratorCues(narratorInput(snapshotOf([feature]), memoryOf()));
