@@ -9,10 +9,10 @@
  * the upstream reason, not a re-labelled one — so a caller asserting on codes
  * should expect a namespaced pair, not a single `visual_state.*` entry.
  *
- * Only the codes the shipped slices actually emit are declared.
- * Missing-mandatory-fact, stale-snapshot and extraction-conflict codes join
- * when the slice that emits them lands — a declared-but-unreachable code reads
- * like coverage that does not exist.
+ * Only the codes the shipped slices actually emit are declared — a
+ * declared-but-unreachable code reads like coverage that does not exist. The
+ * extraction codes joined with slice 9, which emits them; the digest codes
+ * live beside their emitter in `contracts/images/visual-digest.ts`.
  *
  * Every one of these is a DEGRADATION report: the feature is dropped and the
  * projection continues. Nothing here throws (docs/resilience.md §2).
@@ -69,3 +69,16 @@ export const VISUAL_STATE_VISIBILITY_OUT_OF_FRAME = "visual_state.visibility.out
 export const VISUAL_STATE_DETAIL_TIER_INSUFFICIENT = "visual_state.detail_tier.insufficient";
 /** An intimate region without an explicit allowance. A hard gate; rarity never lifts it. */
 export const VISUAL_STATE_INTIMATE_GATED = "visual_state.intimate.gated";
+/** An extraction proposal the target owner's own vocabulary refuses; it is dropped unreviewed. */
+export const VISUAL_STATE_EXTRACTION_PROPOSAL_INVALID = "visual_state.extraction.proposal_invalid";
+/**
+ * The reserved extraction-conflict code (spec §Diagnostics), now with live
+ * emitters: a newer run disagrees with a reviewed proposal for the same slot
+ * (`reason: "reviewed_value_differs"`), or canonical truth moved between the
+ * reviewer's look and their accept (`reason: "canonical_moved"`). Either way
+ * the ruling and the canonical value are PRESERVED and the disagreement
+ * becomes a review item — never an overwrite.
+ */
+export const VISUAL_STATE_EXTRACTION_CONFLICT = "visual_state.extraction.conflict";
+/** An accepted proposal's target owner has no canonical write path yet; the ruling is kept, nothing is written. */
+export const VISUAL_STATE_EXTRACTION_OWNER_UNAVAILABLE = "visual_state.extraction.owner_unavailable";
