@@ -8,10 +8,12 @@ import {
   type UnitInterval,
 } from "../core";
 import {
+  intimateAllowedForSubject,
   visualStateKindRegistry,
   VISUAL_STATE_INTIMATE_GATED,
   VISUAL_STATE_KIND_UNKNOWN,
   VISUAL_STATE_LOCUS_INVALID,
+  VISUAL_STATE_SOURCE_UNAVAILABLE,
   type VisualStateAttentionPriors,
   type VisualStateFeature,
   type VisualStateLayer,
@@ -462,16 +464,39 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
 
   const memoryAfterNotices = applyRecognitionFingerprintChanges(applyRecognitionNotices(memory, notices), changes);
 
+  // One grouping pass per list, rather than re-walking every list once per
+  // subject: a multi-participant snapshot scans the candidates once, not once
+  // per subject.
+  const constraintsBySubject = new Map<string, VisualConstraint[]>();
+  for (const candidate of build.candidates) {
+    if (!isMandatoryVisualStateFact(candidate.feature.priors)) continue;
+    const list = constraintsBySubject.get(candidate.feature.subjectId);
+    if (list === undefined) constraintsBySubject.set(candidate.feature.subjectId, [visualConstraintOf(candidate.feature)]);
+    else list.push(visualConstraintOf(candidate.feature));
+  }
+  // `scorable`, NOT every scored candidate, is the population that was ever
+  // eligible to be said: each entry already cleared the notice threshold,
+  // earned a cue reason, and passed the mention floor. Counting the rest as
+  // suppressed reported restraint the selection never had to exercise.
+  const eligibleBySubject = new Map<string, number>();
+  for (const entry of scorable) {
+    const subjectId = entry.candidate.feature.subjectId;
+    eligibleBySubject.set(subjectId, (eligibleBySubject.get(subjectId) ?? 0) + 1);
+  }
+  const cuesBySubject = new Map<string, VisualNarratorCue[]>();
+  for (const cue of cues) {
+    const list = cuesBySubject.get(cue.subjectId);
+    if (list === undefined) cuesBySubject.set(cue.subjectId, [cue]);
+    else list.push(cue);
+  }
+
   const digests: VisualNarratorDigest[] = snapshot.subjects.map((subjectId) => {
-    const subjectCandidates = build.candidates.filter((candidate) => candidate.feature.subjectId === subjectId);
-    const subjectCues = cues.filter((cue) => cue.subjectId === subjectId);
+    const subjectCues = cuesBySubject.get(subjectId) ?? [];
     return {
       subjectId,
-      constraints: subjectCandidates
-        .filter((candidate) => isMandatoryVisualStateFact(candidate.feature.priors))
-        .map((candidate) => visualConstraintOf(candidate.feature)),
+      constraints: constraintsBySubject.get(subjectId) ?? [],
       selected: subjectCues,
-      suppressedCount: subjectCandidates.length - subjectCues.length,
+      suppressedCount: (eligibleBySubject.get(subjectId) ?? 0) - subjectCues.length,
     };
   });
 
@@ -579,7 +604,13 @@ export function selectVisualImageFacts(input: VisualImageSelectionInput): Visual
       suppressions.push({ key: feature.key, code: VISUAL_STATE_KIND_UNKNOWN, detail: feature.kindId });
       continue;
     }
-    if (!kind.imageEligible) continue;
+    if (!kind.imageEligible) {
+      // A designed absence, but still recorded: without a suppression the
+      // inspector and the digest show a mandatory fact simply gone, with no
+      // way to tell a deliberate exclusion from a degradation.
+      suppressions.push({ key: feature.key, code: VISUAL_STATE_SOURCE_UNAVAILABLE, detail: `image_ineligible:${feature.kindId}` });
+      continue;
+    }
     if (feature.locus.kind === "body") {
       const location = bodyLocationRegistry.byId(feature.locus.locus.bodyLocationId);
       if (location === undefined) {
@@ -590,7 +621,7 @@ export function selectVisualImageFacts(input: VisualImageSelectionInput): Visual
       }
       // The consent gate is the ONE thing that outranks mandatory: rarity
       // never lifts it and neither does a requirement flag.
-      if (location.intimateGroup !== undefined && context.intimateAllowed !== true) {
+      if (location.intimateGroup !== undefined && !intimateAllowedForSubject(context, feature.subjectId)) {
         suppressions.push({ key: feature.key, code: VISUAL_STATE_INTIMATE_GATED, detail: `mandatory:${location.intimateGroup}` });
         continue;
       }

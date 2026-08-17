@@ -278,9 +278,16 @@ function projectFacing(state: ProjectionState): void {
     const kind = kindOrReport(state, VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID);
     if (!kind) return;
     const relationId = `facing:${relation.subjectId}:${relation.towardId}`;
+    // The toward end is mapped through the SAME participant→subject map as the
+    // facing side, so `towardSubjectId` really holds a subject id and a
+    // consumer can resolve it against the snapshot's subjects. It may still be
+    // somebody outside this snapshot ("her back is to the door"); an unmapped
+    // participant is then carried verbatim, which no subject will match —
+    // exactly the honest answer, where the unmapped id used to be indistinguishable
+    // from a subject that is present.
     const value: VisualStateBodyLanguageFacingValue = {
       facing: relation.facing.value,
-      towardSubjectId: relation.towardId,
+      towardSubjectId: state.input.subjectsByParticipant.get(relation.towardId) ?? relation.towardId,
     };
     const locus: VisualStateLocusRef = { kind: "relation", relationId };
     pushValidated(state, {

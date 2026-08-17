@@ -55,11 +55,13 @@ export interface VisualStateObservationProjectionInput {
  * affordance read resolved them (that order is itself deterministic — domain
  * registration order, then phenomenon order).
  *
- * The aspect is the phenomenon id, plus the target location when the
- * observation reaches toward one (`hair.strand_adhesion:neck`), so the same
- * phenomenon resolving against two targets keeps two keys. Both segments are
- * closed vocabulary — phenomenon ids are pattern-validated and targets are
- * registry body locations — so the aspect needs no escaping. An observation at
+ * The aspect is the phenomenon id, the target location when the observation
+ * reaches toward one, and the intensity band
+ * (`hair.strand_adhesion:neck:strong`), so the same phenomenon resolving
+ * against two targets — or at two intensities — keeps distinct keys. Every
+ * segment is closed vocabulary — phenomenon ids are pattern-validated, targets
+ * are registry body locations, bands are a fixed enum — so the aspect needs no
+ * escaping. An observation at
  * a body location the registry does not know is dropped by the shared feature
  * validator with its own diagnostics.
  */
@@ -81,10 +83,16 @@ export function projectObservationFeatures(
   const projected: VisualStateFeature[] = [];
   for (const observation of input.observations) {
     const locus = { kind: "body", locus: { bodyLocationId: observation.sourceLocationId } } as const;
-    const aspect =
-      observation.targetLocationId === undefined
-        ? `${VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID}:${observation.id}`
-        : `${VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID}:${observation.id}:${observation.targetLocationId}`;
+    // The band is part of the key, not only the value: the same phenomenon can
+    // resolve at one source and target with two intensities, and without the
+    // band both render one key — the snapshot then drops the second as a
+    // duplicate and which intensity survives depends on read order.
+    const aspect = [
+      VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID,
+      observation.id,
+      ...(observation.targetLocationId === undefined ? [] : [observation.targetLocationId]),
+      observation.intensityBand,
+    ].join(":");
     const value: VisualStateObservationValue = {
       phenomenon: observation.id,
       band: observation.intensityBand,

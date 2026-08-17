@@ -372,7 +372,11 @@ with current summaries.
 
 ### Slice 7 — narrator proving release
 
-Status: queued.
+Status: blocked on two prerequisites the shipped slices exposed — a repeat and
+newly-visible record for non-recognition facts, and a source of usable viewing
+conditions. Both are open questions below; neither is a code gap that slice 7
+can absorb, and the paid comparison cannot measure repetition or newly-revealed
+detail until they are settled.
 
 Behind a default-off flag, feed only change-gated, action-relevant, or newly
 revealed selections into narration. Keep binding constraints separate from
@@ -452,10 +456,31 @@ and trials rather than guessed:
   sound, scent, and touch;
 - whether a gaze owner is worth adding — no system records where a character's
   eyes point, so body language projects gaze as unavailable;
-- whether an unknown lighting or motion read should keep failing visibility
-  closed (nothing visible under it, the built behavior) or count as
-  unconstrained for some components — to be judged from the shadow
-  measurements slice 6 now records, once those reads have real producers;
+- **how the narrator lane obtains usable viewing conditions — a slice 7
+  blocker.** Visibility fails closed on any unknown component, and the chat
+  lane supplies all four as unknown, so the production narrator selection has
+  no candidates at all. The inspector only looks alive because its staircase
+  substitutes ideal conditions. Two of the four can be grounded from owners
+  that already exist — distance from scene proximity and angle from scene
+  facing, the same mapping the image digest already performs on the committed
+  scene camera — but grounding them changes nothing while lighting stays
+  unknown and fails the whole read closed. So the ruling needed is about
+  lighting and motion: give them an owner, or adopt an explicit degraded
+  first-release policy (a stated default, tested as such). Silently reading
+  unknown as bright and still is the one option the plan's own rulings
+  forbid;
+- **how repetition and first visibility are tracked for facts recognition does
+  not hold — a slice 7 blocker.** Current-state and body-language kinds are
+  deliberately `recognitionEligible: false`, so observer memory never carries a
+  rolled sleeve, a posture, or an occupied hand. That is right for memory, but
+  it also means those facts get no `lastMentionedAt` cooldown and no
+  first-seen record: a recently stamped sleeve stays cue-eligible turn after
+  turn, and nothing can tell the narrator that an ordinary visual fact became
+  visible now rather than merely being true now. Repetition and newly-revealed
+  detail are two of slice 7's five evaluation axes, so the trial cannot score
+  them as built. The likely shape is a narrator-scoped cue record — repeat key
+  to last visible fingerprint and last mention — kept separate from
+  recognition memory and restored with the committed cut so retakes stay pure;
 - whether a consent-gated mandatory anatomy fact should ever reach a render
   through a non-visual anchor, or whether exclusion — the built behavior, as
   the conservative reading of the consent gate — is final;
