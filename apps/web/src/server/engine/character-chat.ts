@@ -1,12 +1,12 @@
 import { streamText, type ModelMessage } from "ai";
 import {
+  chatNarrativeModelId,
   collapseRepeatedBlocksStream,
   isDemoMode,
-  narrativeModelId,
   narrativeProviderOptions,
-  openrouter,
   stripMisplacedSpeakerTagStream,
   stripNarratorArtifactStream,
+  textModel,
   type SpeakerTagVocabulary,
 } from "../ai";
 import { CHARACTER_CHAT_HISTORY_TURNS, NARRATIVE_TEMPERATURE } from "./constants";
@@ -14,8 +14,9 @@ import { CHARACTER_CHAT_HISTORY_TURNS, NARRATIVE_TEMPERATURE } from "./constants
 /**
  * The character-chat model stream (docs/character-chat/pipeline.md): the narrator leg of
  * the chat lane. Mirrors pipeline.liveNarrativeStream — the same `streamText` +
- * `openrouter().chat()` shape (the `@openrouter`-only boundary is satisfied via
- * the `../ai` barrel exactly as the pipeline does). This file only streams: the
+ * `textModel()` shape, which resolves the id to whichever upstream serves it (the
+ * provider-construction boundary is satisfied via the `../ai` barrel exactly as the
+ * pipeline does). This file only streams: the
  * exchange orchestration (state, RAG recall, persistence, the post-turn fan-out)
  * lives in `chat-pipeline.ts`; this stream's short-term memory is the verbatim
  * window it is handed (the rolling summary + RAG recall ride in the system
@@ -49,7 +50,11 @@ export interface StreamCharacterChatInput {
    * the way out, so the literal brackets reach neither the bubble nor the DB.
    */
   names: SpeakerTagVocabulary;
-  /** Narrator model override (a curated NARRATIVE_MODELS id); falls back to the default. */
+  /**
+   * Narrator model override (a curated NARRATIVE_MODELS id); falls back to the chat
+   * default. Resolved through `chatNarrativeModelId`, so an id whose provider has no
+   * configured key falls back too rather than streaming a 401.
+   */
   model?: string | null;
   /** Player Stop (spec §4.2): aborting cuts the stream; the caller keeps the accumulated prefix. */
   signal?: AbortSignal;
@@ -72,12 +77,12 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     return;
   }
   const messages: ModelMessage[] = windowed.map((m) => ({ role: m.role, content: m.content }));
-  const modelId = narrativeModelId(input.model);
+  const modelId = chatNarrativeModelId(input.model);
   // Same provider options as the session narrator (server/ai/provider.ts): drop
   // per-model bad endpoints (DeepInfra on GLM 5.2) and apply the eval-ruled per-model
   // reasoning knob (the chat default GLM 5.2 → effort:low); undefined for plain models.
   const result = streamText({
-    model: openrouter().chat(modelId),
+    model: textModel(modelId),
     system: input.system,
     messages,
     temperature: NARRATIVE_TEMPERATURE,

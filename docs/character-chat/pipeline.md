@@ -287,7 +287,12 @@ exchange:
    before they reach the live feed or the persisted accumulated reply). The narrator model is
    the per-character pick (`characters.chatModel`, resolved through the strict curated
    list) — a headless POST without a `model` defaults to it too
-   (`resolveChatModelId`), so API and UI agree. The stream is wrapped by two watchdogs
+   (`resolveChatModelId`), so API and UI agree. Resolution ends server-side in
+   `chatNarrativeModelId`, which adds a second gate to curation: a pick whose provider
+   has no configured key falls back to the lane default rather than spending the turn
+   on a certain 401. `textModel` then points the id at whichever upstream serves it —
+   the narrator list is the only model list in the app that may name a provider other
+   than OpenRouter. The stream is wrapped by two watchdogs
    (`withStreamTimeouts`, data-loss-rerun): a **first-token timeout**
    (`CHAT_STREAM_FIRST_TOKEN_MS` = 50s — deliberately under Fly's ~60s proxy idle
    timeout, which would otherwise kill the zero-bytes-so-far response first and turn an

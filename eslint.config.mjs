@@ -2,13 +2,15 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextPlugin from "eslint-config-next";
 import tseslint from "typescript-eslint";
 
-// LLM provider construction (createOpenRouter) belongs only in the model gateway
-// (apps/web/src/server/ai). `streamText`/`generateImage` from the `ai` SDK are
-// used at the call sites that need them (engine narration, image pipelines) by
-// design, so the `ai` package itself is NOT restricted — only provider wiring is
-// centralized.
+// LLM provider construction (createOpenRouter, createOpenAICompatible) belongs
+// only in the model gateway (apps/web/src/server/ai). `streamText`/`generateImage`
+// from the `ai` SDK are used at the call sites that need them (engine narration,
+// image pipelines) by design, so the `ai` package itself is NOT restricted — only
+// provider wiring is centralized. That matters more now that there are two text
+// providers: which upstream serves a model id is the gateway's decision
+// (`textModel`), and a call site that built its own provider would route around it.
 const RESTRICT_PROVIDER = {
-  group: ["@openrouter/ai-sdk-provider"],
+  group: ["@openrouter/ai-sdk-provider", "@ai-sdk/openai-compatible"],
   message: "Build LLM providers only in the model gateway (apps/web/src/server/ai); consume them through its barrel.",
 };
 

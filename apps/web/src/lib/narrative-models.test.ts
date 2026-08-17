@@ -3,12 +3,13 @@ import {
   DEFAULT_CHARACTER_CHAT_MODEL_ID,
   DEFAULT_NARRATIVE_MODEL_ID,
   NARRATIVE_MODELS,
+  narrativeModelProvider,
   resolveChatModelId,
 } from "./narrative-models";
 
 describe("NARRATIVE_MODELS", () => {
-  it("every entry is an OpenRouter slug (vendor/model) with a label", () => {
-    for (const option of NARRATIVE_MODELS) {
+  it("every OpenRouter entry is a vendor/model slug with a label", () => {
+    for (const option of NARRATIVE_MODELS.filter((o) => narrativeModelProvider(o.id) === "openrouter")) {
       // The optional leading `~` is OpenRouter's marker for a **floating alias**
       // that redirects to the newest release in a family (e.g.
       // `~deepseek/deepseek-v4-flash-latest`). It is part of the slug — the
@@ -18,9 +19,31 @@ describe("NARRATIVE_MODELS", () => {
     }
   });
 
+  // Featherless ids are Hugging Face repo paths, so they carry the case and the
+  // underscores the OpenRouter guard above forbids. They are still `owner/name`,
+  // which is what keeps one namespace usable for both providers.
+  it("every Featherless entry is a Hugging Face repo path with a label", () => {
+    const featherless = NARRATIVE_MODELS.filter((o) => narrativeModelProvider(o.id) === "featherless");
+    expect(featherless.length).toBeGreaterThan(0);
+    for (const option of featherless) {
+      expect(option.id).toMatch(/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/);
+      expect(option.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  // The id alone names the upstream (there is no provider prefix), so a collision
+  // between two providers' catalogs would silently route one model to the other's
+  // endpoint. Uniqueness is what makes `narrativeModelProvider` a total function.
   it("ids are unique", () => {
     const ids = NARRATIVE_MODELS.map((o) => o.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("a listed row reports its provider; anything unlisted reads as OpenRouter", () => {
+    for (const option of NARRATIVE_MODELS) {
+      expect(narrativeModelProvider(option.id)).toBe(option.provider ?? "openrouter");
+    }
+    expect(narrativeModelProvider("vendor/never-listed")).toBe("openrouter");
   });
 
   // The dropdown renders the label and nothing else, so two rows sharing one is

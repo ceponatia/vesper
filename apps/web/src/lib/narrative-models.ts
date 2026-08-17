@@ -1,38 +1,47 @@
 /**
  * Curated narrator model options (phase-2 T5 ruling): one pure list shared by
  * the client dropdown (components/play/world-tab.tsx) and the server's
- * narrativeModelId resolver default (server/ai/provider.ts). Ids are OpenRouter
- * model slugs (`vendor/model`). The planned BYOK feature replaces this static
- * list with a live-queried catalog; until then, adding a narrator is one entry
- * here.
+ * narrativeModelId resolver default (server/ai/provider.ts). The planned BYOK
+ * feature replaces this static list with a live-queried catalog; until then,
+ * adding a narrator is one entry here.
  *
- * ## Why every id here is still an OpenRouter slug
+ * ## Which upstream serves a row
  *
- * A second narrator provider was investigated on 2026-08-17 and rejected on
- * measurements, not preference — see `narrator-model-bench.spec.md` for the probe
- * transcript. In short:
+ * Most ids are OpenRouter model slugs (`vendor/model`) and carry no `provider`
+ * field. A row that names a different upstream sets one, and the model gateway
+ * (`server/ai/provider.ts` → `textModel`) routes on it. **Only the narrator list
+ * is multi-provider** — agents, the scene composer, embeddings, and vision stay
+ * OpenRouter-only, because narration is the one leg whose quality justifies a
+ * second key.
  *
- * - **Civitai's LLM route is an OpenRouter proxy.** `/v1/chat/completions` on the
- *   orchestrator accepts our existing `CIVITAI_API_TOKEN` (401 without it), but it
- *   answers `sao10k/l3.3-euryale-70b` with an OpenRouter `gen-…` id, while its own
- *   `urn:air:` Civitai-hosted models 500. It is a slower path to this same list.
- * - **Replicate's RP deployments are too slow to narrate.** They work, but they are
- *   raw-prompt llama.cpp cogs: a 12K-token prompt measured 31s of prefill before
- *   the first token, then 41 tok/s, on top of a ~57s cold boot. The chat lane
- *   budgets its legs in seconds.
- * - **The Hugging Face merges are weights, not endpoints.** HF's router serves 2 of
- *   the ~30 candidates, and both are 8K-context Llama-3 8Bs — smaller than this
- *   app's ~9K-token narrator system prompt.
- *
- * The RP-tuned narrators that motivated that search turned out to be hosted on
- * OpenRouter already, which is why the bench below is a list edit and not a seam.
+ * A 2026-08-17 probe rejected three candidate second providers on measurements:
+ * Civitai's LLM route is an OpenRouter proxy in disguise (it answers
+ * `sao10k/l3.3-euryale-70b` with an OpenRouter `gen-…` id while its own
+ * `urn:air:` models 500); Replicate's RP deployments are raw-prompt llama.cpp
+ * cogs that measured 31s of prefill on a 12K-token prompt on top of a ~57s cold
+ * boot; and the Hugging Face merges are weights rather than endpoints, with HF's
+ * router serving only 8K-context Llama-3 8Bs — smaller than this app's ~9K-token
+ * narrator system prompt. Featherless (below) is the one that passed, and it is
+ * why `provider` exists at all.
  */
 
+/** The upstream that serves a narrator id. Absent on an option ⇒ `"openrouter"`. */
+export type NarrativeModelProvider = "openrouter" | "featherless";
+
 export interface NarrativeModelOption {
-  /** OpenRouter model id, e.g. "aion-labs/aion-2.0". */
+  /**
+   * The model id as its own upstream spells it — an OpenRouter slug
+   * ("aion-labs/aion-2.0") or a Featherless/Hugging Face repo path
+   * ("DavidAU/Qwen3.6-…"). Persisted verbatim on chats and characters, so it is
+   * also the id the resolvers curate against; ids are unique across providers
+   * (`narrative-models.test.ts` enforces it), which is what lets one id name one
+   * upstream without a prefix.
+   */
   id: string;
   /** Human label for the dropdown. */
   label: string;
+  /** Which upstream serves {@link id}. Omit for OpenRouter — the default for every legacy row. */
+  provider?: NarrativeModelProvider;
 }
 
 export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
@@ -98,7 +107,44 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // Modern dialogue-first RP model on a non-Llama, non-Mistral backbone — the
   // architectural outlier that keeps the bench from being one family in wigs.
   { id: "minimax/minimax-m2-her", label: "MiniMax M2-her" },
+
+  // ## Featherless rows (added 2026-08-17) — served by FEATHERLESS_API_TOKEN
+  //
+  // Featherless serves community Hugging Face merges that no OpenRouter vendor
+  // hosts, over an OpenAI-compatible endpoint. Measured on this account before the
+  // row was added: the model is on-plan, streams `[Name]` speaker tags correctly,
+  // and returns coherent scene prose. Two operational facts a picker should know:
+  //
+  // - **It thinks first.** The response carries a `reasoning` field ahead of any
+  //   prose (~2.9K characters of it on a two-paragraph probe), which the transport
+  //   routes to reasoning parts, so none of it reaches the bubble. It is still paid
+  //   for and still delays the first visible token.
+  // - **It is slow, and it cold-starts.** ~65s wall clock for ~900 tokens on the
+  //   probe, and the first call to an idle model answers 503 `capacity_exhausted`
+  //   for ~25s while Featherless loads the weights.
+  //
+  // Both make it a bench row to sample, not a default to soak. `(32K)` is the
+  // usual context marker; see the note above the RP bench for what it binds.
+  {
+    id: "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
+    label: "Fable Fusion 27B (32K)",
+    provider: "featherless",
+  },
 ];
+
+/**
+ * Which upstream serves `id` — the one place the routing decision is read, by the
+ * model gateway (`textModel`) and by the provider-options guards that must not send
+ * an OpenRouter routing block to a non-OpenRouter endpoint.
+ *
+ * An id that is not on the list answers `"openrouter"`. That is the safe default
+ * rather than a gap: the resolvers coerce an uncurated id to a curated default
+ * before it can reach a provider, so the only callers that can reach here with an
+ * unknown id are ones already holding an OpenRouter slug.
+ */
+export function narrativeModelProvider(id: string): NarrativeModelProvider {
+  return NARRATIVE_MODELS.find((option) => option.id === id)?.provider ?? "openrouter";
+}
 
 /** The narrator used when neither the world nor the env override one. */
 export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";

@@ -1,11 +1,21 @@
 import {
+  createOpenAICompatible,
+  type OpenAICompatibleProvider,
+} from "@ai-sdk/openai-compatible";
+import {
   createOpenRouter,
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
-import type { JSONValue, ProviderMetadata } from "ai";
+import type { JSONValue, LanguageModel, ProviderMetadata } from "ai";
 import { AGENT_MODELS, DEFAULT_AGENT_MODEL_ID } from "@/lib/agent-models";
 import { DEFAULT_SCENE_COMPOSER_MODEL_ID, SCENE_COMPOSER_MODELS } from "@/lib/composer-models";
-import { DEFAULT_NARRATIVE_MODEL_ID, NARRATIVE_MODELS } from "@/lib/narrative-models";
+import {
+  DEFAULT_CHARACTER_CHAT_MODEL_ID,
+  DEFAULT_NARRATIVE_MODEL_ID,
+  NARRATIVE_MODELS,
+  narrativeModelProvider,
+  resolveChatModelId,
+} from "@/lib/narrative-models";
 import { log } from "@/server/log";
 
 export const MODEL_DEFAULTS = {
@@ -141,6 +151,8 @@ export function providerRouting(
   modelId: string,
   opts: { sortLatency?: boolean } = {},
 ): OpenRouterRouting | undefined {
+  // Endpoint selection among OpenRouter's upstreams is meaningless off OpenRouter.
+  if (narrativeModelProvider(modelId) !== "openrouter") return undefined;
   const routing: OpenRouterRouting = {};
   if (opts.sortLatency) routing.sort = "latency";
   const ignore = PROVIDER_IGNORE[modelId];
@@ -174,6 +186,10 @@ export function narrativeProviderOptions(
   modelId: string,
   opts: { sortLatency?: boolean } = {},
 ): { openrouter: Record<string, JSONValue> } | undefined {
+  // A non-OpenRouter narrator gets NO options block: both knobs below are
+  // OpenRouter API surface, and every id in NARRATOR_REASONING/PROVIDER_* is an
+  // OpenRouter slug, so there is nothing here another vendor could want.
+  if (narrativeModelProvider(modelId) !== "openrouter") return undefined;
   const openrouter: Record<string, JSONValue> = {};
   const provider = providerRouting(modelId, opts);
   if (provider) openrouter.provider = provider;
@@ -193,6 +209,61 @@ export function openrouter(): OpenRouterProvider {
     },
   });
   return cachedProvider;
+}
+
+let cachedFeatherless: OpenAICompatibleProvider | undefined;
+
+/**
+ * Featherless — the second text provider, and **narrator-only** (see
+ * lib/narrative-models.ts §"Which upstream serves a row"). It serves community
+ * Hugging Face merges that no OpenRouter vendor hosts, over a plain
+ * OpenAI-compatible `/v1/chat/completions`, so it needs no bespoke transport: the
+ * generic `@ai-sdk/openai-compatible` provider is the whole integration.
+ *
+ * Nothing OpenRouter-shaped travels this path. `narrativeProviderOptions` and
+ * `providerRouting` both return undefined for a Featherless id, because the
+ * routing block, the provider ignore/order lists and the reasoning knob are all
+ * OpenRouter API surface — a Featherless model reaching for one of them would be
+ * asking a different vendor to honor a stranger's query string.
+ */
+export function featherless(): OpenAICompatibleProvider {
+  cachedFeatherless ??= createOpenAICompatible({
+    name: "featherless",
+    baseURL: "https://api.featherless.ai/v1",
+    apiKey: process.env.FEATHERLESS_API_TOKEN ?? "demo",
+  });
+  return cachedFeatherless;
+}
+
+/** True when a Featherless credential is configured — the gate on selecting a Featherless narrator. */
+export function hasFeatherless(): boolean {
+  return Boolean(process.env.FEATHERLESS_API_TOKEN?.trim());
+}
+
+/**
+ * What both transports hand back for a chat model: the `ai` package's model-spec
+ * type, with the bare-model-id string excluded. `LanguageModel` itself is that
+ * union, and returning it would make every property access on a `textModel` result
+ * look unsafe when the function always builds an object. Excluding the string here
+ * rather than naming either provider's concrete class is also what lets the two
+ * transports share one return type.
+ */
+type ChatLanguageModel = Exclude<LanguageModel, string>;
+
+/**
+ * The chat model for an already-resolved model id, pointed at whichever
+ * upstream serves it. Every text generation in the app goes through here rather
+ * than reaching for a provider directly, so a narrator id can name a second vendor
+ * without each call site learning about providers.
+ *
+ * The id must already have been through a resolver (`narrativeModelId`,
+ * `chatNarrativeModelId`, `agentModelId`, `sceneComposerModelId`): this function
+ * routes, it does not curate, and an unknown id routes to OpenRouter.
+ */
+export function textModel(modelId: string): ChatLanguageModel {
+  return narrativeModelProvider(modelId) === "featherless"
+    ? featherless().chatModel(modelId)
+    : openrouter().chat(modelId);
 }
 
 // Text-model selection is **code or UI only** — there is no env override layer.
@@ -222,8 +293,45 @@ function resolveCurated(list: readonly { id: string }[], requested: string | nul
   return fallback;
 }
 
+/**
+ * Second gate after curation, for narrator ids only: a curated model whose provider
+ * has **no configured key** coerces to `fallback` with a diagnostic, rather than
+ * spending the turn on a guaranteed 401.
+ *
+ * Curation and this check are deliberately separate. A dropped row is a stale
+ * *choice* and coerces permanently; a missing token is a stale *deployment* — the
+ * pick stays valid and stored, and setting the secret restores it without the
+ * player re-choosing. Only Featherless can fail here: OpenRouter's absence is
+ * demo mode (`isDemoMode`), which every generation path already branches on.
+ */
+function providerBackedNarrator(modelId: string, fallback: string, scope: string): string {
+  if (narrativeModelProvider(modelId) !== "featherless" || hasFeatherless()) return modelId;
+  log.warn(scope, "narrator provider has no configured key; coerced to the default", {
+    requested: modelId,
+    provider: "featherless",
+    fallback,
+  });
+  return fallback;
+}
+
 export function narrativeModelId(worldModel?: string | null): string {
-  return resolveCurated(NARRATIVE_MODELS, worldModel, MODEL_DEFAULTS.narrative, "ai.narrative_model");
+  const id = resolveCurated(NARRATIVE_MODELS, worldModel, MODEL_DEFAULTS.narrative, "ai.narrative_model");
+  return providerBackedNarrator(id, MODEL_DEFAULTS.narrative, "ai.narrative_model");
+}
+
+/**
+ * The **character-chat / successor** narrator resolver: `resolveChatModelId`'s
+ * curation (a known id passes, anything else takes the chat default) plus the
+ * provider-key gate above. The server-side counterpart to the pure lib function —
+ * a lane that resolves a stored pick into a real generation calls this one, so a
+ * Featherless row can never reach a provider on a deployment that cannot pay for it.
+ */
+export function chatNarrativeModelId(requested?: string | null): string {
+  return providerBackedNarrator(
+    resolveChatModelId(requested),
+    DEFAULT_CHARACTER_CHAT_MODEL_ID,
+    "ai.chat_narrative_model",
+  );
 }
 
 export function stateModelId(): string {

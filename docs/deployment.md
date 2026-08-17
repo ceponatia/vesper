@@ -116,6 +116,13 @@ primary_region = 'iad'
    ```
    fly secrets set REPLICATE_API_TOKEN="..." -a vesper
    ```
+   `FEATHERLESS_API_TOKEN` is **optional** and narrator-only. It is needed on the
+   deployment only to run the narrator rows served by Featherless
+   ([getting-started.md](getting-started.md) §Environment); without it those rows
+   fall back to the lane's default narrator and everything else is unaffected:
+   ```
+   fly secrets set FEATHERLESS_API_TOKEN="..." -a vesper
+   ```
 4. **Seed the dev/admin credential** once Postgres is migrated:
    ```
    fly ssh console -a vesper -C "pnpm db:seed"

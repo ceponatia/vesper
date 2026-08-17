@@ -99,9 +99,11 @@ call that answers it.
 - **No narrator policy inside generic generation helpers.** A model used for a
   composer, classifier, state agent or deliberator receives that task's explicit
   policy, never the policy it would receive as a narrator.
-- **No second provider or self-hosted deployment.** The existing provider ruling
-  stands. Replicate remains an escape hatch only if an unavailable set of weights
-  later wins on evidence.
+- **No self-hosted deployment.** Replicate remains an escape hatch only if an
+  unavailable set of weights later wins on evidence. A second *hosted* provider is
+  no longer a non-goal: the owner added a Featherless account on 2026-08-17, and
+  narration is the one leg allowed to use it. Every other model list — agents, the
+  scene composer, embeddings, vision — stays on the single existing provider.
 - **No context-window invention.** A 32K model that overflows a long Vesper chat is
   not silently truncated or promoted; it must either pass a separately reviewed
   context-fit design or remain a limited test option.
@@ -111,6 +113,14 @@ call that answers it.
 - **Slice 1 — the bench is pickable.** Status: complete — 2026-08-17. Eleven
   narration-tuned and control models are available from the narrator menu, and
   the alternative providers have recorded probe evidence.
+- **Slice 1b — the bench can hold models from a second provider.** Status: built
+  2026-08-17 — awaiting an owner run of the first Featherless row on the deployed
+  app. The narrator menu can now list a model served by Featherless as well as by
+  OpenRouter, chosen and stored the same way, with the rest of the app's models
+  untouched. A pick whose provider has no configured key quietly uses the lane's
+  usual narrator instead of failing the turn. The first such row is an uncensored
+  Qwen3.6 27B merge; whether it is usable in the chat lane is an open question
+  below, not a settled result.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the
@@ -179,6 +189,14 @@ The build is successful when all of the following are true:
 
 ## Open questions
 
+- **Can a narrator that thinks before it speaks work in the chat lane at all?**
+  The first Featherless row spends about a minute of hidden reasoning before its
+  first visible word, and the chat lane gives up on a silent reply after fifty
+  seconds — a ceiling set by the hosting proxy, not by preference, so it cannot
+  simply be raised. The choices are to suppress the model's thinking if the
+  provider allows it, to confine thinking narrators to a surface without that
+  ceiling, or to drop the row. Nothing else in the second-provider work depends
+  on the answer ([detail](narrator-model-bench.spec.md)).
 - **Which roleplay candidates actually earn `immersive_roleplay`?** The initial
   exact-model cohort is a hypothesis; slice 4 decides the durable map
   ([detail](narrator-model-bench.spec.md)).
