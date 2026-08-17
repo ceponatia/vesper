@@ -1,7 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–10 queued)
+with every review finding fixed in the same merge; slice 3 built 2026-08-16,
+awaiting review; slices 4–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -325,13 +326,14 @@ modification, attachment and occlusion between all of it, so a hat can cover a
 hairstyle without erasing it and a coat can sit over a shirt that is still known
 to be there.
 
-Two of those relationships are built but unused: nothing in the wardrobe tells a
-hairpiece from a hat, and a derived effect needs the material reads slice 3
-brings. Both are recorded as missing owners rather than guessed at.
+One of those relationships is still unused: nothing in the wardrobe tells a
+hairpiece from a hat, so surface replacement remains a recorded missing owner
+rather than a guess. Derived effects gained their material reads when slice 3
+landed.
 
 ### Slice 3 — current state
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review.
 
 Add adapters for body-surface state, garment gradients and presentation,
 supported physical-affordance observations, active conditions, change stamps,

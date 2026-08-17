@@ -7,7 +7,10 @@ import { adaptProjectedAppearanceTruth } from "./compat";
 import { visualStateCompositionFor, resolveVisualStateComposition } from "./composition";
 import { VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
 import type { VisualStateFeature } from "./feature";
+import { effectiveCoverageReadSchema } from "../items/effective-coverage-read";
+import { nextGarmentPresentation, type GarmentPresentationOperation } from "../items/garment-presentation";
 import {
+  visualStateFeatureFixture,
   visualStateGarmentFixture,
   visualStateGroomedPresentation,
   visualStateNonHumanBody,
@@ -397,5 +400,119 @@ describe("projectWardrobeFeatures — composition edges", () => {
       ...project([visualStateGarmentFixture({ id: "g_hat", categoryId: "headwear" })], presentationFeatures()),
     ];
     expect(resolveVisualStateComposition(features).suppressions).toEqual([]);
+  });
+});
+
+/**
+ * Slice 3 closed slice 2's recorded debt: composition follows the wardrobe
+ * owner's presentation-aware EFFECTIVE coverage, and a captured
+ * effective-coverage read modulates how strongly a cover conceals.
+ */
+describe("projectWardrobeFeatures — effective coverage (slice 3)", () => {
+  /** Run one presentation operation through the real reducer. */
+  function presented(
+    garment: VisualStateGarmentInput,
+    operation: GarmentPresentationOperation,
+  ): VisualStateGarmentInput {
+    const presentation = nextGarmentPresentation(garment.instance.presentation, garment.blueprint, operation);
+    if (!presentation) throw new Error(`fixture ${operation.kind} was dropped`);
+    return { ...garment, instance: { ...garment.instance, presentation } };
+  }
+
+  const chestFact = visualStateFeatureFixture({
+    locus: { kind: "body", locus: { bodyLocationId: "chest" } },
+    aspect: "skin.tone",
+  });
+
+  it("stops covering the chest when the shirt is worn open", () => {
+    const shirt = visualStateGarmentFixture();
+    const [closed] = project([shirt], [chestFact]);
+    expect(closed?.relationships).toEqual([
+      { kind: "covers", targetKey: chestFact.key, degree: AFFORDANCE_UNIT_ONE },
+    ]);
+    const opened = presented(shirt, {
+      kind: "set_closure",
+      garmentId: "g_top",
+      partId: "front_panel",
+      state: { kind: "fastener_series", openFastenerIndexes: [0, 1, 2] },
+    });
+    expect(project([opened], [chestFact])[0]?.relationships).toEqual([]);
+  });
+
+  it("stops covering the forearms only when BOTH sleeves are rolled", () => {
+    const forearmFact = visualStateFeatureFixture({
+      locus: { kind: "body", locus: { bodyLocationId: "forearms" } },
+      aspect: "skin.tone",
+    });
+    const coat = visualStateGarmentFixture({ id: "g_coat", categoryId: "outerwear" });
+    const rollLeft: GarmentPresentationOperation = {
+      kind: "set_roll",
+      garmentId: "g_coat",
+      partId: "sleeve_left",
+      degree: "substantial",
+    };
+    const oneSleeve = presented(coat, rollLeft);
+    // The other sleeve still reaches the forearms, so the garment still covers.
+    expect(project([oneSleeve], [forearmFact])[0]?.relationships).toEqual([
+      { kind: "covers", targetKey: forearmFact.key, degree: AFFORDANCE_UNIT_ONE },
+    ]);
+    const bothSleeves = presented(oneSleeve, { ...rollLeft, partId: "sleeve_right" });
+    expect(project([bothSleeves], [forearmFact])[0]?.relationships).toEqual([]);
+  });
+
+  it("scales a cover's degree by this garment's captured effective opacity", () => {
+    const hat = visualStateGarmentFixture({ id: "g_hat", categoryId: "headwear" });
+    const captured = effectiveCoverageReadSchema.parse({
+      atMinutes: 0,
+      entries: [
+        {
+          locationId: "hair",
+          band: "hinted",
+          evidence: [{ garmentId: "g_hat", regionId: "g_hat:crown", effectiveOpacity: 3_000 }],
+        },
+      ],
+    });
+    const [feature] = projectWardrobeFeatures({
+      garments: [hat],
+      subjectsByActor: SUBJECTS,
+      composeAgainst: presentationFeatures(),
+      capturedCoverage: new Map([[VISUAL_STATE_FIXTURE_SUBJECT_ID, captured]]),
+    });
+    expect(feature?.relationships).toEqual([
+      {
+        kind: "covers",
+        targetKey: `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/hair/presentation.hairstyle`,
+        degree: toUnitInterval(3_000),
+      },
+    ]);
+  });
+
+  it("keeps full degree when the capture carries no row for THIS garment", () => {
+    const hat = visualStateGarmentFixture({ id: "g_hat", categoryId: "headwear" });
+    const captured = effectiveCoverageReadSchema.parse({
+      atMinutes: 0,
+      entries: [
+        {
+          locationId: "hair",
+          band: "exposed",
+          evidence: [{ garmentId: "g_someone_elses_veil", regionId: "v:crown", effectiveOpacity: 500 }],
+        },
+      ],
+    });
+    const [feature] = projectWardrobeFeatures({
+      garments: [hat],
+      subjectsByActor: SUBJECTS,
+      composeAgainst: presentationFeatures(),
+      capturedCoverage: new Map([[VISUAL_STATE_FIXTURE_SUBJECT_ID, captured]]),
+    });
+    // Another garment's opacity is that garment's own edge; degrading THIS
+    // one's answer must land on concealment, never invented exposure.
+    expect(feature?.relationships).toEqual([
+      {
+        kind: "covers",
+        targetKey: `${VISUAL_STATE_FIXTURE_SUBJECT_ID}/hair/presentation.hairstyle`,
+        degree: AFFORDANCE_UNIT_ONE,
+      },
+    ]);
   });
 });

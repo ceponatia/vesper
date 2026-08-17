@@ -88,6 +88,14 @@ describe("visualStateKindRegistry", () => {
       "presentation.grooming",
       "presentation.nail_finish",
       "presentation.cosmetic_mark",
+      "body_surface.wetness",
+      "garment.condition",
+      "garment.presentation",
+      "garment.deposit",
+      "garment.damage",
+      "garment.material_effect",
+      "condition.active",
+      "affordance.observation",
     ]);
   });
 

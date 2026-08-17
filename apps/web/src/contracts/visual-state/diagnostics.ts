@@ -9,7 +9,7 @@
  * the upstream reason, not a re-labelled one — so a caller asserting on codes
  * should expect a namespaced pair, not a single `visual_state.*` entry.
  *
- * Only the codes slices 1 and 2 actually emit are declared. Visibility,
+ * Only the codes the shipped slices actually emit are declared. Visibility,
  * detail-tier, intimate-gate, missing-mandatory-fact, stale-snapshot and
  * extraction-conflict codes join when the slice that emits them lands — a
  * declared-but-unreachable code reads like coverage that does not exist.
@@ -46,3 +46,10 @@ export const VISUAL_STATE_PRESENTATION_OPERATION_INVALID = "visual_state.present
 export const VISUAL_STATE_PRESENTATION_ENTRY_MALFORMED = "visual_state.presentation.entry_malformed";
 /** A group is realized on the body with no body location to sit at — an authoring contradiction. */
 export const VISUAL_STATE_FEATURE_GROUP_UNPLACED = "visual_state.species.feature_group_unplaced";
+/**
+ * A source owner ANSWERED and its stored entry failed the owner's own parse —
+ * the body-surface quarantine marker is the live case. Distinct from
+ * `source.unavailable` (no owner, or no mapping yet): unavailable is a design
+ * gap, invalid is corrupt data, and neither may become a convenient default.
+ */
+export const VISUAL_STATE_SOURCE_INVALID = "visual_state.source.invalid";

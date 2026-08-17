@@ -34,8 +34,9 @@ export interface VisualStateSnapshot {
    */
   readonly composition: VisualStateComposition;
   /**
-   * Everything the projection dropped: features that lost a duplicate key, then
-   * composition edges that named a missing target or closed a cycle.
+   * Everything the projection dropped, in pipeline order: what the source
+   * adapters themselves suppressed, then features that lost a duplicate key,
+   * then composition edges that named a missing target or closed a cycle.
    */
   readonly suppressions: readonly VisualStateSuppression[];
 }
@@ -44,6 +45,13 @@ export interface VisualStateSnapshot {
 export interface VisualStateContribution {
   readonly adapterId: VisualStateAdapterId;
   readonly features: readonly VisualStateFeature[];
+  /**
+   * What the ADAPTER itself dropped or could not answer — a quarantined
+   * body-surface entry, an owner that does not exist. The snapshot carries them
+   * so the inspector can say why something is missing without re-running the
+   * read; the adapter's own sink already carried the diagnostic.
+   */
+  readonly suppressions?: readonly VisualStateSuppression[];
 }
 
 export interface VisualStateSnapshotInput {
@@ -122,6 +130,10 @@ export function buildVisualStateSnapshot(input: VisualStateSnapshotInput): Visua
   const subjects = new Set<string>();
 
   for (const contribution of contributionsInAdapterOrder(input.contributions)) {
+    // Adapter suppressions ride ahead of the contribution's own duplicate-key
+    // drops, so the combined list reads in pipeline order: what the source
+    // could not answer, what the merge dropped, then what composition dropped.
+    suppressions.push(...(contribution.suppressions ?? []));
     for (const feature of contribution.features) {
       if (seen.has(feature.key)) {
         input.sink?.push(
