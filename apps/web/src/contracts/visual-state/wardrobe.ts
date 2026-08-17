@@ -6,10 +6,11 @@ import {
   type AffordanceEvidence,
   type UnitInterval,
 } from "../affordances/core";
-import { bodyLocationRegistry } from "../body/locations";
 import { diag, type DiagnosticSink } from "../diagnostics";
 import { VISUAL_STATE_KIND_UNKNOWN } from "./diagnostics";
+import type { EffectiveCoverageRead } from "../items/effective-coverage-read";
 import type { GarmentBlueprint } from "../items/garment-blueprint";
+import { garmentEffectiveCoverage } from "../items/garment-effective-coverage";
 import type { GarmentInstanceState, GarmentLocus } from "../items/garment-instance";
 import { subtypedClothingCategoryIds } from "../items/subtypes";
 import {
@@ -36,10 +37,12 @@ import type { VisualStateSourceRef } from "./sources";
  *
  * What this adapter projects is deliberately narrow: what a piece IS and WHERE
  * it sits. Closure, roll, tuck, displacement, wetness, deposits and damage are
- * the garment's CURRENT state and belong to slice 3 on the current layer; the
- * wardrobe owner already derives and fingerprints all of it
- * (`garment-effective-coverage.ts`, `garment-digest.ts`), so re-deriving any of
- * it here would be the second wardrobe the plan forbids.
+ * the garment's CURRENT state and live on the current layer in
+ * `garment-state.ts`; the wardrobe owner already derives and fingerprints all
+ * of it (`garment-effective-coverage.ts`, `garment-digest.ts`), so re-deriving
+ * any of it in either module would be the second wardrobe the plan forbids.
+ * Presentation DOES reach this adapter's composition edges, through the same
+ * owner's effective-coverage derivation (see `coveredLocations`).
  *
  * Three loci are visual and get projected — `worn`, `held`, and `scene` (the
  * jacket left over the desk chair, which is what makes it stop vanishing between
@@ -116,6 +119,19 @@ export interface VisualStateWardrobeProjectionInput {
    * as a missing target.
    */
   readonly composeAgainst?: readonly VisualStateFeature[];
+  /**
+   * The CAPTURED effective-coverage read per subject id (the wardrobe owner's
+   * "captured, not reconstructed" ruling — `ChatGarmentStore.coverage`, keyed
+   * here by the visual subject the caller resolved the actor to).
+   *
+   * When present, a `covers` edge's degree is THIS garment's current effective
+   * opacity over that location, so a soaked cotton shirt covers less than a dry
+   * one and a sheer layer covers less than an opaque one. Absent — no capture,
+   * no entry for the location, or no evidence row for this garment — degrades
+   * to FULL degree: concealment is the conservative direction, and a degraded
+   * read must never invent exposure.
+   */
+  readonly capturedCoverage?: ReadonlyMap<string, EffectiveCoverageRead>;
   readonly sink?: DiagnosticSink;
   readonly path?: string;
 }
@@ -125,29 +141,27 @@ function compareStrings(left: string, right: string): number {
 }
 
 /**
- * Everything one garment reaches: its blueprint's baseline coverage, expanded
- * down the body tree and filtered to the locations clothing can actually sit on.
+ * Everything one garment reaches RIGHT NOW: its presentation-aware effective
+ * coverage, through the wardrobe owner's own derivation
+ * (`garmentEffectiveCoverage` — behavior laws subtracting from each part's
+ * expanded, `coverageRelevant`-filtered baseline).
  *
- * The `coverageRelevant` filter is the wardrobe owner's own rule, applied by
- * every other coverage read in the app (`items/coverage.ts`,
- * `garment-coverage.ts`'s storable ids, `items/visibility.ts`), and skipping it
- * here was not a cosmetic difference. Expansion walks into locations no garment
- * covers, so a plain shirt claimed `covers` at full degree over WINGS and a TAIL
- * — driving the composed visibility of the exact features this slice marks
- * mandatory for identity to zero — and every non-slot id it swept up inflated
- * the occlusion denominator, understating a coat over a dress by about a third.
+ * Slice 2 expanded the blueprint's baseline here and recorded the effective
+ * read as this slice's debt. The swap is what makes presentation reach
+ * composition: a sleeve rolled past the forearm threshold stops covering the
+ * forearm, an open coat stops covering the chest, and the identity features
+ * underneath become composed-visible without any consumer re-deriving a
+ * coverage law. For a garment in its neutral presentation the two reads are
+ * the same set, byte for byte.
+ *
+ * The `coverageRelevant` filter this inherits is not cosmetic: raw expansion
+ * walks into locations no garment covers, so a plain shirt once claimed
+ * `covers` at full degree over WINGS and a TAIL — zeroing the composed
+ * visibility of the exact features this projection marks mandatory for
+ * identity — and every non-slot id inflated the occlusion denominator.
  */
-function coveredLocations(blueprint: GarmentBlueprint): ReadonlySet<string> {
-  const covered = new Set<string>();
-  for (const node of blueprint.nodes) {
-    for (const locationId of node.baselineCoverage) {
-      for (const expanded of bodyLocationRegistry.expand(locationId)) {
-        if (bodyLocationRegistry.byId(expanded)?.coverageRelevant === false) continue;
-        covered.add(expanded);
-      }
-    }
-  }
-  return covered;
+function coveredLocations(instance: GarmentInstanceState, blueprint: GarmentBlueprint): ReadonlySet<string> {
+  return new Set(garmentEffectiveCoverage(instance, blueprint).covers);
 }
 
 /** The subject a locus puts the garment under, or `undefined` when it is not a visual fact. */
@@ -211,13 +225,19 @@ function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGar
       kindId,
       key: visualStateFeatureKey(subjectId, locus, kindId),
       locus,
-      covered: coveredLocations(garment.blueprint),
+      covered: coveredLocations(garment.instance, garment.blueprint),
       onBody: garment.instance.locus.kind === "worn" || garment.instance.locus.kind === "held",
       isWorn: garment.instance.locus.kind === "worn",
       ...(categoryId === undefined ? {} : { categoryId }),
     });
   }
   return resolved;
+}
+
+/** One coverable body feature: its key, and the location the coverage law gates on. */
+interface BodyTarget {
+  readonly key: string;
+  readonly locationId: string;
 }
 
 /**
@@ -233,30 +253,54 @@ function resolveGarments(input: VisualStateWardrobeProjectionInput): ResolvedGar
 function bodyTargets(
   garment: ResolvedGarment,
   composeAgainst: readonly VisualStateFeature[],
-): readonly string[] {
+): readonly BodyTarget[] {
   if (!garment.isWorn) return [];
-  const keys: string[] = [];
+  const targets: BodyTarget[] = [];
   for (const target of composeAgainst) {
     if (target.subjectId !== garment.subjectId) continue;
     if (target.locus.kind !== "body") continue;
     if (!garment.covered.has(target.locus.locus.bodyLocationId)) continue;
-    keys.push(target.key);
+    targets.push({ key: target.key, locationId: target.locus.locus.bodyLocationId });
   }
-  return keys.sort(compareStrings);
+  return targets.sort((left, right) => compareStrings(left.key, right.key));
+}
+
+/**
+ * How strongly this garment's cover CONCEALS one location: its own current
+ * effective opacity from the captured read, else full degree.
+ *
+ * Only THIS garment's evidence rows count — another layer's opacity over the
+ * same location is that layer's own edge. Every degraded path (no capture, no
+ * entry, no row for this garment, and the schema-degraded opacity of 0 is a
+ * row that exists and says "not concealing") lands on the concealing side or
+ * on the captured value itself, never on invented exposure — except that a
+ * captured 0 IS exposure, because the owner said so and this read only
+ * carries it.
+ */
+function coverDegree(
+  garment: ResolvedGarment,
+  locationId: string,
+  captured: EffectiveCoverageRead | undefined,
+): UnitInterval {
+  const entry = captured?.entries.find((row) => row.locationId === locationId);
+  if (entry === undefined) return AFFORDANCE_UNIT_ONE;
+  const rows = entry.evidence.filter((row) => row.garmentId === garment.input.instance.id);
+  if (rows.length === 0) return AFFORDANCE_UNIT_ONE;
+  return toUnitInterval(Math.max(...rows.map((row) => row.effectiveOpacity)));
 }
 
 /**
  * How much of the lower piece the upper one hides: the share of the lower
  * piece's covered locations the upper one also reaches.
  *
- * The denominator is the lower piece's `coverageRelevant`-filtered baseline
- * coverage — the same wardrobe-slot set every other coverage read uses, and not
- * the raw body-tree expansion, which would pad it with locations no garment can
- * occupy.
- *
- * Baseline, not effective. An unbuttoned coat still occludes the shirt behind it
- * as far as composition is concerned; how much of the shirt that leaves READABLE
- * is the effective-coverage read's answer, and slice 3 owns feeding it in.
+ * Both sets are the pieces' presentation-aware EFFECTIVE coverage — the
+ * slice-3 read that closed slice 2's recorded debt. An unbuttoned coat has
+ * already lost `chest` from its own set, so the share of the shirt it still
+ * occludes falls exactly where the coverage law says the shirt became
+ * readable; a coat worn closed occludes the same share it always did. The
+ * denominator stays the lower piece's `coverageRelevant`-filtered set, never
+ * the raw body-tree expansion, which would pad it with locations no garment
+ * can occupy.
  */
 function overlapDegree(upper: ResolvedGarment, lower: ResolvedGarment): UnitInterval | null {
   if (lower.covered.size === 0) return null;
@@ -384,11 +428,12 @@ function wardrobeChangedAt(garment: ResolvedGarment): number | undefined {
  * it simply asserts no relationship, which is the honest read of a garment
  * nobody said where to put.
  *
- * `replaces_visible_surface` and `derived_from` are not emitted. Nothing in the
- * wardrobe vocabulary distinguishes a hairpiece from a hat — there is no `wig`
- * subtype — and a derived effect needs the material and wetness reads slice 3
- * brings. The resolver handles both kinds; this adapter has no owner that
- * proves either, and the plan's answer to a missing owner is silence.
+ * `replaces_visible_surface` and `derived_from` are not emitted HERE.
+ * `derived_from` gained its owner in slice 3 — `garment-state.ts` asserts it
+ * from a wet-material effect to the wetness fact it rides on — but nothing in
+ * the wardrobe vocabulary distinguishes a hairpiece from a hat (there is no
+ * `wig` subtype), so `replaces_visible_surface` still has no owner anywhere,
+ * and the plan's answer to a missing owner is silence.
  */
 export function projectWardrobeFeatures(
   input: VisualStateWardrobeProjectionInput,
@@ -410,10 +455,11 @@ export function projectWardrobeFeatures(
       continue;
     }
     const attaches = garment.categoryId !== undefined && ATTACHING_CATEGORY_IDS.has(garment.categoryId);
-    const surfaceEdges: VisualStateRelationship[] = bodyTargets(garment, composeAgainst).map((targetKey) =>
+    const captured = input.capturedCoverage?.get(garment.subjectId);
+    const surfaceEdges: VisualStateRelationship[] = bodyTargets(garment, composeAgainst).map((target) =>
       attaches
-        ? { kind: "attached_to", targetKey }
-        : { kind: "covers", targetKey, degree: AFFORDANCE_UNIT_ONE },
+        ? { kind: "attached_to", targetKey: target.key }
+        : { kind: "covers", targetKey: target.key, degree: coverDegree(garment, target.locationId, captured) },
     );
     const changedAtMinutes = wardrobeChangedAt(garment);
     const candidate: VisualStateFeature = {

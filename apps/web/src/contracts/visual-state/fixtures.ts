@@ -5,9 +5,14 @@ import { garmentBlueprintForSeed } from "../items/garment-store";
 import {
   emptyGarmentPresentationState,
   pristineGarmentConditionState,
+  type GarmentChangeStamp,
+  type GarmentConditionState,
   type GarmentInstanceState,
   type GarmentLocus,
+  type GarmentPresentationState,
 } from "../items/garment-instance";
+import type { GarmentMaterialProfileId } from "../items/garment-material";
+import { emptyBodySurfaceState, setBodySurfaceWetness, type BodySurfaceState } from "../state/body-surface";
 import { realizeBody, type RealizedBody } from "../species";
 import { visualStateFeatureKey, type VisualStateFeature } from "./feature";
 import { VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID } from "./kinds";
@@ -125,6 +130,15 @@ export interface VisualStateGarmentFixtureOptions {
   readonly locus?: GarmentLocus;
   readonly layer?: number;
   readonly atMinutes?: number;
+  // Slice-3 additions, all defaulting to the pristine values above them.
+  /** The blueprint's material, threaded through the seed path (VS-7 wet-material effects). */
+  readonly materialProfileId?: GarmentMaterialProfileId;
+  /** Non-neutral arrangement — a rolled cuff, an open closure (VS-6). */
+  readonly presentation?: GarmentPresentationState;
+  /** Non-pristine material state — wetness, deposits, damage (VS-7). */
+  readonly condition?: GarmentConditionState;
+  /** The instance's coarse novelty stamp, when a test asserts change stamps. */
+  readonly lastChange?: GarmentChangeStamp;
 }
 
 /**
@@ -141,16 +155,22 @@ export function visualStateGarmentFixture(
   const categoryId = options.categoryId ?? "top";
   const coverage = options.coverage ?? clothingCategoryById(categoryId)?.coverage ?? [];
   const definitionId = `def_${categoryId}`;
-  const blueprint = garmentBlueprintForSeed({ definitionId, name: categoryId, categoryId, coverage });
+  const blueprint = garmentBlueprintForSeed({
+    definitionId,
+    name: categoryId,
+    categoryId,
+    coverage,
+    ...(options.materialProfileId === undefined ? {} : { materialProfileId: options.materialProfileId }),
+  });
   const instance: GarmentInstanceState = {
     id: options.id ?? `g_${categoryId}`,
     blueprintHash: `h_${categoryId}`,
     definitionId,
     name: options.name ?? categoryId,
     locus: options.locus ?? { kind: "worn", actorId: VISUAL_STATE_FIXTURE_ACTOR },
-    presentation: emptyGarmentPresentationState(),
-    condition: pristineGarmentConditionState(),
-    lastChange: { kind: "mint", atMinutes: options.atMinutes ?? 0 },
+    presentation: options.presentation ?? emptyGarmentPresentationState(),
+    condition: options.condition ?? pristineGarmentConditionState(),
+    lastChange: options.lastChange ?? { kind: "mint", atMinutes: options.atMinutes ?? 0 },
   };
   return {
     instance,
@@ -200,4 +220,25 @@ export function visualStateGroomedPresentation(
       atMinutes: 10,
     },
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// VS-9 — wet hair, through the body-surface owner's own write path
+// ---------------------------------------------------------------------------
+
+/**
+ * The audit's wet-hair case: `BodySurfaceState` with the hair location wet,
+ * written through `setBodySurfaceWetness` rather than by literal — the write
+ * path clamps and stamps exactly as a committed proposal would, so the fixture
+ * cannot hold a level no proposal could produce.
+ */
+export function visualStateWetHairSurface(
+  options: { level?: number; atMinutes?: number; cause?: "rain" | "immersion" | "splash" | "other" } = {},
+): BodySurfaceState {
+  return setBodySurfaceWetness(emptyBodySurfaceState(), {
+    locationId: "hair",
+    level: options.level ?? 6_000,
+    atMinutes: options.atMinutes ?? 0,
+    ...(options.cause === undefined ? {} : { cause: options.cause }),
+  });
 }

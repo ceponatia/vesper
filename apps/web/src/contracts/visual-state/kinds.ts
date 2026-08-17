@@ -1,8 +1,17 @@
 import { z } from "zod";
 import { APPEARANCE_ANATOMY_PRIORS } from "../appearance-features";
-import { toUnitInterval } from "../affordances/core";
+import { affordanceIntensityBands, toUnitInterval } from "../affordances/core";
 import { FEATURE_GROUPS } from "../body/locations";
-import { garmentLocusSchema } from "../items/garment-instance";
+import { conditionSeveritySchema } from "../conditions/condition";
+import {
+  garmentDamageKinds,
+  garmentDepositKinds,
+  garmentDisplacementKinds,
+  garmentLocusSchema,
+  garmentTuckStates,
+} from "../items/garment-instance";
+import { garmentDepositFreshnessBands } from "../items/garment-condition";
+import { garmentDegreeBandSchema } from "../items/garment-material";
 import { defineVisualStateKind, type VisualStateKindDefinition } from "./definitions";
 import { visualStatePriorsFromAppearance, type VisualStateAttentionPriors } from "./priors";
 
@@ -262,6 +271,152 @@ function presentationPriors(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Current state (slice 3)
+// ---------------------------------------------------------------------------
+
+/** Standing wetness on skin or hair — the body-surface owner's one channel. */
+export const VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID = "body_surface.wetness";
+/** One garment condition channel off its neutral band — wet, soiled, rumpled, worn. */
+export const VISUAL_STATE_GARMENT_CONDITION_KIND_ID = "garment.condition";
+/** One garment part's non-neutral arrangement — open, rolled, tucked, displaced. */
+export const VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID = "garment.presentation";
+/** A located contaminant on a garment — mud, blood, dust, paint. */
+export const VISUAL_STATE_GARMENT_DEPOSIT_KIND_ID = "garment.deposit";
+/** A located damage mark on a garment — a tear, a scuff, a burn. */
+export const VISUAL_STATE_GARMENT_DAMAGE_KIND_ID = "garment.damage";
+/** A DERIVED wet-material effect — beading, clinging, going translucent. */
+export const VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID = "garment.material_effect";
+/** An active condition on the subject as a whole — blindfolded, drunk, bound. */
+export const VISUAL_STATE_CONDITION_ACTIVE_KIND_ID = "condition.active";
+/** A supported physical-affordance observation — strands clumping, hair stirring. */
+export const VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID = "affordance.observation";
+
+/**
+ * The non-dry wetness bands, shared with the garment ladder BY NAME so wet hair
+ * and a wet shirt can never band differently for the same fixed-point level.
+ * `dry` is deliberately absent: a dry surface projects NOTHING — absence is the
+ * body-surface owner's own default, and a "dry" feature would be a fact with
+ * nothing to say. The adapter derives the band through the garment ladder
+ * (`garmentConditionBand`), so these members are pinned by test against it.
+ */
+export const bodySurfaceWetnessBands = ["damp", "wet", "soaked"] as const;
+export type BodySurfaceWetnessBand = (typeof bodySurfaceWetnessBands)[number];
+
+export const visualStateBodySurfaceWetnessValueSchema = z
+  .object({ band: z.enum(bodySurfaceWetnessBands) })
+  .strict();
+export type VisualStateBodySurfaceWetnessValue = z.infer<typeof visualStateBodySurfaceWetnessValueSchema>;
+
+/**
+ * One condition channel's NON-NEUTRAL bands, per channel. Each list is its
+ * garment ladder minus the neutral band (`GARMENT_CONDITION_NEUTRAL_BANDS`) —
+ * a neutral channel is silence, not a feature — and drift against the upstream
+ * ladders is pinned by test rather than by construction, because a zod enum
+ * needs a literal tuple.
+ */
+export const visualStateGarmentConditionValueSchema = z.discriminatedUnion("channel", [
+  z.object({ channel: z.literal("wetness"), band: z.enum(["damp", "wet", "soaked"]) }).strict(),
+  z.object({ channel: z.literal("cleanliness"), band: z.enum(["filthy", "soiled", "marked", "clean"]) }).strict(),
+  z.object({ channel: z.literal("crease_load"), band: z.enum(["creased", "rumpled", "crumpled"]) }).strict(),
+  z.object({ channel: z.literal("wear"), band: z.enum(["worn", "shabby", "threadbare"]) }).strict(),
+]);
+export type VisualStateGarmentConditionValue = z.infer<typeof visualStateGarmentConditionValueSchema>;
+
+/**
+ * One part's structural presentation, in the digest's own bands
+ * (`garmentStructuralFacts`): closure loses its neutral `fastened`, roll its
+ * neutral `down`, displacement its neutral `seated`. Tuck keeps ALL THREE
+ * readings on purpose — the digest rules that tuck has no neutral (a hem is
+ * always out, half, or in, and which one is a fact the narrator must not
+ * contradict), and this projection follows that ruling rather than re-judging.
+ */
+export const visualStateGarmentPresentationValueSchema = z.discriminatedUnion("channel", [
+  z.object({ channel: z.literal("closure"), band: z.enum(["partly_open", "open"]) }).strict(),
+  z.object({ channel: z.literal("roll"), band: z.literal("rolled") }).strict(),
+  z.object({ channel: z.literal("tuck"), band: z.enum(garmentTuckStates) }).strict(),
+  z.object({ channel: z.literal("displacement"), band: z.enum(garmentDisplacementKinds) }).strict(),
+]);
+export type VisualStateGarmentPresentationValue = z.infer<typeof visualStateGarmentPresentationValueSchema>;
+
+export const visualStateGarmentDepositValueSchema = z
+  .object({
+    deposit: z.enum(garmentDepositKinds),
+    intensity: garmentDegreeBandSchema,
+    /** Freshness drives PHRASING (wet mud vs dried mud) — a visual change, so it fingerprints. */
+    freshness: z.enum(garmentDepositFreshnessBands),
+    /** Sorted part ids carrying it; empty ⇒ the whole garment. */
+    parts: z.array(z.string().min(1).max(64)).max(16),
+  })
+  .strict();
+export type VisualStateGarmentDepositValue = z.infer<typeof visualStateGarmentDepositValueSchema>;
+
+export const visualStateGarmentDamageValueSchema = z
+  .object({ damage: z.enum(garmentDamageKinds), severity: garmentDegreeBandSchema })
+  .strict();
+export type VisualStateGarmentDamageValue = z.infer<typeof visualStateGarmentDamageValueSchema>;
+
+/**
+ * The derived wet-material effects, and the whole vocabulary of them. Each is
+ * gated on a material-profile coefficient plus a wetness band (the calibration
+ * lives in `garment-state.ts`), and each is DERIVED: recomputed per cut, never
+ * persisted, carrying a `derived_from` edge to the wetness fact it rides on.
+ */
+export const garmentMaterialEffects = ["beading", "clinging", "translucent"] as const;
+export type GarmentMaterialEffect = (typeof garmentMaterialEffects)[number];
+
+export const visualStateGarmentMaterialEffectValueSchema = z
+  .object({ effect: z.enum(garmentMaterialEffects) })
+  .strict();
+export type VisualStateGarmentMaterialEffectValue = z.infer<typeof visualStateGarmentMaterialEffectValueSchema>;
+
+/**
+ * An active condition, by its CANONICAL KEY — the normalized label every
+ * condition-vocabulary table in the app matches on (`conditionKey`). Not free
+ * prose: it is the condition system's own committed identity, and the one
+ * value that can name a condition without inventing a second vocabulary. The
+ * cap matches the owner's ordinary labels; a longer one fails the schema and
+ * degrades to silence plus a diagnostic.
+ */
+export const visualStateActiveConditionValueSchema = z
+  .object({
+    condition: z.string().min(1).max(60),
+    severity: conditionSeveritySchema.optional(),
+  })
+  .strict();
+export type VisualStateActiveConditionValue = z.infer<typeof visualStateActiveConditionValueSchema>;
+
+const AFFORDANCE_PHENOMENON_ID_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
+
+export const visualStateObservationValueSchema = z
+  .object({
+    /** `<domain>.<snake_case>` — the affordance core's own phenomenon id shape. */
+    phenomenon: z.string().regex(AFFORDANCE_PHENOMENON_ID_PATTERN),
+    band: z.enum(affordanceIntensityBands),
+    /** The body location an adhesion-style observation reaches toward. */
+    target: z.string().min(1).max(64).optional(),
+  })
+  .strict();
+export type VisualStateObservationValue = z.infer<typeof visualStateObservationValueSchema>;
+
+/**
+ * CALIBRATION for the current-state kinds. None is recognition-eligible except
+ * body-surface wetness: damp hair is something an observer registers and
+ * change-detects (the plan's opening example), while a garment's own state is
+ * continuity that changes every scene — spending observer memory rows on it
+ * would evict facts about the person. None is mandatory: current state is
+ * always optional detail, and invariant 7 protects identity and wardrobe
+ * truth, not dampness.
+ */
+const BODY_SURFACE_WETNESS_PRIORS = presentationPriors(3_500, 5_500, 2);
+const GARMENT_CONDITION_PRIORS = presentationPriors(3_000, 5_000, 2);
+const GARMENT_PRESENTATION_CHANNEL_PRIORS = presentationPriors(3_500, 5_500, 2);
+const GARMENT_DEPOSIT_PRIORS = presentationPriors(5_500, 5_000, 2);
+const GARMENT_DAMAGE_PRIORS = presentationPriors(5_500, 5_500, 2);
+const GARMENT_MATERIAL_EFFECT_PRIORS = presentationPriors(4_500, 3_500, 2);
+const CONDITION_ACTIVE_PRIORS = presentationPriors(4_000, 6_000, 2);
+const AFFORDANCE_OBSERVATION_PRIORS = presentationPriors(5_000, 4_000, 2);
+
 export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = [
   defineVisualStateKind({
     id: VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
@@ -401,5 +556,116 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     narratorEligible: true,
     imageEligible: true,
     priors: presentationPriors(6_000, 4_500, 2),
+  }),
+  // --- Current state (slice 3) -------------------------------------------------
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateBodySurfaceWetnessValueSchema,
+    allowedLoci: ["body"],
+    stability: "transient",
+    repeatFamily: "body_surface_wetness",
+    recognitionEligible: true,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: BODY_SURFACE_WETNESS_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_GARMENT_CONDITION_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateGarmentConditionValueSchema,
+    // `item` for the whole garment's worst reading, `garment_part` for a region
+    // that reads differently from it — a wet hem on a dry shirt is two features.
+    allowedLoci: ["item", "garment_part"],
+    stability: "transient",
+    repeatFamily: "garment_condition",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: GARMENT_CONDITION_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateGarmentPresentationValueSchema,
+    allowedLoci: ["garment_part"],
+    // A rolled sleeve is a deliberate, currently maintained arrangement — the
+    // stability is `presentation` even though the LAYER is current state: the
+    // plan's layers separate what a fact is about, stability how long it holds.
+    stability: "presentation",
+    repeatFamily: "garment_presentation",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: GARMENT_PRESENTATION_CHANNEL_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_GARMENT_DEPOSIT_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateGarmentDepositValueSchema,
+    // The garment, not a part: a deposit may span several parts (or the whole
+    // garment), so the parts ride the value and the locus stays the one thing
+    // every deposit has — the garment it is on.
+    allowedLoci: ["item"],
+    stability: "transient",
+    repeatFamily: "garment_deposit",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: GARMENT_DEPOSIT_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_GARMENT_DAMAGE_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateGarmentDamageValueSchema,
+    allowedLoci: ["garment_part"],
+    // A tear does not decay and only a repair removes it.
+    stability: "persistent",
+    repeatFamily: "garment_damage",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: GARMENT_DAMAGE_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateGarmentMaterialEffectValueSchema,
+    allowedLoci: ["item"],
+    stability: "transient",
+    repeatFamily: "garment_material_effect",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: GARMENT_MATERIAL_EFFECT_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateActiveConditionValueSchema,
+    // The subject as a whole. The condition owner has no body locus (a
+    // condition cannot be placed — visual-state.audit.md finding 11), and the
+    // `subject` locus is the honest home rather than a guessed body location.
+    allowedLoci: ["subject"],
+    stability: "transient",
+    repeatFamily: "condition_active",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: CONDITION_ACTIVE_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateObservationValueSchema,
+    allowedLoci: ["body"],
+    // True for exactly one committed cut, so it can never be recognition
+    // eligible — `defineVisualStateKind` enforces the pairing.
+    stability: "instantaneous",
+    repeatFamily: "affordance_observation",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: AFFORDANCE_OBSERVATION_PRIORS,
   }),
 ];

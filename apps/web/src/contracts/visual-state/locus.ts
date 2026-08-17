@@ -86,3 +86,17 @@ export function visualStateLocusKey(ref: VisualStateLocusRef): string {
       return `relation:${encodeLocusSegment(ref.relationId)}`;
   }
 }
+
+/**
+ * The same injective escape, for an id embedded in a key's ASPECT segment.
+ *
+ * An aspect that carries an opaque id (a deposit id, a damage-mark id, a
+ * condition key) has the identical aliasing problem the locus segments have:
+ * the id may legally contain `/` or `:`, and unescaped it can render the same
+ * key as a different (subject, locus, aspect) triple. Closed-enum aspect
+ * discriminators (`presentation.grooming:brows`) stay bare, exactly as body
+ * loci do — escaping is only for ids another owner mints.
+ */
+export function encodeVisualStateKeySegment(value: string): string {
+  return encodeLocusSegment(value);
+}
