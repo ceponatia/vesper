@@ -8,12 +8,18 @@ import {
   type UnitInterval,
 } from "../core";
 import {
+  applyVisualCueMentions,
+  emptyVisualCueState,
   intimateAllowedForSubject,
+  observeVisualCues,
   visualStateKindRegistry,
   VISUAL_STATE_INTIMATE_GATED,
   VISUAL_STATE_KIND_UNKNOWN,
   VISUAL_STATE_LOCUS_INVALID,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
+  type VisualCueMentionCommit,
+  type VisualCueObservation,
+  type VisualCueState,
   type VisualStateAttentionPriors,
   type VisualStateFeature,
   type VisualStateLayer,
@@ -23,7 +29,7 @@ import {
   type VisualStateSuppression,
 } from "../../visual-state";
 import { recognizableFeatureKeySchema, type RecognizableFeatureKey } from "./candidates";
-import type { RecognitionCueReason, RecognitionMentionCommit } from "./mention-policy";
+import { recognitionCueReasons, type RecognitionCueReason, type RecognitionMentionCommit } from "./mention-policy";
 import {
   recognitionCanNotice,
   recognitionFeatureSalience,
@@ -174,6 +180,26 @@ export interface VisualConstraint {
   readonly evidence: readonly AffordanceEvidence[];
 }
 
+/**
+ * Why a visual-state cue is live. The shipped recognition reasons, plus the one
+ * the cue state made sayable: `newly_visible`.
+ *
+ * It is NOT folded into `recognitionCueReasons`, because the recognition lane
+ * cannot produce it — recognition memory has no concept of a fact that became
+ * visible without changing — and a shared vocabulary carrying a member one of
+ * its producers can never emit is a vocabulary that lies to its consumers.
+ * `visualNarratorCueReasonIsRecognition` narrows back where the two meet.
+ */
+export const visualNarratorCueReasons = [...recognitionCueReasons, "newly_visible"] as const;
+export type VisualNarratorCueReason = (typeof visualNarratorCueReasons)[number];
+
+/** Whether a visual cue reason is one the recognition mention ledger can record. */
+export function visualNarratorCueReasonIsRecognition(
+  reason: VisualNarratorCueReason,
+): reason is RecognitionCueReason {
+  return reason !== "newly_visible";
+}
+
 /** One offered narrator cue. Structured facts; the chat adapter owns wording. */
 export interface VisualNarratorCue {
   readonly key: string;
@@ -181,7 +207,7 @@ export interface VisualNarratorCue {
   readonly kindId: string;
   readonly layer: VisualStateLayer;
   readonly locus: VisualStateLocusRef;
-  readonly reason: RecognitionCueReason;
+  readonly reason: VisualNarratorCueReason;
   readonly value: unknown;
   readonly truthFingerprint: string;
   readonly semanticTags: readonly string[];
@@ -205,6 +231,13 @@ export interface VisualNarratorSelectionInput {
   /** The (scope, observer) pair `memory` was loaded for. */
   readonly binding: VisualMemoryBinding;
   readonly memory: VisualMemoryState;
+  /**
+   * The narrator cue state as of BEFORE this cut — repetition and first
+   * visibility for the families observer memory deliberately does not hold.
+   * Absent means the lane has not wired it, and every such family reads as
+   * first-visible with a full cooldown.
+   */
+  readonly cues?: VisualCueState;
   /** Cues offered at most, after the mention floor. Defaults to the strict two. */
   readonly cueBudget?: number;
   /** Lane-neutral provenance stamped onto every notice from this cut. */
@@ -225,6 +258,17 @@ export interface VisualNarratorSelection {
   readonly memoryAfterNotices: VisualMemoryState;
   /** Apply these only when the selected cues enter the committed cut. */
   readonly mentionCommits: readonly RecognitionMentionCommit[];
+  /** Every cue-owned family this observer could resolve at this cut. */
+  readonly cueObservations: readonly VisualCueObservation[];
+  /**
+   * Cue state after this cut's visibility, mentions NOT applied — the exact
+   * mirror of `memoryAfterNotices`. Seeing a rolled sleeve is what makes the
+   * next cut's "newly visible" answer correct; SAYING it is a separate event
+   * the caller commits only once the cut lands.
+   */
+  readonly cueStateAfterVisibility: VisualCueState;
+  /** Apply these to `cueStateAfterVisibility` only when the cues enter the cut. */
+  readonly cueMentionCommits: readonly VisualCueMentionCommit[];
   readonly suppressions: readonly VisualStateSuppression[];
 }
 
@@ -240,7 +284,7 @@ function visualNarratorCueReason(input: {
   row: VisualFeatureMemory | undefined;
   fingerprintChanged: boolean;
   atMinutes: number;
-}): RecognitionCueReason | null {
+}): VisualNarratorCueReason | null {
   const { candidate } = input;
   if (input.fingerprintChanged) return "change";
   if (input.memoryEligible && input.row === undefined) return "first_notice";
@@ -251,7 +295,27 @@ function visualNarratorCueReason(input: {
   ) {
     return "recognition_refresh";
   }
+  // An owner's own change stamp outranks the cue state, deliberately: "this
+  // sleeve was rolled nine minutes ago" is a more specific thing to say than
+  // "we have no record of having seen it". Without this order every fact would
+  // read as newly visible on the first narrated cut, when no family has a
+  // record yet, and a genuinely fresh change would be reported as a first
+  // sighting.
   if (candidate.changeSignificance > AFFORDANCE_UNIT_ZERO) return "change";
+  // The cue state's own reasons, for the families memory never held. A family
+  // in continuous, unchanged view produces NOTHING here and falls through to
+  // the action tests below — which is the whole point: a rolled sleeve earns a
+  // beat when it appears or changes, not for continuing to exist.
+  switch (candidate.cueStatus) {
+    case "first_visible":
+    case "revealed":
+      return "newly_visible";
+    case "changed":
+      return "change";
+    case "steady":
+    case undefined:
+      break;
+  }
   if (candidate.actionRelevance > AFFORDANCE_UNIT_ZERO) return "action_relevance";
   if (
     candidate.importance >= RECOGNITION_EMOTIONAL_CALLBACK_IMPORTANCE &&
@@ -296,13 +360,19 @@ function emptyNarratorSelection(
     changes: [],
     memoryAfterNotices: input.memory,
     mentionCommits: [],
+    // A failed-closed selection saw nothing, so it records nothing — the cue
+    // state must not advance its sequence on a cut that resolved no features,
+    // or every family would read as newly revealed on the next one.
+    cueObservations: [],
+    cueStateAfterVisibility: input.cues ?? emptyVisualCueState(),
+    cueMentionCommits: [],
     suppressions,
   };
 }
 
 interface ScoredNarratorEntry {
   readonly candidate: VisualAttentionCandidate;
-  readonly reason: RecognitionCueReason;
+  readonly reason: VisualNarratorCueReason;
   readonly brandedKey?: RecognizableFeatureKey;
 }
 
@@ -353,10 +423,12 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   const budget = resolvedBudget(input.cueBudget, VISUAL_NARRATOR_CUE_BUDGET_DEFAULT, sink, path);
   const atMinutes = Number.isFinite(snapshot.atMinutes) ? Math.max(0, Math.trunc(snapshot.atMinutes)) : 0;
 
+  const priorCueState = input.cues ?? emptyVisualCueState();
   const build = buildVisualAttentionCandidates({
     snapshot,
     context,
     memory,
+    cues: priorCueState,
     ...(sink === undefined ? {} : { sink }),
   });
   const suppressions: VisualStateSuppression[] = [...build.suppressions];
@@ -453,16 +525,27 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
     };
   });
 
+  // The two mention ledgers, split by which record answered for the feature —
+  // the same disjoint split the scoring used, so one cue can never spend both.
   const mentionCommits: RecognitionMentionCommit[] = selected
     .filter((entry): entry is ScoredNarratorEntry & { brandedKey: RecognizableFeatureKey } => entry.brandedKey !== undefined)
-    .map((entry) => ({
-      featureKey: entry.brandedKey,
-      atMinutes,
-      reason: entry.reason,
-      repeatKey: entry.candidate.repeatKey,
-    }));
+    .flatMap((entry) =>
+      visualNarratorCueReasonIsRecognition(entry.reason)
+        ? [{ featureKey: entry.brandedKey, atMinutes, reason: entry.reason, repeatKey: entry.candidate.repeatKey }]
+        : [],
+    );
+  const cueMentionCommits: VisualCueMentionCommit[] = selected
+    .filter((entry) => entry.candidate.noveltySource === "cue")
+    .map((entry) => ({ repeatKey: entry.candidate.repeatKey, atMinutes }));
 
   const memoryAfterNotices = applyRecognitionFingerprintChanges(applyRecognitionNotices(memory, notices), changes);
+  // Visibility is recorded for EVERY resolved cue family, mentioned or not:
+  // looking is what makes the next cut's newly-visible answer correct, exactly
+  // as a notice is for memory. The sequence advances once per selection.
+  const cueStateAfterVisibility = observeVisualCues(priorCueState, {
+    atMinutes,
+    observations: build.cueObservations,
+  });
 
   // One grouping pass per list, rather than re-walking every list once per
   // subject: a multi-participant snapshot scans the candidates once, not once
@@ -507,8 +590,25 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
     changes,
     memoryAfterNotices,
     mentionCommits,
+    cueObservations: build.cueObservations,
+    cueStateAfterVisibility,
+    cueMentionCommits,
     suppressions,
   };
+}
+
+/**
+ * Commit the selected cue mentions once the cut lands — the cue state's mirror
+ * of `commitVisualNarratorMentions`, applied to `cueStateAfterVisibility`.
+ *
+ * An empty list is a no-op, and so is a commit for a family the state holds no
+ * row for: the narrator cannot have spent a cooldown it never had.
+ */
+export function commitVisualNarratorCueMentions(
+  state: VisualCueState,
+  commits: readonly VisualCueMentionCommit[],
+): VisualCueState {
+  return applyVisualCueMentions(state, commits);
 }
 
 /**

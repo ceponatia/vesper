@@ -59,6 +59,13 @@ export const VISUAL_STATE_BODY_LANGUAGE_UNAVAILABLE = "visual_state.body_languag
 export const VISUAL_STATE_VISIBILITY_UNKNOWN = "visual_state.visibility.unknown";
 /** A visibility component read answered `invalid` — a value broke its trust boundary. */
 export const VISUAL_STATE_VISIBILITY_INVALID = "visual_state.visibility.invalid";
+/**
+ * One or more visibility components came from a DECLARED RELEASE DEFAULT rather
+ * than from an owner (spec §Visibility → declared defaults). Info severity: the
+ * policy is deliberate and written down, and this is the line that makes it
+ * measurable instead of invisible.
+ */
+export const VISUAL_STATE_VISIBILITY_DECLARED = "visual_state.visibility.declared_default";
 /** Hidden from this viewpoint: exposure-covered, composed away, replaced, or extinguished. NOT a claim of absence. */
 export const VISUAL_STATE_VISIBILITY_HIDDEN = "visual_state.visibility.hidden";
 /** The observer viewpoint has no sight channel this cut. */

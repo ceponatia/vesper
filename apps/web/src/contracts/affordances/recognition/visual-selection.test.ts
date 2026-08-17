@@ -20,6 +20,7 @@ import {
 } from "./fixtures";
 import type { VisualFeatureMemory, VisualMemoryBinding, VisualMemoryState } from "./visual-memory";
 import {
+  commitVisualNarratorCueMentions,
   commitVisualNarratorMentions,
   selectVisualImageFacts,
   selectVisualNarratorCues,
@@ -334,6 +335,114 @@ describe("selectVisualNarratorCues", () => {
     const memory = memoryOf(memoryRowOf(feature));
     const run = () => JSON.stringify(selectVisualNarratorCues(narratorInput(snapshot, memory)));
     expect(run()).toBe(run());
+  });
+});
+
+/**
+ * The narrator cue state doing the job observer memory refuses (slice 7's first
+ * blocker): repetition and first visibility for current-state and body-language
+ * facts, which are deliberately `recognitionEligible: false`.
+ */
+describe("selectVisualNarratorCues — the cue state", () => {
+  /** An unstamped posture: the case only the cue state can say anything about. */
+  function postureFixture(): VisualStateFeature {
+    return visualStateFeatureFixture({
+      kindId: VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+      layer: "body_language",
+      stability: "instantaneous",
+      aspect: "body_language.posture",
+      locus: { kind: "subject", subjectId: SUBJECT },
+      sourceRef: { kind: "scene_relation", relationId: "rel_fixture" },
+      value: { posture: "kneeling" },
+    });
+  }
+
+  const POSTURE_REPEAT_KEY = `recognition.fixture.subject:${SUBJECT}`;
+
+  it("cues an unstamped current fact as newly visible the first time it is in view", () => {
+    const selection = selectVisualNarratorCues(narratorInput(snapshotOf([postureFixture()]), memoryOf()));
+    expect(selection.digests[0]?.selected[0]?.reason).toBe("newly_visible");
+    // The observation is returned so the caller can record it, and the mention
+    // is staged separately — the same notice/mention split memory uses.
+    expect(selection.cueObservations.map((entry) => entry.repeatKey)).toEqual([POSTURE_REPEAT_KEY]);
+    expect(selection.cueMentionCommits).toEqual([{ repeatKey: POSTURE_REPEAT_KEY, atMinutes: 120 }]);
+    // …and observer recognition memory is untouched by all of it.
+    expect(selection.notices).toEqual([]);
+  });
+
+  it("goes quiet once the same fact has been seen and said — the repetition blocker", () => {
+    // Before this record existed, a feature memory could not hold produced a
+    // full cooldown every cut, so a rolled sleeve stayed cue-eligible forever.
+    const posture = postureFixture();
+    const first = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    const spent = commitVisualNarratorCueMentions(first.cueStateAfterVisibility, first.cueMentionCommits);
+    const second = selectVisualNarratorCues(
+      narratorInput(snapshotOf([posture]), memoryOf(), { cues: spent }),
+    );
+    expect(second.digests[0]?.selected).toEqual([]);
+    expect(second.candidates[0]?.repetitionCooldown).toBe(0);
+    expect(second.candidates[0]?.noveltySource).toBe("cue");
+    expect(second.candidates[0]?.cueStatus).toBe("steady");
+  });
+
+  it("speaks again when the fact leaves view and comes back", () => {
+    const posture = postureFixture();
+    const first = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    // A cut in which the posture was not resolvable at all.
+    const away = selectVisualNarratorCues(
+      narratorInput(snapshotOf([]), memoryOf(), { cues: first.cueStateAfterVisibility }),
+    );
+    const back = selectVisualNarratorCues(
+      narratorInput(snapshotOf([posture]), memoryOf(), { cues: away.cueStateAfterVisibility }),
+    );
+    expect(back.candidates[0]?.cueStatus).toBe("revealed");
+    expect(back.digests[0]?.selected[0]?.reason).toBe("newly_visible");
+  });
+
+  it("keeps the two records disjoint — a recognizable feature never enters the cue state", () => {
+    const feature = visualStateFeatureFixture();
+    const selection = selectVisualNarratorCues(narratorInput(snapshotOf([feature]), memoryOf()));
+    expect(selection.cueObservations).toEqual([]);
+    expect(selection.cueMentionCommits).toEqual([]);
+    expect(selection.candidates[0]?.noveltySource).toBe("memory");
+    expect(selection.candidates[0]?.cueStatus).toBeUndefined();
+  });
+
+  it("advances the cut counter on every narrated cut, said or not", () => {
+    const posture = postureFixture();
+    const first = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    expect(first.cueStateAfterVisibility.sequence).toBe(1);
+    const second = selectVisualNarratorCues(
+      narratorInput(snapshotOf([]), memoryOf(), { cues: first.cueStateAfterVisibility }),
+    );
+    expect(second.cueStateAfterVisibility.sequence).toBe(2);
+  });
+
+  it("does not advance the cut counter when the selection fails closed", () => {
+    // A scope mismatch selects nothing and sees nothing; advancing anyway would
+    // make every family read as revealed on the next real cut.
+    const posture = postureFixture();
+    const seen = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    const mismatched = selectVisualNarratorCues(
+      narratorInput(snapshotOf([posture]), memoryOf(), {
+        cues: seen.cueStateAfterVisibility,
+        binding: { ...BINDING, scope: { kind: "chat", memoryGroupId: "mg_other" } },
+      }),
+    );
+    expect(mismatched.cueStateAfterVisibility).toBe(seen.cueStateAfterVisibility);
+    expect(mismatched.cueObservations).toEqual([]);
+  });
+
+  it("keeps the cue state out of the camera's read entirely", () => {
+    const posture = postureFixture();
+    const first = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    const spent = commitVisualNarratorCueMentions(first.cueStateAfterVisibility, first.cueMentionCommits);
+    // Same snapshot, same spent state — the camera cannot see it, so its
+    // cooldown stays one and the fact still ranks (invariant 6).
+    const image = selectVisualImageFacts({ snapshot: snapshotOf([posture]), context: contextOf("image") });
+    expect(spent.cues[POSTURE_REPEAT_KEY]?.mentionCount).toBe(1);
+    expect(image.optional[0]?.repetitionCooldown).toBe(AFFORDANCE_UNIT_ONE);
+    expect(image.optional[0]?.noveltySource).toBe("none");
   });
 });
 

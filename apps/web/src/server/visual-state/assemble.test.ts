@@ -13,6 +13,7 @@ import {
   VISUAL_STATE_SCENE_PLAYER,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
   VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS,
+  VISUAL_STATE_VISIBILITY_DECLARED,
   VISUAL_STATE_VISIBILITY_UNKNOWN,
   type ChatGarmentStore,
 } from "@/contracts";
@@ -27,10 +28,10 @@ import {
 /**
  * Slice-6 assembly tests (visual-state.plan.md §Slice 6): the lane assembly is
  * pure over a committed cut — deterministic, retake-reproducible, input-
- * preserving — the shadow selections fail closed under the production
- * (ownerless) viewing reads with the diagnostic saying so, the image mandatory
- * lane survives that closure, and every owner the lane cannot hand over is a
- * recorded missing-owner suppression rather than a silent gap.
+ * preserving — the production viewing reads take the scene's own distance and
+ * angle and the declared base for what nothing owns, the image mandatory lane
+ * survives a closed visibility read, and every owner the lane cannot hand over
+ * is a recorded missing-owner suppression rather than a silent gap.
  */
 
 const SUBJECT_ID = "vs_test_subject";
@@ -187,18 +188,53 @@ describe("buildVisualStateShadow", () => {
     ).toBe(before);
   });
 
-  it("fails the production selections closed — no owner produces a lighting read yet — with the code saying so", () => {
+  it("opens the production selections — the scene's own distance and angle, the declared base for the rest", () => {
     const sink = new DiagnosticCollector();
     const build = buildVisualStateShadow(chatShadowInput(sink));
-    // Fallback: nothing selected, nothing noticed, memory outputs empty.
-    expect(build.narrator.candidates).toHaveLength(0);
-    expect(build.narrator.notices).toHaveLength(0);
-    expect(build.narrator.mentionCommits).toHaveLength(0);
-    for (const digest of build.narrator.digests) expect(digest.selected).toHaveLength(0);
-    expect(build.image.optional).toHaveLength(0);
-    // AND the diagnostic code, per feature and on the sink.
-    expect(build.narrator.suppressions.some((entry) => entry.code === VISUAL_STATE_VISIBILITY_UNKNOWN)).toBe(true);
-    expect(sink.items.some((entry) => entry.code === VISUAL_STATE_VISIBILITY_UNKNOWN)).toBe(true);
+    // The blocker this closes: before the viewing reads existed, every
+    // component was unknown and the production selection had no candidates at
+    // all under ordinary conditions.
+    expect(build.narrator.candidates.length).toBeGreaterThan(0);
+    expect(build.narrator.suppressions.every((entry) => entry.code !== VISUAL_STATE_VISIBILITY_UNKNOWN)).toBe(true);
+    // Distance and angle came from the scene fixture (close, npc facing the
+    // player), through the scene PARTICIPANT ids, not the visual subject ids.
+    expect(build.viewing.distance).toEqual({ status: "known", value: "close" });
+    expect(build.viewing.angle).toEqual({ status: "known", value: "toward" });
+    // Lighting and motion are the declared base, and say so — the marker is
+    // what keeps this a stated policy rather than a silent default.
+    expect(build.viewing.lighting).toEqual({ status: "known", value: "bright", declared: true });
+    expect(build.viewing.motion).toEqual({ status: "known", value: "still", declared: true });
+    expect(sink.items.some((entry) => entry.code === VISUAL_STATE_VISIBILITY_DECLARED)).toBe(true);
+  });
+
+  it("falls back to the declared base for distance and angle when the scene states neither", () => {
+    const input = chatShadowInput();
+    const build = buildVisualStateShadow({
+      ...input,
+      sceneRelations: {
+        scene: visualStateSceneFixture({ proximity: null, playerFacing: null, npcFacing: null }),
+        subjectsByParticipant: input.sceneRelations?.subjectsByParticipant ?? new Map(),
+      },
+    });
+    expect(build.viewing.distance).toEqual({ status: "known", value: "close", declared: true });
+    expect(build.viewing.angle).toEqual({ status: "known", value: "toward", declared: true });
+  });
+
+  it("takes the scene's word when it places the subject across the room", () => {
+    const input = chatShadowInput();
+    const build = buildVisualStateShadow({
+      ...input,
+      sceneRelations: {
+        scene: visualStateSceneFixture({ proximity: "distant", npcFacing: "away" }),
+        subjectsByParticipant: input.sceneRelations?.subjectsByParticipant ?? new Map(),
+      },
+    });
+    expect(build.viewing.distance).toEqual({ status: "known", value: "distant" });
+    expect(build.viewing.angle).toEqual({ status: "known", value: "away" });
+    // Distant + away caps the detail tier at 1, so fine detail drops out while
+    // the staircase — which never moves with the scene — still holds it.
+    expect(build.narrator.candidates.every((candidate) => candidate.detailTier === 1)).toBe(true);
+    expect(build.staircase.candidates.some((candidate) => candidate.detailTier === 3)).toBe(true);
   });
 
   it("keeps mandatory identity in the image lane even while visibility is closed", () => {

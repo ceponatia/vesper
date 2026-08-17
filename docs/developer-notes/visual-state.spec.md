@@ -242,12 +242,37 @@ export interface VisualAttentionContext {
 ```
 
 Each component read distinguishes `known`, `unknown`, and `invalid`; unknown and
-invalid cannot become positive visibility.
+invalid cannot become positive visibility. A single unusable component fails the
+whole feature list closed.
 
 The first release keeps the existing three detail tiers. Lighting, distance,
 angle, motion, framing/pixel size, exposure, and occlusion determine the highest
 available tier. Observer mode may add inspection focus and relationship-specific
 importance.
+
+### Declared reads
+
+A `known` read carries an optional `declared: true`. It resolves like any other
+known read — a declared default is a real assertion — and it is fingerprinted,
+evidenced, diagnosed (`visual_state.visibility.declared_default`, info) and
+surfaced in the inspector payload separately, so a graded trial can always
+separate a grounded read from stated policy. `visualComponentDeclared` is the
+only way to mint one; an unmarked default remains forbidden.
+
+`viewing.ts` resolves a narrator viewpoint's four components:
+
+| Component | Source                                                    |
+| --------- | --------------------------------------------------------- |
+| distance  | scene proximity for the pair; declared `close` if unstated |
+| angle     | scene facing, subject → observer; declared `toward`        |
+| lighting  | always declared `bright` — no owner exists                 |
+| motion    | always declared `still` — no owner exists                  |
+
+`SceneProximityBand` IS `VisualDistanceBand` and `SceneFacing` IS
+`VisualAngleBand`, so both are lookups rather than mappings. The scene answers
+only to its own participant ids, so the lane assembly inverts
+`subjectsByParticipant` before asking. `silhouette` stays camera-only: it
+describes a viewpoint's relationship to a light source, not an ambient fact.
 
 ## Attention and memory
 ```ts
@@ -263,6 +288,9 @@ export interface VisualAttentionCandidate {
   readonly consumerRelevance: UnitInterval;
   readonly repetitionCooldown: UnitInterval;
   readonly priority: UnitInterval;
+  readonly repeatKey: string;
+  readonly noveltySource: "memory" | "cue" | "none";
+  readonly cueStatus?: VisualCueVisibilityStatus;
   readonly evidence: readonly AffordanceEvidence[];
 }
 ```
@@ -293,6 +321,67 @@ The existing `VisualMemoryState` remains authoritative:
 - camera and inspector reads never write memory.
 
 The current 96-row cap remains until trial evidence shows pressure.
+
+### The narrator cue state
+
+`VisualCueState` (`visual-state/cue-state.ts`) answers repetition and first
+visibility for the families observer memory refuses — every kind that is
+`recognitionEligible: false`, or whose stability the floor law will not hold.
+The two records are **disjoint**: `isMemoryEligible` decides which answers for a
+feature, so one cue can never spend both.
+
+```ts
+export interface VisualCueState {
+  readonly sequence: number;
+  readonly cues: Readonly<Record<string, VisualCueRecord>>;
+}
+
+export interface VisualCueRecord {
+  readonly repeatKey: string;
+  readonly visibleFingerprint: string;
+  readonly firstVisibleAtMinutes: number;
+  readonly lastVisibleAtMinutes: number;
+  readonly lastVisibleSequence: number;
+  readonly lastMentionedAtMinutes?: number;
+  readonly mentionCount: number;
+}
+```
+
+Keyed by repeat key, not feature key: both questions are questions about the
+family, and `visualAttentionRepeatKey` already renders the locus into the key.
+`visibleFingerprint` is `visualCueFamilyFingerprint` over every visible member,
+sorted by feature key — so it tracks the family's truth, not emission order.
+
+`visualCueVisibilityStatus` compares the record against `state.sequence`:
+
+| Status          | Meaning                                          | Cue reason      |
+| --------------- | ------------------------------------------------ | --------------- |
+| `first_visible` | no record — never in view for this observer       | `newly_visible` |
+| `changed`       | the family fingerprint moved                      | `change`        |
+| `revealed`      | in view now, not in view at the immediately prior cut | `newly_visible` |
+| `steady`        | continuous, unchanged view                        | none            |
+
+**Cuts, not minutes.** "Newly visible" is a question about cuts; chat turns
+advance the story clock by wildly varying amounts, so any minute threshold would
+call a continuously visible sleeve newly revealed after a long gap and miss a
+coat that came off and back on inside an hour. `sequence` counts recorded cuts.
+
+`visualNarratorCueReasons` is `recognitionCueReasons` plus `newly_visible`, and
+it is a separate vocabulary: the recognition lane cannot produce that reason, and
+a shared vocabulary carrying a member one of its producers can never emit lies to
+its consumers. `visualNarratorCueReasonIsRecognition` narrows back at the
+mention-ledger boundary. An owner's change stamp outranks the cue state in
+`visualNarratorCueReason`, so a fresh change is not reported as a first sighting
+on the cut where no family has a record yet.
+
+Transitions mirror notice-versus-mention exactly. `observeVisualCues` records
+what was in view and advances the counter once per selection, said or not;
+`applyVisualCueMentions` (via `commitVisualNarratorCueMentions`) starts the
+cooldown only for cues that entered the cut. Both come back as plain data. A
+failed-closed selection records nothing and does not advance the counter.
+
+The 96-row cap and its coldest-first, key-ordered eviction mirror the memory
+cap, with `lastVisibleSequence` as the age policy.
 
 ## Consumer digests
 ```ts
@@ -355,6 +444,17 @@ Persist source-owner state, non-item presentation entries, observer memory,
 lane cue state needed for repeat-safe mention accounting, render
 provenance/trial manifests, and optional debug snapshots with retention.
 
+The chat lane's cue state lives in `chat_visual_cues` — its own table, not a
+column on `chat_visual_memory`. The design reason is that the two records are
+disjoint and must stay so; the mechanical reason is the generation shuffle,
+which decides what to keep by comparing the stored `applied_message_id` with the
+incoming one, so two upserts against one row inside one exchange would leave the
+second seeing a guard the first had already stamped. Key, columns, and retake
+law are otherwise `chat_visual_memory`'s, and `visualMemoryGenerationFor` is
+imported rather than restated so the two stores cannot disagree about what a
+retake is. The counter is why this matters more here: a retake that advanced it
+twice would make every tracked family read as newly revealed on the next cut.
+
 Character chat builds from the committed pre-fan-out cut and the same rollback
 anchors as state, scenario, wardrobe, perception, and memory. Successor chat
 builds from one engine cut and branch version.
@@ -374,12 +474,21 @@ Narration degrades to silence.
 
 ## Flags
 - `CHAT_VISUAL_STATE_SHADOW` builds snapshots and diagnostics only.
-- `CHAT_VISUAL_STATE_NARRATION` adds optional detail, default off.
+- `CHAT_VISUAL_STATE_NARRATION` commits the narrator cue state with the
+  exchange, and will feed the prompt selection. Default off.
 - `IMAGE_VISUAL_STATE` enables reviewed render-intent integration.
 - Reference extraction remains admin-only until review behavior is proven.
 
-Shadow mode leaves prompts and writes byte-identical. The inspector may ignore
-flags for read-only diagnostics but displays their values.
+Shadow mode leaves prompts and writes byte-identical. The cue state is READ on
+both arms — ranking against stored repetition is a read, so the shadow measures
+real repeat and newly-revealed counts — and WRITTEN only under the narration
+flag. That is why the narration arm runs the build on the turn's own path rather
+than deferring it: a deferred build cannot be captured with the cut it
+describes, and a cue advance for an exchange that never landed is exactly the
+impurity the two-generation store exists to prevent.
+
+The inspector may ignore flags for read-only diagnostics but displays their
+values.
 
 ## Tests and promotion
 Pure fixtures cover deterministic keys/fingerprints/order, every source adapter,
@@ -443,7 +552,7 @@ start.
 | 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
 | 5     | built 2026-08-16 — awaiting review | Attention + memory           |
 | 6     | built 2026-08-16 — awaiting review | Shadow + inspector           |
-| 7     | not started                        | Narrator proving release     |
+| 7     | unblocked 2026-08-17 — trial next  | Narrator proving release     |
 | 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
 | 9     | built 2026-08-16 — awaiting review | Reference extraction         |
 | 10    | not started                        | Narrator consolidation       |
@@ -1249,3 +1358,52 @@ surface for canonical truth.
 the character's ready avatar or portrait variant, owner-scoped; image FK
 SET NULL and reviewer FK no-action for the audit trail. Admin-only routes
 (`withOwnerAdmin`), no flag — the surface is dark until a review UI exists.
+
+### Decisions the slice-7 unblock settled (2026-08-17)
+
+Two prerequisites the shipped slices exposed, both closed by owner ruling and
+built in one change. Each is recorded in the code that owns it.
+
+**Viewing conditions are half-owned, half-declared, never silently defaulted.**
+Distance and angle come from the scene owner when it states them; lighting and
+motion have no owner anywhere and are supplied as marked declared defaults
+(`bright`, `still`). The owner's ruling (2026-08-17) was a base-value
+placeholder rather than a new simulation owner. `declared: true` on the known
+arm of `VisualComponentRead` is what keeps this a stated policy: it rides the
+camera fingerprint, every visible read's evidence, one info diagnostic, and the
+inspector's own panel. Replacing the lighting placeholder with a real owner is a
+one-line change plus its caller, and the marker is what makes that swap visible
+when it happens.
+
+**This reverses the slice-6 all-unknown decision recorded above.** That decision
+was correct for measuring missing-owner frequency, and the measurement it was
+waiting for came back unambiguous: with all four unknown, the production
+narrator selection has zero candidates under every ordinary condition, so there
+is nothing left to measure.
+
+**Two narrator-side records, disjoint by construction.** `isMemoryEligible` is
+the single predicate deciding whether observer memory or the cue state answers
+for a feature — novelty, cooldown, and the mention ledger all follow it, so one
+cue can never spend both and the cue cap is spent entirely on the gap it exists
+to fill.
+
+**The cue state records visibility for every resolvable family, not just cued
+ones.** Recording what was in view is what makes the next cut's newly-revealed
+answer correct, exactly as a notice is for memory. Both come back as plain data
+and the caller commits them once the cut lands.
+
+**The shadow image lane takes the same conditions.** A shadow camera has no
+committed camera of its own, and leaving it unknown would hold slice 6's image
+measurement at a permanent zero — measuring the placeholder rather than the
+projection. A real render supplies its own reads through
+`visualCameraReadsOfSceneCamera` when the consolidation plan cuts routes over.
+
+**`VISUAL_ATTENTION_FIRST_VISIBLE_NOVELTY` is a runtime assertion, not a type
+identity.** Meeting points 1 and 2 are compile-time, but both novelty constants
+are `UnitInterval`, whose brand erases the literal — an intersection type would
+compile whatever the values were. A module-load equality check is the honest
+form.
+
+**The successor lane is not wired.** It hands over no scene and has no cue
+store, so its shadow runs on all-declared conditions with an empty cue state.
+Successor parity stays slice 10's.
