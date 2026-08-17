@@ -96,11 +96,12 @@ call that answers it.
   and padding is not a substitute for scene presence.
 - **No automatic model-card settings.** Published temperature, top-p, top-k and
   repetition recommendations are hypotheses to test, not production defaults. Owner
-  ruling 2026-08-17 carved one exception on reliability grounds: the Qwen3.6 Fable
-  Fusion row ships its author's non-thinking sampling baseline, because it is asked
-  with its thinking template off and the repo's generic defaults are not a neutral
-  control for that configuration. Any comparison that includes this row must read
-  those settings as part of the arm.
+  ruling 2026-08-17 carved one exception on reliability grounds: the two DavidAU
+  Qwen3.6 rows ship their author's non-thinking sampling baseline, because they are
+  asked with their thinking template off and the repo's generic defaults are not a
+  neutral control for that configuration. They share one profile, so they stay
+  comparable with each other; any comparison that includes either must read those
+  settings as part of the arm.
 - **No narrator policy inside generic generation helpers.** A model used for a
   composer, classifier, state agent or deliberator receives that task's explicit
   policy, never the policy it would receive as a narrator.
@@ -140,6 +141,15 @@ call that answers it.
   sampling settings, and a single invisible retry covers a one-off silent reply so
   the player never has to ask twice. Nothing changes for any other narrator or
   agent, and every other narrator gains the same honest failure messages for free.
+- **Slice 1d — a second Featherless row, matched to the first.** Status: built
+  2026-08-17 — awaiting an owner run on the deployed app. The narrator menu gains
+  "F451 Ultra Pro Writer 27B", the writer-tuned counterpart to Fable Fusion from the
+  same author and base model. The two are set up identically on purpose — same
+  sampling, same thinking-off handling, same retry — so a comparison between them
+  measures the model and not the settings. Two further models the owner asked for
+  could not be added: Featherless publishes catalog pages for them but does not
+  actually serve them, and every turn would have failed. Adding a model now requires
+  confirming the provider serves it first.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the
@@ -177,7 +187,7 @@ call that answers it.
 ## Where the work stands
 
 - **[narrator-model-bench.spec.md](narrator-model-bench.spec.md)** — replanned
-  2026-08-17. Slices 1, 1b and 1c are built; the model/profile seam, immersive
+  2026-08-17. Slices 1, 1b, 1c and 1d are built; the model/profile seam, immersive
   profile, successor parity and comparison campaign are not started.
 
 ## Success criteria
