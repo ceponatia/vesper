@@ -1,8 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slice 3 built 2026-08-16,
-awaiting review; slices 4–10 queued)
+with every review finding fixed in the same merge; slices 3–4 built 2026-08-16,
+awaiting review; slices 5–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -342,12 +342,15 @@ physiology, contamination, contact, and fit remain explicit suppressions.
 
 ### Slice 4 — body language and visibility
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review.
 
 Consume the shipped scene / body-relations owner for posture, support,
-orientation, hand occupation, gaze, and committed motion. Add observer/camera
+orientation, hand occupation, and committed motion. Add observer/camera
 lighting, distance, angle, motion, frame-size, exposure, and occlusion reads.
 Include non-human and altered-anatomy fixtures before enabling image use.
+Gaze has no owner anywhere in the app — the scene owner proves facing, not
+where the eyes point — so gaze projects as explicitly unavailable until an
+owner exists.
 
 ### Slice 5 — attention and memory integration
 
@@ -444,7 +447,13 @@ and trials rather than guessed:
 - narrator and image optional-detail caps by task/profile;
 - lighting, distance, motion, and pixel-size thresholds for detail tiers;
 - whether a later perceptual-state plan should generalize the machinery to
-  sound, scent, and touch.
+  sound, scent, and touch;
+- whether a gaze owner is worth adding — no system records where a character's
+  eyes point, so body language projects gaze as unavailable;
+- whether an unknown lighting or motion read should keep failing visibility
+  closed (nothing visible under it, the built behavior) or count as
+  unconstrained for some components — to be judged from slice 6's shadow
+  measurements once those reads have real producers.
 
 Any new owner question discovered during design or implementation must be
 restated here before work proceeds.

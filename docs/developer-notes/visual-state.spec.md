@@ -6,10 +6,10 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–3 are built (see [Implementation status](#implementation-status));
-everything from slice 4 onward — every remaining adapter, flag, visibility read,
-salience score and consumer digest below — is still a design rather than a
-description of code. The modules it reuses are all live:
+Slices 0–4 are built (see [Implementation status](#implementation-status));
+everything from slice 5 onward — every remaining flag, salience score and
+consumer digest below — is still a design rather than a description of code.
+The modules it reuses are all live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -439,7 +439,8 @@ start.
 | 1     | reviewed 2026-08-16                | Contract + compat adapter    |
 | 2     | reviewed 2026-08-16                | Identity + presentation      |
 | 3     | built 2026-08-16 — awaiting review | Current state                |
-| 4–10  | not started                        | Everything else in this spec |
+| 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
+| 5–10  | not started                        | Everything else in this spec |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -479,6 +480,18 @@ scaling `covers` degrees. Adapter suppressions ride a new optional
 `VisualStateContribution.suppressions`, appended ahead of duplicate-key and
 composition entries. Still nothing outside the folder: no server adapter, no
 flag, no consumer, no schema, no persistence.
+
+Slice 4 added, in the same folder: the body-language adapter over `SceneState`
+and its housed contact lifecycle (posture, support, facing, hand occupation,
+committed motion — five new kinds, all `body_language` layer, instantaneous,
+recognition-ineligible, none mandatory); and the visibility read —
+`VisualViewpoint`, per-component known/unknown/invalid reads for lighting,
+distance, angle, motion and framing with calibration tables,
+`resolveVisualStateVisibility` multiplying into composition's
+`effectiveVisibility`, detail tiers, and suppression-based gating. The source
+union gained a `{ kind: "contact", contactId }` arm. Non-human (wings) and
+altered-anatomy (missing finger) fixtures exercise silhouette and detail-tier
+behavior. Same footprint as every slice so far: nothing outside the folder.
 
 ### What the audit changed about later slices
 
@@ -575,7 +588,12 @@ slice 2: `visual_state.relationship.missing_target`,
 plus a deliberate reuse: the standing unsupported-fact table emits
 `visual_state.source.unavailable` at **info** severity, because a permanent
 designed absence is context rather than a degradation alarm (the code is still
-asserted by tests).
+asserted by tests). From slice 4:
+`visual_state.body_language.unavailable`, `visual_state.visibility.unknown`,
+`visual_state.visibility.invalid`, `visual_state.visibility.hidden`,
+`visual_state.visibility.channel_unavailable`,
+`visual_state.visibility.out_of_frame`,
+`visual_state.detail_tier.insufficient`, and `visual_state.intimate.gated`.
 
 Two FOREIGN codes also reach a caller's sink from this family, because the sink
 is handed straight to a shared helper rather than wrapped:
@@ -584,10 +602,9 @@ is handed straight to a shared helper rather than wrapped:
 upstream reason, not a re-labelled one — so a caller asserting on codes should
 expect a namespaced pair rather than a single `visual_state.*` entry.
 
-The visibility, detail-tier,
-intimate-gate, missing-mandatory-fact, stale-snapshot and extraction-conflict
-codes join with the slices that emit them; a declared but unreachable code reads
-like coverage that does not exist.
+The missing-mandatory-fact, stale-snapshot and extraction-conflict codes join
+with the slices that emit them; a declared but unreachable code reads like
+coverage that does not exist.
 
 ### Decisions slice 2 settled
 
@@ -813,3 +830,70 @@ non-neutral-only projection, with tuck always projecting per the digest's
 "no neutral" ruling. Deposits sit at the item locus with parts and freshness
 in the value and the escaped deposit id in the aspect; damage sits at its
 part. Snapshot suppression order is adapter → duplicate-key → composition.
+
+### Decisions slice 4 settled
+
+Each is recorded in the code that owns it.
+
+**Slice 4 owns the visibility half of the context only.** The spec's full
+attention context (focus loci, action loci, importance boosts, consumer) is
+slice 5's; `VisualVisibilityContext` is what slice 4 built, and slice 5
+extends it rather than reshaping it.
+
+**`VisualViewpoint.observer` is a plain observer id.** No `VisualObserverRef`
+union exists anywhere, and inventing one for a single string field would be
+vocabulary without a second reader.
+
+**Distance and angle reuse the scene owner's vocabularies.** Distance bands
+are scene proximity bands and angles are scene facings — a second wording of
+either would drift from the one system that proves them.
+
+**An unknown or invalid component fails the whole read closed.** One
+diagnostic plus per-feature suppressions, nothing claimed visible under it.
+This is the strict reading of "unknown cannot become positive visibility",
+and it is the intended shadow behavior while lighting and motion have no
+production owner (audit finding 14). The open question on relaxing it per
+component sits in the plan.
+
+**Gaze projects as explicitly unavailable.** The scene owner proves facing —
+where the body points — and nothing anywhere records where the eyes point.
+
+**Hand occupation derives only from committed contacts.** Sourced from active
+contacts in the `hands` registry subtree (the audit's sanctioned derivation),
+one feature per subject and side, with a minimal `{ side }` value so a
+re-asserted touch does not churn the fingerprint; action kinds ride tags and
+evidence. The `sourceRef` is the first contact by contact id with every
+contributor in evidence, and the change stamp is omitted when more than one
+contact contributes. Support relations that load the arms are NOT re-derived
+into hand occupation — the support feature already carries its load zones,
+and deriving a hand from a zone states more than the owner does.
+
+**Owner-side ids ride verbatim.** Values and relation loci carry the scene and
+contact owners' own row identities; the subject map only selects and renames
+subjects (facing needs only the facing side mapped).
+
+**Body-language kinds are instantaneous and never mandatory.** All five are
+recognition-ineligible (`defineVisualStateKind` enforces the pairing with
+instantaneous stability), and the mandatory set stays identity, morphology,
+wardrobe, subject count and action.
+
+**Adapter suppressions are returned beside features.** The body-language and
+visibility adapters return `{ features, suppressions }` on the
+`buildRecognitionCandidates` precedent; slice 3 landed
+`VisualStateContribution.suppressions` in the same merge window, and the
+caller files the returned suppressions into its contribution when it
+assembles a snapshot — slice 6's wiring, not this adapter's.
+
+**Exposure and framing gate body loci only.** Framing bands map to the
+scene's five body zones (`full_figure` and `wide` contain everything; tighter
+frames fail unresolvable zones closed). A garment's frame answer needs the
+captured effective-coverage read, so non-body loci are not frame-gated — a
+documented simplification. Gate order mirrors recognition: locus → intimate
+(hard, first) → sight channel (observer only; camera and debug viewpoints
+have no senses) → exposure → composition → framing → fixed-point factor
+product → tier.
+
+**The hinted exposure factor is restated, not imported.** Recognition's 3000
+factor is copied locally because importing it would create the
+`visual-state` → `affordances/recognition` cycle slice 1 already dodged; the
+place the two meet in slice 5 is a compile error if they diverge.

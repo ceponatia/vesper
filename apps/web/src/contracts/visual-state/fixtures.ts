@@ -1,5 +1,32 @@
 import { APPEARANCE_FIXTURE_SUBJECT_ID } from "../appearance-features";
-import { affordanceEvidence, toUnitInterval } from "../affordances/core";
+import {
+  CONTACT_ACTION_SCOPE,
+  composeContactMaterial,
+  contactEventRef,
+  contactPairKey,
+  deriveContactId,
+  emptyContactLifecycleState,
+  type CommittedContactRead,
+  type ContactActionKind,
+  type ContactBodySurfaceRef,
+  type ContactLifecycleState,
+  type ContactMotionBand,
+  type ContactSurfaceRef,
+} from "../affordances/contact";
+import { affordanceEvidence, affordanceSubjectId, toUnitInterval } from "../affordances/core";
+import {
+  sceneEventRef,
+  sceneFact,
+  sceneProvenance,
+  sceneStateOf,
+  sceneSupportId,
+  type SceneFacing,
+  type SceneFact,
+  type ScenePosture,
+  type SceneProximityBand,
+  type SceneState,
+  type SceneSupportRelation,
+} from "../affordances/scene";
 import { clothingCategoryById } from "../items/clothing-categories";
 import { garmentBlueprintForSeed } from "../items/garment-store";
 import {
@@ -241,4 +268,215 @@ export function visualStateWetHairSurface(
     atMinutes: options.atMinutes ?? 0,
     ...(options.cause === undefined ? {} : { cause: options.cause }),
   });
+}
+// VS-10 — scene relations and committed contact
+// ---------------------------------------------------------------------------
+
+/**
+ * The audit's VS-10 case: two participants with posture, facing, proximity and
+ * a support relation, all carrying provenance — plus the contact-lifecycle
+ * additions slice 4 reads (an occupied hand, a committed motion).
+ *
+ * Built through `sceneStateOf` rather than by hand, so canonical ordering,
+ * symmetry and freezing are the real owner's, and the projection is judged
+ * against a state the scene module could actually produce.
+ */
+
+export const VISUAL_STATE_SCENE_PLAYER = affordanceSubjectId("vs_scene_player");
+export const VISUAL_STATE_SCENE_NPC = affordanceSubjectId("vs_scene_npc");
+export const VISUAL_STATE_SCENE_FLOOR = sceneSupportId("vs_scene_floor");
+export const VISUAL_STATE_SCENE_BED = sceneSupportId("vs_scene_bed");
+
+/** The visual subject ids the fixture map files the two participants under. */
+export const VISUAL_STATE_SCENE_PLAYER_SUBJECT = "vs_player";
+export const VISUAL_STATE_SCENE_NPC_SUBJECT = "vs_npc";
+
+/** Deliberately distinct from the scene-side ids, so a test that sees a scene id where a visual id belongs fails loudly. */
+export function visualStateSceneSubjects(): ReadonlyMap<string, string> {
+  return new Map([
+    [VISUAL_STATE_SCENE_PLAYER as string, VISUAL_STATE_SCENE_PLAYER_SUBJECT],
+    [VISUAL_STATE_SCENE_NPC as string, VISUAL_STATE_SCENE_NPC_SUBJECT],
+  ]);
+}
+
+function sceneFixtureFact<TValue>(value: TValue, storyTime = 100): SceneFact<TValue> {
+  return sceneFact(
+    value,
+    sceneProvenance({
+      source: "authored",
+      ref: sceneEventRef("vs_scene_event"),
+      storyTime,
+      evidence: [affordanceEvidence("state", "vs_scene.authored")],
+    }),
+  );
+}
+
+const PLAYER_SUPPORT: readonly SceneSupportRelation[] = [
+  { role: "borne_by", anchor: { kind: "surface", supportId: VISUAL_STATE_SCENE_FLOOR }, loadZones: ["legs"] },
+];
+
+const NPC_SUPPORT: readonly SceneSupportRelation[] = [
+  {
+    role: "borne_by",
+    anchor: { kind: "surface", supportId: VISUAL_STATE_SCENE_BED },
+    loadZones: ["pelvis", "legs"],
+  },
+];
+
+export interface VisualStateSceneFixtureOptions {
+  /** `null` means nobody stated it — the scene's own load-bearing absence. */
+  readonly playerPosture?: ScenePosture | null;
+  readonly npcPosture?: ScenePosture | null;
+  readonly npcSupport?: readonly SceneSupportRelation[] | null;
+  readonly proximity?: SceneProximityBand | null;
+  readonly playerFacing?: SceneFacing | null;
+  readonly npcFacing?: SceneFacing | null;
+  readonly contacts?: ContactLifecycleState;
+  readonly atMinutes?: number;
+}
+
+/**
+ * The default scene: the player standing on the floor, the NPC sitting on the
+ * bed, an arm's length apart, facing each other, nothing touching.
+ */
+export function visualStateSceneFixture(options: VisualStateSceneFixtureOptions = {}): SceneState {
+  const at = options.atMinutes ?? 100;
+  const playerPosture = options.playerPosture === undefined ? "standing" : options.playerPosture;
+  const npcPosture = options.npcPosture === undefined ? "sitting" : options.npcPosture;
+  const npcSupport = options.npcSupport === undefined ? NPC_SUPPORT : options.npcSupport;
+  const proximity = options.proximity === undefined ? "close" : options.proximity;
+  const playerFacing = options.playerFacing === undefined ? "toward" : options.playerFacing;
+  const npcFacing = options.npcFacing === undefined ? "toward" : options.npcFacing;
+  return sceneStateOf({
+    participants: [
+      {
+        subjectId: VISUAL_STATE_SCENE_PLAYER,
+        control: sceneFixtureFact("player_controlled", at),
+        ...(playerPosture === null ? {} : { posture: sceneFixtureFact(playerPosture, at) }),
+        support: sceneFixtureFact(PLAYER_SUPPORT, at),
+      },
+      {
+        subjectId: VISUAL_STATE_SCENE_NPC,
+        control: sceneFixtureFact("npc_controlled", at),
+        ...(npcPosture === null ? {} : { posture: sceneFixtureFact(npcPosture, at) }),
+        ...(npcSupport === null ? {} : { support: sceneFixtureFact(npcSupport, at) }),
+      },
+    ],
+    supports: [
+      { supportId: VISUAL_STATE_SCENE_FLOOR, kind: "ground", height: sceneFixtureFact("ground", at) },
+      { supportId: VISUAL_STATE_SCENE_BED, kind: "bed", height: sceneFixtureFact("knee", at) },
+    ],
+    proximity:
+      proximity === null
+        ? []
+        : [
+            {
+              subjectId: VISUAL_STATE_SCENE_PLAYER,
+              otherId: VISUAL_STATE_SCENE_NPC,
+              band: sceneFixtureFact(proximity, at),
+            },
+          ],
+    facing: [
+      ...(playerFacing === null
+        ? []
+        : [
+            {
+              subjectId: VISUAL_STATE_SCENE_PLAYER,
+              towardId: VISUAL_STATE_SCENE_NPC,
+              facing: sceneFixtureFact(playerFacing, at),
+            },
+          ]),
+      ...(npcFacing === null
+        ? []
+        : [
+            {
+              subjectId: VISUAL_STATE_SCENE_NPC,
+              towardId: VISUAL_STATE_SCENE_PLAYER,
+              facing: sceneFixtureFact(npcFacing, at),
+            },
+          ]),
+    ],
+    ...(options.contacts === undefined ? {} : { contacts: options.contacts }),
+  });
+}
+
+export interface VisualStateContactFixtureOptions {
+  readonly sourceLocationId?: string;
+  readonly sourceSide?: "left" | "right" | "center";
+  readonly targetLocationId?: string;
+  readonly actionKind?: ContactActionKind;
+  /** `null` means the contact carries no motion read at all. */
+  readonly motionBand?: ContactMotionBand | null;
+  readonly pathDetailIds?: readonly string[];
+  readonly startedAt?: number;
+  readonly lastUpdatedAt?: number;
+  readonly eventRef?: string;
+}
+
+/**
+ * One committed contact as the store would hold it: player's fingers on the
+ * NPC's shoulders, sliding. The identity fields are DERIVED the way the
+ * lifecycle derives them (`contactPairKey`, `deriveContactId`), so the fixture
+ * cannot drift from what `parseContactLifecycleState` would accept.
+ */
+export function visualStateContactFixture(
+  options: VisualStateContactFixtureOptions = {},
+): CommittedContactRead {
+  const source: ContactBodySurfaceRef = {
+    kind: "body",
+    subjectId: VISUAL_STATE_SCENE_PLAYER,
+    locationId: options.sourceLocationId ?? "fingers",
+    ...(options.sourceSide === undefined ? {} : { side: options.sourceSide }),
+  };
+  const target: ContactSurfaceRef = {
+    kind: "body",
+    subjectId: VISUAL_STATE_SCENE_NPC,
+    locationId: options.targetLocationId ?? "shoulders",
+  };
+  const pairKey = contactPairKey(source, target);
+  const startedByEventRef = contactEventRef(options.eventRef ?? "vs_contact_event");
+  const actionKind = options.actionKind ?? "affectionate";
+  const startedAt = options.startedAt ?? 90;
+  const motionBand = options.motionBand === undefined ? "sliding" : options.motionBand;
+  return {
+    phase: "active",
+    contactId: deriveContactId({ pairKey, startedByEventRef }),
+    pairKey,
+    startedByEventRef,
+    lastUpdatedByEventRef: startedByEventRef,
+    startedAt,
+    lastUpdatedAt: options.lastUpdatedAt ?? startedAt,
+    actorId: VISUAL_STATE_SCENE_PLAYER,
+    actionKind,
+    source,
+    target,
+    ...(motionBand === null
+      ? {}
+      : {
+          motion: {
+            band: motionBand,
+            ...(options.pathDetailIds === undefined ? {} : { pathDetailIds: options.pathDetailIds }),
+            evidence: [affordanceEvidence("contact", "vs_contact_motion")],
+          },
+        }),
+    materialBetween: [],
+    transmission: composeContactMaterial([]),
+    implicitAdjustments: [],
+    actorControl: { status: "allowed", actorId: VISUAL_STATE_SCENE_PLAYER, evidence: [] },
+    targetAgencies: [],
+    policy: { status: "allowed", scopes: [CONTACT_ACTION_SCOPE[actionKind]], evidence: [] },
+    evidence: [affordanceEvidence("contact", "vs_contact")],
+  };
+}
+
+/** A lifecycle projection holding these contacts, in the store's own pair-key order. */
+export function visualStateContactState(
+  contacts: readonly CommittedContactRead[],
+): ContactLifecycleState {
+  return {
+    ...emptyContactLifecycleState(),
+    contacts: [...contacts].sort((left, right) =>
+      left.pairKey < right.pairKey ? -1 : left.pairKey > right.pairKey ? 1 : 0,
+    ),
+  };
 }

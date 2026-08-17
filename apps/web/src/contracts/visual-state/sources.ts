@@ -50,6 +50,15 @@ export const visualStateSourceRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("item_locus"), itemInstanceId: z.string().min(1) }),
   z.object({ kind: z.literal("scene_relation"), relationId: z.string().min(1) }),
   z.object({ kind: z.literal("affordance"), observationKey: z.string().min(1) }),
+  /**
+   * SPEC ADDITION. A committed contact — the contact lifecycle projection the
+   * scene state carries verbatim and never edits. Hand occupation and committed
+   * motion come from here (plan §First-release source map), and it is a
+   * different owner from a scene relation: filing a contact under
+   * `scene_relation` would name a relation row that was never written, and a
+   * reader chasing the provenance would look in the wrong store.
+   */
+  z.object({ kind: z.literal("contact"), contactId: z.string().min(1) }),
 ]);
 
 export type VisualStateSourceRef = z.infer<typeof visualStateSourceRefSchema>;
@@ -96,5 +105,7 @@ export function visualStateSourceKey(ref: VisualStateSourceRef): string {
       return `scene_relation:${ref.relationId}`;
     case "affordance":
       return `affordance:${ref.observationKey}`;
+    case "contact":
+      return `contact:${ref.contactId}`;
   }
 }
