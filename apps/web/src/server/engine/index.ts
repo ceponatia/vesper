@@ -15,6 +15,7 @@ export * from "./sim-exchange";
 export * from "./sim-narrator";
 export * from "./sim-shadow";
 export * from "./sim-surfaces";
+export * from "./sim-visual-state";
 export * from "./chat-callback";
 export * from "./chat-feeling";
 export * from "./chat-initiative";

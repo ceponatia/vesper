@@ -199,8 +199,17 @@ import {
   chatPromptLayout,
   chatRecognitionCuesEnabled,
   chatRomanticPermissionEnabled,
+  chatVisualStateShadowEnabled,
   narrationShapeId,
 } from "./prompts/constants";
+import {
+  degradedVisualStatePreviewPayload,
+  safeBuildVisualStateShadow,
+  visualStatePreviewPayload,
+  visualStateShadowLogSummary,
+  type VisualStatePreviewPayload,
+  type VisualStateShadowInput,
+} from "@/server/visual-state";
 
 /**
  * The character-chat exchange pipeline (docs/character-chat/pipeline.md) — the chat lane's
@@ -1766,6 +1775,96 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         if (permissionStopTransitions.length > 0) throw error;
       }
     }
+
+    // --- Visual-state shadow (visual-state.plan.md slice 6, `CHAT_VISUAL_STATE_SHADOW`, OFF) ---
+    // Runs the lane-neutral projection BESIDE the turn for measurement only:
+    // nothing it computes reaches the prompt, the reply, chat state, or observer
+    // memory (its one DB touch is a read-only memory load), and any failure
+    // degrades to a log line (docs/resilience.md). Its diagnostics ride a
+    // PRIVATE collector so even the turn's own diagnostic record is
+    // byte-identical with the flag on. It reads the same committed cut the
+    // narrator writes from: the drifted state, the ticked scenario, this turn's
+    // resolved wardrobe, and the post-contact-leg scene.
+    if (chatVisualStateShadowEnabled()) {
+      try {
+        const shadowSink = new DiagnosticCollector();
+        // Reuse this turn's affordance read when another flag already took one;
+        // otherwise take the identical read with the shadow's own sink so the
+        // turn's collector stays untouched.
+        const shadowRead =
+          affordanceRead ?? recognitionPerception ?? buildChatAffordanceRead({ ...affordanceReadInput, sink: shadowSink });
+        const shadowMemory = await loadChatVisualMemory({
+          memoryGroupId,
+          viewpointId: owner,
+          subjectId: characterId,
+          promptingMessageId: exchangeGuardMessageId,
+          sink: shadowSink,
+        });
+        const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
+        const shadowInput: VisualStateShadowInput = {
+          lane: "character_chat",
+          scope: { kind: "chat", memoryGroupId },
+          cutId: exchangeGuardMessageId,
+          atMinutes: scenario.clockMinutes,
+          subjectId: characterId,
+          attributes: profile.attributes,
+          attributeOverlays: driftedState.attributeOverlays,
+          conditions: driftedState.conditions,
+          realize: {
+            ...(profile.speciesId === undefined ? {} : { speciesId: profile.speciesId }),
+            ...(profile.heritageId === undefined ? {} : { heritageId: profile.heritageId }),
+            ...(profile.bodyPlanId === undefined ? {} : { bodyPlanId: profile.bodyPlanId }),
+            ...(profile.intimateRegions === undefined ? {} : { intimateRegions: profile.intimateRegions }),
+            ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
+          },
+          garments: {
+            store: scenario.garments,
+            actorId: garmentActorForCharacter(characterId),
+            ...(wardrobe.worn === undefined
+              ? {}
+              : { layersByGarmentId: new Map(wardrobe.worn.map((row) => [row.garmentId, row.layer])) }),
+            freshCoverage: shadowRead.coverage,
+          },
+          playerSubjectId: playerSubject,
+          sceneSubjectId: "scene",
+          bodySurface: driftedState.bodySurface,
+          environment: scenario.environment,
+          sceneRelations: {
+            scene: scenario.scene,
+            subjectsByParticipant: new Map([
+              [characterId, characterId],
+              [playerSubject, playerSubject],
+              ...others.map((member) => [member.characterId, member.characterId] as const),
+            ]),
+          },
+          observations: shadowRead.read.observations,
+          perception: shadowRead.request.perception,
+          observerId: owner,
+          observer: { kind: "player_viewpoint", viewpointId: owner },
+          memory: shadowMemory,
+          ...(wardrobe.worn === undefined
+            ? {}
+            : { wornGarmentIds: [...new Set(wardrobe.worn.map((row) => row.garmentId))] }),
+          sink: shadowSink,
+        };
+        const shadow = safeBuildVisualStateShadow(shadowInput, shadowSink);
+        if (shadow !== null) {
+          log.info("engine.chat", "visual-state shadow", {
+            chatId,
+            ...visualStateShadowLogSummary(shadow),
+            codes: shadowSink.items.map((entry) => entry.code),
+          });
+        } else {
+          log.warn("engine.chat", "visual-state shadow degraded to nothing", {
+            chatId,
+            codes: shadowSink.items.map((entry) => entry.code),
+          });
+        }
+      } catch (error) {
+        log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
+      }
+    }
+
     /**
      * Commit the exchange's observer memory. Called ONLY once the exchange has
      * actually settled — a failed or empty reply leaves the memory exactly as the
@@ -3148,6 +3247,103 @@ export async function previewChatAffordances(input: {
     result: previewAffordanceRead({ characterId: input.character.id, cut, sink }),
     possessive: `${input.character.name}'s`,
     cueFlagEnabled: chatAffordanceCuesEnabled(),
+  });
+}
+
+/**
+ * A nonce prompting id for the visual-state inspector's memory read: it matches
+ * no exchange's `applied_message_id`, so the two-generation store always hands
+ * back the CURRENT `features` generation — what the observer knows now — and,
+ * because the preview never writes, the generations themselves never move.
+ */
+const VISUAL_STATE_PREVIEW_GUARD = "visual_state_preview";
+
+/**
+ * The read-only visual-state inspector payload for one legacy chat
+ * (visual-state.plan.md slice 6): the same shadow build the flagged live turn
+ * runs — snapshot, composition, suppressions, staircase, both consumer
+ * selections, measurements — recomputed on demand from the stored cut.
+ *
+ * Computes on demand and stores NOTHING: the memory load is read-only, no
+ * notice or mention state is spent, and `CHAT_VISUAL_STATE_SHADOW` is reported
+ * rather than obeyed (the inspector rule in visual-state.spec.md §Flags).
+ */
+export async function previewChatVisualState(input: {
+  chatId: string;
+  memoryGroupId: string;
+  character: { id: string; name: string; profile: unknown };
+}): Promise<VisualStatePreviewPayload> {
+  const sink = new DiagnosticCollector();
+  const characterId = input.character.id;
+  const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
+  const read = previewAffordanceRead({ characterId, cut, sink });
+  const memory = await loadChatVisualMemory({
+    memoryGroupId: input.memoryGroupId,
+    viewpointId: cut.owner,
+    subjectId: characterId,
+    promptingMessageId: VISUAL_STATE_PREVIEW_GUARD,
+    sink,
+  });
+  const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
+  const build = safeBuildVisualStateShadow(
+    {
+      lane: "character_chat",
+      scope: { kind: "chat", memoryGroupId: input.memoryGroupId },
+      cutId: VISUAL_STATE_PREVIEW_GUARD,
+      atMinutes: cut.scenario.clockMinutes,
+      subjectId: characterId,
+      attributes: cut.profile.attributes,
+      attributeOverlays: cut.state.attributeOverlays,
+      conditions: cut.state.conditions,
+      realize: {
+        ...(cut.profile.speciesId === undefined ? {} : { speciesId: cut.profile.speciesId }),
+        ...(cut.profile.heritageId === undefined ? {} : { heritageId: cut.profile.heritageId }),
+        ...(cut.profile.bodyPlanId === undefined ? {} : { bodyPlanId: cut.profile.bodyPlanId }),
+        ...(cut.profile.intimateRegions === undefined ? {} : { intimateRegions: cut.profile.intimateRegions }),
+        ...(cut.profile.bodyFeatures === undefined ? {} : { bodyFeatures: cut.profile.bodyFeatures }),
+      },
+      garments: {
+        store: cut.scenario.garments,
+        actorId: garmentActorForCharacter(characterId),
+        ...(cut.wardrobe.worn === undefined
+          ? {}
+          : { layersByGarmentId: new Map(cut.wardrobe.worn.map((row) => [row.garmentId, row.layer])) }),
+        freshCoverage: read.coverage,
+      },
+      playerSubjectId: playerSubject,
+      sceneSubjectId: "scene",
+      bodySurface: cut.state.bodySurface,
+      environment: cut.scenario.environment,
+      sceneRelations: {
+        scene: cut.scenario.scene,
+        subjectsByParticipant: new Map([
+          [characterId, characterId],
+          [playerSubject, playerSubject],
+        ]),
+      },
+      observations: read.read.observations,
+      perception: read.request.perception,
+      observerId: cut.owner,
+      observer: { kind: "player_viewpoint", viewpointId: cut.owner },
+      memory,
+      ...(cut.wardrobe.worn === undefined
+        ? {}
+        : { wornGarmentIds: [...new Set(cut.wardrobe.worn.map((row) => row.garmentId))] }),
+      sink,
+    },
+    sink,
+  );
+  if (build === null) {
+    return degradedVisualStatePreviewPayload({
+      lane: "character_chat",
+      shadowFlagEnabled: chatVisualStateShadowEnabled(),
+      diagnostics: sink.items,
+    });
+  }
+  return visualStatePreviewPayload({
+    build,
+    shadowFlagEnabled: chatVisualStateShadowEnabled(),
+    diagnostics: sink.items,
   });
 }
 

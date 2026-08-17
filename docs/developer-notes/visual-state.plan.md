@@ -1,8 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–5 and 8 built
-2026-08-16, awaiting review; slices 6–7 and 9–10 queued)
+with every review finding fixed in the same merge; slices 3–6 and 8 built
+2026-08-16, awaiting review; slices 7 and 9–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -363,7 +363,7 @@ strict budgets and preserved observer isolation.
 
 ### Slice 6 — shadow adapters and inspector
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review; shadow flag defaults off.
 
 Run the new snapshot and selections beside current inputs in character chat and
 successor chat without changing prompts, images, state, or memory. Add the
@@ -453,8 +453,8 @@ and trials rather than guessed:
   eyes point, so body language projects gaze as unavailable;
 - whether an unknown lighting or motion read should keep failing visibility
   closed (nothing visible under it, the built behavior) or count as
-  unconstrained for some components — to be judged from slice 6's shadow
-  measurements once those reads have real producers;
+  unconstrained for some components — to be judged from the shadow
+  measurements slice 6 now records, once those reads have real producers;
 - whether a consent-gated mandatory anatomy fact should ever reach a render
   through a non-visual anchor, or whether exclusion — the built behavior, as
   the conservative reading of the consent gate — is final.

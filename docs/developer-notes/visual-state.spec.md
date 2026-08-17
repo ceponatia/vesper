@@ -6,10 +6,10 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–5 and 8 are built (see [Implementation status](#implementation-status));
-the remaining slices — shadow adapters and flags, the narrator proving
-release, reference extraction and the final consolidation — are still a design
-rather than a description of code. The modules the spec reuses are all live:
+Slices 0–6 and 8 are built (see [Implementation status](#implementation-status));
+the remaining slices — the narrator proving release (7), reference extraction
+(9) and the final consolidation (10) — are still a design rather than a
+description of code. The modules the spec reuses are all live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -441,7 +441,8 @@ start.
 | 3     | built 2026-08-16 — awaiting review | Current state                |
 | 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
 | 5     | built 2026-08-16 — awaiting review | Attention + memory           |
-| 6–7   | not started                        | Shadow adapters + narrator   |
+| 6     | built 2026-08-16 — awaiting review | Shadow + inspector           |
+| 7     | not started                        | Narrator proving release     |
 | 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
 | 9–10  | not started                        | Extraction + consolidation   |
 
@@ -508,6 +509,18 @@ eligible-sources widening: `RecognitionNotice.candidate` now accepts a
 changed. The attention context extends slice 4's visibility context; narrator
 and image selections are separate functions, and the image selection is
 structurally memoryless — no memory parameter exists to misuse.
+
+Slice 6 added the first server code of the plan:
+`apps/web/src/server/visual-state/` (assembly of one snapshot over a committed
+cut with adapters in canonical order, consumer selections, measurements,
+fenced shadow, inspector preview payload), the character-chat and successor
+shadow hooks (flag `CHAT_VISUAL_STATE_SHADOW`, default off; fenced, private
+diagnostics collector, read-only memory load, nothing returned to the turn),
+and the both-lane read-only inspector route and panel. Measurements — feature
+counts by layer, suppressions by code, missing-owner and duplicate-key counts,
+and disagreement with the legacy attribute and garment summaries — surface as
+one structured log line per shadowed turn and in the inspector payload; no
+table was added.
 
 Slice 8 (built out of order, ahead of slices 6–7) added
 `apps/web/src/contracts/images/visual-digest.ts`: the `VisualImageDigest`
@@ -1060,3 +1073,62 @@ re-judged; `forCutId` mismatch fails the whole digest closed.
 **Shared "required" definition.** The selection's private mandatory test was
 exported (`isMandatoryVisualStateFact`) so the digest and the selection cannot
 drift on what "required" means.
+
+### Decisions slice 6 settled
+
+Each is recorded in the code that owns it.
+
+**A lane-absent owner is a suppression of the snapshot itself.** Each owner a
+lane cannot supply is recorded as one info-severity
+`visual_state.source.unavailable` suppression at the subject locus with a
+`lane:<owner>` detail — the slice-3 unsupported-table precedent — so
+missing-owner frequency is a property of the snapshot, not of whoever
+happens to count.
+
+**Shadow visibility components are all-unknown, deliberately.** No production
+owner emits lighting, distance, angle, motion or framing for a chat turn, and
+deriving partial reads from the scene owner would blur exactly the
+measurement the plan's open question waits on. Everything fails closed at
+lighting first; the inspector's attention staircase instead uses a debug
+viewpoint under ideal conditions (bright, close, toward, still).
+
+**The legacy comparison is a documented replica.** `measure.ts` restates
+character chat's five-step attribute guard chain as `legacyNarratorAttributeIds`
+for disagreement measurement only; slice 10 consolidates the original away,
+at which point the replica dies with it.
+
+**`server/visual-state` is pure over passed-in state.** It imports only
+`@/contracts`, so `server/engine → server/visual-state` stays one-way and the
+successor glue loads its own profile rather than importing `sim-exchange`.
+
+**The shadow can never touch a turn.** Flag-gated (default off — the spec
+left the default open and off is the conservative reading), fenced
+(`visual_state.shadow.failed` on any assembly error, turn unaffected),
+diagnostics on a private collector, and its only database touch is a
+read-only visual-memory load; the preview's memory read sits behind a nonce
+guard that always hits the current generation. Byte-identical production
+behavior is asserted structurally and by test (default-off, deep-frozen
+inputs, same cut → byte-equal outputs, restored cut reproduces them); a
+flag-on/off full-pipeline prompt-byte comparison would need Postgres and
+belongs to `test:int` if ever wanted.
+
+**The successor lane shadows a profile-truth subset.** Attributes and species
+realization project; engine-body conditions are shape-mismatched with
+`ActiveCondition` and are recorded as lane-unavailable rather than adapted;
+only the co-present turn is hooked; narrator selection runs against empty
+memory under a branch-scoped binding, because nothing persists `world_branch`
+visual memory yet.
+
+**Subject handles.** Body language projects for all mapped participants;
+appearance and wardrobe project for the primary character, player-worn
+garments under the lane's existing `player` handle, and loose scene garments
+under a literal `scene` subject id.
+
+**Garment category and subtype are omitted at assembly.** They live on
+library rows the cut does not carry, so the wardrobe adapter's documented
+concealment-conservative default applies; layer IS plumbed from resolved worn
+rows.
+
+**Slices 7 and 8 own their flags.** `CHAT_VISUAL_STATE_NARRATION` and
+`IMAGE_VISUAL_STATE` are deliberately unregistered — registering an unread
+flag would be dead vocabulary.
