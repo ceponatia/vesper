@@ -6,8 +6,8 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–2 are built (see [Implementation status](#implementation-status));
-everything from slice 3 onward — every remaining adapter, flag, visibility read,
+Slices 0–3 are built (see [Implementation status](#implementation-status));
+everything from slice 4 onward — every remaining adapter, flag, visibility read,
 salience score and consumer digest below — is still a design rather than a
 description of code. The modules it reuses are all live:
 
@@ -438,7 +438,8 @@ start.
 | 0     | reviewed 2026-08-16                | Source + duplication audit   |
 | 1     | reviewed 2026-08-16                | Contract + compat adapter    |
 | 2     | reviewed 2026-08-16                | Identity + presentation      |
-| 3–10  | not started                        | Everything else in this spec |
+| 3     | built 2026-08-16 — awaiting review | Current state                |
+| 4–10  | not started                        | Everything else in this spec |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -465,6 +466,19 @@ adapters for species feature groups and for garment/item loci, eight new
 registered kinds, a scope leaf, a suppression leaf, and four diagnostics. Still
 nothing outside the folder: no adapter under `server/`, no flag, no consumer, no
 schema, no persistence.
+
+Slice 3 added, in the same folder: adapters for body-surface wetness, garment
+current state (condition channels, per-part overrides, structural presentation,
+deposits, damage, derived wet-material effects), active conditions, and
+supported affordance observations; the standing unsupported-fact suppression
+table for the ownerless physiology/contamination/contact/fit facts; eight new
+registered kinds; and both slice-2 debts — `derived_from` gained its material
+reads, and the wardrobe adapter's cover/occlusion sets now come from
+`garmentEffectiveCoverage`, with an optional captured effective-opacity input
+scaling `covers` degrees. Adapter suppressions ride a new optional
+`VisualStateContribution.suppressions`, appended ahead of duplicate-key and
+composition entries. Still nothing outside the folder: no server adapter, no
+flag, no consumer, no schema, no persistence.
 
 ### What the audit changed about later slices
 
@@ -547,7 +561,7 @@ The compatibility adapter is judged on preservation. For each
 
 ### Diagnostics declared so far
 
-Only the codes slices 1 and 2 emit exist. From slice 1:
+Only the codes the shipped slices actually emit exist. From slice 1:
 `visual_state.kind.unknown`, `visual_state.value.invalid`,
 `visual_state.locus.invalid`, `visual_state.locus.not_allowed`,
 `visual_state.feature.malformed`, `visual_state.tag.rejected`,
@@ -556,7 +570,12 @@ slice 2: `visual_state.relationship.missing_target`,
 `visual_state.relationship.cycle`, `visual_state.presentation.entry_unknown`,
 `visual_state.presentation.operation_invalid`,
 `visual_state.presentation.entry_malformed`,
-`visual_state.species.feature_group_unplaced`.
+`visual_state.species.feature_group_unplaced`. From slice 3:
+`visual_state.source.invalid` for a quarantined or malformed source entry —
+plus a deliberate reuse: the standing unsupported-fact table emits
+`visual_state.source.unavailable` at **info** severity, because a permanent
+designed absence is context rather than a degradation alarm (the code is still
+asserted by tests).
 
 Two FOREIGN codes also reach a caller's sink from this family, because the sink
 is handed straight to a shared helper rather than wrapped:
@@ -734,3 +753,63 @@ code states:
   escaping `{g1, "cuff:left"}` and `{"g1:cuff", left}` render one key. Body loci
   stay bare and unescaped, because they are a closed registry vocabulary and the
   byte-identical adapted key is load-bearing.
+
+### Decisions slice 3 settled
+
+Each is recorded in the code that owns it.
+
+**Active conditions project at the subject locus.** The condition owner stores
+no body location (audit finding 11), so a located condition cannot be located;
+guessing a body locus would be invention. Value is the canonical `conditionKey`
+plus severity, expiry-gated at the cut minute, duplicate labels collapsed to
+the earliest instance.
+
+**Derived wet-material effects gate on bands the material can actually reach.**
+Wetness increases are absorbency-scaled, so a low-absorbency shell can never
+reach the `wet` band — a `wet` gate for beading would be dead vocabulary.
+Beading therefore gates on any non-dry band, while clinging and translucency
+need `wet` or above. The `unknown` material profile passes no gate and degrades
+to silence with no special-casing.
+
+**Garment features carry no validity window.** Garment drying is exponential
+(per-material half-life), so the band-crossing time needs a logarithm — floats
+in a fixed-point-deterministic path. Body-surface windows exist because that
+law is linear and exact: `ceil(60·(level−floor+1)/rate)` matches
+`linearDriftStep`'s floor division with no floats. Precipitation suspends
+drying and drops the window.
+
+**Projected bands are plain, never hysteretic.** Hysteresis needs the band a
+consumer last reported — mention state — and reading it would make the same
+committed truth project differently per consumer. Hysteresis stays in
+consumers.
+
+**Change stamps are per-fact where the owner has them.** Surface
+`updatedAtMinutes` and deposit/damage `atMinutes` are used directly; otherwise
+the instance's coarse `lastChange` is spent only when its change kind writes
+the channel family being projected (`condition` → gradients, `damage` → also
+`wear`, `presentation` → structural). Band drift from lazy drying never
+restamps.
+
+**No observation→cause composition edges.** Asserting why an affordance
+observation happened would need per-phenomenon knowledge this projection does
+not own. Observations project as `instantaneous` features carrying the
+observation's `repeatKey` as their `repeatFamily` — what slice 5's cooldown
+inherits — with no stamps and no window.
+
+**`replaces_visible_surface` alone remains unowned.** `derived_from` now has
+its owner (a garment's wet-material effects derive from the garment's own
+wetness feature). Nothing anywhere distinguishes a hairpiece from a hat, so
+surface replacement stays a recorded missing owner exercised only by
+hand-built fixtures.
+
+**The compatibility adapter is unchanged.** Condition-sourced
+`ProjectedFeatureTruth` still suppresses — upstream never produces it — and
+live conditions come through the new adapter on the current layer instead.
+
+**Bands and vocabulary are pinned, not restated.** Body-surface bands walk the
+garment wetness ladder (one vocabulary, held by a drift-guard test), and
+garment condition channels reuse the digest's bands minus neutrals — a
+non-neutral-only projection, with tuck always projecting per the digest's
+"no neutral" ruling. Deposits sit at the item locus with parts and freshness
+in the value and the escaped deposit id in the aspect; damage sits at its
+part. Snapshot suppression order is adapter → duplicate-key → composition.
