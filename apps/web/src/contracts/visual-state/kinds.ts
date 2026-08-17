@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { APPEARANCE_ANATOMY_PRIORS } from "../appearance-features";
+import { contactMotionBands } from "../affordances/contact";
 import { affordanceIntensityBands, toUnitInterval } from "../affordances/core";
+import {
+  SCENE_MAX_SUPPORT_RELATIONS,
+  sceneBodyZones,
+  sceneFacings,
+  scenePostures,
+  sceneSupportKinds,
+  sceneSupportRoles,
+} from "../affordances/scene";
 import { FEATURE_GROUPS } from "../body/locations";
 import { conditionSeveritySchema } from "../conditions/condition";
 import {
@@ -416,6 +425,125 @@ const GARMENT_DAMAGE_PRIORS = presentationPriors(5_500, 5_500, 2);
 const GARMENT_MATERIAL_EFFECT_PRIORS = presentationPriors(4_500, 3_500, 2);
 const CONDITION_ACTIVE_PRIORS = presentationPriors(4_000, 6_000, 2);
 const AFFORDANCE_OBSERVATION_PRIORS = presentationPriors(5_000, 4_000, 2);
+// Body language (slice 4)
+// ---------------------------------------------------------------------------
+
+export const VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID = "body_language.posture";
+export const VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID = "body_language.support";
+export const VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID = "body_language.facing";
+export const VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID = "body_language.hand_occupation";
+export const VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID = "body_language.motion";
+
+/**
+ * Every value vocabulary below is REUSED from the owner that proves the fact —
+ * the scene / body-relations layer and the contact lifecycle — never restated.
+ * A second posture list here would drift from the one the intents write, and
+ * the plan's rule is that this projection owns no truth.
+ */
+export const visualStateBodyLanguagePostureValueSchema = z
+  .object({ posture: z.enum(scenePostures) })
+  .strict();
+
+export type VisualStateBodyLanguagePostureValue = z.infer<typeof visualStateBodyLanguagePostureValueSchema>;
+
+/**
+ * The support SET as one value, mirroring the owner: the scene stores a
+ * participant's support as one fact whose value is the whole relation list, so
+ * one feature carries the list and its fingerprint moves when the set does.
+ * Anchor ids are the scene owner's own identifiers, carried verbatim;
+ * `surfaceKind` is resolved from the scene's surface table when the anchor
+ * names a surface the scene actually holds.
+ */
+export const visualStateBodyLanguageSupportValueSchema = z
+  .object({
+    relations: z
+      .array(
+        z
+          .object({
+            role: z.enum(sceneSupportRoles),
+            anchor: z.discriminatedUnion("kind", [
+              z
+                .object({
+                  kind: z.literal("surface"),
+                  supportId: z.string().min(1),
+                  surfaceKind: z.enum(sceneSupportKinds).optional(),
+                })
+                .strict(),
+              z.object({ kind: z.literal("participant"), subjectId: z.string().min(1) }).strict(),
+            ]),
+            loadZones: z.array(z.enum(sceneBodyZones)).max(sceneBodyZones.length),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(SCENE_MAX_SUPPORT_RELATIONS),
+  })
+  .strict();
+
+export type VisualStateBodyLanguageSupportValue = z.infer<typeof visualStateBodyLanguageSupportValueSchema>;
+
+/** Directional, like the owner's fact: `towardSubjectId` is the scene-side id, verbatim. */
+export const visualStateBodyLanguageFacingValueSchema = z
+  .object({
+    facing: z.enum(sceneFacings),
+    towardSubjectId: z.string().min(1),
+  })
+  .strict();
+
+export type VisualStateBodyLanguageFacingValue = z.infer<typeof visualStateBodyLanguageFacingValueSchema>;
+
+/** Which hand, when the committed contact states a side; `unspecified` when it does not. */
+export const visualStateHandSides = ["left", "right", "unspecified"] as const;
+export type VisualStateHandSide = (typeof visualStateHandSides)[number];
+
+/**
+ * DELIBERATELY minimal: the visual fact is that the hand is engaged, and the
+ * value says no more. What engages it is the contact's own business — the
+ * action kinds ride the feature's semantic tags and evidence, and the gesture
+ * itself is the `body_language.motion` kind beside this one. A value carrying
+ * the occupying contacts would change fingerprint every time a touch was
+ * re-asserted, making an unmoved hand read as a change candidate.
+ */
+export const visualStateBodyLanguageHandOccupationValueSchema = z
+  .object({ side: z.enum(visualStateHandSides) })
+  .strict();
+
+export type VisualStateBodyLanguageHandOccupationValue = z.infer<
+  typeof visualStateBodyLanguageHandOccupationValueSchema
+>;
+
+/** A committed contact's motion, as committed: the band and the domain's own path tokens. */
+export const visualStateBodyLanguageMotionValueSchema = z
+  .object({
+    band: z.enum(contactMotionBands),
+    pathDetailIds: z.array(z.string().trim().min(1).max(64)).min(1).max(16).optional(),
+  })
+  .strict();
+
+export type VisualStateBodyLanguageMotionValue = z.infer<typeof visualStateBodyLanguageMotionValueSchema>;
+
+/**
+ * CALIBRATION for the five body-language kinds. All are `instantaneous` — true
+ * for exactly one committed cut — so none may be recognition-eligible
+ * (`defineVisualStateKind` enforces it) and none can ever earn a recognition
+ * floor. Nobody is REMEMBERED by how they were sitting.
+ *
+ * None is mandatory. The plan's mandatory set is identity, morphology, wardrobe
+ * truth, subject count, requested action and authored absence; staging already
+ * reaches the image lane through the scene-committed camera read, and marking
+ * posture mandatory here would force a full-body fact into a face portrait.
+ */
+function bodyLanguagePriors(
+  baseUniqueness: number,
+  baseImportance: number,
+  minimumDetailTier: 1 | 2 | 3,
+): VisualStateAttentionPriors {
+  return {
+    baseUniqueness: toUnitInterval(baseUniqueness),
+    baseImportance: toUnitInterval(baseImportance),
+    minimumDetailTier,
+  };
+}
 
 export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = [
   defineVisualStateKind({
@@ -667,5 +795,76 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     narratorEligible: true,
     imageEligible: true,
     priors: AFFORDANCE_OBSERVATION_PRIORS,
+  }),
+  // Posture and support hang at a `subject` locus: they are whole-body facts,
+  // and pinning either to one body location would claim a precision the five
+  // coarse postures deliberately do not have. Tier 1 — both read from a
+  // silhouette.
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguagePostureValueSchema,
+    allowedLoci: ["subject"],
+    stability: "instantaneous",
+    repeatFamily: "body_posture",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: bodyLanguagePriors(2_500, 6_500, 1),
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguageSupportValueSchema,
+    allowedLoci: ["subject"],
+    stability: "instantaneous",
+    repeatFamily: "body_support",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: bodyLanguagePriors(3_000, 6_000, 1),
+  }),
+  // Facing and motion hang at a `relation` locus — each is a fact about a pair
+  // (an ordered facing pair; a contact), and the relation id is the owner's own
+  // row identity.
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguageFacingValueSchema,
+    allowedLoci: ["relation"],
+    stability: "instantaneous",
+    repeatFamily: "body_facing",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: bodyLanguagePriors(2_000, 5_500, 1),
+  }),
+  // Hand occupation hangs at the `hands` body locus (with the contact's side
+  // when one was committed), so coverage and framing reads about hands apply to
+  // it like any other hand fact. Tier 2 — an occupied hand does not read from a
+  // silhouette.
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguageHandOccupationValueSchema,
+    allowedLoci: ["body"],
+    stability: "instantaneous",
+    repeatFamily: "hand_occupation",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: bodyLanguagePriors(3_500, 6_000, 2),
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguageMotionValueSchema,
+    allowedLoci: ["relation"],
+    stability: "instantaneous",
+    repeatFamily: "contact_motion",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: true,
+    priors: bodyLanguagePriors(4_000, 5_500, 2),
   }),
 ];

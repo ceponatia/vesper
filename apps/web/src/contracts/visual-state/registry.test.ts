@@ -96,6 +96,11 @@ describe("visualStateKindRegistry", () => {
       "garment.material_effect",
       "condition.active",
       "affordance.observation",
+      "body_language.posture",
+      "body_language.support",
+      "body_language.facing",
+      "body_language.hand_occupation",
+      "body_language.motion",
     ]);
   });
 

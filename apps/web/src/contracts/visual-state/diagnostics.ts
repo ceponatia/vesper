@@ -9,10 +9,10 @@
  * the upstream reason, not a re-labelled one — so a caller asserting on codes
  * should expect a namespaced pair, not a single `visual_state.*` entry.
  *
- * Only the codes the shipped slices actually emit are declared. Visibility,
- * detail-tier, intimate-gate, missing-mandatory-fact, stale-snapshot and
- * extraction-conflict codes join when the slice that emits them lands — a
- * declared-but-unreachable code reads like coverage that does not exist.
+ * Only the codes the shipped slices actually emit are declared.
+ * Missing-mandatory-fact, stale-snapshot and extraction-conflict codes join
+ * when the slice that emits them lands — a declared-but-unreachable code reads
+ * like coverage that does not exist.
  *
  * Every one of these is a DEGRADATION report: the feature is dropped and the
  * projection continues. Nothing here throws (docs/resilience.md §2).
@@ -53,3 +53,19 @@ export const VISUAL_STATE_FEATURE_GROUP_UNPLACED = "visual_state.species.feature
  * gap, invalid is corrupt data, and neither may become a convenient default.
  */
 export const VISUAL_STATE_SOURCE_INVALID = "visual_state.source.invalid";
+/** A body-language fact has no owner anywhere in the app — gaze, fine joint pose, a microexpression. */
+export const VISUAL_STATE_BODY_LANGUAGE_UNAVAILABLE = "visual_state.body_language.unavailable";
+/** A visibility component read answered `unknown`; nothing is claimed visible under it. */
+export const VISUAL_STATE_VISIBILITY_UNKNOWN = "visual_state.visibility.unknown";
+/** A visibility component read answered `invalid` — a value broke its trust boundary. */
+export const VISUAL_STATE_VISIBILITY_INVALID = "visual_state.visibility.invalid";
+/** Hidden from this viewpoint: exposure-covered, composed away, replaced, or extinguished. NOT a claim of absence. */
+export const VISUAL_STATE_VISIBILITY_HIDDEN = "visual_state.visibility.hidden";
+/** The observer viewpoint has no sight channel this cut. */
+export const VISUAL_STATE_VISIBILITY_CHANNEL_UNAVAILABLE = "visual_state.visibility.channel_unavailable";
+/** The feature's body zone is outside the frame, or cannot be placed inside one. */
+export const VISUAL_STATE_VISIBILITY_OUT_OF_FRAME = "visual_state.visibility.out_of_frame";
+/** Visible, but not at the closeness these viewing conditions can resolve. */
+export const VISUAL_STATE_DETAIL_TIER_INSUFFICIENT = "visual_state.detail_tier.insufficient";
+/** An intimate region without an explicit allowance. A hard gate; rarity never lifts it. */
+export const VISUAL_STATE_INTIMATE_GATED = "visual_state.intimate.gated";

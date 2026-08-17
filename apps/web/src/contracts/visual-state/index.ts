@@ -16,8 +16,10 @@
  * one. Everything else here reads somebody else's truth.
  *
  * Pure and lane-neutral: no IO, no environment, no clock. It may import the
- * appearance, affordance, body and item contracts; it never imports server code,
- * and nothing here decides what an observer can see or what is worth saying.
+ * appearance, affordance, body and item contracts; it never imports server code.
+ * `visibility.ts` decides what a viewpoint can RESOLVE from explicit typed
+ * condition reads; what is worth SAYING — attention, ranking, selection — stays
+ * downstream in slice 5.
  */
 export * from "./vocabulary";
 export * from "./scope";
@@ -43,3 +45,5 @@ export * from "./conditions";
 export * from "./observations";
 export * from "./current-suppressions";
 export * from "./fixtures";
+export * from "./body-language";
+export * from "./visibility";
