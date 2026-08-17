@@ -23,6 +23,15 @@ describe("NARRATIVE_MODELS", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  // The dropdown renders the label and nothing else, so two rows sharing one is
+  // an unpickable option, not a cosmetic slip. It bites hardest on the bench's
+  // same-family rows (the two Euryale versions, the four TheDrummer tunes), where
+  // the version is the only thing telling them apart.
+  it("labels are unique", () => {
+    const labels = NARRATIVE_MODELS.map((o) => o.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   it("the default narrator is one of the listed options", () => {
     expect(NARRATIVE_MODELS.some((o) => o.id === DEFAULT_NARRATIVE_MODEL_ID)).toBe(true);
   });
