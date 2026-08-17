@@ -36,9 +36,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Visual state and attention** — [plan](visual-state.plan.md) ·
   [spec](visual-state.spec.md) — one lane-neutral projection over the existing
-  appearance, wardrobe, body-condition and scene owners; the appearance audit,
-  the core contract and the identity/presentation projection are in, and every
-  remaining build slice up to the narrator proving release is unblocked.
+  appearance, wardrobe, body-condition and scene owners; slices 0–6, 8 and 9
+  are built (projection, attention, shadow + inspector, image digest,
+  reference extraction), leaving the paid narrator proving release and the
+  final consolidation.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
@@ -55,8 +56,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
   every character-bearing image route onto semantic visual facts, then remove
   the duplicated appearance, reference-numbering, and prompt-budget machinery;
-  the per-lane fact freeze and the two dead-symbol deletions are in, and the
-  digest itself waits on visual-state slices 2–5.
+  the per-lane fact freeze, the two dead-symbol deletions, and the
+  visual-state digest seam are in — Stage 2's server-side assembly is the
+  next step.
 
 ## Next (queued, in dependency order)
 
