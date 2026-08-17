@@ -5,6 +5,7 @@ import {
   chatPhysicalConstraintsEnabled,
   chatRomanticPermissionDevOverrideEnabled,
   chatRomanticPermissionEnabled,
+  chatVisualStateShadowEnabled,
 } from "./constants";
 
 const FLAGS = [
@@ -77,5 +78,22 @@ describe("the romantic-permission owner composes over the contact lane", () => {
     process.env.CHAT_NPC_SCENE_DECISIONS = "on";
     expect(chatNpcSceneDecisionsEnabled()).toBe(true);
     delete process.env.CHAT_NPC_SCENE_DECISIONS;
+  });
+});
+
+/**
+ * The visual-state shadow (visual-state.plan.md slice 6) defaults OFF: with the
+ * env unset — the deployed default — production behavior is untouched to the
+ * byte, which is the plan's own success criterion.
+ */
+describe("the visual-state shadow flag", () => {
+  it("is OFF by default, and on anything other than the literal `on`", () => {
+    delete process.env.CHAT_VISUAL_STATE_SHADOW;
+    expect(chatVisualStateShadowEnabled()).toBe(false);
+    process.env.CHAT_VISUAL_STATE_SHADOW = "true";
+    expect(chatVisualStateShadowEnabled()).toBe(false);
+    process.env.CHAT_VISUAL_STATE_SHADOW = "on";
+    expect(chatVisualStateShadowEnabled()).toBe(true);
+    delete process.env.CHAT_VISUAL_STATE_SHADOW;
   });
 });

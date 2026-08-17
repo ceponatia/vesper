@@ -8,6 +8,7 @@ import { ChatInspectorCompositionHealth } from "@/components/chat/chat-inspector
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
 import { ChatInspectorFacts } from "@/components/chat/chat-inspector-facts";
 import { ChatInspectorPhysicalGuidance } from "@/components/chat/chat-inspector-physical-guidance";
+import { ChatInspectorVisualState } from "@/components/chat/chat-inspector-visual-state";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -89,6 +90,10 @@ function InspectorBody({ chatId }: { chatId: string }) {
               explains what this body IS doing, and this one explains what the narrator
               was told it may not claim about it. */}
           <ChatInspectorPhysicalGuidance chatId={chatId} />
+          {/* The visual-state staircase, last: the lane-neutral projection running in
+              shadow (visual-state slice 6) — what the snapshot holds, what each consumer
+              would select, and how it disagrees with the summaries above. */}
+          <ChatInspectorVisualState chatId={chatId} />
         </div>
       ) : null}
     </PageContainer>
