@@ -8,7 +8,13 @@ snapshot and selection primitives; this spec owns only their image-lane use.
 
 ## Implementation status
 
-- Stage 2 contracts: remaining.
+- Stage 2 contracts: largely built 2026-08-16 under the visual-state plan —
+  `VisualImageDigest` / `VisualImageFact` / `VisualImageProvenance` in
+  `apps/web/src/contracts/images/visual-digest.ts` realize this spec's
+  `ImageVisualDigest` / `ImageVisualFact` / `ImageVisualProvenance` sketch
+  (names follow visual-state conventions, as §Contract allows). Remaining for
+  Stage 2: the server-side assembly that feeds a live snapshot in and persists
+  provenance, and route consumption.
 - Avatar and scene consumers: remaining.
 - Visual provenance persistence: remaining.
 

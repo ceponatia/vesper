@@ -120,8 +120,14 @@ function resolvedBudget(
 // Shared shapes and helpers
 // ---------------------------------------------------------------------------
 
-/** Mandatory is a requirement flag on the feature's priors, never a score. */
-function isMandatoryFact(priors: VisualStateAttentionPriors): boolean {
+/**
+ * Mandatory is a requirement flag on the feature's priors, never a score.
+ *
+ * Exported for the image digest (slice 8), which must agree with the selection
+ * about which facts ride the mandatory lane: two definitions of "required"
+ * would let a digest report a fact missing that the selection never owed it.
+ */
+export function isMandatoryVisualStateFact(priors: VisualStateAttentionPriors): boolean {
   return priors.mandatoryForIdentity === true || priors.mandatoryForContinuity === true;
 }
 
@@ -462,7 +468,7 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
     return {
       subjectId,
       constraints: subjectCandidates
-        .filter((candidate) => isMandatoryFact(candidate.feature.priors))
+        .filter((candidate) => isMandatoryVisualStateFact(candidate.feature.priors))
         .map((candidate) => visualConstraintOf(candidate.feature)),
       selected: subjectCues,
       suppressedCount: subjectCandidates.length - subjectCues.length,
@@ -565,7 +571,7 @@ export function selectVisualImageFacts(input: VisualImageSelectionInput): Visual
   // Mandatory lane: straight from the snapshot, no visibility, no ranking.
   const mandatory: VisualStateFeature[] = [];
   for (const feature of snapshot.features) {
-    if (!isMandatoryFact(feature.priors)) continue;
+    if (!isMandatoryVisualStateFact(feature.priors)) continue;
     const kind = visualStateKindRegistry.byId(feature.kindId);
     if (kind === undefined) {
       // The optional build reports the same record to the sink; the mandatory
@@ -602,7 +608,7 @@ export function selectVisualImageFacts(input: VisualImageSelectionInput): Visual
   suppressions.push(...build.suppressions);
 
   const optionalCandidates = build.candidates.filter(
-    (candidate) => !isMandatoryFact(candidate.feature.priors) && candidate.priority > AFFORDANCE_UNIT_ZERO,
+    (candidate) => !isMandatoryVisualStateFact(candidate.feature.priors) && candidate.priority > AFFORDANCE_UNIT_ZERO,
   );
   const optional = [...optionalCandidates].sort(byPriorityThenKey).slice(0, budget);
 

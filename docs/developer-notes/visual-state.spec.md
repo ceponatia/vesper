@@ -6,10 +6,10 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–5 are built (see [Implementation status](#implementation-status));
-everything from slice 6 onward — every remaining flag, shadow adapter,
-consumer-digest realization and extraction workflow below — is still a design
-rather than a description of code. The modules it reuses are all live:
+Slices 0–5 and 8 are built (see [Implementation status](#implementation-status));
+the remaining slices — shadow adapters and flags, the narrator proving
+release, reference extraction and the final consolidation — are still a design
+rather than a description of code. The modules the spec reuses are all live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -441,7 +441,9 @@ start.
 | 3     | built 2026-08-16 — awaiting review | Current state                |
 | 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
 | 5     | built 2026-08-16 — awaiting review | Attention + memory           |
-| 6–10  | not started                        | Everything else in this spec |
+| 6–7   | not started                        | Shadow adapters + narrator   |
+| 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
+| 9–10  | not started                        | Extraction + consolidation   |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -506,6 +508,14 @@ eligible-sources widening: `RecognitionNotice.candidate` now accepts a
 changed. The attention context extends slice 4's visibility context; narrator
 and image selections are separate functions, and the image selection is
 structurally memoryless — no memory parameter exists to misuse.
+
+Slice 8 (built out of order, ahead of slices 6–7) added
+`apps/web/src/contracts/images/visual-digest.ts`: the `VisualImageDigest`
+realization over a snapshot, camera context and `VisualImageSelection`;
+typed camera facts and the scene-camera mapping; the segment-kind seam onto
+`@vesper/image-core`'s prompt-segment vocabulary; and the compact
+`VisualImageProvenance` record. It ships dark — no route, flag or server
+consumer — and the image-lane consolidation plan owns cutting routes over.
 
 ### What the audit changed about later slices
 
@@ -615,9 +625,16 @@ From slice 5: `visual_state.attention.boost_invalid` (candidate builder),
 `visual_state.selection.key_unbrandable` (narrator selection) — plus a reuse:
 the image mandatory lane emits `visual_state.intimate.gated` with a
 `mandatory:<group>` detail, and `visual_state.kind.unknown` guards both the
-builder and that lane. Missing-mandatory-fact and stale-snapshot remain
-undeclared: nothing built so far can emit them, and they belong with slice 8's
-profile-eligibility decision.
+builder and that lane. From slice 8 (all emitted only by `visual-digest.ts`):
+`visual_state.digest.mandatory_missing` (a priors-mandatory fact the mandatory
+lane lost to degradation — the digest is still returned, and per-subject
+`missingMandatory` keys carry the profile-eligibility signal; consent-gated
+and image-ineligible absences are excused as designed),
+`visual_state.digest.snapshot_stale` (`forCutId` differs from the snapshot's
+cut; the whole digest fails closed), and
+`visual_state.digest.selection_mismatch` (a selection naming foreign subjects
+or keys; fails closed) — the missing-mandatory and stale codes slice 5 left to
+this slice's profile-eligibility decision, now declared with live emitters.
 
 Two FOREIGN codes also reach a caller's sink from this family, because the sink
 is handed straight to a shared helper rather than wrapped:
@@ -626,9 +643,8 @@ is handed straight to a shared helper rather than wrapped:
 upstream reason, not a re-labelled one — so a caller asserting on codes should
 expect a namespaced pair rather than a single `visual_state.*` entry.
 
-The missing-mandatory-fact, stale-snapshot and extraction-conflict codes join
-with the slices that emit them; a declared but unreachable code reads like
-coverage that does not exist.
+The extraction-conflict codes join with the slice that emits them; a declared
+but unreachable code reads like coverage that does not exist.
 
 ### Decisions slice 2 settled
 
@@ -992,3 +1008,55 @@ plain data on the mention-policy precedent, so retakes stay pure;
 **Failure is silent and diagnosed, never partial.** Scope mismatch, context
 mismatch and an unbrandable key (> 256 chars cannot index memory) each fail
 closed with one diagnostic plus per-feature suppressions, memory untouched.
+
+### Decisions slice 8 settled
+
+Each is recorded in the code that owns it.
+
+**The digest lives in `contracts/images/`, not `contracts/visual-state/`.**
+Recognition consumes the projection (the slice-1/4/5 import direction), the
+digest consumes recognition's `VisualImageSelection`, and it speaks
+`@vesper/image-core`'s segment vocabulary — so it sits downstream of both,
+beside the scene-camera vocabulary at the image seam. `contracts/state/scene-gen.ts`
+is the precedent for a contracts file importing `@vesper/image-core`.
+
+**Camera reads are typed facts, never pseudo-features.** A camera read has no
+owner, key or fingerprint, and fabricating them would invent provenance.
+`visualImageCameraFacts` carries known reads only;
+`visualCameraReadsOfSceneCamera` maps the committed scene camera's registry
+vocabulary onto known distance/angle/framing reads via exhaustive switches.
+Lighting and motion stay caller inputs — no production owner exists, and an
+unknown read fails the optional lane closed (the plan's parked open
+question).
+
+**Segment kinds map by layer and source, with two rulings.** Anatomy and
+species groups → `morphology`; the apparent-age attribute → `age`
+(registry-drift-guarded); other identity → `identity`; worn/carried wardrobe →
+`wardrobe`; a garment left at a scene locus → `setting`; non-item presentation
+and all current-layer facts → `current_state` (the segment registry has no
+`presentation` member, and adding one is image-render-quality's registry —
+the slice-2 "wig" precedent); body language → `pose`. There is deliberately
+no `exposure` mapping: exposure is a coverage read, not a projected feature,
+and the consolidation adapter keeps consuming the canonical coverage readout.
+
+**Consent-gated is not missing.** The mandatory lane bypasses visibility
+(hidden identity anchors keep an `identity_required` basis), and
+`visual_state.digest.mandatory_missing` explicitly excuses consent-gated and
+image-ineligible absences as designed rather than degraded.
+
+**Provenance identifies, never duplicates.** `VisualImageProvenance` stores
+scope key, cut, the three fingerprints (snapshot / selection / camera), and
+per-subject selected `{key, truthFingerprint, required, segmentKind}` under
+`meta.visualState`, beside package-owned `meta.render`. The selection
+fingerprint reuses `visualStateFeaturesFingerprint`, so "same composition,
+retry" versus "current state moved" is one equality check — the slice-1
+promise kept. Read-back parses non-strict and degrades to absent provenance,
+never a fabricated one.
+
+**Staleness is cut identity only.** A pure digest has no honest "now" beyond
+the snapshot's own minute, so per-feature validity windows are not
+re-judged; `forCutId` mismatch fails the whole digest closed.
+
+**Shared "required" definition.** The selection's private mandatory test was
+exported (`isMandatoryVisualStateFact`) so the digest and the selection cannot
+drift on what "required" means.

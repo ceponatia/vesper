@@ -1,8 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–5 built 2026-08-16,
-awaiting review; slices 6–10 queued)
+with every review finding fixed in the same merge; slices 3–5 and 8 built
+2026-08-16, awaiting review; slices 6–7 and 9–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -31,8 +31,8 @@ Related work:
   ownership, and deletion of superseded image prompt machinery;
 - [scene composition](finished/scene-composition.plan.md) owns the scene image's camera,
   subject orientation, and intimate staging; its interim read of the scene /
-  body-relations owner migrates onto this plan's image digest when slice 8
-  ships.
+  body-relations owner migrates onto this plan's now-built image digest when
+  the image-lane consolidation plan cuts scene routes over.
 
 ## What this plan waits for
 
@@ -381,7 +381,8 @@ grounded specificity, naturalness, and hidden-detail leakage.
 
 ### Slice 8 — image digest and render-intent seam
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review; ships dark until the
+consolidation plan cuts routes over.
 
 The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
 Produce the required and optional image digest, its camera-relative selection,
