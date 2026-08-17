@@ -26,9 +26,16 @@ describe("unsupportedCurrentStateSuppressions", () => {
       "contamination:blood_on_skin",
       "contamination:cosmetics_wear",
       "contact:contact_marks",
-      "contact:occupied_hands",
       "fit:garment_fit",
     ]);
+  });
+
+  it("does not declare a fact an adapter now owns", () => {
+    // The table retires a row when its owner ships. `body_language.hand_occupation`
+    // (slice 4) derives occupied hands from the committed contacts, so a row for
+    // it would make one snapshot call the fact unavailable and state it at once.
+    const facts = VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS.map((row) => `${row.family}:${row.fact}`);
+    expect(facts).not.toContain("contact:occupied_hands");
   });
 
   it("reports each gap on the sink as context, not as a degradation alarm", () => {

@@ -21,9 +21,14 @@ import type { VisualStateSuppression } from "./suppression";
  * and an adapter takes over. A row and an adapter for the same fact would be a
  * snapshot arguing with itself.
  *
- * Body language (posture, gaze, occupied hands as reach) is slice 4's scope
- * and is deliberately not tabled here; `contact` below is the current-state
- * half only — what committed contact has visibly done to a body.
+ * Body language (posture, gaze, occupied hands) is slice 4's scope and is
+ * deliberately not tabled here; `contact` below is the current-state half
+ * only — what committed contact has visibly done to a body.
+ *
+ * `occupied_hands` was tabled here before slice 4 shipped and has been REMOVED
+ * per the rule above: `body_language.hand_occupation` derives it from the
+ * committed contacts, so leaving the row would make one snapshot report the
+ * fact as unavailable and state it in the same breath.
  */
 
 export const visualStateUnsupportedFamilies = [
@@ -57,7 +62,6 @@ export const VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS: readonly VisualStateUnsuppo
   { family: "contamination", fact: "blood_on_skin", nearest: "garment deposit blood" },
   { family: "contamination", fact: "cosmetics_wear", nearest: "garment deposit cosmetic" },
   { family: "contact", fact: "contact_marks", nearest: "contact lifecycle (not readable as state)" },
-  { family: "contact", fact: "occupied_hands", nearest: "support loadZones, zoned to arms" },
   { family: "fit", fact: "garment_fit", nearest: "no wardrobe vocabulary member" },
 ];
 

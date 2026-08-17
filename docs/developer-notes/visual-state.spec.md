@@ -1180,6 +1180,12 @@ read order.
 end through the same participant→subject map as the facing side; an
 unmapped participant is still carried verbatim, which no subject matches.
 
+**The unsupported-fact table dropped `contact:occupied_hands`.** Slice 3 tabled
+it as ownerless and slice 4 then shipped `body_language.hand_occupation`, so a
+single snapshot reported the fact unavailable and stated it at the same time.
+The table's own rule is that a row dies when its owner ships; a test now pins
+that this row is gone.
+
 Also fixed, without changing a recorded contract: the narrator digest's
 `suppressedCount` counts cue-ELIGIBLE candidates rather than every scored one;
 image-ineligible mandatory facts record a suppression instead of vanishing; the
