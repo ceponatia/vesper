@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { appearanceDetailTierSchema, type AppearanceDetailTier } from "../../appearance-features";
+import { appearanceDetailTierSchema, type AppearanceDetailTier, type AppearanceStability } from "../../appearance-features";
 import {
   toUnitInterval,
   unitIntervalSchema,
@@ -7,7 +7,7 @@ import {
   type AffordanceStoryTime,
   type UnitInterval,
 } from "../core";
-import type { RecognizableFeatureCandidate, RecognizableFeatureKey } from "./candidates";
+import type { RecognizableFeatureKey } from "./candidates";
 import {
   recognitionFeatureSalience,
   recognitionNoticeConfidence,
@@ -251,9 +251,30 @@ export const visualMemoryStateSchema = z
 // Transitions
 // ---------------------------------------------------------------------------
 
+/**
+ * What a notice must know about the noticed feature — exactly the fields the
+ * row math reads, and nothing more.
+ *
+ * This is the "extend eligible sources" seam the visual-state plan relies on:
+ * `RecognizableFeatureCandidate` satisfies it structurally (the original and
+ * still-primary source), and the slice-5 visual-attention integration is the
+ * second — a recognition-eligible visual-state feature noticed under the same
+ * law. Widening the INPUT here is what lets one memory serve both reads
+ * without a second appearance-memory system.
+ */
+export interface RecognitionNoticeSource {
+  readonly key: RecognizableFeatureKey;
+  readonly subjectId: string;
+  readonly truthFingerprint: string;
+  readonly stability: AppearanceStability;
+  readonly visibility: UnitInterval;
+  readonly uniqueness: UnitInterval;
+  readonly importance: UnitInterval;
+}
+
 /** One feature this observer perceived above threshold, on one cut. */
 export interface RecognitionNotice {
-  readonly candidate: RecognizableFeatureCandidate;
+  readonly candidate: RecognitionNoticeSource;
   readonly detailTier: AppearanceDetailTier;
   readonly atMinutes: AffordanceStoryTime;
   /** Lane-neutral provenance: a chat message id or a successor observation id. */
