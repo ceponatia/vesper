@@ -77,6 +77,11 @@ import {
 import { inferenceLods } from "@vesper/simulation-core/contracts/deliberation";
 import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
+import {
+  visualExtractionProposalStatuses,
+  visualExtractionRunStatuses,
+  visualExtractionTargetOwners,
+} from "@/contracts/visual-state/extraction";
 
 const id = () => text("id").primaryKey().$defaultFn(newId);
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -2089,6 +2094,113 @@ export const imageLabExperiments = pgTable(
     // Its LEADING column doubles as the per-owner lookup index (the house ruling
     // recorded on `personas`).
     index("image_lab_experiments_owner_created_idx").on(t.ownerId, t.createdAt),
+  ],
+);
+
+/**
+ * One offline reference-image extraction run (visual-state.plan.md slice 9;
+ * visual-state.spec.md §Reference-image extraction): an admin registered an
+ * extractor's structured proposals about one character's canonical image.
+ * Admin-only (`/api/admin/self/reference-extractions`), review-first — a row
+ * here never touches a canonical owner; only a reviewed acceptance on a
+ * PROPOSAL row does, through the owner's own write path.
+ *
+ * `source_hash` is SHA-256 over the STORED webp bytes, computed server-side at
+ * registration (the `image_identity_packs.source_content_hash` rule: never
+ * claim derivation from bytes the system did not read). The image FK is
+ * SET NULL like the identity pack's: a deleted portrait does not erase the
+ * review record derived from it — the hash still names the exact input.
+ *
+ * Registering a new run for the same (character, source image) supersedes the
+ * prior open one: its PENDING proposals close as `superseded`, while decided
+ * proposals keep their ruling forever (they are what re-runs reconcile
+ * against). Statuses come from the contract vocabulary so the column and the
+ * parser cannot drift.
+ */
+export const visualReferenceExtractions = pgTable(
+  "visual_reference_extractions",
+  {
+    id: id(),
+    ownerId: text("owner_id").notNull().references(() => users.id),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    sourceImageId: text("source_image_id").references(() => images.id, { onDelete: "set null" }),
+    sourceHash: text("source_hash").notNull(),
+    extractorId: text("extractor_id").notNull(),
+    extractorVersion: text("extractor_version").notNull(),
+    status: text("status", { enum: visualExtractionRunStatuses }).notNull().default("open"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The review page's one listing query: a character's runs, newest first. Its
+    // LEADING column doubles as the per-character lookup index (the house ruling
+    // recorded on `personas`).
+    index("visual_reference_extractions_character_idx").on(t.characterId, t.createdAt),
+  ],
+);
+
+/**
+ * One extraction proposal with its review state — its own row, not a jsonb
+ * array on the run, for the reason `image_identity_pack_trial_verdicts` gives:
+ * a per-proposal ruling as a read-modify-write over one blob silently loses a
+ * concurrent ruling.
+ *
+ * `slot_key` is the claim's stable identity across runs and extractor versions
+ * (`visualExtractionSlotKey`), and the slot index below is what registration
+ * reconciles a re-run against: the newest DECIDED row per slot either carries
+ * its ruling onto the new run (same machine claim) or marks the new row
+ * conflicted (`conflict_with_proposal_id`) — never overwritten.
+ *
+ * `baseline_json` stores the diff against canonical truth AS REGISTERED
+ * (`VisualExtractionProposalDiff`, minus values recoverable elsewhere); review
+ * reads recompute a fresh diff, and the accept path requires the reviewer to
+ * echo the fresh diff's `currentDigest`, so an accept can only land against
+ * canonical state the reviewer actually saw. `edited_value_json` is the
+ * reviewer's manual edit; it survives supersession by riding the carry.
+ * Reviewer FK carries no cascade (the `image_identity_packs` audit-trail rule).
+ */
+export const visualReferenceProposals = pgTable(
+  "visual_reference_proposals",
+  {
+    id: id(),
+    extractionId: text("extraction_id")
+      .notNull()
+      .references(() => visualReferenceExtractions.id, { onDelete: "cascade" }),
+    /** Denormalized from the run for the cross-run slot lookup. */
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    slotKey: text("slot_key").notNull(),
+    targetOwner: text("target_owner", { enum: visualExtractionTargetOwners }).notNull(),
+    kindId: text("kind_id").notNull(),
+    /** `BodyLocusRef | null` — required for located_fact/presentation targets, absent for attributes. */
+    locus: jsonb("locus_json"),
+    /** The machine's proposed value, as re-issued by the target owner's parser. */
+    value: jsonb("value_json").notNull(),
+    proposedFingerprint: text("proposed_fingerprint").notNull(),
+    /** Extractor confidence, fixed-point 0…10 000. Display only: confidence never grants overwrite. */
+    confidence: integer("confidence").notNull(),
+    /** `VisualExtractionImageRegion | null` — evidence highlight, never truth. */
+    evidenceRegion: jsonb("evidence_region_json"),
+    /** The registration-time diff against canonical truth. */
+    baseline: jsonb("baseline_json").notNull(),
+    status: text("status", { enum: visualExtractionProposalStatuses }).notNull().default("pending"),
+    editedValue: jsonb("edited_value_json"),
+    /** The decided proposal whose ruling this row inherited at registration. */
+    carriedFromProposalId: text("carried_from_proposal_id"),
+    /** The decided proposal this row's machine claim disagrees with. */
+    conflictWithProposalId: text("conflict_with_proposal_id"),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("visual_reference_proposals_extraction_idx").on(t.extractionId),
+    // The reconcile lookup: a character's decided rulings per slot, newest first.
+    index("visual_reference_proposals_slot_idx").on(t.characterId, t.slotKey, t.createdAt),
   ],
 );
 

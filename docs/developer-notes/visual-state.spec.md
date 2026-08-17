@@ -6,10 +6,11 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–6 and 8 are built (see [Implementation status](#implementation-status));
-the remaining slices — the narrator proving release (7), reference extraction
-(9) and the final consolidation (10) — are still a design rather than a
-description of code. The modules the spec reuses are all live:
+Slices 0–6, 8 and 9 are built (see
+[Implementation status](#implementation-status)); the remaining slices — the
+narrator proving release (7) and the final consolidation (10) — are still a
+design rather than a description of code. The modules the spec reuses are all
+live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -444,7 +445,8 @@ start.
 | 6     | built 2026-08-16 — awaiting review | Shadow + inspector           |
 | 7     | not started                        | Narrator proving release     |
 | 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
-| 9–10  | not started                        | Extraction + consolidation   |
+| 9     | built 2026-08-16 — awaiting review | Reference extraction         |
+| 10    | not started                        | Narrator consolidation       |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -529,6 +531,15 @@ typed camera facts and the scene-camera mapping; the segment-kind seam onto
 `@vesper/image-core`'s prompt-segment vocabulary; and the compact
 `VisualImageProvenance` record. It ships dark — no route, flag or server
 consumer — and the image-lane consolidation plan owns cutting routes over.
+
+Slice 9 added the reference-image extraction workflow: the pure proposal
+boundary, slot identity, diffing, reconciliation, review transitions and
+apply planning in `contracts/visual-state/extraction.ts`; the
+`server/reference-extraction/` barrel (register / list / decide / apply);
+two admin-only routes; and migration `0111` with the
+`visual_reference_extractions` and `visual_reference_proposals` tables. Only
+the API surface exists — the review UI is future work — and the whole
+surface is dark and admin-gated.
 
 ### What the audit changed about later slices
 
@@ -648,6 +659,13 @@ cut; the whole digest fails closed), and
 `visual_state.digest.selection_mismatch` (a selection naming foreign subjects
 or keys; fails closed) — the missing-mandatory and stale codes slice 5 left to
 this slice's profile-eligibility decision, now declared with live emitters.
+From slice 6: `visual_state.shadow.failed` (a fenced shadow assembly threw;
+the turn is unaffected). From slice 9:
+`visual_state.extraction.proposal_invalid` (boundary and apply-plan
+revalidation), `visual_state.extraction.conflict` (the reserved conflict
+code, with reasons `reviewed_value_differs` and `canonical_moved`), and
+`visual_state.extraction.owner_unavailable` (an accepted proposal whose
+target lane has no persisted canonical owner).
 
 Two FOREIGN codes also reach a caller's sink from this family, because the sink
 is handed straight to a shared helper rather than wrapped:
@@ -656,8 +674,8 @@ is handed straight to a shared helper rather than wrapped:
 upstream reason, not a re-labelled one — so a caller asserting on codes should
 expect a namespaced pair rather than a single `visual_state.*` entry.
 
-The extraction-conflict codes join with the slice that emits them; a declared
-but unreachable code reads like coverage that does not exist.
+Every reserved code family now has a live emitter; a declared but unreachable
+code reads like coverage that does not exist.
 
 ### Decisions slice 2 settled
 
@@ -1132,3 +1150,57 @@ rows.
 **Slices 7 and 8 own their flags.** `CHAT_VISUAL_STATE_NARRATION` and
 `IMAGE_VISUAL_STATE` are deliberately unregistered — registering an unread
 flag would be dead vocabulary.
+
+### Decisions slice 9 settled
+
+Each is recorded in the code that owns it.
+
+**The proposal wire shape carries a locus.** The spec's `VisualContractProposal`
+gains a required, un-coarsened body locus for `located_fact` and
+`presentation` targets (forbidden for `attribute`). `ImageRegion` existed
+nowhere, so `VisualExtractionImageRegion` defines it: a normalized fixed-point
+rect (0…10000), evidence-only. Confidence is a branded unit interval and
+grants nothing.
+
+**Extractor output is untrusted at two gates.** Per-item boundary parse,
+then revalidation by the target owner's own vocabulary — the attribute
+registry (including its sensory and non-character refusals), the appearance
+kind registry with `allowsBodyLocation`, and the presentation owner's kind
+set. Sixty-four proposals per run, overflow reported; per-run slot dedupe
+(first wins); output sorted by slot key.
+
+**Slot identity reuses the owners' own keys.** `attribute/<id>`,
+`located_fact/<bodyLocusKey>/<kind>`,
+`presentation/<bodyLocusKey>/<aspect>` — the presentation aspect reuses
+`presentationAspect`, so grooming and cosmetic-mark discriminators match the
+owner's slot law exactly.
+
+**A ruling is carried by machine fingerprint, never by confidence.** A re-run
+compares the new machine fingerprint against the newest decided ruling per
+slot: identical → the ruling (edits included) carries, `applied` carrying as
+`accepted`; different → a new `pending` row with
+`conflict_with_proposal_id` and `visual_state.extraction.conflict`
+(`reviewed_value_differs`), the ruling untouched. `superseded` is reachable
+only from `pending`, and only by a new run over the same character and image.
+
+**An accept must echo the fresh canonical digest.** The server recomputes the
+order-insensitive digest of current canonical values at decide time; a
+mismatch answers 409 `canonical_moved` with the fresh diff and writes
+nothing. Edited values re-run the full boundary and must keep their slot.
+
+**Apply goes through the owner's own write path, or not at all.** Attribute
+accepts land on the character profile via the PATCH route's law (replace by
+id, `manual` source, `sourceId: reference_extraction:<proposalId>`, then
+`materializeBodyDefaults`). Located facts and canonical presentation have no
+persisted per-character lane, so their accepts persist as accepted-unapplied
+with `visual_state.extraction.owner_unavailable` — the plan carries the open
+question. Applied rows are immutable: disagreeing with an applied fact means
+editing the canonical owner, so extraction can never become a second edit
+surface for canonical truth.
+
+**Storage follows the identity-pack precedents.** Two additive tables
+(migration `0111`): per-proposal rows on the concurrent-ruling pattern;
+`source_hash` is SHA-256 over the stored webp bytes; the source image must be
+the character's ready avatar or portrait variant, owner-scoped; image FK
+SET NULL and reviewer FK no-action for the audit trail. Admin-only routes
+(`withOwnerAdmin`), no flag — the surface is dark until a review UI exists.

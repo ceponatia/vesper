@@ -47,3 +47,4 @@ export * from "./current-suppressions";
 export * from "./fixtures";
 export * from "./body-language";
 export * from "./visibility";
+export * from "./extraction";

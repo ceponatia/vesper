@@ -1,8 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–6 and 8 built
-2026-08-16, awaiting review; slices 7 and 9–10 queued)
+with every review finding fixed in the same merge; slices 3–6, 8 and 9 built
+2026-08-16, awaiting review; slices 7 and 10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -393,7 +393,8 @@ human/non-human, altered-anatomy, realistic, and stylized acceptance matrix.
 
 ### Slice 9 — reference-image compiler
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review; admin-only API surface, no
+review UI yet.
 
 Allow canonical images to propose structured identity and presentation facts
 offline. Store source hash, extractor version, confidence, and diffs. Require
@@ -457,7 +458,11 @@ and trials rather than guessed:
   measurements slice 6 now records, once those reads have real producers;
 - whether a consent-gated mandatory anatomy fact should ever reach a render
   through a non-visual anchor, or whether exclusion — the built behavior, as
-  the conservative reading of the consent gate — is final.
+  the conservative reading of the consent gate — is final;
+- whether located facts and canonical presentation should gain per-character
+  persistence so accepted extraction proposals can apply to them, or whether
+  accepted rulings stay preserved-unapplied until their owning plans persist
+  those lanes (today only attribute proposals can apply).
 
 Any new owner question discovered during design or implementation must be
 restated here before work proceeds.
