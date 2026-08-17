@@ -5,6 +5,7 @@ import {
   characterProfileSchema,
   chatActionIdSchema,
   commitRecognitionMention,
+  commitVisualNarratorCueMentions,
   compileNarratorPhysicalGuidance,
   contactCommitEvents,
   currentScenePlace,
@@ -106,6 +107,7 @@ import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "./chat-physical-guidance-preview";
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
+import { loadChatVisualCues, saveChatVisualCues } from "./visual-cue-store";
 import { appendCallbackEntry, chatCallbackEligible } from "./chat-callback";
 import { buildInitiativeCue } from "./chat-initiative";
 import { loadChatRelationships } from "./chat-relationships";
@@ -199,6 +201,7 @@ import {
   chatPromptLayout,
   chatRecognitionCuesEnabled,
   chatRomanticPermissionEnabled,
+  chatVisualStateNarrationEnabled,
   chatVisualStateShadowEnabled,
   narrationShapeId,
 } from "./prompts/constants";
@@ -208,6 +211,7 @@ import {
   visualStatePreviewPayload,
   visualStateShadowLogSummary,
   type VisualStatePreviewPayload,
+  type VisualStateShadowBuild,
   type VisualStateShadowInput,
 } from "@/server/visual-state";
 
@@ -1776,22 +1780,27 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     }
 
-    // --- Visual-state shadow (visual-state.plan.md slice 6, `CHAT_VISUAL_STATE_SHADOW`, OFF) ---
-    // Runs the lane-neutral projection BESIDE the turn for measurement only:
-    // nothing it computes reaches the prompt, the reply, chat state, or observer
-    // memory (its one DB touch is a read-only memory load), and any failure
-    // degrades to a log line (docs/resilience.md). Its diagnostics ride a
-    // PRIVATE collector so even the turn's own diagnostic record is
-    // byte-identical with the flag on. It reads the same committed cut the
-    // narrator writes from: the drifted state, the ticked scenario, this turn's
-    // resolved wardrobe, and the post-contact-leg scene.
-    if (chatVisualStateShadowEnabled()) {
-      // DEFERRED off the turn's critical path: this is measurement, and the
-      // player waits for none of it. The closure captures the cut this turn
-      // already committed, so it still measures the same moment — it just
-      // stops charging the affordance read and the memory round trip to reply
-      // latency. The successor lane defers its shadow the same way.
-      void (async () => {
+    // --- Visual state (slice 6 shadow + slice 7 narration cue state) ---------
+    // `CHAT_VISUAL_STATE_SHADOW` (OFF) runs the lane-neutral projection BESIDE
+    // the turn for measurement only: nothing it computes reaches the prompt, the
+    // reply, chat state, or observer memory (its DB touches are read-only
+    // loads), and any failure degrades to a log line (docs/resilience.md). Its
+    // diagnostics ride a PRIVATE collector so even the turn's own diagnostic
+    // record is byte-identical with the flag on. It reads the same committed cut
+    // the narrator writes from: the drifted state, the ticked scenario, this
+    // turn's resolved wardrobe, and the post-contact-leg scene.
+    //
+    // `CHAT_VISUAL_STATE_NARRATION` (OFF) makes the same build COMMITTABLE: its
+    // narrator cue state is written with the exchange at settle, so a mentioned
+    // family cools down and a family merely in view stops reading as newly
+    // revealed. That is why the narration arm runs on the turn's own path rather
+    // than deferred — a deferred build cannot be captured with the cut it
+    // describes, and a cue advance for an exchange that never landed is exactly
+    // the retake impurity the two-generation store exists to prevent.
+    let visualStateBuild: VisualStateShadowBuild | null = null;
+    const visualStateNarrationOn = chatVisualStateNarrationEnabled();
+    if (chatVisualStateShadowEnabled() || visualStateNarrationOn) {
+      const runVisualState = async (): Promise<VisualStateShadowBuild | null> => {
         try {
           const shadowSink = new DiagnosticCollector();
           // Reuse this turn's affordance read when another flag already took one;
@@ -1799,13 +1808,25 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // turn's collector stays untouched.
           const shadowRead =
             affordanceRead ?? recognitionPerception ?? buildChatAffordanceRead({ ...affordanceReadInput, sink: shadowSink });
-          const shadowMemory = await loadChatVisualMemory({
-            memoryGroupId,
-            viewpointId: owner,
-            subjectId: characterId,
-            promptingMessageId: exchangeGuardMessageId,
-            sink: shadowSink,
-          });
+          const [shadowMemory, shadowCues] = await Promise.all([
+            loadChatVisualMemory({
+              memoryGroupId,
+              viewpointId: owner,
+              subjectId: characterId,
+              promptingMessageId: exchangeGuardMessageId,
+              sink: shadowSink,
+            }),
+            // Loaded on BOTH arms. Ranking against the stored cue state is a
+            // read, so the shadow measures real repetition and real
+            // newly-revealed counts; only the WRITE waits on the narration flag.
+            loadChatVisualCues({
+              memoryGroupId,
+              viewpointId: owner,
+              subjectId: characterId,
+              promptingMessageId: exchangeGuardMessageId,
+              sink: shadowSink,
+            }),
+          ]);
           const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
           const shadowInput: VisualStateShadowInput = {
             lane: "character_chat",
@@ -1848,6 +1869,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             observerId: owner,
             observer: { kind: "player_viewpoint", viewpointId: owner },
             memory: shadowMemory,
+            cues: shadowCues,
             ...(wardrobe.worn === undefined
               ? {}
               : { wornGarmentIds: [...new Set(wardrobe.worn.map((row) => row.garmentId))] }),
@@ -1857,6 +1879,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           if (shadow !== null) {
             log.info("engine.chat", "visual-state shadow", {
               chatId,
+              // Which arm produced this line: the deferred measurement run, or
+              // the committable narration run. A trial row cannot be read
+              // without it, since only one of the two advances the cue state.
+              narration: visualStateNarrationOn,
               ...visualStateShadowLogSummary(shadow),
               codes: shadowSink.items.map((entry) => entry.code),
             });
@@ -1866,10 +1892,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               codes: shadowSink.items.map((entry) => entry.code),
             });
           }
+          return shadow;
         } catch (error) {
           log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
+          return null;
         }
-      })();
+      };
+      if (visualStateNarrationOn) {
+        visualStateBuild = await runVisualState();
+      } else {
+        // DEFERRED off the turn's critical path: measurement only, and the
+        // player waits for none of it. The closure captures the cut this turn
+        // already committed, so it still measures the same moment — it just
+        // stops charging the affordance read and the two loads to reply
+        // latency. The successor lane defers its shadow the same way.
+        void runVisualState();
+      }
     }
 
     /**
@@ -1897,6 +1935,36 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         });
       } catch (error) {
         log.error("engine.chat", "chat visual memory persist failed", { error: describeError(error) });
+      }
+    };
+
+    /**
+     * Commit the exchange's narrator cue state — what was in view and what was
+     * said about the families observer memory does not hold. Called at the same
+     * settle points as the recognition commit, and never when the narration
+     * flag is off (the shadow arm reads the state and ranks against it, but a
+     * measurement run may not advance it).
+     *
+     * Visibility is persisted even when nothing was said: recording what was in
+     * view is what makes the NEXT cut's newly-revealed answer correct, exactly
+     * as a notice is for recognition, and only a cue that entered the cut moves
+     * the cooldown. Fenced like every other optional write.
+     */
+    const commitVisualStateCues = async (): Promise<void> => {
+      if (!visualStateNarrationOn || visualStateBuild === null) return;
+      try {
+        await saveChatVisualCues({
+          memoryGroupId,
+          viewpointId: owner,
+          subjectId: characterId,
+          promptingMessageId: exchangeGuardMessageId,
+          next: commitVisualNarratorCueMentions(
+            visualStateBuild.narrator.cueStateAfterVisibility,
+            visualStateBuild.narrator.cueMentionCommits,
+          ),
+        });
+      } catch (error) {
+        log.error("engine.chat", "chat visual cue state persist failed", { error: describeError(error) });
       }
     };
 
@@ -2213,8 +2281,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         }
         // An opening beat is a committed exchange with a real prompt, so what the
         // observer noticed on it counts — without this, the first real turn would
-        // re-offer the same first-notice cue.
+        // re-offer the same first-notice cue. The cue state advances with it, for
+        // the same reason: an opening beat is a cut the narrator looked at.
         await commitRecognitionMemory();
+        await commitVisualStateCues();
         // The common reply-scene leg runs for opening beats too (spec
         // §"Authoritative post-settle cut": "the current opening branch must call
         // the common leg before returning") — AFTER the opening's own state and
@@ -2369,6 +2439,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // observer's memory may advance — and only now. PRIMARY only, for the same
         // reason the cue block is: this is the subject the prompt described.
         await commitRecognitionMemory();
+        await commitVisualStateCues();
         // Ensemble members settle their own turn: the presence-gated tick from
         // prompt time, a referenced-only pulse (regard/mood/mindNote/weather), a
         // personal note-taker pass for every PRESENT member (followups ruling 10 —

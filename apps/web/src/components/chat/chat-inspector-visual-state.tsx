@@ -144,7 +144,19 @@ function PreviewBody({ data }: { data: VisualStatePreview }) {
         <CandidateList rows={data.staircase} empty="No feature survived visibility even under ideal conditions." />
       </Panel>
 
-      <Panel label="Narrator selection — production shadow conditions">
+      <Panel label="Viewing conditions — what the production reads ran under">
+        <p className="font-mono text-[11px] text-paper-400">
+          light {data.viewing.lighting} · distance {data.viewing.distance} · angle {data.viewing.angle} · motion{" "}
+          {data.viewing.motion}
+        </p>
+        <p className="mt-1 font-mono text-[11px] text-paper-600">
+          {data.viewing.declared.length === 0
+            ? "every component came from an owner"
+            : `declared release default: ${data.viewing.declared.join(", ")} — no owner asserts these, and the value is stated policy, not an observation`}
+        </p>
+      </Panel>
+
+      <Panel label="Narrator selection — production conditions">
         {data.narrator.digests.map((digest) => (
           <div key={digest.subjectId} className="mt-2 first:mt-0">
             <p className="text-[11px] tracking-wide text-paper-500 uppercase">{digest.subjectId}</p>
@@ -161,12 +173,16 @@ function PreviewBody({ data }: { data: VisualStatePreview }) {
           notices {data.narrator.noticeCount} · changes {data.narrator.changeCount} · mention commits{" "}
           {data.narrator.mentionCommitCount} — all discarded; the inspector spends nothing
         </p>
+        <p className="mt-1 font-mono text-[11px] text-paper-600">
+          cue state: cut {data.narrator.cueState.sequenceAfter} · {data.narrator.cueState.recordCount} families tracked ·{" "}
+          {data.narrator.cueState.observedCount} in view now · {data.narrator.cueState.mentionCommitCount} would cool down
+        </p>
         <div className="mt-3 border-t border-ink-600 pt-3">
           <SuppressionList rows={data.narrator.suppressions} empty="Nothing suppressed." />
         </div>
       </Panel>
 
-      <Panel label="Image selection — camera, production shadow conditions">
+      <Panel label="Image selection — camera, production conditions">
         <p className="font-mono text-[11px] text-paper-400">
           mandatory:{" "}
           {data.image.mandatoryKeys.length === 0 ? "none" : data.image.mandatoryKeys.join(" · ")}
@@ -262,6 +278,12 @@ function CandidateList({ rows, empty }: { rows: readonly VisualStateCandidateRow
             {row.detailTier}
           </span>
           {row.changeSignificance > 0 ? <span className="text-ok-400"> · changed {row.changeSignificance}</span> : null}
+          {row.cueStatus === null ? null : (
+            <span className="text-ok-400">
+              {" "}
+              · cue {row.cueStatus} · cooldown {row.repetitionCooldown}
+            </span>
+          )}
         </li>
       ))}
     </ul>

@@ -3,17 +3,20 @@ import {
   type AffordancePerceptionView,
   type DiagnosticSink,
   type VisualAttentionBuild,
+  type VisualCueState,
   type VisualImageSelection,
   type VisualMemoryState,
   type VisualNarratorSelection,
   type VisualObserverRef,
   type VisualStateSnapshot,
+  type VisualViewingConditions,
 } from "@/contracts";
 import {
   assembleVisualStateSnapshot,
   buildVisualStateSelections,
   type VisualStateAssemblyInput,
   type VisualStateLane,
+  type VisualStateLaneScene,
 } from "./assemble";
 import { legacyNarratorAttributeIds, measureVisualState, type VisualStateMeasurements } from "./measure";
 
@@ -40,6 +43,8 @@ export interface VisualStateShadowInput extends VisualStateAssemblyInput {
   readonly observer: VisualObserverRef;
   /** Observer memory, loaded READ-ONLY. Slice 6 never writes it back. */
   readonly memory?: VisualMemoryState;
+  /** The narrator cue state, loaded READ-ONLY on exactly the same terms. */
+  readonly cues?: VisualCueState;
   /** The lane's resolved worn garment ids — the garment-summary comparison set. */
   readonly wornGarmentIds?: readonly string[];
 }
@@ -50,11 +55,38 @@ export interface VisualStateShadowBuild {
   readonly narrator: VisualNarratorSelection;
   readonly image: VisualImageSelection;
   readonly staircase: VisualAttentionBuild;
+  /** The conditions the production reads ran under, declared components included. */
+  readonly viewing: VisualViewingConditions;
   readonly measurements: VisualStateMeasurements;
+}
+
+/**
+ * The SCENE participant whose facts file under one visual subject.
+ *
+ * The two id spaces coincide in the chat lane today (its map is the identity),
+ * but they are not the same space — `subjectsByParticipant` exists precisely
+ * because a lane may label them differently — and the scene owner answers only
+ * to its own participant ids. Reading proximity with a visual subject id would
+ * miss every relation and silently fall back to the declared base, which looks
+ * exactly like a scene that stated nothing. First match wins on the map's
+ * insertion order, so a lane that files two participants under one subject gets
+ * a stable answer rather than an arbitrary one.
+ */
+function sceneParticipantFor(
+  sceneRelations: VisualStateLaneScene | undefined,
+  subjectId: string | undefined,
+): string | undefined {
+  if (sceneRelations === undefined || subjectId === undefined) return undefined;
+  for (const [participantId, visualSubjectId] of sceneRelations.subjectsByParticipant) {
+    if (visualSubjectId === subjectId) return participantId;
+  }
+  return undefined;
 }
 
 /** Snapshot → selections → measurements, pure over the passed cut. */
 export function buildVisualStateShadow(input: VisualStateShadowInput): VisualStateShadowBuild {
+  const observerParticipantId = sceneParticipantFor(input.sceneRelations, input.playerSubjectId);
+  const subjectParticipantId = sceneParticipantFor(input.sceneRelations, input.subjectId);
   const assembled = assembleVisualStateSnapshot(input);
   const selections = buildVisualStateSelections({
     snapshot: assembled.snapshot,
@@ -63,6 +95,12 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     observerId: input.observerId,
     observer: input.observer,
     ...(input.memory === undefined ? {} : { memory: input.memory }),
+    ...(input.cues === undefined ? {} : { cues: input.cues }),
+    // The viewing conditions read the same committed scene the body-language
+    // adapter does; the observer is the lane's player subject.
+    ...(input.sceneRelations === undefined ? {} : { scene: input.sceneRelations.scene }),
+    ...(observerParticipantId === undefined ? {} : { observerParticipantId }),
+    ...(subjectParticipantId === undefined ? {} : { subjectParticipantId }),
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
   const measurements = measureVisualState({
@@ -84,6 +122,7 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     narrator: selections.narrator,
     image: selections.image,
     staircase: selections.staircase,
+    viewing: selections.viewing,
     measurements,
   };
 }

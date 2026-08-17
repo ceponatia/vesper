@@ -10,10 +10,17 @@ import {
 } from "../core";
 import {
   resolveVisualStateVisibility,
+  visualCueFamilyFingerprint,
+  visualCueNovelty,
+  visualCueVisibilityStatus,
   visualStateKindRegistry,
   visualStateLocusKey,
+  VISUAL_CUE_NOVELTY_FIRST_VISIBLE,
   VISUAL_STATE_KIND_UNKNOWN,
   VISUAL_STATE_VISIBILITY_HINTED,
+  type VisualCueObservation,
+  type VisualCueState,
+  type VisualCueVisibilityStatus,
   type VisualStateFeature,
   type VisualStateLayer,
   type VisualStateLocusRef,
@@ -33,6 +40,7 @@ import {
   recognitionRepetitionCooldown,
   RECOGNITION_ACTION_RELEVANCE,
   RECOGNITION_CHANGE_SIGNIFICANCE,
+  RECOGNITION_NOVELTY_UNSEEN,
 } from "./salience";
 import type { VisualMemoryScopeRef, VisualMemoryState } from "./visual-memory";
 
@@ -103,6 +111,31 @@ export function visualStateScopeOf(scope: VisualMemoryScopeRef): VisualStateScop
  */
 export const VISUAL_ATTENTION_HINTED_VISIBILITY: typeof RECOGNITION_VISIBILITY_HINTED &
   typeof VISUAL_STATE_VISIBILITY_HINTED = VISUAL_STATE_VISIBILITY_HINTED;
+
+// ---------------------------------------------------------------------------
+// Meeting point 3 — "never seen before" is one number in both records
+// ---------------------------------------------------------------------------
+
+/**
+ * The two narrator-side records answer the same question for DISJOINT feature
+ * sets — memory for what an observer can recognize, the cue state for
+ * everything else — so a first sighting must weigh the same in both, or a
+ * rolled sleeve and a scar would rank differently merely for being new.
+ *
+ * Unlike the two meeting points above, this one cannot be a type-level
+ * identity: both constants are `UnitInterval`, whose brand erases the literal,
+ * so an intersection would compile whatever the values were. A runtime
+ * equality asserted at module load is the honest form — it costs one
+ * comparison, it is covered by every test that imports this module, and it
+ * fails loudly at boot rather than silently mis-ranking a cue.
+ */
+export const VISUAL_ATTENTION_FIRST_VISIBLE_NOVELTY: UnitInterval = VISUAL_CUE_NOVELTY_FIRST_VISIBLE;
+if (VISUAL_ATTENTION_FIRST_VISIBLE_NOVELTY !== RECOGNITION_NOVELTY_UNSEEN) {
+  throw new Error(
+    "visual cue and recognition novelty disagree about an unseen feature: " +
+      `${String(VISUAL_CUE_NOVELTY_FIRST_VISIBLE)} vs ${String(RECOGNITION_NOVELTY_UNSEEN)}`,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Context — slice 4's visibility context, extended, never reshaped
@@ -340,6 +373,16 @@ export interface VisualAttentionCandidate {
   readonly repetitionCooldown: UnitInterval;
   readonly priority: UnitInterval;
   readonly repeatKey: string;
+  /**
+   * Which record answered novelty and cooldown for this candidate. `memory` is
+   * observer visual memory; `cue` is the narrator cue state, which covers
+   * exactly the features memory refuses; `none` is a camera or inspector read,
+   * which consults neither. The two records are disjoint by construction, so
+   * this is a fact about the feature rather than a preference.
+   */
+  readonly noveltySource: "memory" | "cue" | "none";
+  /** How the cue state read this family's visibility, when `noveltySource` is `cue`. */
+  readonly cueStatus?: VisualCueVisibilityStatus;
   readonly evidence: readonly AffordanceEvidence[];
 }
 
@@ -353,6 +396,17 @@ export interface VisualAttentionBuildInput {
    * useful image fact and an inspector read never depends on who has looked.
    */
   readonly memory?: VisualMemoryState;
+  /**
+   * The narrator's cue state, as of BEFORE this cut. Consulted by a `narrator`
+   * consumer ONLY, on the same isolation rule as memory: a render must not be
+   * dimmed by what narration said an hour ago, and an inspector read must not
+   * depend on it either.
+   *
+   * Absent means the lane has not wired cue state yet, and every cue-backed
+   * feature reads as first-visible with a full cooldown — the pre-slice-7
+   * behavior, unchanged.
+   */
+  readonly cues?: VisualCueState;
   readonly sink?: DiagnosticSink;
   readonly path?: string;
 }
@@ -362,6 +416,13 @@ export interface VisualAttentionBuild {
   readonly candidates: readonly VisualAttentionCandidate[];
   /** Everything the viewpoint or the registry could not resolve, and why. */
   readonly suppressions: readonly VisualStateSuppression[];
+  /**
+   * Every cue-backed family this viewpoint could resolve at this cut, with its
+   * combined fingerprint — what `observeVisualCues` records so the NEXT cut can
+   * tell steady state from a newly revealed fact. Empty for a camera or
+   * inspector build, and for a narrator build with no cue state wired.
+   */
+  readonly cueObservations: readonly VisualCueObservation[];
 }
 
 /** A finite whole story minute; anything else degrades to zero. */
@@ -389,6 +450,34 @@ function kindEligibleFor(
 }
 
 /**
+ * Whether observer memory can hold this feature at all: a recognition-eligible
+ * kind whose stability maps into the floor law's vocabulary.
+ *
+ * This ONE predicate decides which of the two narrator records answers for a
+ * feature, so the records stay disjoint: true ⇒ visual memory, false ⇒ the cue
+ * state. Splitting the decision across the two call sites is how they would
+ * drift into double-counting a mention or double-cooling a cue.
+ */
+function isMemoryEligible(
+  kind: { recognitionEligible: boolean },
+  feature: VisualStateFeature,
+): boolean {
+  return kind.recognitionEligible && visualRecognitionStability(feature.stability) !== null;
+}
+
+/**
+ * The repeat key one feature's family answers under. Extracted because the cue
+ * pre-pass and the scoring loop must derive it identically — a mismatch would
+ * fingerprint one family and score another.
+ */
+function repeatKeyOf(
+  feature: VisualStateFeature,
+  kind: { repeatFamily: string },
+): string {
+  return visualAttentionRepeatKey(feature.priors.repeatFamily ?? kind.repeatFamily, feature.locus);
+}
+
+/**
  * Score every feature one viewpoint can resolve.
  *
  * The visibility half is slice 4's `resolveVisualStateVisibility`, verbatim —
@@ -405,8 +494,10 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
   const path = input.path ?? "visual_state.attention";
   const { snapshot, context } = input;
   const consumer = context.consumer;
-  // Observer isolation, structurally: only the narrator's read may see memory.
+  // Observer isolation, structurally: only the narrator's read may see either
+  // narrator-side record.
   const memory = consumer === "narrator" ? input.memory : undefined;
+  const cues = consumer === "narrator" ? input.cues : undefined;
   const atMinutes = wholeMinutes(snapshot.atMinutes);
 
   const visibilityBuild = resolveVisualStateVisibility({
@@ -416,6 +507,14 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
   });
   const readsByKey = new Map<string, VisualStateVisibilityRead>();
   for (const read of visibilityBuild.visible) readsByKey.set(read.key, read);
+
+  // Cue pre-pass: a family's fingerprint is the fingerprint of ALL its visible
+  // members, so it cannot be computed inside the per-feature loop that consumes
+  // it. Runs only for a narrator build with cue state wired.
+  const cueFingerprints = cues === undefined ? new Map<string, string>() : cueFamilyFingerprints(snapshot, readsByKey);
+  const cueObservations: VisualCueObservation[] = [...cueFingerprints.entries()]
+    .map(([repeatKey, familyFingerprint]) => ({ repeatKey, familyFingerprint }))
+    .sort((left, right) => (left.repeatKey < right.repeatKey ? -1 : left.repeatKey > right.repeatKey ? 1 : 0));
 
   const suppressions: VisualStateSuppression[] = [...visibilityBuild.suppressions];
   const candidates: VisualAttentionCandidate[] = [];
@@ -458,17 +557,34 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
     // Memory-backed dimensions exist only for the narrator, and only for a
     // feature the memory law can hold: a recognition-eligible kind whose
     // stability maps into the floor law's vocabulary.
-    const memoryEligible = kind.recognitionEligible && visualRecognitionStability(feature.stability) !== null;
+    const memoryEligible = isMemoryEligible(kind, feature);
     const row = memoryEligible ? memory?.features[feature.key] : undefined;
     const fingerprintChanged = row !== undefined && row.truthFingerprint !== feature.truthFingerprint;
+    const repeatKey = repeatKeyOf(feature, kind);
+
+    // The cue state answers for exactly what memory refuses. A family with no
+    // fingerprint this cut is one the pre-pass did not resolve, which cannot
+    // happen for a feature that reached here — but reading it defensively keeps
+    // the two derivations from silently disagreeing.
+    const cueFamilyFingerprint = memoryEligible ? undefined : cueFingerprints.get(repeatKey);
+    const cueStatus: VisualCueVisibilityStatus | undefined =
+      cues === undefined || cueFamilyFingerprint === undefined
+        ? undefined
+        : visualCueVisibilityStatus({ state: cues, repeatKey, familyFingerprint: cueFamilyFingerprint });
+    const cueRow = cues === undefined ? undefined : cues.cues[repeatKey];
+
+    const noveltySource: "memory" | "cue" | "none" =
+      memory !== undefined && memoryEligible ? "memory" : cueStatus !== undefined ? "cue" : "none";
     const novelty =
-      memory !== undefined && memoryEligible
+      noveltySource === "memory"
         ? recognitionNovelty({
             hasMemory: row !== undefined,
             fingerprintChanged,
             bucket: row === undefined ? "recent" : recognitionFreshnessBucket(row.lastNoticedAt, atMinutes),
           })
-        : AFFORDANCE_UNIT_ZERO;
+        : cueStatus !== undefined
+          ? visualCueNovelty(cueStatus)
+          : AFFORDANCE_UNIT_ZERO;
 
     const stampSignificance = visualChangeSignificance({
       ...(feature.changedAtMinutes === undefined ? {} : { changedAtMinutes: feature.changedAtMinutes }),
@@ -485,12 +601,18 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
 
     // The one factor that can silence an otherwise perfect cue — and only the
     // narrator has it. An image or inspector read never spends mention state,
-    // so its cooldown is structurally one (spec §Attention and memory).
+    // so its cooldown is structurally one (spec §Attention and memory). Which
+    // record supplies the last mention follows the same disjoint split as
+    // novelty: a rolled sleeve now cools down on its OWN history rather than on
+    // the full-cooldown default a feature memory never held always produced.
+    const cooldownRow = memoryEligible
+      ? { lastMentionedAt: row?.lastMentionedAt, mentionCount: row?.mentionCount ?? 0 }
+      : { lastMentionedAt: cueRow?.lastMentionedAtMinutes, mentionCount: cueRow?.mentionCount ?? 0 };
     const repetitionCooldown =
       consumer === "narrator"
         ? recognitionRepetitionCooldown({
-            ...(row?.lastMentionedAt === undefined ? {} : { lastMentionedAt: row.lastMentionedAt }),
-            mentionCount: row?.mentionCount ?? 0,
+            ...(cooldownRow.lastMentionedAt === undefined ? {} : { lastMentionedAt: cooldownRow.lastMentionedAt }),
+            mentionCount: cooldownRow.mentionCount,
             atMinutes,
           })
         : AFFORDANCE_UNIT_ONE;
@@ -505,10 +627,12 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
       repetitionCooldown,
     });
 
-    const repeatFamily = feature.priors.repeatFamily ?? kind.repeatFamily;
     const evidence: AffordanceEvidence[] = [...read.evidence, consumerEvidence];
     if (boost !== 0) {
       evidence.push(affordanceEvidence("adapter", "visual_state.attention.importance_boost", String(boost)));
+    }
+    if (cueStatus !== undefined) {
+      evidence.push(affordanceEvidence("adapter", "visual_state.attention.cue_state", cueStatus));
     }
 
     candidates.push({
@@ -523,10 +647,41 @@ export function buildVisualAttentionCandidates(input: VisualAttentionBuildInput)
       consumerRelevance,
       repetitionCooldown,
       priority,
-      repeatKey: visualAttentionRepeatKey(repeatFamily, feature.locus),
+      repeatKey,
+      noveltySource,
+      ...(cueStatus === undefined ? {} : { cueStatus }),
       evidence,
     });
   }
 
-  return { candidates, suppressions };
+  return { candidates, suppressions, cueObservations };
+}
+
+/**
+ * Repeat key → the fingerprint of every VISIBLE member of that family.
+ *
+ * Only families the cue state owns are collected: narrator-eligible kinds that
+ * observer memory cannot hold. Recognition-eligible facts keep answering out of
+ * memory, so the two records never hold a row for the same family and the cue
+ * cap is spent entirely on the gap it exists to fill.
+ */
+function cueFamilyFingerprints(
+  snapshot: VisualStateSnapshot,
+  readsByKey: ReadonlyMap<string, VisualStateVisibilityRead>,
+): Map<string, string> {
+  const members = new Map<string, { key: string; truthFingerprint: string }[]>();
+  for (const feature of snapshot.features) {
+    if (!readsByKey.has(feature.key)) continue;
+    const kind = visualStateKindRegistry.byId(feature.kindId);
+    if (kind === undefined || !kind.narratorEligible) continue;
+    if (isMemoryEligible(kind, feature)) continue;
+    const repeatKey = repeatKeyOf(feature, kind);
+    const list = members.get(repeatKey);
+    const member = { key: feature.key, truthFingerprint: feature.truthFingerprint };
+    if (list === undefined) members.set(repeatKey, [member]);
+    else list.push(member);
+  }
+  const fingerprints = new Map<string, string>();
+  for (const [repeatKey, list] of members) fingerprints.set(repeatKey, visualCueFamilyFingerprint(list));
+  return fingerprints;
 }

@@ -2,7 +2,8 @@
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
 with every review finding fixed in the same merge; slices 3–6, 8 and 9 built
-2026-08-16, awaiting review; slices 7 and 10 queued)
+2026-08-16, awaiting review; slice 7's two prerequisites built 2026-08-17,
+leaving its prompt wiring and paid trial; slice 10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -46,6 +47,8 @@ was written, and it has closed.
 One later slice has a real prerequisite:
 
 - **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
+  Its two code prerequisites — usable viewing conditions and a repeat /
+  newly-visible record — were built on 2026-08-17.
 - **Slice 8** feeds the shared render intent, which shipped with the
   [capabilities plan's](finished/image-model-capabilities.plan.md) slice 2 on
   2026-08-07 — that gate is open, and the intent's role-carrying references
@@ -372,16 +375,40 @@ with current summaries.
 
 ### Slice 7 — narrator proving release
 
-Status: blocked on two prerequisites the shipped slices exposed — a repeat and
-newly-visible record for non-recognition facts, and a source of usable viewing
-conditions. Both are open questions below; neither is a code gap that slice 7
-can absorb, and the paid comparison cannot measure repetition or newly-revealed
-detail until they are settled.
+Status: unblocked 2026-08-17 — both prerequisites built; the prompt wiring and
+the paid trial remain.
 
 Behind a default-off flag, feed only change-gated, action-relevant, or newly
 revealed selections into narration. Keep binding constraints separate from
 optional positive detail. Run a paired trial over contradiction, repetition,
 grounded specificity, naturalness, and hidden-detail leakage.
+
+Two prerequisites the shipped slices exposed are now closed, and both were
+things the trial could not have scored around:
+
+- **The narrator can see again.** Visibility refuses to claim anything without
+  knowing the light, the distance, the angle, and whether anyone is moving, and
+  every one of those was being handed over as unknown — so the real narrator
+  had no candidates at all under ordinary conditions, and only the inspector
+  looked alive because it substitutes ideal conditions. Distance and angle now
+  come from the scene, which already knows how far apart two people are and
+  which way they are turned. Nothing in the app knows how bright a room is or
+  whether a body is moving, so the release states a base value for both and
+  marks it as stated — visible in the inspector, in the diagnostics, and in
+  every trial row, so a grader can always tell a real reading from the
+  placeholder.
+- **The narrator can tell repetition from news.** Facts like a rolled sleeve, a
+  posture, or an occupied hand are deliberately kept out of the memory of what
+  a person would recognize, which also left them with no record of having been
+  mentioned and no record of having been seen. A separate narrator-side record
+  now tracks, per detail, when it was last in view and when it was last said,
+  and it is stored and restored with the exchange like everything else, so
+  another take of the same beat cannot double-count. A detail in continuous,
+  unchanged view stays quiet; one that reappears, or that changes, can earn a
+  beat.
+
+What is left in this slice: putting the selected cues into the narrator prompt,
+and running the paired comparison.
 
 ### Slice 8 — image digest and render-intent seam
 
@@ -456,31 +483,14 @@ and trials rather than guessed:
   sound, scent, and touch;
 - whether a gaze owner is worth adding — no system records where a character's
   eyes point, so body language projects gaze as unavailable;
-- **how the narrator lane obtains usable viewing conditions — a slice 7
-  blocker.** Visibility fails closed on any unknown component, and the chat
-  lane supplies all four as unknown, so the production narrator selection has
-  no candidates at all. The inspector only looks alive because its staircase
-  substitutes ideal conditions. Two of the four can be grounded from owners
-  that already exist — distance from scene proximity and angle from scene
-  facing, the same mapping the image digest already performs on the committed
-  scene camera — but grounding them changes nothing while lighting stays
-  unknown and fails the whole read closed. So the ruling needed is about
-  lighting and motion: give them an owner, or adopt an explicit degraded
-  first-release policy (a stated default, tested as such). Silently reading
-  unknown as bright and still is the one option the plan's own rulings
-  forbid;
-- **how repetition and first visibility are tracked for facts recognition does
-  not hold — a slice 7 blocker.** Current-state and body-language kinds are
-  deliberately `recognitionEligible: false`, so observer memory never carries a
-  rolled sleeve, a posture, or an occupied hand. That is right for memory, but
-  it also means those facts get no `lastMentionedAt` cooldown and no
-  first-seen record: a recently stamped sleeve stays cue-eligible turn after
-  turn, and nothing can tell the narrator that an ordinary visual fact became
-  visible now rather than merely being true now. Repetition and newly-revealed
-  detail are two of slice 7's five evaluation axes, so the trial cannot score
-  them as built. The likely shape is a narrator-scoped cue record — repeat key
-  to last visible fingerprint and last mention — kept separate from
-  recognition memory and restored with the committed cut so retakes stay pure;
+- whether the lighting placeholder should become a real owner, and when.
+  Owner ruling (2026-08-17): the first release states a base light value rather
+  than building a scene-lighting owner, and marks it as stated everywhere it
+  travels. The chat lane already has a typed scene-environment owner holding
+  wind, rain, and indoors — filled in by the continuity extraction leg the
+  narrator already runs — which is where a real light band would go if the
+  trial shows the placeholder costing anything. Motion has no comparable home
+  and would need a new scene fact;
 - whether a consent-gated mandatory anatomy fact should ever reach a render
   through a non-visual anchor, or whether exclusion — the built behavior, as
   the conservative reading of the consent gate — is final;
