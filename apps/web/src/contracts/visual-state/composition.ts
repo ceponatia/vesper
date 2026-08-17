@@ -64,8 +64,9 @@ export interface VisualStateCompositionEntry {
    *
    * This is COMPOSITION only. It says what is in front of the feature, not what
    * the observer can resolve — lighting, distance, angle, motion and framing are
-   * the visibility slice's inputs and multiply into this later. A feature nobody
-   * covers reads as fully composed-visible here even in a pitch-dark room.
+   * the visibility read's inputs and multiply into this in `visibility.ts`. A
+   * feature nobody covers reads as fully composed-visible here even in a
+   * pitch-dark room.
    */
   readonly effectiveVisibility: UnitInterval;
 }
