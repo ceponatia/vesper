@@ -6,10 +6,10 @@ This spec defines the lane-neutral visual-state projection, source boundaries,
 visibility and attention reads, consumer digests, memory integration, and
 rollout seams.
 
-Slices 0–4 are built (see [Implementation status](#implementation-status));
-everything from slice 5 onward — every remaining flag, salience score and
-consumer digest below — is still a design rather than a description of code.
-The modules it reuses are all live:
+Slices 0–5 are built (see [Implementation status](#implementation-status));
+everything from slice 6 onward — every remaining flag, shadow adapter,
+consumer-digest realization and extraction workflow below — is still a design
+rather than a description of code. The modules it reuses are all live:
 
 - `apps/web/src/contracts/appearance-features/` for truth-level appearance
   projection;
@@ -440,7 +440,8 @@ start.
 | 2     | reviewed 2026-08-16                | Identity + presentation      |
 | 3     | built 2026-08-16 — awaiting review | Current state                |
 | 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
-| 5–10  | not started                        | Everything else in this spec |
+| 5     | built 2026-08-16 — awaiting review | Attention + memory           |
+| 6–10  | not started                        | Everything else in this spec |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
@@ -492,6 +493,19 @@ distance, angle, motion and framing with calibration tables,
 union gained a `{ kind: "contact", contactId }` arm. Non-human (wings) and
 altered-anatomy (missing finger) fixtures exercise silhouette and detail-tier
 behavior. Same footprint as every slice so far: nothing outside the folder.
+
+Slice 5 is the one deviation from that footprint: its modules live in
+`apps/web/src/contracts/affordances/recognition/` (`visual-attention.ts`,
+`visual-selection.ts`), not the visual-state folder, because slices 1 and 4
+recorded the import direction — recognition consumes the projection, and the
+reverse import is the cycle they dodged. Nothing under
+`contracts/visual-state/` changed. `visual-memory.ts` gained the sanctioned
+eligible-sources widening: `RecognitionNotice.candidate` now accepts a
+`RecognitionNoticeSource` (the seven fields the row math reads), which
+`RecognizableFeatureCandidate` satisfies structurally with zero callers
+changed. The attention context extends slice 4's visibility context; narrator
+and image selections are separate functions, and the image selection is
+structurally memoryless — no memory parameter exists to misuse.
 
 ### What the audit changed about later slices
 
@@ -594,6 +608,16 @@ asserted by tests). From slice 4:
 `visual_state.visibility.channel_unavailable`,
 `visual_state.visibility.out_of_frame`,
 `visual_state.detail_tier.insufficient`, and `visual_state.intimate.gated`.
+From slice 5: `visual_state.attention.boost_invalid` (candidate builder),
+`visual_state.selection.context_mismatch` and
+`visual_state.selection.budget_invalid` (both selections),
+`visual_state.selection.scope_mismatch` and
+`visual_state.selection.key_unbrandable` (narrator selection) — plus a reuse:
+the image mandatory lane emits `visual_state.intimate.gated` with a
+`mandatory:<group>` detail, and `visual_state.kind.unknown` guards both the
+builder and that lane. Missing-mandatory-fact and stale-snapshot remain
+undeclared: nothing built so far can emit them, and they belong with slice 8's
+profile-eligibility decision.
 
 Two FOREIGN codes also reach a caller's sink from this family, because the sink
 is handed straight to a shared helper rather than wrapped:
@@ -897,3 +921,74 @@ product → tier.
 factor is copied locally because importing it would create the
 `visual-state` → `affordances/recognition` cycle slice 1 already dodged; the
 place the two meet in slice 5 is a compile error if they diverge.
+
+### Decisions slice 5 settled
+
+Each is recorded in the code that owns it.
+
+**Both meeting points are compile errors on divergence, as promised.** The
+scope unions meet in identity-conversion functions whose `return` statements
+compile only while `VisualStateScopeRef` ≡ `VisualMemoryScopeRef` — and the
+conversion is load-bearing: narrator selection converts the snapshot scope and
+fails closed (`scope_mismatch`, memory untouched) if it names a different
+continuity than the binding. The hinted factors meet in a constant typed as
+the intersection of the two literal types, which goes `never` if either side
+moves. Both guards were verified by deliberate divergence during the build.
+
+**No law is restated.** Salience, novelty, freshness and repetition cooldown
+are the shipped recognition functions called directly; the four-way selection
+priority delegates to `recognitionMentionPriority` by folding the fourth
+reason via max-associativity. Change significance is banded from the
+`changedAtMinutes` stamps slices 2–3 added (≤ 1 hour → 9 000, ≤ 1 day →
+5 000, else 0), max'd with the shipped 9 500 on a memory contradiction.
+
+**Narrator consumer relevance is all-zero.** The four-way max degenerates to
+the shipped three-reason law for narration — the failed ambient-cue trial made
+structural. Image rows carry per-layer relevance (identity 3 000,
+presentation 6 000, current 7 000, body language 6 500); inspector is 10 000.
+All are calibration defaults awaiting trial evidence.
+
+**Novelty and cooldown are narrator-only.** Non-narrator builds ignore a
+passed memory entirely (tested byte-equal with and without), and the image
+selection is structurally memoryless. Recognition-ineligible and
+instantaneous features have novelty 0, so their only cue reasons are stamp
+change or action relevance — slice 7's "change-gated, action-relevant, or
+newly revealed" rule falls out of the arithmetic rather than being enforced.
+
+**The recognition floor maps exactly.** Four stabilities cross;
+`instantaneous` maps to `null` and never enters the memory law, even for a
+hand-built record whose stability disagrees with its kind.
+
+**Repeat keys are byte-compatible.** The `recognition.<family>.<locusKey>`
+format is reused, byte-identical to shipped keys for body loci; a per-feature
+`repeatFamily` override wins over the kind — the slice-1 priors addition
+consumed as promised.
+
+**Narrator constraints are visible mandatory facts only.** A hidden mandatory
+fact never enters the narrator digest: the leakage rule beats contradiction
+prevention, and unseen constraints stay with narrator guidance.
+
+**The intimate consent gate is the one thing mandatory never outranks.** The
+image mandatory lane bypasses the visibility read (hidden identity anchors
+survive), so it applies the consent gate itself, and gated facts are excluded
+with `visual_state.intimate.gated` + `mandatory:<group>` detail.
+
+**Focus lowers the notice threshold but never raises the detail tier.**
+Inspection cannot see in the dark — stricter than the conditionless chat
+lane, deliberately.
+
+**Consumer-ineligibility filtering is silent.** Designed absence is context;
+today every registered kind is narrator- and image-eligible, so the filter has
+no reachable negative case.
+
+**The image consumer shape at this layer is `VisualImageSelection`** —
+mandatory features plus scored optional candidates — deliberately not the
+spec's `VisualImageDigest`: slice 8 owns digest realization and keeps its
+names. Candidates carry a `repeatKey` beside the spec's fields. Narrator
+selection returns notices, changes, post-notice memory and mention commits as
+plain data on the mention-policy precedent, so retakes stay pure;
+`commitVisualNarratorMentions` is the caller's post-cut step.
+
+**Failure is silent and diagnosed, never partial.** Scope mismatch, context
+mismatch and an unbrandable key (> 256 chars cannot index memory) each fail
+closed with one diagnostic plus per-feature suppressions, memory untouched.
