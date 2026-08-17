@@ -184,7 +184,7 @@ export interface CharacterChatPromptInput {
     affordanceCues?: readonly string[];
     /**
      * The visual-state projection's MUST-NOT-CONTRADICT clauses
-     * (visual-state.plan.md slice 7, `CHAT_VISUAL_STATE_NARRATION`): the visible
+     * (visual-state.plan.md slice 7, the per-chat narration switch): the visible
      * mandatory facts — what is worn, what morphology this body has — as
      * contradiction prevention, not as material for a beat. Unlike every other
      * block here they are NOT change-gated: a coat worn for six exchanges is as
@@ -893,7 +893,7 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
         .join("\n")}`,
     );
   }
-  // The visual-state pair (slice 7, `CHAT_VISUAL_STATE_NARRATION`), LAST in the
+  // The visual-state pair (slice 7, the per-chat narration switch), LAST in the
   // section and in this order: the constraint block is a fence and the cue block
   // is an offer, so the offer reads against a fence that is already standing.
   //

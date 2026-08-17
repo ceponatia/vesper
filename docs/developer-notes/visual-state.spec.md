@@ -474,16 +474,20 @@ Narration degrades to silence.
 
 ## Flags
 - `CHAT_VISUAL_STATE_SHADOW` builds snapshots and diagnostics only.
-- `CHAT_VISUAL_STATE_NARRATION` commits the narrator cue state with the
-  exchange, and will feed the prompt selection. Default off.
+- **Visual-state narration is a PER-CHAT column, not an env flag**
+  (`character_chats.visual_state_narration`, default false; owner ruling
+  2026-08-17). On, the narrator receives the two blocks and the conversation's
+  cue state is committed with each exchange. It is operational configuration:
+  it does not ride `ChatScenario`, so a retake never moves it, and it has its
+  own owner-scoped route rather than a field on the chat-state PATCH.
 - `IMAGE_VISUAL_STATE` enables reviewed render-intent integration.
 - Reference extraction remains admin-only until review behavior is proven.
 
 Shadow mode leaves prompts and writes byte-identical. The cue state is READ on
 both arms — ranking against stored repetition is a read, so the shadow measures
-real repeat and newly-revealed counts — and WRITTEN only under the narration
-flag. That is why the narration arm runs the build on the turn's own path rather
-than deferring it: a deferred build cannot be captured with the cut it
+real repeat and newly-revealed counts — and WRITTEN only when the chat's switch
+is on. That is why the narration arm runs the build on the turn's own path
+rather than deferring it: a deferred build cannot be captured with the cut it
 describes, and a cue advance for an exchange that never landed is exactly the
 impurity the two-generation store exists to prevent.
 
@@ -552,7 +556,7 @@ start.
 | 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
 | 5     | built 2026-08-16 — awaiting review | Attention + memory           |
 | 6     | built 2026-08-16 — awaiting review | Shadow + inspector           |
-| 7     | unblocked 2026-08-17 — trial next  | Narrator proving release     |
+| 7     | complete — 2026-08-17              | Narrator proving release     |
 | 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
 | 9     | built 2026-08-16 — awaiting review | Reference extraction         |
 | 10    | not started                        | Narrator consolidation       |
@@ -1256,9 +1260,9 @@ library rows the cut does not carry, so the wardrobe adapter's documented
 concealment-conservative default applies; layer IS plumbed from resolved worn
 rows.
 
-**Slices 7 and 8 own their flags.** `CHAT_VISUAL_STATE_NARRATION` and
-`IMAGE_VISUAL_STATE` are deliberately unregistered — registering an unread
-flag would be dead vocabulary.
+**Slices 7 and 8 own their flags.** `IMAGE_VISUAL_STATE` is deliberately
+unregistered — registering an unread flag would be dead vocabulary. Slice 7
+shipped as a per-chat column instead of a flag (2026-08-17).
 
 ### Corrections from the slices 3–9 review (2026-08-16)
 

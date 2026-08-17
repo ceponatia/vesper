@@ -5,6 +5,8 @@ import {
   capVisualCueRecords,
   emptyVisualCueState,
   observeVisualCues,
+  recordVisualCuesSpoken,
+  visualCueRecentlySpoken,
   visualCueFamilyFingerprint,
   visualCueNovelty,
   visualCueStateSchema,
@@ -175,6 +177,50 @@ describe("applyVisualCueMentions", () => {
   });
 });
 
+describe("the spoken ledger", () => {
+  it("marks a family spoken at the current cut and quiets it for exactly the next one", () => {
+    const seen = observed(emptyVisualCueState(), 10, [SLEEVE]);
+    const said = recordVisualCuesSpoken(seen, [SLEEVE]);
+    expect(said.spoken[SLEEVE]).toBe(seen.sequence);
+    // The cut immediately after: still quiet.
+    expect(visualCueRecentlySpoken(said, SLEEVE)).toBe(true);
+    // One cut later: fenced again, because a fact absent from the fence is a
+    // fact the narrator is free to contradict.
+    const next = observed(said, 20, [SLEEVE]);
+    expect(visualCueRecentlySpoken(next, SLEEVE)).toBe(false);
+  });
+
+  it("says nothing about a family that was never spoken", () => {
+    const seen = observed(emptyVisualCueState(), 10, [SLEEVE, POSTURE]);
+    expect(visualCueRecentlySpoken(recordVisualCuesSpoken(seen, [SLEEVE]), POSTURE)).toBe(false);
+  });
+
+  it("records families memory owns too — the window is about the prompt, not the observer", () => {
+    // The ledger takes a repeat key it holds no visibility record for, because
+    // a recognizable feature's cooldown lives in observer memory while its
+    // fence entry is still a thing the prompt just said.
+    const said = recordVisualCuesSpoken(observed(emptyVisualCueState(), 10, []), ["recognition.appearance_mark.nose"]);
+    expect(visualCueRecentlySpoken(said, "recognition.appearance_mark.nose")).toBe(true);
+  });
+
+  it("leaves the ledger alone through a visibility pass — seeing is not saying", () => {
+    const said = recordVisualCuesSpoken(observed(emptyVisualCueState(), 10, [SLEEVE]), [SLEEVE]);
+    expect(observed(said, 20, [SLEEVE]).spoken).toEqual(said.spoken);
+  });
+
+  it("caps the ledger, keeping the newest cuts, in key order", () => {
+    let state = emptyVisualCueState();
+    for (let index = 0; index < VISUAL_CUE_RECORDS_MAX + 3; index += 1) {
+      state = observeVisualCues(state, { atMinutes: index, observations: [] });
+      state = recordVisualCuesSpoken(state, [`family_${String(index).padStart(3, "0")}`]);
+    }
+    const keys = Object.keys(state.spoken);
+    expect(keys).toHaveLength(VISUAL_CUE_RECORDS_MAX);
+    expect(keys).not.toContain("family_000");
+    expect([...keys].sort()).toEqual(keys);
+  });
+});
+
 describe("retakes", () => {
   it("replays from the restored state and lands on identical counts", () => {
     // The two-generation store hands back the pre-exchange state on a retake;
@@ -199,6 +245,7 @@ describe("the boundary", () => {
     expect(parseOr(visualCueStateSchema, { sequence: -4, cues: [] }, emptyVisualCueState())).toEqual({
       sequence: 0,
       cues: {},
+      spoken: {},
     });
   });
 

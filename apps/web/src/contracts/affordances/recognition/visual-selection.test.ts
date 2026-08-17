@@ -421,6 +421,48 @@ describe("selectVisualNarratorCues — the cue state", () => {
     );
   });
 
+  it("keeps a just-said fact out of the fence for one cut, then fences it again", () => {
+    // The round-1 repetition finding: a fact cued on one cut and said, then
+    // re-presented by the fence on the very next one, which the narrator reads
+    // as licence to say it twice.
+    const posture = postureFixture();
+    const first = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));
+    expect(first.digests[0]?.selected).toHaveLength(1);
+    expect(first.spokenRepeatKeys).toEqual([POSTURE_REPEAT_KEY]);
+
+    const afterSaying = commitVisualNarratorCueMentions(
+      first.cueStateAfterVisibility,
+      first.cueMentionCommits,
+      first.spokenRepeatKeys,
+    );
+    const second = selectVisualNarratorCues(
+      narratorInput(snapshotOf([posture]), memoryOf(), { cues: afterSaying }),
+    );
+    expect(second.digests[0]?.selected).toEqual([]);
+    expect(second.digests[0]?.constraints.map((entry) => entry.kindId)).not.toContain(
+      VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    );
+
+    // …and it comes back, because a fact absent from the fence is a fact the
+    // narrator is free to contradict.
+    const third = selectVisualNarratorCues(
+      narratorInput(snapshotOf([posture]), memoryOf(), { cues: second.cueStateAfterVisibility }),
+    );
+    expect(third.digests[0]?.constraints.map((entry) => entry.kindId)).toContain(
+      VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+    );
+  });
+
+  it("records every offered family as spoken, whichever record cooled it down", () => {
+    // A recognizable feature's cooldown comes from observer memory, not the cue
+    // state — but the fence's quiet window is about what the PROMPT just said.
+    const feature = visualStateFeatureFixture();
+    const selection = selectVisualNarratorCues(narratorInput(snapshotOf([feature]), memoryOf()));
+    expect(selection.candidates[0]?.noveltySource).toBe("memory");
+    expect(selection.cueMentionCommits).toEqual([]);
+    expect(selection.spokenRepeatKeys).toEqual(["recognition.fixture.nose"]);
+  });
+
   it("never states one fact in both blocks", () => {
     const posture = postureFixture();
     const selection = selectVisualNarratorCues(narratorInput(snapshotOf([posture]), memoryOf()));

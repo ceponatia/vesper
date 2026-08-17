@@ -403,27 +403,6 @@ export function chatVisualStateShadowEnabled(): boolean {
   return process.env.CHAT_VISUAL_STATE_SHADOW === "on";
 }
 
-/**
- * The VISUAL-STATE NARRATION switch (visual-state.plan.md slice 7; spec §Flags
- * — `CHAT_VISUAL_STATE_NARRATION`) — default off, same literal-`on` shape.
- *
- * OFF is today's behavior to the byte. ON lets the narrator lane SPEND what the
- * shadow only computed: the narrator cue state is committed with the exchange,
- * so a family the narrator mentioned starts a cooldown and a family it merely
- * had in view is no longer newly revealed next cut.
- *
- * The cue state is the flag's first consumer and the reason the flag exists
- * now: repetition and newly-revealed detail are two of the paired trial's five
- * axes, and neither can be scored while nothing records what was in view. The
- * prompt-side selection this flag will eventually feed is the rest of slice 7.
- *
- * Committing is gated rather than always-on because a write is not shadow
- * behavior: with the flag off, the projection still reads the stored state and
- * still ranks against it, and it simply never advances it.
- */
-export function chatVisualStateNarrationEnabled(): boolean {
-  return process.env.CHAT_VISUAL_STATE_NARRATION === "on";
-}
 
 /** Max characters of player input echoed inside agent prompts. */
 export const AGENT_INPUT_CAP = 2000;

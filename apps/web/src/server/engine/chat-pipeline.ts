@@ -108,6 +108,7 @@ import { buildChatPhysicalGuidancePreview, type PhysicalGuidancePreview } from "
 import { buildChatRecognitionRead, type ChatRecognitionRead } from "./chat-recognition-adapter";
 import { loadChatVisualMemory, saveChatVisualMemory } from "./visual-memory-store";
 import { loadChatVisualCues, saveChatVisualCues } from "./visual-cue-store";
+import { chatVisualStateNarrationOn } from "./chat-visual-state-flag";
 import {
   renderChatVisualStateLines,
   visualStateGarmentNames,
@@ -206,7 +207,6 @@ import {
   chatPromptLayout,
   chatRecognitionCuesEnabled,
   chatRomanticPermissionEnabled,
-  chatVisualStateNarrationEnabled,
   chatVisualStateShadowEnabled,
   narrationShapeId,
 } from "./prompts/constants";
@@ -1795,7 +1795,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // the narrator writes from: the drifted state, the ticked scenario, this
     // turn's resolved wardrobe, and the post-contact-leg scene.
     //
-    // `CHAT_VISUAL_STATE_NARRATION` (OFF) makes the same build COMMITTABLE: its
+    // The per-chat VISUAL-STATE NARRATION switch (off by default) makes the same
+    // build COMMITTABLE: its
     // narrator cue state is written with the exchange at settle, so a mentioned
     // family cools down and a family merely in view stops reading as newly
     // revealed. That is why the narration arm runs on the turn's own path rather
@@ -1803,9 +1804,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // describes, and a cue advance for an exchange that never landed is exactly
     // the retake impurity the two-generation store exists to prevent.
     let visualStateBuild: VisualStateShadowBuild | null = null;
-    /** The rendered pair the prompt carries. Null on every path but a flagged, non-empty selection. */
+    /** The rendered pair the prompt carries. Null unless this chat's switch is on and the selection spoke. */
     let visualStateLines: ChatVisualStateLines | null = null;
-    const visualStateNarrationOn = chatVisualStateNarrationEnabled();
+    // PER CHAT, not per deploy (owner ruling 2026-08-17). Fenced: a failed read
+    // answers "off", which leaves the prompt byte-identical to today.
+    const visualStateNarrationOn = await chatVisualStateNarrationOn(chatId).catch((error: unknown) => {
+      log.error("engine.chat", "visual-state narration switch read failed", { error: describeError(error) });
+      return false;
+    });
     if (chatVisualStateShadowEnabled() || visualStateNarrationOn) {
       const runVisualState = async (): Promise<VisualStateShadowBuild | null> => {
         try {
@@ -1986,6 +1992,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           next: commitVisualNarratorCueMentions(
             visualStateBuild.narrator.cueStateAfterVisibility,
             visualStateBuild.narrator.cueMentionCommits,
+            visualStateBuild.narrator.spokenRepeatKeys,
           ),
         });
       } catch (error) {

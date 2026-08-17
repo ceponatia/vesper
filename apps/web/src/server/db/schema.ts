@@ -318,6 +318,23 @@ export const characterChats = pgTable(
      */
     sceneComposerModel: text("scene_composer_model").notNull().default(""),
     /**
+     * **Visual-state narration** (visual-state.plan.md slice 7), per conversation
+     * and OFF by default.
+     *
+     * On, the narrator receives the visual projection's two blocks — a short
+     * must-not-contradict fence of what is visibly true, and at most two details
+     * that just changed or just came into view — and the conversation's narrator
+     * cue state is committed with each exchange.
+     *
+     * A per-chat switch rather than a deploy-wide flag (owner ruling 2026-08-17)
+     * because the paid round could not measure the benefit: the trial's own gate
+     * refused a verdict, so this ships as something to turn on and read rather
+     * than something to enable everywhere. Operational configuration, not story
+     * state — retakes and state rollback never change it, exactly like
+     * `agentReasoningProfile` beside it.
+     */
+    visualStateNarration: boolean("visual_state_narration").notNull().default(false),
+    /**
      * Admin-only structured-agent reasoning experiment. This is operational
      * configuration, not story state: retakes and state rollback never change it.
      */

@@ -9,6 +9,7 @@ import {
 } from "@/contracts";
 import { MONTHS } from "@/lib/clock";
 import { chatPresetsApi, chatsApi, imageProfilesApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { VisualStateNarrationToggle } from "@/components/chat/visual-state-narration-toggle";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
 import { ImageProfileSelect } from "./image-profile-select";
@@ -304,6 +305,8 @@ function ScenarioForm({
             : "Personas are built in your library. Leave this to use whichever one you set as default."}
         </span>
       </label>
+
+      <VisualStateNarrationToggle chatId={chatId} />
 
       <div className="flex flex-col gap-2">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Scene images</span>
