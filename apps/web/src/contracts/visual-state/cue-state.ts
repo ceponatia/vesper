@@ -166,11 +166,48 @@ export interface VisualCueState {
   /** How many cuts this observer has recorded. Rolls back with a retake. */
   readonly sequence: number;
   readonly cues: Readonly<Record<string, VisualCueRecord>>;
+  /**
+   * Repeat family → the cut at which the narrator last SPOKE it, for every cue
+   * that entered a committed cut — whichever record supplied its cooldown.
+   *
+   * Separate from `cues` on purpose. `cues` is the disjoint half this record
+   * owns (novelty and cooldown for what observer memory refuses); `spoken` is a
+   * fact about the PROMPT rather than about the observer, and it covers
+   * everything the narrator was offered, because the thing it prevents does not
+   * care which record answered.
+   *
+   * What it prevents: a fact offered as a cue on one cut, said, and then
+   * re-presented in the must-preserve fence on the very next one. The fence has
+   * no cooldown by design — a coat worn for six exchanges is as contradictable
+   * on the seventh — and the trial's round 1 showed the narrator reads a
+   * bulleted fence as a menu and says the fact again. This is that loop closed
+   * in the projection rather than in prompt wording.
+   */
+  readonly spoken: Readonly<Record<string, number>>;
 }
 
 /** Nothing seen yet — the pre-seed value and the degraded default. */
 export function emptyVisualCueState(): VisualCueState {
-  return { sequence: 0, cues: {} };
+  return { sequence: 0, cues: {}, spoken: {} };
+}
+
+/**
+ * How many cuts a just-spoken family stays out of the fence, counting from the
+ * cut after it was said.
+ *
+ * `1` is quiet for exactly the following cut, then fenced again. The window is
+ * deliberately the shortest one that works: a fact absent from the fence is a
+ * fact the narrator is free to contradict, and the single cut it is absent for
+ * is the one immediately after the narrator described it — the least likely
+ * moment for it to contradict itself. A fixture-tested calibration default, not
+ * product law.
+ */
+export const VISUAL_FENCE_QUIET_CUTS = 1;
+
+/** Whether the narrator said this family recently enough that the fence should stay quiet. */
+export function visualCueRecentlySpoken(state: VisualCueState, repeatKey: string): boolean {
+  const spokenAt = state.spoken[repeatKey];
+  return spokenAt !== undefined && state.sequence - spokenAt < VISUAL_FENCE_QUIET_CUTS;
 }
 
 function compareKeys(left: string, right: string): number {
@@ -219,9 +256,31 @@ export const visualCueStateSchema = z
   .object({
     sequence: z.number().int().min(0).catch(0),
     cues: z.record(z.string(), visualCueRecordSchema.nullable().catch(null)).catch({}),
+    spoken: z.record(z.string(), z.number().int().min(0).catch(0)).catch({}).default({}),
   })
-  .catch({ sequence: 0, cues: {} })
-  .transform((parsed): VisualCueState => ({ sequence: parsed.sequence, cues: healVisualCueRecords(parsed.cues) }));
+  .catch({ sequence: 0, cues: {}, spoken: {} })
+  .transform(
+    (parsed): VisualCueState => ({
+      sequence: parsed.sequence,
+      cues: healVisualCueRecords(parsed.cues),
+      spoken: capSpoken(parsed.spoken),
+    }),
+  );
+
+/**
+ * The spoken ledger, capped and key-ordered on the same terms as the records —
+ * newest cuts kept, so a replay produces a byte-equal blob.
+ */
+export function capSpoken(spoken: Readonly<Record<string, number>>): Readonly<Record<string, number>> {
+  const entries = Object.entries(spoken);
+  const kept =
+    entries.length <= VISUAL_CUE_RECORDS_MAX
+      ? entries
+      : [...entries]
+          .sort((left, right) => left[1] - right[1] || compareKeys(left[0], right[0]))
+          .slice(entries.length - VISUAL_CUE_RECORDS_MAX);
+  return Object.fromEntries([...kept].sort((left, right) => compareKeys(left[0], right[0])));
+}
 
 // ---------------------------------------------------------------------------
 // Family fingerprints
@@ -347,7 +406,26 @@ export function observeVisualCues(
             lastVisibleSequence: sequence,
           };
   }
-  return { sequence, cues: capVisualCueRecords(cues) };
+  return { sequence, cues: capVisualCueRecords(cues), spoken: state.spoken };
+}
+
+/**
+ * Record that the narrator SPOKE these families at this cut.
+ *
+ * Applied only once the cut lands, exactly like a mention — and for every
+ * selected cue, not only the ones this record supplies a cooldown for.
+ */
+export function recordVisualCuesSpoken(
+  state: VisualCueState,
+  repeatKeys: readonly string[],
+): VisualCueState {
+  if (repeatKeys.length === 0) return state;
+  const spoken: Record<string, number> = { ...state.spoken };
+  for (const repeatKey of repeatKeys) {
+    if (repeatKey.length === 0) continue;
+    spoken[repeatKey] = state.sequence;
+  }
+  return { sequence: state.sequence, cues: state.cues, spoken: capSpoken(spoken) };
 }
 
 /**
@@ -373,5 +451,5 @@ export function applyVisualCueMentions(
       mentionCount: previous.mentionCount + 1,
     };
   }
-  return { sequence: state.sequence, cues: capVisualCueRecords(cues) };
+  return { sequence: state.sequence, cues: capVisualCueRecords(cues), spoken: state.spoken };
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "character_chats" ADD COLUMN "visual_state_narration" boolean DEFAULT false NOT NULL;

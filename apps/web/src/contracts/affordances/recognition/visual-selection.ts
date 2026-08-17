@@ -10,6 +10,8 @@ import {
 import {
   applyVisualCueMentions,
   emptyVisualCueState,
+  recordVisualCuesSpoken,
+  visualCueRecentlySpoken,
   intimateAllowedForSubject,
   observeVisualCues,
   visualStateKindRegistry,
@@ -102,6 +104,20 @@ export const VISUAL_SELECTION_KEY_UNBRANDABLE = "visual_state.selection.key_unbr
 
 /** The narrator's cue budget: the affordance core's strict "one or two". */
 export const VISUAL_NARRATOR_CUE_BUDGET_DEFAULT = AFFORDANCE_CUES_PER_EXCHANGE;
+
+/**
+ * The must-preserve block's cap — the plan's "compact must-preserve block",
+ * given a number.
+ *
+ * A fence is not a cue budget and the two are calibrated against opposite
+ * failures. The cue budget is small because volunteering detail is what the
+ * failed affordance-cue trial punished; this cap is larger because a fact left
+ * out of the fence is a fact the narrator is free to contradict, and it is
+ * capped at all because a fence long enough to read as an inventory invites the
+ * recitation that trial also punished. Six is a fixture-tested calibration
+ * default, not product law.
+ */
+export const VISUAL_NARRATOR_CONSTRAINT_BUDGET_DEFAULT = 6;
 /** Optional image facts per render until model profiles (slice 8) calibrate it. */
 export const VISUAL_IMAGE_OPTIONAL_BUDGET_DEFAULT = 8;
 
@@ -240,6 +256,8 @@ export interface VisualNarratorSelectionInput {
   readonly cues?: VisualCueState;
   /** Cues offered at most, after the mention floor. Defaults to the strict two. */
   readonly cueBudget?: number;
+  /** Must-preserve facts carried at most. Defaults to the compact six. */
+  readonly constraintBudget?: number;
   /** Lane-neutral provenance stamped onto every notice from this cut. */
   readonly observationId?: string;
   readonly sink?: DiagnosticSink;
@@ -269,6 +287,8 @@ export interface VisualNarratorSelection {
   readonly cueStateAfterVisibility: VisualCueState;
   /** Apply these to `cueStateAfterVisibility` only when the cues enter the cut. */
   readonly cueMentionCommits: readonly VisualCueMentionCommit[];
+  /** Every offered family's repeat key — the fence's just-spoken window, committed with the cut. */
+  readonly spokenRepeatKeys: readonly string[];
   readonly suppressions: readonly VisualStateSuppression[];
 }
 
@@ -326,6 +346,78 @@ function visualNarratorCueReason(input: {
   return null;
 }
 
+/**
+ * The must-preserve facts, per subject, capped.
+ *
+ * **The image-mandatory flags are NOT the narrator's fence.**
+ * `mandatoryForIdentity` / `mandatoryForContinuity` are documented in
+ * `priors.ts` as IMAGE REQUIREMENTS — what a render may not drop — and reusing
+ * them here would fence exactly the facts a render needs (morphology, worn
+ * garments) while leaving unfenced the ones prose actually contradicts: how a
+ * sleeve is arranged, how wet the hair is, what posture the body is in. That
+ * mismatch is why this is its own ranking rather than the mandatory filter it
+ * started as.
+ *
+ * So the fence is every VISIBLE narrator-eligible fact, ranked mandatory-first
+ * and then by salience, capped. Three properties matter:
+ *
+ * - **No change gate and no cooldown.** A coat worn for six exchanges is
+ *   exactly as contradictable on the seventh; a fence that went quiet once
+ *   mentioned would stop fencing precisely when the narrator was most likely to
+ *   drift.
+ * - **Visible only.** These are already the visibility read's survivors, so the
+ *   fence can never state what this observer cannot see — hidden-fact
+ *   contradiction prevention stays the narrator-guidance plan's business.
+ * - **Mandatory first.** A cap that dropped a morphology anchor to make room
+ *   for a crease would be the salience-over-requirement trade invariant 7
+ *   forbids on the image side, and it reads no better here.
+ */
+function narratorConstraints(
+  candidates: readonly VisualAttentionCandidate[],
+  budget: number,
+  /**
+   * Feature keys the cue block already carries. They are EXCLUDED from the
+   * fence: one fact belongs in one place, and the cue line is the place that
+   * says more — it carries the same clause plus the reason the fact is live
+   * this turn. Leaving it in both would spend a fence slot on a repetition and
+   * bury the change signal the whole lane exists to surface.
+   */
+  spokenKeys: ReadonlySet<string>,
+  /**
+   * The cue state, for the just-spoken window. A family the narrator said on
+   * the previous cut stays out of the fence for one cut
+   * (`VISUAL_FENCE_QUIET_CUTS`) — the round-1 repetition finding, closed here
+   * rather than in prompt wording: the fence cannot be re-presenting a fact the
+   * narrator has only just used, because the narrator reads a fence entry as
+   * something it may say.
+   */
+  cues: VisualCueState,
+): Map<string, VisualAttentionCandidate[]> {
+  const bySubject = new Map<string, VisualAttentionCandidate[]>();
+  for (const candidate of candidates) {
+    if (spokenKeys.has(candidate.feature.key)) continue;
+    if (visualCueRecentlySpoken(cues, candidate.repeatKey)) continue;
+    const list = bySubject.get(candidate.feature.subjectId);
+    if (list === undefined) bySubject.set(candidate.feature.subjectId, [candidate]);
+    else list.push(candidate);
+  }
+  const chosen = new Map<string, VisualAttentionCandidate[]>();
+  for (const [subjectId, list] of bySubject) {
+    const ranked = [...list].sort((left, right) => {
+      const leftMandatory = isMandatoryVisualStateFact(left.feature.priors) ? 1 : 0;
+      const rightMandatory = isMandatoryVisualStateFact(right.feature.priors) ? 1 : 0;
+      if (leftMandatory !== rightMandatory) return rightMandatory - leftMandatory;
+      // Salience, NOT priority: priority carries novelty and the mention
+      // cooldown, and a fence must not fade as it gets mentioned.
+      const bySalience =
+        recognitionFeatureSalience(right) - recognitionFeatureSalience(left);
+      return bySalience || compareStrings(left.feature.key, right.feature.key);
+    });
+    chosen.set(subjectId, ranked.slice(0, budget));
+  }
+  return chosen;
+}
+
 function visualConstraintOf(feature: VisualStateFeature): VisualConstraint {
   return {
     key: feature.key,
@@ -366,6 +458,7 @@ function emptyNarratorSelection(
     cueObservations: [],
     cueStateAfterVisibility: input.cues ?? emptyVisualCueState(),
     cueMentionCommits: [],
+    spokenRepeatKeys: [],
     suppressions,
   };
 }
@@ -421,6 +514,12 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   }
 
   const budget = resolvedBudget(input.cueBudget, VISUAL_NARRATOR_CUE_BUDGET_DEFAULT, sink, path);
+  const constraintBudget = resolvedBudget(
+    input.constraintBudget,
+    VISUAL_NARRATOR_CONSTRAINT_BUDGET_DEFAULT,
+    sink,
+    path,
+  );
   const atMinutes = Number.isFinite(snapshot.atMinutes) ? Math.max(0, Math.trunc(snapshot.atMinutes)) : 0;
 
   const priorCueState = input.cues ?? emptyVisualCueState();
@@ -489,6 +588,15 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
       }
     }
 
+    // A mandatory fact never competes in the OPTIONAL lane. It already rides
+    // the constraints list, which the prompt renders as its own must-preserve
+    // block, so letting it also take one of the two cue slots would spend the
+    // budget restating a fence the same prompt just put up — and the cue that
+    // lost the slot is exactly the changed or newly revealed detail this lane
+    // exists to surface. The image selection draws the same line (invariant 7);
+    // this is that line on the narrator side.
+    if (isMandatoryVisualStateFact(feature.priors)) continue;
+
     const reason = visualNarratorCueReason({ candidate, memoryEligible, row, fingerprintChanged, atMinutes });
     if (reason === null) continue;
     if (candidate.priority < RECOGNITION_MENTION_FLOOR) continue;
@@ -537,6 +645,10 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   const cueMentionCommits: VisualCueMentionCommit[] = selected
     .filter((entry) => entry.candidate.noveltySource === "cue")
     .map((entry) => ({ repeatKey: entry.candidate.repeatKey, atMinutes }));
+  // EVERY offered family, not only the cue-owned ones: the fence's quiet window
+  // is a fact about what the prompt just said, and it does not care which
+  // record supplied the cooldown.
+  const spokenRepeatKeys: string[] = selected.map((entry) => entry.candidate.repeatKey);
 
   const memoryAfterNotices = applyRecognitionFingerprintChanges(applyRecognitionNotices(memory, notices), changes);
   // Visibility is recorded for EVERY resolved cue family, mentioned or not:
@@ -551,11 +663,9 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   // subject: a multi-participant snapshot scans the candidates once, not once
   // per subject.
   const constraintsBySubject = new Map<string, VisualConstraint[]>();
-  for (const candidate of build.candidates) {
-    if (!isMandatoryVisualStateFact(candidate.feature.priors)) continue;
-    const list = constraintsBySubject.get(candidate.feature.subjectId);
-    if (list === undefined) constraintsBySubject.set(candidate.feature.subjectId, [visualConstraintOf(candidate.feature)]);
-    else list.push(visualConstraintOf(candidate.feature));
+  const spokenKeys = new Set(cues.map((offered) => offered.key));
+  for (const [subjectId, chosen] of narratorConstraints(build.candidates, constraintBudget, spokenKeys, priorCueState)) {
+    constraintsBySubject.set(subjectId, chosen.map((candidate) => visualConstraintOf(candidate.feature)));
   }
   // `scorable`, NOT every scored candidate, is the population that was ever
   // eligible to be said: each entry already cleared the notice threshold,
@@ -593,6 +703,7 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
     cueObservations: build.cueObservations,
     cueStateAfterVisibility,
     cueMentionCommits,
+    spokenRepeatKeys,
     suppressions,
   };
 }
@@ -607,8 +718,10 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
 export function commitVisualNarratorCueMentions(
   state: VisualCueState,
   commits: readonly VisualCueMentionCommit[],
+  /** Every offered family, for the fence's just-spoken window. */
+  spokenRepeatKeys: readonly string[] = [],
 ): VisualCueState {
-  return applyVisualCueMentions(state, commits);
+  return recordVisualCuesSpoken(applyVisualCueMentions(state, commits), spokenRepeatKeys);
 }
 
 /**
