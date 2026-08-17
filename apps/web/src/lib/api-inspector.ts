@@ -278,8 +278,31 @@ export const visualStateCandidateRowSchema = z.object({
   consumerRelevance: z.number().catch(0),
   repetitionCooldown: z.number().catch(0),
   repeatKey: textOr(""),
+  noveltySource: textOr("none"),
+  cueStatus: z.string().nullable().catch(null),
 });
 export type VisualStateCandidateRow = z.infer<typeof visualStateCandidateRowSchema>;
+
+/** The conditions the production reads ran under, and which of them nobody owns. */
+const visualStateViewingSchema = z
+  .object({
+    lighting: textOr("unknown"),
+    distance: textOr("unknown"),
+    angle: textOr("unknown"),
+    motion: textOr("unknown"),
+    declared: z.array(z.string()).catch([]),
+  })
+  .catch({ lighting: "unknown", distance: "unknown", angle: "unknown", motion: "unknown", declared: [] });
+
+/** The narrator cue record — repetition and first visibility for what memory does not hold. */
+const visualStateCueStateSchema = z
+  .object({
+    sequenceAfter: z.number().catch(0),
+    recordCount: z.number().catch(0),
+    observedCount: z.number().catch(0),
+    mentionCommitCount: z.number().catch(0),
+  })
+  .catch({ sequenceAfter: 0, recordCount: 0, observedCount: 0, mentionCommitCount: 0 });
 
 const countRecord = z.record(z.string(), z.number()).catch({});
 
@@ -363,6 +386,7 @@ export const visualStatePreviewSchema = z.object({
   composition: arrayOf(visualStateCompositionRowSchema),
   suppressions: arrayOf(visualStateSuppressionSchema),
   staircase: arrayOf(visualStateCandidateRowSchema),
+  viewing: visualStateViewingSchema,
   narrator: z
     .object({
       digests: arrayOf(
@@ -378,9 +402,17 @@ export const visualStatePreviewSchema = z.object({
       noticeCount: z.number().catch(0),
       changeCount: z.number().catch(0),
       mentionCommitCount: z.number().catch(0),
+      cueState: visualStateCueStateSchema,
       suppressions: arrayOf(visualStateSuppressionSchema),
     })
-    .catch({ digests: [], noticeCount: 0, changeCount: 0, mentionCommitCount: 0, suppressions: [] }),
+    .catch({
+      digests: [],
+      noticeCount: 0,
+      changeCount: 0,
+      mentionCommitCount: 0,
+      cueState: { sequenceAfter: 0, recordCount: 0, observedCount: 0, mentionCommitCount: 0 },
+      suppressions: [],
+    }),
   image: z
     .object({
       mandatoryKeys: z.array(z.string()).catch([]),

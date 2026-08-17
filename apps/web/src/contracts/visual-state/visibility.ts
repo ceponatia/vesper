@@ -25,6 +25,7 @@ import {
   VISUAL_STATE_INTIMATE_GATED,
   VISUAL_STATE_LOCUS_INVALID,
   VISUAL_STATE_VISIBILITY_CHANNEL_UNAVAILABLE,
+  VISUAL_STATE_VISIBILITY_DECLARED,
   VISUAL_STATE_VISIBILITY_HIDDEN,
   VISUAL_STATE_VISIBILITY_INVALID,
   VISUAL_STATE_VISIBILITY_OUT_OF_FRAME,
@@ -52,10 +53,11 @@ import type { VisualStateSuppression } from "./suppression";
  *   §Visibility). Every component read distinguishes `known`, `unknown` and
  *   `invalid`, and a single unusable component fails the WHOLE read closed:
  *   with the lighting unknown, nothing is claimed visible, however exposed.
- *   Today no production owner can assert lighting or motion as typed data
- *   (visual-state.audit.md finding 14), so the common shadow-mode result is
- *   conservative silence — that is the intended behavior, and slice 6 measures
- *   it as missing-owner frequency rather than papering over it with a default.
+ *   No production owner asserts lighting or whole-subject motion as typed data
+ *   (visual-state.audit.md finding 14), so the narrator lane supplies them as
+ *   DECLARED release defaults (`viewing.ts`) rather than as unknowns — a stated
+ *   assertion the inspector and the diagnostics both name. An unmarked default
+ *   remains forbidden; a marked one is the ruled first-release policy.
  * - **Blocked features are suppressions, never zero-visibility reads** — the
  *   recognition layer's own representation, so a consumer cannot accidentally
  *   rank an invisible feature.
@@ -94,14 +96,29 @@ export type VisualViewpoint =
  * One explicit visibility input. `unknown` means no owner could answer;
  * `invalid` means a value broke its trust boundary on the way here. Neither is
  * a band, neither defaults, and neither can produce positive visibility.
+ *
+ * `declared` on the known arm marks a value that came from a written-down
+ * RELEASE DEFAULT rather than from an owner. It resolves exactly like any other
+ * known read — the whole point of a declared default is that it is a real
+ * assertion — but it is fingerprinted, evidenced, and reported separately, so a
+ * trial can always tell a grounded read from a stated policy. This is the
+ * mechanism the plan's "an explicit degraded first-release policy, stated and
+ * tested as such" needs; the thing it forbids is an unmarked default, which is
+ * precisely what this flag makes impossible to write by accident.
  */
 export type VisualComponentRead<TValue> =
-  | { readonly status: "known"; readonly value: TValue }
+  | { readonly status: "known"; readonly value: TValue; readonly declared?: true }
   | { readonly status: "unknown" }
   | { readonly status: "invalid" };
 
+/** An owner answered. */
 export function visualComponentKnown<TValue>(value: TValue): VisualComponentRead<TValue> {
   return { status: "known", value };
+}
+
+/** No owner answered, and the release declares this value instead. Never silent. */
+export function visualComponentDeclared<TValue>(value: TValue): VisualComponentRead<TValue> {
+  return { status: "known", value, declared: true };
 }
 
 export const VISUAL_COMPONENT_UNKNOWN: VisualComponentRead<never> = { status: "unknown" };
@@ -310,8 +327,21 @@ type ResolvedComponents =
       readonly angle: VisualAngleBand;
       readonly motion: VisualMotionBand;
       readonly framing?: VisualFramingBand;
+      /** Component names whose value is a declared default, in resolution order. */
+      readonly declared: readonly string[];
     }
   | { readonly ok: false; readonly component: string; readonly status: "unknown" | "invalid" };
+
+/** The component names supplied by a declared default, in a fixed order. */
+export function visualDeclaredComponents(context: VisualVisibilityContext): readonly string[] {
+  const declared: string[] = [];
+  if (context.lighting.status === "known" && context.lighting.declared === true) declared.push("lighting");
+  if (context.distance.status === "known" && context.distance.declared === true) declared.push("distance");
+  if (context.angle.status === "known" && context.angle.declared === true) declared.push("angle");
+  if (context.motion.status === "known" && context.motion.declared === true) declared.push("motion");
+  if (context.framing?.status === "known" && context.framing.declared === true) declared.push("framing");
+  return declared;
+}
 
 function resolveComponents(context: VisualVisibilityContext): ResolvedComponents {
   const { lighting, distance, angle, motion, framing } = context;
@@ -329,6 +359,7 @@ function resolveComponents(context: VisualVisibilityContext): ResolvedComponents
     angle: angle.value,
     motion: motion.value,
     ...(framing === undefined ? {} : { framing: framing.value }),
+    declared: visualDeclaredComponents(context),
   };
 }
 
@@ -477,6 +508,22 @@ export function resolveVisualStateVisibility(input: {
     ].join(":"),
   );
   const viewpointEvidence = affordanceEvidence("adapter", "visual_state.visibility", context.viewpoint.kind);
+  // Declared defaults ride on EVERY read they contributed to, so a graded trial
+  // row can never mistake a stated policy for an observed condition.
+  const declaredEvidence =
+    components.declared.length === 0
+      ? undefined
+      : affordanceEvidence("adapter", "visual_state.visibility.declared_default", components.declared.join(","));
+  if (declaredEvidence !== undefined) {
+    input.sink?.push(
+      diag(
+        "info",
+        VISUAL_STATE_VISIBILITY_DECLARED,
+        `No owner asserts ${components.declared.join(", ")}; the release default is used`,
+        { path, context: { components: components.declared.join(","), viewpoint: context.viewpoint.kind } },
+      ),
+    );
+  }
 
   const visible: VisualStateVisibilityRead[] = [];
   const suppressions: VisualStateSuppression[] = [];
@@ -598,10 +645,12 @@ export function resolveVisualStateVisibility(input: {
       key: feature.key,
       visibility,
       detailTier: conditionTier,
-      evidence:
-        exposureEvidence === undefined
-          ? [viewpointEvidence, conditionsEvidence]
-          : [viewpointEvidence, conditionsEvidence, exposureEvidence],
+      evidence: [
+        viewpointEvidence,
+        conditionsEvidence,
+        ...(declaredEvidence === undefined ? [] : [declaredEvidence]),
+        ...(exposureEvidence === undefined ? [] : [exposureEvidence]),
+      ],
     });
   });
 

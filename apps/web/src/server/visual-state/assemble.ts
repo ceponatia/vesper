@@ -4,6 +4,7 @@ import {
   buildVisualStateSnapshot,
   conditionAttributeOverlays,
   diag,
+  emptyVisualCueState,
   emptyVisualMemoryState,
   garmentBlueprintFor,
   GARMENT_PLAYER_ACTOR,
@@ -18,12 +19,12 @@ import {
   projectWardrobeFeatures,
   realizeBody,
   resolveAttributes,
+  resolveVisualViewingConditions,
   selectVisualImageFacts,
   selectVisualNarratorCues,
   unsupportedCurrentStateSuppressions,
   visualComponentKnown,
   visualStateFeatureKey,
-  VISUAL_COMPONENT_UNKNOWN,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
   type ActiveCondition,
   type AffordanceObservation,
@@ -40,6 +41,7 @@ import {
   type SceneState,
   type VisualAttentionBuild,
   type VisualAttentionContext,
+  type VisualCueState,
   type VisualImageSelection,
   type VisualMemoryState,
   type VisualNarratorSelection,
@@ -50,6 +52,7 @@ import {
   type VisualStateScopeRef,
   type VisualStateSnapshot,
   type VisualStateSuppression,
+  type VisualViewingConditions,
 } from "@/contracts";
 
 /**
@@ -452,6 +455,18 @@ export interface VisualStateSelectionsInput {
   readonly observer: VisualObserverRef;
   /** Loaded read-only; never written back by any slice-6 caller. */
   readonly memory?: VisualMemoryState;
+  /**
+   * The narrator cue state as of before this cut, loaded read-only. Slice 6
+   * discards the selection's cue outputs exactly as it discards its memory
+   * outputs; committing them is the narration flag's work.
+   */
+  readonly cues?: VisualCueState;
+  /** The committed scene, for the distance and angle reads. */
+  readonly scene?: SceneState;
+  /** The scene participant doing the looking. */
+  readonly observerParticipantId?: string;
+  /** The scene participant being looked at. */
+  readonly subjectParticipantId?: string;
   readonly sink?: DiagnosticSink;
 }
 
@@ -461,30 +476,47 @@ export interface VisualStateSelections {
   /**
    * The inspector's staircase: every feature scored under a debug viewpoint
    * with ideal viewing conditions, so the panel can show what the projection
-   * HOLDS even while the production reads keep the real selections closed.
+   * HOLDS independently of where the scene put the subject.
    */
   readonly staircase: VisualAttentionBuild;
+  /**
+   * The conditions the production reads actually ran under, carried so the
+   * inspector and the trial can see which components an owner answered and
+   * which came from the declared base. A policy nobody can read is not a
+   * stated policy.
+   */
+  readonly viewing: VisualViewingConditions;
 }
 
 /**
- * The shadow viewing conditions, stated honestly: no owner anywhere produces a
- * lighting, distance, angle, or motion read for either lane today (audit
- * finding 14), so every component is `unknown` and the visibility read fails
- * closed — nothing claimed visible, one diagnostic, per-feature suppressions.
- * That IS the slice-4 ruling's intended shadow behavior, and the measurement
- * this produces is what the plan's open question on per-component relaxation
- * waits for. Nothing here may substitute a plausible default.
+ * The lane's viewing conditions (plan §Open questions → "how the narrator lane
+ * obtains usable viewing conditions", resolved 2026-08-17).
+ *
+ * Until this, every component was passed as `unknown`, the slice-4 read failed
+ * the whole feature list closed, and the production narrator selection had zero
+ * candidates under every ordinary condition — the second of the two blockers
+ * slice 7 could not absorb. `resolveVisualViewingConditions` supplies distance
+ * and angle from the scene owner where it states them, and the release's
+ * declared base values where nothing owns them. Declared reads are marked, so
+ * the trial can separate a grounded read from a stated policy; nothing here
+ * substitutes an unmarked default.
  */
-function shadowComponents() {
-  return {
-    lighting: VISUAL_COMPONENT_UNKNOWN,
-    distance: VISUAL_COMPONENT_UNKNOWN,
-    angle: VISUAL_COMPONENT_UNKNOWN,
-    motion: VISUAL_COMPONENT_UNKNOWN,
-  } as const;
+function laneComponents(input: VisualStateSelectionsInput) {
+  return resolveVisualViewingConditions({
+    ...(input.scene === undefined ? {} : { scene: input.scene }),
+    ...(input.observerParticipantId === undefined ? {} : { observerParticipantId: input.observerParticipantId }),
+    ...(input.subjectParticipantId === undefined ? {} : { subjectParticipantId: input.subjectParticipantId }),
+  });
 }
 
-/** Ideal viewing conditions for the inspector's debug staircase only. */
+/**
+ * Ideal viewing conditions for the inspector's debug staircase only.
+ *
+ * Still worth keeping now that the production reads are open: the staircase's
+ * job is to show what the projection HOLDS, so it must not move when the scene
+ * places the subject across the room. These are asserted as `known` rather than
+ * declared because the debug viewpoint is not a claim about the world at all.
+ */
 function staircaseComponents() {
   return {
     lighting: visualComponentKnown("bright" as const),
@@ -508,11 +540,12 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
   // either lane today, so it is the only entry — an unlisted subject resolves
   // nothing rather than borrowing this one.
   const perceptionBySubject = new Map([[input.perceptionSubjectId, input.perception]]);
+  const components = laneComponents(input);
   const narratorContext: VisualAttentionContext = {
     viewpoint: { kind: "observer", observerId: input.observerId },
     perception: input.perception,
     perceptionBySubject,
-    ...shadowComponents(),
+    ...components,
     intimateAllowed: false,
     consumer: "narrator",
   };
@@ -521,14 +554,20 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
     context: narratorContext,
     binding: { scope: input.snapshot.scope, observer: input.observer },
     memory: input.memory ?? emptyVisualMemoryState(),
+    cues: input.cues ?? emptyVisualCueState(),
     ...(sink === undefined ? {} : { sink }),
   });
 
+  // The shadow camera takes the same reads. It has no committed camera of its
+  // own — a real render supplies one through `visualCameraReadsOfSceneCamera`
+  // when the consolidation plan cuts the routes over — and leaving it unknown
+  // would keep slice 6's image measurement at a permanent zero, which measures
+  // the placeholder rather than the projection.
   const imageContext: VisualAttentionContext = {
     viewpoint: { kind: "camera", cameraId: "visual_state_shadow" },
     perception: input.perception,
     perceptionBySubject,
-    ...shadowComponents(),
+    ...components,
     intimateAllowed: false,
     consumer: "image",
   };
@@ -552,5 +591,5 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
     ...(sink === undefined ? {} : { sink }),
   });
 
-  return { narrator, image, staircase };
+  return { narrator, image, staircase, viewing: components };
 }

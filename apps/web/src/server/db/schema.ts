@@ -883,6 +883,44 @@ export const chatVisualMemory = pgTable(
 );
 
 /**
+ * NARRATOR VISUAL CUE STATE (visual-state.plan.md slice 7; the cue-state
+ * contract in contracts/visual-state/cue-state.ts): for ONE observer and ONE
+ * subject, when each repeat family was last in view and when the narrator last
+ * said it.
+ *
+ * A SEPARATE table from `chat_visual_memory`, deliberately. The two records are
+ * disjoint by construction — memory holds what an observer could recognize,
+ * this holds everything recognition refuses (a rolled sleeve, a posture, an
+ * occupied hand) — and keeping them apart is what stops a transient body-language
+ * fact from ever reaching the recognition floor, the cap, or the decay law.
+ * Sharing the memory row's columns would also have made the two-generation
+ * shuffle below unsound: two upserts against one row in one exchange, and the
+ * second sees an `applied_message_id` the first already stamped.
+ *
+ * The key and the retake law are otherwise identical to
+ * `chat_visual_memory` — memory group, observer, subject; `cues` is the state as
+ * of the last applied exchange, `cues_before` the state it advanced from, and
+ * `applied_message_id` the exchange guard that decides which one a load returns.
+ *
+ * Both jsonb columns hold `VisualCueState` and cross the trust boundary through
+ * `parseOr` in `visual-cue-store.ts`; a corrupt blob heals to "nothing has been
+ * seen yet" rather than costing a turn.
+ */
+export const chatVisualCues = pgTable(
+  "chat_visual_cues",
+  {
+    memoryGroupId: text("memory_group_id").notNull(),
+    viewpointId: text("viewpoint_id").notNull(),
+    subjectId: text("subject_id").notNull(),
+    cues: jsonb("cues").notNull().default({}),
+    cuesBefore: jsonb("cues_before"),
+    appliedMessageId: text("applied_message_id"),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.memoryGroupId, t.viewpointId, t.subjectId] })],
+);
+
+/**
  * The chat lane's DURABLE CONTACT LEDGER (romantic-contact-affordances — the
  * affectionate integration proof): every `ContactLifecycleCommit` an exchange
  * produced, stamped with the exchange that produced it.

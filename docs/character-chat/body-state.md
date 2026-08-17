@@ -173,6 +173,49 @@ forearm") — standing truth after the physical cues, never competing with them.
   `body-attribute-affordances.plan.md`
   §Slice 7.
 
+### The narrator's own cue record
+
+**`chat_visual_cues`** (behind `CHAT_VISUAL_STATE_NARRATION`, default OFF) is the sibling
+record for everything `chat_visual_memory` deliberately refuses. Recognition memory holds
+what a person could *recognize* — a crooked nose, a scar — and a rolled sleeve, a posture, or
+an occupied hand has no business filling it up. That exclusion also left those details with
+no cooldown after being mentioned and no record of having been seen, so a recently stamped
+sleeve stayed eligible turn after turn and nothing could tell the narrator that an ordinary
+detail became *visible* now rather than merely being true now.
+
+Contract in `contracts/visual-state/cue-state.ts`, storage in
+`engine/visual-cue-store.ts`. The two records are disjoint: one predicate
+(`isMemoryEligible`) decides which answers for a feature, so novelty, the cooldown, and the
+mention ledger all follow it and a single cue can never spend both.
+
+- **Keyed by repeat family, not by feature** — both questions it answers are questions about
+  the family ("this sleeve's arrangement"), and its stored fingerprint covers every visible
+  member of that family, so a change to any of them registers.
+- **It counts cuts, not minutes.** "Newly visible" means *not in view at the immediately
+  previous cut*. Chat turns move the story clock by wildly varying amounts, so a time
+  threshold would call a continuously visible sleeve newly revealed after a long gap and miss
+  a coat that came off and back on inside an hour.
+- **Seeing and saying are separate events**, exactly as they are for recognition. Every cut
+  records what was in view, said or not; only a cue that reached the transcript starts a
+  cooldown. A detail in continuous, unchanged view stays quiet; one that reappears or changes
+  can earn a beat.
+- **Same key and same two-generation retake law** as `chat_visual_memory`, in its own table.
+  The counter is why that matters more here: a retake that advanced it twice would make every
+  tracked detail read as newly revealed on the following cut.
+- **Read on both flags, written on one.** The visual-state shadow reads the stored state and
+  ranks against it, so its repetition and newly-revealed counts are real; only
+  `CHAT_VISUAL_STATE_NARRATION` commits.
+
+### What the narrator can see
+
+Visibility claims nothing unless it knows the light, the distance, the angle, and whether
+anyone is moving; one unknown component suppresses every detail in the snapshot. Distance and
+angle come from the scene owner's proximity and facing for the observer/subject pair. Nothing
+in the app owns scene lighting or whole-subject motion, so the release **states** a base
+value for each (an ordinary lit room, a still scene) and marks it as stated — the marker
+rides the evidence on every visible read, one info diagnostic, and the inspector's own panel,
+so a stated placeholder can never be mistaken for an observation.
+
 ### Narrator physical guidance — constraints and premise checks
 
 The affordance-cue trial closed against volunteering physical detail, so the same committed

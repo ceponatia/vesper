@@ -5,7 +5,9 @@ import {
   type Diagnostic,
   type VisualAttentionCandidate,
   type VisualStateFeature,
+  type VisualComponentRead,
   type VisualStateSuppression,
+  type VisualViewingConditions,
 } from "@/contracts";
 import { emptyVisualStateMeasurements, type VisualStateMeasurements } from "./measure";
 import type { VisualStateShadowBuild } from "./shadow";
@@ -71,6 +73,10 @@ export interface VisualStatePreviewCandidate {
   readonly consumerRelevance: number;
   readonly repetitionCooldown: number;
   readonly repeatKey: string;
+  /** Which record answered novelty and cooldown: observer memory, the cue state, or neither. */
+  readonly noveltySource: string;
+  /** How the cue state read this family's visibility, when the cue state answered. */
+  readonly cueStatus: string | null;
 }
 
 export interface VisualStatePreviewCue {
@@ -85,6 +91,38 @@ export interface VisualStatePreviewDigest {
   readonly constraintKeys: readonly string[];
   readonly selected: readonly VisualStatePreviewCue[];
   readonly suppressedCount: number;
+}
+
+/**
+ * The conditions the production reads ran under, and which of them nobody owns.
+ *
+ * The inspector's staircase deliberately substitutes ideal conditions, so
+ * without this panel a reader cannot tell a grounded read from the release's
+ * declared base — which is exactly the confusion that let "the inspector works,
+ * so the narrator must too" stand while production had no candidates at all.
+ */
+export interface VisualStatePreviewViewing {
+  readonly lighting: string;
+  readonly distance: string;
+  readonly angle: string;
+  readonly motion: string;
+  /** Components supplied by the declared release default rather than by an owner. */
+  readonly declared: readonly string[];
+}
+
+/** The narrator cue record — repetition and first visibility for what memory does not hold. */
+export interface VisualStatePreviewCueState {
+  /**
+   * Cuts this observer has recorded, THIS one included — the value a commit
+   * would store. A stored `0` before the cut means the state has never been
+   * committed, which is what makes every family read as first-visible.
+   */
+  readonly sequenceAfter: number;
+  readonly recordCount: number;
+  /** Families resolvable at this cut — what a commit would record. */
+  readonly observedCount: number;
+  /** Families whose cue would start a cooldown if this cut landed. */
+  readonly mentionCommitCount: number;
 }
 
 export interface VisualStatePreviewDiagnostic {
@@ -106,11 +144,14 @@ export interface VisualStatePreviewPayload {
   readonly suppressions: readonly VisualStatePreviewSuppression[];
   /** Every feature scored under the debug viewpoint's ideal conditions. */
   readonly staircase: readonly VisualStatePreviewCandidate[];
+  /** What the production reads actually ran under. */
+  readonly viewing: VisualStatePreviewViewing;
   readonly narrator: {
     readonly digests: readonly VisualStatePreviewDigest[];
     readonly noticeCount: number;
     readonly changeCount: number;
     readonly mentionCommitCount: number;
+    readonly cueState: VisualStatePreviewCueState;
     readonly suppressions: readonly VisualStatePreviewSuppression[];
   };
   readonly image: {
@@ -165,6 +206,28 @@ function previewCandidate(candidate: VisualAttentionCandidate): VisualStatePrevi
     consumerRelevance: candidate.consumerRelevance,
     repetitionCooldown: candidate.repetitionCooldown,
     repeatKey: candidate.repeatKey,
+    noveltySource: candidate.noveltySource,
+    cueStatus: candidate.cueStatus ?? null,
+  };
+}
+
+function previewViewing(viewing: VisualViewingConditions): VisualStatePreviewViewing {
+  const band = (read: VisualComponentRead<string>): string =>
+    read.status === "known" ? read.value : read.status;
+  // Spelled out per component rather than walked over `Object.entries`: the
+  // conditions object is a typed contract, and enumerating it loses the types
+  // that make `declared` checkable at all.
+  const declared: string[] = [];
+  if (viewing.lighting.status === "known" && viewing.lighting.declared === true) declared.push("lighting");
+  if (viewing.distance.status === "known" && viewing.distance.declared === true) declared.push("distance");
+  if (viewing.angle.status === "known" && viewing.angle.declared === true) declared.push("angle");
+  if (viewing.motion.status === "known" && viewing.motion.declared === true) declared.push("motion");
+  return {
+    lighting: band(viewing.lighting),
+    distance: band(viewing.distance),
+    angle: band(viewing.angle),
+    motion: band(viewing.motion),
+    declared,
   };
 }
 
@@ -189,7 +252,15 @@ export function degradedVisualStatePreviewPayload(input: {
     composition: [],
     suppressions: [],
     staircase: [],
-    narrator: { digests: [], noticeCount: 0, changeCount: 0, mentionCommitCount: 0, suppressions: [] },
+    viewing: { lighting: "unknown", distance: "unknown", angle: "unknown", motion: "unknown", declared: [] },
+    narrator: {
+      digests: [],
+      noticeCount: 0,
+      changeCount: 0,
+      mentionCommitCount: 0,
+      cueState: { sequenceAfter: 0, recordCount: 0, observedCount: 0, mentionCommitCount: 0 },
+      suppressions: [],
+    },
     image: { mandatoryKeys: [], optional: [], suppressedOptionalCount: 0, suppressions: [] },
     measurements: emptyVisualStateMeasurements(),
     diagnostics: input.diagnostics.map((entry) => ({
@@ -227,6 +298,7 @@ export function visualStatePreviewPayload(input: {
     })),
     suppressions: previewSuppressions(snapshot.suppressions),
     staircase: staircase.candidates.map(previewCandidate),
+    viewing: previewViewing(build.viewing),
     narrator: {
       digests: narrator.digests.map((digest) => ({
         subjectId: digest.subjectId,
@@ -242,6 +314,12 @@ export function visualStatePreviewPayload(input: {
       noticeCount: narrator.notices.length,
       changeCount: narrator.changes.length,
       mentionCommitCount: narrator.mentionCommits.length,
+      cueState: {
+        sequenceAfter: narrator.cueStateAfterVisibility.sequence,
+        recordCount: Object.keys(narrator.cueStateAfterVisibility.cues).length,
+        observedCount: narrator.cueObservations.length,
+        mentionCommitCount: narrator.cueMentionCommits.length,
+      },
       suppressions: previewSuppressions(narrator.suppressions),
     },
     image: {
