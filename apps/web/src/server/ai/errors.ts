@@ -17,9 +17,39 @@ import type { ChatReplyFailureCode } from "@/contracts";
  */
 export function describeProviderError(err: unknown): string {
   if (!APICallError.isInstance(err)) {
-    return err instanceof Error ? err.message : String(err);
+    if (err instanceof Error) return err.message;
+    // A provider error envelope reported IN-STREAM rather than thrown — see
+    // `streamErrorEnvelope`. `String(err)` on one of these is "[object Object]".
+    const envelope = streamErrorEnvelope(err);
+    if (envelope) return envelope.code ? `${envelope.message} (${envelope.code})` : envelope.message;
+    return String(err);
   }
   return providerErrorMessage(err.responseBody) ?? err.message;
+}
+
+/**
+ * A provider error object the AI SDK reported through the STREAM instead of throwing.
+ *
+ * When an upstream answers HTTP 200 and then puts `{"error": {...}}` in an SSE frame —
+ * which is what a Featherless cold start does, observed live 2026-08-17 — the
+ * openai-compatible transport enqueues an error part carrying that raw JSON object
+ * verbatim. It is a plain record, not an `APICallError`: there is no status code, no
+ * response body, and it is not even an `Error`. Read as one, it degrades to the string
+ * "[object Object]" and the class `unknown`, which is how a warming model came to be
+ * indistinguishable from a silent one.
+ *
+ * Recognized only when the record actually looks like a provider envelope (a string
+ * `message` or `code`), so an unrelated object thrown from Vesper's own code still
+ * classifies as `unknown` rather than being dressed up as an upstream failure.
+ */
+function streamErrorEnvelope(err: unknown): { message: string; code: string } | null {
+  if (err instanceof Error || !isRecord(err)) return null;
+  // Some upstreams nest it one level (`{error: {...}}`), others send the inner object.
+  const inner = isRecord(err.error) ? err.error : err;
+  const message = typeof inner.message === "string" ? inner.message : "";
+  const code = typeof inner.code === "string" ? inner.code : "";
+  if (!message && !code) return null;
+  return { message: message || code, code };
 }
 
 /**
@@ -51,6 +81,17 @@ export function classifyProviderError(err: unknown): {
     return { code: "unknown", detail, status };
   }
   if (isNetworkError(cause)) return { code: "network", detail };
+  // An in-stream provider envelope: no HTTP status to fall back on, so the vendor's own
+  // words are all there is. It is still definitively an UPSTREAM failure — reporting it
+  // as `unknown` sends the player honest-but-useless "no cause recorded" copy for a
+  // failure the provider explained.
+  const envelope = streamErrorEnvelope(cause);
+  if (envelope) {
+    const text = `${envelope.message} ${envelope.code}`;
+    if (MODERATION_TEXT.test(text)) return { code: "moderation_blocked", detail };
+    if (CONTEXT_TEXT.test(text)) return { code: "context_too_long", detail };
+    return { code: "provider_error", detail };
+  }
   return { code: "unknown", detail };
 }
 

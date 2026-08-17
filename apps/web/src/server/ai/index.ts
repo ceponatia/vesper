@@ -2,6 +2,7 @@ export * from "./provider";
 export * from "./narrator-artifacts";
 export * from "./narrator-repeats";
 export * from "./narrator-speaker-tags";
+export * from "./narrator-completion";
 export * from "./agent-failures";
 export * from "./agent-reasoning";
 export * from "./generate-checked";

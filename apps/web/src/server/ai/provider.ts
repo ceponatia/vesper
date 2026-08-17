@@ -237,45 +237,151 @@ export function featherless(): OpenAICompatibleProvider {
 }
 
 /**
- * Featherless models asked with their chat template's **thinking mode off**, keyed by
- * exact model id. Opt-in per model, never a blanket flag — the same rule the OpenRouter
- * reasoning knobs above follow, and for the same reason: a model that does not use a
- * thinking template gains nothing, and one whose template spells the flag differently
- * would silently ignore it.
- *
- * This is not a preference. A thinking narrator is unusable in the chat lane on two
- * independent counts, both measured against the live endpoint on 2026-08-17:
- *
- * - **It blows the first-token budget.** The chain runs ~1,300 tokens before any prose,
- *   which put the first visible token at ~61s — past `CHAT_STREAM_FIRST_TOKEN_MS` (50s),
- *   a ceiling that cannot be raised because it sits under Fly's ~60s proxy idle timeout.
- * - **It eats the whole reply.** Asked with a bounded output budget, the model spent all
- *   of it thinking and returned an EMPTY reply with `finish_reason: "length"`. Not slow
- *   prose — no prose.
- *
- * Only `chat_template_kwargs` works. `reasoning_effort: "none"` and a `/no_think` token in
- * the prompt were both probed on this model and both silently ignored, still producing a
- * full chain and no prose — which is why this rides `transformRequestBody` rather than the
- * transport's own `reasoningEffort` option.
+ * The exact id of the Fable Fusion 711 narrator, named once here because three
+ * separate things key on it — its request policy below, the chat lane's hidden
+ * empty retry, and the tests that prove no other model inherits either. A curated
+ * row's id is a persisted value, so a typo'd second spelling would silently mean
+ * "policy off" rather than fail.
  */
-const FEATHERLESS_THINKING_OFF: ReadonlySet<string> = new Set([
-  "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
-]);
+export const FABLE_FUSION_711_ID = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP";
 
 /**
- * The Featherless request-body hook: adds `chat_template_kwargs` for the models above and
- * changes nothing for any other. Reads the id off the outgoing body rather than taking it
- * as an argument, because the transport builds one client for every model.
+ * Per-model **runtime request policy** for a Featherless narrator, keyed by exact model
+ * id. Opt-in per model, never a blanket flag — the same rule the OpenRouter reasoning
+ * knobs above follow, and for the same reason: a model that does not use a thinking
+ * template gains nothing from the flag, and one whose template spells it differently
+ * would ignore it just as quietly.
+ *
+ * Runtime policy lives HERE, in the provider layer, and not on the narrator list
+ * (`lib/narrative-models.ts`). That list is the UI's option registry and is pure; the
+ * transport is where a call's shape is decided, and keeping the two apart is what lets a
+ * row be relabelled or reordered without touching how it is asked.
+ */
+interface FeatherlessModelPolicy {
+  /**
+   * Ask with the chat template's thinking mode OFF.
+   *
+   * This is not a preference. A thinking narrator is unusable in the chat lane on two
+   * independent counts, both measured against the live endpoint:
+   *
+   * - **It blows the first-token budget.** The chain runs ~1,300 tokens before any prose,
+   *   which put the first visible token at ~61s — past `CHAT_STREAM_FIRST_TOKEN_MS` (50s),
+   *   a ceiling that cannot be raised because it sits under Fly's ~60s proxy idle timeout.
+   * - **It eats the whole reply.** Asked with a bounded output budget the model spent all
+   *   of it thinking and returned an EMPTY reply with `finish_reason: "length"`. Not slow
+   *   prose — no prose. Re-reproduced 2026-08-17 on a 34-token prompt with
+   *   `max_tokens: 300`: `finish_reason "length"`, 298 completion tokens, **zero**
+   *   characters of content, ~1,080 characters of reasoning.
+   *
+   * Only `chat_template_kwargs` works. `reasoning_effort: "none"` and a `/no_think` token
+   * in the prompt were both probed on this model and both silently ignored, still producing
+   * a full chain and no prose — which is why this rides `transformRequestBody` rather than
+   * the transport's own `reasoningEffort` option.
+   *
+   * **One key, not three.** Featherless documents `enable_thinking`, `thinking` and
+   * `do_reasoning` as normalized synonyms with `false` winning any conflict, and all three
+   * were probed independently on this exact model on 2026-08-17: each alone produced
+   * `finish_reason "stop"`, prose, and zero reasoning. One confirmed-sufficient key is
+   * therefore what is sent; sending the other two would be redundancy against a hazard
+   * the evidence says does not exist.
+   */
+  thinkingOff?: boolean;
+  /**
+   * Exact-model sampler baseline, merged over whatever the call site set. Sent as raw
+   * OpenAI-compatible body fields because two of them have no AI SDK equivalent: the
+   * transport drops `topK` with an "unsupported" warning, and `repetition_penalty` is not
+   * in the standard call settings at all.
+   */
+  sampler?: Readonly<Record<string, number>>;
+  /**
+   * This model earns the chat lane's ONE hidden retry for a zero-visible-text completion
+   * (`streamCharacterChat`). Exact-model, because the retry is only defensible where a
+   * known-intermittent empty has been measured — every other narrator keeps today's
+   * behaviour of surfacing the empty reply immediately.
+   */
+  hiddenEmptyRetry?: boolean;
+  /**
+   * Minimum generated tokens on the hidden retry ONLY, and only when the first attempt was
+   * a genuinely silent stop. Featherless accepts `min_tokens` (probed 2026-08-17). This is
+   * deliberately not a global floor: a minimum response length applied to every narrator
+   * call is how narrator padding gets resurrected.
+   */
+  retryMinTokens?: number;
+}
+
+const FEATHERLESS_MODEL_POLICY: Readonly<Record<string, FeatherlessModelPolicy>> = {
+  [FABLE_FUSION_711_ID]: {
+    thinkingOff: true,
+    // The author's recommended non-thinking/instruct baseline for this merge, not a
+    // Vesper-tuned guess. `NARRATIVE_TEMPERATURE` (0.85) is the repo default and stays
+    // the default for every other narrator; this model asks for 0.7 with tight nucleus
+    // and top-k, plus presence pressure, which is what its instruct template expects.
+    sampler: {
+      temperature: 0.7,
+      top_p: 0.8,
+      top_k: 20,
+      presence_penalty: 1.5,
+      repetition_penalty: 1.0,
+    },
+    hiddenEmptyRetry: true,
+    retryMinTokens: 48,
+  },
+};
+
+/**
+ * The Featherless request-body hook: applies the exact-model policy above and changes
+ * nothing for any other model. Reads the id off the outgoing body rather than taking it as
+ * an argument, because the transport builds one client for every model.
+ *
+ * Riding the transport rather than the call sites is what gives the successor narrator
+ * parity for free: `streamCharacterChat` and `generateChecked` both reach Featherless
+ * through `textModel`, so a policy applied here is applied to both, and neither call site
+ * has to learn a model's name. Nothing else routes here — the narrator list is the only
+ * model list that may name a provider, so no agent, composer, embedding or vision call can
+ * reach this function at all.
  *
  * Exported for its test. It is the only place a Featherless call's shape is decided, and
- * the difference between the two branches is the difference between a narrator that
- * answers in about a second and one that returns nothing at all — worth asserting
- * directly rather than through a network round-trip.
+ * the difference between the branches is the difference between a narrator that answers in
+ * about a second and one that returns nothing at all — worth asserting directly rather
+ * than through a network round-trip.
  */
 export function featherlessRequestBody(body: Record<string, unknown>): Record<string, unknown> {
   const modelId = typeof body.model === "string" ? body.model : "";
-  if (!FEATHERLESS_THINKING_OFF.has(modelId)) return body;
-  return { ...body, chat_template_kwargs: { enable_thinking: false } };
+  const policy = FEATHERLESS_MODEL_POLICY[modelId];
+  if (!policy) return body;
+  return {
+    ...body,
+    ...(policy.sampler ?? {}),
+    ...(policy.thinkingOff ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+  };
+}
+
+/**
+ * Whether this narrator id earns the chat lane's one hidden retry for a
+ * zero-visible-text completion. False for every model without an explicit
+ * `hiddenEmptyRetry` policy entry — including every OpenRouter narrator and any other
+ * Featherless row — so the retry can never spread by default.
+ */
+export function narratorHiddenRetryModel(modelId: string): boolean {
+  return FEATHERLESS_MODEL_POLICY[modelId]?.hiddenEmptyRetry === true;
+}
+
+/**
+ * The provider options for the hidden retry's minimum-generation floor, or undefined when
+ * this model has no floor configured. `@ai-sdk/openai-compatible` spreads
+ * `providerOptions.featherless` into the request body verbatim, which is what scopes
+ * `min_tokens` to this ONE call instead of the transport-wide `transformRequestBody`
+ * policy above.
+ *
+ * Only ever called for a retry that follows a genuinely silent stop
+ * (`narratorEmptyWasSilentStop`) — see the field doc for why a length/reasoning empty must
+ * not get a floor.
+ */
+export function narratorRetryFloorOptions(
+  modelId: string,
+): { featherless: Record<string, JSONValue> } | undefined {
+  const minTokens = FEATHERLESS_MODEL_POLICY[modelId]?.retryMinTokens;
+  return minTokens === undefined ? undefined : { featherless: { min_tokens: minTokens } };
 }
 
 /** True when a Featherless credential is configured — the gate on selecting a Featherless narrator. */

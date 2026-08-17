@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NarratorCompletion } from "@/server/ai";
 import { CHAT_REPLY_TAKES_CAP } from "./constants";
 import {
   emptyReplyTakes,
@@ -203,7 +204,80 @@ describe("resolveReplyFailure", () => {
     expect(resolveReplyFailure({ ...none, stopped: true })).toBeNull();
   });
 
-  it("classifies a clean zero-token stream as empty_reply", () => {
+  it("classifies a clean zero-token stream with no completion evidence as bare empty_reply", () => {
     expect(resolveReplyFailure(none)).toEqual({ code: "empty_reply", detail: "" });
+  });
+
+  // With generation metadata in hand the verdict comes from evidence rather than from
+  // the absence of it (server/ai/narrator-completion.ts owns the classification; these
+  // cases prove the pipeline actually consults it and respects the precedence above).
+  describe("with narrator completion metadata", () => {
+    const completion = (over: Partial<NarratorCompletion>): NarratorCompletion => ({
+      provider: "featherless",
+      modelId: "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
+      finishReason: "stop",
+      rawTextLength: 0,
+      visibleTextLength: 0,
+      visibleTextChars: 0,
+      attempts: 1,
+      ...over,
+    });
+
+    it("records a silent stop as a genuine empty reply", () => {
+      const result = resolveReplyFailure({ ...none, completion: completion({ finishReason: "stop" }) });
+      expect(result).toMatchObject({ code: "empty_reply", cause: "model_silent" });
+    });
+
+    it("records a length burn as a reasoning/length failure, not a generic empty", () => {
+      const result = resolveReplyFailure({
+        ...none,
+        completion: completion({ finishReason: "length", outputTokens: 298 }),
+      });
+      expect(result).toMatchObject({ code: "empty_reply", cause: "reasoning_or_length" });
+    });
+
+    it("records a content-filter finish as moderation and an error finish as a provider error", () => {
+      expect(resolveReplyFailure({ ...none, completion: completion({ finishReason: "content-filter" }) })?.code).toBe(
+        "moderation_blocked",
+      );
+      expect(resolveReplyFailure({ ...none, completion: completion({ finishReason: "error" }) })?.code).toBe(
+        "provider_error",
+      );
+    });
+
+    it("records a normalizer erasure distinctly", () => {
+      const result = resolveReplyFailure({ ...none, completion: completion({ rawTextLength: 412 }) });
+      expect(result).toMatchObject({ code: "empty_reply", cause: "normalizer_erased" });
+    });
+
+    // The precedence rules the metadata must NOT overturn.
+    it("still clears the record for any visible reply, and for a partial that then errored", () => {
+      expect(resolveReplyFailure({ ...none, hasText: true, completion: completion({}) })).toBeNull();
+      expect(
+        resolveReplyFailure({
+          ...none,
+          hasText: true,
+          streamError: { code: "provider_error", detail: "boom" },
+          completion: completion({ visibleTextLength: 40, visibleTextChars: 36 }),
+        }),
+      ).toBeNull();
+    });
+
+    it("still lets a thrown provider error and a watchdog trip outrank the metadata", () => {
+      expect(
+        resolveReplyFailure({
+          ...none,
+          streamError: { code: "no_credits", detail: "Payment required" },
+          completion: completion({ finishReason: "stop" }),
+        }),
+      ).toEqual({ code: "no_credits", detail: "Payment required" });
+      expect(
+        resolveReplyFailure({ ...none, timedOut: "first_token", completion: completion({}) })?.code,
+      ).toBe("timeout");
+    });
+
+    it("still records nothing for a genuine player Stop", () => {
+      expect(resolveReplyFailure({ ...none, stopped: true, completion: completion({}) })).toBeNull();
+    });
   });
 });

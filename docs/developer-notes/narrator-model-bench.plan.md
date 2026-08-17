@@ -95,7 +95,12 @@ call that answers it.
 - **No hard paragraph or token floor.** Longer output is not automatically better,
   and padding is not a substitute for scene presence.
 - **No automatic model-card settings.** Published temperature, top-p, top-k and
-  repetition recommendations are hypotheses to test, not production defaults.
+  repetition recommendations are hypotheses to test, not production defaults. Owner
+  ruling 2026-08-17 carved one exception on reliability grounds: the Qwen3.6 Fable
+  Fusion row ships its author's non-thinking sampling baseline, because it is asked
+  with its thinking template off and the repo's generic defaults are not a neutral
+  control for that configuration. Any comparison that includes this row must read
+  those settings as part of the arm.
 - **No narrator policy inside generic generation helpers.** A model used for a
   composer, classifier, state agent or deliberator receives that task's explicit
   policy, never the policy it would receive as a narrator.
@@ -122,6 +127,19 @@ call that answers it.
   Qwen3.6 27B merge, which had to be told to stop showing its reasoning before it
   could answer inside the lane's normal reply time; it now does, at ordinary
   narrator speed.
+- **Slice 1c — the first Featherless row is reliable, and its failures say what
+  happened.** Status: built 2026-08-17 — awaiting an owner run on the deployed app.
+  Selecting the Qwen3.6 merge no longer produces frequent "the narrator model
+  finished without saying anything" popups: the real cause was that a provider
+  failure — most often the model waking from idle — reached the app as a silent
+  stream with no error, so every such failure was described as an empty reply. The
+  server now reads how the generation actually ended and says so: a warming model, a
+  rejected key, an exhausted balance and a rate limit each get their own honest
+  message, and a model that spent its whole answer thinking is no longer described
+  as having said nothing. This one model is also asked with its author's own
+  sampling settings, and a single invisible retry covers a one-off silent reply so
+  the player never has to ask twice. Nothing changes for any other narrator or
+  agent, and every other narrator gains the same honest failure messages for free.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the
@@ -159,8 +177,8 @@ call that answers it.
 ## Where the work stands
 
 - **[narrator-model-bench.spec.md](narrator-model-bench.spec.md)** — replanned
-  2026-08-17. Slice 1 is built; the model/profile seam, immersive profile,
-  successor parity and comparison campaign are not started.
+  2026-08-17. Slices 1, 1b and 1c are built; the model/profile seam, immersive
+  profile, successor parity and comparison campaign are not started.
 
 ## Success criteria
 
@@ -204,6 +222,13 @@ The build is successful when all of the following are true:
   the output grammar ([detail](narrator-model-bench.spec.md)).
 - **Does a 32K context window bind under richer replies?** The long-history pass
   decides whether those rows remain test-only or need a separate context-fit plan
+  ([detail](narrator-model-bench.spec.md)).
+- **Should the first send to an idle Featherless model be made to succeed?** It
+  currently fails once, in about fourteen seconds, with an honest "the provider is
+  warming up" message, and the next send works. Fixing that means a warm-up
+  strategy — keeping the model awake, or waiting for it behind the scenes — and
+  neither is free. Deferred deliberately: the failure is now legible and cheap, and
+  the classification bug behind the old symptom is fixed
   ([detail](narrator-model-bench.spec.md)).
 
 ## Technical companion

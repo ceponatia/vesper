@@ -10,10 +10,15 @@ import {
 import {
   agentModelId,
   chatNarrativeModelId,
+  FABLE_FUSION_711_ID,
   featherlessRequestBody,
   narrativeModelId,
   narrativeProviderOptions,
+  narratorHiddenRetryModel,
+  narratorRetryFloorOptions,
   providerRouting,
+  sceneComposerModelId,
+  stateModelId,
   textModel,
 } from "./provider";
 
@@ -174,26 +179,133 @@ describe("provider-key gate on narrator selection", () => {
   });
 });
 
-describe("Featherless request body — thinking mode", () => {
-  // Measured on the live endpoint 2026-08-17. With the model's thinking template ON, a
-  // bounded output budget produced an EMPTY reply (`finish_reason: "length"`, the whole
-  // budget spent on the chain) and first prose at ~61s — past the chat lane's 50s
-  // first-token watchdog. With it OFF, on a ~10.7K-token prompt: first token ~1.2s, a
-  // full reply in ~11s. This flag is the difference between the two.
+describe("Featherless exact-model request policy", () => {
+  // Measured on the live endpoint 2026-08-17, and re-reproduced the same day: with the
+  // model's thinking template ON and a bounded output budget it returns an EMPTY reply
+  // (`finish_reason: "length"`, 298 completion tokens, zero characters of content, ~1,080
+  // characters of reasoning) and first prose at ~61s — past the chat lane's 50s first-token
+  // watchdog. With it OFF: `finish_reason "stop"`, prose, zero reasoning, ~2.4s.
   it("disables the chat template's thinking mode for the model that needs it", () => {
-    expect(featherlessRequestBody({ model: FEATHERLESS_MODEL_ID, messages: [] })).toEqual({
-      model: FEATHERLESS_MODEL_ID,
+    const body = featherlessRequestBody({ model: FABLE_FUSION_711_ID, messages: [] });
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+  });
+
+  // ONE key, not three. Featherless normalizes `enable_thinking` / `thinking` /
+  // `do_reasoning` and each was probed alone on this exact model — all three produced
+  // `stop`, prose and zero reasoning — so the confirmed-sufficient key is what ships.
+  it("sends exactly one thinking-disable key", () => {
+    const body = featherlessRequestBody({ model: FABLE_FUSION_711_ID, messages: [] });
+    expect(Object.keys(body.chat_template_kwargs as object)).toEqual(["enable_thinking"]);
+  });
+
+  // The author's recommended non-thinking/instruct baseline for this merge. `top_k` and
+  // `repetition_penalty` ride the raw body because the AI SDK transport has no equivalent
+  // for either (it drops `topK` with an "unsupported" warning).
+  it("applies the model's own sampler profile over the call site's defaults", () => {
+    expect(featherlessRequestBody({ model: FABLE_FUSION_711_ID, messages: [], temperature: 0.85 })).toEqual({
+      model: FABLE_FUSION_711_ID,
       messages: [],
+      temperature: 0.7,
+      top_p: 0.8,
+      top_k: 20,
+      presence_penalty: 1.5,
+      repetition_penalty: 1,
       chat_template_kwargs: { enable_thinking: false },
     });
   });
 
-  it("leaves every other model's body byte-identical", () => {
+  // The whole point of keying policy to an exact id: a second Featherless row must arrive
+  // with plain defaults, not this model's profile.
+  it("leaves every other Featherless model's body byte-identical", () => {
     const body = { model: "SomeOwner/Some-Other-Merge", messages: [], temperature: 0.85 };
     expect(featherlessRequestBody(body)).toEqual(body);
+    expect(featherlessRequestBody(body).chat_template_kwargs).toBeUndefined();
+  });
+
+  // An OpenRouter slug can never actually reach this hook (`textModel` routes it to the
+  // other transport), but the policy must be inert for one regardless — a shared helper
+  // that special-cased a slug would be a trap for the next provider added.
+  it("leaves the proven OpenRouter narrators' bodies byte-identical", () => {
+    for (const modelId of [
+      "aion-labs/aion-3.0",
+      "z-ai/glm-5.2",
+      "~deepseek/deepseek-v4-flash-latest",
+      "anthracite-org/magnum-v4-72b",
+    ]) {
+      const body = { model: modelId, messages: [], temperature: 0.85 };
+      expect(featherlessRequestBody(body)).toEqual(body);
+    }
   });
 
   it("passes a body with no model through untouched rather than guessing", () => {
     expect(featherlessRequestBody({ messages: [] })).toEqual({ messages: [] });
+  });
+});
+
+describe("the hidden empty-reply retry is exact-model", () => {
+  it("is on for Fable Fusion 711 and its retry floor is configured", () => {
+    expect(narratorHiddenRetryModel(FABLE_FUSION_711_ID)).toBe(true);
+    expect(narratorRetryFloorOptions(FABLE_FUSION_711_ID)).toEqual({ featherless: { min_tokens: 48 } });
+  });
+
+  it("is off for every other narrator — including another Featherless row", () => {
+    for (const modelId of [
+      "SomeOwner/Some-Other-Merge",
+      "aion-labs/aion-2.0",
+      "aion-labs/aion-3.0",
+      "aion-labs/aion-3.0-mini",
+      "z-ai/glm-5.2",
+      "~deepseek/deepseek-v4-flash-latest",
+      "google/gemini-3.5-flash",
+      "x-ai/grok-4.5",
+      "anthracite-org/magnum-v4-72b",
+      "sao10k/l3.3-euryale-70b",
+      "thedrummer/cydonia-24b-v4.1",
+      "nousresearch/hermes-4-70b",
+      "minimax/minimax-m2-her",
+    ]) {
+      expect(narratorHiddenRetryModel(modelId)).toBe(false);
+      expect(narratorRetryFloorOptions(modelId)).toBeUndefined();
+    }
+  });
+
+  it("is off for the agent and composer models — they are not narrators", () => {
+    expect(narratorHiddenRetryModel(stateModelId())).toBe(false);
+    expect(narratorHiddenRetryModel(sceneComposerModelId())).toBe(false);
+  });
+});
+
+// The isolation guarantee this whole change rests on: the models that already work must
+// be asked byte-identically afterwards. `narrativeProviderOptions` is the entire
+// per-call configuration the narrator lanes build, and `featherlessRequestBody` is the
+// only body rewrite that exists — so these two assertions together cover the effective
+// request configuration for every unaffected model.
+describe("proven narrators and non-narrator agents are unchanged", () => {
+  it("keeps each proven narrator's provider options exactly as they were", () => {
+    expect(narrativeProviderOptions("aion-labs/aion-2.0")).toEqual({ openrouter: { reasoning: { effort: "low" } } });
+    expect(narrativeProviderOptions("z-ai/glm-5.2")).toEqual({
+      openrouter: { provider: { ignore: ["deepinfra"] }, reasoning: { effort: "low" } },
+    });
+    // Aion 3.0 deliberately sends NO reasoning knob (reverted 2026-07-09).
+    expect(narrativeProviderOptions("aion-labs/aion-3.0")).toBeUndefined();
+    expect(narrativeProviderOptions("~deepseek/deepseek-v4-flash-latest")).toBeUndefined();
+    expect(narrativeProviderOptions("anthracite-org/magnum-v4-72b")).toBeUndefined();
+    expect(narrativeProviderOptions("google/gemini-3.5-flash")).toBeUndefined();
+    expect(narrativeProviderOptions("x-ai/grok-4.5")).toBeUndefined();
+    expect(narrativeProviderOptions("nousresearch/hermes-4-70b")).toBeUndefined();
+  });
+
+  it("keeps the state-agent and scene-composer routing exactly as it was", () => {
+    // The state/agent call: `generateChecked` builds its OpenRouter block from
+    // `providerRouting` on the resolved agent model.
+    expect(providerRouting(stateModelId())).toBeUndefined();
+    // The scene composer's own model keeps its cheap-endpoint preference order.
+    expect(providerRouting("deepseek/deepseek-v4-flash-0731")).toEqual({
+      order: ["gmicloud/fp8", "deepinfra/fp8"],
+      allow_fallbacks: true,
+    });
+    expect(providerRouting(sceneComposerModelId())).toEqual(
+      providerRouting(DEFAULT_SCENE_COMPOSER_MODEL_ID),
+    );
   });
 });

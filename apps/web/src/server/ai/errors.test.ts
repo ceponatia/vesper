@@ -29,6 +29,21 @@ describe("describeProviderError", () => {
     expect(describeProviderError(new Error("boom"))).toBe("boom");
     expect(describeProviderError("weird")).toBe("weird");
   });
+
+  // Observed live 2026-08-17: a Featherless cold start answers HTTP 200 and puts the
+  // error in an SSE frame, so the transport hands on a plain JSON object. Read as an
+  // Error it stringifies to "[object Object]".
+  it("reads a provider error object reported in-stream rather than thrown", () => {
+    expect(
+      describeProviderError({ message: "model is temporarily at capacity. Please try again shortly.", code: "capacity_exhausted" }),
+    ).toBe("model is temporarily at capacity. Please try again shortly. (capacity_exhausted)");
+    // Nested one level, the way some upstreams wrap it.
+    expect(describeProviderError({ error: { message: "upstream exploded" } })).toBe("upstream exploded");
+  });
+
+  it("still stringifies an object that is not a provider envelope", () => {
+    expect(describeProviderError({ chatId: "abc" })).toBe("[object Object]");
+  });
 });
 
 describe("classifyProviderError", () => {
@@ -78,8 +93,28 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(reset).code).toBe("network");
   });
 
+  // The in-stream envelope (a Featherless cold start). There is no HTTP status to read,
+  // so the vendor's words are the whole signal — but it IS an upstream failure, and
+  // `unknown` would send the player "no cause recorded" for a failure the provider named.
+  it("classifies an in-stream provider error envelope as a provider failure", () => {
+    const cold = classifyProviderError({
+      message: "model is temporarily at capacity. Please try again shortly.",
+      code: "capacity_exhausted",
+    });
+    expect(cold.code).toBe("provider_error");
+    expect(cold.detail).toContain("temporarily at capacity");
+    expect(cold.status).toBeUndefined();
+  });
+
+  it("still reads moderation and context overflow out of an in-stream envelope", () => {
+    expect(classifyProviderError({ message: "flagged by the content policy" }).code).toBe("moderation_blocked");
+    expect(classifyProviderError({ message: "maximum context length exceeded" }).code).toBe("context_too_long");
+  });
+
   it("falls back to unknown for anything else", () => {
     expect(classifyProviderError(new Error("boom")).code).toBe("unknown");
     expect(classifyProviderError("weird").code).toBe("unknown");
+    // An object that is not a provider envelope must not be dressed up as one.
+    expect(classifyProviderError({ chatId: "abc" }).code).toBe("unknown");
   });
 });
