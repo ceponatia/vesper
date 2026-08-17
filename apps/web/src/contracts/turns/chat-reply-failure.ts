@@ -35,10 +35,32 @@ export const chatReplyFailureCodes = [
 
 export type ChatReplyFailureCode = (typeof chatReplyFailureCodes)[number];
 
+/**
+ * A refinement of `empty_reply`, for the cases where the server knows WHY no text
+ * arrived (`server/ai/narrator-completion.ts` reads it off the generation's own
+ * finish metadata). Separate from the code vocabulary above rather than four more
+ * literals in it, because the distinction changes only the copy shown for one
+ * class — every reader that branches on `code` keeps working, and a record written
+ * before this field existed simply carries no cause.
+ *
+ * - `model_silent` — a clean stop with nothing generated. The one case where
+ *   "it finished without saying anything" is literally true.
+ * - `reasoning_or_length` — the provider billed output tokens, or hit the length
+ *   cap, without producing prose. Usually a thinking model whose chain ate the
+ *   whole budget.
+ * - `normalizer_erased` — the model DID write prose and Vesper's own output
+ *   normalizers discarded all of it. This one is not the model's fault.
+ */
+export const chatReplyFailureCauses = ["model_silent", "reasoning_or_length", "normalizer_erased"] as const;
+
+export type ChatReplyFailureCause = (typeof chatReplyFailureCauses)[number];
+
 export const chatReplyFailureSchema = z.object({
   code: z.enum(chatReplyFailureCodes).catch("unknown"),
   /** What the provider actually said (classifyProviderError) — the popup's fine print. */
   detail: z.string().catch(""),
+  /** Why an `empty_reply` was empty, when the generation metadata said. Absent otherwise. */
+  cause: z.enum(chatReplyFailureCauses).optional().catch(undefined),
   /** The narrator model the failed exchange ran, so the popup can name it. */
   model: z.string().catch(""),
   /** ISO timestamp of the failure — readers treat an old record as stale. */

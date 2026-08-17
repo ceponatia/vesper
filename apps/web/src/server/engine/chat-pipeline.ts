@@ -29,6 +29,7 @@ import {
   type AffordanceSubjectId,
   type ChatActionId,
   type ChatReplyFailure,
+  type ChatReplyFailureCause,
   type ChatReplyFailureCode,
   type CharacterProfile,
   type ContactEndReason,
@@ -41,7 +42,12 @@ import {
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
-import { classifyProviderError } from "../ai";
+import {
+  classifyEmptyNarratorCompletion,
+  classifyProviderError,
+  narratorCompletionLogFields,
+  type NarratorCompletion,
+} from "../ai";
 import {
   characterChats,
   characterChatMessages,
@@ -2198,10 +2204,19 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     const abortController = new AbortController();
     inflightReplyAborts.set(chatId, abortController);
+    // How the narrator generation actually finished (server/ai/narrator-completion.ts).
+    // Set once, by the stream itself, when it runs to its own end — so a zero-text
+    // exchange can be classified from real evidence instead of "no text and no
+    // exception". Stays null on a player Stop or a watchdog trip, which own their
+    // verdicts already.
+    let narratorCompletion: NarratorCompletion | null = null;
     const gen = streamCharacterChat({
       system,
       history: modelHistory,
       name: characterName,
+      onCompletion: (completion) => {
+        narratorCompletion = completion;
+      },
       // The reply's name vocabulary (server/ai/narrator-speaker-tags.ts). `speakers` is
       // exactly the renderer's tag vocabulary — the roster the chat bubble passes to the
       // segmenter — so a line-opening `[Name]` stays. Everyone else brackets can reach
@@ -2800,7 +2815,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         log.warn("engine.chat", "chat reply stream timed out", { chatId, reason });
       },
     });
-    return { ok: true, stream: streamExchange(guarded, settle, abortController, () => timedOut) };
+    return {
+      ok: true,
+      stream: streamExchange(guarded, settle, abortController, () => timedOut, () => narratorCompletion),
+    };
   }
 
   /**
@@ -2817,6 +2835,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     settle: (full: string, stopped: boolean) => Promise<void>,
     abortController: AbortController,
     timedOut: () => "first_token" | "overall" | null,
+    completion: () => NarratorCompletion | null,
   ): AsyncGenerator<string, void, unknown> {
     let full = "";
     let stopped = false;
@@ -2849,12 +2868,28 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
         }
       }
+      // A zero-visible-text exchange logs the generation's own numbers — the
+      // structured half of the truthful story, and the only place the raw-versus-
+      // visible split is recorded. Counts and finish state only.
+      const narrator = completion();
+      if (!full.trim() && narrator) {
+        log.warn("engine.chat", "narrator produced no visible text", {
+          chatId,
+          ...narratorCompletionLogFields(narrator),
+        });
+      }
       // Record (or clear) the exchange's reply-failure verdict BEFORE the generator
       // returns — the route's drain, and so the client's refetch, wait on this.
       await saveReplyFailure(
         chatId,
-        resolveReplyFailure({ hasText: Boolean(full.trim()), stopped, streamError, timedOut: timedOut() }),
-        input.model ?? "",
+        resolveReplyFailure({
+          hasText: Boolean(full.trim()),
+          stopped,
+          streamError,
+          timedOut: timedOut(),
+          completion: narrator,
+        }),
+        narrator?.modelId ?? input.model ?? "",
       );
     } finally {
       inflightReplyAborts.delete(chatId);
@@ -2868,15 +2903,26 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
  * exchange that produced NO text records one — a partial that persisted is a
  * visible reply. A watchdog trip aborts the same controller as a player Stop, so
  * the timeout reason outranks the stop flag; a genuine player Stop is not a
- * failure. A clean zero-token stream is its own class (`empty_reply`: the model
- * succeeded and said nothing). Null ⇒ clear any prior record.
+ * failure. Null ⇒ clear any prior record.
+ *
+ * A zero-text exchange that neither threw, timed out, nor was stopped used to
+ * record a bare `empty_reply` with no detail — which asserted "the model said
+ * nothing" on the strength of having no evidence either way. When the stream
+ * reports how the generation actually finished, that record is built from the
+ * evidence instead (`classifyEmptyNarratorCompletion`): a content filter and a
+ * generation error route to the classes that already describe them, and a genuine
+ * empty is told apart from reasoning/length exhaustion and from Vesper's own
+ * normalizers erasing the reply. With no completion record — a provider that
+ * reported nothing, or a lane that supplies none — it stays the honest bare
+ * `empty_reply`.
  */
 export function resolveReplyFailure(input: {
   hasText: boolean;
   stopped: boolean;
   streamError: { code: ChatReplyFailureCode; detail: string } | null;
   timedOut: "first_token" | "overall" | null;
-}): { code: ChatReplyFailureCode; detail: string } | null {
+  completion?: NarratorCompletion | null;
+}): { code: ChatReplyFailureCode; detail: string; cause?: ChatReplyFailureCause } | null {
   if (input.hasText) return null;
   if (input.streamError) return input.streamError;
   if (input.timedOut) {
@@ -2889,6 +2935,7 @@ export function resolveReplyFailure(input: {
     };
   }
   if (input.stopped) return null;
+  if (input.completion) return classifyEmptyNarratorCompletion(input.completion);
   return { code: "empty_reply", detail: "" };
 }
 
@@ -2899,11 +2946,17 @@ export function resolveReplyFailure(input: {
  */
 async function saveReplyFailure(
   chatId: string,
-  failure: { code: ChatReplyFailureCode; detail: string } | null,
+  failure: { code: ChatReplyFailureCode; detail: string; cause?: ChatReplyFailureCause } | null,
   model: string,
 ): Promise<void> {
   const record: ChatReplyFailure | null = failure
-    ? { code: failure.code, detail: failure.detail.slice(0, 500), model, at: new Date().toISOString() }
+    ? {
+        code: failure.code,
+        detail: failure.detail.slice(0, 500),
+        ...(failure.cause === undefined ? {} : { cause: failure.cause }),
+        model,
+        at: new Date().toISOString(),
+      }
     : null;
   try {
     await db().update(characterChats).set({ lastReplyFailure: record }).where(eq(characterChats.id, chatId));

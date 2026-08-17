@@ -115,17 +115,22 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // row was added: the model is on-plan, streams `[Name]` speaker tags correctly,
   // and returns coherent scene prose. Two operational facts a picker should know:
   //
-  // - **It is a thinking model, asked with thinking OFF.** Left alone it spends
-  //   ~1,300 tokens of chain before any prose — which misses the chat lane's
-  //   first-token budget AND, under a bounded output budget, returns an empty reply.
-  //   `FEATHERLESS_THINKING_OFF` in server/ai/provider.ts suppresses it, after which
-  //   it measures ~1.2s to first token and ~11s to a full reply on a ~10.7K-token
-  //   prompt. Removing that entry makes this row unusable, not merely slower.
-  // - **It cold-starts.** The first call to an idle model answers 503
-  //   `capacity_exhausted` for ~25s while Featherless loads the weights. The AI SDK
-  //   retries that status for longer than the chat lane's first-token watchdog allows,
-  //   so a cold row presents as a `timeout` reply failure; the next send usually lands
-  //   on a warm model.
+  // - **It is a thinking model, asked with thinking OFF, on its author's sampler
+  //   baseline.** Left alone it spends ~1,300 tokens of chain before any prose — which
+  //   misses the chat lane's first-token budget AND, under a bounded output budget,
+  //   returns an empty reply. `FEATHERLESS_MODEL_POLICY` in server/ai/provider.ts
+  //   suppresses the chain and applies the merge's recommended non-thinking sampling
+  //   (temp 0.7 / top-p 0.8 / top-k 20 / presence 1.5), after which warm calls measure
+  //   0.7–2.8s to first token and 2–5s to a full reply. Removing that entry makes this
+  //   row unusable, not merely slower. It is the ONE bench row with a sampler profile;
+  //   a comparison including it must read those settings as part of the arm.
+  // - **It cold-starts.** The first call to an idle model fails while Featherless loads
+  //   the weights (503 `capacity_exhausted`, or an error frame on a 200). It surfaces
+  //   after ~14s as a `provider_error` reply failure quoting the vendor's "temporarily
+  //   at capacity" wording; the next send usually lands on a warm model. It is NOT an
+  //   empty reply, and the one hidden retry below deliberately does not cover it.
+  // - **It gets one hidden retry for a zero-text reply.** Exact-model, and only when
+  //   nothing reached the player (`narratorHiddenRetryModel`). No other narrator has it.
   //
   // `(32K)` is the usual context marker; see the note above the RP bench for what
   // it binds.
