@@ -1,8 +1,8 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–4 built 2026-08-16,
-awaiting review; slices 5–10 queued)
+with every review finding fixed in the same merge; slices 3–5 built 2026-08-16,
+awaiting review; slices 6–10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -354,7 +354,7 @@ owner exists.
 
 ### Slice 5 — attention and memory integration
 
-Status: queued.
+Status: built 2026-08-16 — awaiting review.
 
 Reuse existing fixed-point salience and visual-memory laws. Add change
 significance, action relevance, and consumer relevance without rewriting stored
@@ -453,7 +453,10 @@ and trials rather than guessed:
 - whether an unknown lighting or motion read should keep failing visibility
   closed (nothing visible under it, the built behavior) or count as
   unconstrained for some components — to be judged from slice 6's shadow
-  measurements once those reads have real producers.
+  measurements once those reads have real producers;
+- whether a consent-gated mandatory anatomy fact should ever reach a render
+  through a non-visual anchor, or whether exclusion — the built behavior, as
+  the conservative reading of the consent gate — is final.
 
 Any new owner question discovered during design or implementation must be
 restated here before work proceeds.
