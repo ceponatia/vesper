@@ -99,9 +99,11 @@ call that answers it.
 - **No narrator policy inside generic generation helpers.** A model used for a
   composer, classifier, state agent or deliberator receives that task's explicit
   policy, never the policy it would receive as a narrator.
-- **No second provider or self-hosted deployment.** The existing provider ruling
-  stands. Replicate remains an escape hatch only if an unavailable set of weights
-  later wins on evidence.
+- **No self-hosted deployment.** Replicate remains an escape hatch only if an
+  unavailable set of weights later wins on evidence. A second *hosted* provider is
+  no longer a non-goal: the owner added a Featherless account on 2026-08-17, and
+  narration is the one leg allowed to use it. Every other model list — agents, the
+  scene composer, embeddings, vision — stays on the single existing provider.
 - **No context-window invention.** A 32K model that overflows a long Vesper chat is
   not silently truncated or promoted; it must either pass a separately reviewed
   context-fit design or remain a limited test option.
@@ -111,6 +113,15 @@ call that answers it.
 - **Slice 1 — the bench is pickable.** Status: complete — 2026-08-17. Eleven
   narration-tuned and control models are available from the narrator menu, and
   the alternative providers have recorded probe evidence.
+- **Slice 1b — the bench can hold models from a second provider.** Status: built
+  2026-08-17 — awaiting an owner run of the first Featherless row on the deployed
+  app. The narrator menu can now list a model served by Featherless as well as by
+  OpenRouter, chosen and stored the same way, with the rest of the app's models
+  untouched. A pick whose provider has no configured key quietly uses the lane's
+  usual narrator instead of failing the turn. The first such row is an uncensored
+  Qwen3.6 27B merge, which had to be told to stop showing its reasoning before it
+  could answer inside the lane's normal reply time; it now does, at ordinary
+  narrator speed.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the

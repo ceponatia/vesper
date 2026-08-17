@@ -7,10 +7,10 @@ import {
   type PresentationAudit,
 } from "@vesper/simulation-core/contracts/narrative";
 import type { SoftCanonProposal } from "@vesper/simulation-core/contracts/soft-canon";
-import { resolveChatModelId } from "@/lib/narrative-models";
 import { simulationHash } from "@vesper/simulation-core/hash";
 import { auditPresentation, parseNarratorResult } from "@vesper/simulation-core/presentation";
 import {
+  chatNarrativeModelId,
   collapseRepeatedBlocks,
   generateChecked,
   narrativeProviderOptions,
@@ -213,7 +213,7 @@ export async function renderCommittedCut(
   options: RenderCutOptions = {},
 ): Promise<RenderedCut> {
   const database = options.database ?? db();
-  const modelId = resolveChatModelId(input.modelId);
+  const modelId = chatNarrativeModelId(input.modelId);
   const maxAttempts = input.maxAttempts ?? 2;
   const diagnostics: string[] = [];
 
@@ -404,7 +404,7 @@ export async function renderSoloNarration(
   input: RenderSoloInput,
   options: { render?: SoloRenderSeam } = {},
 ): Promise<RenderedSolo> {
-  const modelId = resolveChatModelId(input.modelId);
+  const modelId = chatNarrativeModelId(input.modelId);
   const maxAttempts = input.maxAttempts ?? 2;
   const render = options.render ?? liveSoloSeam(input.fallbackProse);
   const diagnostics: string[] = [];
@@ -476,7 +476,7 @@ export function buildLiveDeliberation(options: {
   modelBudget?: number;
   scoreGapThresholdFixedPoint?: number;
 } = {}): PrepareTurnDeliberation {
-  const modelId = resolveChatModelId(options.modelId);
+  const modelId = chatNarrativeModelId(options.modelId);
   const timeoutMs = options.timeoutMs ?? 4_000;
   return {
     scoreGapThresholdFixedPoint: options.scoreGapThresholdFixedPoint ?? 10_000,

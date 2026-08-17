@@ -62,8 +62,15 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 - **`DATABASE_URL`** — app database. Default
   `postgresql://vesper:vesper_dev_password@localhost:5435/vesper_dev`.
-- **`OPENROUTER_API_KEY`** — all text models + embeddings; no default. Leave it unset to
-  run in demo mode (deterministic narrative, placeholder images).
+- **`OPENROUTER_API_KEY`** — text models + embeddings; no default. Leave it unset to
+  run in demo mode (deterministic narrative, placeholder images). It serves every text
+  leg except the handful of narrator rows below that name a different provider.
+- **`FEATHERLESS_API_TOKEN`** — the **narrator-only** second text provider; no default.
+  Featherless serves community Hugging Face merges that no OpenRouter vendor hosts, and
+  only rows in the narrator list may name it (`lib/narrative-models.ts`) — agents, the
+  scene composer, embeddings and vision stay OpenRouter-only. Absent ⇒ a Featherless
+  narrator pick falls back to the lane default and logs `ai.chat_narrative_model`; the
+  stored pick survives, so setting the token later restores it with no re-choosing.
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
   ([images/providers.md](images/providers.md)). Absent outside demo mode ⇒ every render fails the

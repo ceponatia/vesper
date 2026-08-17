@@ -3,7 +3,7 @@ import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
 import { classifyProviderError } from "./errors";
-import { isDemoMode, openrouter, providerRouting, routedProvider, stateModelId } from "./provider";
+import { isDemoMode, providerRouting, routedProvider, stateModelId, textModel } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
 export interface GenerateImagePart {
@@ -169,7 +169,7 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   const attempt = async (prompt: string): Promise<T> => {
     const start = Date.now();
     const base = {
-      model: openrouter().chat(opts.modelId ?? stateModelId()),
+      model: textModel(opts.modelId ?? stateModelId()),
       temperature: opts.temperature ?? 0,
       maxOutputTokens: opts.maxOutputTokens ?? 4096,
       abortSignal: opts.signal,
