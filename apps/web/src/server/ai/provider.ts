@@ -246,6 +246,13 @@ export function featherless(): OpenAICompatibleProvider {
 export const FABLE_FUSION_711_ID = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP";
 
 /**
+ * The second DavidAU Qwen3.6-27B narrator — the writer-tuned arm of the same
+ * comparison. Named here for the same reason as the id above.
+ */
+export const F451_ULTRA_PRO_WRITER_ID =
+  "DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic";
+
+/**
  * Per-model **runtime request policy** for a Featherless narrator, keyed by exact model
  * id. Opt-in per model, never a blanket flag — the same rule the OpenRouter reasoning
  * knobs above follow, and for the same reason: a model that does not use a thinking
@@ -272,6 +279,12 @@ interface FeatherlessModelPolicy {
    *   prose — no prose. Re-reproduced 2026-08-17 on a 34-token prompt with
    *   `max_tokens: 300`: `finish_reason "length"`, 298 completion tokens, **zero**
    *   characters of content, ~1,080 characters of reasoning.
+   *
+   * Measured PER MODEL, never assumed from the family. Both listed rows were probed
+   * the same way on 2026-08-17 and both failed identically without the flag — F451
+   * Ultra Pro Writer returned `length` with 299 completion tokens, zero characters of
+   * content and ~1,100 characters of reasoning, then `stop` with prose in 5.7s once
+   * the flag was set. A Qwen3.6 row that has NOT been probed does not get an entry.
    *
    * Only `chat_template_kwargs` works. `reasoning_effort: "none"` and a `/no_think` token
    * in the prompt were both probed on this model and both silently ignored, still producing
@@ -309,23 +322,37 @@ interface FeatherlessModelPolicy {
   retryMinTokens?: number;
 }
 
-const FEATHERLESS_MODEL_POLICY: Readonly<Record<string, FeatherlessModelPolicy>> = {
-  [FABLE_FUSION_711_ID]: {
-    thinkingOff: true,
-    // The author's recommended non-thinking/instruct baseline for this merge, not a
-    // Vesper-tuned guess. `NARRATIVE_TEMPERATURE` (0.85) is the repo default and stays
-    // the default for every other narrator; this model asks for 0.7 with tight nucleus
-    // and top-k, plus presence pressure, which is what its instruct template expects.
-    sampler: {
-      temperature: 0.7,
-      top_p: 0.8,
-      top_k: 20,
-      presence_penalty: 1.5,
-      repetition_penalty: 1.0,
-    },
-    hiddenEmptyRetry: true,
-    retryMinTokens: 48,
+/**
+ * The shared policy for DavidAU's Qwen3.6-27B non-thinking/instruct merges.
+ *
+ * Both rows using it are the same author, the same base family and the same
+ * quantization, asked in the same configuration — and each was measured to need the
+ * thinking flag on its own terms (see `thinkingOff`). They therefore share ONE policy
+ * object rather than two copies of the same numbers, and that sharing is the point:
+ * the two rows exist to be compared against each other, so a sampler difference
+ * between them would confound the only question the comparison asks. If a later probe
+ * rules a different baseline for one of them, split this object rather than editing it.
+ */
+const DAVIDAU_QWEN36_NON_THINKING: FeatherlessModelPolicy = {
+  thinkingOff: true,
+  // The author's recommended non-thinking/instruct baseline for these merges, not a
+  // Vesper-tuned guess. `NARRATIVE_TEMPERATURE` (0.85) is the repo default and stays
+  // the default for every other narrator; these models ask for 0.7 with tight nucleus
+  // and top-k, plus presence pressure, which is what their instruct template expects.
+  sampler: {
+    temperature: 0.7,
+    top_p: 0.8,
+    top_k: 20,
+    presence_penalty: 1.5,
+    repetition_penalty: 1.0,
   },
+  hiddenEmptyRetry: true,
+  retryMinTokens: 48,
+};
+
+const FEATHERLESS_MODEL_POLICY: Readonly<Record<string, FeatherlessModelPolicy>> = {
+  [FABLE_FUSION_711_ID]: DAVIDAU_QWEN36_NON_THINKING,
+  [F451_ULTRA_PRO_WRITER_ID]: DAVIDAU_QWEN36_NON_THINKING,
 };
 
 /**
