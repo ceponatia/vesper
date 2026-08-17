@@ -24,6 +24,13 @@ them may name a provider.
   owner run of the first Featherless row on the deployed app. Adds the `provider`
   field, the Featherless transport, the `textModel` routing seam and the
   provider-key gate described below.
+- **Slice 1c — the first Featherless row is reliable and its failures are truthful**
+  — built 2026-08-17, awaiting an owner run on the deployed app. Adds narrator
+  completion metadata, the zero-visible-text failure taxonomy, the exact-model
+  sampler policy, and the one hidden retry. See
+  [Why a reply read as empty](#why-a-reply-read-as-empty) for the root cause it
+  fixes and [The exact-model request policy](#the-exact-model-request-policy) for
+  what the model is now asked with.
 - **Slice 2 — a recorded comparison** — not started.
 - **Slice 3 — a default ruling** — not started, blocked on slice 2.
 
@@ -91,20 +98,25 @@ The Dolphin row's full id is
 
 The row's full id is
 `DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP`, added on owner
-request as the first model from this provider. Measured against the live endpoint the
-day it was added:
+request as the first model from this provider. Measured against the live endpoint:
 
 - **It is a thinking model, and it is asked not to be.** Left alone it emits ~1,300
   tokens of chain before any prose, which both breaks the lane's first-token budget
-  and — under a bounded output budget — consumes the entire reply. It is therefore in
-  `FEATHERLESS_THINKING_OFF`; see
+  and — under a bounded output budget — consumes the entire reply. See
   [the ruling](#ruling-2026-08-17--a-thinking-narrator-is-asked-with-thinking-off).
-- **As configured: first token ~1.2s, a full reply in ~11s** on a ~10.7K-token prompt.
-  Ordinary narrator latency, not a bench compromise.
-- **Cold start ~25s.** The first call to an idle model answers `503`
-  `capacity_exhausted` while Featherless loads the weights. In the chat lane that
-  presents as a `timeout` reply failure rather than a provider error — see
-  [Resilience](#resilience).
+- **Warm, as configured: first token 0.7–2.8s, a full reply in 2.1–4.6s.** Nine
+  consecutive warm calls through the production narrator seam on 2026-08-17 all
+  finished `stop` with prose and **zero** reasoning tokens; the slowest first token
+  in the set was 6.9s on the call that warmed it. Ordinary narrator latency, not a
+  bench compromise.
+- **Cold start.** The first call to an idle model fails while Featherless loads the
+  weights — reproducibly, and it takes ~14s to surface. It is a warm-up, not an
+  outage, and it is **not** an empty reply; see
+  [Why a reply read as empty](#why-a-reply-read-as-empty).
+- **Replies run short.** Warm calls produced 20–63 output tokens (79–303 characters).
+  That is the lane-wide `aggressive_concise` shape this model was never selected for,
+  which is exactly what the plan's slices 2–4 exist to correct — it is a prompt-shape
+  observation, not a reliability one.
 - **Prose quality is on-brief.** It honors the `[Name]` speaker tag, holds third
   person, and produces scene-like description rather than chat-length answers — which
   is the property the whole bench exists to find.
@@ -177,8 +189,9 @@ probes could only find as downloadable weights are served here behind a normal c
 endpoint. Two operational facts shape how it is used:
 
 - **Serverless cold start.** An idle model answers `503` with
-  `code: "capacity_exhausted"` for roughly 25 seconds while its weights load, then
-  serves normally. It is a warm-up, not an outage, but it is a real first-call failure.
+  `code: "capacity_exhausted"` — or HTTP 200 with the same envelope in an SSE frame —
+  while its weights load, then serves normally. It is a warm-up, not an outage, but it
+  is a real first-call failure; see [Resilience](#resilience) for how it now surfaces.
 - **Slower than the hosted commercial endpoints**, and with no endpoint choice to make.
   There is no routing block, no provider preference, no reasoning knob — which is why
   `providerRouting` and `narrativeProviderOptions` return nothing for these ids rather
@@ -311,7 +324,7 @@ both measured against the live endpoint:
   one is not a latency problem and no timeout change would fix it.
 
 So thinking is **switched off for those models rather than budgeted for**, per exact
-model id, in `FEATHERLESS_THINKING_OFF`. Measured on a ~10.7K-token prompt with the flag
+model id, in `FEATHERLESS_MODEL_POLICY`. Measured on a ~10.7K-token prompt with the flag
 set: first token **~1.2s**, a complete two-paragraph reply in **~11s** — the same league
 as the hosted commercial narrators, and comfortably inside every existing budget.
 
@@ -327,6 +340,210 @@ The switch is per-model and opt-in, the same rule `NARRATOR_REASONING` follows f
 OpenRouter. A Featherless model that does not use a thinking template is unaffected, and
 `featherlessRequestBody` leaves its body byte-identical.
 
+Re-verified 2026-08-17 with a 34-token synthetic prompt and `max_tokens: 300`:
+
+| Request                        | Finish   | Content chars | Reasoning chars |
+| ------------------------------ | -------- | ------------: | --------------: |
+| no flag (template default)     | `length` |             0 |           1,081 |
+| `enable_thinking: false`       | `stop`   |           144 |               0 |
+| `thinking: false`              | `stop`   |           172 |               0 |
+| `do_reasoning: false`          | `stop`   |           112 |               0 |
+| all three `false`              | `stop`   |           116 |               0 |
+
+### Ruling 2026-08-17 — one disable key, not three
+
+Featherless documents `enable_thinking`, `thinking` and `do_reasoning` as normalized
+synonyms of one toggle, with a `false` value winning any conflict. The table above
+probed each alias **alone** on this exact model: all three work identically. So the
+request sends the one confirmed-sufficient key. Sending all three would be redundancy
+against a hazard the evidence says does not exist, and it would leave a reader unable
+to tell which key the model actually honors.
+
+The provider's `POST /models/{owner}/{model}/debug/chat-format` endpoint would have
+shown the rendered template directly, and it was tried. It is **not reachable with an
+API token**: the path exists (it is `https://api.featherless.ai/models/…`, outside the
+`/v1` prefix — the `/v1` spelling is a 404) but answers
+`401 unauthorized — "You must be signed in to access this resource"`, i.e. it wants a
+web session rather than a bearer key. The behavioral table above is the substitute, and
+is arguably the better evidence anyway: it measures what the model did, not what the
+template said.
+
+## Why a reply read as empty
+
+The symptom that motivated slice 1c: selecting this narrator frequently produced the
+chat lane's "The narrator model finished without saying anything" popup. The cause was
+not the model.
+
+**`streamText`'s `textStream` never throws.** In AI SDK 6 an error part is *dropped* by
+the `textStream` transform and the failure is delivered to the `onError` callback
+instead, while `finishReason` / `rawFinishReason` / `totalUsage` are rejected. The chat
+lane consumed only `textStream`, so a provider failure arrived as a clean stream of zero
+deltas with no exception — and `streamExchange`'s `catch`, which
+[pipeline.md](../character-chat/pipeline.md) describes as the classifier for provider
+errors, never fired. Every such failure fell through to the one remaining verdict:
+`empty_reply`, whose copy asserted the model had said nothing.
+
+Confirmed for each status by driving the real provider stack against stubbed responses
+on 2026-08-17. All four produced **zero visible characters and no thrown exception**:
+
+| Upstream status          | SDK hands `onError`         | Now recorded as  |
+| ------------------------ | --------------------------- | ---------------- |
+| 503 `capacity_exhausted` | `RetryError` → APICallError | `provider_error` |
+| 401 bad key              | `APICallError`              | `auth_failed`    |
+| 402 out of credits       | `APICallError`              | `no_credits`     |
+| 429 rate limited         | `RetryError` → APICallError | `rate_limited`   |
+
+There is a second failure shape, and it is the one the live cold start actually takes:
+Featherless answers **HTTP 200** and puts `{"error": {...}}` in an SSE frame. The
+openai-compatible transport forwards that raw JSON object as the error part's payload —
+a plain record, not an `Error`, with no status code. Read as an error it stringified to
+`"[object Object]"` and classified as `unknown`. `classifyProviderError` now recognizes
+a provider error envelope (a record carrying a string `message` or `code`) and reports
+it as `provider_error` with the vendor's own words, while an unrelated object still
+classifies as `unknown` rather than being dressed up as an upstream failure.
+
+This correction is **diagnostic only**. No generation option, prompt, sampler setting or
+retry behavior changes for any other model; what changes is that a failure which used to
+be described as an empty reply is now described as what it was. Every proven OpenRouter
+narrator benefits from the same correction for free.
+
+### The completion record
+
+`server/ai/narrator-completion.ts` owns `NarratorCompletion` — how a narrator generation
+actually ended, read off the AI SDK's supported finish metadata: `provider`, `modelId`,
+`finishReason`, `rawFinishReason`, `inputTokens`, `outputTokens`, `textTokens`,
+`reasoningTokens`, `rawTextLength`, `visibleTextLength`, `visibleTextChars`, `attempts`,
+and the classified `providerError` when one was reported in-stream.
+
+Three properties matter:
+
+- **Counts and finish state only.** No prompt, player text, prose, reasoning content,
+  system prompt or private character state. The record is written to the chat row and to
+  the server log, and a diagnostic carrying content would turn both into transcripts.
+- **Every token field is optional.** Providers disagree about what they report —
+  Featherless returns no `completion_tokens_details` on a non-streaming call — and
+  unknown is never recorded as zero.
+- **Raw and visible lengths are measured separately.** `rawTextLength` is counted
+  UPSTREAM of the artifact/speaker-tag/repeat normalizers, `visibleTextLength`
+  downstream. That difference is the only way to tell "the model said nothing" apart
+  from "Vesper deleted everything the model said", and nothing is buffered to get it —
+  each delta is counted as it is yielded.
+
+The stream is consumed exactly once: `result.textStream` feeds a counting tap, the tap
+feeds the normalizers, and the finish promises are awaited afterwards with
+`Promise.allSettled` so one unavailable field costs neither the others nor the reply.
+
+### The zero-visible-text taxonomy
+
+`classifyEmptyNarratorCompletion` (pure) turns the record into a reply-failure verdict.
+It is only reached for an exchange that produced no visible reply, was not stopped by the
+player, did not trip a watchdog and threw nothing — those all outrank it, unchanged.
+
+| Evidence                                     | Recorded as                           |
+| -------------------------------------------- | ------------------------------------- |
+| `content-filter` finish                      | `moderation_blocked`                  |
+| `error` finish                               | the provider error's own class        |
+| raw text > 0, nothing survived normalizing   | `empty_reply` / `normalizer_erased`   |
+| `length` finish, or billed-but-unseen tokens | `empty_reply` / `reasoning_or_length` |
+| `stop` finish with no such evidence          | `empty_reply` / `model_silent`        |
+| none of the above                            | `empty_reply`, no cause               |
+
+The normalizer check comes first among the empty causes deliberately: if the model
+produced prose and Vesper discarded it, that is this repo's bug, and a record blaming the
+model would point every future investigation at the wrong system.
+
+"Billed-but-unseen tokens" needs a floor, because a stop sequence or a lone
+end-of-turn token can be billed on a genuinely silent completion. The rule is
+`reasoningTokens > 0`, or **8+ output tokens with zero characters of text**.
+
+No new failure code was added. `ChatReplyFailureCause` is an optional refinement of
+`empty_reply` on the same jsonb record (`character_chats.last_reply_failure`), so no
+migration, and a record written before the field existed simply carries no cause. The
+top-level `ChatReplyFailureCode` vocabulary is unchanged, and every reader that branches
+on `code` keeps working.
+
+## The exact-model request policy
+
+### Ruling 2026-08-17 — this row ships its author's sampling baseline
+
+The plan's standing non-goal is that published model-card settings are hypotheses, not
+production defaults, and that a knob set on one bench arm would confound a comparison.
+The owner ruled an exception for this exact model on reliability grounds: it is a
+non-thinking/instruct merge being asked with its thinking template off, which is the
+configuration its author's recommended sampling baseline describes, and asking it with
+the repo's generic defaults instead is not a neutral control — it is a different
+configuration from the one the weights were tuned for.
+
+So `FEATHERLESS_MODEL_POLICY` in `server/ai/provider.ts` keys the following to the exact
+id, and to nothing else:
+
+| Field                | Value | Why not the default                             |
+| -------------------- | ----: | ----------------------------------------------- |
+| `temperature`        |   0.7 | `NARRATIVE_TEMPERATURE` is 0.85, repo-wide      |
+| `top_p`              |   0.8 | tighter nucleus than the transport default      |
+| `top_k`              |    20 | no AI SDK equivalent — dropped as "unsupported" |
+| `presence_penalty`   |   1.5 | the instruct template's expected pressure       |
+| `repetition_penalty` |   1.0 | not in the AI SDK's standard call settings      |
+
+`NARRATIVE_TEMPERATURE` itself is untouched, and every other narrator — OpenRouter and
+Featherless alike — is asked exactly as before. Two of these fields have no AI SDK
+call-setting equivalent at all, which is the second reason the policy rides
+`transformRequestBody` rather than the call sites.
+
+**Riding the transport is what gives the successor narrator parity for free.** Both
+narrator paths reach Featherless through `textModel` — `streamCharacterChat` for the
+chat lane, `generateChecked` for the successor renderer — so a policy applied in the
+transport's request-body hook is applied to both, and neither call site learns a model's
+name. The successor deliberator and every structured agent are unreachable from here by
+construction: the narrator list is the only model list that may name a provider.
+
+### The hidden retry
+
+The chat lane gives this one model a **second attempt** when the first produced no
+visible text at all. `hiddenEmptyRetry` in the policy above is the exact-model gate;
+`narratorHiddenRetryModel` returns false for every other id, including any future
+Featherless row.
+
+Conditions, all required:
+
+- zero user-visible text was emitted (whitespace does not count — the stream uses the
+  same non-whitespace test the pipeline's `full.trim()` applies);
+- the finish was neither `content-filter` (the same ask is refused again) nor `error`
+  (the provider says the generation itself failed, and a 503 must not be hidden inside
+  empty-reply logic);
+- the player has not aborted;
+- nothing was thrown. Auth, credit, context-window, network and ordinary provider
+  exceptions all propagate on the first attempt and are never retried.
+
+It is safe precisely because it is conditioned on zero emission: nothing reached the
+player, so nothing can be duplicated. A partial reply is never retried.
+
+The retry lives **inside `streamCharacterChat`**, not in the pipeline, so it inherits the
+existing ownership instead of competing with it: both attempts carry the caller's abort
+signal (a player Stop stops the retry) and the first-token/overall watchdogs wrap the
+whole generator, so two attempts share one budget rather than doubling it. A normalizer
+erasure IS retried — it is a zero-visible-text completion by definition, and a fresh
+sample usually lands outside whatever the collapse rules matched.
+
+`retryMinTokens: 48` applies a `min_tokens` floor to the **retry only**, and only when
+the first attempt was a genuinely silent stop. Featherless accepts `min_tokens` (probed
+2026-08-17); it is passed per-call as `providerOptions.featherless`, which the
+openai-compatible transport spreads into the body — that is what scopes it to one call
+rather than the transport-wide policy. A length/reasoning empty deliberately does **not**
+get the floor: that model already generated plenty, just not prose, and forcing more
+tokens would treat a configuration failure as a length problem. There is no global
+minimum response length, and there must not be — that is how narrator padding gets
+resurrected.
+
+### The successor narrator keeps its own retry
+
+`renderCommittedCut` and `renderSoloNarration` already run two attempts with
+audit-driven and empty-prose retries respectively, on top of `generateChecked`'s own
+repair round-trip and degraded fallback. No hidden retry was added there, and their retry
+semantics are unchanged. They also need none of the chat lane's stream forensics:
+`generateChecked` calls `generateText`, which **does** throw, so its existing transport
+classification already sees a cold start as the provider failure it is.
+
 ## Ownership rules
 
 - `lib/narrative-models.ts` is the single source of narrator options. The client
@@ -337,11 +554,16 @@ OpenRouter. A Featherless model that does not use a thinking template is unaffec
   an authenticated user could bill arbitrary OpenRouter slugs to the deployment key
   through a chat PATCH. Bench rows are cheap, but the rule is what makes adding them
   safe.
-- Per-model call policy stays out of the list. `NARRATOR_REASONING` and
-  `PROVIDER_IGNORE`/`PROVIDER_ORDER` in `server/ai/provider.ts` are keyed by model id
-  and are empty for every bench row, so each is asked with plain defaults —
-  temperature `NARRATIVE_TEMPERATURE` (0.85) and nothing else. That is deliberate for
-  a comparison: a knob set on one arm and not another would confound it.
+- Per-model call policy stays out of the list. `NARRATOR_REASONING`,
+  `PROVIDER_IGNORE`/`PROVIDER_ORDER` and `FEATHERLESS_MODEL_POLICY` in
+  `server/ai/provider.ts` are all keyed by exact model id. Every bench row **except
+  Fable Fusion 711** is absent from all of them and is therefore asked with plain
+  defaults — temperature `NARRATIVE_TEMPERATURE` (0.85) and nothing else. That is
+  deliberate for a comparison: a knob set on one arm and not another would confound it.
+  Fable Fusion 711 is the one recorded exception, on reliability grounds and by owner
+  ruling — see
+  [The exact-model request policy](#the-exact-model-request-policy). Any comparison
+  including that row must read its sampling profile as part of the arm.
 - **The narrator list is the only model list that may name a provider.**
   `lib/agent-models.ts`, `lib/composer-models.ts`, the embedding model and the vision
   model are OpenRouter-only and are not given the field. `textModel` still routes them,
@@ -363,21 +585,29 @@ The second provider adds one new degraded default and inherits the rest:
 - **Missing credential ⇒ the lane default, not a failed turn.** See
   [The provider-key gate](#the-provider-key-gate). Logged as
   `ai.chat_narrative_model` / `ai.narrative_model`.
-- **Cold start surfaces as the first-token timeout, not as a provider error.**
-  Featherless answers `503` `capacity_exhausted` while an idle model loads. The AI SDK
-  retries that status with backoff, and measured through the app's own gateway those
-  retries ran **~191s and yielded an empty stream** — far past
-  `CHAT_STREAM_FIRST_TOKEN_MS`. So the watchdog wins the race: the exchange aborts at
-  50s and records a `timeout` reply failure, and the vendor's "temporarily at capacity"
-  wording never reaches `classifyProviderError`.
+- **Cold start surfaces as a provider error naming the capacity warm-up.** Featherless
+  answers `503` `capacity_exhausted` — or HTTP 200 with an error frame in the SSE
+  stream — while an idle model loads. Measured on 2026-08-17 it surfaces after **~14s**
+  through the AI SDK's own three-attempt retry budget, comfortably inside
+  `CHAT_STREAM_FIRST_TOKEN_MS` (50s). The reply failure records `provider_error` with
+  the vendor's own "temporarily at capacity" wording, which the popup quotes.
 
-  That is a survivable outcome — the lock releases, the failure is attributable, and the
-  player's next send usually lands on a warm model — but it is worth stating plainly,
-  because a `timeout` on a cold Featherless row means "the model was asleep", not "the
-  model is too slow to narrate". Shortening the SDK's retry budget for this transport so
-  the real 503 surfaces instead is an available improvement this work did not take.
+  A previous revision of this document claimed those retries ran ~191s and presented as
+  a `timeout`. That is superseded: the retry budget is three attempts, and the failure
+  presented as an **empty reply**, not a timeout — see
+  [Why a reply read as empty](#why-a-reply-read-as-empty).
+
+  This is survivable rather than fixed: the lock releases, the failure is attributable
+  and legible, and the player's next send usually lands on a warm model. Making that
+  first send after an idle period succeed rather than fail is recorded as an open
+  question on the plan — it is a warm-up strategy, not a classification bug, and the
+  classification is now correct.
 - **A reasoning model's chain is never mistaken for prose.** The transport routes
   `reasoning` deltas to reasoning parts, so `textStream` carries prose only.
+- **A zero-visible-text completion is classified from evidence, not from silence.** See
+  [The zero-visible-text taxonomy](#the-zero-visible-text-taxonomy).
+- **A transient zero-text completion costs the player nothing.** This one row retries
+  once, invisibly — see [The hidden retry](#the-hidden-retry).
 
 One known-untested boundary is recorded as an open question in the plan: a 32K row
 overflowing its context on a long chat. The provider returns an error rather than
@@ -407,6 +637,39 @@ written out, so relabelling or replacing the row cannot rot the file.
 credentials. Demo mode keys off `OPENROUTER_API_KEY`, but the key gate reads the
 Featherless token directly, so a developer with the secret exported would otherwise get
 different resolver results than a clean checkout.
+
+Slice 1c adds four test surfaces, all in the pure suite and none of them
+network-dependent:
+
+- **`provider.test.ts`** additionally covers the exact-model policy: the thinking flag,
+  exactly one disable key, the sampler profile applied over the call site's temperature,
+  and the retry gate. Its isolation cases assert the inverse for a second Featherless id,
+  for the proven OpenRouter narrators by name, and for the resolved state-agent and
+  scene-composer models — plus that `narrativeProviderOptions` and `providerRouting`
+  still answer exactly what they answered before for each of them.
+- **`narrator-completion.test.ts`** covers the taxonomy case by case, including the
+  billed-but-unseen floor, the normalizer-over-length precedence, and that a log payload
+  omits every count the provider did not report.
+- **`character-chat.test.ts`** scripts `streamText` attempt by attempt to cover the
+  completion record and the retry: retry-then-succeed, exactly two attempts, the
+  retry-only `min_tokens` floor and its withholding on a length empty, no retry on
+  moderation / generation error / thrown exception / player abort / partial reply, and no
+  retry at all for a non-Fable narrator. Its last block re-asserts that an OpenRouter
+  narrator's request options are byte-identical.
+- **`featherless-wire.test.ts`** proves the link a pure unit test cannot: that the
+  transport really is built with the policy as its `transformRequestBody` hook. It stubs
+  `globalThis.fetch` and asserts the serialized body for the successor lane
+  (`generateChecked` → `generateText`) and the chat lane (`streamText`) separately,
+  because the AI SDK applies the hook in `doGenerate` and `doStream` independently. It
+  also pins the cold start end-to-end through the real provider stack: an error finish,
+  the vendor's own words, one attempt, and the SDK's three-request retry budget.
+
+`pnpm probe:featherless-narrator` (`scripts/eval/featherless-narrator/probe.ts`) is the
+opt-in live probe behind the measurements above. It is in no suite and `pnpm verify` never
+runs it — it makes real, billed calls — and without `FEATHERLESS_API_TOKEN` it prints why
+it skipped and exits 0. It runs through `streamCharacterChat` rather than calling the
+provider itself, so what it measures is the production path; it prints counts, finish
+state, TTFT and the outgoing sampler fields, and never prose or reasoning content.
 
 Slice 2's comparison fixtures are not started. The machinery it should use already
 exists: `scripts/eval/narrator-comparison/harness.ts` runs independent per-arm
