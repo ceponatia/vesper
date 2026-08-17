@@ -60,6 +60,12 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   visual-state digest seam are in — Stage 2's server-side assembly is the
   next step.
 
+- **Narrator model test bench** — [plan](narrator-model-bench.plan.md) ·
+  [spec](narrator-model-bench.spec.md) — eleven roleplay and low-refusal
+  narrators are pickable from the chat menu and the alternative providers are
+  measured and ruled out; the recorded comparison that would move a default is
+  the next step.
+
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, the
