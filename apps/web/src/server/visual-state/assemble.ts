@@ -438,6 +438,14 @@ export interface VisualStateSelectionsInput {
   readonly snapshot: VisualStateSnapshot;
   /** The lane's observer exposure/channel view (the affordance read's). */
   readonly perception: AffordancePerceptionView;
+  /**
+   * The subject `perception` actually describes. The lane resolves coverage
+   * for the primary character only, so every other subject in the snapshot
+   * (the player, other roster members) has no exposure owner — and reading
+   * theirs through this view would let one character's clothing answer for
+   * another's. They resolve nothing instead.
+   */
+  readonly perceptionSubjectId: string;
   /** The observing player/actor, as the visibility viewpoint names them. */
   readonly observerId: string;
   /** The same observer, as the memory binding names them. */
@@ -496,9 +504,14 @@ function staircaseComponents() {
  */
 export function buildVisualStateSelections(input: VisualStateSelectionsInput): VisualStateSelections {
   const sink = input.sink;
+  // Exposure is owned per subject. Only the primary has a coverage read in
+  // either lane today, so it is the only entry — an unlisted subject resolves
+  // nothing rather than borrowing this one.
+  const perceptionBySubject = new Map([[input.perceptionSubjectId, input.perception]]);
   const narratorContext: VisualAttentionContext = {
     viewpoint: { kind: "observer", observerId: input.observerId },
     perception: input.perception,
+    perceptionBySubject,
     ...shadowComponents(),
     intimateAllowed: false,
     consumer: "narrator",
@@ -514,6 +527,7 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
   const imageContext: VisualAttentionContext = {
     viewpoint: { kind: "camera", cameraId: "visual_state_shadow" },
     perception: input.perception,
+    perceptionBySubject,
     ...shadowComponents(),
     intimateAllowed: false,
     consumer: "image",
@@ -527,6 +541,7 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
   const staircaseContext: VisualAttentionContext = {
     viewpoint: { kind: "debug" },
     perception: input.perception,
+    perceptionBySubject,
     ...staircaseComponents(),
     intimateAllowed: false,
     consumer: "inspector",

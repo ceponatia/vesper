@@ -1786,83 +1786,90 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // narrator writes from: the drifted state, the ticked scenario, this turn's
     // resolved wardrobe, and the post-contact-leg scene.
     if (chatVisualStateShadowEnabled()) {
-      try {
-        const shadowSink = new DiagnosticCollector();
-        // Reuse this turn's affordance read when another flag already took one;
-        // otherwise take the identical read with the shadow's own sink so the
-        // turn's collector stays untouched.
-        const shadowRead =
-          affordanceRead ?? recognitionPerception ?? buildChatAffordanceRead({ ...affordanceReadInput, sink: shadowSink });
-        const shadowMemory = await loadChatVisualMemory({
-          memoryGroupId,
-          viewpointId: owner,
-          subjectId: characterId,
-          promptingMessageId: exchangeGuardMessageId,
-          sink: shadowSink,
-        });
-        const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
-        const shadowInput: VisualStateShadowInput = {
-          lane: "character_chat",
-          scope: { kind: "chat", memoryGroupId },
-          cutId: exchangeGuardMessageId,
-          atMinutes: scenario.clockMinutes,
-          subjectId: characterId,
-          attributes: profile.attributes,
-          attributeOverlays: driftedState.attributeOverlays,
-          conditions: driftedState.conditions,
-          realize: {
-            ...(profile.speciesId === undefined ? {} : { speciesId: profile.speciesId }),
-            ...(profile.heritageId === undefined ? {} : { heritageId: profile.heritageId }),
-            ...(profile.bodyPlanId === undefined ? {} : { bodyPlanId: profile.bodyPlanId }),
-            ...(profile.intimateRegions === undefined ? {} : { intimateRegions: profile.intimateRegions }),
-            ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
-          },
-          garments: {
-            store: scenario.garments,
-            actorId: garmentActorForCharacter(characterId),
+      // DEFERRED off the turn's critical path: this is measurement, and the
+      // player waits for none of it. The closure captures the cut this turn
+      // already committed, so it still measures the same moment — it just
+      // stops charging the affordance read and the memory round trip to reply
+      // latency. The successor lane defers its shadow the same way.
+      void (async () => {
+        try {
+          const shadowSink = new DiagnosticCollector();
+          // Reuse this turn's affordance read when another flag already took one;
+          // otherwise take the identical read with the shadow's own sink so the
+          // turn's collector stays untouched.
+          const shadowRead =
+            affordanceRead ?? recognitionPerception ?? buildChatAffordanceRead({ ...affordanceReadInput, sink: shadowSink });
+          const shadowMemory = await loadChatVisualMemory({
+            memoryGroupId,
+            viewpointId: owner,
+            subjectId: characterId,
+            promptingMessageId: exchangeGuardMessageId,
+            sink: shadowSink,
+          });
+          const playerSubject = String(CHAT_CONTACT_PLAYER_SUBJECT);
+          const shadowInput: VisualStateShadowInput = {
+            lane: "character_chat",
+            scope: { kind: "chat", memoryGroupId },
+            cutId: exchangeGuardMessageId,
+            atMinutes: scenario.clockMinutes,
+            subjectId: characterId,
+            attributes: profile.attributes,
+            attributeOverlays: driftedState.attributeOverlays,
+            conditions: driftedState.conditions,
+            realize: {
+              ...(profile.speciesId === undefined ? {} : { speciesId: profile.speciesId }),
+              ...(profile.heritageId === undefined ? {} : { heritageId: profile.heritageId }),
+              ...(profile.bodyPlanId === undefined ? {} : { bodyPlanId: profile.bodyPlanId }),
+              ...(profile.intimateRegions === undefined ? {} : { intimateRegions: profile.intimateRegions }),
+              ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
+            },
+            garments: {
+              store: scenario.garments,
+              actorId: garmentActorForCharacter(characterId),
+              ...(wardrobe.worn === undefined
+                ? {}
+                : { layersByGarmentId: new Map(wardrobe.worn.map((row) => [row.garmentId, row.layer])) }),
+              freshCoverage: shadowRead.coverage,
+            },
+            playerSubjectId: playerSubject,
+            sceneSubjectId: "scene",
+            bodySurface: driftedState.bodySurface,
+            environment: scenario.environment,
+            sceneRelations: {
+              scene: scenario.scene,
+              subjectsByParticipant: new Map([
+                [characterId, characterId],
+                [playerSubject, playerSubject],
+                ...others.map((member) => [member.characterId, member.characterId] as const),
+              ]),
+            },
+            observations: shadowRead.read.observations,
+            perception: shadowRead.request.perception,
+            observerId: owner,
+            observer: { kind: "player_viewpoint", viewpointId: owner },
+            memory: shadowMemory,
             ...(wardrobe.worn === undefined
               ? {}
-              : { layersByGarmentId: new Map(wardrobe.worn.map((row) => [row.garmentId, row.layer])) }),
-            freshCoverage: shadowRead.coverage,
-          },
-          playerSubjectId: playerSubject,
-          sceneSubjectId: "scene",
-          bodySurface: driftedState.bodySurface,
-          environment: scenario.environment,
-          sceneRelations: {
-            scene: scenario.scene,
-            subjectsByParticipant: new Map([
-              [characterId, characterId],
-              [playerSubject, playerSubject],
-              ...others.map((member) => [member.characterId, member.characterId] as const),
-            ]),
-          },
-          observations: shadowRead.read.observations,
-          perception: shadowRead.request.perception,
-          observerId: owner,
-          observer: { kind: "player_viewpoint", viewpointId: owner },
-          memory: shadowMemory,
-          ...(wardrobe.worn === undefined
-            ? {}
-            : { wornGarmentIds: [...new Set(wardrobe.worn.map((row) => row.garmentId))] }),
-          sink: shadowSink,
-        };
-        const shadow = safeBuildVisualStateShadow(shadowInput, shadowSink);
-        if (shadow !== null) {
-          log.info("engine.chat", "visual-state shadow", {
-            chatId,
-            ...visualStateShadowLogSummary(shadow),
-            codes: shadowSink.items.map((entry) => entry.code),
-          });
-        } else {
-          log.warn("engine.chat", "visual-state shadow degraded to nothing", {
-            chatId,
-            codes: shadowSink.items.map((entry) => entry.code),
-          });
+              : { wornGarmentIds: [...new Set(wardrobe.worn.map((row) => row.garmentId))] }),
+            sink: shadowSink,
+          };
+          const shadow = safeBuildVisualStateShadow(shadowInput, shadowSink);
+          if (shadow !== null) {
+            log.info("engine.chat", "visual-state shadow", {
+              chatId,
+              ...visualStateShadowLogSummary(shadow),
+              codes: shadowSink.items.map((entry) => entry.code),
+            });
+          } else {
+            log.warn("engine.chat", "visual-state shadow degraded to nothing", {
+              chatId,
+              codes: shadowSink.items.map((entry) => entry.code),
+            });
+          }
+        } catch (error) {
+          log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
         }
-      } catch (error) {
-        log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
-      }
+      })();
     }
 
     /**

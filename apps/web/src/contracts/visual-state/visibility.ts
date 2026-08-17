@@ -243,8 +243,23 @@ export const VISUAL_STATE_VISIBILITY_HINTED = 3_000;
  */
 export interface VisualVisibilityContext {
   readonly viewpoint: VisualViewpoint;
-  /** Exposure per body location, and (for an observer) the sensory channels. */
+  /**
+   * Exposure per body location, and (for an observer) the sensory channels.
+   *
+   * Exposure belongs to the SUBJECT being looked at; channels belong to the
+   * viewpoint doing the looking. In a single-subject snapshot this one view
+   * answers both. Where a snapshot spans subjects, `perceptionBySubject` is
+   * the per-subject exposure and this stays the viewpoint's channel view.
+   */
   readonly perception: AffordancePerceptionView;
+  /**
+   * Exposure per subject, when the snapshot holds more than one. Supplying it
+   * makes the exposure read STRICT: a subject with no view of its own resolves
+   * nothing rather than borrowing another subject's coverage, because one
+   * character's clothes can never answer what another character is showing.
+   * Absent ⇒ every subject reads through `perception`, the single-subject case.
+   */
+  readonly perceptionBySubject?: ReadonlyMap<string, AffordancePerceptionView>;
   readonly lighting: VisualComponentRead<VisualLightingBand>;
   readonly distance: VisualComponentRead<VisualDistanceBand>;
   readonly angle: VisualComponentRead<VisualAngleBand>;
@@ -253,6 +268,13 @@ export interface VisualVisibilityContext {
   readonly framing?: VisualComponentRead<VisualFramingBand>;
   /** Consent/context allowance for intimate regions. Absent means NO. */
   readonly intimateAllowed?: boolean;
+  /**
+   * Per-subject consent allowance, when the snapshot spans subjects. Supplying
+   * it makes the gate strict the same way `perceptionBySubject` does: an
+   * unlisted subject is NOT allowed, because consent is granted per person and
+   * never inherited from whoever else is in frame.
+   */
+  readonly intimateAllowedBySubject?: ReadonlyMap<string, boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +335,46 @@ function resolveComponents(context: VisualVisibilityContext): ResolvedComponents
 /** The lower of two tiers — `AppearanceDetailTier` is a closed 1|2|3 union, so `<` preserves it. */
 function capTier(left: AppearanceDetailTier, right: AppearanceDetailTier): AppearanceDetailTier {
   return left < right ? left : right;
+}
+
+/**
+ * The exposure view that answers for this subject: its own when the caller
+ * supplied a per-subject map, otherwise the single shared view. `undefined`
+ * means the caller declared per-subject exposure and has none for this
+ * subject — unknown, which fails closed.
+ */
+function perceptionForSubject(
+  context: VisualVisibilityContext,
+  subjectId: string,
+): AffordancePerceptionView | undefined {
+  if (context.perceptionBySubject === undefined) return context.perception;
+  return context.perceptionBySubject.get(subjectId);
+}
+
+/** Consent for this subject: per-subject when declared, else the shared flag. Absent is NO. */
+export function intimateAllowedForSubject(context: VisualVisibilityContext, subjectId: string): boolean {
+  if (context.intimateAllowedBySubject === undefined) return context.intimateAllowed === true;
+  return context.intimateAllowedBySubject.get(subjectId) === true;
+}
+
+/**
+ * The intimate group a NON-body feature reaches, through its own accepted
+ * `covers`/`occludes` edges: an open shirt front says something about the chest
+ * beneath it, so a garment inherits the consent gate of what it sits on. Body
+ * loci answer directly and never come here.
+ */
+function intimateGroupThroughEdges(
+  entry: VisualStateCompositionEntry,
+  featuresByKey: ReadonlyMap<string, VisualStateFeature>,
+): string | undefined {
+  for (const relationship of entry.relationships) {
+    if (relationship.kind !== "covers" && relationship.kind !== "occludes") continue;
+    const target = featuresByKey.get(relationship.targetKey);
+    if (target === undefined || target.locus.kind !== "body") continue;
+    const group = bodyLocationRegistry.byId(target.locus.locus.bodyLocationId)?.intimateGroup;
+    if (group !== undefined) return group;
+  }
+  return undefined;
 }
 
 function frameContainsZone(framing: VisualFramingBand, zone: SceneBodyZone | undefined): boolean {
@@ -418,6 +480,9 @@ export function resolveVisualStateVisibility(input: {
 
   const visible: VisualStateVisibilityRead[] = [];
   const suppressions: VisualStateSuppression[] = [];
+  // Built once: the consent gate resolves a non-body feature's edges to the
+  // body features they cover.
+  const featuresByKey = new Map(snapshot.features.map((feature) => [feature.key, feature]));
 
   snapshot.features.forEach((feature, index) => {
     const suppress = (code: string, detail?: string): void => {
@@ -430,7 +495,9 @@ export function resolveVisualStateVisibility(input: {
       return;
     }
 
-    // Consent gate — hard, and above every perception branch on purpose.
+    // Consent gate — hard, and above every perception branch on purpose. It is
+    // resolved for the feature's OWN subject: consent is per person.
+    const intimateAllowed = intimateAllowedForSubject(context, feature.subjectId);
     let bodyLocationId: string | undefined;
     if (feature.locus.kind === "body") {
       bodyLocationId = feature.locus.locus.bodyLocationId;
@@ -442,8 +509,17 @@ export function resolveVisualStateVisibility(input: {
         suppress(VISUAL_STATE_LOCUS_INVALID, bodyLocationId);
         return;
       }
-      if (location.intimateGroup !== undefined && context.intimateAllowed !== true) {
+      if (location.intimateGroup !== undefined && !intimateAllowed) {
         suppress(VISUAL_STATE_INTIMATE_GATED, location.intimateGroup);
+        return;
+      }
+    } else if (!intimateAllowed) {
+      // A garment or item locus carries no body location of its own, but what
+      // it covers does: without this, an intimate-region garment's arrangement
+      // reached a consumer while the skin beneath it was correctly gated.
+      const group = intimateGroupThroughEdges(entry, featuresByKey);
+      if (group !== undefined) {
+        suppress(VISUAL_STATE_INTIMATE_GATED, group);
         return;
       }
     }
@@ -459,7 +535,14 @@ export function resolveVisualStateVisibility(input: {
     let exposureFactor: UnitInterval = AFFORDANCE_UNIT_ONE;
     let exposureEvidence: AffordanceEvidence | undefined;
     if (bodyLocationId !== undefined) {
-      const exposure = affordanceExposureAt(context.perception, bodyLocationId);
+      const subjectPerception = perceptionForSubject(context, feature.subjectId);
+      if (subjectPerception === undefined) {
+        // Per-subject exposure was declared and this subject has none: nobody
+        // answered what it is showing, which is unknown, not visible.
+        suppress(VISUAL_STATE_VISIBILITY_UNKNOWN, `perception:${feature.subjectId}`);
+        return;
+      }
+      const exposure = affordanceExposureAt(subjectPerception, bodyLocationId);
       switch (exposure) {
         case "hidden":
           suppress(VISUAL_STATE_VISIBILITY_HIDDEN, `exposure:${bodyLocationId}`);

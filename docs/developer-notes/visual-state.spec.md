@@ -1151,6 +1151,45 @@ rows.
 `IMAGE_VISUAL_STATE` are deliberately unregistered — registering an unread
 flag would be dead vocabulary.
 
+### Corrections from the slices 3–9 review (2026-08-16)
+
+A review over the whole merged range found ten defects; all were fixed in one
+pass, and four of them change contracts recorded above.
+
+**Exposure and consent are per subject.** `VisualVisibilityContext` gained
+`perceptionBySubject` and `intimateAllowedBySubject`. A snapshot spans subjects
+— body language projects for every mapped participant — and the single
+`perception` view was answering for all of them, so one character's clothing
+decided what another was showing, and one subject's consent gated another's
+intimate loci. Supplying either map makes that read STRICT: an unlisted subject
+resolves nothing rather than borrowing. Omitting them keeps the single-subject
+behavior. `perception` remains the viewpoint's channel view, because channels
+belong to whoever is looking.
+
+**The consent gate follows a garment's own edges.** A non-body locus inherits
+the intimate group of whatever its accepted `covers`/`occludes` edges reach, so
+an intimate-region garment's arrangement can no longer reach a consumer while
+the skin beneath it is withheld.
+
+**An observation's key carries its intensity band.** Two intensities of one
+phenomenon at one source and target used to render a single key, so the
+snapshot dropped the second as a duplicate and which band survived depended on
+read order.
+
+**`towardSubjectId` is a subject id.** The facing adapter now maps the toward
+end through the same participant→subject map as the facing side; an
+unmapped participant is still carried verbatim, which no subject matches.
+
+Also fixed, without changing a recorded contract: the narrator digest's
+`suppressedCount` counts cue-ELIGIBLE candidates rather than every scored one;
+image-ineligible mandatory facts record a suppression instead of vanishing; the
+character-chat shadow is deferred off the turn's critical path, as the
+successor lane already did; the extraction accept re-reads the profile under a
+row lock inside its write transaction, so a concurrent character edit is no
+longer clobbered; the legacy-vs-projection comparison de-duplicates both sides
+before differencing; and the per-subject digests group once instead of
+re-filtering per subject.
+
 ### Decisions slice 9 settled
 
 Each is recorded in the code that owns it.

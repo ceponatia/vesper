@@ -560,7 +560,7 @@ export async function decideVisualReferenceProposal(
     sink,
   );
   if (plan !== null && plan.kind === "attribute") {
-    await applyAttributeToProfile(character.id, profile, plan.next);
+    await applyAttributeToProfile(character.id, plan.next);
     const applied = await db()
       .update(visualReferenceProposals)
       .set({ appliedAt: new Date(), status: "applied" })
@@ -584,15 +584,26 @@ export async function decideVisualReferenceProposal(
  * provenance, and `resolveAttributes` precedence is for overlays, not for two
  * stored rows arguing.
  */
-async function applyAttributeToProfile(
-  characterId: string,
-  profile: CharacterProfile,
-  next: AttributeValue,
-): Promise<void> {
-  const attributes = [...profile.attributes.filter((attribute) => attribute.id !== next.id), next];
-  const merged = { ...profile, attributes };
-  await db()
-    .update(characters)
-    .set({ profile: { ...merged, attributes: materializeBodyDefaults(merged.attributes, merged) } })
-    .where(eq(characters.id, characterId));
+async function applyAttributeToProfile(characterId: string, next: AttributeValue): Promise<void> {
+  // The profile is re-read under a row lock INSIDE the write transaction, not
+  // reused from the read that produced the diff. This write replaces the whole
+  // profile document, so applying it to a copy fetched earlier in the request
+  // would silently revert any edit that landed in between — the reviewed slot
+  // is guarded by the `currentDigest` echo, but every other attribute is not.
+  await db().transaction(async (tx) => {
+    const [row] = await tx
+      .select({ profile: characters.profile })
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .for("update")
+      .limit(1);
+    if (!row) return;
+    const profile = parseProfile(row.profile);
+    const attributes = [...profile.attributes.filter((attribute) => attribute.id !== next.id), next];
+    const merged = { ...profile, attributes };
+    await tx
+      .update(characters)
+      .set({ profile: { ...merged, attributes: materializeBodyDefaults(merged.attributes, merged) } })
+      .where(eq(characters.id, characterId));
+  });
 }

@@ -99,11 +99,13 @@ describe("projectBodyLanguageFeatures", () => {
     expect(supports.map((feature) => feature.subjectId)).toEqual([VISUAL_STATE_SCENE_PLAYER_SUBJECT]);
   });
 
-  it("projects each directional facing with the scene-side toward id verbatim", () => {
+  it("maps the toward id to a subject id, like the facing side", () => {
     const facings = byKind(project().features, VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID);
     expect(facings).toHaveLength(2);
     const player = facings.find((feature) => feature.subjectId === VISUAL_STATE_SCENE_PLAYER_SUBJECT);
-    expect(player?.value).toEqual({ facing: "toward", towardSubjectId: VISUAL_STATE_SCENE_NPC });
+    // The fixture's map is deliberately NOT the identity, so a participant id
+    // left unmapped here would be unresolvable against the snapshot's subjects.
+    expect(player?.value).toEqual({ facing: "toward", towardSubjectId: VISUAL_STATE_SCENE_NPC_SUBJECT });
     // Relation ids are the owner's row identity, escaped inside the key.
     expect(player?.key).toBe(
       `${VISUAL_STATE_SCENE_PLAYER_SUBJECT}/relation:facing%3A${VISUAL_STATE_SCENE_PLAYER}%3A${VISUAL_STATE_SCENE_NPC}/body_language.facing`,

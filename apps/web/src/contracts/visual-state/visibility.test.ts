@@ -347,4 +347,97 @@ describe("resolveVisualStateVisibility", () => {
       JSON.stringify(resolve(snapshot, { lighting: visualComponentKnown("dim") })),
     );
   });
+
+  /**
+   * Exposure belongs to the subject being looked at, so a snapshot spanning
+   * subjects cannot answer for all of them from one coverage view: one
+   * character's clothing must never decide what another is showing.
+   */
+  describe("per-subject exposure", () => {
+    const OTHER_SUBJECT = "vs_other_subject";
+
+    function twoSubjectSnapshot(): VisualStateSnapshot {
+      const mine = visualStateFeatureFixture();
+      const theirs = visualStateFeatureFixture({ subjectId: OTHER_SUBJECT });
+      return snapshotOf([mine, theirs]);
+    }
+
+    it("resolves each subject through its own exposure view", () => {
+      const snapshot = twoSubjectSnapshot();
+      const covered = affordancePerceptionView({
+        exposure: { nose: "hidden" },
+        channels: { sight: "available" },
+      });
+      const build = resolve(snapshot, {
+        perceptionBySubject: new Map([
+          [VISUAL_STATE_FIXTURE_SUBJECT_ID, EXPOSED],
+          [OTHER_SUBJECT, covered],
+        ]),
+      });
+      expect(build.visible.map((read) => read.key)).toEqual([
+        snapshot.features.find((feature) => feature.subjectId === VISUAL_STATE_FIXTURE_SUBJECT_ID)?.key,
+      ]);
+      expect(build.suppressions.map((suppression) => suppression.code)).toEqual([
+        VISUAL_STATE_VISIBILITY_HIDDEN,
+      ]);
+    });
+
+    it("fails closed for a subject the caller declared no exposure for", () => {
+      const snapshot = twoSubjectSnapshot();
+      const build = resolve(snapshot, {
+        // The lane resolves coverage for the primary only; the other subject
+        // must resolve nothing rather than borrow this view.
+        perceptionBySubject: new Map([[VISUAL_STATE_FIXTURE_SUBJECT_ID, EXPOSED]]),
+      });
+      expect(build.visible).toHaveLength(1);
+      const suppression = build.suppressions[0];
+      expect(suppression?.code).toBe(VISUAL_STATE_VISIBILITY_UNKNOWN);
+      expect(suppression?.detail).toBe(`perception:${OTHER_SUBJECT}`);
+    });
+
+    it("reads every subject through the shared view when none is declared", () => {
+      const snapshot = twoSubjectSnapshot();
+      const build = resolve(snapshot);
+      expect(build.visible).toHaveLength(2);
+      expect(build.suppressions).toEqual([]);
+    });
+
+    it("gates a garment by the intimate region it covers", () => {
+      // The garment carries no body location of its own, so before the gate
+      // followed its `covers` edge an intimate-region garment's arrangement
+      // reached a consumer while the skin beneath it was correctly withheld.
+      const skin = visualStateFeatureFixture({
+        aspect: "intimate_fixture",
+        locus: { kind: "body", locus: { bodyLocationId: "vulva" } },
+      });
+      const garment = visualStateFeatureFixture({
+        aspect: "garment_fixture",
+        locus: { kind: "item", itemInstanceId: "g_underwear" },
+        relationships: [{ kind: "covers", targetKey: skin.key, degree: AFFORDANCE_UNIT_ONE }],
+      });
+      const build = resolve(snapshotOf([skin, garment]));
+      expect(build.visible).toEqual([]);
+      expect(build.suppressions.map((suppression) => suppression.code)).toEqual([
+        VISUAL_STATE_INTIMATE_GATED,
+        VISUAL_STATE_INTIMATE_GATED,
+      ]);
+    });
+
+    it("grants consent per subject, never by inheritance", () => {
+      const mine = visualStateFeatureFixture({
+        aspect: "intimate_fixture",
+        locus: { kind: "body", locus: { bodyLocationId: "vulva" } },
+      });
+      const theirs = visualStateFeatureFixture({
+        subjectId: OTHER_SUBJECT,
+        aspect: "intimate_fixture",
+        locus: { kind: "body", locus: { bodyLocationId: "vulva" } },
+      });
+      const build = resolve(snapshotOf([mine, theirs]), {
+        intimateAllowedBySubject: new Map([[VISUAL_STATE_FIXTURE_SUBJECT_ID, true]]),
+      });
+      expect(build.visible.map((read) => read.key)).toEqual([mine.key]);
+      expect(build.suppressions[0]?.code).toBe(VISUAL_STATE_INTIMATE_GATED);
+    });
+  });
 });
