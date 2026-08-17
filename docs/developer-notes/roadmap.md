@@ -63,10 +63,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Narrator model test bench** — [plan](narrator-model-bench.plan.md) ·
   [spec](narrator-model-bench.spec.md) — twelve roleplay and low-refusal
   narrators are pickable from the chat menu, now including one served by a
-  second provider (Featherless) for models no commercial host carries; whether a
-  narrator that thinks before it speaks fits the chat lane's latency ceiling is
-  the open question, and the recorded comparison that would move a default is
-  still the next step.
+  second provider (Featherless) for models no commercial host carries; the
+  recorded comparison that would move a default is still the next step.
 
 ## Next (queued, in dependency order)
 

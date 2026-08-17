@@ -10,6 +10,7 @@ import {
 import {
   agentModelId,
   chatNarrativeModelId,
+  featherlessRequestBody,
   narrativeModelId,
   narrativeProviderOptions,
   providerRouting,
@@ -170,5 +171,29 @@ describe("provider-key gate on narrator selection", () => {
   it("curates before it gates — an uncurated id still takes the lane default", () => {
     expect(chatNarrativeModelId("openai/o5-preview")).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
     expect(chatNarrativeModelId(null)).toBe(DEFAULT_CHARACTER_CHAT_MODEL_ID);
+  });
+});
+
+describe("Featherless request body — thinking mode", () => {
+  // Measured on the live endpoint 2026-08-17. With the model's thinking template ON, a
+  // bounded output budget produced an EMPTY reply (`finish_reason: "length"`, the whole
+  // budget spent on the chain) and first prose at ~61s — past the chat lane's 50s
+  // first-token watchdog. With it OFF, on a ~10.7K-token prompt: first token ~1.2s, a
+  // full reply in ~11s. This flag is the difference between the two.
+  it("disables the chat template's thinking mode for the model that needs it", () => {
+    expect(featherlessRequestBody({ model: FEATHERLESS_MODEL_ID, messages: [] })).toEqual({
+      model: FEATHERLESS_MODEL_ID,
+      messages: [],
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it("leaves every other model's body byte-identical", () => {
+    const body = { model: "SomeOwner/Some-Other-Merge", messages: [], temperature: 0.85 };
+    expect(featherlessRequestBody(body)).toEqual(body);
+  });
+
+  it("passes a body with no model through untouched rather than guessing", () => {
+    expect(featherlessRequestBody({ messages: [] })).toEqual({ messages: [] });
   });
 });

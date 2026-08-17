@@ -119,8 +119,9 @@ call that answers it.
   OpenRouter, chosen and stored the same way, with the rest of the app's models
   untouched. A pick whose provider has no configured key quietly uses the lane's
   usual narrator instead of failing the turn. The first such row is an uncensored
-  Qwen3.6 27B merge; whether it is usable in the chat lane is an open question
-  below, not a settled result.
+  Qwen3.6 27B merge, which had to be told to stop showing its reasoning before it
+  could answer inside the lane's normal reply time; it now does, at ordinary
+  narrator speed.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the
@@ -189,14 +190,6 @@ The build is successful when all of the following are true:
 
 ## Open questions
 
-- **Can a narrator that thinks before it speaks work in the chat lane at all?**
-  The first Featherless row spends about a minute of hidden reasoning before its
-  first visible word, and the chat lane gives up on a silent reply after fifty
-  seconds — a ceiling set by the hosting proxy, not by preference, so it cannot
-  simply be raised. The choices are to suppress the model's thinking if the
-  provider allows it, to confine thinking narrators to a surface without that
-  ceiling, or to drop the row. Nothing else in the second-provider work depends
-  on the answer ([detail](narrator-model-bench.spec.md)).
 - **Which roleplay candidates actually earn `immersive_roleplay`?** The initial
   exact-model cohort is a hypothesis; slice 4 decides the durable map
   ([detail](narrator-model-bench.spec.md)).

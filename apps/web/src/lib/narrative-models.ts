@@ -115,16 +115,20 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // row was added: the model is on-plan, streams `[Name]` speaker tags correctly,
   // and returns coherent scene prose. Two operational facts a picker should know:
   //
-  // - **It thinks first.** The response carries a `reasoning` field ahead of any
-  //   prose (~2.9K characters of it on a two-paragraph probe), which the transport
-  //   routes to reasoning parts, so none of it reaches the bubble. It is still paid
-  //   for and still delays the first visible token.
-  // - **It is slow, and it cold-starts.** ~65s wall clock for ~900 tokens on the
-  //   probe, and the first call to an idle model answers 503 `capacity_exhausted`
-  //   for ~25s while Featherless loads the weights.
+  // - **It is a thinking model, asked with thinking OFF.** Left alone it spends
+  //   ~1,300 tokens of chain before any prose — which misses the chat lane's
+  //   first-token budget AND, under a bounded output budget, returns an empty reply.
+  //   `FEATHERLESS_THINKING_OFF` in server/ai/provider.ts suppresses it, after which
+  //   it measures ~1.2s to first token and ~11s to a full reply on a ~10.7K-token
+  //   prompt. Removing that entry makes this row unusable, not merely slower.
+  // - **It cold-starts.** The first call to an idle model answers 503
+  //   `capacity_exhausted` for ~25s while Featherless loads the weights. The AI SDK
+  //   retries that status for longer than the chat lane's first-token watchdog allows,
+  //   so a cold row presents as a `timeout` reply failure; the next send usually lands
+  //   on a warm model.
   //
-  // Both make it a bench row to sample, not a default to soak. `(32K)` is the
-  // usual context marker; see the note above the RP bench for what it binds.
+  // `(32K)` is the usual context marker; see the note above the RP bench for what
+  // it binds.
   {
     id: "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
     label: "Fable Fusion 27B (32K)",

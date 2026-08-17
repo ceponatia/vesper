@@ -94,16 +94,17 @@ The row's full id is
 request as the first model from this provider. Measured against the live endpoint the
 day it was added:
 
-- **It reasons before it narrates.** The response carries a `reasoning` field of
-  roughly 1,300 tokens ahead of any prose. The transport routes that to reasoning
-  parts, so none of it reaches the bubble or the transcript — it is paid for and it
-  delays the first visible token.
-- **First visible token at ~61s** on a 46-token prompt, ~10s more for a
-  two-paragraph reply (~22 tok/s). See
-  [The first-token problem](#the-first-token-problem) — this is the one thing about
-  the row that is not just a bench observation.
+- **It is a thinking model, and it is asked not to be.** Left alone it emits ~1,300
+  tokens of chain before any prose, which both breaks the lane's first-token budget
+  and — under a bounded output budget — consumes the entire reply. It is therefore in
+  `FEATHERLESS_THINKING_OFF`; see
+  [the ruling](#ruling-2026-08-17--a-thinking-narrator-is-asked-with-thinking-off).
+- **As configured: first token ~1.2s, a full reply in ~11s** on a ~10.7K-token prompt.
+  Ordinary narrator latency, not a bench compromise.
 - **Cold start ~25s.** The first call to an idle model answers `503`
-  `capacity_exhausted` while Featherless loads the weights.
+  `capacity_exhausted` while Featherless loads the weights. In the chat lane that
+  presents as a `timeout` reply failure rather than a provider error — see
+  [Resilience](#resilience).
 - **Prose quality is on-brief.** It honors the `[Name]` speaker tag, holds third
   person, and produces scene-like description rather than chat-length answers — which
   is the property the whole bench exists to find.
@@ -293,24 +294,38 @@ can answer, and setting the secret restores the pick with no re-choosing. Only
 Featherless can fail this gate — OpenRouter's absence is demo mode, which every
 generation path already branches on.
 
-### The first-token problem
+### Ruling 2026-08-17 — a thinking narrator is asked with thinking off
 
 The chat lane aborts a reply that produces no visible token within
 `CHAT_STREAM_FIRST_TOKEN_MS` (50s), and that ceiling is not tunable upward: it is
-deliberately under Fly's ~60s proxy idle timeout, past which the proxy kills a
-response that has sent zero bytes.
+deliberately under Fly's ~60s proxy idle timeout, past which the proxy kills a response
+that has sent zero bytes.
 
-A model that reasons before it narrates spends that budget invisibly. The first
-Featherless row measured **~61s to first visible token** on a 46-token prompt through
-the app's own gateway — over the watchdog before Vesper's real ~17K-token prompt adds
-any prefill. **On the deployed app this row is expected to trip the first-token
-watchdog and settle as a `timeout` reply failure rather than narrate.**
+A model that reasons before it narrates fails that budget on two independent counts,
+both measured against the live endpoint:
 
-This is recorded as an open question in the plan rather than fixed here, because every
-available answer is a product decision: suppress the model's thinking if its provider
-accepts a knob for it, restrict thinking narrators to a lane without a proxy idle
-ceiling, or drop the row. Nothing about the seam depends on the answer — a
-non-reasoning Featherless model would run inside the existing budget today.
+- **First prose at ~61s**, behind ~1,300 tokens of chain — over the watchdog before
+  Vesper's real prompt adds any prefill.
+- **An empty reply.** Asked with a bounded output budget, the model spent the whole
+  budget thinking and returned `finish_reason: "length"` with no content at all. This
+  one is not a latency problem and no timeout change would fix it.
+
+So thinking is **switched off for those models rather than budgeted for**, per exact
+model id, in `FEATHERLESS_THINKING_OFF`. Measured on a ~10.7K-token prompt with the flag
+set: first token **~1.2s**, a complete two-paragraph reply in **~11s** — the same league
+as the hosted commercial narrators, and comfortably inside every existing budget.
+
+Only one mechanism works. `chat_template_kwargs: {enable_thinking: false}` suppresses the
+chain completely; `reasoning_effort: "none"` and a `/no_think` token in the prompt were
+both probed on this model and both **silently ignored**, still producing a full chain and
+no prose. That is why the flag rides `transformRequestBody` on the Featherless client
+rather than the transport's own `reasoningEffort` option, and why it is keyed to exact
+model ids: a model whose template spells the flag differently would ignore it just as
+quietly.
+
+The switch is per-model and opt-in, the same rule `NARRATOR_REASONING` follows for
+OpenRouter. A Featherless model that does not use a thinking template is unaffected, and
+`featherlessRequestBody` leaves its body byte-identical.
 
 ## Ownership rules
 
@@ -348,20 +363,26 @@ The second provider adds one new degraded default and inherits the rest:
 - **Missing credential ⇒ the lane default, not a failed turn.** See
   [The provider-key gate](#the-provider-key-gate). Logged as
   `ai.chat_narrative_model` / `ai.narrative_model`.
-- **Cold start surfaces as a provider error.** Featherless answers `503` with
-  `code: "capacity_exhausted"` for ~25s while an idle model loads.
-  `classifyProviderError` reads the status, not the vendor, so this lands as
-  `provider_error` with the vendor's own words as `detail` — an accurate, attributable
-  failure. There is no warm-up retry: the reply fails, and the player's next send
-  usually lands on a warm model. A retry would be a real design decision (it doubles a
-  slow leg's worst case) and is not one this work took.
+- **Cold start surfaces as the first-token timeout, not as a provider error.**
+  Featherless answers `503` `capacity_exhausted` while an idle model loads. The AI SDK
+  retries that status with backoff, and measured through the app's own gateway those
+  retries ran **~191s and yielded an empty stream** — far past
+  `CHAT_STREAM_FIRST_TOKEN_MS`. So the watchdog wins the race: the exchange aborts at
+  50s and records a `timeout` reply failure, and the vendor's "temporarily at capacity"
+  wording never reaches `classifyProviderError`.
+
+  That is a survivable outcome — the lock releases, the failure is attributable, and the
+  player's next send usually lands on a warm model — but it is worth stating plainly,
+  because a `timeout` on a cold Featherless row means "the model was asleep", not "the
+  model is too slow to narrate". Shortening the SDK's retry budget for this transport so
+  the real 503 surfaces instead is an available improvement this work did not take.
 - **A reasoning model's chain is never mistaken for prose.** The transport routes
   `reasoning` deltas to reasoning parts, so `textStream` carries prose only.
 
-Two known-untested boundaries are recorded as open questions in the plan: a 32K row
-overflowing its context on a long chat (the provider returns an error rather than
-silently truncating, which should surface as an ordinary reply failure, but this has
-not been observed), and [the first-token problem](#the-first-token-problem).
+One known-untested boundary is recorded as an open question in the plan: a 32K row
+overflowing its context on a long chat. The provider returns an error rather than
+silently truncating, which should surface as an ordinary reply failure, but this has not
+been observed.
 
 ## Fixtures and tests
 

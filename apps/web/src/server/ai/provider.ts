@@ -231,8 +231,51 @@ export function featherless(): OpenAICompatibleProvider {
     name: "featherless",
     baseURL: "https://api.featherless.ai/v1",
     apiKey: process.env.FEATHERLESS_API_TOKEN ?? "demo",
+    transformRequestBody: featherlessRequestBody,
   });
   return cachedFeatherless;
+}
+
+/**
+ * Featherless models asked with their chat template's **thinking mode off**, keyed by
+ * exact model id. Opt-in per model, never a blanket flag — the same rule the OpenRouter
+ * reasoning knobs above follow, and for the same reason: a model that does not use a
+ * thinking template gains nothing, and one whose template spells the flag differently
+ * would silently ignore it.
+ *
+ * This is not a preference. A thinking narrator is unusable in the chat lane on two
+ * independent counts, both measured against the live endpoint on 2026-08-17:
+ *
+ * - **It blows the first-token budget.** The chain runs ~1,300 tokens before any prose,
+ *   which put the first visible token at ~61s — past `CHAT_STREAM_FIRST_TOKEN_MS` (50s),
+ *   a ceiling that cannot be raised because it sits under Fly's ~60s proxy idle timeout.
+ * - **It eats the whole reply.** Asked with a bounded output budget, the model spent all
+ *   of it thinking and returned an EMPTY reply with `finish_reason: "length"`. Not slow
+ *   prose — no prose.
+ *
+ * Only `chat_template_kwargs` works. `reasoning_effort: "none"` and a `/no_think` token in
+ * the prompt were both probed on this model and both silently ignored, still producing a
+ * full chain and no prose — which is why this rides `transformRequestBody` rather than the
+ * transport's own `reasoningEffort` option.
+ */
+const FEATHERLESS_THINKING_OFF: ReadonlySet<string> = new Set([
+  "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
+]);
+
+/**
+ * The Featherless request-body hook: adds `chat_template_kwargs` for the models above and
+ * changes nothing for any other. Reads the id off the outgoing body rather than taking it
+ * as an argument, because the transport builds one client for every model.
+ *
+ * Exported for its test. It is the only place a Featherless call's shape is decided, and
+ * the difference between the two branches is the difference between a narrator that
+ * answers in about a second and one that returns nothing at all — worth asserting
+ * directly rather than through a network round-trip.
+ */
+export function featherlessRequestBody(body: Record<string, unknown>): Record<string, unknown> {
+  const modelId = typeof body.model === "string" ? body.model : "";
+  if (!FEATHERLESS_THINKING_OFF.has(modelId)) return body;
+  return { ...body, chat_template_kwargs: { enable_thinking: false } };
 }
 
 /** True when a Featherless credential is configured — the gate on selecting a Featherless narrator. */
