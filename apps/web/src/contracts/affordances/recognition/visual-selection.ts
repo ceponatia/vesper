@@ -10,6 +10,8 @@ import {
 import {
   applyVisualCueMentions,
   emptyVisualCueState,
+  recordVisualCuesSpoken,
+  visualCueRecentlySpoken,
   intimateAllowedForSubject,
   observeVisualCues,
   visualStateKindRegistry,
@@ -285,6 +287,8 @@ export interface VisualNarratorSelection {
   readonly cueStateAfterVisibility: VisualCueState;
   /** Apply these to `cueStateAfterVisibility` only when the cues enter the cut. */
   readonly cueMentionCommits: readonly VisualCueMentionCommit[];
+  /** Every offered family's repeat key — the fence's just-spoken window, committed with the cut. */
+  readonly spokenRepeatKeys: readonly string[];
   readonly suppressions: readonly VisualStateSuppression[];
 }
 
@@ -379,10 +383,20 @@ function narratorConstraints(
    * bury the change signal the whole lane exists to surface.
    */
   spokenKeys: ReadonlySet<string>,
+  /**
+   * The cue state, for the just-spoken window. A family the narrator said on
+   * the previous cut stays out of the fence for one cut
+   * (`VISUAL_FENCE_QUIET_CUTS`) — the round-1 repetition finding, closed here
+   * rather than in prompt wording: the fence cannot be re-presenting a fact the
+   * narrator has only just used, because the narrator reads a fence entry as
+   * something it may say.
+   */
+  cues: VisualCueState,
 ): Map<string, VisualAttentionCandidate[]> {
   const bySubject = new Map<string, VisualAttentionCandidate[]>();
   for (const candidate of candidates) {
     if (spokenKeys.has(candidate.feature.key)) continue;
+    if (visualCueRecentlySpoken(cues, candidate.repeatKey)) continue;
     const list = bySubject.get(candidate.feature.subjectId);
     if (list === undefined) bySubject.set(candidate.feature.subjectId, [candidate]);
     else list.push(candidate);
@@ -444,6 +458,7 @@ function emptyNarratorSelection(
     cueObservations: [],
     cueStateAfterVisibility: input.cues ?? emptyVisualCueState(),
     cueMentionCommits: [],
+    spokenRepeatKeys: [],
     suppressions,
   };
 }
@@ -630,6 +645,10 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   const cueMentionCommits: VisualCueMentionCommit[] = selected
     .filter((entry) => entry.candidate.noveltySource === "cue")
     .map((entry) => ({ repeatKey: entry.candidate.repeatKey, atMinutes }));
+  // EVERY offered family, not only the cue-owned ones: the fence's quiet window
+  // is a fact about what the prompt just said, and it does not care which
+  // record supplied the cooldown.
+  const spokenRepeatKeys: string[] = selected.map((entry) => entry.candidate.repeatKey);
 
   const memoryAfterNotices = applyRecognitionFingerprintChanges(applyRecognitionNotices(memory, notices), changes);
   // Visibility is recorded for EVERY resolved cue family, mentioned or not:
@@ -645,7 +664,7 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
   // per subject.
   const constraintsBySubject = new Map<string, VisualConstraint[]>();
   const spokenKeys = new Set(cues.map((offered) => offered.key));
-  for (const [subjectId, chosen] of narratorConstraints(build.candidates, constraintBudget, spokenKeys)) {
+  for (const [subjectId, chosen] of narratorConstraints(build.candidates, constraintBudget, spokenKeys, priorCueState)) {
     constraintsBySubject.set(subjectId, chosen.map((candidate) => visualConstraintOf(candidate.feature)));
   }
   // `scorable`, NOT every scored candidate, is the population that was ever
@@ -684,6 +703,7 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
     cueObservations: build.cueObservations,
     cueStateAfterVisibility,
     cueMentionCommits,
+    spokenRepeatKeys,
     suppressions,
   };
 }
@@ -698,8 +718,10 @@ export function selectVisualNarratorCues(input: VisualNarratorSelectionInput): V
 export function commitVisualNarratorCueMentions(
   state: VisualCueState,
   commits: readonly VisualCueMentionCommit[],
+  /** Every offered family, for the fence's just-spoken window. */
+  spokenRepeatKeys: readonly string[] = [],
 ): VisualCueState {
-  return applyVisualCueMentions(state, commits);
+  return recordVisualCuesSpoken(applyVisualCueMentions(state, commits), spokenRepeatKeys);
 }
 
 /**

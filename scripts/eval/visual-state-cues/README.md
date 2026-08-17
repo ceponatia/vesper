@@ -1,13 +1,21 @@
 # Visual-state narrator trial
 
 The owner-gated live comparison for **slice 7** of
-`docs/developer-notes/visual-state.plan.md`: does the
-`CHAT_VISUAL_STATE_NARRATION` path — a must-not-contradict **fence** plus at most
-two change-gated **cues** — reduce contradictions of committed visual state
-without costing repetition, naturalness, or hidden-detail discipline?
+`docs/developer-notes/visual-state.plan.md`: does visual-state narration — a
+must-not-contradict **fence** plus at most two change-gated **cues** — reduce
+contradictions of committed visual state without costing repetition,
+naturalness, or hidden-detail discipline?
 
-Round 1 (2026-08-17) ran and returned `invalid_induction`. Record:
+The harness always builds both arms itself, so it does not read the
+per-conversation switch that gates the feature in production.
+
+Round 1 (2026-08-17) ran and returned `invalid_induction`; slice 7 then closed on
+the mechanism rather than on a measured benefit, and the feature shipped as a
+per-conversation switch that is off by default. Record:
 [`visual-state.trial.md`](../../../docs/developer-notes/visual-state.trial.md).
+
+This harness is kept, not retired: the question it asks is still open, and the
+matrix is the expensive half of asking it again.
 
 ## Run
 

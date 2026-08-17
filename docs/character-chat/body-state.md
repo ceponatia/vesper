@@ -175,7 +175,7 @@ forearm") — standing truth after the physical cues, never competing with them.
 
 ### The narrator's own cue record
 
-**`chat_visual_cues`** (behind `CHAT_VISUAL_STATE_NARRATION`, default OFF) is the sibling
+**`chat_visual_cues`** (behind each conversation's own visual-continuity switch, default OFF) is the sibling
 record for everything `chat_visual_memory` deliberately refuses. Recognition memory holds
 what a person could *recognize* — a crooked nose, a scar — and a rolled sleeve, a posture, or
 an occupied hand has no business filling it up. That exclusion also left those details with
@@ -202,9 +202,14 @@ mention ledger all follow it and a single cue can never spend both.
 - **Same key and same two-generation retake law** as `chat_visual_memory`, in its own table.
   The counter is why that matters more here: a retake that advanced it twice would make every
   tracked detail read as newly revealed on the following cut.
-- **Read on both flags, written on one.** The visual-state shadow reads the stored state and
-  ranks against it, so its repetition and newly-revealed counts are real; only
-  `CHAT_VISUAL_STATE_NARRATION` commits.
+- **Read either way, written only when the chat's switch is on.** The visual-state shadow reads
+  the stored state and ranks against it, so its repetition and newly-revealed counts are real;
+  only a conversation with visual continuity turned on commits.
+- **A just-said detail leaves the fence for one cut.** The fence otherwise never goes quiet — a
+  fact stays contradictable — but a detail the narrator has only just used would otherwise be
+  re-presented immediately, and the narrator reads a fence entry as something it may say. The
+  ledger of what was spoken, and when, is what closes that loop in the projection rather than in
+  prompt wording.
 
 ### What the narrator can see
 

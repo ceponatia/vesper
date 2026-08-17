@@ -1,7 +1,8 @@
 # Slice 7 narrator trial — visual state vs. no visual state
 
-Status: **open — round 1 ran 2026-08-17 and returned no verdict** (invalid
-induction, $1.21). Companion to
+Status: **closed — round 1 ran 2026-08-17 and returned no verdict** (invalid
+induction, $1.21); the owner closed slice 7 on the mechanism the same day and
+the harness stays for a later round. Companion to
 [visual-state.plan.md](visual-state.plan.md) §"Slice 7 — narrator proving
 release". Harness: `scripts/eval/visual-state-cues/`.
 
@@ -15,18 +16,21 @@ repeat itself, read worse, or start describing things the player cannot see?
 Both arms are the real product path. The only difference between them is whether
 those two blocks reach the prompt.
 
-## Recommendation
+## Outcome
 
-**Do not turn the flag on, and do not treat these numbers as a result.** Run a
-second round after two changes, described under "What to change" below.
+**Owner ruling (2026-08-17): slice 7 closes on the mechanism, not on a measured
+benefit.** The repetition finding below was fixed in the projection, and the
+feature shipped as a per-conversation switch that is off by default — something
+to turn on for one chat and read, rather than something enabled everywhere on a
+directional result.
 
-The round did not fail the feature. It failed to be a measurement: the
-comparison arm — today's narrator, with no visual blocks — contradicted the
-committed state only **0.13 times per exchange**, and the trial's own
-pre-registered gate needs **0.40** before it will render a verdict at all. That
-gate exists because of the affordance-cue trial, which spent four rounds
-learning that a control arm with nothing to get wrong makes any improvement
-unmeasurable.
+These numbers are not a verdict and must not be quoted as one. The round did not
+fail the feature; it failed to be a measurement. The comparison arm — today's
+narrator, with no visual blocks — contradicted the committed state only **0.13
+times per exchange**, and the trial's own pre-registered gate needs **0.40**
+before it will render a verdict at all. That gate exists because of the
+affordance-cue trial, which spent four rounds learning that a control arm with
+nothing to get wrong makes any improvement unmeasurable.
 
 ## What happened
 
@@ -87,29 +91,41 @@ On a valid round this alone would fail the trial's repetition guard.
 detail on 5 of the 9 exchanges where one was named. Being told the detail was
 new made no difference to whether it got used. Specificity was identical at 4.90.
 
-## What to change before round 2
+## What changed after the round
 
-1. **Make the fence quieter about facts it has already fenced.** Not a cooldown
-   on the fact — the fence must keep fencing — but the block should stop reading
-   as an invitation. The candidate change is presentational: state the facts once
-   as a compact clause rather than a bulleted list, and say plainly that these
-   are things not to contradict rather than things to use. The bulleted form is
-   what the narrator is treating as a menu.
-2. **Strengthen the three families that never baited.** Arrangement, wetness and
-   hidden detail need scenes that pull much harder toward the wrong claim —
-   player lines that assert it outright, and more exchanges per scene so the
-   pressure accumulates.
+**The repetition defect is fixed, in the projection.** The owner's ruling was
+that a repetition problem belongs to the visual layer rather than to prompt
+wording, and that is where it now lives: the projection records every detail it
+offered the narrator, and keeps that family out of the fence for exactly one
+exchange afterwards. The fence otherwise still never goes quiet. The window is
+the shortest one that works, because a fact absent from the fence is a fact the
+narrator is free to contradict — and the single exchange it is absent for is the
+one immediately after the narrator described it, the least likely moment for it
+to contradict itself.
 
-Both are matrix or presentation changes. Neither changes what the projection
-selects, and neither changes the decision rule.
+The deterministic checks confirm the loop is closed: the details cued on the
+first exchange of a scene no longer reappear in the second exchange's fence.
+
+**What a round 2 would still need**, if the question ever matters enough to
+spend on again: the three bait families that never tempted the control arm —
+arrangement, wetness and hidden detail — need scenes that pull much harder
+toward the wrong claim, with player lines that assert it outright and more
+exchanges per scene so the pressure accumulates. That is a matrix change; it
+does not touch the projection or the decision rule.
 
 ## What this round cannot say
 
 It cannot say the feature works, and it cannot say it does not. Two events
-against four is not a rate. The one thing it says with any confidence is
-mechanical rather than statistical: the fence's bulleted form invites the
-repetition the plan's own success criteria forbid, and that is fixable before
-anyone spends another $1.21 measuring it.
+against four is not a rate, and nothing here should be quoted as one. What the
+round *did* establish is narrower and worth keeping: the projection puts correct,
+visible-only facts in front of the narrator, never described anything the player
+could not see, and cost essentially nothing in how the prose reads. That is a
+statement about the machinery, not about the benefit, and it is the basis the
+slice closed on.
+
+The one statistical claim it supports is the negative one: whatever this feature
+is worth, it is not worth much on the three families the control arm never got
+wrong.
 
 ## Method
 
@@ -138,3 +154,5 @@ is committed at `scripts/eval/visual-state-cues/results/round-1-2026-08-17.json`
 | round | date       | verdict            | spend | note                                       |
 | ----- | ---------- | ------------------ | ----- | ------------------------------------------ |
 | 1     | 2026-08-17 | invalid_induction  | $1.21 | control 0.13/exchange, 3 of 5 families dry |
+
+Campaign spend to date: **$1.24** (one smoke scenario plus one full round).

@@ -5,6 +5,7 @@ import {
   emptyVisualCueState,
   emptyVisualMemoryState,
   commitVisualNarratorMentions,
+  commitVisualNarratorCueMentions,
   emptyChatSceneMemory,
   garmentBlueprintForSeed,
   pristineGarmentConditionState,
@@ -353,7 +354,11 @@ export function readTurn(input: {
   // The mention commits are applied because this arm DID say them: the trial's
   // visual arm is the flagged pipeline, and its cooldowns must advance the way
   // production's would or the repetition axis measures nothing.
-  const nextCues = commitCues(build.narrator.cueStateAfterVisibility, build.narrator.cueMentionCommits);
+  const nextCues = commitVisualNarratorCueMentions(
+    build.narrator.cueStateAfterVisibility,
+    build.narrator.cueMentionCommits,
+    build.narrator.spokenRepeatKeys,
+  );
   const nextMemory = commitVisualNarratorMentions(build.narrator.memoryAfterNotices, build.narrator.mentionCommits);
   return {
     lines,
@@ -368,26 +373,6 @@ export function readTurn(input: {
       ...(digest?.selected ?? []).map((entry) => entry.locus),
     ].map((locus) => JSON.stringify(locus)),
   };
-}
-
-function commitCues(
-  state: VisualCueState,
-  commits: readonly { readonly repeatKey: string; readonly atMinutes: number }[],
-): VisualCueState {
-  // Imported through the contracts barrel rather than the selection module so
-  // the harness depends on the same door production does.
-  const applied = commits.reduce<VisualCueState>((next, commit) => {
-    const row = next.cues[commit.repeatKey];
-    if (row === undefined) return next;
-    return {
-      sequence: next.sequence,
-      cues: {
-        ...next.cues,
-        [commit.repeatKey]: { ...row, lastMentionedAtMinutes: commit.atMinutes, mentionCount: row.mentionCount + 1 },
-      },
-    };
-  }, state);
-  return applied;
 }
 
 export const emptyCues = emptyVisualCueState;
