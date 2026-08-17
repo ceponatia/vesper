@@ -111,32 +111,49 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // ## Featherless rows (added 2026-08-17) — served by FEATHERLESS_API_TOKEN
   //
   // Featherless serves community Hugging Face merges that no OpenRouter vendor
-  // hosts, over an OpenAI-compatible endpoint. Measured on this account before the
-  // row was added: the model is on-plan, streams `[Name]` speaker tags correctly,
-  // and returns coherent scene prose. Two operational facts a picker should know:
+  // hosts, over an OpenAI-compatible endpoint. Every row is checked against
+  // `GET /v1/models` before it is added — a catalog page on the website is NOT
+  // evidence the API serves it, and an id that is merely published answers
+  // `400 model_not_deployed` on every turn (two candidates were rejected this way
+  // on 2026-08-17). Measured on this account before each row was added: the model is
+  // on-plan, streams `[Name]` speaker tags correctly, and returns coherent scene
+  // prose. Three operational facts a picker should know:
   //
-  // - **It is a thinking model, asked with thinking OFF, on its author's sampler
-  //   baseline.** Left alone it spends ~1,300 tokens of chain before any prose — which
-  //   misses the chat lane's first-token budget AND, under a bounded output budget,
+  // - **They are thinking models, asked with thinking OFF, on their author's sampler
+  //   baseline.** Left alone each spends ~1,100–1,300 tokens of chain before any prose —
+  //   which misses the chat lane's first-token budget AND, under a bounded output budget,
   //   returns an empty reply. `FEATHERLESS_MODEL_POLICY` in server/ai/provider.ts
-  //   suppresses the chain and applies the merge's recommended non-thinking sampling
+  //   suppresses the chain and applies the merges' recommended non-thinking sampling
   //   (temp 0.7 / top-p 0.8 / top-k 20 / presence 1.5), after which warm calls measure
-  //   0.7–2.8s to first token and 2–5s to a full reply. Removing that entry makes this
-  //   row unusable, not merely slower. It is the ONE bench row with a sampler profile;
-  //   a comparison including it must read those settings as part of the arm.
-  // - **It cold-starts.** The first call to an idle model fails while Featherless loads
+  //   0.7–2.8s to first token and 2–6s to a full reply. Removing an entry makes that
+  //   row unusable, not merely slower. These are the ONLY bench rows with a sampler
+  //   profile; a comparison including one must read those settings as part of the arm.
+  //   The flag is probed per model, never assumed from the family.
+  // - **They cold-start.** The first call to an idle model fails while Featherless loads
   //   the weights (503 `capacity_exhausted`, or an error frame on a 200). It surfaces
   //   after ~14s as a `provider_error` reply failure quoting the vendor's "temporarily
   //   at capacity" wording; the next send usually lands on a warm model. It is NOT an
-  //   empty reply, and the one hidden retry below deliberately does not cover it.
-  // - **It gets one hidden retry for a zero-text reply.** Exact-model, and only when
-  //   nothing reached the player (`narratorHiddenRetryModel`). No other narrator has it.
+  //   empty reply, and the hidden retry below deliberately does not cover it. Each model
+  //   warms independently, so a second row is a second cold start, not a shared one.
+  // - **They get one hidden retry for a zero-text reply.** Exact-model, and only when
+  //   nothing reached the player (`narratorHiddenRetryModel`). No OpenRouter narrator
+  //   has it.
   //
   // `(32K)` is the usual context marker; see the note above the RP bench for what
   // it binds.
   {
     id: "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP",
     label: "Fable Fusion 27B (32K)",
+    provider: "featherless",
+  },
+  // The writer-tuned arm of the same comparison: same author, same Qwen3.6-27B base,
+  // same FP8/32K/$1.06–2.60 economics, and the same thinking-off policy — so the two
+  // differ by their merge recipe and nothing else, which is the only way the
+  // comparison answers anything. Its card emphasizes instruction-following and
+  // writer-oriented tuning where Fable Fusion emphasizes prose fusion.
+  {
+    id: "DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic",
+    label: "F451 Ultra Pro Writer 27B (32K)",
     provider: "featherless",
   },
 ];

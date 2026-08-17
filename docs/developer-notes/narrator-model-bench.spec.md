@@ -25,12 +25,19 @@ them may name a provider.
   field, the Featherless transport, the `textModel` routing seam and the
   provider-key gate described below.
 - **Slice 1c — the first Featherless row is reliable and its failures are truthful**
-  — built 2026-08-17, awaiting an owner run on the deployed app. Adds narrator
+  — built 2026-08-17, **confirmed on the deployed app the same day**: the owner
+  reports the common failure is now the model-busy (cold start) message, which is
+  the misclassification this slice fixed presenting correctly. Adds narrator
   completion metadata, the zero-visible-text failure taxonomy, the exact-model
   sampler policy, and the one hidden retry. See
   [Why a reply read as empty](#why-a-reply-read-as-empty) for the root cause it
   fixes and [The exact-model request policy](#the-exact-model-request-policy) for
   what the model is now asked with.
+- **Slice 1d — a second Featherless row for a matched comparison** — built
+  2026-08-17, awaiting an owner run. Adds F451 Ultra Pro Writer under the same
+  policy object as Fable Fusion, so the two differ only by merge recipe. Two further
+  candidates were rejected as undeployed; see
+  [Rejected candidates](#rejected-candidates-and-why).
 - **Slice 2 — a recorded comparison** — not started.
 - **Slice 3 — a default ruling** — not started, blocked on slice 2.
 
@@ -92,13 +99,23 @@ The Dolphin row's full id is
 
 ### The Featherless rows
 
-| Model                                     | Context | $/M in–out | Lane                    |
-| ----------------------------------------- | ------: | ---------: | ----------------------- |
-| `DavidAU/Qwen3.6-27B-Fable-Fusion-711-…`  |     32K |  1.06–2.60 | Uncensored Qwen3.6 merge |
+| Model                                    | Context | $/M in–out | Lane                     |
+| ---------------------------------------- | ------: | ---------: | ------------------------ |
+| `DavidAU/Qwen3.6-27B-Fable-Fusion-711-…` |     32K |  1.06–2.60 | Uncensored Qwen3.6 merge |
+| `DavidAU/Qwen3.6-27B-F451-AND-TRI-…`     |     32K |  1.06–2.60 | Writer-tuned counterpart |
 
-The row's full id is
-`DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP`, added on owner
-request as the first model from this provider. Measured against the live endpoint:
+Full ids: `DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP` and
+`DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic`, both
+added on owner request.
+
+The two are a **matched pair on purpose**: same author, same Qwen3.6-27B base, same
+FP8 quantization, same 32K window, same price, and the same request policy. They differ
+by their merge recipe and nothing else, which is the only arrangement under which
+comparing them answers anything. F451's card emphasizes instruction-following and
+writer-oriented tuning where Fable Fusion emphasizes prose fusion.
+
+Measured against the live endpoint (the Fable numbers below; F451's own probe is in
+[the thinking-off ruling](#ruling-2026-08-17--a-thinking-narrator-is-asked-with-thinking-off)):
 
 - **It is a thinking model, and it is asked not to be.** Left alone it emits ~1,300
   tokens of chain before any prose, which both breaks the lane's first-token budget
@@ -145,6 +162,22 @@ listed above were dropped for one of these reasons, all of them checkable:
   reason to drop one; context window and speed still are.
 - **Near-duplicate of a listed row.** `nousresearch/hermes-4-405b` and
   `hermes-3-llama-3.1-70b` add cost, not a lane, over Hermes 4 70B.
+- **Published on Featherless but not served by it.**
+  `nightmedia/Qwen3.6-27B-Architect-Polaris2-Fable-B-F451` and
+  `gorbatjovy/Qwen3.6-27B-Architect-Polaris2-Fable-B-F451-heretic` were requested on
+  2026-08-17 and both refused: `400 invalid_request_error`,
+  `code: "model_not_deployed"` — "is not available for inference". Neither appears in
+  the 21,704-entry `GET /v1/models` catalog; there is no `gorbatjovy` owner in it at
+  all, and no id anywhere matching `Architect-Polaris2` or `Fable-B-F451`. Both have
+  ordinary-looking model pages on the website.
+
+  That gap is the lesson, and it generalizes: **a Featherless model page is not
+  evidence the inference API serves the model.** The website catalogs Hugging Face
+  repos; `/v1/models` lists what is deployed and on-plan. Listing an undeployed id
+  would not degrade — it would pass curation, route to Featherless, and 400 on every
+  single turn, because the provider-key gate checks that a *credential* exists, not
+  that a *model* is deployed. So the check before adding any row is the catalog, and
+  it is `available_on_current_plan` that has to be true.
 
 Stheno v3.2 deserves its own note, because it was ranked a top candidate and it *is*
 reachable — Hugging Face's router serves it. It is disqualified anyway on context: it
@@ -350,6 +383,20 @@ Re-verified 2026-08-17 with a 34-token synthetic prompt and `max_tokens: 300`:
 | `do_reasoning: false`          | `stop`   |           112 |               0 |
 | all three `false`              | `stop`   |           116 |               0 |
 
+**Probed per model, never inherited from the family.** Featherless documents reasoning
+as on by default across the whole Qwen3 / 3.5 / 3.6 line, but "the family reasons" is
+not evidence that a given merge honors this particular key — the entire premise of the
+flag is that a template spelling it differently ignores it silently. F451 Ultra Pro
+Writer was therefore probed the same way before it was listed, and failed identically:
+
+| Model, 34-token prompt | No flag                        | `enable_thinking: false` |
+| ---------------------- | ------------------------------ | ------------------------ |
+| Fable Fusion 711       | `length`, 0 chars, 1,081 chain | `stop`, 144 chars, 2.4s  |
+| F451 Ultra Pro Writer  | `length`, 0 chars, 1,096 chain | `stop`, 236 chars, 5.7s  |
+
+A Qwen3.6 row that has not been probed gets no policy entry, and is therefore unusable
+rather than quietly mediocre — which is the correct failure, because it is loud.
+
 ### Ruling 2026-08-17 — one disable key, not three
 
 Featherless documents `enable_thinking`, `thinking` and `do_reasoning` as normalized
@@ -474,8 +521,12 @@ configuration its author's recommended sampling baseline describes, and asking i
 the repo's generic defaults instead is not a neutral control — it is a different
 configuration from the one the weights were tuned for.
 
-So `FEATHERLESS_MODEL_POLICY` in `server/ai/provider.ts` keys the following to the exact
-id, and to nothing else:
+So `FEATHERLESS_MODEL_POLICY` in `server/ai/provider.ts` keys the following to the two
+probed DavidAU ids, and to nothing else. They share ONE policy object
+(`DAVIDAU_QWEN36_NON_THINKING`) rather than two copies of the same numbers, because the
+pair exists to be compared: a sampler difference between them would confound the only
+question the comparison asks. If a later probe rules a different baseline for one, that
+object is split rather than edited.
 
 | Field                | Value | Why not the default                             |
 | -------------------- | ----: | ----------------------------------------------- |
@@ -486,9 +537,9 @@ id, and to nothing else:
 | `repetition_penalty` |   1.0 | not in the AI SDK's standard call settings      |
 
 `NARRATIVE_TEMPERATURE` itself is untouched, and every other narrator — OpenRouter and
-Featherless alike — is asked exactly as before. Two of these fields have no AI SDK
-call-setting equivalent at all, which is the second reason the policy rides
-`transformRequestBody` rather than the call sites.
+Featherless alike, including any unprobed Featherless row — is asked exactly as before.
+Two of these fields have no AI SDK call-setting equivalent at all, which is the second
+reason the policy rides `transformRequestBody` rather than the call sites.
 
 **Riding the transport is what gives the successor narrator parity for free.** Both
 narrator paths reach Featherless through `textModel` — `streamCharacterChat` for the
@@ -499,9 +550,9 @@ construction: the narrator list is the only model list that may name a provider.
 
 ### The hidden retry
 
-The chat lane gives this one model a **second attempt** when the first produced no
+The chat lane gives these two models a **second attempt** when the first produced no
 visible text at all. `hiddenEmptyRetry` in the policy above is the exact-model gate;
-`narratorHiddenRetryModel` returns false for every other id, including any future
+`narratorHiddenRetryModel` returns false for every other id, including any unprobed
 Featherless row.
 
 Conditions, all required:
@@ -560,10 +611,11 @@ classification already sees a cold start as the provider failure it is.
   Fable Fusion 711** is absent from all of them and is therefore asked with plain
   defaults — temperature `NARRATIVE_TEMPERATURE` (0.85) and nothing else. That is
   deliberate for a comparison: a knob set on one arm and not another would confound it.
-  Fable Fusion 711 is the one recorded exception, on reliability grounds and by owner
-  ruling — see
-  [The exact-model request policy](#the-exact-model-request-policy). Any comparison
-  including that row must read its sampling profile as part of the arm.
+  The two DavidAU Qwen3.6 rows are the recorded exception, on reliability grounds and
+  by owner ruling — see
+  [The exact-model request policy](#the-exact-model-request-policy). They share one
+  profile so they stay comparable with each other; any comparison including either
+  must read that profile as part of the arm.
 - **The narrator list is the only model list that may name a provider.**
   `lib/agent-models.ts`, `lib/composer-models.ts`, the embedding model and the vision
   model are OpenRouter-only and are not given the field. `textModel` still routes them,

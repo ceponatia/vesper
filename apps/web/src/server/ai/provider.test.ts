@@ -10,6 +10,7 @@ import {
 import {
   agentModelId,
   chatNarrativeModelId,
+  F451_ULTRA_PRO_WRITER_ID,
   FABLE_FUSION_711_ID,
   featherlessRequestBody,
   narrativeModelId,
@@ -214,8 +215,20 @@ describe("Featherless exact-model request policy", () => {
     });
   });
 
-  // The whole point of keying policy to an exact id: a second Featherless row must arrive
-  // with plain defaults, not this model's profile.
+  // The second DavidAU row shares ONE policy object with the first, deliberately: the
+  // two exist to be compared, so a sampler difference between them would confound the
+  // only question the comparison asks. Probed independently — it fails identically
+  // without the flag (`length`, 299 completion tokens, zero content).
+  it("applies the identical policy to both DavidAU Qwen3.6 rows", () => {
+    const fable = featherlessRequestBody({ model: FABLE_FUSION_711_ID, messages: [] });
+    const writer = featherlessRequestBody({ model: F451_ULTRA_PRO_WRITER_ID, messages: [] });
+    expect({ ...writer, model: FABLE_FUSION_711_ID }).toEqual(fable);
+    expect(writer.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(writer.temperature).toBe(0.7);
+  });
+
+  // The whole point of keying policy to an exact id: an UNPROBED Featherless row must
+  // arrive with plain defaults, not a family-inherited profile.
   it("leaves every other Featherless model's body byte-identical", () => {
     const body = { model: "SomeOwner/Some-Other-Merge", messages: [], temperature: 0.85 };
     expect(featherlessRequestBody(body)).toEqual(body);
@@ -243,12 +256,14 @@ describe("Featherless exact-model request policy", () => {
 });
 
 describe("the hidden empty-reply retry is exact-model", () => {
-  it("is on for Fable Fusion 711 and its retry floor is configured", () => {
-    expect(narratorHiddenRetryModel(FABLE_FUSION_711_ID)).toBe(true);
-    expect(narratorRetryFloorOptions(FABLE_FUSION_711_ID)).toEqual({ featherless: { min_tokens: 48 } });
+  it("is on for both probed DavidAU rows, with their retry floor configured", () => {
+    for (const modelId of [FABLE_FUSION_711_ID, F451_ULTRA_PRO_WRITER_ID]) {
+      expect(narratorHiddenRetryModel(modelId)).toBe(true);
+      expect(narratorRetryFloorOptions(modelId)).toEqual({ featherless: { min_tokens: 48 } });
+    }
   });
 
-  it("is off for every other narrator — including another Featherless row", () => {
+  it("is off for every other narrator — including an unprobed Featherless row", () => {
     for (const modelId of [
       "SomeOwner/Some-Other-Merge",
       "aion-labs/aion-2.0",
