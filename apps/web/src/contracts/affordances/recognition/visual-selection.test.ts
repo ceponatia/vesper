@@ -105,7 +105,10 @@ describe("selectVisualNarratorCues", () => {
     const memory = memoryOf(memoryRowOf(feature));
     const selection = selectVisualNarratorCues(narratorInput(snapshotOf([feature]), memory));
     expect(selection.digests[0]?.selected).toEqual([]);
-    expect(selection.digests[0]?.suppressedCount).toBe(1);
+    // Noticed, but never cue-ELIGIBLE: a familiar steady-state fact earns no cue
+    // reason at all, so there was nothing for restraint to hold back. Counting it
+    // as suppressed would report restraint the selection never exercised.
+    expect(selection.digests[0]?.suppressedCount).toBe(0);
     expect(selection.notices).toHaveLength(1);
     expect(selection.memoryAfterNotices.features[feature.key]?.noticeCount).toBe(4);
     expect(selection.mentionCommits).toEqual([]);

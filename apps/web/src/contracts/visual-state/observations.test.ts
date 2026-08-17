@@ -28,7 +28,7 @@ describe("projectObservationFeatures", () => {
   it("projects a supported observation as an instantaneous current-layer feature", () => {
     const sink = new DiagnosticCollector();
     const [feature] = project([observation()], sink);
-    expect(feature?.key).toBe(`${SUBJECT}/hair/affordance.observation:hair.wet_clumping`);
+    expect(feature?.key).toBe(`${SUBJECT}/hair/affordance.observation:hair.wet_clumping:clear`);
     expect(feature?.layer).toBe("current");
     expect(feature?.stability).toBe("instantaneous");
     expect(feature?.value).toEqual({ phenomenon: "hair.wet_clumping", band: "clear" });
@@ -46,8 +46,18 @@ describe("projectObservationFeatures", () => {
         repeatKey: "hair:adhesion:neck",
       }),
     ]);
-    expect(feature?.key).toBe(`${SUBJECT}/hair/affordance.observation:hair.strand_adhesion:neck`);
+    expect(feature?.key).toBe(`${SUBJECT}/hair/affordance.observation:hair.strand_adhesion:neck:clear`);
     expect(feature?.value).toEqual({ phenomenon: "hair.strand_adhesion", band: "clear", target: "neck" });
+  });
+
+  it("keeps one phenomenon distinct per intensity band", () => {
+    // Same phenomenon, same source, same (absent) target, two intensities. With
+    // the band outside the key both rendered one key and the snapshot dropped
+    // the second as a duplicate, so which intensity survived depended on the
+    // order the affordance read happened to resolve them in.
+    const features = project([observation({ intensityBand: "subtle" }), observation({ intensityBand: "strong" })]);
+    expect(features).toHaveLength(2);
+    expect(new Set(features.map((feature) => feature.key)).size).toBe(2);
   });
 
   it("carries the observation's own anti-repeat identity as its repeat family", () => {

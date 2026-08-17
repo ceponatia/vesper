@@ -165,11 +165,16 @@ function countCode(suppressions: readonly VisualStateSuppression[], code: string
   return suppressions.reduce((count, suppression) => (suppression.code === code ? count + 1 : count), 0);
 }
 
-function compareSets(legacy: readonly string[], projected: readonly string[]): VisualStateSetComparison {
+export function compareSets(legacy: readonly string[], projected: readonly string[]): VisualStateSetComparison {
+  // Both sides are DE-DUPLICATED before differencing. Either list may legally
+  // repeat an id (the legacy attribute chain can surface one id through two
+  // guard steps), and differencing the raw arrays would count that id twice in
+  // `legacyOnly` — which subtracted from a Set size produced a `sharedCount`
+  // that undercounts agreement and can go negative.
   const legacySet = new Set(legacy);
   const projectedSet = new Set(projected);
-  const legacyOnly = legacy.filter((id) => !projectedSet.has(id));
-  const projectedOnly = projected.filter((id) => !legacySet.has(id));
+  const legacyOnly = [...legacySet].filter((id) => !projectedSet.has(id));
+  const projectedOnly = [...projectedSet].filter((id) => !legacySet.has(id));
   return {
     legacyCount: legacySet.size,
     projectedCount: projectedSet.size,

@@ -59,6 +59,7 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
   const selections = buildVisualStateSelections({
     snapshot: assembled.snapshot,
     perception: input.perception,
+    perceptionSubjectId: input.subjectId,
     observerId: input.observerId,
     observer: input.observer,
     ...(input.memory === undefined ? {} : { memory: input.memory }),
