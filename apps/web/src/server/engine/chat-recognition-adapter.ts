@@ -224,7 +224,26 @@ const ANATOMY_STATE_WORDS: Readonly<Record<string, string>> = {
  * Anything unrecognized falls through to the bare part, which is honest and
  * cannot throw — the `genericCue` precedent in `chat-affordance-cues.ts`.
  */
-function detailPhrase(cue: RecognitionCue, possessive: string): string {
+/**
+ * The noun phrase for one projected appearance fact — "Mara's crooked nose",
+ * "the linear scar on Mara's right arm".
+ *
+ * Exported for the visual-state narrator projection (visual-state slice 7),
+ * which renders the same three appearance kinds and must not grow a second
+ * phrasing of them: two renderers would drift, and a reader comparing the
+ * recognition cue block with the visual-state fence would see one fact written
+ * two ways in one prompt. The tag-order discriminator documented on
+ * `detailPhrase` is the contract this shares.
+ */
+export function chatRecognitionDetailPhrase(input: {
+  semanticTags: readonly string[];
+  locus: BodyLocusRef;
+  possessive: string;
+}): string {
+  return detailPhrase({ semanticTags: input.semanticTags, locus: input.locus }, input.possessive);
+}
+
+function detailPhrase(cue: Pick<RecognitionCue, "semanticTags" | "locus">, possessive: string): string {
   const tags = cue.semanticTags.map(humanize).filter((tag) => tag.length > 0);
   const part = partPhrase(cue.locus);
   const [first] = tags;

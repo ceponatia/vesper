@@ -183,6 +183,23 @@ export interface CharacterChatPromptInput {
      */
     affordanceCues?: readonly string[];
     /**
+     * The visual-state projection's MUST-NOT-CONTRADICT clauses
+     * (visual-state.plan.md slice 7, the per-chat narration switch): the visible
+     * mandatory facts — what is worn, what morphology this body has — as
+     * contradiction prevention, not as material for a beat. Unlike every other
+     * block here they are NOT change-gated: a coat worn for six exchanges is as
+     * contradictable on the seventh as it was on the first. Absent/empty ⇒ no
+     * block, which is the flag-off default and byte-identical to today.
+     */
+    visualConstraints?: readonly string[];
+    /**
+     * The visual-state projection's selected optional detail — at most the
+     * selection's strict budget, each already change-gated, action-relevant or
+     * newly revealed, and each carrying the reason it earned the slot. The
+     * positive half of the pair above, and the half the paid trial measures.
+     */
+    visualCues?: readonly string[];
+    /**
      * The character's unfinished business (character-chat-standalone.spec.md §6.2) —
      * rendered as a standing "Unfinished business" state line (never-recite discipline),
      * so long conversations get narrative pull, not just recall. Absent/empty ⇒ no line.
@@ -769,6 +786,15 @@ function feelingPhrase(feeling: ChatFeelingState | undefined): string {
 export const AFFORDANCE_CUE_BLOCK_HEADING = "Physical detail worth noticing this turn";
 
 /**
+ * The visual-state block headings, declared HERE beside the affordance one
+ * rather than imported from `chat-visual-state-cues.ts`: the prompt builder is
+ * the thing that writes them, and importing upward from `prompts/` into the
+ * engine root would close an import cycle. The renderer re-exports these.
+ */
+export const VISUAL_STATE_CONSTRAINT_BLOCK_HEADING = "True right now — do not contradict";
+export const VISUAL_STATE_CUE_BLOCK_HEADING = "Visible detail worth noticing this turn";
+
+/**
  * The sensory-allowance carve-out sentence (owner ruling 2026-07-28: "cues
  * win"). Appended to the `none` allowance line only when the prompt actually
  * carries cue lines, so the two instructions never contradict. A pure function
@@ -777,6 +803,17 @@ export const AFFORDANCE_CUE_BLOCK_HEADING = "Physical detail worth noticing this
  */
 export function chatAffordanceCueCarveOut(name: string): string {
   return ` The "${AFFORDANCE_CUE_BLOCK_HEADING}" block above is exempt: those are effects happening now, not a description of how ${name} looks — its own one-detail limit still applies.`;
+}
+
+/**
+ * The same carve-out for the visual-state cue block (visual-state.plan.md
+ * slice 7). Separate sentence and separate constant rather than a shared one:
+ * the two blocks are independently flagged, and a run with only one of them on
+ * must not name a block its prompt does not carry. Exported for the slice-7
+ * trial harness, whose splice checks subtract exactly what the cue arm adds.
+ */
+export function chatVisualStateCueCarveOut(name: string): string {
+  return ` The "${VISUAL_STATE_CUE_BLOCK_HEADING}" block above is exempt on the same terms: it offers what just changed or came into view about ${name}, not a description of how ${name} looks — its own one-detail limit still applies.`;
 }
 
 /**
@@ -852,6 +889,32 @@ function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>
     // 2026-07-28) — one constant, so the two can never drift apart.
     blocks.push(
       `${AFFORDANCE_CUE_BLOCK_HEADING} (weave at most one into the beat, in action — never a physics report, never restated once said):\n${affordanceCues
+        .map((cue) => `- ${cue}`)
+        .join("\n")}`,
+    );
+  }
+  // The visual-state pair (slice 7, the per-chat narration switch), LAST in the
+  // section and in this order: the constraint block is a fence and the cue block
+  // is an offer, so the offer reads against a fence that is already standing.
+  //
+  // The constraint block deliberately carries no "weave one in" invitation. It
+  // is the only block in this section that is not an attention cue, and giving
+  // it one would turn a wardrobe inventory into something the narrator feels
+  // obliged to recite — the exact failure the affordance-cue trial found.
+  const visualConstraints = (state.visualConstraints ?? []).map((line) => line.trim()).filter(Boolean);
+  if (visualConstraints.length) {
+    blocks.push(
+      `${VISUAL_STATE_CONSTRAINT_BLOCK_HEADING} (facts already committed — say nothing that conflicts with them; there is no obligation to mention any of them):\n${visualConstraints
+        .map((line) => `- ${line}`)
+        .join("\n")}`,
+    );
+  }
+  const visualCues = (state.visualCues ?? []).map((cue) => cue.trim()).filter(Boolean);
+  if (visualCues.length) {
+    // The heading is shared with `chatSensoryAllowanceLine`'s carve-out on the
+    // same one-constant rule the affordance block follows.
+    blocks.push(
+      `${VISUAL_STATE_CUE_BLOCK_HEADING} (weave at most one into the beat, in action — never an inventory, never restated once said; the clause after the dash is why it is live, not something to say):\n${visualCues
         .map((cue) => `- ${cue}`)
         .join("\n")}`,
     );
@@ -1286,12 +1349,14 @@ function chatSensoryAllowanceLine(
   player: string,
   /** True when this turn's prompt actually carries affordance cue lines. */
   hasCurrentEffectCues = false,
+  /** True when this turn's prompt actually carries visual-state cue lines. */
+  hasVisualStateCues = false,
 ): string {
   switch (allowance) {
     case "none":
       return `Sensory allowance this turn: none — no scent, warmth, texture, or taste detail of ${name}, and no appearance description beyond what ${name}'s own movement this turn makes newly visible.${
         hasCurrentEffectCues ? chatAffordanceCueCarveOut(name) : ""
-      }`;
+      }${hasVisualStateCues ? chatVisualStateCueCarveOut(name) : ""}`;
     case "visual_accent":
       return `Sensory allowance this turn: one visual accent — ${player}'s eye is on ${name}. You may give one concrete visual detail drawn from ${name}'s Attributes and outfit, woven into the beat and seen from ${player}'s eye. Sight only — no scent, touch, or taste detail.`;
     case "close_range_hook":
@@ -1826,6 +1891,10 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
               // not static appearance, so the `none` grant must not read as
               // forbidding the block the same prompt just offered.
               (input.state?.affordanceCues ?? []).some((cue) => cue.trim().length > 0),
+              // Same ruling, same reason: a visual-state cue is change-gated
+              // new information, so a `none` grant must not read as forbidding
+              // the block the same prompt just offered.
+              (input.state?.visualCues ?? []).some((cue) => cue.trim().length > 0),
             )
           : "",
     },

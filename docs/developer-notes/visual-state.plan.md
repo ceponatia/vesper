@@ -2,8 +2,8 @@
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
 with every review finding fixed in the same merge; slices 3–6, 8 and 9 built
-2026-08-16, awaiting review; slice 7's two prerequisites built 2026-08-17,
-leaving its prompt wiring and paid trial; slice 10 queued)
+2026-08-16, awaiting review; slice 7 complete 2026-08-17 behind a per-chat
+switch, off by default; slice 10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -46,9 +46,11 @@ was written, and it has closed.
 
 One later slice has a real prerequisite:
 
-- **Slice 7** is a paid narrator trial and needs a scheduled comparison run.
-  Its two code prerequisites — usable viewing conditions and a repeat /
-  newly-visible record — were built on 2026-08-17.
+- **Slice 7** is complete (2026-08-17). Its two code prerequisites, its prompt
+  wiring, and one paid trial round all landed the same day; the round rendered no
+  verdict and the slice closed on the mechanism instead, behind a per-chat switch
+  that is off by default. [visual-state.trial.md](visual-state.trial.md) owns the
+  record.
 - **Slice 8** feeds the shared render intent, which shipped with the
   [capabilities plan's](finished/image-model-capabilities.plan.md) slice 2 on
   2026-08-07 — that gate is open, and the intent's role-carrying references
@@ -375,8 +377,10 @@ with current summaries.
 
 ### Slice 7 — narrator proving release
 
-Status: unblocked 2026-08-17 — both prerequisites built; the prompt wiring and
-the paid trial remain.
+Status: complete — 2026-08-17. Owner ruling: closed on the mechanism rather
+than on a measured benefit, and shipped as a per-conversation switch that is off
+by default. The round's record is [visual-state.trial.md](visual-state.trial.md);
+the harness stays for a later round if the question ever matters again.
 
 Behind a default-off flag, feed only change-gated, action-relevant, or newly
 revealed selections into narration. Keep binding constraints separate from
@@ -407,8 +411,35 @@ things the trial could not have scored around:
   unchanged view stays quiet; one that reappears, or that changes, can earn a
   beat.
 
-What is left in this slice: putting the selected cues into the narrator prompt,
-and running the paired comparison.
+The prompt wiring landed the same day: a must-not-contradict **fence** of the
+visible facts worth not getting wrong, and separately at most two **cues** that
+just changed or just came into view, each carrying the reason it is live.
+
+Round 1 of the paid comparison ran on 2026-08-17 and returned **no verdict**.
+The trial's own pre-registered gate refuses to judge a round in which the
+comparison arm had little to get wrong, and that is what happened: today's
+narrator contradicted committed state 0.13 times per exchange against a 0.40
+bar. Directionally the fence looked right — it cut invented posture and
+orientation from four events to one — but two events against four is not a rate.
+
+The round did establish that the machinery works: correct facts, nothing
+described that the player cannot see, prose essentially unchanged, and every
+deterministic check green. It also found one real defect, and the owner's ruling
+(2026-08-17) was to fix that in the projection rather than in prompt wording,
+then close the slice on the mechanism.
+
+**The defect and its fix.** A detail offered as a cue on one exchange and used
+would be re-presented by the fence on the very next one, and the narrator —
+reading a fence entry as something it may say — said it again. The projection now
+records what it offered and keeps that family out of the fence for exactly one
+exchange. It comes straight back, because a fact absent from the fence is a fact
+the narrator is free to contradict, and the single exchange it is absent for is
+the one right after the narrator described it.
+
+**What shipped.** A per-conversation switch in each chat's settings, off by
+default, rather than a deploy-wide flag: the benefit is unmeasured, so this is
+something to turn on for one conversation and read rather than something to
+enable everywhere on a directional result.
 
 ### Slice 8 — image digest and render-intent seam
 

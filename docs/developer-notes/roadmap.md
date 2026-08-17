@@ -38,8 +38,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [spec](visual-state.spec.md) — one lane-neutral projection over the existing
   appearance, wardrobe, body-condition and scene owners; slices 0–6, 8 and 9
   are built (projection, attention, shadow + inspector, image digest,
-  reference extraction), and slice 7's two prerequisites landed, leaving its
-  prompt wiring plus the paid narrator trial and the final consolidation.
+  reference extraction, narrator wiring behind a per-chat switch that is off by
+  default), leaving the final consolidation.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
