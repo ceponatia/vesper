@@ -5,8 +5,10 @@ import {
   type BodyLocusRef,
   type ProjectedFeatureTruth,
 } from "../../appearance-features";
+import { buildVisualStateSnapshot, type VisualStateFeature, type VisualStateSnapshot } from "../../visual-state";
 import { affordancePerceptionView, toUnitInterval, AFFORDANCE_UNIT_ZERO, type AffordanceExposure } from "../core";
 import type { RecognitionObserverContext } from "./candidates";
+import type { VisualAttentionConsumer, VisualAttentionContext } from "./visual-attention";
 import type { VisualFeatureMemory, VisualMemoryState } from "./visual-memory";
 
 /**
@@ -218,3 +220,68 @@ export const RECOGNITION_FIXTURE_INVISIBLE_SALIENCE_INPUT = {
   uniqueness: toUnitInterval(10_000),
   importance: toUnitInterval(10_000),
 } as const;
+
+// ---------------------------------------------------------------------------
+// Visual attention (slice 5) — the worked snapshot, context, and memory rows
+// ---------------------------------------------------------------------------
+
+/** The chat continuity every visual-attention fixture snapshot lives in. */
+export const VISUAL_ATTENTION_FIXTURE_SCOPE = { kind: "chat", memoryGroupId: "group_fixture" } as const;
+
+/** One committed cut over hand-built features, at the fixture story minute. */
+export function visualAttentionSnapshotFixture(
+  features: readonly VisualStateFeature[],
+  atMinutes = 120,
+): VisualStateSnapshot {
+  return buildVisualStateSnapshot({
+    scope: VISUAL_ATTENTION_FIXTURE_SCOPE,
+    atMinutes,
+    cutId: "cut_fixture",
+    contributions: [{ adapterId: "appearance", features }],
+  });
+}
+
+const VISUAL_ATTENTION_FIXTURE_PERCEPTION = affordancePerceptionView({
+  exposure: { nose: "visible", hair: "visible", fingers: "visible", wings: "visible" },
+  channels: { sight: "available" },
+});
+
+/**
+ * Bright, close, still, toward — the everything-resolvable viewing conditions,
+ * for a sighted observer or an unremarkable camera depending on the consumer.
+ */
+export function visualAttentionContextFixture(
+  consumer: VisualAttentionConsumer,
+  overrides: Partial<VisualAttentionContext> = {},
+): VisualAttentionContext {
+  return {
+    viewpoint:
+      consumer === "narrator"
+        ? { kind: "observer", observerId: "obs_fixture" }
+        : { kind: "camera", cameraId: "cam_fixture" },
+    perception: VISUAL_ATTENTION_FIXTURE_PERCEPTION,
+    lighting: { status: "known", value: "bright" },
+    distance: { status: "known", value: "close" },
+    angle: { status: "known", value: "toward" },
+    motion: { status: "known", value: "still" },
+    consumer,
+    ...overrides,
+  };
+}
+
+/** A memory row agreeing with the feature it remembers, noticed before the fixture cut. */
+export function visualAttentionMemoryRowFixture(
+  feature: VisualStateFeature,
+  overrides: Partial<VisualFeatureMemory> = {},
+): VisualFeatureMemory {
+  return recognitionVisualMemoryRowFixture({
+    featureKey: feature.key,
+    subjectId: feature.subjectId,
+    truthFingerprint: feature.truthFingerprint,
+    lastNoticedAt: 100,
+    noticeCount: 3,
+    confidence: toUnitInterval(5_000),
+    recognitionStrength: toUnitInterval(5_000),
+    ...overrides,
+  });
+}
