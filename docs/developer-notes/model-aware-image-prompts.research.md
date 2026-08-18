@@ -72,7 +72,7 @@ Current sources:
 
 - [Qwen Image 2512 official model card](https://huggingface.co/Qwen/Qwen-Image-2512)
 - [QwenCloud text-to-image documentation](https://docs.qwencloud.com/developer-guides/image-generation/text-to-image)
-- [Vesper endpoint notes](../../image-models/qwen-image-2512.md)
+- [Vesper endpoint notes](../image-models/qwen-image-2512.md)
 
 ### Qwen Image Edit 2511
 
@@ -93,7 +93,7 @@ Current sources:
 
 - [Qwen Image Edit 2511 official model card](https://huggingface.co/Qwen/Qwen-Image-Edit-2511)
 - [fal endpoint schema, showing how another 2511 host differs](https://fal.ai/models/fal-ai/qwen-image-edit-2511/api)
-- [Vesper endpoint notes](../../image-models/qwen-image-edit-2511.md)
+- [Vesper endpoint notes](../image-models/qwen-image-edit-2511.md)
 
 ### Seedream 4.5 and Seedream 5 Lite
 
@@ -114,8 +114,8 @@ Current sources:
 - [Seedream 4.5 official page](https://seed.bytedance.com/en/seedream4_5)
 - [Seedream 5 Lite official page](https://seed.bytedance.com/seedream5_0_lite)
 - [Seedream 5 Lite release article](https://seed.bytedance.com/en/blog/deeper-thinking-more-accurate-generation-introducing-seedream-5-0-lite)
-- [Vesper Seedream 4.5 endpoint notes](../../image-models/seedream-4-5.md)
-- [Vesper Seedream 5 Lite endpoint notes](../../image-models/seedream-5-lite.md)
+- [Vesper Seedream 4.5 endpoint notes](../image-models/seedream-4-5.md)
+- [Vesper Seedream 5 Lite endpoint notes](../image-models/seedream-5-lite.md)
 
 ### Stable Diffusion 3.5 Large
 
@@ -127,7 +127,7 @@ Current sources:
 
 - [Stable Diffusion 3.5 Large model card](https://huggingface.co/stabilityai/stable-diffusion-3.5-large)
 - [Stability API reference](https://platform.stability.ai/docs/api-reference)
-- [Vesper endpoint notes](../../image-models/stable-diffusion-3-5-large.md)
+- [Vesper endpoint notes](../image-models/stable-diffusion-3-5-large.md)
 
 ### Wan 2.7 Image Pro
 
@@ -138,7 +138,7 @@ This is another reason to model hosted endpoints rather than aggregate internet 
 Current sources:
 
 - [QwenCloud text-to-image documentation](https://docs.qwencloud.com/developer-guides/image-generation/text-to-image)
-- [Vesper endpoint notes](../../image-models/wan-2-7-image-pro.md)
+- [Vesper endpoint notes](../image-models/wan-2-7-image-pro.md)
 
 ### FLUX Dev
 
@@ -150,7 +150,7 @@ Current sources:
 
 - [Black Forest Labs: Working Without Negative Prompts](https://docs.bfl.ai/guides/prompting_guide_t2i_negative)
 - [Black Forest Labs prompting guide](https://docs.bfl.ai/guides/prompting_summary)
-- [Vesper endpoint notes](../../image-models/nsfw-flux-dev.md)
+- [Vesper endpoint notes](../image-models/nsfw-flux-dev.md)
 
 ### LikeReality Pony v1
 
@@ -161,7 +161,7 @@ Community Pony guides generally lead with score tags such as `score_9, score_8_u
 Current sources:
 
 - [Pony Diffusion prompting guide](https://stable-diffusion-art.com/pony-diffusion-v6-xl/)
-- [Vesper endpoint notes](../../image-models/likereality-pony-v1.md)
+- [Vesper endpoint notes](../image-models/likereality-pony-v1.md)
 
 ### SDXL PuLID
 
@@ -171,7 +171,7 @@ Identity language must not compete with the reference adapter. The positive prom
 
 Current source:
 
-- [Vesper endpoint notes](../../image-models/sdxl-pulid.md)
+- [Vesper endpoint notes](../image-models/sdxl-pulid.md)
 
 ### Pruna P-Image
 
@@ -179,7 +179,7 @@ The current endpoint is a fast text-to-image wrapper with no negative prompt and
 
 Current source:
 
-- [Vesper endpoint notes](../../image-models/p-image.md)
+- [Vesper endpoint notes](../image-models/p-image.md)
 
 ## Reddit and community findings
 
