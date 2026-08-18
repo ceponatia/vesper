@@ -5,11 +5,11 @@ directional, exact-scope permission owner for `romantic_touch`, behind
 `CHAT_ROMANTIC_PERMISSION`. The separate developer override capability is behind
 `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`.
 
-The owner is not yet proven by a genuinely romantic player contact because the
-live player contact producer is still deliberately affectionate-only. A narrow
-`actionKind: "romantic"` player producer is therefore a prerequisite for the
-first permission proof; enabling this flag alone cannot create a romantic
-attempt.
+The narrow `actionKind: "romantic"` player producer this owner was waiting on is
+now built and its deterministic negative-case suite passes against the real
+permission seam, so enabling the flag produces a real permission-gated attempt.
+What remains is the controlled live proof and the rollout ruling — owner work,
+not code work.
 
 Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
@@ -90,27 +90,53 @@ be inferred from:
 
 This boundary is now an explicit integration law.
 
-The current player producer in `chat-contact-adapter.ts` creates only:
+The player producer in `chat-contact-adapter.ts` creates two kinds:
 
 ```ts
-actionKind: "affectionate"
+actionKind: "affectionate" | "romantic"
 ```
 
-and its sentence gate rejects romantic/intimate framing. The shared contact core
-supports `"romantic"`, and this permission owner can answer it, but character
-chat currently has **no producer that constructs such an attempt**.
+The affectionate half is unchanged and its sentence gate still rejects
+romantic/intimate framing whole. The romantic half is a separate producer with
+its own sentence gate, admitting only a closed caress/stroke/cup family. The act
+type names exactly these two kinds rather than the core's full
+`ContactActionKind`, so a kind this lane cannot author stays a compile error
+instead of becoming a runtime silence.
 
 Therefore:
 
 - do not modify the permission classifier to detect romantic player actions;
 - do not make a permission grant itself synthesize a contact attempt;
 - do not weaken the affectionate detector's romantic veto;
-- do not relabel romantic prose as affectionate when the new romantic producer
+- do not relabel romantic prose as affectionate when the romantic producer
   rejects it.
 
-The first proof must add a separate narrow player romantic action producer, then
-supply the resulting `actionKind: "romantic"` intent to the existing permission
-read + contact resolver.
+**Flag-off behavior — the producer does not run at all.** `detectChatContactAct`
+takes `romanticEnabled`, defaulting to **false**, and `planChatContactTurn` sets
+it from `input.permissionPolicy !== undefined`. The permission owner's *presence*
+is the gate: `chat-pipeline.ts` wires a policy source only under
+`chatRomanticPermissionEnabled()`, so that flag reaches a pure module without the
+module reading an env var.
+
+The reasoning is not fastidiousness. A turn admits **one** act, so a romantic
+sentence that gets produced and then resolves `permission_unresolved` still
+consumes the slot — and takes down a later affectionate sentence that would have
+committed. A romantic act nobody can authorize is therefore not a quieter
+romantic act; it is one this lane must not author. Gating on the owner's presence
+is what makes `CHAT_ROMANTIC_PERMISSION=off` **byte-identical to the lane before
+this producer existed**, rather than merely silent.
+
+That distinction is verified, not asserted: a differential sweep over 4096
+three-clause message permutations found 0 divergences from the affectionate-only
+detector with the gate off, and 1443 divergences with it on — the second number
+being what proves the harness can detect divergence at all.
+
+When an owner *is* wired, the resolver still fails closed on an unanswered
+question: a bare `not_required` on a permission-requiring kind is an owner that
+was never consulted, and returns `unresolved` / `permission_unresolved`. The
+stub's evidence distinguishes the two silences — `permission_owner_absent` for a
+gated kind with no owner wired, `permission_neutral_kind` for a kind that
+genuinely needs none.
 
 ## First romantic action boundary
 
@@ -120,7 +146,8 @@ participant's behavior:
 
 - player is the actor;
 - hand is the acting surface;
-- non-intimate target loci already supported by the chat contact vocabulary;
+- non-intimate target loci already supported by the chat contact vocabulary,
+  plus `face` under the 2026-08-18 cheek ruling below;
 - closed, explicitly romantic gesture language such as caress/stroke/cup
   (final vocabulary belongs to the action-producer spec/code);
 - no target reposition or voluntary target reaction;
@@ -132,6 +159,83 @@ participant's behavior:
 
 Ambiguous/mixed framing fails closed. This is an action-evidence rule, not a
 permission rule.
+
+Built 2026-08-18 to exactly this boundary, with one owner-ruled extension.
+
+### Owner ruling (2026-08-18) — the romantic lane admits the cheek
+
+`cheek` / `cheeks` resolve to the body registry's existing coarse `face` locus.
+No new cheek location was invented, and `cup` gains the canonical target it
+previously lacked. The romantic lane reaches **nine** loci; the affectionate lane
+still reaches eight and refuses the cheek in every affectionate form.
+
+The binding constraint the owner attached: the shared
+`CHAT_CONTACT_ROMANTIC_TARGET_RE` must **not** lose `cheeks?` to achieve this,
+because it guards the affectionate detector and the frozen NPC ending floor.
+Implemented accordingly:
+
+- `CHAT_ROMANTIC_CONTACT_EXCLUDED_TARGET_RE` — the shared list minus `cheeks?`,
+  read only by the romantic gate;
+- `chatRomanticTargetLocationEntries` — the shared locus map plus
+  cheek/cheeks/face, read only by the romantic producer;
+- the shared regex is byte-identical, and `face` appears in neither refusal list
+  because it was never romantic framing — only a surface nothing previously
+  reached.
+
+### Both halves of the act are allow-lists
+
+The first implementation guarded the locus with an allow-list and the rest of the
+sentence with a deny-list. That asymmetry was wrong and adversarial probing broke
+it decisively: **75 of 86 probes** defeated the deny-list — `make love`,
+`chain you to the bed`, `titty`, `taking off`, `go down on you`, `privates`,
+whole families it never named — while the same list over-fired on ordinary prose,
+where `unti\w*` matched **until** and `lift`, `tie`, `bound`, `erect`, and `sex`
+each killed innocent lines.
+
+**The lesson, which is the durable part:** a deny-list over free-form English
+cannot be finished, and every entry that tightens it also refuses something
+innocent. Do not respond to a leak by adding a term.
+
+`ROMANTIC_DIRECT_RE` is therefore anchored to the whole sentence: `^`, optional
+closed adverb, closed verb family, owner, allow-listed locus, optional closed
+trailing adjunct, terminal punctuation, `$`. `I caress your arm and <anything>`
+is refused because a trailing clause exists at all — the producer forms no
+opinion about its content. `CHAT_ROMANTIC_CONTACT_OUT_OF_SCOPE_RE` was deleted;
+do not reintroduce a deny-list in its place.
+
+Verified: all 46 reported leaks closed, and the 5832-permutation differential
+still shows 0 divergence from the affectionate detector with the flag off.
+
+**The cost is real and one-directional.** Ordinary romantic prose carrying a
+second clause — `"I caress your arm until you smile."` — commits nothing. That is
+a refusal where a commit was arguably fine, never a commit where a refusal was
+required. Candidate follow-up if the live proof finds it too tight; not a defect.
+
+### Owner ruling (2026-08-18) — leave the affectionate lane's veto gaps alone
+
+The gaps the romantic gate had also exist in the shared lists the affectionate
+lane reads. They stay, for this slice.
+
+`contactSentenceEligible` is shared with the frozen NPC ending detector, which
+calls it **before** recognizing withdrawals and separations. Adding refusal terms
+there makes legitimate endings disappear — a contact left alive past the sentence
+that released it. That is an unrelated behavioral change, in the unsafe
+direction, and it conflicts with the standing instruction not to broaden or
+weaken the affectionate detector while adding the romantic producer.
+
+**Stated future direction.** Do not perpetuate this coupling forever, and do not
+casually fix it here either. If the affectionate list is later found genuinely
+incomplete, first **split the three concepts**:
+
+1. frozen NPC-ending eligibility — pinned behavior-equivalent to today;
+2. affectionate-action eligibility;
+3. romantic-action eligibility.
+
+Then harden the affectionate list without suppressing endings. A repair attempted
+before that split will trade a detection gap for an ending bug.
+
+Both rulings above resolve open questions the plan previously carried; the plan
+no longer lists them.
 
 ## Resolver adapter
 
@@ -319,11 +423,21 @@ The contact resolver never polls a relationship label and derives permission.
 ## Revised first-proof sequence
 
 1. Build the separate narrow **player romantic action producer** described in
-   the plan/contact-core boundary.
+   the plan/contact-core boundary. Status: built 2026-08-18.
 2. Unit-test producer evidence without permission side effects.
+   Status: built 2026-08-18 — admitted evidence, the refusal table, ambiguous
+   pronouns, span handling, the never-degrade law, and written-order
+   arbitration across the two kinds.
 3. Feed the resulting `actionKind: "romantic"` attempt through the existing
-   policy adapter + contact resolver.
-4. Prove deterministically:
+   policy adapter + contact resolver. Status: built 2026-08-18 with step 1 —
+   `planChatContactTurn` runs the one player producer, and the pipeline's
+   permission read already keys off the attempt's kind.
+4. Prove deterministically the cases below.
+   Status: built 2026-08-18 — proven through the **real** seam rather than a
+   stubbed policy read: real permission events, the real projection fold, and
+   the real `derivePermissionPolicyRead`, assembled exactly as `chat-pipeline.ts`
+   assembles them. One exception: retake restoration is covered by
+   `chat-permission.int.test.ts`, not by these pure tests.
    - exact grant -> physically valid attempt commits;
    - no grant -> no contact commit;
    - reverse-direction grant -> no commit;
@@ -333,17 +447,33 @@ The contact resolver never polls a relationship label and derives permission.
      unrelated standing grant;
    - withdrawal of a live dependent contact ends it `policy_withdrawn`;
    - affectionate contact remains unchanged/permission-neutral;
+   - a granted touch that cannot physically reach still does not commit;
    - retake restores permission + contact state.
 5. Use the developer override or an earlier NPC-authored grant to seed one
-   controlled player -> NPC scenario.
+   controlled player -> NPC scenario. Status: next — owner-gated setup.
 6. Enable `CHAT_ROMANTIC_PERMISSION` for that controlled proof and verify the
    committed contact/action outcome, ledger, scene, retake, and narrator stop
-   behavior.
+   behavior. Status: queued behind step 5; no code work is outstanding for it.
 7. Decide rollout for that **specific romantic action surface** only.
+   Status: owner decision, queued behind step 6.
 
 This proof does **not** require general NPC scene-decision movement/start/update
 authority unless the chosen fixture asks the target NPC to reposition. The NPC
 authority shadow review remains a parallel operational gate.
+
+### Expect this on the first flag-on turn
+
+With the flag **on** and no grant yet, a romantic sentence takes the turn's
+single act slot and resolves `permission_unresolved`. A later affectionate
+sentence in the same message therefore does not commit.
+
+That is correct under the lane's two standing laws — one act per turn, first
+eligible sentence wins — and it is the same slot arithmetic that made gating the
+producer on the owner's presence necessary in the first place. But it means the
+first thing the operator sees on enabling the flag may look like contact
+breaking. Expect it; do not debug it. It resolves the moment a grant exists, and
+it does not occur at all with the flag off, where the romantic producer never
+runs.
 
 ## Future exact scopes
 
@@ -396,8 +526,17 @@ current core performs exact membership and does not invent a hierarchy.
 
 ### Integration gap regression
 
-- enabling `CHAT_ROMANTIC_PERMISSION` without a romantic action producer does
-  **not** cause affectionate input to become romantic;
-- romantic-framed input rejected by the affectionate detector does not fall back
-  to affectionate contact;
-- the future romantic producer emits `actionKind: "romantic"` explicitly.
+These still apply, now against a live producer rather than a missing one:
+
+- enabling `CHAT_ROMANTIC_PERMISSION` does **not** cause affectionate input to
+  become romantic, and an ordinary affectionate message behaves identically
+  before and after the romantic producer existed;
+- romantic-framed input the romantic producer rejects does not fall back to
+  affectionate contact;
+- the romantic producer emits `actionKind: "romantic"` explicitly;
+- with no permission owner wired the romantic producer does not run at all, so
+  the lane is byte-identical to its pre-producer behavior — in particular a
+  romantic sentence cannot consume the turn's single act slot and suppress a
+  later affectionate sentence that would have committed;
+- a romantic sentence later in a message never outranks an eligible
+  affectionate sentence earlier in it — one scan, written order.

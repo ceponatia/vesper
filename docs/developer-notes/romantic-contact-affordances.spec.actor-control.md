@@ -1,12 +1,25 @@
 # Romantic contact affordances — NPC actor control through the live lane
 
-Status: **implementation complete, authority gated; reconciled 2026-08-18.**
-The pure decision foundation, durable decision envelope, shadow leg, and all
-three authority increments are built. The production shadow measurement window
-was opened on 2026-08-10 on a build carrying the cost/latency instrument. The
-repository does **not** contain a final reviewed corpus or owner acceptance
-ruling as of this reconciliation, so authority remains a rollout decision rather
-than a completed plan step.
+Status: **implementation complete; authority on HOLD by owner ruling
+2026-08-18.** The pure decision foundation, durable decision envelope, shadow
+leg, and all three authority increments are built. The production shadow
+measurement window was opened on 2026-08-10 on a build carrying the cost/latency
+instrument.
+
+**Owner ruling (2026-08-18):** keep shadow measurement running; do **not** enable
+NPC authority. This is a hold pending evidence, not a rejection — the corpus that
+would justify acceptance does not exist yet. So there is now a ruling but still
+no acceptance, and authority remains a rollout decision rather than a completed
+plan step.
+
+Two conditions bind the eventual review:
+
+- **Precision over recall.** A missed NPC movement means the lane fails to
+  capture something the narrator said; a false commit means it writes
+  authoritative world state the narrator never said. The second failure is much
+  worse, so the review is not optimizing a symmetric score.
+- **Thresholds are set before the corpus is read**, never derived from it
+  afterwards.
 
 This corrects the old header that said shadow had never been enabled; later
 sections of the same document already recorded the 2026-08-10 window.
@@ -249,6 +262,18 @@ is shared; only the final execution step differs.
 The production shadow window was explicitly documented as opened 2026-08-10
 with this telemetry available.
 
+### What the instrument cannot tell you
+
+`scripts/npc-scene-decision-report.ts` **deliberately computes no accuracy**, and
+says so in its own output: false positives and negatives are a human judgment
+about prose, so the script exports the labelling corpus under `--review-out` and
+the accuracy pass happens outside it.
+
+So the instrument supplies sample size, drop reasons, latency percentiles,
+timeout rate, and cost — and nothing whatever about correctness. The precision
+and recall figures the gate below turns on depend on a human labelling pass that
+**has not happened**. No amount of additional telemetry will produce them.
+
 ### Remaining gate
 
 Before movement authority is enabled, review must record:
@@ -263,6 +288,55 @@ Before movement authority is enabled, review must record:
 
 **The existence of telemetry is not the ruling.** No final review artifact is
 committed in the repository as of 2026-08-18.
+
+### Pre-registered acceptance thresholds — `movement` only
+
+**These are pre-registered: set before the corpus is reviewed, never derived
+from it afterwards.** That is the whole reason this section exists. A threshold
+chosen after seeing the data describes the data instead of gating it, and the
+review stops being capable of a negative result — so these numbers are fixed
+now, while nobody knows what the corpus says.
+
+| Gate                  | Threshold                                             |
+| --------------------- | ----------------------------------------------------- |
+| Sample adequacy       | ≥150 admitted movement candidates, ≥25 distinct chats |
+| Precision             | ≥98%, Wilson 95% lower bound ≥95%                     |
+| Zero-tolerance class  | any single occurrence fails outright                  |
+| Recall                | ≥50%; reported, not gating above that                 |
+| Timeout / degradation | ≤2% of triggered replies                              |
+| Added settle wait     | p95 ≤ +1.5s, p99 ≤ +3.0s vs baseline                  |
+| Cost per 100 replies  | owner's figure, deliberately not pre-set              |
+
+Why each one is set where it is:
+
+- **Sample adequacy.** Below roughly 100 admitted candidates the corpus cannot
+  distinguish 98% precision from 90%, so a smaller sample cannot pass this gate
+  no matter how clean it looks. The ≥25 distinct chats guard against a single
+  chat's idiom carrying the result.
+- **Precision.** A false commit writes authoritative world state the narrator
+  never said. In practice ≥98% over ≥150 candidates means **≤1 false positive**,
+  and the Wilson lower bound is what stops a small clean sample from being read
+  as proof.
+- **Zero-tolerance class.** Moving a participant the reply never mentions, or
+  moving the player, fails outright — rate-independent. This is not a quality
+  score; it is the failure mode that corrupts the authority itself, so one
+  instance is disqualifying however good the aggregate looks.
+- **Recall.** Deliberately loose. A miss costs one turn of continuity and
+  nothing durable.
+- **Settle wait / timeout.** Measured against the same period's untriggered
+  baseline, so a slow week does not read as a regression.
+- **Cost.** A spend decision, not a quality one, and therefore the owner's
+  figure rather than a number pinned here.
+
+**Precision over recall is the owner's ruling** (2026-08-18), and the reason
+travels with it: a missed NPC movement means Vesper fails to capture something
+the narrator said, while a false commit means Vesper writes world state the
+narrator never said. The second is much worse. That asymmetry is why the recall
+bar is loose and the precision bar is not.
+
+Acceptance applies to **`movement` alone**. Widening to `movement,start` and then
+`movement,start,update` re-runs this same gate at each step, per the staged
+rollout below.
 
 ## Staged authority rollout
 
