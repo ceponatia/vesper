@@ -85,10 +85,19 @@ case fails or goes ungraded.
 ## What is tested and what is not
 
 `oracle.test.ts` and `cases.test.ts` run in the pure suite and cover everything
-that decides anything: the grading rules, quote verification, the derivation of
-graded state from the turn, and — the cheap guard against the expensive mistake —
-that each case line actually produces the act it claims to, through the real
-detectors.
+that decides anything: the grading rules, quote verification, and the derivation
+of graded state from the turn.
+
+The case lines are guarded differently, because the workspace boundary keeps the
+detectors out of reach from here — they are not part of the server's public API,
+and a filesystem path is not an API between workspaces. Two things cover it
+instead: the sentence shape every romantic case uses is tested in the adapter's
+own suite (`closing the distance and touching in one message`), and the runner
+**stops the whole run** when a case marked `mustProduceAct` produces none. That
+matters more than a unit test would: a line that produces nothing resolves to
+silence, silence is indistinguishable from a correct refusal, and a run that
+carried on would fill the report with passes for turns that never asked the
+permission owner anything.
 
 `run.ts` is the driver, and it is **unverified against a live database**. Its
 `--dry-run` path is exercised; the DB and pipeline calls are not. Expect to debug

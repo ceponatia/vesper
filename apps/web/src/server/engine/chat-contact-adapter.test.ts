@@ -76,7 +76,6 @@ import {
   type ChatDeparture,
 } from "./chat-contact-adapter";
 import { chatContactActionsEnabled } from "./prompts/constants";
-import { TRIAL_CASES } from "../../../../../scripts/trial/romantic-contact/cases";
 import { probePermissionEvent } from "@/contracts/affordances/permission/test-support";
 
 /**
@@ -2219,50 +2218,41 @@ describe("the romantic producer — everything it refuses", () => {
 });
 
 /**
- * The rollout rerun's own case lines, run through the real producer
- * (`scripts/trial/romantic-contact/cases.ts`).
+ * Approach and romantic touch in ONE message, written as two sentences.
  *
- * This is the cheapest guard against the most expensive mistake available on
- * that trial: a case line that reads perfectly and produces NOTHING. The
- * producer is anchored to the whole sentence, so "I walk over to Sabrina and I
- * caress Sabrina's arm" — one sentence with a leading clause — commits nothing
- * at all. A run would record that as a silent refusal, conclude the permission
- * gate works, and the rollout ruling would be made from it. The named case's
- * first draft was exactly that sentence.
+ * The shape every romantic case has to use, because the producer is anchored to
+ * the whole sentence and the scene does not remember a walk across the room from
+ * one turn to the next. So "I walk over to Sabrina and I caress Sabrina's arm"
+ * — one sentence with a leading clause — commits nothing at all, while the same
+ * content split at the full stop closes the distance AND lands the act.
  *
- * It lives here rather than beside the harness because the detectors are
- * deliberately not part of the server's public surface, and the trial's lines
- * are imported rather than copied so the two cannot drift.
+ * The distinction is worth a test of its own because both readings look correct
+ * in prose and only one produces anything, and the failure is silent: the turn
+ * resolves to nothing, which is indistinguishable from a refusal unless somebody
+ * checks the act was built. (The romantic rollout rerun sends exactly these two
+ * shapes — `scripts/trial/romantic-contact/`. Its case lines are its own; the
+ * workspace boundary keeps the two apart, and its runner refuses to continue
+ * when a case that must produce an act produces none.)
  */
-describe("the rollout rerun's case lines still produce the acts it needs", () => {
+describe("closing the distance and touching in one message", () => {
   const SABRINA = affordanceSubjectId("char_sabrina");
   const ROSTER = [member(SABRINA, "Sabrina Vale")];
-  const lineFor = (id: string): string => {
-    const found = TRIAL_CASES.find((entry) => entry.id === id);
-    if (found === undefined) throw new Error(`the trial no longer defines a case called ${id}`);
-    return found.line;
-  };
   const romantic = (message: string) =>
     detectChatRomanticTouch({ message, narratorInput: false, characters: ROSTER, eventRef: EVENT });
 
-  it.each([["no_grant"], ["explicit_denial"], ["natural_named"], ["commit"]])(
-    "%s writes a romantic act the permission owner can answer",
-    (id) => {
-      expect(romantic(lineFor(id))?.actionKind).toBe("romantic");
-    },
-  );
-
-  it("the cases that must also close the distance do so in a sentence of their own", () => {
-    for (const id of ["natural_named", "commit"]) {
-      expect(detectChatApproach({ message: lineFor(id), narratorInput: false, characters: ROSTER })).toEqual({
-        targetSubject: SABRINA,
-        band: "close",
-      });
-    }
+  it.each([
+    ["I walk over to Sabrina. I caress Sabrina's arm.", "a name in both sentences"],
+    ["I step closer to you. I caress your arm.", "a pronoun, sole character present"],
+  ])("%s produces the act (%s)", (message) => {
+    expect(romantic(message)?.actionKind).toBe("romantic");
+    expect(detectChatApproach({ message, narratorInput: false, characters: ROSTER })).toEqual({
+      targetSubject: SABRINA,
+      band: "close",
+    });
   });
 
-  it("the withdrawal case writes no touch of its own — it tests what the withdrawal did", () => {
-    expect(romantic(lineFor("withdrawal"))).toBeNull();
+  it("the same content in ONE sentence produces nothing — the trailing clause refuses it", () => {
+    expect(romantic("I walk over to Sabrina and I caress Sabrina's arm.")).toBeNull();
   });
 });
 

@@ -35,6 +35,17 @@ export interface TrialCase {
    * oracle told the expected answer would hide it.
    */
   readonly expectation: string;
+  /**
+   * Whether this case MUST build a contact act for the turn to mean anything.
+   *
+   * The runner stops the whole run when one of these produces none, and that is
+   * the point: a line that reads perfectly and produces nothing resolves to
+   * silence, which is indistinguishable from a correct refusal. A run that
+   * carried on would record the silence as the permission gate working and hand
+   * the rollout ruling a false pass. The producer is anchored to the whole
+   * sentence, so this is one edited word away at any time.
+   */
+  readonly mustProduceAct: boolean;
 }
 
 /**
@@ -47,6 +58,7 @@ export interface TrialCase {
 export const TRIAL_CASES: readonly TrialCase[] = [
   {
     id: "no_grant",
+    mustProduceAct: true,
     proves: "a romantic touch nobody authorised does not become part of the world, and the prose does not invent it",
     setup: "none",
     line: "I caress your arm.",
@@ -54,6 +66,7 @@ export const TRIAL_CASES: readonly TrialCase[] = [
   },
   {
     id: "explicit_denial",
+    mustProduceAct: true,
     proves: "a recorded denial refuses the touch, and the narration may say so",
     setup: "deny",
     line: "I caress your arm.",
@@ -61,6 +74,7 @@ export const TRIAL_CASES: readonly TrialCase[] = [
   },
   {
     id: "natural_named",
+    mustProduceAct: true,
     proves: "a player writing the character's name the way players write it produces a real attempt",
     setup: "grant",
     line: "I walk over to Sabrina. I caress Sabrina's arm.",
@@ -68,6 +82,7 @@ export const TRIAL_CASES: readonly TrialCase[] = [
   },
   {
     id: "commit",
+    mustProduceAct: true,
     proves: "an authorised, physically possible touch commits and the narration honours it",
     setup: "grant",
     line: "I step closer to you. I caress your arm.",
@@ -75,6 +90,7 @@ export const TRIAL_CASES: readonly TrialCase[] = [
   },
   {
     id: "withdrawal",
+    mustProduceAct: false,
     proves: "withdrawing permission ends a touch already in progress and the next reply does not continue it",
     setup: "withdraw",
     line: "I stay where I am.",
@@ -82,6 +98,7 @@ export const TRIAL_CASES: readonly TrialCase[] = [
   },
   {
     id: "retake",
+    mustProduceAct: true,
     proves: "regenerating the committing turn leaves one contact rather than two",
     setup: "grant",
     line: "I step closer to you. I caress your arm.",

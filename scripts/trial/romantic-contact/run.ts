@@ -129,6 +129,17 @@ async function main(): Promise<void> {
       let reply = "";
       for await (const chunk of submitted.stream) reply += chunk;
 
+      // Fail fast, before the next case spends another turn. A case that must
+      // build an act and did not has produced silence, and silence here reads
+      // exactly like a correct refusal — carrying on would fill the report with
+      // passes for turns that never asked the permission owner anything.
+      if (entry.mustProduceAct && capture.record?.act === undefined) {
+        throw new Error(
+          `${entry.id}: the line produced no contact act, so this turn proves nothing. ` +
+            `Check the sentence shape before reopening the flag window: ${JSON.stringify(entry.line)}`,
+        );
+      }
+
       const after = await readContactState(chat.id);
       if (entry.rerunPrevious !== true) previousUserMessageId = await newestUserMessageId(chat.id);
 
