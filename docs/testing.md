@@ -50,11 +50,15 @@ Each layer names its file glob, what it covers, and the IO it needs.
   fused retrieval merge/dedup, witness-eligibility filtering. IO: mocked embeddings
   (deterministic vectors).
 - **server unit** (`apps/web/src/server/{api,authoring,images}/**/*.test.ts`) — rate limiting, error
-  envelopes, body schemas; character-forge grounding (attributes, traits, outfits, drives,
+  envelopes (`respond.ts` — including the request-size guards), body schemas, the paced SSE text
+  reveal (`stream.ts`); character-forge grounding (attributes, traits, outfits, drives,
   social cards) plus demo-mode forge runs; image prompt builders, monogram SVG, atomic webp
   writes. No IO.
-- **api unit** (`apps/web/src/app/api/**/_shared/*.test.ts`) — SSE framing, engine-error → HTTP
-  status mapping, turn event streaming, status payloads. No IO.
+- **api unit** (`apps/web/src/app/api/**/*.test.ts`) — the pure decisions that live in route
+  folders: chat-permission override direction, the sim-routing decision (every POST kind on a
+  sim-routed chat maps to a successor mode or a refusal), and the `/self/` admin mirror parity
+  tripwires (every canonical route has a twin, and every handler is gated by an owner-admin
+  wrapper rather than a bare `withUser`). No IO.
 - **components** (`apps/web/src/components/**/*.test.ts`) — pure logic extracted from components
   (draft merge/seed, attribute editor helpers, inline markup, message-markup span display +
   `commsLine` texted-line detection, chat reply segment→label mapping, focus-trap
