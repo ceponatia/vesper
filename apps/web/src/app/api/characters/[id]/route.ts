@@ -3,7 +3,9 @@ import {
   characterProfileSchema,
   emptyCharacterProfile,
   materializeBodyDefaults,
+  withItemsInDefaultOutfit,
 } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
@@ -14,6 +16,7 @@ import {
   findViewable,
   jsonError,
   jsonOk,
+  materializeSuggestedItems,
   queueEmbedRefresh,
   readBody,
   toPublicCharacter,
@@ -65,20 +68,32 @@ export const PATCH = withAuthorizedResource(
     const body = await readBody(req, characterPatchSchema);
     if (!body.ok) return body.response;
 
+    // Outfit suggestions reach the SHEET editor too — the in-sheet Forge and the
+    // per-tab Re-draft both draft them — so they materialize here on exactly the
+    // POST terms (reuse-by-name, `suggested` tag, ids into the default preset).
+    // Without this the editor's "saved as new items with this character" was a
+    // lie on the edit page: the rows survived every save and could only be
+    // discarded. Items are created BEFORE the row update, as on create — a stray
+    // item is harmless, a dangling outfit id is not.
+    const sink = new DiagnosticCollector();
+    const suggestedIds = await materializeSuggestedItems(user.id, body.value.suggestedItems, sink);
+
     const update: Partial<typeof characters.$inferInsert> = {};
     if (body.value.name !== undefined) update.name = body.value.name;
     if (body.value.tags !== undefined) update.tags = body.value.tags;
     if (body.value.visibility !== undefined) update.visibility = body.value.visibility;
     if (body.value.chatModel !== undefined) update.chatModel = body.value.chatModel;
-    if (body.value.profile !== undefined) {
+    if (body.value.profile !== undefined || suggestedIds.length > 0) {
       const current = parseOr(characterProfileSchema, existing.profile, emptyCharacterProfile(), undefined, "characters.profile");
-      const merged = { ...current, ...body.value.profile };
+      // Materialized ids land in the default preset of the MERGED profile, so a
+      // save that rewrote the outfit tab keeps both its edits and the new items.
+      const merged = withItemsInDefaultOutfit({ ...current, ...body.value.profile }, suggestedIds);
       // Persisted-baseline facts have no blank state: a PATCH that removed one
       // (or predates one) re-materializes it, fill-only, against the merged
       // profile's own body. Players change the value; the fact stays present.
       update.profile = { ...merged, attributes: materializeBodyDefaults(merged.attributes, merged) };
     }
-    if (Object.keys(update).length === 0) return jsonOk({ character: existing });
+    if (Object.keys(update).length === 0) return jsonOk({ character: existing, diagnostics: sink.items });
 
     const [row] = await db()
       .update(characters)
@@ -87,7 +102,7 @@ export const PATCH = withAuthorizedResource(
       .returning();
     if (!row) return jsonError("not_found", "character not found", 404);
     queueEmbedRefresh("character", existing.id);
-    return jsonOk({ character: row });
+    return jsonOk({ character: row, diagnostics: sink.items });
   },
 );
 

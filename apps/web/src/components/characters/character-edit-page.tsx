@@ -90,16 +90,33 @@ export function CharacterEditPage({ characterId }: { characterId: string }) {
   const save = async (opts: { silent?: boolean } = {}): Promise<boolean> => {
     if (!draft) return false;
     const gen = editGenRef.current;
+    // Outfit suggestions the Forge/Re-draft drafted ride along: the server turns
+    // them into real library items and appends the ids to the default preset, so
+    // "saved as new items with this character" is what Save actually does.
+    const pendingSuggestions = draft.suggestedItems;
     setSaving(true);
     const result = await charactersApi.update(characterId, {
       name: draft.name,
       tags: draft.tags,
       profile: draft.profile,
+      suggestedItems: pendingSuggestions,
     });
     setSaving(false);
     if (result.ok) {
       // Edits made while the save was in flight stay marked unsaved.
-      if (editGenRef.current === gen) setDirty(false);
+      if (editGenRef.current === gen) {
+        setDirty(false);
+        if (pendingSuggestions.length > 0) {
+          // Adopt the saved profile — it carries the new item ids the client can't
+          // know — and clear the now-materialized suggestion rows. Skipped when an
+          // edit landed mid-flight: the next save re-sends them and
+          // `materializeSuggestedItems` reuses by name, so nothing duplicates.
+          setDraft((current) =>
+            current ? { ...current, profile: result.data.character.profile, suggestedItems: [] } : current,
+          );
+          setForgeDiagnostics(result.data.diagnostics);
+        }
+      }
       setStagedForge(false); // a save IS the review acceptance
       if (!opts.silent) toast.push({ title: "Character saved", tone: "success" });
       detail.reload({ silent: true });
