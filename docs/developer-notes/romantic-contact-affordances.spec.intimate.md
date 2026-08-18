@@ -1,51 +1,56 @@
 # Romantic contact affordances — intimate-region domain
 
-Status: technical companion to
-[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
-(promoted 2026-07-28 — later scope: slices 5–6). **Not built.** No code exists
-for this domain. It is blocked twice over: on the permission owner becoming
-authoritative (built, dark) and on the deferred physiology plan supplying live
-reads that this domain may not substitute for.
+Status: **not built; architecture reconciled 2026-08-18.** No intimate contact
+domain is registered or wired. This work is blocked on future exact permission
+scopes, physiology/body-surface owners, explicit intimate action producers, and
+channel-correct perception/presentation routing.
 
-## Scope and safety boundary
+Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
-This domain applies the
-[shared contact core](romantic-contact-affordances.spec.contact-core.md) to
-permission-gated intimate contact. The
-[directional permission owner](romantic-contact-affordances.spec.permission.md)
-defines the common direction, chronology, revocation, authorship, and rollback
-laws. This domain handles only anatomy present in the character's body
-configuration and only after the lane's authoritative actor-control,
-permission, exposure, and point-of-view checks.
+Core: [romantic-contact-affordances.spec.contact-core.md](romantic-contact-affordances.spec.contact-core.md)
 
-The domain calculates physical and sensory observations. It never decides or
-infers desire, consent, attraction, pleasure, orgasm, withdrawal, resistance,
-or an expressive reaction. An arousal-related body read is an input from
-physiology, not evidence of permission.
+Effects/presentation: [romantic-contact-affordances.spec.effects.md](romantic-contact-affordances.spec.effects.md)
 
-## Permission scopes
+Permission: [romantic-contact-affordances.spec.permission.md](romantic-contact-affordances.spec.permission.md)
 
-Intimate contact is outside the current `romantic_touch` MVP. That grant must
-never authorize kissing, contact with intimate anatomy, removing another
-participant's clothes, exposing oneself to them, or sex.
+## Scope and hard boundary
 
-Later work should introduce exact directional scopes for the distinct
-interactions the product chooses to support. A broad relationship label such as
-`cherished` or `smitten` may eventually help set per-scope automatic
-revocation thresholds, but it never creates a grant. A relationship recovery
-does not restore a revoked grant.
+This domain may eventually apply shared contact mechanics to anatomy present in
+the character's realized body configuration. It calculates physical phenomena
+from committed contact/current state.
 
-The player-target exception remains an authorship rule: the system does not
-pre-calculate the player's acceptance before an NPC acts, and the narrator may
-not invent the player's reaction. It does not relax actor control, exposure,
-anatomy, content, or point-of-view gates.
+It never decides or infers:
+
+- desire;
+- consent/permission;
+- attraction;
+- pleasure/orgasm;
+- resistance/withdrawal;
+- expressive reaction;
+- player acceptance;
+- anatomy that is absent from the realized body.
+
+Physiology reads are inputs. They are never evidence of permission.
+
+## Permission is not `romantic_touch`
+
+The current permission owner knows `romantic_touch`; that scope does **not**
+authorize intimate anatomy, kissing, undressing, nudity exposure, or sex.
+
+Before this domain is enabled, product design must define the exact directional
+scopes relevant to the supported actions. Scope membership remains exact unless
+a future product ruling explicitly defines implications.
+
+The NPC -> player exception remains only an authorship rule: Vesper does not
+pre-authorize the player's response. It does not bypass anatomy, exposure,
+physical feasibility, content, or action-scope gates.
 
 ## Existing topology
 
-Use the registry under `src/contracts/body/locations/intimate.ts`; do not create
-a parallel body-part vocabulary.
+Use the shared body location registry. Do not create a second intimate anatomy
+vocabulary.
 
-Relevant groups and loci include:
+Relevant current groups include:
 
 ```text
 chest
@@ -68,12 +73,12 @@ pelvis
 └── anus
 ```
 
-The current registry/body configuration remains authoritative about which
-configurable regions exist. Universal moderation-sensitive regions keep their
-existing rules. Side, subregion, external/internal surface, and contact path
-use validated `BodyLocusRef` detail rather than new schema columns.
+Side/subregion/internal-vs-external detail belongs in validated body-locus/path
+contracts, not new ad-hoc strings.
 
-## Stable profile versus live state
+## Stable profile versus current state
+
+Conceptually:
 
 ```ts
 interface IntimateStructuralProfile extends RegionalStructuralProfile {
@@ -83,39 +88,26 @@ interface IntimateStructuralProfile extends RegionalStructuralProfile {
   compliance: UnitInterval;
   supportResponse: UnitInterval;
   drySurfaceFriction: UnitInterval;
-  sensitivityTendency?: UnitInterval;
   textureBand?: IntimateTextureBand;
-}
-
-interface IntimateCurrentConditionRead extends SurfaceConditionRead {
-  physiology: IntimatePhysiologyRead;
-  moisture?: IntimateMoistureRead;
-  moistureContributors: readonly SurfaceSubstanceRead[];
-  temperatureBand?: ContactTemperatureBand;
-  residues: readonly SurfaceResidueRead[];
-  marks: readonly BodySurfaceMarkRead[];
 }
 ```
 
-Stable profiles compile canonical attributes describing baseline anatomy.
-Current condition reads:
+Current state must come from real owners, not this domain's memory:
 
-- erection/engorgement;
-- genital or nipple swelling/firmness;
-- lubrication;
-- vascular color/flush where visible;
-- sweat and temperature;
-- products, water, or residue;
-- current marks or irritation only when body state owns them.
+- body-surface wetness where already owned;
+- physiology-owned erection/engorgement/swelling/lubrication/vascular change;
+- products/residue after a body-state owner exists;
+- temperature after a real source exists;
+- marks after a body-mark owner exists;
+- garment state from wardrobe.
 
-The physiology plan owns transfer functions, time behavior, and live levels.
-This domain only maps current levels plus contact into observable mechanics.
+The current codebase does **not** yet own the full set. Visual state explicitly
+suppresses unsupported physiology/contamination/contact-mark families. That is a
+blocker, not permission to default them.
 
-`sensitivityTendency` may affect an actor's internally available tactile signal
-when an established consumer needs it. It must never be converted directly
-into pleasure narration or behavior.
+Known dry and unavailable remain different.
 
-## Effective exposure and access
+## Exposure/access
 
 Intimate access is locus-, action-, actor-, and channel-specific.
 
@@ -127,252 +119,250 @@ type IntimateExposureMode =
   | "partially_exposed"
   | "direct_external"
   | "direct_internal";
-
-interface IntimateAccessRead {
-  mode: IntimateExposureMode;
-  locus: BodyLocusRef;
-  materialBetween: readonly GarmentLayerRead[];
-  contactPath: ContactPathRead;
-  visualPath: PerceptionPathRead;
-  policyDecisionRef: PolicyDecisionRef;
-  evidence: readonly AffordanceEvidence[];
-}
 ```
 
 Rules:
 
-- opaque coverage blocks visual/direct-skin reads but may allow
-  material-filtered touch and contour;
+- opaque coverage blocks direct visual/skin reads but may transmit pressure or
+  contour;
 - sheer visibility does not imply tactile access;
-- displacement applies to the garment part and body locus actually affected;
-- internal access requires a compatible explicit action, aligned path,
-  committed exposure, and policy pass;
-- a general intimate-scene signal is not sufficient evidence for specific
-  contact or access;
-- missing clothing, path, or policy evidence degrades toward blocked.
+- garment displacement applies only after a wardrobe operation commits;
+- a general intimate-scene signal cannot substitute for exact action/access;
+- internal access requires an explicit compatible action, aligned path,
+  committed exposure, exact permission scope, and physical feasibility;
+- missing policy/coverage/path evidence fails closed.
+
+Do not persist a domain-local `visualPath`; visual visibility is evaluated by
+visual state from the committed visual facts and observer/camera context.
+Nonvisual access belongs to the future shared sensory owner.
 
 ## Phenomena
 
+Every phenomenon returns a channel-tagged physical observation and/or effect
+proposal. It never writes narrator prose.
+
 ### `intimate.effective_exposure`
 
-Returns the exposure mode and allowed sensory channels for one locus. This is a
-hard prerequisite for the remaining phenomena, not a narrator cue by itself
-unless a current wardrobe/action change makes exposure relevant.
+Returns structured exposure/access state for a locus. It is a prerequisite for
+other phenomena, not automatically a narration cue.
+
+A visually meaningful exposure change may later project into visual state.
 
 ### `intimate.contact_pressure`
 
-Uses the shared pressure/area mechanic, then maps it to the target locus and
-surface geometry.
+Requires committed contact. Uses shared pressure/area/motion mechanics and
+preserves:
 
-Outputs include:
+- exact locus/path;
+- pressure band;
+- area band;
+- motion band;
+- direct versus material-filtered contact.
 
-- external or internal locus;
-- `trace | light | moderate | firm`;
-- `point | narrow | broad`;
-- still/pressing/sliding/rolling motion;
-- material-filtered versus direct contact.
-
-It does not infer a response.
+The result is primarily tactile; any visible deformation is a separate visual
+phenomenon with its own support/state requirements.
 
 ### `intimate.surface_moisture`
 
-Combines only authoritative sources:
+May combine only authoritative sources:
 
+- body-surface wetness;
 - physiology-owned lubrication;
-- sweat/body wetness;
+- sweat when owned;
 - water;
 - authored/applied product;
-- committed fluid/residue.
+- committed residue.
 
-Outputs are local semantic bands and provenance. An intimate frame, high
-arousal meter, or contact alone cannot synthesize wetness unless physiology has
-produced the corresponding read.
-
-Known dry and unknown are separate. If no authoritative source establishes
-current moisture, the phenomenon is silent and friction cannot assume a dry
-surface.
+Contact/arousal/narrative framing cannot synthesize moisture.
 
 ### `intimate.friction_glide`
 
-Requires committed relative motion. Combines both structural surfaces, current
-moisture, pressure/area, material layers, and motion path.
+Requires committed relative motion plus known relevant surface/material state.
+Possible semantic outputs:
 
-Outputs:
+```text
+dragging
+controlled_glide
+smooth_glide
+slippery
+material_catch
+grip_breaks
+```
 
-- `dragging`;
-- `controlled_glide`;
-- `smooth_glide`;
-- `slippery`;
-- `material_catch`;
-- `grip_breaks`.
+Substance curves are distinct. Water, sweat, oil/lotion, physiology-owned
+lubrication, and wet fabric are not one monotonic “wetness” scale.
 
-This is a contact mechanic, not an evaluation of comfort or pleasure.
-
-Friction curves are keyed by the actual substance/material combination.
-Water, sweat, physiology-owned lubrication, oil/lotion, and wet fabric are not
-one monotonic moisture scale; low water or sweat films may increase skin
-friction.
+This is tactile mechanics and may not enter visual state.
 
 ### `intimate.soft_tissue_deformation`
 
-Consumes stable compliance/support mechanics, live physiology, contact
-pressure/area, support, and current pose.
+Requires actual pressure/support/current geometry. Potential compliance alone is
+silent.
 
-Possible observations:
-
-- localized compression;
-- broad flattening/support;
-- displacement along a committed motion path;
-- rebound after released pressure when the authoritative frame includes it;
-- constrained deformation under a garment.
-
-Potential deformation is not narrated. It requires actual contact or a current
-support constraint.
+A visual deformation observation and a tactile deformation observation are
+separate channel results even when produced by the same physical frame.
 
 ### `intimate.physiology_geometry`
 
-Projects physiology-owned state through baseline anatomy:
+Projects an existing physiology-owned state through baseline anatomy.
 
-- penis erection/engorgement changes effective length, girth, angle, firmness,
-  and garment contour;
-- vulvar/clitoral swelling changes prominence and visible/tactile geometry;
-- nipple erection changes projection and possible garment transmission;
-- breast or genital vascular change may alter visible color only under a valid
-  visual/exposure path;
-- testicular position or other temperature-dependent changes are omitted until
-  an authoritative physiology read exists.
+Examples may include erection/engorgement/swelling or nipple projection, but
+only after the physiology owner exists and supplies the current state.
 
-Opaque clothing may permit a contour read while suppressing skin/anatomy detail.
-No physiology read means no live-geometry claim.
+Opaque clothing may permit a garment-contour visual read while suppressing bare
+anatomy detail.
 
 ### `intimate.garment_contour`
 
-Combines baseline/live geometry with garment fit, tension, material thickness,
-rigidity, wetness, and current displacement.
+Combines known current body geometry with garment fit/tension/material/condition.
 
-It may produce:
+Possible visual results:
 
-- shape transmitted through fabric;
-- localized tension or compression;
-- damp fabric clinging where garment state confirms it;
-- movement transmitted through flexible material;
-- anatomy detail suppressed by opaque/rigid material.
+- contour transmitted through fabric;
+- local tension/compression;
+- damp cling only where garment/body wetness supports it;
+- movement transmitted through flexible material.
 
-It never treats contour as direct exposure.
+Contour is not direct exposure.
+
+This phenomenon should project through visual state, which owns viewpoint,
+occlusion, exposure, salience, and narrator/image selection.
 
 ### `intimate.fluid_transfer`
 
-Calculates a proposed transfer from a current source, actual contact path,
-pressure/motion, receiving surface, and material permeability. The body or
-garment owner commits amount, locus, timestamp, and provenance.
+Requires a real source plus committed contact/path/permeability. It proposes a
+conserved transfer; the appropriate body/garment owner commits source removal and
+target/intermediate deposition atomically.
 
-Source removal and target or intermediate-garment deposition commit atomically
-under one idempotency key. Retry and retake cannot duplicate material or leave
-only one side applied.
-
-The observation appears only after commit and may then feed:
-
-- surface moisture;
-- garment dampness;
-- visible residue;
-- scent/taste contributors;
-- later cleanup actions.
+The current body residue owner required for general skin deposition does not yet
+exist, so this cannot be promoted to live truth merely because the contact domain
+can calculate a proposal.
 
 ### `intimate.aftereffect_visibility`
 
-Reads only authoritative aftermath:
+Reads only committed aftermath:
 
-- current displacement/exposure;
+- wardrobe displacement/exposure;
 - dampness;
-- pressure impressions;
-- flushing or vascular change;
-- committed residue;
-- temporary marks.
+- committed marks;
+- physiology-owned flush/change;
+- committed residue.
 
-Each source keeps its owner and expiry. The affordance domain stores no hidden
-aftereffect timer.
+It has no hidden domain timer.
+
+Visual aftermath routes into visual state. Nonvisual aftermath routes to the
+future sensory owner.
 
 ### `intimate.action_alignment`
 
-Validates that the action semantics match the physical frame:
+Validates:
 
-- named actor surface and target locus exist;
-- pose and contact path can connect them;
-- clothing state permits the requested contact mode;
-- external versus internal destination is correct;
-- motion direction/path remains compatible;
-- required support and free movement exist;
-- actor control covers the initiating participant;
-- consent/policy scope covers the action.
+- actor/target loci exist;
+- action path matches external/internal destination;
+- scene geometry/support permits it;
+- wardrobe permits the requested access;
+- actor control is valid;
+- target movement has its own authority when required;
+- exact permission scope applies.
 
-It yields a resolver constraint or diagnostic, not a prompt claim about a
-failed attempt.
+It emits resolver requirements/diagnostics, not narrator prose.
 
-## Sensory channels
+## Sensory routing
 
-- **Channel: Visual**
-  - **Additional intimate requirements:** Valid exposure plus viewpoint; contour-through-clothing stays distinct from anatomy detail.
-- **Channel: Tactile**
-  - **Additional intimate requirements:** Actor participates in committed contact; material transmission and locus are preserved.
-- **Channel: Olfactory**
-  - **Additional intimate requirements:** Current baseline/condition contributor, intimate proximity, exposure/permeability, and airflow.
-- **Channel: Gustatory**
-  - **Additional intimate requirements:** Explicit direct oral contact with the qualifying surface and policy pass.
+### Visual
 
-Authored scent/taste attributes provide baseline character identity. Hygiene,
-physiology, products, and residue may modulate intensity or add grounded notes;
-they do not replace the authored character of the value. The narrator receives
-at most one relevant sensory cue, not a catalog.
+Route only visual phenomena to visual state.
 
-## First intimate fixture set
+Visual state owns:
 
-1. Hand over opaque underwear: touch and contour may transmit; no direct skin,
-   anatomy color, lubrication, or residue cue.
-2. Same garment, sheer but not displaced: visual allowance may change; direct
-   tactile access does not.
-3. Garment explicitly displaced after policy pass: direct external contact
-   becomes possible only at the exposed locus.
-4. Direct contact with dry current state: pressure/texture may resolve; glide
-   must not become slippery.
-5. Same contact after authoritative product/lubrication state: the calibrated
-   substance curve changes the friction band and remains locally scoped.
-6. Physiology-owned erection beneath opaque underwear: contour may resolve;
-   bare anatomy detail remains suppressed.
-7. Swelling/lubrication absent from physiology: genre and narrator framing
-   cannot create them.
-8. Proposed fluid transfer rolled back: no receiving-surface or garment
-   observation appears.
-9. Sustained unchanged contact: cue is not repeated until pressure, motion,
-   material, physiology, exposure, or residue changes.
-10. Retake: same event cut produces the same contact, policy reference,
-    observations, and repeat keys.
+- per-subject exposure/visibility;
+- viewpoint/camera filtering;
+- occlusion;
+- visual attention;
+- notice/mention state;
+- repetition suppression;
+- narrator/image selection.
 
-## Leak-prevention and property tests
+Intimate contact must not maintain its own visual cue memory or ranking.
 
-- absent/body-config-disabled region cannot be targeted or narrated;
-- universal sensitive regions still require exposure/policy gates;
-- intimate scene signal without committed contact produces no contact cue;
-- high arousal without physiology-owned surface state produces no wetness or
-  live-geometry claim;
-- erection/swelling/lubrication never imply consent;
-- consent never implies arousal or sensory response;
-- opaque coverage prevents anatomy-specific visual cues;
-- tactile transmission through fabric never flips to direct skin;
-- no relative motion produces no glide;
-- zero moisture/product input cannot produce a slippery result;
-- unknown moisture cannot produce either a known-dry or slippery result;
-- substance-specific friction fixtures cover low and high water/sweat films
-  separately from confirmed lubricants;
-- increasing pressure does not reduce deformation under identical support and
-  profile unless a domain constraint explicitly saturates it;
-- transfer and aftereffects require committed event provenance;
-- transfer conserves material and is idempotent on retry/retake;
-- unperceived intimate observations never reach ranking or capture;
-- malformed policy/wardrobe/body reads fail closed with bounded diagnostics;
-- narrator cues contain semantic results, not policy, anatomy coefficients, or
-  rejected alternatives.
+### Tactile
 
-Common permission mechanics are settled in the
-[permission-owner spec](romantic-contact-affordances.spec.permission.md).
-Remaining intimate physiology and presentation questions stay in the
-[plain-English plan](romantic-contact-affordances.plan.md#open-questions).
+Requires participant involvement in the qualifying committed contact plus
+material/path transmission. It waits on the shared nonvisual sensory
+presentation owner before live narrator cues.
+
+### Olfactory
+
+Requires real contributors plus proximity/exposure/permeability/airflow as
+applicable. It waits on the shared nonvisual sensory owner.
+
+### Gustatory
+
+Requires an explicit compatible direct oral contact and exact action/policy
+scope plus real source contributors. It waits on the shared nonvisual sensory
+owner.
+
+No nonvisual intimate observation may be passed through the visual-state
+`AffordanceObservation` bridge.
+
+## Effects
+
+Effect proposals follow the shared effects spec:
+
+- proposal is not truth;
+- body/wardrobe owner validates and commits;
+- transfer is conserved and idempotent;
+- retake removes the committed result through the owner rollback path;
+- observation reads the **post-commit** state;
+- no hidden residue/mark state lives here.
+
+## First fixture matrix
+
+1. Hand over opaque underwear: material-filtered pressure possible; no direct
+   skin or anatomy-specific visual detail.
+2. Sheer but undisplaced garment: visual allowance may change; direct tactile
+   access does not.
+3. Explicitly displaced garment after applicable scope/action: direct external
+   access only at the committed exposed locus.
+4. Direct contact with known dry current state: pressure/texture may resolve;
+   no invented slippery result.
+5. Same contact after authoritative product/lubrication state: the correct
+   substance curve changes friction locally.
+6. Physiology-owned geometry under opaque underwear: garment contour may resolve;
+   bare detail remains hidden.
+7. Missing physiology: genre/arousal cannot create swelling/lubrication.
+8. Rolled-back transfer: no residue/deposit observation remains.
+9. Sustained unchanged contact: physical state persists; presentation repetition
+   is owned by visual/nonvisual attention layers, not the domain.
+10. Retake: same restored contact/policy/body/wardrobe cut produces the same
+    physical observations/effect proposals.
+
+## Leak-prevention tests
+
+- absent/unrealized anatomy cannot be targeted/narrated;
+- `romantic_touch` cannot authorize intimate action;
+- permission cannot imply arousal/response;
+- arousal/physiology cannot imply permission;
+- opaque coverage suppresses bare-anatomy visual facts;
+- tactile transmission never becomes direct-skin access;
+- no motion -> no glide;
+- no authoritative source -> no moisture/residue;
+- unknown -> neither dry nor slippery;
+- transfer/marks appear only after owner commit;
+- nonvisual phenomena cannot enter visual state;
+- visual phenomena use visual-state visibility/selection rather than local
+  ranking/capture;
+- retake is idempotent across contact, permission, effects, and presentation
+  owners;
+- malformed policy/wardrobe/body reads fail closed.
+
+## Prerequisites before implementation
+
+1. First player romantic action seam and `romantic_touch` proof are accepted.
+2. Future intimate permission scopes are explicitly ruled.
+3. Required physiology/body-surface owners exist for the phenomena selected.
+4. Wardrobe access/displacement path is authoritative.
+5. Visual facts have visual-state feature/adapters.
+6. A shared nonvisual sensory presentation owner exists before tactile/scent/
+   taste cues go live.
+7. A dedicated intimate leak-prevention trial is defined before registration.
