@@ -8,8 +8,8 @@ directional, exact-scope permission owner for `romantic_touch`, behind
 The narrow `actionKind: "romantic"` player producer this owner was waiting on is
 now built and its deterministic negative-case suite passes against the real
 permission seam, so enabling the flag produces a real permission-gated attempt.
-What remains is the controlled live proof and the rollout ruling — owner work,
-not code work.
+The controlled live proof passed on 2026-08-18 and the flags were reverted
+afterwards; what remains is the rollout ruling — owner work, not code work.
 
 Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
@@ -450,16 +450,38 @@ The contact resolver never polls a relationship label and derives permission.
    - a granted touch that cannot physically reach still does not commit;
    - retake restores permission + contact state.
 5. Use the developer override or an earlier NPC-authored grant to seed one
-   controlled player -> NPC scenario. Status: next — owner-gated setup.
+   controlled player -> NPC scenario.
+   Status: done 2026-08-18 — seeded by developer override.
 6. Enable `CHAT_ROMANTIC_PERMISSION` for that controlled proof and verify the
    committed contact/action outcome, ledger, scene, retake, and narrator stop
-   behavior. Status: queued behind step 5; no code work is outstanding for it.
+   behavior.
+   Status: **passed 2026-08-18.** All five verified, plus the no-grant and
+   geometry refusals. The permission gate, the withdrawal sweep and the stop
+   handoff each executed in production for the first time. Flags reverted after
+   the run. Identifiers, result codes and ledger rows:
+   `romantic-contact-affordances.trial.romantic-proof.evidence.md`.
 7. Decide rollout for that **specific romantic action surface** only.
-   Status: owner decision, queued behind step 6.
+   Status: next — the live owner decision; see the trial's silent-refusal
+   finding, which is what the ruling turns on.
 
 This proof does **not** require general NPC scene-decision movement/start/update
 authority unless the chosen fixture asks the target NPC to reposition. The NPC
 authority shadow review remains a parallel operational gate.
+
+### Confirmed live: a refusal is silent to the narrator
+
+The 2026-08-18 proof established this and it outranks everything else in this
+section for the rollout ruling. With no grant on record the resolver returns
+`unresolved` / `permission_unresolved`, `rendered` is empty, and **no narrator
+line is produced** — so the reply described the caress as landing while nothing
+was committed and the ledger stayed empty. Only an explicit `attempt_denied`
+yields a blocking line.
+
+This is the resolver's own unknown-is-not-refused law working as designed, so it
+is not a defect. Its consequence is the part to carry forward: enabling
+`CHAT_ROMANTIC_PERMISSION` governs **committed world state**, not prose. Closing
+the gap means giving the narrator something to say about an unresolved refusal,
+which is separate work and is not in this slice.
 
 ### Expect this on the first flag-on turn
 

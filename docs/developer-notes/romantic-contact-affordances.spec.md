@@ -56,7 +56,7 @@ visual memory, narrator repetition, garment state, body residue, or permission.
 | Posture/support | Built coarse read | Richer engine state | No general fine-pose solver. |
 | Player approach/depart | Built | Engine command path | Player lane only authors the player's body. |
 | Player affectionate hand contact | Built/live lane | Not this adapter | Deterministic allow-list; romantic framing still vetoed. |
-| Player romantic contact | Built + tested, permission gated | Not claimed | Closed caress/stroke/cup family, whole-sentence anchored, nine loci; unproven live. |
+| Player romantic contact | Proven live 2026-08-18, gated | Not claimed | Closed caress/stroke/cup family, whole-sentence anchored, nine loci; rollout undecided. |
 | Contact lifecycle | Built | No parity claim here | Stable active contact projection + start/update/end commits. |
 | Contact persistence/retake | Built | Engine-specific | Character chat uses `chat_contact_events`. |
 | NPC deterministic contact endings | Built | Engine-specific | Frozen live floor. |
@@ -356,7 +356,9 @@ and restores it. Contact remains physical truth only.
    Status: built 2026-08-18 — pure tests drive the real permission seam; retake
    restoration stays with the `chat-permission.int.test.ts` integration layer.
 7. Run the first controlled player -> NPC romantic live proof.
-   Status: next — owner-gated; no code work is outstanding for it.
+   Status: **passed 2026-08-18** on Fly version 209; flags reverted afterwards.
+   Refusal, geometry refusal, commit, withdrawal and retake all behaved. Report:
+   `romantic-contact-affordances.trial.romantic-proof.md`.
 
 Track B does not require general NPC authority unless the fixture asks an NPC to
 voluntarily reposition.

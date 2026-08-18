@@ -11,10 +11,12 @@ The affectionate contact slice is live in character chat. The shared contact
 core, durable contact lifecycle, scene/body-relations owner, player-authored
 affectionate action lane, narrow player-authored romantic action producer, NPC
 deterministic ending floor, NPC reply-scene authority implementation, and
-directional `romantic_touch` permission owner all exist. The NPC authority
-increments and the romantic permission owner remain gated; the romantic producer
-only runs when a permission owner is wired, so with the flag off the lane behaves
-exactly as it did before the producer existed. The foot domain is built but
+directional `romantic_touch` permission owner all exist, and the first live
+romantic contact proof passed on 2026-08-18. The NPC authority increments and the
+romantic permission owner remain gated: the proof flags were reverted after the
+run, and the romantic producer only runs when a permission owner is wired, so
+with the flag off the lane behaves exactly as it did before the producer existed.
+What is left on the romantic track is the owner's rollout decision, not code. The foot domain is built but
 deliberately unregistered. Contact effects and intimate-region mechanics remain
 future work.
 
@@ -43,6 +45,7 @@ Technical companions:
 - [intimate domain](romantic-contact-affordances.spec.intimate.md)
 - [truth-source audit](romantic-contact-affordances.audit.md)
 - [affectionate trial](romantic-contact-affordances.trial.md)
+- [first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md)
 
 Related owners:
 
@@ -94,14 +97,24 @@ The narrator renders those answers. It does not become the owner of them.
 - **Visual visibility, attention, repetition** — owned by visual state, including
   per-subject exposure, selection, memory and narrator projection.
 
-**Built, gated, not yet proven live**
+**Proven live, flags reverted, rollout undecided**
 
 - **Romantic action producer** — emits `actionKind: "romantic"` for a closed
   caress/stroke/cup family. Runs only when a permission owner is wired, so
   `CHAT_ROMANTIC_PERMISSION=off` leaves the lane unchanged. Deterministically
-  tested.
+  tested, and proven on the deployed app 2026-08-18.
 - **Romantic permission owner** — exact directional `romantic_touch` only;
-  developer override is a separate capability.
+  developer override is a separate capability. The permission gate, the
+  withdrawal sweep and the narrator stop handoff all ran in production for the
+  first time during that proof.
+
+Both flags were enabled for the proof window only and reverted afterwards. The
+proof also established that a refusal is silent to the narrator — see the
+[first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md),
+which is the input to the item-9 rollout decision.
+
+**Built, gated, not yet proven live**
+
 - **NPC movement/start/update authority** — all three increments built behind
   `CHAT_NPC_SCENE_DECISIONS`. Shadow measurement opened 2026-08-10; on hold by
   owner ruling pending a reviewed corpus.
@@ -466,11 +479,19 @@ Do not infer one from the existence of telemetry.
    - permission-neutral affectionate touch remains unchanged.
 8. Enable `CHAT_ROMANTIC_PERMISSION` only for the controlled proof and run the
    first player -> NPC live scenario.
-   Status: next — owner-gated, not code-gated. Nothing further needs building.
-9. If the proof passes, decide the production rollout of that **specific**
-   romantic action surface. Do not infer support for kissing, undressing,
-   intimate touch, or sex.
-   Status: owner decision, queued behind item 8.
+   Status: **passed 2026-08-18.** No grant refused the touch, permission did not
+   override distance, an authorized reachable touch committed, withdrawal ended a
+   live contact, and a regenerate left no duplicate. Both flags reverted after
+   the run. Report:
+   [first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md).
+9. Decide the production rollout of that **specific** romantic action surface. Do
+   not infer support for kissing, undressing, intimate touch, or sex.
+   Status: **next — the live owner decision.** The proof surfaced the fact this
+   ruling turns on: with no permission on record the state correctly refuses, but
+   a refusal renders nothing, so the prose still describes the touch as landing.
+   Enabling the flag governs committed world state, not what the story says. The
+   options are to ship this surface, keep it test-only, or close the silent-refusal
+   gap first. Nothing in the code is waiting on the answer.
 
 Track B does not wait for NPC movement/start/update authority unless the chosen
 fixture requires an NPC voluntary adjustment.
@@ -548,9 +569,12 @@ were off. Treat that as a dated deployment observation, not a code invariant.
   authority? Still genuinely open: the owner has ruled to hold and keep
   measuring — see Track A — so there is now a ruling but not an acceptance, and
   the evidence that would settle it does not exist yet.
-- After the first romantic proof, should that narrow player action surface ship
-  immediately or remain test-only until the visual contact-relation projection
-  is available?
+- Should the narrow romantic action surface ship, stay test-only, or wait? This
+  is Track B item 9, and the 2026-08-18 proof sharpened it: a refusal is silent
+  to the narrator, so enabling the flag governs what Vesper records, not what the
+  story says. A player with no permission on record still reads a reply where the
+  touch lands. Weigh that against shipping, and against first giving the narrator
+  something to say about a refusal it currently is not told about.
 
 ### Shared sensory architecture
 
