@@ -134,10 +134,15 @@ Current settled law:
 The core consumes `ContactInteractionPolicyRead`; it does not own or infer the
 permission record.
 
-**Integration fact:** character chat currently has no producer of a player
-`actionKind: "romantic"` attempt. The existing player act type is
-`actionKind: "affectionate"`. Supporting a kind in this core is not the same as
-having a lane producer for it.
+**Integration fact:** character chat now produces a player
+`actionKind: "romantic"` attempt through a separate narrow producer beside the
+affectionate one, **but only while a permission owner is wired to answer it** —
+the producer is gated on the policy source's presence, so a kind this core gates
+is never authored into a turn that has nobody to gate it. The player act type is
+`"affectionate" | "romantic"`, and it deliberately names only the kinds that lane
+can author rather than this core's full `ContactActionKind`. `incidental`, `casual`, and `intimate` are still
+supported here with no chat producer. Supporting a kind in this core is not the
+same as having a lane producer for it.
 
 ## Actor control and target agency
 

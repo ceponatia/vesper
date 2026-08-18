@@ -25,9 +25,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — affectionate player
-  contact is live; NPC shadow review and the missing player-romantic action seam
-  are now parallel gates, with the latter required before `romantic_touch` can
-  be proven end to end.
+  contact is live and the narrow player-romantic action producer it was missing
+  now exists, leaving the NPC shadow review and the first controlled
+  `romantic_touch` proof as the two parallel gates.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·
