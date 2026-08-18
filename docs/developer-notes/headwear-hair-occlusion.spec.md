@@ -15,6 +15,31 @@ layering question exactly as it does now; the narrator prompt paths, which
 describe garments from authored text; and garment presentation, which owns
 hood-up/hood-down.
 
+## Implementation status
+
+| Slice                              | State                                          |
+| ---------------------------------- | ---------------------------------------------- |
+| 1 — enclosure band + resolver      | not started                                    |
+| 2 — image prompts honour it        | not started                                    |
+| 2b — negative block                | not started; blocked on render-quality slice 3 |
+| 3 — reference-anchored paths       | not started                                    |
+| 4 — editor override + forge        | not started                                    |
+
+### Owner rulings (2026-08-18)
+
+- **Full enclosure means no hair at all.** A hijab is worn covering every strand
+  for modesty; rendering a stray fringe misrepresents the garment. `full`
+  therefore emits no `hair.*` value and no hair-adjacent phrasing. A style that
+  deliberately shows hair at the front is a different garment as far as this
+  model is concerned, and is authored as `partial`.
+- **A visor shows hair.** It takes `none`, not `partial`: it has no crown, so
+  nothing about the hair mass is hidden. Sitting across the fringe does not
+  count as enclosing.
+- **Negative-prompt steering is wanted, not optional.** The positive concealment
+  sentence is necessary but is the weaker half of the instruction. See
+  [Negative steering](#negative-steering) for what this binds and what it waits
+  on.
+
 ## Why coverage cannot carry this
 
 Recorded here because it is the first thing a reader will propose, and the answer
@@ -77,12 +102,12 @@ required to read one.
 Set on the existing entries in `contracts/items/subtypes/headwear.ts`. Coverage
 values stay exactly as they are.
 
-| Subtype                                       | Band      |
-| --------------------------------------------- | --------- |
+| Subtype                                           | Band      |
+| ------------------------------------------------- | --------- |
 | `headband`, `hairpin`, `ribbon`, `tiara`, `crown` | `none`    |
-| `hat`, `cap`, `beanie`, `hood`                | `partial` |
-| `headscarf`, `helmet`                         | `full`    |
-| `veil`                                        | `none`    |
+| `veil`                                            | `none`    |
+| `hat`, `cap`, `beanie`, `hood`                    | `partial` |
+| `headscarf`, `helmet`                             | `full`    |
 
 `veil` takes `none` deliberately: a veil hangs over or behind rather than
 enclosing, and the face-covering veil is out of scope (plan non-goal).
@@ -145,11 +170,11 @@ their place. The attribute ids are `hair.color`, `hair.length`, `hair.texture`,
 `hair.density`, `hair.strand_thickness`, `hair.condition`, `hair.arrangement`,
 `hair.style`.
 
-| Band      | Hair attributes emitted | Extra phrase                        |
-| --------- | ----------------------- | ----------------------------------- |
-| `none`    | All                     | None                                |
-| `partial` | All                     | None                                |
-| `full`    | None                    | An affirmative concealment sentence |
+| Band      | Hair attributes emitted | Positive phrase                     | Negative block |
+| --------- | ----------------------- | ----------------------------------- | -------------- |
+| `none`    | All                     | None                                | None           |
+| `partial` | All                     | None                                | None           |
+| `full`    | None                    | An affirmative concealment sentence | `hair-covered` |
 
 `partial` is deliberately identical to `none` in effect. It exists so that `full`
 has something to contrast against, so the hood-up work has a band to land in, and
@@ -162,6 +187,51 @@ At `full` the prompt states the concealment in the positive — the garment's ow
 noun, then the absence — for example `hair completely covered by the headscarf,
 no hair visible`. It is built from the resolved garment's name so it never
 hardcodes a garment noun.
+
+### Negative steering
+
+What exists today, since the shape of this work depends on it and the surface is
+easy to misread in both directions:
+
+- **The transport is complete.** Negative prompts have a per-model capability
+  binding (`advancedCapabilities.controls.negativePrompt`), control mapping onto
+  each model's own field name, override precedence in
+  `compile-profile-plan.ts`, trial hashing, and honest reporting that counts a
+  model row's `extraInput` constant as a real negative
+  (`resolvedNegativePrompt`). None of that needs building.
+- **The content is static, and mostly empty.** The only sources are an
+  owner-typed string on a model profile (which defaults to `""`), a model row's
+  `extraInput` constant, and identity-pack trial fixtures. The reviewed rows send
+  `negative_prompt: ""` deliberately, to neutralize a wrapper's hidden
+  boilerplate. Nothing anywhere composes a negative from what is actually in the
+  picture.
+
+So the gap is not support — it is that negatives are a static per-model setting
+rather than a per-render consequence of the subject.
+
+**This plan does not close that gap, and must not.** Compositional negative
+steering is owned by
+[image-render-quality.plan.md](image-render-quality.plan.md), whose slice 3
+builds named context-composed blocks with conflict linting, and whose standing
+rule is that the context-free render seam never invents negative content. A
+bespoke hair negative bolted on here would be a second owner for the same
+mechanism and would violate that rule on its way in.
+
+What this spec contributes is one **named block**, on that plan's terms:
+
+| Field       | Value                                                          |
+| ----------- | -------------------------------------------------------------- |
+| Block id    | `hair-covered`                                                 |
+| Emitted when | `resolveHairOcclusion` returns `full`                          |
+| Content     | Visible-hair terms — loose hair, strands, fringe, ponytail      |
+| Suppressed when | The character has no hair to begin with (bald, non-haired species) |
+
+The conflict linter is the reason this composes safely rather than by luck. A
+`hair-covered` negative on a render whose positive prompt still described the
+character's hair is exactly the positive/negative collision that linter exists to
+reject. That rejection is a feature: it makes the two halves of slice 2
+structurally inseparable, so the negative can never be added while the positive
+still leaks hair.
 
 ### The reference-anchored paths
 
@@ -244,5 +314,10 @@ Pure suite (`pnpm test`) unless noted:
   value and does contain the concealment phrase; a `partial` character's prompt
   is unchanged from today's output; the identity anchor omits hair terms at
   `full` and keeps them otherwise.
+- **Negative block** (slice 2b) — `hair-covered` is emitted at `full` and at no
+  other band, is suppressed for a character with no hair, and a render whose
+  positive prompt still names hair is **rejected** by the conflict linter rather
+  than sent. That last case is the one worth writing first: it is what keeps the
+  two halves of the instruction from drifting apart.
 - **Rendered evidence** — not a test. The paired bench run named in the plan's
   success criteria, recorded in `headwear-hair-occlusion.trial.md`.
