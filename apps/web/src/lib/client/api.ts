@@ -298,6 +298,21 @@ export const characterDetailSchema = characterSummarySchema.extend({
 export type CharacterDetail = z.infer<typeof characterDetailSchema>;
 
 /**
+ * `PATCH /api/characters/:id` — the saved row's profile plus the save's own
+ * diagnostics (materializing a forge outfit suggestion reports reuse/degradation).
+ * Resilient throughout: a visibility-only toggle reads the same envelope.
+ */
+export const characterSaveSchema = z
+  .object({
+    character: z
+      .object({ profile: characterProfileSchema.catch(() => emptyCharacterProfile()) })
+      .catch(() => ({ profile: emptyCharacterProfile() })),
+    diagnostics: arrayOf(diagnosticSchema),
+  })
+  .catch(() => ({ character: { profile: emptyCharacterProfile() }, diagnostics: [] }));
+export type CharacterSaveResult = z.infer<typeof characterSaveSchema>;
+
+/**
  * A persona library card (persona-library.plan.md). `title` is the per-owner-unique
  * label the card shows and the owner searches by; `name` is the in-fiction name a
  * character addresses — which is why the two are separate and why `name` may repeat.
@@ -1049,7 +1064,13 @@ export const charactersApi = {
     apiGet(listOf(characterSummarySchema, "characters"), withQuery("/api/characters", params)),
   get: (id: string) => apiGet(detailOf(characterDetailSchema, "character"), `/api/characters/${id}`),
   create: (body: unknown) => apiPost(createdRefSchema, "/api/characters", body),
-  update: (id: string, body: unknown) => apiPatch(z.unknown(), `/api/characters/${id}`, body),
+  /**
+   * The saved profile comes BACK because the save can add to it: `suggestedItems`
+   * in the body are materialized into library items server-side and their ids
+   * appended to the default outfit preset, so the editor adopts the returned
+   * profile rather than guessing the new ids.
+   */
+  update: (id: string, body: unknown) => apiPatch(characterSaveSchema, `/api/characters/${id}`, body),
   remove: (id: string) => apiDelete(`/api/characters/${id}`),
   /** Clone a public (or own) character into your library as an owned, private copy. */
   clone: (id: string) => apiPost(createdRefSchema, `/api/characters/${id}/clone`, {}),

@@ -79,6 +79,12 @@ export const characterPatchSchema = z.object({
   visibility: visibilitySchema.optional(),
   /** Persisted character-chat narrator pick (a NARRATIVE_MODELS id); empty ⇒ the chat default. */
   chatModel: z.string().trim().max(120).optional(),
+  /**
+   * Forge outfit suggestions drafted in the SHEET editor (in-sheet Forge, per-tab
+   * Re-draft) — materialized on exactly the same terms as the create body, so a
+   * suggestion is saved wherever it was drafted rather than only on the forge page.
+   */
+  suggestedItems: z.array(itemDefinitionSchema).max(50).default([]),
 });
 export type CharacterPatchBody = z.infer<typeof characterPatchSchema>;
 

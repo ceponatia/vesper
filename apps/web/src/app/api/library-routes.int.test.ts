@@ -185,6 +185,47 @@ describe.skipIf(!ready)("characters CRUD + search", () => {
     expect(again.character.profile.outfits[0]?.items).toEqual([outfit[0]]);
   });
 
+  it("PATCH materializes suggested outfit items drafted in the sheet editor", async () => {
+    // The in-sheet Forge / per-tab Re-draft draft suggestions on an EXISTING
+    // character; the edit page's Save is a PATCH, so it must materialize them on
+    // the same terms as create — otherwise the rows can only ever be discarded.
+    type PresetProfile = { profile: { outfits: { id: string; items: string[] }[] } };
+    const patched = await expectJson<{ character: PresetProfile; diagnostics: { code: string }[] }>(
+      await patchCharacterRoute(
+        apiRequest(`/api/characters/${characterId}`, {
+          method: "PATCH",
+          body: {
+            profile: { bio: "Re-drafted bio." },
+            suggestedItems: [
+              { kind: "clothing", name: "Harbor Peacoat", description: "Navy wool.", coverage: ["torso", "arms"], layer: 3 },
+            ],
+          },
+        }),
+        routeCtx({ id: characterId }),
+      ),
+      200,
+    );
+    const outfit = patched.character.profile.outfits[0]?.items ?? [];
+    expect(outfit.length).toBe(1);
+    const [coat] = await db().select().from(items).where(eq(items.id, outfit[0]!)).limit(1);
+    expect(coat?.name).toBe("Harbor Peacoat");
+    expect(coat?.tags).toContain("suggested");
+
+    // A re-send (an edit landed mid-save, so the client kept the rows) reuses the
+    // item by name and the outfit stays deduped — never a second peacoat.
+    const again = await expectJson<{ character: PresetProfile }>(
+      await patchCharacterRoute(
+        apiRequest(`/api/characters/${characterId}`, {
+          method: "PATCH",
+          body: { suggestedItems: [{ kind: "clothing", name: "Harbor Peacoat", coverage: ["torso"] }] },
+        }),
+        routeCtx({ id: characterId }),
+      ),
+      200,
+    );
+    expect(again.character.profile.outfits[0]?.items).toEqual(outfit);
+  });
+
   it("PATCH merges a partial profile without clobbering unsent fields", async () => {
     const patched = await expectJson<{ character: { profile: { bio: string; personality: string; aliases: string[] } } }>(
       await patchCharacterRoute(

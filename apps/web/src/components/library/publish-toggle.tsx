@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { charactersApi, itemsApi, locationsApi, socialCardsApi, type Visibility } from "@/lib/client/api";
+import { charactersApi, itemsApi, locationsApi, socialCardsApi, type ApiResult, type Visibility } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
@@ -16,7 +16,9 @@ import {
 
 export type { ShareableKind };
 
-const updaters: Record<ShareableKind, (id: string, body: unknown) => ReturnType<typeof charactersApi.update>> = {
+// The toggle reads only `ok` — each kind's PATCH returns its own envelope
+// (a character's carries the saved profile), so the shared shape is the widest one.
+const updaters: Record<ShareableKind, (id: string, body: unknown) => Promise<ApiResult<unknown>>> = {
   character: charactersApi.update,
   location: locationsApi.update,
   item: itemsApi.update,

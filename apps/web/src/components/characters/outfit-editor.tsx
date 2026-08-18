@@ -313,7 +313,8 @@ export function OutfitEditor({ outfits, onChange, suggestedItems, onChangeSugges
             Suggested new items
           </h3>
           <p className="text-xs text-paper-500">
-            Forge suggestions with no library match — saved as new items with this character.
+            Forge suggestions with no library match. Saving the character creates them as real
+            items and adds them to this outfit — discard any you don&apos;t want first.
           </p>
           <ul className="flex flex-col gap-1.5">
             {suggestedItems.map((item, index) => (

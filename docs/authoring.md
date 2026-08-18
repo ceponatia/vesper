@@ -19,7 +19,7 @@ Before the parallel sections run, the forge deterministically matches species id
 
 The forge returns a **draft** (never auto-saves). The forge UI renders it as the same form used for manual editing — accept, tweak any field, regenerate any single section (each agent can re-run independently), then save. After save, the avatar pipeline can run from the attributes.
 
-On save, `suggestedItems` in the create body are materialized as real library items (`materializeSuggestedItems` in `server/api/library.ts`): a suggestion whose name matches an existing item reuses it — never a duplicate. Failing an exact-name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUPE_MIN_SCORE`, same item kind) collapses a near-identical garment the agent missed (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert. New rows keep the `suggested` tag; the resulting ids are appended to `profile.defaultOutfit`. A bad suggestion degrades (invalid coverage ids dropped with a diagnostic) and never fails the save.
+On save, `suggestedItems` in the body are materialized as real library items (`materializeSuggestedItems` in `server/api/library.ts`) — on **create and on PATCH alike**, because the in-sheet Forge and the per-tab Re-draft draft suggestions on characters that already exist, and the editor's Save is a PATCH. A suggestion whose name matches an existing item reuses it — never a duplicate. Failing an exact-name match, a **conservative embedding backstop** (`fuzzyResolve` at `ITEM_DEDUPE_MIN_SCORE`, same item kind) collapses a near-identical garment the agent missed (`api.library.suggested_item.fuzzy_reused`); an embedding failure degrades to a fresh insert. New rows keep the `suggested` tag; the resulting ids are appended to `profile.defaultOutfit`. A bad suggestion degrades (invalid coverage ids dropped with a diagnostic) and never fails the save. The PATCH response returns the saved profile so the sheet editor can adopt the new ids and clear its suggestion rows — the outfit tab's "suggested" rows are pending until a save, and Save is what creates them.
 
 ## In-sheet forge: fill, re-draft, portrait
 
@@ -85,7 +85,7 @@ it creates whole characters from a prompt; these build parts of an existing shee
 
 A forge **draft** and a create endpoint's **input** are different shapes by design (drafts use names and suggestions; inputs use ids and definitions). Every forge ships a typed conversion, and the create endpoints use `.strict()` bodies — a draft posted to a create route is a loud 400 (`invalid_body`), never a silently empty save. Don't add a forge without its conversion path.
 
-- **Character**: the create body carries `suggestedItems`; `materializeSuggestedItems` (server/api/library.ts) turns them into library items (reuse-by-name, then a conservative embedding backstop, `suggested` tag) and appends ids to the character's default outfit preset.
+- **Character**: the create body **and the PATCH body** carry `suggestedItems` (the in-sheet forge drafts them on an existing character, whose save is a PATCH); `materializeSuggestedItems` (server/api/library.ts) turns them into library items (reuse-by-name, then a conservative embedding backstop, `suggested` tag) and appends ids to the character's default outfit preset.
 
 ## Social cards
 
