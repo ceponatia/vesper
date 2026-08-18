@@ -29,9 +29,10 @@ entirely. Nothing in the item model captures that today.
 ## What the owner gets
 
 - **Headwear that hides hair when it should.** A headscarf, wimple, turban or
-  helmet renders with the hair genuinely gone — not merely unmentioned, but
-  positively stated as covered, because an image model left to guess paints hair
-  by default.
+  helmet renders with **no hair showing at all** — not a wisp, not a fringe,
+  because covering every strand is the point of the garment. The hair is not
+  merely left unmentioned but positively stated as covered, since an image model
+  left to guess paints hair by default.
 - **Headwear that does not hide hair when it shouldn't.** Caps, hats, beanies and
   hoods keep the hair the player authored: colour, length and texture still read,
   because they still show below the brim. Headbands, hairpins, ribbons, tiaras
@@ -78,7 +79,14 @@ entirely. Nothing in the item model captures that today.
 - **Slice 2 — images stop showing hair that is covered.** Status: queued. The
   avatar and scene prompts drop hair description for fully enclosed hair and
   state the concealment positively. This is the slice that fixes the reported
-  problem.
+  problem, and it stands on its own.
+- **Slice 2b — the same instruction from the other side.** Status: blocked on
+  [image-render-quality.plan.md](image-render-quality.plan.md) slice 3. Telling a
+  model what *not* to draw is the stronger half of this instruction, and this
+  plan does not build its own channel for it: it contributes a named block to the
+  negative composer that plan is building. Until that composer exists there is
+  nowhere to put a context-aware negative, by that plan's own standing rule that
+  the shared render seam never invents negative content.
 - **Slice 3 — the reference render stops fighting it.** Status: queued. The
   identity-anchor phrase and the face-turned-away fallback both currently insist
   on preserving hair from the reference image; both learn to fall back to
@@ -110,18 +118,11 @@ claim needs observed evidence rather than a passing test.
 
 ## Open questions
 
-- **Does full enclosure mean no hair at all, or a deliberate fringe?** Many
-  headscarf styles show hair at the front on purpose. The proposal is that full
-  means none, and a fringe is authored as the partial band with the detail in the
-  description — but that decides how the default reads for every hijab in the
-  library ([detail](headwear-hair-occlusion.spec.md)).
-- **Which band does a visor take?** It has no crown at all, so it hides less than
-  a cap, yet it does sit across the fringe
-  ([detail](headwear-hair-occlusion.spec.md)).
-- **Is a positive concealment sentence enough, or does this need negative-prompt
-  steering too?** Negative support is per-model and is being worked in
-  [image-render-quality.plan.md](image-render-quality.plan.md); leaning on it
-  would couple the two plans ([detail](headwear-hair-occlusion.spec.md)).
+None. The three questions this plan opened with were settled by owner ruling on
+2026-08-18 — full enclosure shows no hair at all, a visor shows hair, and the
+concealment gets negative-prompt steering as well as the positive sentence. The
+rulings, and what each one binds, are recorded in
+[the spec](headwear-hair-occlusion.spec.md#owner-rulings-2026-08-18).
 
 ## Technical companion
 
