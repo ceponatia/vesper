@@ -5,11 +5,15 @@ import {
   chatContactGestureSchema,
   chatContactGestures,
   chatContactTargetNounAlternation,
+  chatRomanticContactGestures,
+  chatRomanticContactGestureSchema,
   contactSentenceEligible,
+  romanticContactSentenceEligible,
   normalizeTypographicQuotes,
   CHAT_CONTACT_SOURCE_LOCATION,
   CHAT_CONTACT_TARGET_LOCATION,
   CHAT_GESTURE_CONTACT,
+  CHAT_ROMANTIC_GESTURE_CONTACT,
   CHAT_ROMANTIC_PERMISSION_CUE_RE,
   CHAT_ROMANTIC_PERMISSION_TOUCH_RE,
 } from "./chat-contact-vocabulary";
@@ -138,5 +142,53 @@ describe("the romantic-permission trigger vocabulary (additions — permission s
     // `_` is a word character, so `romantic_touch` has no boundary before "touch".
     expect(CHAT_ROMANTIC_PERMISSION_TOUCH_RE.test("/permission grant player romantic_touch")).toBe(false);
     expect(CHAT_ROMANTIC_PERMISSION_TOUCH_RE.test("She folds the blanket.")).toBe(false);
+  });
+});
+
+describe("the romantic gesture vocabulary — a second lane, not a wider one", () => {
+  it("is its own closed family, disjoint from the affectionate one", () => {
+    expect(chatRomanticContactGestures).toEqual(["caress", "stroke", "cup"]);
+    // The guard that matters: the NPC reply-scene classifier closes over
+    // `chatContactGestureSchema`, so an overlap here would hand the NPC lane
+    // authority to propose romantic contact before that authority is reviewed.
+    const affectionate = new Set<string>(chatContactGestures);
+    for (const gesture of chatRomanticContactGestures) {
+      expect(affectionate.has(gesture)).toBe(false);
+      expect(chatContactGestureSchema.safeParse(gesture).success).toBe(false);
+    }
+    for (const gesture of chatContactGestures) {
+      expect(chatRomanticContactGestureSchema.safeParse(gesture).success).toBe(false);
+    }
+  });
+
+  it("states pressure per gesture and never states an area", () => {
+    expect(CHAT_ROMANTIC_GESTURE_CONTACT.caress).toEqual({ pressure: "light", motion: "sliding" });
+    expect(CHAT_ROMANTIC_GESTURE_CONTACT.stroke).toEqual({ pressure: "light", motion: "sliding" });
+    // A cup states no motion: holding is not moving, and nobody said it was.
+    expect(CHAT_ROMANTIC_GESTURE_CONTACT.cup).toEqual({ pressure: "light" });
+    for (const gesture of chatRomanticContactGestures) {
+      expect(CHAT_ROMANTIC_GESTURE_CONTACT[gesture].area).toBeUndefined();
+    }
+  });
+});
+
+describe("the romantic sentence gate — the carve-out, and only the carve-out", () => {
+  // The gate is a second line, not the boundary: `ROMANTIC_DIRECT_RE`'s
+  // whole-sentence anchoring is what excludes out-of-scope content, and the
+  // adapter suite asserts that. What is unique here is the carve-out itself —
+  // that the two gates disagree about exactly the three admitted verbs, which is
+  // what makes a refused romantic line unable to re-enter as an affectionate one.
+  it("admits the closed family that the affectionate gate vetoes", () => {
+    for (const sentence of ["I caress your arm.", "I stroke your hair.", "I cup your hands."]) {
+      expect(romanticContactSentenceEligible(sentence)).toBe(true);
+      // The two gates are mutually exclusive by construction — which is why a
+      // refused romantic line can never re-enter as an affectionate act.
+      expect(contactSentenceEligible(sentence)).toBe(false);
+    }
+  });
+
+  it("leaves the affectionate gate's own answers untouched", () => {
+    expect(contactSentenceEligible("I rest my hand on your shoulder.")).toBe(true);
+    expect(romanticContactSentenceEligible("I rest my hand on your shoulder.")).toBe(true);
   });
 });

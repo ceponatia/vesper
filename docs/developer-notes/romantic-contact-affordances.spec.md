@@ -55,8 +55,8 @@ visual memory, narrator repetition, garment state, body residue, or permission.
 | Proximity/facing/reach | Built | Engine-owned equivalent | Chat relations require continuous co-presence. |
 | Posture/support | Built coarse read | Richer engine state | No general fine-pose solver. |
 | Player approach/depart | Built | Engine command path | Player lane only authors the player's body. |
-| Player affectionate hand contact | Built/live lane | Not this adapter | Deterministic allow-list; romantic framing vetoed. |
-| Player romantic contact | **No producer** | Not claimed | Required before the permission proof can run. |
+| Player affectionate hand contact | Built/live lane | Not this adapter | Deterministic allow-list; romantic framing still vetoed. |
+| Player romantic contact | Built + tested, permission gated | Not claimed | Closed caress/stroke/cup family, whole-sentence anchored, nine loci; unproven live. |
 | Contact lifecycle | Built | No parity claim here | Stable active contact projection + start/update/end commits. |
 | Contact persistence/retake | Built | Engine-specific | Character chat uses `chat_contact_events`. |
 | NPC deterministic contact endings | Built | Engine-specific | Frozen live floor. |
@@ -150,20 +150,44 @@ apps/web/src/server/engine/chat-pipeline.ts
 
 ### Player side
 
-The current producer is deliberately narrow:
+The producers are deliberately narrow:
 
 - player narration spans only;
 - explicit first-person movement/touch;
 - approach/depart plus affectionate hand contact;
-- one admitted affectionate action per turn;
-- no romantic/intimate/resisting/restraining fallback;
+- a separate closed romantic caress/stroke/cup hand contact, matched against the
+  **whole sentence** (both the shape and the locus are allow-lists, so a trailing
+  clause of any content refuses), on the affectionate lane's eight loci plus
+  `face`, and running only when a permission owner is wired;
+- one admitted contact action per turn, of whichever kind the player wrote —
+  a single scan in written order keeps "first eligible sentence wins";
+- no intimate/resisting/restraining fallback, and no romantic-to-affectionate
+  downgrade: a line the romantic gate rejects carries romantic framing, which
+  the affectionate gate vetoes whole;
 - material read from the current exchange's wardrobe cut;
 - persistence acknowledgment required before the narrator may be told a contact
   committed.
 
-**Important:** `ChatContactAct.actionKind` is currently the literal
-`"affectionate"`. The shared contact core supports `romantic`, but the chat lane
-has no producer for it.
+**Important:** `ChatContactAct.actionKind` is `"affectionate" | "romantic"` —
+the two kinds this lane has a producer for, deliberately narrower than the
+core's `ContactActionKind`. `incidental`, `casual`, and `intimate` stay compile
+errors here, so a kind cannot reach the resolver ahead of its producer and its
+permission owner. The NPC lane is separate and still hard-codes
+`"affectionate"`; its evidence gate enforces that.
+
+### Inspector preview
+
+`previewChatContactOutcomes` in `chat-pipeline.ts` loads the permission ledger
+under the same `chatRomanticPermissionEnabled()` gate as the live leg, and is
+async for that reason.
+
+The preview **obeys** the permission flag rather than reporting on it. Without
+the ledger read the preview would produce no romantic act at all — the producer
+is gated on the policy source's presence — while the live turn consults the real
+owner, so the preview would show silence for a romantic act the live turn would
+in fact commit. A preview that disagrees with the turn it previews is worse than
+no preview at all. With the flag off both paths leave the romantic producer
+switched off, which is the honest preview of a turn that does not run it.
 
 ### NPC side
 
@@ -206,8 +230,13 @@ Rules:
 - retake prunes discarded permission authority.
 
 The permission owner answers attempts. **It does not create attempts.** The
-missing romantic player producer is therefore a real integration blocker, not a
-flag-setting issue.
+narrow romantic player producer now supplies them, and only while this owner is
+available to answer: the producer is gated on `permissionPolicy !== undefined`,
+so with `CHAT_ROMANTIC_PERMISSION` off it does not run and the lane is
+byte-identical to its pre-producer behavior. That is stronger than silence, and
+deliberately so — a turn admits one act, so a produced-then-unresolved romantic
+sentence would consume the slot and suppress a later affectionate sentence that
+commits today.
 
 ## Visual-state integration
 
@@ -320,11 +349,14 @@ and restores it. Contact remains physical truth only.
 ### Track B — permission proof
 
 4. Add a **separate narrow player romantic action producer**; do not weaken the
-   affectionate detector.
+   affectionate detector. Status: built 2026-08-18.
 5. Reuse the shared resolver/lifecycle with `actionKind: "romantic"` and the
-   existing permission read.
+   existing permission read. Status: built 2026-08-18 with step 4.
 6. Prove grant/no-grant/reverse-direction/wrong-scope/withdrawal/retake cases.
+   Status: built 2026-08-18 — pure tests drive the real permission seam; retake
+   restoration stays with the `chat-permission.int.test.ts` integration layer.
 7. Run the first controlled player -> NPC romantic live proof.
+   Status: next — owner-gated; no code work is outstanding for it.
 
 Track B does not require general NPC authority unless the fixture asks an NPC to
 voluntarily reposition.

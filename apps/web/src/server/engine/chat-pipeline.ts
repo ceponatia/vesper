@@ -3600,13 +3600,13 @@ function previewSensoryFocus(input: {
  * Fenced whole like the live leg (docs/resilience.md): any failure degrades to no
  * outcomes, which is the flag-off preview, and never costs the inspector its page.
  */
-function previewChatContactOutcomes(input: {
+async function previewChatContactOutcomes(input: {
   chatId: string;
   character: { id: string; name: string };
   cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
   message: { id: string | null; content: string; narrator: boolean };
   sink: DiagnosticCollector;
-}): { outcomes: readonly PhysicalActionOutcome[]; reachPremise: ChatContactReachPremise | null } {
+}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; reachPremise: ChatContactReachPremise | null }> {
   const { cut } = input;
   try {
     // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
@@ -3643,6 +3643,30 @@ function previewChatContactOutcomes(input: {
           ]
         : [];
 
+    // The permission owner's read, gated exactly as the live leg gates it. This
+    // one the preview OBEYS rather than reports: a romantic attempt resolves
+    // against whatever the ledger says, and a preview that answered from an
+    // owner the live turn never consulted would explain a commit the turn did
+    // not make. With the flag off, both paths reach the adapter's bare
+    // `not_required` stub and both fall to `permission_unresolved` — silence,
+    // which is the honest preview of a silent turn.
+    let permissionPolicy: ChatContactPolicySource | undefined;
+    if (chatRomanticPermissionEnabled()) {
+      const permissionProjection = foldChatPermissionProjection(
+        await listChatPermissionEvents(input.chatId, input.sink),
+        input.sink,
+      );
+      permissionPolicy = (attempt) =>
+        derivePermissionPolicyRead({
+          projection: permissionProjection,
+          permittedActorId: attempt.permittedActorId,
+          grantingTargetId: attempt.grantingTargetId,
+          actionKind: attempt.actionKind,
+          playerSubjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+          attemptActionId: attempt.actionId,
+        });
+    }
+
     // The planned scene — the seeding, any release, and any movement the line wrote —
     // is deliberately NOT taken, and neither are the plan's `ended` commits: both are
     // authoritative state a live turn persists with the exchange, and a preview has no
@@ -3656,6 +3680,7 @@ function previewChatContactOutcomes(input: {
       characters,
       eventRef,
       storyTime: storyMinute,
+      ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
       sink: input.sink,
     });
     if (act === null || resolution === null) return { outcomes: [], reachPremise: null };
@@ -3709,7 +3734,7 @@ export async function previewChatPhysicalGuidance(input: {
   // `CHAT_CONTACT_ACTIONS` off too, which is why this runs unconditionally and the
   // flag rides the preview as a field. (`previewChatPrompt` gates on it instead: that
   // surface is showing prompt bytes, so it has to obey.)
-  const contact = previewChatContactOutcomes({
+  const contact = await previewChatContactOutcomes({
     chatId: input.chatId,
     character: input.character,
     cut,
@@ -3811,7 +3836,7 @@ export async function previewChatPrompt(input: {
     // it rides in. Unlike the inspector, this surface OBEYS `CHAT_CONTACT_ACTIONS` —
     // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
     const contact = chatContactActionsEnabled()
-      ? previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
+      ? await previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
       : { outcomes: [] as readonly PhysicalActionOutcome[], reachPremise: null };
     previewPhysicalGuidance = renderChatPhysicalGuidance({
       guidance: buildChatPhysicalGuidance({

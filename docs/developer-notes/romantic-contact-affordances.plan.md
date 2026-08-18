@@ -3,22 +3,31 @@
 Status: **active; reconciled to `main` on 2026-08-18.** The affectionate contact
 slice is live in character chat. The shared contact core, durable contact
 lifecycle, scene/body-relations owner, player-authored affectionate action lane,
-NPC deterministic ending floor, NPC reply-scene authority implementation, and
-directional `romantic_touch` permission owner all exist. The NPC authority
-increments and romantic permission owner remain gated. The foot domain is built
-but deliberately unregistered. Contact effects and intimate-region mechanics
-remain future work.
+narrow player-authored romantic action producer, NPC deterministic ending floor,
+NPC reply-scene authority implementation, and directional `romantic_touch`
+permission owner all exist. The NPC authority increments and romantic permission
+owner remain gated; the romantic producer only runs when a permission owner is
+wired, so with the flag off the lane behaves exactly as it did before the
+producer existed. The foot domain is built but deliberately unregistered.
+Contact effects and intimate-region mechanics remain future work.
+
+Outcome: A player can touch a character and have the game itself settle what
+happened — who moved, what was in the way, whether that character had allowed it
+— so that physical moments stop being whatever the narrator improvised that
+turn.
 
 This reconciliation changes the continuation design in two important ways:
 
 1. **Visual perception/presentation is now owned by visual state.** Contact must
    not build a second visual visibility, salience, repetition, memory, or narrator
    capture system.
-2. **The permission proof is missing an action producer.** The live player touch
-   producer is intentionally and literally affectionate-only, so enabling
-   `CHAT_ROMANTIC_PERMISSION` cannot yet produce a permission-gated romantic
-   attempt. A narrow romantic action seam is now an explicit prerequisite for
-   the first romantic proof.
+2. **The permission proof needs its own action producer.** The live player touch
+   producer was intentionally and literally affectionate-only, so enabling
+   `CHAT_ROMANTIC_PERMISSION` alone could not produce a permission-gated
+   romantic attempt. A narrow romantic action seam is an explicit prerequisite
+   for the first romantic proof. That producer is now built and deterministically
+   tested; what remains of Track B is owner work — the controlled live proof and
+   the rollout ruling for this specific action surface.
 
 Technical companions:
 
@@ -70,13 +79,13 @@ The narrator renders those answers. It does not become the owner of them.
 | Area | Current state |
 | --- | --- |
 | Shared contact core | Built and used by character chat under `apps/web/src/contracts/affordances/contact/`. |
-| Player movement + affectionate hand contact | Built and live behind `CHAT_CONTACT_ACTIONS`; the detector is deliberately affectionate-only and vetoes romantic/intimate framing. |
+| Player movement + affectionate hand contact | Built and live behind `CHAT_CONTACT_ACTIONS`; unchanged by the romantic work, and still vetoes romantic/intimate framing outright. |
 | Contact persistence | Durable `chat_contact_events` lifecycle with idempotent start/update/end projection and retake pruning. |
 | Scene/body relations | Built: participants, control, posture, support, proximity, facing, reach, discontinuity clearing, and active contacts. |
 | NPC deterministic endings | Built and part of the live contact floor. |
 | NPC movement/start/update authority | All three increments are built behind `CHAT_NPC_SCENE_DECISIONS` and the authority-kind scope. Shadow measurement opened 2026-08-10; no committed review/acceptance artifact exists in the repository as of this reconciliation. |
 | Romantic permission owner | Built behind `CHAT_ROMANTIC_PERMISSION`, exact directional `romantic_touch` only; developer override is separate. |
-| Romantic action producer | **Missing.** No live player action has `actionKind: "romantic"`; the existing `ChatContactAct` is typed to `"affectionate"`. |
+| Romantic action producer | Built: a separate narrow player producer emits `actionKind: "romantic"` for a closed caress/stroke/cup family. Runs only when a permission owner is wired, so `CHAT_ROMANTIC_PERMISSION=off` leaves the lane unchanged. Deterministically tested; not yet proven live. |
 | Foot domain | Built and fixture-driven, intentionally absent from the live affordance-domain registry. |
 | Body-surface wetness | Owned and now consumed beyond hair; visual state projects non-dry regional wetness. |
 | Residue / dirt / blood / cosmetics wear on skin | No current body-state owner. |
@@ -231,15 +240,18 @@ selection still decide whether it is seen or mentioned.
 This is **not** required for the first permission proof, whose correctness can be
 verified from the committed contact/action outcome and inspector state.
 
-### 4. The first romantic proof is currently impossible
+### 4. The first romantic proof needed its own action producer
 
-The player-side producer is intentionally narrow:
+Status: built 2026-08-18 — the producer exists, its evidence and permission
+behavior are deterministically tested, and the affectionate path is unchanged.
+
+The player-side producer used to be narrow in a way that closed the proof off:
 
 - `detectChatAffectionateTouch` uses an allow-list;
-- `ChatContactAct.actionKind` is literally `"affectionate"`;
+- `ChatContactAct.actionKind` was literally `"affectionate"`;
 - romantic/intimate framing is vetoed rather than downgraded.
 
-The permission owner is therefore an authoritative answer with no romantic
+The permission owner was therefore an authoritative answer with no romantic
 attempt to answer.
 
 **Ruling:** insert a new narrow player-authored romantic action producer before
@@ -251,7 +263,8 @@ For the first proof, keep it intentionally small:
 
 - player actor only;
 - hand as the acting surface;
-- non-intimate target loci already supported by the contact vocabulary;
+- non-intimate target loci already supported by the contact vocabulary, plus
+  the face (owner ruling, below);
 - a closed, explicitly romantic gesture vocabulary such as a caress/stroke/cup
   family with deterministic evidence validation;
 - no target movement or implicit emotional reaction;
@@ -263,6 +276,42 @@ For the first proof, keep it intentionally small:
 The target NPC's existing `romantic_touch` grant must be read before the attempt
 is resolved. No grant, wrong direction, wrong scope, withdrawn grant, or
 unavailable owner must prevent commitment.
+
+The delivered producer holds that whole boundary. Two consequences are worth
+naming for the owner.
+
+**Both halves of the act are now allow-lists.** The first attempt guarded where
+a touch could land with an allow-list, but guarded what else the sentence could
+say with a list of refused words. That was the wrong shape and adversarial
+probing proved it twice: the refusal list missed whole families it had never
+thought to name, while simultaneously refusing innocent prose — the entry meant
+to catch *untie* was also catching *until*. A list of forbidden words over
+free-form English cannot be finished, and every entry that closes a gap also
+refuses something harmless.
+
+The producer now matches the **whole sentence** instead: an opening `I`, an
+optional adverb from a closed set, one of the three verbs, whose body, an
+allowed body area, an optional closing phrase from a closed set, and the end of
+the sentence. `I caress your arm and <anything>` is refused because there is a
+trailing clause at all — the producer forms no opinion about what the clause
+says. Nothing outside the shape it recognizes can commit.
+
+**Owner ruling (2026-08-18): the romantic lane admits the cheek.** `cheek` and
+`cheeks` map to the body registry's existing coarse `face` area — no new cheek
+location was invented — which gives `cup` the target it was missing. The romantic
+lane now reaches nine body areas; the affectionate lane still reaches eight and
+refuses the cheek in every form. The constraint the owner attached: the shared
+refusal list that guards the affectionate detector and the frozen NPC ending
+floor must not lose the cheek to make this work, so the carve-out lives in a
+romantic-only list and the shared one is byte-identical. Detail in the
+permission spec.
+
+**The cost, stated plainly.** Ordinary romantic prose carrying a second clause —
+`"I caress your arm until you smile."` — now commits nothing. That is a refusal
+where a commit would arguably have been fine. It is never the reverse, and the
+asymmetry is the point: the failure this design accepts is silence, and the
+failure it refuses is committing world state nobody authorized. If the live proof
+finds it too tight, loosening it is a candidate follow-up.
 
 ### 5. NPC authority review and player romantic proof are parallel gates, not one chain
 
@@ -338,6 +387,25 @@ These remain unchanged.
 
 ### Track A — operational review of already-built NPC authority
 
+Status: **hold — 2026-08-18 owner ruling.** Keep shadow measurement running; do
+not enable NPC authority. This is not a rejection: the evidence needed to accept
+it does not exist yet.
+
+Two conditions the owner attached to the eventual review:
+
+- **Weigh precision over recall.** A missed NPC movement means Vesper fails to
+  capture something the narrator said. A false commit means Vesper writes
+  authoritative world state the narrator never said. The second is much worse,
+  so the review is not looking for the best overall score.
+- **Set the acceptance thresholds before reading the corpus.** A number chosen
+  after seeing the data is a description of the data, not a gate. The owner has
+  approved a pre-registered gate for `movement` authority — sample size,
+  precision, a zero-tolerance failure class, recall, latency, and timeout — which
+  is written down in the NPC actor-control spec and applies to `movement` alone;
+  each later widening re-runs it. Note that precision and recall cannot come from
+  the report tool, which computes no accuracy by design: they need a human
+  labelling pass that has not happened.
+
 1. Export/review the 2026-08-10+ shadow corpus with
    `pnpm report:npc-scene-decisions`.
 2. Record trigger accuracy, false positives/negatives, drop reasons,
@@ -355,9 +423,16 @@ Do not infer one from the existence of telemetry.
 
 5. **Build the narrow player romantic action producer** described above. This is
    the new prerequisite the old plan missed.
+   Status: built 2026-08-18 — a closed caress/stroke/cup family on the existing
+   non-intimate body areas, refusing everything else rather than softening it.
 6. Wire its attempt to the existing permission projection/read and shared contact
    resolver without changing the affectionate path.
-7. Run deterministic/adversarial tests for:
+   Status: built 2026-08-18 with item 5 — one player producer now feeds the
+   resolver, and the permission read the pipeline already loads answers it.
+7. Run deterministic/adversarial tests for the cases below.
+   Status: built 2026-08-18 — every case is covered by the pure suite **except
+   retake**, whose permission/contact restoration is exercised by the existing
+   `chat-permission.int.test.ts` integration layer instead.
    - grant present -> physically valid action commits;
    - no grant -> no contact commit;
    - reverse-direction grant -> no commit;
@@ -368,9 +443,11 @@ Do not infer one from the existence of telemetry.
    - permission-neutral affectionate touch remains unchanged.
 8. Enable `CHAT_ROMANTIC_PERMISSION` only for the controlled proof and run the
    first player -> NPC live scenario.
+   Status: next — owner-gated, not code-gated. Nothing further needs building.
 9. If the proof passes, decide the production rollout of that **specific**
    romantic action surface. Do not infer support for kissing, undressing,
    intimate touch, or sex.
+   Status: owner decision, queued behind item 8.
 
 Track B does not wait for NPC movement/start/update authority unless the chosen
 fixture requires an NPC voluntary adjustment.
@@ -445,8 +522,9 @@ were off. Treat that as a dated deployment observation, not a code invariant.
 ### Operational
 
 - Does the NPC shadow corpus meet the accuracy/latency/cost gate for movement
-  authority? The codebase contains the measurement machinery but no committed
-  final ruling.
+  authority? Still genuinely open: the owner has ruled to hold and keep
+  measuring — see Track A — so there is now a ruling but not an acceptance, and
+  the evidence that would settle it does not exist yet.
 - After the first romantic proof, should that narrow player action surface ship
   immediately or remain test-only until the visual contact-relation projection
   is available?

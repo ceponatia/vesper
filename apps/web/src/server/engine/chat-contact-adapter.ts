@@ -7,10 +7,14 @@ import {
   buildActionOutcome,
   chatAffectionateTargetLocationOf,
   chatContactTargetNounAlternation,
+  chatRomanticTargetLocationOf,
+  chatRomanticTargetNounAlternation,
   contactSentenceEligible,
+  romanticContactSentenceEligible,
   CHAT_CONTACT_RESTRAINT_RE,
   CHAT_CONTACT_SOURCE_LOCATION,
   CHAT_GESTURE_CONTACT,
+  CHAT_ROMANTIC_GESTURE_CONTACT,
   commitContactResolution,
   contactActionOutcomeStatus,
   contactActionRequiresPermission,
@@ -46,6 +50,7 @@ import {
   type AffordanceStoryTime,
   type AffordanceSubjectId,
   type ChatContactGesture,
+  type ChatRomanticContactGesture,
   type ChatEnvironment,
   type ChatGarmentStore,
   type CommittedContactOutcome,
@@ -54,15 +59,18 @@ import {
   type ContactActionIntent,
   type ContactActionKind,
   type ContactActorControlDecision,
+  type ContactAreaBand,
   type ContactBodySurfaceRef,
   type ContactCommitOutcome,
   type ContactEndedCommit,
   type ContactEndReason,
   type ContactEventRef,
   type ContactInteractionPolicyRead,
+  type ContactMotionBand,
   type ContactMaterialLayerRead,
   type ContactMaterialRead,
   type ContactPersistenceAcknowledgment,
+  type ContactPressureBand,
   type ContactRejectionReason,
   type ContactRequirementCode,
   type ContactResolution,
@@ -966,8 +974,49 @@ export interface ChatContactActShape {
 export interface ChatContactAct extends ChatContactActShape {
   readonly actionId: string;
   readonly sourceLocationId: string;
-  readonly actionKind: "affectionate";
-  readonly gesture: ChatContactGesture;
+  /**
+   * The two kinds this lane has a PRODUCER for — never the core's full
+   * `ContactActionKind`.
+   *
+   * A kind the core supports and the lane cannot author is exactly the gap the
+   * plan calls out (§"The first romantic proof is currently impossible"): the
+   * permission owner became an authoritative answer with no attempt to answer.
+   * Naming only the producible kinds here keeps that gap a compile error rather
+   * than a silent `unresolved` at runtime, so `incidental`, `casual` and
+   * `intimate` cannot be smuggled in ahead of their producers and their owners.
+   */
+  readonly actionKind: "affectionate" | "romantic";
+  readonly gesture: ChatContactActGesture;
+}
+
+/**
+ * Every gesture either producer can author. The two families stay separate at
+ * the vocabulary (see `chatRomanticContactGestures`) because the NPC classifier
+ * closes over the affectionate one; they meet here, where the act is already
+ * tagged with the kind that says which family produced it.
+ */
+export type ChatContactActGesture = ChatContactGesture | ChatRomanticContactGesture;
+
+/** The contact bands a gesture from either family states. */
+export function chatContactGestureBands(gesture: ChatContactActGesture): {
+  readonly pressure: ContactPressureBand;
+  readonly motion?: ContactMotionBand;
+  readonly area?: ContactAreaBand;
+} {
+  // `Object.hasOwn`, never `in`: `in` walks the prototype chain, so a gesture
+  // named `__proto__` or `constructor` arriving from a future parsed payload
+  // would select `Object.prototype` and yield an intent with no pressure at all.
+  if (Object.hasOwn(CHAT_ROMANTIC_GESTURE_CONTACT, gesture)) {
+    return CHAT_ROMANTIC_GESTURE_CONTACT[gesture as ChatRomanticContactGesture];
+  }
+  if (Object.hasOwn(CHAT_GESTURE_CONTACT, gesture)) {
+    return CHAT_GESTURE_CONTACT[gesture as ChatContactGesture];
+  }
+  // Neither table owns it. Unreachable through the closed union, but `__proto__`
+  // reaches `Object.prototype` through a bare index, which would build an intent
+  // with no pressure at all — the lightest band wins by accident. Fail loud
+  // instead: an unknown gesture is a contract violation, not a light touch.
+  throw new Error(`unknown chat contact gesture: ${String(gesture)}`);
 }
 
 /**
@@ -1014,24 +1063,240 @@ export function detectChatAffectionateTouch(
   input: ChatContactDetectionInput & { readonly eventRef: ContactEventRef },
 ): ChatContactAct | null {
   for (const sentence of contactSentences(input)) {
-    const match = CONTACT_PLACE_RE.exec(sentence) ?? CONTACT_DIRECT_RE.exec(sentence);
-    if (match === null) continue;
-    const target = resolveContactTarget(match[2] ?? "", input.characters);
-    if (target === null) continue;
-    const locationId = chatAffectionateTargetLocationOf(match[3] ?? "");
-    if (locationId === undefined) continue;
-    const shape: ChatContactActShape = {
-      actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
-      targetSubject: target.subjectId,
-      targetLocationId: locationId,
-    };
-    return {
-      ...shape,
-      actionId: chatContactActionId(input.eventRef, shape),
-      sourceLocationId: CHAT_CONTACT_SOURCE_LOCATION,
-      actionKind: "affectionate",
-      gesture: gestureOf(match[1] ?? ""),
-    };
+    const act = affectionateActInSentence(sentence, input);
+    if (act !== null) return act;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Romantic touch — the narrow player-authored producer
+// (romantic-contact-affordances.plan.md §"Design corrections from this review"
+// 4; boundary owned by spec.permission.md §"First romantic action boundary")
+// ---------------------------------------------------------------------------
+
+/**
+ * "I caress her arm" / "I stroke your hair" / "I cup her hands".
+ *
+ * ONE form, the direct-object one, and deliberately no `place` twin. The
+ * affectionate lexicon needs both because "I rest my hand on your shoulder"
+ * and "I pat your head" are both ordinary; a romantic caress is stated
+ * directly, and every extra admitted shape is another sentence this proof has
+ * to be sure it read correctly. The acting surface is `hands` by the same law
+ * as the affectionate detector — the verbs name a hand's action, and which
+ * fingers is a question nobody answered.
+ *
+ * The target alternation is the SAME non-intimate lexicon the affectionate
+ * detector uses. The permission spec's boundary is "non-intimate target loci
+ * already supported by the chat contact vocabulary", so the first romantic
+ * proof adds no body area at all: what changes is the framing and the
+ * permission scope it therefore needs, never the reachable anatomy.
+ */
+/**
+ * Closed leading adverbs and trailing adjuncts — the only words allowed to sit
+ * beside the act inside an admitted sentence.
+ *
+ * Both lists are short because both are the price of the anchoring below: every
+ * word admitted here is a word that no longer has to be proven harmless by a
+ * deny-list. `in mine` earns its place by making "I cup your hands in mine" —
+ * the most natural phrasing of the gesture — an admitted act rather than a
+ * near-miss.
+ */
+const ROMANTIC_LEADING_ADVERB = "gently|softly|slowly|lightly|carefully|tenderly|quietly";
+const ROMANTIC_TRAILING_ADJUNCT =
+  "in mine|in my hands?|with my hand|with my palm|gently|softly|slowly|lightly|tenderly|once|twice|briefly|again|for a moment";
+
+/**
+ * ANCHORED TO THE WHOLE SENTENCE, and that is the guard.
+ *
+ * The affectionate patterns float: they look for their shape anywhere in the
+ * sentence, and the words around it are policed by shared vetoes. The romantic
+ * producer cannot borrow that design, because the content it must exclude —
+ * every way English can express sex, restraint, undressing, and anatomy — is an
+ * open set, and an earlier deny-list attempt at exactly this leaked 75 of 86
+ * adversarial probes while refusing ordinary lines like "I caress your arm
+ * until you smile".
+ *
+ * So an admitted romantic sentence must be the act and nothing else: `^`, an
+ * optional closed adverb, the closed verb family, the owner, an allow-listed
+ * locus, optional closed adjuncts, terminal punctuation, `$`. `I caress your
+ * arm and chain you to the bed` is refused because of the trailing clause, with
+ * no opinion about chains — which is what makes the boundary hold against
+ * wording nobody enumerated.
+ *
+ * The cost is deliberate and one-directional: ordinary romantic prose that
+ * carries a second clause commits nothing. That is a refusal where a commit was
+ * arguably fine, never a commit where a refusal was required, and the first
+ * proof is the right place to pay it.
+ *
+ * Capture-group contract is unchanged — 1 verb, 2 owner, 3 noun — so it shares
+ * `playerContactActFrom` with the affectionate patterns.
+ */
+const ROMANTIC_DIRECT_RE = new RegExp(
+  `^\\s*i\\s+(?:(?:${ROMANTIC_LEADING_ADVERB})\\s+){0,2}` +
+    `(caress|caresses|caressed|caressing` +
+    `|stroke|strokes|stroked|stroking|cup|cups|cupped|cupping)\\s+` +
+    `(${CONTACT_OWNER})\\s+(${chatRomanticTargetNounAlternation})\\b` +
+    `(?:\\s+(?:${ROMANTIC_TRAILING_ADJUNCT}))*\\s*[.!]?\\s*$`,
+  "iu",
+);
+
+function romanticGestureOf(verb: string): ChatRomanticContactGesture {
+  const stem = verb.toLowerCase();
+  if (stem.startsWith("caress")) return "caress";
+  if (stem.startsWith("cup")) return "cup";
+  return "stroke";
+}
+
+/**
+ * The romantic commit gate: the romantic sentence rules PLUS the same restraint
+ * veto the affectionate commit path applies. Restraint is orthogonal to
+ * framing — `trapped` mobility has no producer in the scene owner either way.
+ */
+function romanticCommitSentenceEligible(sentence: string): boolean {
+  return romanticContactSentenceEligible(sentence) && !CHAT_CONTACT_RESTRAINT_RE.test(sentence);
+}
+
+/**
+ * The player's romantic touch this turn, or `null`.
+ *
+ * Everything the affectionate detector fails closed on, this fails closed on
+ * too — the shared span parser, the shared owner resolver (a pronoun in a group
+ * of two is silence, not a guess), the shared non-intimate locus allow-list.
+ * What differs is exactly two things, which is the whole point: the admitted
+ * verb family, and `actionKind: "romantic"`, which is what finally gives the
+ * directional permission owner an attempt to answer.
+ *
+ * It never degrades to `affectionate`. A romantic line the permission owner
+ * refuses is a refused romantic action, not a milder one that happened anyway.
+ */
+export function detectChatRomanticTouch(
+  input: ChatContactDetectionInput & { readonly eventRef: ContactEventRef },
+): ChatContactAct | null {
+  for (const sentence of contactSentences(input, romanticCommitSentenceEligible)) {
+    const act = romanticActInSentence(sentence, input);
+    if (act !== null) return act;
+  }
+  return null;
+}
+
+/**
+ * One act from one matched sentence, for either kind.
+ *
+ * Every contact regex in this lane shares one capture-group contract — 1 is the
+ * verb, 2 the owner token, 3 the target noun — so the only things that vary
+ * between the two producers are the pattern that matched, the kind, and which
+ * verb table reads group 1. Everything after the match is identical by law, not
+ * by coincidence: both kinds resolve the owner through the same roster rules
+ * (an ambiguous pronoun is silence), both land on the same non-intimate locus
+ * allow-list, and both mint the same deterministic action id, so a retake
+ * reproduces either one.
+ */
+function playerContactActFrom(
+  match: RegExpExecArray | null,
+  input: ChatContactDetectionInput & { readonly eventRef: ContactEventRef },
+  actionKind: ChatContactAct["actionKind"],
+  gestureFor: (verb: string) => ChatContactActGesture,
+  locusOf: (noun: string) => string | undefined,
+): ChatContactAct | null {
+  if (match === null) return null;
+  const target = resolveContactTarget(match[2] ?? "", input.characters);
+  if (target === null) return null;
+  const locationId = locusOf(match[3] ?? "");
+  if (locationId === undefined) return null;
+  const shape: ChatContactActShape = {
+    actorSubject: CHAT_CONTACT_PLAYER_SUBJECT,
+    targetSubject: target.subjectId,
+    targetLocationId: locationId,
+  };
+  return {
+    ...shape,
+    actionId: chatContactActionId(input.eventRef, shape),
+    sourceLocationId: CHAT_CONTACT_SOURCE_LOCATION,
+    actionKind,
+    gesture: gestureFor(match[1] ?? ""),
+  };
+}
+
+function romanticActInSentence(
+  sentence: string,
+  input: ChatContactDetectionInput & { readonly eventRef: ContactEventRef },
+): ChatContactAct | null {
+  return playerContactActFrom(
+    ROMANTIC_DIRECT_RE.exec(sentence),
+    input,
+    "romantic",
+    romanticGestureOf,
+    chatRomanticTargetLocationOf,
+  );
+}
+
+function affectionateActInSentence(
+  sentence: string,
+  input: ChatContactDetectionInput & { readonly eventRef: ContactEventRef },
+): ChatContactAct | null {
+  return playerContactActFrom(
+    CONTACT_PLACE_RE.exec(sentence) ?? CONTACT_DIRECT_RE.exec(sentence),
+    input,
+    "affectionate",
+    gestureOf,
+    chatAffectionateTargetLocationOf,
+  );
+}
+
+/**
+ * THE ONE PLAYER CONTACT PRODUCER — the single act this turn, of whichever kind
+ * the player actually wrote.
+ *
+ * One scan, not two passes, because "first eligible sentence wins" is the law
+ * both detectors already documented and two sequential passes would quietly
+ * break it: a romantic second sentence would outrank an affectionate first one
+ * purely because the romantic pass ran first. The scan walks the message in
+ * written order and asks each sentence the romantic question before the
+ * affectionate one — an ordering that only decides ties WITHIN one sentence,
+ * where it cannot matter, since the two gates are mutually exclusive by
+ * construction (the affectionate gate vetoes every admitted romantic verb).
+ *
+ * The two gates are applied PER SENTENCE rather than filtering the message
+ * once, so a sentence that fails the romantic gate is still offered to the
+ * affectionate one and vice versa. That is not a fallback: a sentence carrying
+ * romantic framing is vetoed WHOLE by `contactSentenceEligible`, so a rejected
+ * romantic line can never re-enter as an affectionate act. What it preserves is
+ * the existing behavior of an ordinary affectionate message, byte for byte.
+ */
+export function detectChatContactAct(
+  input: ChatContactDetectionInput & {
+    readonly eventRef: ContactEventRef;
+    /**
+     * Whether a permission owner is available to answer a romantic attempt.
+     *
+     * DEFAULT FALSE, and the default is the whole point. A romantic act nobody
+     * can authorize is not a quieter romantic act — it is an act this lane must
+     * not author at all, because producing one still COSTS the turn its single
+     * act slot. With no owner wired, a romantic sentence would win the slot,
+     * resolve `permission_unresolved`, and take a later affectionate sentence's
+     * committed contact down with it: the player writes two things, the second
+     * of which used to land, and now neither does.
+     *
+     * So the romantic producer is gated on the owner's PRESENCE, which is what
+     * makes `CHAT_ROMANTIC_PERMISSION=off` byte-identical to the lane before
+     * this producer existed, rather than merely silent.
+     */
+    readonly romanticEnabled?: boolean;
+  },
+): ChatContactAct | null {
+  // No eligibility filter here: `contactSentences` still refuses narrator input
+  // and non-narration spans, but the two commit gates differ per kind and are
+  // applied to each sentence below.
+  for (const sentence of contactSentences(input, () => true)) {
+    if (input.romanticEnabled === true && romanticCommitSentenceEligible(sentence)) {
+      const romantic = romanticActInSentence(sentence, input);
+      if (romantic !== null) return romantic;
+    }
+    if (contactCommitSentenceEligible(sentence)) {
+      const affectionate = affectionateActInSentence(sentence, input);
+      if (affectionate !== null) return affectionate;
+    }
   }
   return null;
 }
@@ -1734,7 +1999,7 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
     subjectId: act.targetSubject,
     locationId: act.targetLocationId,
   };
-  const gesture = CHAT_GESTURE_CONTACT[act.gesture];
+  const gesture = chatContactGestureBands(act.gesture);
 
   const intent: ContactActionIntent = {
     actionId: act.actionId,
@@ -1762,7 +2027,19 @@ export function resolveChatContactAttempt(input: ChatContactAttemptInput): Conta
       : {
           status: "not_required",
           scopes: [],
-          evidence: [affordanceEvidence("adapter", "chat.contact.policy", "affectionate_permission_neutral")],
+          evidence: [
+            affordanceEvidence(
+              "adapter",
+              "chat.contact.policy",
+              // Two different silences, told apart in the evidence. A neutral
+              // kind genuinely needs no owner; a gated kind with no owner wired
+              // is an UNANSWERED question, and the resolver reads this bare
+              // `not_required` (no basis) as `permission_unresolved` for it —
+              // the fail-closed direction, and the flag-off behavior of the
+              // romantic producer.
+              contactActionRequiresPermission(act.actionKind) ? "permission_owner_absent" : "permission_neutral_kind",
+            ),
+          ],
         };
   const context: ContactActionContext = {
     actorControl: chatActorControl({ scene, actorId: act.actorSubject, requires: input.control }),
@@ -1917,7 +2194,14 @@ export function planChatContactTurn(input: ChatContactTurnInput): ChatContactTur
     ).state;
   }
 
-  const act = detectChatAffectionateTouch({ ...detection, eventRef: input.eventRef });
+  const act = detectChatContactAct({
+    ...detection,
+    eventRef: input.eventRef,
+    // The owner's PRESENCE is the gate. `chat-pipeline.ts` wires a policy
+    // source only under `chatRomanticPermissionEnabled()`, so this is that flag
+    // reaching a pure module without the module reading an env var.
+    romanticEnabled: input.permissionPolicy !== undefined,
+  });
   if (act === null) return { scene, act: null, resolution: null, commit: null, ended };
 
   // A target with no roster entry cannot happen (the act's subject came FROM the
@@ -2011,6 +2295,12 @@ const CHAT_CONTACT_LEXICON: Readonly<Record<string, ChatContactPhrase>> = {
   "contact.gesture.rest": { kind: "gesture", phrase: "rests on" },
   "contact.gesture.pat": { kind: "gesture", phrase: "pats" },
   "contact.gesture.squeeze": { kind: "gesture", phrase: "closes lightly around" },
+  // The romantic family. Same law as above: a present-tense verb phrase
+  // carrying its own preposition, stating the contact and nothing about how it
+  // is received — how the character answers a caress is not decided here.
+  "contact.gesture.caress": { kind: "gesture", phrase: "caresses" },
+  "contact.gesture.stroke": { kind: "gesture", phrase: "strokes" },
+  "contact.gesture.cup": { kind: "gesture", phrase: "cups" },
   // The surface, named the way a sentence names it rather than the way the
   // registry ids it (`shoulders` is a pair; a hand lands on one).
   [locusCode("shoulders")]: { kind: "locus", phrase: "shoulder" },
@@ -2021,6 +2311,10 @@ const CHAT_CONTACT_LEXICON: Readonly<Record<string, ChatContactPhrase>> = {
   [locusCode("back")]: { kind: "locus", phrase: "back" },
   [locusCode("head")]: { kind: "locus", phrase: "head" },
   [locusCode("hair")]: { kind: "locus", phrase: "hair" },
+  // Romantic-only: the registry's coarse `face` is what `cheek` maps onto, and
+  // "face" is the word that stays honest whichever noun the player wrote —
+  // narrating a cheek when they wrote "face" would invent a narrower fact.
+  [locusCode("face")]: { kind: "locus", phrase: "face" },
   // Material. `direct` has no phrase on purpose: a hand on a shoulder reads as
   // skin by default, so saying so would spend a clause volunteering a positive
   // detail — which is the one thing this block does not do.
@@ -2028,6 +2322,15 @@ const CHAT_CONTACT_LEXICON: Readonly<Record<string, ChatContactPhrase>> = {
   // Refusals somebody actually gave.
   "contact.blocked.out_of_reach": { kind: "blocked", phrase: "they are too far apart for it" },
   "contact.blocked.actor_control_denied": { kind: "blocked", phrase: "that is not the player's body to move" },
+  // Permission refusals. These had no producer until the romantic action lane
+  // existed; they word the REFUSAL and never the record behind it — the prompt
+  // is told the touch did not land, not what the ledger says about why (the
+  // permission spec's §"Mandatory stop handoff" disclosure rule).
+  // Agentless on purpose: the target may be any character, so a phrase naming
+  // "she" would misgender whoever the scene actually holds.
+  "contact.blocked.permission_denied": { kind: "blocked", phrase: "that has not been allowed" },
+  "contact.blocked.permission_withdrawn": { kind: "blocked", phrase: "that is no longer allowed" },
+  "contact.blocked.permission_scope_missing": { kind: "blocked", phrase: "that has not been allowed" },
   // What the scene would have to do first.
   "contact.requires.reposition": { kind: "requirement", phrase: "the distance would have to be closed first" },
   "contact.requires.close_distance": { kind: "requirement", phrase: "the distance would have to be closed first" },

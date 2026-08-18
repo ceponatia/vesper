@@ -244,3 +244,164 @@ export const CHAT_ROMANTIC_PERMISSION_CUE_RE =
  */
 export const CHAT_ROMANTIC_PERMISSION_TOUCH_RE =
   /\b(?:touch(?:es|ed|ing)?|hold(?:s|ing)?|held|hands?|fingers?|palms?|skin|closer?|contact)\b/iu;
+
+// ---------------------------------------------------------------------------
+// Romantic contact vocabulary
+// (romantic-contact-affordances.plan.md §"Design corrections from this review"
+// 4 — "insert a new narrow player-authored romantic action producer"; the
+// permission spec's §"First romantic action boundary" owns the boundary)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE CLOSED ROMANTIC GESTURE FAMILY.
+ *
+ * Deliberately a SEPARATE tuple from `chatContactGestures` rather than three
+ * more members of it. That list is the NPC reply-scene classifier's closed
+ * decision schema (`npc-scene-decision.ts` reads `chatContactGestureSchema`),
+ * and widening it would silently hand the NPC lane authority to propose
+ * romantic contact — which the actor-control spec explicitly withholds until
+ * NPC `start` authority is reviewed. Two tuples, two lanes, one direction of
+ * travel.
+ *
+ * The family is the plan's own exemplar ("a caress/stroke/cup family"). It is
+ * closed: a romantic verb outside these three produces no act at all rather
+ * than degrading to the nearest member.
+ */
+export const chatRomanticContactGestures = ["caress", "stroke", "cup"] as const;
+export const chatRomanticContactGestureSchema = z.enum(chatRomanticContactGestures);
+export type ChatRomanticContactGesture = z.infer<typeof chatRomanticContactGestureSchema>;
+
+/**
+ * What each romantic gesture states about the contact it makes.
+ *
+ * Same law as `CHAT_GESTURE_CONTACT`: pressure is stated because the VERB
+ * states it, and an unstated band is left unknown rather than defaulted. A
+ * caress and a stroke are both moving contact, so they state `sliding`; a cup
+ * states no motion at all, because holding is not moving and nobody said it
+ * was.
+ */
+export const CHAT_ROMANTIC_GESTURE_CONTACT: Readonly<
+  Record<
+    ChatRomanticContactGesture,
+    { readonly pressure: ContactPressureBand; readonly motion?: ContactMotionBand; readonly area?: ContactAreaBand }
+  >
+> = {
+  caress: { pressure: "light", motion: "sliding" },
+  stroke: { pressure: "light", motion: "sliding" },
+  cup: { pressure: "light" },
+};
+
+/**
+ * Romantic/intimate framing the ROMANTIC producer still refuses.
+ *
+ * This is `CHAT_CONTACT_ROMANTIC_VERB_RE` MINUS the three admitted gesture
+ * stems (`caress`, `strok`, `cup`), plus the explicitly sexual and
+ * clothing-manipulation verbs that regex left to its target half. Written out
+ * rather than derived: the original is three other consumers' contract
+ * (the affectionate detector, the frozen reply-side ending floor, and the NPC
+ * assertion gate) and must not move, and a carve-out computed by subtracting
+ * one regex from another is a silent widening waiting to happen.
+ *
+ * Note what stays vetoed on purpose: `trac(e|ing)`, `glid`, and `fingertips`
+ * are romantic in register but outside the closed family, so a line built on
+ * them commits nothing rather than being rounded to a caress.
+ */
+export const CHAT_ROMANTIC_CONTACT_EXCLUDED_VERB_RE =
+  /\b(?:kiss\w*|nuzzl\w*|cuddl\w*|snuggl\w*|embrac\w*|hugs?|hugg\w*|straddl\w*|grind\w*|undress\w*|strip\w*|unbutton\w*|unzip\w*|unhook\w*|unclasp\w*|unfasten\w*|lick\w*|tast\w*|suck\w*|nibbl\w*|bit(?:e|es|ing)|moan\w*|arous\w*|seduc\w*|fondl\w*|grop\w*|thrust\w*|penetrat\w*|mount\w*|hump\w*|masturbat\w*|orgasm\w*|climax\w*|fuck\w*|trac(?:e|es|ed|ing)|glid\w*|fingertips?)\b/iu;
+
+/**
+ * The ROMANTIC target lexicon: the affectionate map plus the cheek.
+ *
+ * Owner ruling (2026-08-18): `cup` earns its place in the closed family only if
+ * it can reach a cheek, which is what the gesture is actually for. The registry
+ * already carries `face` as the coarse canonical surface, so `cheek` maps onto
+ * it rather than inventing a `cheek` body location for one verb.
+ *
+ * This is a SEPARATE map, not three rows added to the shared one. Adding them
+ * there would hand the cheek to the affectionate detector and to the NPC
+ * classifier's closed schema, neither of which was ruled on — the romantic lane
+ * reaches one more surface than the affectionate lane, and that difference has
+ * to live somewhere only the romantic lane reads.
+ */
+const chatRomanticTargetLocationEntries = {
+  ...chatContactTargetLocationEntries,
+  cheek: "face",
+  cheeks: "face",
+  face: "face",
+} as const;
+
+export type ChatRomanticTargetLocationId =
+  (typeof chatRomanticTargetLocationEntries)[keyof typeof chatRomanticTargetLocationEntries];
+
+const CHAT_ROMANTIC_TARGET_LOCATION: Readonly<Record<string, ChatRomanticTargetLocationId>> =
+  chatRomanticTargetLocationEntries;
+
+/** The canonical id a written noun names for a romantic act, or `undefined`. */
+export function chatRomanticTargetLocationOf(noun: string): ChatRomanticTargetLocationId | undefined {
+  return CHAT_ROMANTIC_TARGET_LOCATION[noun.trim().toLowerCase()];
+}
+
+/** Longest-first written-noun alternation, derived from the romantic map's keys. */
+export const chatRomanticTargetNounAlternation: string = Object.keys(chatRomanticTargetLocationEntries)
+  .sort((left, right) => right.length - left.length || (left < right ? -1 : 1))
+  .map((noun) => noun.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+  .join("|");
+
+/**
+ * Target framing the ROMANTIC producer refuses — `CHAT_CONTACT_ROMANTIC_TARGET_RE`
+ * MINUS `cheeks?`, and minus nothing else.
+ *
+ * Owner ruling (2026-08-18): cupping someone's cheek is the most natural use of
+ * `cup` in the closed romantic family, so the romantic lane admits the cheek —
+ * **and the shared regex above must not lose the word to make that happen.**
+ * That regex is read by the affectionate detector and by the frozen reply-side
+ * ending floor; taking `cheeks?` out of it would let an affectionate act land on
+ * a cheek, which is not what was ruled, and is the kind of side effect this lane
+ * has to stop causing.
+ *
+ * So the carve-out lives here, in a regex only the romantic gate reads, exactly
+ * as `CHAT_ROMANTIC_CONTACT_EXCLUDED_VERB_RE` carves out the three admitted
+ * verbs. The shared list keeps its exact current meaning for its exact current
+ * consumers. Note `face` never appears in either list — it was not romantic
+ * framing to begin with; it is simply a surface nothing previously reached.
+ */
+export const CHAT_ROMANTIC_CONTACT_EXCLUDED_TARGET_RE =
+  /\b(?:lips?|mouth|tongue|thighs?|chest|breasts?|nipples?|cleavage|waist|hips?|belly|stomach|navel|neck|throat|nape|jaw|chin|ears?|earlobes?|buttocks?|butt|ass|arse|rear|groin|crotch|pussy|cunt|vulva|clit\w*|penis|cock|dick|naked|nude|bare skin|small of)\b/iu;
+
+/**
+ * The romantic producer's sentence gate — a SIBLING of
+ * `contactSentenceEligible`, never a replacement for it.
+ *
+ * Same first three vetoes (a question, a hedge, a denial). Both the verb and
+ * the target half are narrowed, each by exactly one carve-out, and each as its
+ * OWN regex rather than an edit to the shared one.
+ *
+ * **These vetoes are a second line, not the boundary.** An earlier revision of
+ * this producer tried to keep out-of-scope content out with a long deny-list of
+ * forbidden words. An adversarial pass broke it in 75 of 86 attempts — `make
+ * love`, `chain you to the bed`, `titty`, `taking off` — while the same list
+ * over-fired on ordinary prose (`until`, `lift`, `tie`, `bound`). That is the
+ * general shape of the problem: a deny-list over free-form English cannot be
+ * finished, and every entry that tightens it also refuses something innocent.
+ *
+ * The real boundary is therefore structural and lives in the producer's pattern
+ * (`ROMANTIC_DIRECT_RE`), which must match the WHOLE sentence. `I caress your
+ * arm and <anything>` is refused because of the trailing clause, never because
+ * of what is in it — so the unbounded question "what content is forbidden?" is
+ * replaced by the bounded one "what shape is an admitted act?". Both halves of
+ * the act are then allow-lists: a closed verb family and a closed locus map.
+ *
+ * What survives here is cheap defense in depth against a future edit that
+ * loosens that pattern. Do not add to it in the belief that it is the guard.
+ *
+ * Restraint is vetoed by the caller's commit gate, exactly as it is for the
+ * affectionate detector — `trapped` mobility still has no producer.
+ */
+export function romanticContactSentenceEligible(sentence: string): boolean {
+  if (sentence.includes("?")) return false;
+  if (CHAT_CONTACT_CONDITIONAL_RE.test(sentence)) return false;
+  if (hasChatEvidenceNegation(sentence)) return false;
+  if (CHAT_ROMANTIC_CONTACT_EXCLUDED_VERB_RE.test(sentence)) return false;
+  if (CHAT_ROMANTIC_CONTACT_EXCLUDED_TARGET_RE.test(sentence)) return false;
+  return true;
+}

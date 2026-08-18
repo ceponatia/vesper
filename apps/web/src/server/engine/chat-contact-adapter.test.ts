@@ -11,6 +11,9 @@ import {
   emptyChatGarmentStore,
   emptyEffectiveCoverageRead,
   emptySceneState,
+  chatRomanticContactGestures,
+  derivePermissionPolicyRead,
+  foldRomanticPermissionProjection,
   garmentActorForCharacter,
   garmentInstanceStateSchema,
   isAdapterSupported,
@@ -32,6 +35,7 @@ import {
   type GarmentInstanceState,
   type SceneMovementIntent,
   type SceneProximityBand,
+  type RomanticPermissionEvent,
   type SceneState,
 } from "@/contracts";
 import {
@@ -55,6 +59,8 @@ import {
   departedBand,
   detectChatAffectionateTouch,
   detectChatApproach,
+  detectChatContactAct,
+  detectChatRomanticTouch,
   detectChatContactRelease,
   detectChatDeparture,
   endAllChatContacts,
@@ -65,10 +71,12 @@ import {
   seededChatScene,
   type ChatContactAct,
   type ChatContactMaterialSource,
+  type ChatContactPolicySource,
   type ChatContactRosterMember,
   type ChatDeparture,
 } from "./chat-contact-adapter";
 import { chatContactActionsEnabled } from "./prompts/constants";
+import { probePermissionEvent } from "@/contracts/affordances/permission/test-support";
 
 /**
  * The chat lane's contact adapter (romantic-contact-affordances.plan.md
@@ -1954,3 +1962,422 @@ describe("scene discontinuities clear pair relations", () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// The romantic action producer
+// (romantic-contact-affordances.plan.md §"Track B — first genuinely romantic
+// contact proof" items 5-7)
+// ---------------------------------------------------------------------------
+
+const ROMANTIC_BRANCH = "chat_probe_branch";
+
+function romantic(message: string, characters: readonly ChatContactRosterMember[] = SOLO): ChatContactAct | null {
+  return detectChatRomanticTouch({ message, narratorInput: false, characters, eventRef: EVENT });
+}
+
+/** The shipped producer WITH a permission owner available. */
+function anyAct(message: string, characters: readonly ChatContactRosterMember[] = SOLO): ChatContactAct | null {
+  return detectChatContactAct({ message, narratorInput: false, characters, eventRef: EVENT, romanticEnabled: true });
+}
+
+/** The shipped producer with NO permission owner — today's live flag state. */
+function ownerlessAct(
+  message: string,
+  characters: readonly ChatContactRosterMember[] = SOLO,
+): ChatContactAct | null {
+  return detectChatContactAct({ message, narratorInput: false, characters, eventRef: EVENT });
+}
+
+function grantEvent(overrides: Partial<RomanticPermissionEvent> = {}): RomanticPermissionEvent {
+  return probePermissionEvent({
+    branchId: ROMANTIC_BRANCH,
+    permittedActorId: CHAT_CONTACT_PLAYER_SUBJECT,
+    grantingTargetId: WREN,
+    scope: "romantic_touch",
+    kind: "granted",
+    storyTime: AT - 10,
+    ...overrides,
+  });
+}
+
+/**
+ * The REAL permission seam, assembled exactly as `chat-pipeline.ts` assembles
+ * it: real events, the real fold, the real derive. A stubbed policy read would
+ * prove the resolver reads a field; this proves the owner answers an attempt.
+ */
+function permissionPolicyFor(events: readonly RomanticPermissionEvent[]): ChatContactPolicySource {
+  const projection = foldRomanticPermissionProjection({ events });
+  return (attempt) =>
+    derivePermissionPolicyRead({
+      projection,
+      permittedActorId: attempt.permittedActorId,
+      grantingTargetId: attempt.grantingTargetId,
+      actionKind: attempt.actionKind,
+      playerSubjectId: CHAT_CONTACT_PLAYER_SUBJECT,
+      attemptActionId: attempt.actionId,
+    });
+}
+
+function resolveAct(act: ChatContactAct, permissionPolicy?: ChatContactPolicySource, scene: SceneState = placed("touching")) {
+  return resolveChatContactAttempt({
+    scene,
+    act,
+    material: chatContactMaterialBetween([{ side: "target", material: BARE, locationId: act.targetLocationId }]),
+    control: "player_controlled",
+    storyTime: AT,
+    ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
+  });
+}
+
+describe("the romantic producer — admitted evidence", () => {
+  it.each([
+    ["I caress your arm.", "caress", "arms"],
+    ["I stroke your hair.", "stroke", "hair"],
+    ["I cup your hands in mine.", "cup", "hands"],
+    ["I slowly caress your shoulder.", "caress", "shoulders"],
+    ["I stroke your upper back.", "stroke", "back"],
+    ["I cup your cheek.", "cup", "face"],
+    ["I cup your face.", "cup", "face"],
+    ["I cup your hands in mine.", "cup", "hands"],
+    ["I gently caress your arm.", "caress", "arms"],
+  ])("%s is a romantic %s on %s", (message, gesture, locationId) => {
+    const act = romantic(message);
+    expect(act).not.toBeNull();
+    expect(act?.actionKind).toBe("romantic");
+    expect(act?.gesture).toBe(gesture);
+    expect(act?.targetLocationId).toBe(locationId);
+    // The acting surface is the same one the whole lane models.
+    expect(act?.sourceLocationId).toBe("hands");
+    expect(act?.actorSubject).toBe(CHAT_CONTACT_PLAYER_SUBJECT);
+  });
+
+  it("names the character the sentence named, not the only one in the room", () => {
+    const act = romantic("I caress Vaelith's arm.", PAIR);
+    expect(act?.targetSubject).toBe(VAEL);
+  });
+});
+
+describe("the romantic producer — everything it refuses", () => {
+  it.each([
+    ["I kiss your shoulder.", "kissing"],
+    ["I caress your thigh.", "an intimate target"],
+    ["I caress your breast.", "intimate anatomy"],
+    ["I stroke your neck.", "a locus off the allow-list"],
+    ["I caress your bare arm.", "an adjective between the owner and the locus"],
+    ["I undress you.", "undressing"],
+    ["I caress your arm?", "a question"],
+    ["I would caress your arm.", "a hedge"],
+    ["I almost caress your arm.", "a hedge"],
+    ["I want to caress your arm.", "an intention"],
+    ["I don't caress your arm.", "a denial"],
+    ["I trace my fingers along your arm.", "a verb outside the closed family"],
+    ["I glide my hand down your arm.", "a verb outside the closed family"],
+    ["I fondle your arm.", "a verb outside the closed family"],
+    ["I nuzzle your shoulder.", "a verb outside the closed family"],
+    ["She caresses my arm.", "an NPC as the actor"],
+  ])("%s produces nothing (%s)", (message) => {
+    expect(romantic(message)).toBeNull();
+  });
+
+  it("refuses an ambiguous pronoun when more than one body could be meant", () => {
+    expect(romantic("I caress her arm.", PAIR)).toBeNull();
+    // The same line is unambiguous with one character present.
+    expect(romantic("I caress her arm.", SOLO)).not.toBeNull();
+  });
+
+  it("ignores storyteller narration and non-narration spans", () => {
+    expect(
+      detectChatRomanticTouch({ message: "I caress your arm.", narratorInput: true, characters: SOLO, eventRef: EVENT }),
+    ).toBeNull();
+    expect(romantic('"I caress your arm."')).toBeNull();
+    expect(romantic("((I caress your arm))")).toBeNull();
+  });
+});
+
+describe("the never-degrade law — a refused romantic line is not an affectionate one", () => {
+  it("never relabels an admitted romantic act as affectionate", () => {
+    expect(anyAct("I caress your arm.")?.actionKind).toBe("romantic");
+    expect(anyAct("I stroke your hair.")?.actionKind).toBe("romantic");
+  });
+
+  it("leaves the affectionate detector's own answers untouched", () => {
+    // The affectionate producer still refuses every romantic verb, exactly as
+    // it did before the romantic lane existed.
+    expect(touch("I caress your arm.")).toBeNull();
+    expect(touch("I stroke your hair.")).toBeNull();
+    expect(touch("I rest my hand on your shoulder.")?.actionKind).toBe("affectionate");
+  });
+});
+
+describe("the one producer — first eligible sentence wins, whichever kind it is", () => {
+  it("keeps written order when the affectionate sentence comes first", () => {
+    const act = anyAct("I rest my hand on your shoulder. I caress your arm.");
+    expect(act?.actionKind).toBe("affectionate");
+    expect(act?.targetLocationId).toBe("shoulders");
+  });
+
+  it("keeps written order when the romantic sentence comes first", () => {
+    const act = anyAct("I caress your arm. I rest my hand on your shoulder.");
+    expect(act?.actionKind).toBe("romantic");
+    expect(act?.targetLocationId).toBe("arms");
+  });
+
+  it("still admits a later affectionate sentence when an earlier one was vetoed whole", () => {
+    // The kiss sentence is refused by both gates; the shoulder is untouched by it.
+    const act = anyAct("I kiss you. I rest my hand on your shoulder.");
+    expect(act?.actionKind).toBe("affectionate");
+  });
+
+  it("produces exactly one act per turn", () => {
+    const act = anyAct("I caress your arm. I stroke your hair. I caress your back.");
+    expect(act?.targetLocationId).toBe("arms");
+  });
+});
+
+describe("the permission proof — the owner finally has an attempt to answer", () => {
+  it("commits a physically valid romantic touch when the exact directional grant exists", () => {
+    const act = anyAct("I caress your arm");
+    expect(act?.actionKind).toBe("romantic");
+    const resolution = resolveAct(act!, permissionPolicyFor([grantEvent()]));
+    expect(resolution.status).toBe("committable");
+  });
+
+  it("refuses with NO grant at all — unresolved, never a silent allow", () => {
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, permissionPolicyFor([]));
+    expect(resolution.status).toBe("unresolved");
+    expect(resolution.status === "unresolved" && resolution.reason).toBe("permission_unresolved");
+  });
+
+  it("refuses a REVERSE-direction grant — the NPC allowing herself says nothing", () => {
+    const reversed = grantEvent({ permittedActorId: WREN, grantingTargetId: CHAT_CONTACT_PLAYER_SUBJECT });
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, permissionPolicyFor([reversed]));
+    expect(resolution.status).toBe("unresolved");
+  });
+
+  it("refuses a grant naming a DIFFERENT target", () => {
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, permissionPolicyFor([grantEvent({ grantingTargetId: VAEL })]));
+    expect(resolution.status).toBe("unresolved");
+  });
+
+  it("refuses once the grant is WITHDRAWN", () => {
+    const events = [grantEvent(), grantEvent({ kind: "withdrawn", storyTime: AT - 5 })];
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, permissionPolicyFor(events));
+    expect(resolution.status).toBe("rejected");
+    expect(resolution.status === "rejected" && resolution.reason).toBe("permission_withdrawn");
+  });
+
+  it("refuses the exact attempt a denial named, without deleting the standing grant", () => {
+    const act = anyAct("I caress your arm")!;
+    const denial = grantEvent({ kind: "attempt_denied", storyTime: AT - 5, attemptActionId: act.actionId });
+    const resolution = resolveAct(act, permissionPolicyFor([grantEvent(), denial]));
+    expect(resolution.status).toBe("rejected");
+    expect(resolution.status === "rejected" && resolution.reason).toBe("permission_denied");
+
+    // A DIFFERENT attempt in the same direction still rides the standing grant.
+    const other = detectChatContactAct({
+      message: "I caress your back",
+      narratorInput: false,
+      characters: SOLO,
+      eventRef: chatContactEventRef("msg_exchange_2"),
+      romanticEnabled: true,
+    })!;
+    expect(resolveAct(other, permissionPolicyFor([grantEvent(), denial])).status).toBe("committable");
+  });
+
+  it("fails closed when no permission owner is wired at all (the flag-off path)", () => {
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, undefined);
+    expect(resolution.status).toBe("unresolved");
+    expect(resolution.status === "unresolved" && resolution.reason).toBe("permission_unresolved");
+  });
+
+  it("leaves affectionate contact permission-neutral, grant or no grant", () => {
+    const act = anyAct("I rest my hand on your shoulder")!;
+    expect(act.actionKind).toBe("affectionate");
+    expect(resolveAct(act, permissionPolicyFor([])).status).toBe("committable");
+    expect(resolveAct(act, undefined).status).toBe("committable");
+  });
+
+  it("keeps permission orthogonal to physical feasibility", () => {
+    // A granted romantic touch across the room is still out of reach: the owner
+    // makes an attempt eligible, never possible.
+    const act = anyAct("I caress your arm")!;
+    const resolution = resolveAct(act, permissionPolicyFor([grantEvent()]), placed("distant"));
+    expect(resolution.status).not.toBe("committable");
+  });
+});
+
+describe("the romantic narrator seam", () => {
+  // Kills a producer that can commit an act the renderer cannot word: a gesture
+  // or refusal with no lexicon entry silently drops its clause, so the prompt
+  // states a contact without saying what kind it was.
+  it("words every code the romantic lane can emit", () => {
+    for (const gesture of chatRomanticContactGestures) {
+      expect(chatContactPhrase(`contact.gesture.${gesture}`)?.kind).toBe("gesture");
+    }
+    for (const reason of ["permission_denied", "permission_withdrawn", "permission_scope_missing"]) {
+      expect(chatContactPhrase(`contact.blocked.${reason}`)?.kind).toBe("blocked");
+    }
+    expect(chatContactPhrase("contact.locus.face")?.kind).toBe("locus");
+  });
+
+  it("never exposes the permission record itself", () => {
+    for (const code of [
+      "contact.blocked.permission_denied",
+      "contact.blocked.permission_withdrawn",
+      "contact.blocked.permission_scope_missing",
+    ]) {
+      const phrase = chatContactPhrase(code)?.phrase ?? "";
+      expect(phrase).not.toMatch(/permission|grant|ledger|scope|romantic_touch/iu);
+    }
+  });
+});
+
+describe("the owner gate — no permission owner, no romantic act at all", () => {
+  it("produces nothing romantic when no owner is wired", () => {
+    expect(ownerlessAct("I caress your arm.")).toBeNull();
+    expect(ownerlessAct("I stroke your hair.")).toBeNull();
+    expect(ownerlessAct("I cup your hands.")).toBeNull();
+  });
+
+  it("does not let a romantic sentence cost a later affectionate one its slot", () => {
+    // THE REGRESSION THIS GATE EXISTS FOR. With the permission flag off, the
+    // shoulder touch is what the lane committed before the romantic producer
+    // existed, and it must still commit: a romantic act nobody can authorize
+    // must not silently consume the turn's single act slot.
+    const act = ownerlessAct("I stroke your hair. I rest my hand on your shoulder.");
+    expect(act?.actionKind).toBe("affectionate");
+    expect(act?.targetLocationId).toBe("shoulders");
+
+    const second = ownerlessAct("I caress your arm. I pat your head.");
+    expect(second?.actionKind).toBe("affectionate");
+    expect(second?.gesture).toBe("pat");
+  });
+
+  it("matches the affectionate-only detector exactly on every ordinary message", () => {
+    for (const message of [
+      "I rest my hand on your shoulder.",
+      "I pat your head.",
+      "I squeeze your hand.",
+      "I stroke your hair. I rest my hand on your shoulder.",
+      "I caress your arm. I pat your head.",
+      "I kiss you. I rest my hand on your shoulder.",
+      "I walk over to you.",
+      "I caress your arm.",
+    ]) {
+      expect(ownerlessAct(message)).toEqual(touch(message));
+    }
+  });
+
+  it("admits the romantic act once an owner is available", () => {
+    expect(anyAct("I caress your arm.")?.actionKind).toBe("romantic");
+    // And THEN it may outrank a later affectionate sentence, which is correct:
+    // refusing the romantic act and quietly doing the milder one instead is the
+    // degrade this lane forbids.
+    expect(anyAct("I stroke your hair. I rest my hand on your shoulder.")?.actionKind).toBe("romantic");
+  });
+});
+
+describe("the whole-sentence boundary — an admitted act is the entire sentence", () => {
+  // These are refused by SHAPE, not by a list of forbidden words. An earlier
+  // deny-list revision leaked 75 of 86 adversarial probes across exactly these
+  // families while over-firing on ordinary prose; anchoring closes the whole set
+  // at once and never has to be extended for a wording nobody enumerated.
+  it.each([
+    // One case per SHAPE, not per forbidden word: with the act anchored to the
+    // whole sentence these all fail identically, so enumerating more vocabulary
+    // would buy no additional defect detection.
+    ["I caress your arm and we make love.", "a trailing clause"],
+    ["I caress your arm and touch your privates.", "a trailing clause naming anatomy"],
+    ["I stroke your hair and tear off your shirt.", "a trailing clause undressing"],
+    ["I caress your arm and hogtie you.", "a trailing clause restraining"],
+    ["I caress your arm, taking off your dress.", "a trailing participial clause"],
+    ["Later I chain you to the bed and I caress your arm.", "a leading clause"],
+  ])("%s produces nothing (%s)", (message) => {
+    expect(romantic(message)).toBeNull();
+    expect(anyAct(message)).toBeNull();
+  });
+
+  it("pays that boundary's cost in the safe direction only", () => {
+    // Ordinary romantic prose carrying a second clause commits nothing. A
+    // refusal where a commit was arguably fine — never the reverse.
+    for (const message of [
+      "I caress your arm until you smile.",
+      "I caress your arm and lift my eyes to yours.",
+      "I stroke your hair and blow out the candle.",
+    ]) {
+      expect(anyAct(message)).toBeNull();
+    }
+  });
+
+  it.each([
+    // Restraint the shared regex never named.
+    "I stroke your arm and tie your wrists.",
+    "I stroke your arm and bind your hands.",
+    "I stroke your arm and handcuff you.",
+    "I stroke your arm and gag you.",
+    "I stroke your arm and choke you.",
+    // Garment removal beyond the un- prefixes.
+    "I stroke your arm and unbuckle your belt.",
+    "I stroke your arm and untie your robe.",
+    "I caress your hair and unlace your corset.",
+    "I caress your arm and remove your bra.",
+    "I stroke your arm and peel off your top.",
+    "I caress your arm and lift your skirt.",
+    // Explicit sexual acts.
+    "I caress your arm and finger you.",
+    "I stroke your arm and we have sex.",
+    "I cup your hands and cum on them.",
+    "I stroke your arm and press my erection against you.",
+    "I stroke your arm as I rape you.",
+    // Intimate anatomy the shared target list misses.
+    "I caress your arm and touch your tits.",
+    "I caress your arm and touch your boobs.",
+    "I caress your arm and cup your balls.",
+    "I caress your arm and touch your labia.",
+    "I caress your arm and touch your asshole.",
+    "I caress your arm and touch your genitals.",
+  ])("%s produces nothing", (message) => {
+    expect(romantic(message)).toBeNull();
+    expect(anyAct(message)).toBeNull();
+  });
+});
+
+describe("the cheek is romantic-only — the shared veto keeps it out of the affectionate lane", () => {
+  it("admits a cupped cheek as a romantic act on the registry's coarse `face`", () => {
+    expect(anyAct("I cup your cheek.")?.targetLocationId).toBe("face");
+    expect(anyAct("I cup your cheek.")?.actionKind).toBe("romantic");
+  });
+
+  it("still refuses the cheek to every affectionate form", () => {
+    // Owner ruling (2026-08-18): the romantic lane reaches the cheek WITHOUT the
+    // shared veto losing the word — that veto also guards the frozen NPC ending
+    // floor, so weakening it to buy the cheek was explicitly ruled out.
+    for (const message of ["I rest my hand on your cheek.", "I pat your cheek.", "I squeeze your cheek."]) {
+      expect(touch(message)).toBeNull();
+      expect(anyAct(message)).toBeNull();
+      expect(ownerlessAct(message)).toBeNull();
+    }
+  });
+});
+
+describe("the shipped path carries the same guards as the isolated detector", () => {
+  // The guard suites above call `detectChatAffectionateTouch`, which no longer
+  // has a production caller. The owner-gate block's equivalence test already
+  // re-proves all of them through the shipped path for the owner-OFF case, in
+  // one assertion rather than a second enumeration. What it cannot reach is the
+  // owner-ON half, where romantic verbs are live — so that is what these cover.
+  it.each([
+    "I grip your hand and stroke it.",
+    "I pull your arm and caress it.",
+    "I caress your bare shoulder.",
+    "I stroke the small of your back.",
+  ])("%s produces nothing with the owner on", (message) => {
+    expect(anyAct(message)).toBeNull();
+  });
+
+});
