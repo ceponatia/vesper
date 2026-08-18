@@ -164,6 +164,12 @@ the scene owner.
   with correctness-flavoured findings folding into whichever plan touches each
   file first.
 
+- **Headwear that actually covers hair** —
+  [plan](headwear-hair-occlusion.plan.md) ·
+  [spec](headwear-hair-occlusion.spec.md) — a headscarf renders with the hair
+  genuinely hidden while a cap or visor leaves it showing, via an enclosure band
+  on headwear that the wardrobe's coverage axis cannot express.
+
 ## Someday / parking lot
 
 Unpromoted ideas live in [deferred.plan.md](deferred.plan.md) — the
