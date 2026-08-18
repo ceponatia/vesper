@@ -1,417 +1,403 @@
 # Romantic contact affordances — directional permission owner
 
-Status: technical companion to
-[romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md),
-continuation item 5. Product behavior was owner-ruled 2026-08-04 and the owner
-was implemented the same day behind `CHAT_ROMANTIC_PERMISSION` (default off;
-the developer override has its own `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`
-capability). §As built records the implementation decisions; enablement waits
-for the plan's item-6 romantic proof.
+Status: **built and gated; reconciled 2026-08-18.** Character chat has a durable,
+directional, exact-scope permission owner for `romantic_touch`, behind
+`CHAT_ROMANTIC_PERMISSION`. The separate developer override capability is behind
+`CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`.
+
+The owner is not yet proven by a genuinely romantic player contact because the
+live player contact producer is still deliberately affectionate-only. A narrow
+`actionKind: "romantic"` player producer is therefore a prerequisite for the
+first permission proof; enabling this flag alone cannot create a romantic
+attempt.
+
+Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
+
+Core: [romantic-contact-affordances.spec.contact-core.md](romantic-contact-affordances.spec.contact-core.md)
 
 ## Scope
 
-This specification defines the smallest authoritative permission owner needed
-for the first genuinely romantic contact proof in character chat. The MVP owns
-one exact scope: `romantic_touch`.
-
-It does not decide whether an action is physically possible, author an NPC's
-movement, infer attraction or arousal, or write the player's reaction. Actor
-control, geometry, wardrobe, contact lifecycle, physiology, and narration
-remain with their existing owners.
-
-The current scope is deliberately narrower than the long-term consent model.
-Kissing, intimate anatomy, undressing another participant, exposing oneself to
-another participant, and sex require future exact scopes. They are not aliases
-or implied descendants of `romantic_touch`.
-
-## Direction and participant rules
-
-A permission key is directional:
+The current owner answers exactly one gated scope:
 
 ```text
-permitted actor -> granting target -> exact scope -> story branch
+romantic_touch
 ```
 
-If Mara grants Alex `romantic_touch`, Alex may attempt that class of contact
-toward Mara. The record says nothing about Mara acting toward Alex.
+It does not decide:
 
-The MVP applies these rules:
+- whether an action occurred;
+- whether surfaces can reach;
+- actor control or target movement;
+- attraction, arousal, desire, pleasure, or relationship state;
+- kissing, intimate touch, clothing manipulation, nudity exposure, or sex.
 
-- Player-to-NPC romantic contact requires a grant authored by the target NPC.
-- NPC-to-NPC romantic contact requires a grant authored by the target NPC.
-  Mutual permission is represented by two records.
-- NPC-to-player contact does not require Vesper to pre-calculate a standing
-  player grant. The player controls their own next reaction. The NPC still
-  needs actor control over its action, and the narrator may not commit the
-  player's acceptance, reciprocation, pleasure, movement, or other voluntary
-  response.
-- Player-authored narrator mode never changes those boundaries.
+Those future interactions require separate exact scopes if/when product design
+supports them.
 
-Ordinary incidental, casual, and affectionate contact remains permission-neutral
-under the existing owner ruling. Romantic or fetish-framed contact is never
-relabeled as affectionate to avoid this owner.
+## Direction is part of the key
 
-## Exact scopes and future matrix
+Permission is directional:
 
-The MVP contains only `romantic_touch`, with exact membership and no
-implication graph. A stored grant is usable only when the requested action maps
-to that exact scope.
+```text
+permitted actor -> granting target -> exact scope -> chat/branch
+```
 
-Future work should replace the single-scope MVP with a directional matrix. At
-minimum, product design should consider distinct scopes for:
+A grant from Mara allowing Alex `romantic_touch` toward Mara says nothing about
+Mara touching Alex.
 
-- kissing;
-- romantic non-intimate touch;
-- intimate touch;
-- removing or moving another participant's clothing;
-- exposing one's own nudity to another participant;
-- sexual activity.
+Current rules:
 
-Names and granularity remain future decisions. The invariant is settled now:
-one scope never silently authorizes another.
+- player -> NPC romantic contact requires that target NPC's grant to the player;
+- NPC -> NPC requires the target NPC's grant in that direction;
+- reverse direction never authorizes;
+- another scope never authorizes the requested scope;
+- NPC -> player uses the explicit `player_target` not-required basis rather than
+  pre-calculating a standing player grant;
+- the player still owns their next reaction, movement, acceptance, refusal, and
+  reciprocation;
+- player-authored narrator text cannot grant permission on behalf of an NPC.
 
-Relationship labels describe feeling, not permission. `cherished` or
-`smitten` cannot create any grant and cannot substitute for one.
+Ordinary incidental/casual/affectionate contact remains permission-neutral under
+the existing product ruling. Romantic language must never be downgraded to
+`affectionate` merely to bypass this owner.
 
 ## Grant, denial, absence, and withdrawal
 
-The owner keeps four meanings separate:
+Keep four states semantically distinct:
 
-- **Absent:** no authoritative answer exists.
-- **Grant:** the target authorizes the named actor for the exact scope.
-- **Denial:** the target rejects the current attempt without necessarily
-  changing an existing standing grant.
-- **Withdrawal:** the target revokes an existing standing grant.
+- **absent** — no authoritative answer exists;
+- **grant** — the target authorizes the named actor for the exact scope;
+- **attempt denial** — the target rejects the current attempted action without
+  necessarily deleting an existing standing grant;
+- **withdrawal** — the target revokes a standing grant.
 
-“Not now” normally denies the current attempt. “Do not touch me like that
-anymore” withdraws the standing grant. Ambiguous language produces no permission
-change.
+“Not now” can deny one attempt. “Do not touch me like that anymore” can withdraw
+standing permission. Ambiguous language produces no permission change.
 
-A production NPC grant or withdrawal may come from explicit NPC dialogue or
-unambiguous NPC-authored conduct that directly offers or retracts the contact.
-The decision must be grounded in the NPC-side assistant message or simulation
-event. It must not be inferred from:
+A grant or withdrawal may be grounded only in the target NPC's authoritative
+assistant-side dialogue/conduct or an explicit developer override. It must not
+be inferred from:
 
-- affection, attraction, arousal, or physiology;
-- relationship label or score;
-- an intimate-scene or touch-welcomeness signal;
+- affection/attraction/arousal;
+- relationship label/score;
+- an intimate-scene signal;
 - lack of resistance or silence;
-- narrator tone, genre, or prior contact alone;
-- player-authored claims about what the NPC permits.
+- previous contact by itself;
+- narrator tone/genre;
+- player-authored claims about what an NPC allows.
 
-The first implementation should use a structured, evidence-bearing decision
-with conservative deterministic validation. Do not add another broad keyword
-detector. Adversarial and natural-language fixtures are required because the
-first consent classifier pass is expected to need refinement.
+## Permission answers attempts; it does not create them
 
-## Authorship and developer controls
+This boundary is now an explicit integration law.
 
-Only the target participant's authoritative side may grant, deny, or withdraw
-permission attributed to that target. Player input and player-authored narrator
-mode cannot write an NPC permission event. No participant can grant on behalf
-of another.
-
-Testing requires a separate authority path. Authorized development/test users
-may change permission and relationship values instantly through the developer
-menus. Those controls must:
-
-- write structured events or state through a dedicated endpoint;
-- require the existing developer/admin authorization and an explicit
-  development/test capability gate;
-- identify the affected branch, actor, target, scope, value, and operator;
-- record an auditable `developer_override` source;
-- use the same projection and contact-invalidation path as production events;
-- never parse chat content as an override command;
-- never expose the override as an ordinary player or narrator capability.
-
-The menu should show direction in plain language, such as “Alex may touch Mara
-romantically,” rather than a symmetric checkbox.
-
-## Events and active projection
-
-The permission ledger is event-backed and branch-local. The exact schema may
-reuse existing repository conventions, but it must preserve the following
-semantics:
+The current player producer in `chat-contact-adapter.ts` creates only:
 
 ```ts
-type RomanticPermissionEventKind =
-  | "granted"
-  | "attempt_denied"
-  | "withdrawn"
-  | "relationship_revoked"
-  | "developer_overridden";
-
-interface RomanticPermissionEvent {
-  eventId: string;
-  branchId: string;
-  permittedActorId: string;
-  grantingTargetId: string;
-  scope: "romantic_touch";
-  kind: RomanticPermissionEventKind;
-  sourceKind: "npc_decision" | "relationship_transition" | "developer_override";
-  sourceMessageId?: string;
-  sourceEventId?: string;
-  attemptActionId?: string;
-  attemptContactId?: string;
-  storyTime: number;
-  orderInSource: number;
-}
+actionKind: "affectionate"
 ```
 
-The durable event needs idempotency identity and enough provenance to reproduce
-the decision. The active projection contains only current standing grants.
-Attempt denials remain evidence about an attempt but do not remove a standing
-grant unless the same source also proves withdrawal.
+and its sentence gate rejects romantic/intimate framing. The shared contact core
+supports `"romantic"`, and this permission owner can answer it, but character
+chat currently has **no producer that constructs such an attempt**.
 
-A story branch inherits the permission projection at its fork point. Later
-events are branch-local. A grant never becomes global character metadata and
-never leaks into an unrelated chat, a cloned character, or a sibling branch.
+Therefore:
 
-## Relationship-based automatic revocation
+- do not modify the permission classifier to detect romantic player actions;
+- do not make a permission grant itself synthesize a contact attempt;
+- do not weaken the affectionate detector's romantic veto;
+- do not relabel romantic prose as affectionate when the new romantic producer
+  rejects it.
 
-Relationship integration is reserved but not implemented by this MVP.
+The first proof must add a separate narrow player romantic action producer, then
+supply the resulting `actionKind: "romantic"` intent to the existing permission
+read + contact resolver.
 
-When relationship state eventually emits authoritative transitions, a future
-per-scope matrix may define significant downward thresholds. Crossing a
-threshold commits a `relationship_revoked` permission event. For example, a
-change from `cherished` to `cold` may revoke Alex's grant to touch Mara.
+## First romantic action boundary
 
-This is one-way:
+The initial producer is intentionally smaller than the long-term romance model.
+It should admit only evidence the lane can resolve without inventing another
+participant's behavior:
 
-- relationship decline may revoke a standing grant;
-- relationship improvement never creates a grant;
-- recovering above the threshold never restores a revoked grant;
-- a fresh target-authored grant is required after revocation.
+- player is the actor;
+- hand is the acting surface;
+- non-intimate target loci already supported by the chat contact vocabulary;
+- closed, explicitly romantic gesture language such as caress/stroke/cup
+  (final vocabulary belongs to the action-producer spec/code);
+- no target reposition or voluntary target reaction;
+- no kissing;
+- no intimate anatomy;
+- no clothing manipulation/exposure;
+- no restraint/pinning;
+- no sexual act.
 
-The permission owner consumes a committed relationship transition. It must not
-poll a label and silently change policy during contact resolution.
-
-## Chronology and non-retroactivity
-
-Every event has an effective position in committed chronology. Resolution may
-use only permission effective before the attempted action.
-
-A grant may authorize a clearly later action in the same committed assistant
-reply when evidence offsets establish that order. It never authorizes an action
-whose evidence precedes the grant. Ambiguous ordering fails closed.
-
-This rule is separate from rollback. Retake cleanup prevents a discarded
-reply's events from surviving; chronological ordering prevents a later event in
-a retained reply from authorizing an earlier act.
-
-## Retakes and branches
-
-Permission uses the same rollback boundary as the story state it governs:
-
-- Retaking an assistant reply restores the permission projection from before
-  that reply.
-- Permission events sourced from the discarded reply are pruned or excluded
-  from the restored branch.
-- Replaying the same reply is idempotent.
-- A new branch receives the projection at the fork point.
-- Permission changes after the fork remain local to their branch.
-- A discarded denial or withdrawal cannot affect the replacement reply.
-
-The permission event, active projection, contact projection, and narrator cut
-must never describe different branch moments.
-
-## Revocation during active contact
-
-A withdrawal or automatic revocation invalidates every active contact that
-depends on that directional grant and exact scope. Within the authoritative
-settle:
-
-1. commit or order the permission change;
-2. end affected contacts with `policy_withdrawn`;
-3. persist the permission and contact projections atomically, or through one
-   guarded sequence that cannot expose a mixed state;
-4. emit a mandatory, narrator-safe action outcome or high-priority transition
-   when the prose has not already portrayed the stop.
-
-The narrator instruction should communicate only the observable change needed
-to continue naturally. It must not expose relationship thresholds, permission
-records, developer overrides, or diagnostic detail. The narrator may portray
-stopping, separating, or a natural NPC reaction, but may not keep the old
-contact active or author the player's reaction.
-
-A permission change occurs at a turn settlement boundary, not in the middle of
-the player's submitted text. If it lands after one narrator reply, the next
-reply receives the binding transition.
+Ambiguous/mixed framing fails closed. This is an action-evidence rule, not a
+permission rule.
 
 ## Resolver adapter
 
-The permission owner supplies the shared contact core with a result for the
-attempt's exact actor, target, scope, branch, and chronological position.
+The pure permission adapter receives:
 
-Required behavior:
+- folded current permission projection;
+- permitted actor id;
+- granting target id;
+- attempted `ContactActionKind`;
+- player subject id;
+- current attempt action/contact ids where relevant.
 
-- current exact grant -> `allowed`;
-- explicit denial of the current attempt -> `denied`;
-- standing grant withdrawn or relationship-revoked -> `withdrawn`;
-- no answer or malformed/unavailable owner -> `unresolved`;
-- different direction or different scope -> scope missing, never allowed;
-- player-target exception -> the lane's explicit not-required result, without
-  manufacturing a player grant.
+Required mapping:
 
-The contact resolver remains responsible for combining policy with actor
-control, target agency, geometry, support, wardrobe, and lifecycle. A permission
-grant makes an attempt eligible for resolution; it does not force an NPC to
-perform or accept an action and does not make an impossible action possible.
+- permission-neutral action -> `not_required` without a player-target basis;
+- gated action aimed at player -> `not_required` with exact `player_target`
+  basis + matching target id;
+- explicit current-attempt denial -> `denied`;
+- current exact standing grant -> `allowed` with the exact granted scopes;
+- exact standing grant withdrawn/revoked -> `withdrawn`;
+- no authoritative answer -> `unresolved`;
+- reverse direction -> no matching grant;
+- different scope -> never widened to the requested scope.
 
-## Required fixtures and tests
+The contact resolver still combines this answer with actor control, target
+agency, geometry, support, and material. Permission makes a physically valid
+attempt eligible; it never makes an impossible attempt possible.
 
-Direction and scope:
+## Durable event model
 
-- player-to-NPC allowed only by that NPC's grant to that player;
-- NPC-to-NPC allowed in one direction while the reverse remains unavailable;
-- reverse-direction grant cannot authorize the attempt;
-- `romantic_touch` cannot authorize kissing, intimate touch, undressing,
-  nudity exposure, or sex;
-- NPC-to-player uses the explicit player-target exception and never creates a
-  player reaction.
+Character chat uses `chat_permission_events` (migration 0096) as the durable
+ledger. The chat id is the branch boundary for this lane.
 
-Evidence and authorship:
+Important identities/provenance:
 
-- explicit NPC dialogue and unambiguous direct offer can grant;
-- silence, affection, arousal, relationship label, lack of resistance, and
-  player-authored narrator prose cannot grant;
-- “not now” denies the attempt without withdrawing a standing grant;
-- clear “anymore” language withdraws;
-- player attempts to author an NPC grant fail;
-- chat text resembling a developer command never invokes an override;
-- the developer menu can set each direction independently and records an audit
-  source.
+- unique `(chat_id, event_ref, sequence)` for idempotency;
+- `guard_message_id` for retake pruning;
+- direction: permitted actor + granting target;
+- exact scope;
+- event kind/source;
+- story time + source order/evidence offset;
+- attempt action/contact ids for action-local denials.
 
-Chronology and restoration:
+The active projection is a pure fold over surviving ledger rows rather than a
+second persisted summary.
 
-- later same-reply grant cannot authorize an earlier action;
-- clear grant-before-action ordering may authorize the later action;
-- ambiguous ordering fails closed;
-- retake removes discarded grant, denial, and withdrawal events;
-- branch inherits only pre-fork state and then diverges;
-- retry is idempotent.
+Current event meanings include:
 
-Revocation and narration:
+```text
+granted
+attempt_denied
+withdrawn
+relationship_revoked      (reserved for future relationship integration)
+developer_overridden
+```
 
-- withdrawal ends only contacts dependent on that direction and scope;
-- relationship revocation uses the same path when that integration ships;
-- relationship recovery does not restore the grant;
-- permission/contact projections cannot commit a mixed state;
-- the next narrator cut receives a mandatory/high-priority stop transition
-  when needed;
-- narrator output cannot continue invalidated contact or expose policy internals.
+Developer overrides store an explicit grant/withdraw operation in their typed
+payload and remain separately authorized/audited.
 
-## Implementation order
+## Chronology
 
-1. Add the event schema, active projection, idempotency, and branch/retake
-   restoration.
-2. Add the developer-menu controls and audit path so fixtures and live testing
-   can set both directions and relationship inputs without chat commands.
-3. Add the conservative NPC-side grant/denial/withdrawal decision and evidence
-   validator.
-4. Adapt exact policy reads into the shared contact resolver.
-5. End permission-dependent contacts on withdrawal and wire the mandatory
-   narrator handoff.
-6. Run adversarial unit/integration tests, then the plan's genuinely romantic
-   proof.
+Only permission effective before an action may authorize it.
 
-Successor parity remains separate. It may be claimed only after the successor
-lane enforces the same direction, scope, chronology, revocation, developer
-separation, and rollback laws.
+The fold orders by committed chronology (story time, commit order, source order,
+evidence offset). An ambiguous tie fails closed.
 
-## As built (2026-08-04)
+A grant clearly earlier in one assistant reply may authorize a later action only
+when that lane eventually supports both authoritative actions in the same reply
+and their evidence order is unambiguous. A later grant never authorizes an
+earlier action.
 
-Implementation decisions recorded at build time; everything above remains the
-requirement set.
+For the first **player -> NPC** romantic proof, the permission event must already
+be committed before the player's next attempted action. This keeps the proof
+simple and avoids conflating same-reply NPC chronology with the missing player
+action seam.
 
-- **The chat is the branch.** Character chat has no separate branch entity, so
-  `branchId` is `character_chats.id`, and branch-locality is chat-scoped rows
-  with cascade FKs. Fork inheritance needs no mechanism in this lane.
-- **Ledger, no stored projection.** `chat_permission_events` (migration 0096)
-  copies the contact ledger's identity: unique `(chat_id, event_ref, sequence)`
-  for idempotency, `guard_message_id` for retake pruning (nullable only for an
-  override recorded before any message exists). The active projection is a pure
-  fold over the pruned rows (`src/contracts/affordances/permission/`), so
-  retake/branch restoration IS the existing prune — pruning is unconditional at
-  every site the contact ledger prunes. Event-ref namespaces:
-  `permission-reply:<assistantMessageId>` (NPC decisions, guard = the assistant
-  row) and `permission-override:<eventId>` (developer overrides, guard = the
-  chat's newest message).
-- **One atomic entry point.** `appendChatPermissionEventsWithInvalidation`
-  commits permission rows, the withdrawal sweep's `policy_withdrawn`
-  contact-ended rows, the swept scene, and the operator audit event in one
-  transaction; a mixed state cannot commit.
-- **Both producers are serialized against the exchange.** The NPC leg inherits
-  the per-chat `chat_exchange:<chatId>` lock by running inside the settle tail;
-  the developer override *acquires* that lock (bounded wait, then the same
-  `chat_busy` 409 it answers when the fast-path probe finds a live stream)
-  rather than merely probing it, because a probe leaves a window in which an
-  exchange finalizer can rewrite the scene from its own earlier read and
-  resurrect the contacts the sweep just ended. Underneath both, the sweep's
-  scene write is a compare-and-swap against the raw column value it read — the
-  database's own answer for any future producer that forgets the lock. A
-  collision refuses the whole call as `stale_scene` (surfaced by the endpoint
-  as 409 `scene_conflict`) with nothing committed. The CAS base is the raw
-  value, not the parsed state, so a repaired-on-read scene cannot look changed.
-- **Player-target exception on the read.** `ContactInteractionPolicyRead` gained
-  `notRequiredBasis?: "player_target"` plus `notRequiredTargetId`; the resolver
-  accepts `not_required` only when both the basis and named subject match the
-  attempted target. A bare or misdirected `not_required` remains `unresolved`.
-- **Overrides use the spec's `developer_overridden` kind** with
-  `operation: "grant" | "withdraw"` in the typed payload; the endpoint is
-  `/api/admin/chat-permissions/:chatId` (owner-admin + ownership + capability
-  flag), audited as `romantic_permission_developer_override`.
-- **NPC decision is a single-phase settle-tail leg** (one trigger-gated
-  classifier call per reply max, assistant text only), with a deterministic
-  validator: verbatim evidence grounding with absolute offsets, NPC attribution
-  (including the adjacent narration line, so a reply that hands the words back
-  to the player — "that was what you had said" — cannot ground a grant),
-  conditional/negation/question/restraint vetoes for grants, player-as-target
-  and self-grant drops, and dedupe per direction. A `withdrawn` may take back
-  either a standing grant or an offer made **earlier in the same reply**: a
-  reply that allows the touch and then retracts it must not leave a standing
-  grant, so only the withdrawal is emitted (emitting both would end
-  not-standing too, but a chronology cutoff falling between the two offsets
-  would read the retracted offer as effective). A two-half begin/finish split
-  is a noted future optimization.
-- **The stop instruction rides the guidance transition tier** (its first
-  producer): `policy_withdrawn` endings that no assistant reply has yet
-  followed emit one mandatory, idempotently-phrased line each through the
-  constraints block. Every pending pair emits — the tier budget was raised from
-  1 to 4, the lawful maximum one exchange can produce, because an ensemble
-  reply can end contact on several pairs at once and a line dropped inside the
-  one-reply window is lost permanently. Past that bound the producer trims and
-  files a `warn` (`chat_permission.stop_guidance.over_bound`), cutting the
-  degraded generic line before any named pair.
-- **Retake semantics of overrides:** an override guarded by the newest
-  assistant message is pruned when that reply is regenerated — the rollback
-  boundary restores the pre-exchange scenario, which predates the override, so
-  keeping its rows would expose exactly the mixed state the transaction rule
-  forbids. An operator re-applies the override if it is still wanted.
-- **Chronology:** the pure comparator (storyTime, commit order, orderInSource,
-  evidence offset; ties are `ambiguous` and fail closed) is exercised by the
-  fold's `effectiveBefore` cutoff. A player attempt treats every committed
-  ledger event as effective, since all of them precede it.
-- **Permission authority is independent of general physical guidance.**
-  `CHAT_ROMANTIC_PERMISSION` composes with `CHAT_CONTACT_ACTIONS`, not
-  `CHAT_PHYSICAL_CONSTRAINTS`. A pending mandatory stop still goes through the
-  one shared guidance compiler and renderer when the general experiment is off;
-  a stop read, compile, or render failure aborts the exchange before a reply can
-  consume the one-reply delivery window.
-- **Retake pruning fails closed across later turns.** Both possible permission
-  guards are removed in one idempotent statement with bounded retries. If all
-  retries fail, the retake is refused before a replacement reply commits; stale
-  permission can therefore never become authoritative on a later turn.
-- **Attempt denials are action-local.** The settle leg binds `attempt_denied` to
-  the exchange's player contact action and, when it committed, the resulting
-  contact. The invalidation sweep re-derives policy against that contact id,
-  ending only the denied attempt while the
-  standing grant remains available for a later action. A denial with no current
-  attempt is dropped rather than stored as dead authority.
-- **Transcript edits cannot rewrite NPC agency.** An assistant reply that
-  authored an NPC permission event returns 409 from the transcript-only edit and
-  delete routes. Regenerate/rerun remains the state-aware rollback path and
-  prunes permission and contact rows before replacing the take.
-- **Exactness is pinned.** Fixtures prove a one-direction withdrawal leaves an
-  unrelated direction and contact active, the player-target basis names the
-  actual target, and the stop-row read covers the contact lifecycle maximum.
+## NPC permission decision leg
+
+`chat-permission-decision.ts` is a conservative assistant-reply classifier leg.
+
+It:
+
+- runs only when `CHAT_ROMANTIC_PERMISSION` is enabled and the cheap trigger
+  fires;
+- reads only the committed assistant reply plus compact permission digest;
+- never reads player text as grant authority;
+- performs at most one classifier call per eligible reply;
+- parses candidates independently so one malformed item does not erase valid
+  siblings;
+- requires deterministic evidence grounding/attribution/assertion validation;
+- drops self-grants, player-as-granting-target mistakes, ambiguous/conditional/
+  negated/question evidence, and other unsupported cases;
+- writes accepted events through the one atomic permission/contact invalidation
+  entry point;
+- degrades to **no new permission event**, never a fabricated grant.
+
+An `attempt_denied` candidate is stored only when it can bind to the current
+attempt action id (and contact id when one committed). A denial with no current
+attempt is dropped rather than becoming dead standing authority.
+
+## Withdrawal and active contact invalidation
+
+A withdrawal invalidates only active contacts that depend on the matching:
+
+```text
+permitted actor -> granting target -> exact scope
+```
+
+The authoritative path must commit atomically/guardedly:
+
+1. permission event;
+2. affected `policy_withdrawn` contact endings;
+3. resulting scene/contact projection;
+4. developer audit row where applicable.
+
+`appendChatPermissionEventsWithInvalidation` is the current character-chat entry
+point.
+
+A one-direction withdrawal must not end the reverse direction or unrelated
+contacts.
+
+## Mandatory stop handoff
+
+A newly withdrawn contact may need one binding narrator transition so prose does
+not continue a contact the state owner ended.
+
+That handoff belongs to constraint-first physical guidance, not the optional
+visual-state cue path.
+
+Rules:
+
+- expose only the observable stop/separation requirement;
+- never expose permission records, relationship thresholds, developer override
+  metadata, or diagnostics;
+- never author the player's reaction;
+- do not make visual-state narration a prerequisite for the stop.
+
+## Developer controls
+
+`CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE` is deliberately independent of the
+runtime permission flag so a controlled fixture may be prepared first.
+
+The current endpoint remains admin/owner gated and audited. Controls must:
+
+- name chat/branch, actor, target, exact scope, and operation;
+- record `developer_override` provenance/audit;
+- use the same projection/invalidation transaction as production events;
+- never be invokable through chat prose;
+- serialize against the exchange and fail closed on scene conflict.
+
+The UI should describe direction plainly (for example, “Alex may touch Mara
+romantically”), not present a symmetric checkbox.
+
+## Retake and transcript mutation
+
+Permission authority rolls back with the story take it came from.
+
+- retake prunes discarded reply-sourced permission rows;
+- retry is idempotent;
+- the folded projection after prune is authoritative;
+- discarded denial/withdrawal cannot survive into the replacement take;
+- transcript-only edits/deletes cannot rewrite a reply that authored permission
+  authority; regeneration is the state-aware path;
+- pruning failure refuses the retake rather than letting stale permission become
+  authoritative.
+
+Developer overrides guarded by the newest assistant reply are intentionally
+pruned if that reply is regenerated; the operator reapplies the override if it
+is still wanted.
+
+## Relationship integration
+
+Automatic relationship-based revocation remains reserved, not part of the MVP.
+
+If implemented later:
+
+- relationship owner emits an authoritative transition event;
+- permission owner may map a downward transition to scope-specific revocation;
+- improvement never auto-grants;
+- recovery never automatically restores a revoked grant;
+- a fresh target-authored grant is required.
+
+The contact resolver never polls a relationship label and derives permission.
+
+## Revised first-proof sequence
+
+1. Build the separate narrow **player romantic action producer** described in
+   the plan/contact-core boundary.
+2. Unit-test producer evidence without permission side effects.
+3. Feed the resulting `actionKind: "romantic"` attempt through the existing
+   policy adapter + contact resolver.
+4. Prove deterministically:
+   - exact grant -> physically valid attempt commits;
+   - no grant -> no contact commit;
+   - reverse-direction grant -> no commit;
+   - wrong scope -> no commit;
+   - withdrawn grant -> no commit;
+   - action-local denial -> current attempt rejected without deleting an
+     unrelated standing grant;
+   - withdrawal of a live dependent contact ends it `policy_withdrawn`;
+   - affectionate contact remains unchanged/permission-neutral;
+   - retake restores permission + contact state.
+5. Use the developer override or an earlier NPC-authored grant to seed one
+   controlled player -> NPC scenario.
+6. Enable `CHAT_ROMANTIC_PERMISSION` for that controlled proof and verify the
+   committed contact/action outcome, ledger, scene, retake, and narrator stop
+   behavior.
+7. Decide rollout for that **specific romantic action surface** only.
+
+This proof does **not** require general NPC scene-decision movement/start/update
+authority unless the chosen fixture asks the target NPC to reposition. The NPC
+authority shadow review remains a parallel operational gate.
+
+## Future exact scopes
+
+`romantic_touch` never implicitly authorizes future categories. Product design
+must define exact directional scopes before supporting, at minimum:
+
+- kissing;
+- intimate non-penetrative touch;
+- removing/moving another participant's clothing;
+- exposing one's own nudity to another participant;
+- sexual activity.
+
+Whether any scope implies another is a future explicit product ruling. The
+current core performs exact membership and does not invent a hierarchy.
+
+## Required tests
+
+### Direction/scope
+
+- player -> NPC exact grant works only in that direction;
+- NPC -> NPC reverse direction remains independent;
+- player-target exception names the real player target;
+- wrong scope cannot authorize;
+- `romantic_touch` cannot authorize kissing/intimate/clothing/nudity/sex.
+
+### Authorship/evidence
+
+- explicit NPC grant/offer can commit when unambiguous;
+- silence/affection/arousal/relationship/lack of resistance cannot grant;
+- player text cannot author an NPC grant;
+- “not now” denial is action-local;
+- clear standing withdrawal revokes;
+- chat text resembling a developer command cannot trigger override.
+
+### Chronology/rollback
+
+- later grant cannot authorize earlier action;
+- ambiguous chronology fails closed;
+- retry is idempotent;
+- retake removes discarded grant/denial/withdrawal;
+- stale permission cannot survive a failed prune;
+- transcript edit cannot rewrite an authority-producing assistant reply.
+
+### Invalidation/narration
+
+- withdrawal ends only matching dependent contacts;
+- stop handoff is binding even when optional visual-state narration is disabled;
+- narrator cannot continue invalidated contact or expose policy internals;
+- player reaction remains uncommitted.
+
+### Integration gap regression
+
+- enabling `CHAT_ROMANTIC_PERMISSION` without a romantic action producer does
+  **not** cause affectionate input to become romantic;
+- romantic-framed input rejected by the affectionate detector does not fall back
+  to affectionate contact;
+- the future romantic producer emits `actionKind: "romantic"` explicitly.
