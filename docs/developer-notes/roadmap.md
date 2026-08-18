@@ -24,9 +24,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
-  [spec index](romantic-contact-affordances.spec.md) — the affectionate tier is
-  live for players and the shadow measurement window is open; next is reviewing
-  the window and taking the cost ruling every later item waits on.
+  [spec index](romantic-contact-affordances.spec.md) — affectionate player
+  contact is live; NPC shadow review and the missing player-romantic action seam
+  are now parallel gates, with the latter required before `romantic_touch` can
+  be proven end to end.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·
@@ -68,9 +69,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Next (queued, in dependency order)
 
-**Unblocked today — only scheduling gates these:** data lifecycle, the
-shadow-measurement enable, resilience closures, `ConfirmDialog`, clothing
-slice 7, and wiring the affordance layer to the scene owner.
+**Unblocked today — only scheduling gates these:** data lifecycle, resilience
+closures, `ConfirmDialog`, clothing slice 7, and wiring the affordance layer to
+the scene owner.
 
 - **Data lifecycle — chat-scoped deletion, retention sweeps, intentional image
   orphans** — [plan](data-lifecycle.plan.md) · [audit](data-lifecycle.audit.md) —
