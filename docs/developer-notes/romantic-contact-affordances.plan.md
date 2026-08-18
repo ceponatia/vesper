@@ -1,20 +1,22 @@
 # Romantic contact affordances — grounded contact, permission, and effects
 
-Status: **active; reconciled to `main` on 2026-08-18.** The affectionate contact
-slice is live in character chat. The shared contact core, durable contact
-lifecycle, scene/body-relations owner, player-authored affectionate action lane,
-narrow player-authored romantic action producer, NPC deterministic ending floor,
-NPC reply-scene authority implementation, and directional `romantic_touch`
-permission owner all exist. The NPC authority increments and romantic permission
-owner remain gated; the romantic producer only runs when a permission owner is
-wired, so with the flag off the lane behaves exactly as it did before the
-producer existed. The foot domain is built but deliberately unregistered.
-Contact effects and intimate-region mechanics remain future work.
+Status: active — reconciled to `main` on 2026-08-18.
 
 Outcome: A player can touch a character and have the game itself settle what
 happened — who moved, what was in the way, whether that character had allowed it
 — so that physical moments stop being whatever the narrator improvised that
 turn.
+
+The affectionate contact slice is live in character chat. The shared contact
+core, durable contact lifecycle, scene/body-relations owner, player-authored
+affectionate action lane, narrow player-authored romantic action producer, NPC
+deterministic ending floor, NPC reply-scene authority implementation, and
+directional `romantic_touch` permission owner all exist. The NPC authority
+increments and the romantic permission owner remain gated; the romantic producer
+only runs when a permission owner is wired, so with the flag off the lane behaves
+exactly as it did before the producer existed. The foot domain is built but
+deliberately unregistered. Contact effects and intimate-region mechanics remain
+future work.
 
 This reconciliation changes the continuation design in two important ways:
 
@@ -76,26 +78,47 @@ The narrator renders those answers. It does not become the owner of them.
 
 ## Current state of the codebase — 2026-08-18
 
-| Area | Current state |
-| --- | --- |
-| Shared contact core | Built and used by character chat under `apps/web/src/contracts/affordances/contact/`. |
-| Player movement + affectionate hand contact | Built and live behind `CHAT_CONTACT_ACTIONS`; unchanged by the romantic work, and still vetoes romantic/intimate framing outright. |
-| Contact persistence | Durable `chat_contact_events` lifecycle with idempotent start/update/end projection and retake pruning. |
-| Scene/body relations | Built: participants, control, posture, support, proximity, facing, reach, discontinuity clearing, and active contacts. |
-| NPC deterministic endings | Built and part of the live contact floor. |
-| NPC movement/start/update authority | All three increments are built behind `CHAT_NPC_SCENE_DECISIONS` and the authority-kind scope. Shadow measurement opened 2026-08-10; no committed review/acceptance artifact exists in the repository as of this reconciliation. |
-| Romantic permission owner | Built behind `CHAT_ROMANTIC_PERMISSION`, exact directional `romantic_touch` only; developer override is separate. |
-| Romantic action producer | Built: a separate narrow player producer emits `actionKind: "romantic"` for a closed caress/stroke/cup family. Runs only when a permission owner is wired, so `CHAT_ROMANTIC_PERMISSION=off` leaves the lane unchanged. Deterministically tested; not yet proven live. |
-| Foot domain | Built and fixture-driven, intentionally absent from the live affordance-domain registry. |
-| Body-surface wetness | Owned and now consumed beyond hair; visual state projects non-dry regional wetness. |
-| Residue / dirt / blood / cosmetics wear on skin | No current body-state owner. |
-| Contact marks / pressure impressions | No current body-state owner. |
-| Contact-derived visual body language | Built in visual state: active contacts can produce hand occupation and committed contact motion. |
-| Visual visibility + attention + repetition | Built in visual state, including per-subject exposure/consent, selection, memory/cue state, and narrator projection. |
-| Positive visual-state narration | Slice 7 exists behind a per-chat switch and is off by default; contact must not assume visual cues are globally live. |
-| Contact material transfer / marks / scratches / garment displacement | Not built; proposals remain future until owning state transactions exist. |
-| General tactile / olfactory / gustatory presentation | No shared cross-modal perception/presentation owner yet. |
-| Intimate contact domain | Not built; blocked on exact future scopes plus missing physiology/body-surface owners and nonvisual sensory routing. |
+**Built and live**
+
+- **Shared contact core** — `apps/web/src/contracts/affordances/contact/`.
+- **Player movement + affectionate hand contact** — behind `CHAT_CONTACT_ACTIONS`;
+  unchanged by the romantic work, and still vetoes romantic framing outright.
+- **Contact persistence** — durable `chat_contact_events` lifecycle, idempotent
+  start/update/end projection, retake pruning.
+- **Scene/body relations** — participants, control, posture, support, proximity,
+  facing, reach, discontinuity clearing, active contacts.
+- **NPC deterministic endings** — part of the live contact floor.
+- **Body-surface wetness** — owned and consumed beyond hair.
+- **Contact-derived visual body language** — hand occupation and committed
+  contact motion, projected by visual state.
+- **Visual visibility, attention, repetition** — owned by visual state, including
+  per-subject exposure, selection, memory and narrator projection.
+
+**Built, gated, not yet proven live**
+
+- **Romantic action producer** — emits `actionKind: "romantic"` for a closed
+  caress/stroke/cup family. Runs only when a permission owner is wired, so
+  `CHAT_ROMANTIC_PERMISSION=off` leaves the lane unchanged. Deterministically
+  tested.
+- **Romantic permission owner** — exact directional `romantic_touch` only;
+  developer override is a separate capability.
+- **NPC movement/start/update authority** — all three increments built behind
+  `CHAT_NPC_SCENE_DECISIONS`. Shadow measurement opened 2026-08-10; on hold by
+  owner ruling pending a reviewed corpus.
+- **Positive visual-state narration** — behind a per-chat switch, off by default.
+  Contact must not assume visual cues are live.
+- **Foot domain** — fixture-driven, deliberately absent from the live
+  affordance-domain registry.
+
+**No owner yet**
+
+- Residue, dirt, blood, and cosmetics wear on skin.
+- Contact marks and pressure impressions.
+- Contact material transfer, scratches, garment displacement — proposals stay
+  future until the owning state transactions exist.
+- Tactile, olfactory, and gustatory presentation — no shared cross-modal owner.
+- Intimate contact domain — blocked on exact future scopes plus the missing
+  physiology and nonvisual sensory routing.
 
 ### What changed since the previous plan
 
