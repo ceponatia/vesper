@@ -77,7 +77,9 @@ import {
   CHAT_CONTACT_PLAYER_SUBJECT,
   endAllChatContacts,
   planChatContactTurn,
+  type ChatContactAct,
   type ChatContactPolicySource,
+  type ChatContactPremiseKind,
   type ChatContactUnresolvedPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
@@ -266,6 +268,43 @@ import {
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 
+/**
+ * One exchange's physical act, as the narrator was told about it.
+ *
+ * Deliberately a projection rather than the internals: the resolved outcome, the
+ * premise the seam chose, and the rendered guidance lines — never the permission
+ * ledger, the evidence chain, or the policy read. A consumer grading whether the
+ * prose honoured the state needs what the state SAID; giving it the record
+ * behind that would let a trial grade itself against facts the prompt never
+ * carried.
+ */
+export interface ChatContactTurnRecord {
+  /** Absent when the message produced no contact act at all. */
+  readonly act?: {
+    readonly kind: ChatContactAct["actionKind"];
+    readonly gesture: string;
+    readonly targetLocationId: string;
+    readonly actionId: string;
+  };
+  /** The resolver's own status, and its typed reason when it has one. */
+  readonly status?: string;
+  readonly reason?: string;
+  /** The outcome's stable result codes — the same list the fingerprint folds. */
+  readonly resultCodes: readonly string[];
+  /** True only when the exchange durably recorded the contact. */
+  readonly committed: boolean;
+  /** The committed contact's id, when there is one. */
+  readonly contactId?: string;
+  /** Skin or through a layer, as RECORDED — absent unless the contact committed. */
+  readonly directSkinContact?: boolean;
+  /** Contacts this exchange ended, with the reason each ended for. */
+  readonly ended: readonly { readonly contactId: string; readonly reason: string }[];
+  /** Which unresolved gap earned a narrator line, when one did. */
+  readonly premiseKind?: ChatContactPremiseKind;
+  /** The exact physical-guidance lines handed to the narrator this turn. */
+  readonly guidanceLines: readonly string[];
+}
+
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
   chatId: string;
@@ -356,6 +395,23 @@ export interface SubmitChatMessageInput {
    * kinds) so the consumer never re-reads the transcript for it.
    */
   onSettled?: (info: { assistantMessageId: string; content: string }) => void;
+  /**
+   * Contact-turn observer: fired once, AFTER the physical-guidance block for this
+   * exchange is rendered and BEFORE the reply streams, with what the narrator was
+   * actually told about the player's physical act.
+   *
+   * It exists because the turn's guidance is deliberately not persisted — it is
+   * recomputable from the same cut and the same message, which is what makes a
+   * retake reproduce it. That equivalence holds only BEFORE the exchange folds
+   * its commits, so a trial that re-derived the guidance afterwards would be
+   * reading it against state the turn had already changed. Anything grading a
+   * live romantic turn has to see the bytes the model saw, at the moment it saw
+   * them.
+   *
+   * Read-only and fire-and-forget, like the other hooks here: a throwing observer
+   * is logged and swallowed, never allowed to cost the exchange.
+   */
+  onContactTurn?: (record: ChatContactTurnRecord) => void;
   /**
    * Diagnostics observer: every diagnostic this exchange files is teed here as it
    * is pushed, alongside the pipeline's own collector (which still drives the
@@ -1426,6 +1482,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
     let currentContactAttempt: { readonly actionId: string; readonly contactId?: string } | undefined;
     let contactUnresolvedPremise: ChatContactUnresolvedPremise | null = null;
+    /** The contact-turn record minus its guidance lines — only assembled when observed. */
+    let contactTurnFacts: Omit<ChatContactTurnRecord, "guidanceLines"> | null = null;
     // The current-cut coverage reads the contact leg derived, keyed by garment
     // actor. Threaded into the finalizer's `affordanceCoverage` so settlement
     // persists the EXACT objects the contact resolver consumed — never an
@@ -1689,6 +1747,35 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             }),
           ];
         }
+        // The observer's half of the record — everything but the guidance lines,
+        // which are rendered further down. Assembled here because this is the only
+        // scope holding the act and the fold.
+        if (input.onContactTurn !== undefined) {
+          contactTurnFacts = {
+            ...(act === null
+              ? {}
+              : {
+                  act: {
+                    kind: act.actionKind,
+                    gesture: act.gesture,
+                    targetLocationId: act.targetLocationId,
+                    actionId: act.actionId,
+                  },
+                }),
+            ...(resolution === null ? {} : { status: resolution.status }),
+            ...(resolution !== null && "reason" in resolution ? { reason: resolution.reason } : {}),
+            resultCodes: contactActionOutcomes[0]?.resultCodes ?? [],
+            committed: committed !== null,
+            ...(committed === null ? {} : { contactId: committed.contact.contactId }),
+            ...(committed === null
+              ? {}
+              : { directSkinContact: committed.contact.transmission.directSkinContact }),
+            ended: [...endedCommits, ...planned.ended]
+              .filter((entry) => entry.kind === "contact_ended")
+              .map((entry) => ({ contactId: String(entry.contactId), reason: String(entry.reason) })),
+            ...(contactUnresolvedPremise === null ? {} : { premiseKind: contactUnresolvedPremise.kind }),
+          };
+        }
       } catch (error) {
         log.error("engine.chat", "chat contact leg failed", { error: describeError(error) });
       }
@@ -1788,6 +1875,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       } catch (error) {
         log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
         if (permissionStopTransitions.length > 0) throw error;
+      }
+    }
+
+    // The contact-turn record ships here — after the guidance exists, before the
+    // model sees it. Fire-and-forget: a throwing observer costs a log line and
+    // nothing else, because a trial watching a turn may not break it.
+    if (input.onContactTurn !== undefined && contactTurnFacts !== null) {
+      try {
+        input.onContactTurn({ ...contactTurnFacts, guidanceLines: physicalGuidanceLines });
+      } catch (error) {
+        log.error("engine.chat", "contact turn observer failed", { error: describeError(error) });
       }
     }
 

@@ -1,8 +1,13 @@
 # First romantic contact proof — internal trial results
 
-Status: closed — passed 2026-08-18. The permission flags were enabled for the
-proof window only and reverted immediately afterwards; production runs without
-them. The rollout decision this trial exists to inform is still open.
+Status: closed — passed 2026-08-18, and **superseded as the rollout input.** The
+permission flags were enabled for the proof window only and reverted immediately
+afterwards; production runs without them.
+
+Both findings below were closed in code on 2026-08-18, so the behaviour this
+trial measured is no longer the behaviour that would ship. A rerun against the
+fixed lane is the input to the rollout decision — plan item 10. What follows
+stands as the record of what was observed on the day, and is not updated.
 
 Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
@@ -49,10 +54,11 @@ says**. A player who writes a romantic touch with no permission on record will
 still read a reply where it happens; what changes is that Vesper does not record
 it, build on it, or carry it forward.
 
-That is the trade to weigh before rollout. It is a real gap between the story a
-player reads and the state Vesper keeps, and closing it is a separate piece of
-work — the narrator would need to be told about refusals it is currently not told
-about.
+That was the trade to weigh before rollout. **It has since been closed.** The
+narrator is now told about this gap, in wording that stops the touch being
+written as landing without inventing the refusal nobody gave — which is the hard
+half, because saying "she has not allowed that" would replace a false landing
+with a false decision. It has not been observed live.
 
 ## What the trial needed to prove
 
@@ -110,8 +116,12 @@ worked. A player who writes those as two natural turns will be refused for a
 reason the story has already dealt with.
 
 **A character's first name alone is not recognized.** Writing "Sabrina" does not
-match a character named "Sabrina Vale"; a pronoun or the full name is needed.
-Players use first names constantly, so this will be hit.
+match a character named "Sabrina Vale"; a pronoun is needed. **Closed
+2026-08-18, and it was worse than recorded here:** the full name did not work
+either. Every way of writing a name matched a single word only, so a two-word
+character name was unreachable by any phrasing — including the approach and
+release lines. A unique first name and a multi-word name now both resolve, and
+an ambiguous first name is silence. Not observed live.
 
 One smaller mismatch: the reply described the touch landing through the fabric of
 a shirt, while the recorded fact was skin contact. That is narration drifting
@@ -128,6 +138,9 @@ from the recorded state, not the state being wrong.
 
 ## What happens next
 
-The rollout decision is the owner's and remains open: whether this specific
-romantic action surface ships, stays test-only, or waits for the silent-refusal
-gap to be closed first. Nothing in the code is waiting.
+The silent-refusal gap and the naming gap are both closed in code and neither has
+been seen live. The rollout decision is still the owner's and still open, but it
+now waits on a rerun against the fixed lane rather than on this trial: the
+instrument for it is `scripts/trial/romantic-contact/`, and it captures the
+inputs, replies, narrator guidance and before/after state this record could only
+summarise.

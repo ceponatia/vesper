@@ -76,6 +76,7 @@ import {
   type ChatDeparture,
 } from "./chat-contact-adapter";
 import { chatContactActionsEnabled } from "./prompts/constants";
+import { TRIAL_CASES } from "../../../../../scripts/trial/romantic-contact/cases";
 import { probePermissionEvent } from "@/contracts/affordances/permission/test-support";
 
 /**
@@ -2214,6 +2215,54 @@ describe("the romantic producer — everything it refuses", () => {
     ).toBeNull();
     expect(romantic('"I caress your arm."')).toBeNull();
     expect(romantic("((I caress your arm))")).toBeNull();
+  });
+});
+
+/**
+ * The rollout rerun's own case lines, run through the real producer
+ * (`scripts/trial/romantic-contact/cases.ts`).
+ *
+ * This is the cheapest guard against the most expensive mistake available on
+ * that trial: a case line that reads perfectly and produces NOTHING. The
+ * producer is anchored to the whole sentence, so "I walk over to Sabrina and I
+ * caress Sabrina's arm" — one sentence with a leading clause — commits nothing
+ * at all. A run would record that as a silent refusal, conclude the permission
+ * gate works, and the rollout ruling would be made from it. The named case's
+ * first draft was exactly that sentence.
+ *
+ * It lives here rather than beside the harness because the detectors are
+ * deliberately not part of the server's public surface, and the trial's lines
+ * are imported rather than copied so the two cannot drift.
+ */
+describe("the rollout rerun's case lines still produce the acts it needs", () => {
+  const SABRINA = affordanceSubjectId("char_sabrina");
+  const ROSTER = [member(SABRINA, "Sabrina Vale")];
+  const lineFor = (id: string): string => {
+    const found = TRIAL_CASES.find((entry) => entry.id === id);
+    if (found === undefined) throw new Error(`the trial no longer defines a case called ${id}`);
+    return found.line;
+  };
+  const romantic = (message: string) =>
+    detectChatRomanticTouch({ message, narratorInput: false, characters: ROSTER, eventRef: EVENT });
+
+  it.each([["no_grant"], ["explicit_denial"], ["natural_named"], ["commit"]])(
+    "%s writes a romantic act the permission owner can answer",
+    (id) => {
+      expect(romantic(lineFor(id))?.actionKind).toBe("romantic");
+    },
+  );
+
+  it("the cases that must also close the distance do so in a sentence of their own", () => {
+    for (const id of ["natural_named", "commit"]) {
+      expect(detectChatApproach({ message: lineFor(id), narratorInput: false, characters: ROSTER })).toEqual({
+        targetSubject: SABRINA,
+        band: "close",
+      });
+    }
+  });
+
+  it("the withdrawal case writes no touch of its own — it tests what the withdrawal did", () => {
+    expect(romantic(lineFor("withdrawal"))).toBeNull();
   });
 });
 

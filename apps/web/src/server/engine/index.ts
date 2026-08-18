@@ -64,6 +64,7 @@ export {
   chatGarmentCuesEnabled,
   chatPhysicalConstraintsEnabled,
   chatRomanticPermissionDevOverrideEnabled,
+  chatRomanticPermissionEnabled,
   narrationShapeId,
   readDevNarrationShape,
   setDevNarrationShape,
