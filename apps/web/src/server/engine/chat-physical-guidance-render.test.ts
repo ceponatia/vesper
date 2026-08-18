@@ -23,6 +23,7 @@ import {
   type PhysicalStateTransition,
 } from "@/contracts";
 import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
+import type { ChatContactUnresolvedPremise } from "./chat-contact-adapter";
 import {
   chatPhysicalGuidanceBlock,
   renderChatPhysicalGuidance,
@@ -159,17 +160,17 @@ const render = (guidance: NarratorPhysicalGuidance, sink?: DiagnosticCollector) 
     ...(sink === undefined ? {} : { sink }),
   });
 
-describe("the reach-premise line", () => {
-  const premiseRender = (premise: { targetName: string; locus?: string }, guidance = guidanceOf({})) =>
+describe("the unresolved-premise line", () => {
+  const premiseRender = (premise: ChatContactUnresolvedPremise, guidance = guidanceOf({})) =>
     renderChatPhysicalGuidance({
       guidance,
       characterName: NAME,
       possessive: POSSESSIVE,
-      reachPremise: premise,
+      unresolvedPremise: premise,
     });
 
   it("states the unestablished reach with the target's name and surface, and the two forbidden inventions", () => {
-    const lines = premiseRender({ targetName: "Sabrina", locus: "shoulder" });
+    const lines = premiseRender({ kind: "reach", targetName: "Sabrina", locus: "shoulder" });
     expect(lines).toEqual([
       "- Unestablished reach: the current scene does not establish that the player's hand can reach Sabrina's shoulder. " +
         "Do not depict that touch as landing, and do not invent movement by either participant to make it land.",
@@ -177,12 +178,12 @@ describe("the reach-premise line", () => {
   });
 
   it("falls back to the target's name alone when the surface has no wording", () => {
-    const lines = premiseRender({ targetName: "Sabrina" });
+    const lines = premiseRender({ kind: "reach", targetName: "Sabrina" });
     expect(lines[0]).toContain("can reach Sabrina.");
   });
 
   it("claims only the gap — never a distance, a refusal, or a movement", () => {
-    const line = premiseRender({ targetName: "Sabrina", locus: "shoulder" })[0] ?? "";
+    const line = premiseRender({ kind: "reach", targetName: "Sabrina", locus: "shoulder" })[0] ?? "";
     for (const positiveFact of ["across the room", "far apart", "pulls away", "refused", "too far"]) {
       expect(line.toLowerCase()).not.toContain(positiveFact);
     }
@@ -200,7 +201,7 @@ describe("the reach-premise line", () => {
       }),
       characterName: NAME,
       possessive: POSSESSIVE,
-      reachPremise: { targetName: "Sabrina", locus: "shoulder" },
+      unresolvedPremise: { kind: "reach", targetName: "Sabrina", locus: "shoulder" },
     });
     // The unresolved outcome still renders nothing of its own; only the premise ships.
     expect(lines).toHaveLength(1);
@@ -209,6 +210,53 @@ describe("the reach-premise line", () => {
 
   it("absent premise renders the exact lines it always rendered", () => {
     expect(render(guidanceOf({}))).toEqual([]);
+  });
+
+  /**
+   * The permission line, and the reason it is worded differently from every
+   * other fence in this file.
+   *
+   * The contact system's standing law is that something unknown is not
+   * something denied. The 2026-08-18 romantic proof found the practical
+   * consequence: an unanswered permission owner rendered NOTHING, so the reply
+   * described the caress as landing. Closing that with the obvious wording —
+   * "that has not been allowed", the phrase `permission_denied` already uses —
+   * would trade a false landing for a false REFUSAL, inventing a decision the
+   * character never made.
+   *
+   * So this line is graded on three things at once, and the third is the one a
+   * plausible implementation gets wrong: it forecloses the landing, it
+   * forecloses the refusal, and it names no mechanic — no permission, consent,
+   * allowance, or record — because naming one both leaks the ledger the
+   * disclosure rule keeps out of the prompt and implies a ruling that does not
+   * exist.
+   */
+  describe("the permission line — unknown is not denied, in the prose too", () => {
+    const line = () => premiseRender({ kind: "permission", targetName: "Sabrina", locus: "shoulder" })[0] ?? "";
+
+    it("forecloses the landing without asserting a refusal", () => {
+      expect(line()).toBe(
+        "- Unestablished contact: the current scene does not establish that the player's touch on Sabrina's shoulder happens. " +
+          "Do not depict it as landing or as already having landed. " +
+          "Do not depict it as refused, blocked, resisted, or unwelcome either — neither outcome is established. " +
+          "Write the reply so it settles neither: respond to the attempt without confirming the contact.",
+      );
+    });
+
+    it("never names the mechanic behind the gap", () => {
+      const lowered = line().toLowerCase();
+      for (const leak of ["permission", "consent", "allowed", "not been allowed", "record", "ledger", "granted"]) {
+        expect(lowered).not.toContain(leak);
+      }
+    });
+
+    it("states no positive fact about the character — it fences claims and scripts nothing", () => {
+      const lowered = line().toLowerCase();
+      // Each of these would be the renderer deciding her behaviour for her.
+      for (const scripted of ["pulls away", "draws back", "she refuses", "objects", "stiffens", "does not want"]) {
+        expect(lowered).not.toContain(scripted);
+      }
+    });
   });
 });
 

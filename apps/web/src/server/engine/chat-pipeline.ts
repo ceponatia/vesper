@@ -72,13 +72,13 @@ import {
   chatContactActionOutcome,
   chatContactEventRef,
   chatContactMaterialAtCut,
-  chatContactReachPremise,
+  chatContactUnresolvedPremise,
   chatSceneAfterDiscontinuity,
   CHAT_CONTACT_PLAYER_SUBJECT,
   endAllChatContacts,
   planChatContactTurn,
   type ChatContactPolicySource,
-  type ChatContactReachPremise,
+  type ChatContactUnresolvedPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
 import {
@@ -1425,7 +1425,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // and no outcome — which is the flag-off path — and never costs the exchange.
     let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
     let currentContactAttempt: { readonly actionId: string; readonly contactId?: string } | undefined;
-    let contactReachPremise: ChatContactReachPremise | null = null;
+    let contactUnresolvedPremise: ChatContactUnresolvedPremise | null = null;
     // The current-cut coverage reads the contact leg derived, keyed by garment
     // actor. Threaded into the finalizer's `affordanceCoverage` so settlement
     // persists the EXACT objects the contact resolver consumed — never an
@@ -1622,7 +1622,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // could not establish stays `unresolved` — no row, no fold, no
         // acknowledgment — but the guidance block (when `CHAT_PHYSICAL_CONSTRAINTS`
         // is on) gets one typed premise fencing the prose from inventing the landing.
-        contactReachPremise = chatContactReachPremise({ act, resolution, characters: contactRoster });
+        contactUnresolvedPremise = chatContactUnresolvedPremise({ act, resolution, characters: contactRoster });
         // ONE combined, ordered commit list per exchange — hook ends, then the ends
         // the plan folded from the player's own act (the release's `withdrawn`, then
         // the departure's `separated`), then the touch (with whatever it had to end to
@@ -1771,7 +1771,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // The unestablished-reach premise (S3): presentation only, and owned by
           // THIS flag — the underlying attempt stays `unresolved` either way, and
           // with the flag off these bytes do not exist.
-          ...(physicalConstraintsEnabled && contactReachPremise !== null ? { reachPremise: contactReachPremise } : {}),
+          ...(physicalConstraintsEnabled && contactUnresolvedPremise !== null ? { unresolvedPremise: contactUnresolvedPremise } : {}),
           // The stop line's display names: the roster plus the reserved player
           // subject. Presentation only, and only when a stop is in play.
           ...(permissionStopTransitions.length > 0
@@ -3606,7 +3606,7 @@ async function previewChatContactOutcomes(input: {
   cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
   message: { id: string | null; content: string; narrator: boolean };
   sink: DiagnosticCollector;
-}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; reachPremise: ChatContactReachPremise | null }> {
+}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; unresolvedPremise: ChatContactUnresolvedPremise | null }> {
   const { cut } = input;
   try {
     // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
@@ -3683,7 +3683,7 @@ async function previewChatContactOutcomes(input: {
       ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
       sink: input.sink,
     });
-    if (act === null || resolution === null) return { outcomes: [], reachPremise: null };
+    if (act === null || resolution === null) return { outcomes: [], unresolvedPremise: null };
     const acknowledgment =
       commit?.status === "committed"
         ? chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId })
@@ -3701,11 +3701,11 @@ async function previewChatContactOutcomes(input: {
       ],
       // The same typed premise the live leg derives — the inspector and the
       // prompt preview must both explain (or show) the reach fence the turn built.
-      reachPremise: chatContactReachPremise({ act, resolution, characters }),
+      unresolvedPremise: chatContactUnresolvedPremise({ act, resolution, characters }),
     };
   } catch (error) {
     log.error("engine.chat", "chat contact preview failed", { error: describeError(error) });
-    return { outcomes: [], reachPremise: null };
+    return { outcomes: [], unresolvedPremise: null };
   }
 }
 
@@ -3777,7 +3777,7 @@ export async function previewChatPhysicalGuidance(input: {
       guidance: stages.guidance,
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
-      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
+      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
       sink,
     }),
     diagnostics: [...stages.guidance.diagnostics, ...sink.items.filter((item) => item.code.startsWith("guidance."))],
@@ -3837,7 +3837,7 @@ export async function previewChatPrompt(input: {
     // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
     const contact = chatContactActionsEnabled()
       ? await previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
-      : { outcomes: [] as readonly PhysicalActionOutcome[], reachPremise: null };
+      : { outcomes: [] as readonly PhysicalActionOutcome[], unresolvedPremise: null };
     previewPhysicalGuidance = renderChatPhysicalGuidance({
       guidance: buildChatPhysicalGuidance({
         read: read.read,
@@ -3856,7 +3856,7 @@ export async function previewChatPrompt(input: {
       }),
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
-      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
+      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
       sink,
     });
   }

@@ -52,7 +52,7 @@ import {
   chatContactMaterialLayers,
   chatContactMaterialSource,
   chatContactPhrase,
-  chatContactReachPremise,
+  chatContactUnresolvedPremise,
   chatDepartureSceneIntents,
   CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_SCENE_GROUND_SUPPORT,
@@ -374,6 +374,85 @@ describe("approach detection", () => {
         targetSubject: WREN,
         band: "close",
       });
+    });
+  });
+
+  /**
+   * The 2026-08-18 romantic proof recorded that "a character's first name alone
+   * is not recognized". It was worse than that: EVERY owner capture in this lane
+   * was one word, so a character named "Sabrina Vale" could not be named at all
+   * — "Sabrina's arm" missed, and so did "Sabrina Vale's arm". Players write
+   * first names constantly, and most authored characters have two-word names, so
+   * the shipped lane answered ordinary writing with silence.
+   *
+   * These live here rather than beside each detector because the rule is one
+   * resolver's, and the approach path is where the widened capture can do damage
+   * — it is the only site where over-capturing changes a target that used to
+   * resolve.
+   */
+  describe("naming a character — a unique first name, and a name of more than one word", () => {
+    const VALE = [member(WREN, "Sabrina Vale")];
+    const TWO_SABRINAS = [member(WREN, "Sabrina Vale"), member(VAEL, "Sabrina Cruz")];
+
+    it.each([
+      ["I walk over to Sabrina.", "a unique first name — the case the trial hit"],
+      ["I walk over to Sabrina Vale.", "the full name, which nothing could match before"],
+      ["I walk over to sabrina.", "the same, written lower-case"],
+    ])("%s reaches her (%s)", (message) => {
+      expect(approach(message, VALE)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("an ambiguous first name is silence, exactly as an ambiguous pronoun is", () => {
+      expect(approach("I walk over to Sabrina.", TWO_SABRINAS)).toBeNull();
+      // The full name still separates them.
+      expect(approach("I walk over to Sabrina Vale.", TWO_SABRINAS)).toEqual({
+        targetSubject: WREN,
+        band: "close",
+      });
+    });
+
+    /**
+     * The hazard the widened capture creates, and the only way it could LOSE a
+     * target: greedily taking a second capitalised word and then failing to
+     * resolve the pair. Falling back to the longest resolvable prefix is what
+     * keeps "Wren Vaelith" an approach to Wren.
+     */
+    it("a second name after the first still moves the player to the first", () => {
+      expect(approach("I walk over to Wren Vaelith.", PAIR)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("the possessive guard survives a capitalised possession", () => {
+      expect(approach("I walk over to Wren's Desk.", SOLO)).toBeNull();
+    });
+
+    it.each([
+      ["I caress Sabrina's arm.", "arms"],
+      ["I caress Sabrina Vale's arm.", "arms"],
+    ])("%s is a romantic act on %s", (message, locationId) => {
+      const act = detectChatRomanticTouch({
+        message,
+        narratorInput: false,
+        characters: VALE,
+        eventRef: EVENT,
+      });
+      expect(act?.targetLocationId).toBe(locationId);
+    });
+
+    /**
+     * The first-name rule's own failure mode: "Sabrina's sister" names somebody
+     * the roster does not contain, and a resolver that read its leading word
+     * would commit a durable touch on the wrong body. An internal possessive
+     * makes the whole phrase unreadable rather than merely unmatched.
+     */
+    it("a possessed third party is not the character whose name it borrows", () => {
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress Sabrina's sister's arm.",
+          narratorInput: false,
+          characters: VALE,
+          eventRef: EVENT,
+        }),
+      ).toBeNull();
     });
   });
 
@@ -1799,13 +1878,13 @@ describe("the narrator seam", () => {
 // The reach premise (S3)
 // ---------------------------------------------------------------------------
 
-describe("the reach premise — one unresolved case earns a presentation fence", () => {
+describe("the unresolved premise — the reasons that earn a presentation fence", () => {
   /** The plan for one line over one scene — the premise's whole input surface. */
   function planned(scene: SceneState, message: string, characters: readonly ChatContactRosterMember[] = SOLO) {
     const plan = planChatContactTurn({ scene, message, narratorInput: false, characters, eventRef: EVENT, storyTime: AT });
     return {
       plan,
-      premise: chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters }),
+      premise: chatContactUnresolvedPremise({ act: plan.act, resolution: plan.resolution, characters }),
     };
   }
 
@@ -1817,7 +1896,7 @@ describe("the reach premise — one unresolved case earns a presentation fence",
     if (plan.resolution?.status !== "unresolved") return;
     expect(plan.resolution.reason).toBe("geometry_unavailable");
     // The premise exists, names the resolved target, and words the surface.
-    expect(premise).toEqual({ targetName: "Wren", locus: "shoulder" });
+    expect(premise).toEqual({ kind: "reach", targetName: "Wren", locus: "shoulder" });
     // The underlying result is untouched: no commit, no ends.
     expect(plan.commit).toBeNull();
     expect(plan.ended).toEqual([]);
@@ -1881,7 +1960,7 @@ describe("the reach premise — one unresolved case earns a presentation fence",
       storyTime: AT,
     });
     expect(plan.act).toBeNull();
-    expect(chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters: SOLO })).toBeNull();
+    expect(chatContactUnresolvedPremise({ act: plan.act, resolution: plan.resolution, characters: SOLO })).toBeNull();
   });
 
   it("words the surface only when the lexicon can — an unwordable locus still names the target", () => {
@@ -1889,12 +1968,56 @@ describe("the reach premise — one unresolved case earns a presentation fence",
     // lexicon phrase must not sink the premise with it.
     const act = touch(TOUCH);
     if (act === null) throw new Error("fixture: the touch must detect");
-    const premise = chatContactReachPremise({
+    const premise = chatContactUnresolvedPremise({
       act: { ...act, targetLocationId: "collarbone" },
       resolution: { status: "unresolved", reason: "geometry_unavailable", evidence: [] },
       characters: SOLO,
     });
-    expect(premise).toEqual({ targetName: "Wren" });
+    expect(premise).toEqual({ kind: "reach", targetName: "Wren" });
+  });
+
+  /**
+   * The 2026-08-18 romantic proof's headline finding: with no permission on
+   * record the resolver correctly commits nothing, but `unresolved` renders no
+   * narrator line, so the reply still described the caress as landing.
+   *
+   * Kills the two implementations that look right and are not: reusing the
+   * reach premise for it (which would tell the narrator reach is unknown when
+   * the two are standing together), and leaving it unmapped (the shipped
+   * behaviour — silence, and prose that invents the landing).
+   */
+  it("an unanswered permission owner earns its OWN premise, not the reach one", () => {
+    const act = touch(TOUCH);
+    if (act === null) throw new Error("fixture: the touch must detect");
+    expect(
+      chatContactUnresolvedPremise({
+        act,
+        resolution: { status: "unresolved", reason: "permission_unresolved", evidence: [] },
+        characters: SOLO,
+      }),
+    ).toEqual({ kind: "permission", targetName: "Wren", locus: "shoulder" });
+  });
+
+  /**
+   * The selection rule itself. Every OTHER unresolved reason still renders
+   * nothing, so widening the premise seam cannot quietly start narrating gaps
+   * whose wording nobody chose.
+   */
+  it.each([
+    ["material_unavailable"],
+    ["support_unavailable"],
+    ["actor_control_unresolved"],
+    ["target_agency_unresolved"],
+  ] as const)("%s earns no premise — an unlisted reason is still silence", (reason) => {
+    const act = touch(TOUCH);
+    if (act === null) throw new Error("fixture: the touch must detect");
+    expect(
+      chatContactUnresolvedPremise({
+        act,
+        resolution: { status: "unresolved", reason, evidence: [] },
+        characters: SOLO,
+      }),
+    ).toBeNull();
   });
 });
 

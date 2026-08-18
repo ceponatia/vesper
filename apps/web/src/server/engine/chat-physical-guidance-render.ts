@@ -12,7 +12,7 @@ import {
 import {
   chatContactPhrase,
   type ChatContactPhraseKind,
-  type ChatContactReachPremise,
+  type ChatContactUnresolvedPremise,
 } from "./chat-contact-adapter";
 import { CHAT_CONTACT_DOMAIN_ID, CHAT_CONTACT_ENDED_CODE } from "./chat-permission-guidance";
 
@@ -99,12 +99,12 @@ export interface ChatPhysicalGuidanceRenderInput {
   /** How the lines name the subject — "Wren's". */
   readonly possessive: string;
   /**
-   * This turn's unestablished-reach premise (`chatContactReachPremise`), when
-   * the contact leg produced one. Presentation only: the attempt it words stayed
-   * `unresolved` — no row, no fold, no acknowledgment — and this line fences the
-   * PROSE from inventing the landing the state refused to record.
+   * This turn's unresolved-contact premise (`chatContactUnresolvedPremise`),
+   * when the contact leg produced one. Presentation only: the attempt it words
+   * stayed `unresolved` — no row, no fold, no acknowledgment — and this line
+   * fences the PROSE from inventing the landing the state refused to record.
    */
-  readonly reachPremise?: ChatContactReachPremise;
+  readonly unresolvedPremise?: ChatContactUnresolvedPremise;
   /**
    * Display names for transition participants, keyed by subject id — the
    * roster's names plus the player entry ("player" → "the player"). Presentation
@@ -289,22 +289,45 @@ function actionOutcomeLine(outcome: PhysicalActionOutcome, input: ChatPhysicalGu
 }
 
 /**
- * The unestablished-reach line — presentation for the ONE unresolved case that
- * earns any (`chatContactReachPremise`).
+ * The unresolved-contact line — presentation for the unresolved cases that earn
+ * any (`chatContactUnresolvedPremise`).
  *
- * It states the gap and the two inventions it forecloses, and nothing else. The
- * wording is deliberately not "too far apart", "across the room", or a refusal:
+ * Each states its own gap and the inventions it forecloses, and nothing else.
+ * Neither says "too far apart", "across the room", or anything about a refusal:
  * those are positive facts the scene does not own, and the reasons that do own
- * them (`out_of_reach`, the reposition requirements) render through
- * `blockedOutcomeLine` instead. The underlying attempt stays `unresolved` —
- * this line exists precisely because silence was letting the prose depict the
- * landing anyway.
+ * them (`out_of_reach`, `permission_denied`, `permission_withdrawn`, the
+ * reposition requirements) render through `blockedOutcomeLine` instead. The
+ * underlying attempt stays `unresolved` in both cases — these lines exist
+ * precisely because silence was letting the prose depict the landing anyway.
+ *
+ * The PERMISSION line is the harder one to word, and the difficulty is the
+ * point. The contact system's standing law is that something unknown is not
+ * something denied, so this line has to foreclose the landing WITHOUT
+ * manufacturing the refusal nobody recorded. It therefore fences both
+ * directions and says so — not landed, not refused — and hands the turn a third
+ * option (leave it unsettled) so the model is not forced to pick one of the two
+ * it was just told not to write. It also never mentions permission, consent, a
+ * record, or a decision: naming the mechanic would leak the ledger the
+ * disclosure rule keeps out of the prompt, and would imply a ruling that does
+ * not exist.
+ *
+ * What it deliberately does NOT do is script the character's reaction. The
+ * target's response to a gesture is hers, and a line that told the narrator how
+ * to deflect would be this layer writing her behaviour.
  */
-function reachPremiseLine(premise: ChatContactReachPremise): string {
+function unresolvedPremiseLine(premise: ChatContactUnresolvedPremise): string {
   const surface = premise.locus === undefined ? premise.targetName : `${premise.targetName}'s ${premise.locus}`;
+  if (premise.kind === "reach") {
+    return (
+      `- Unestablished reach: the current scene does not establish that the player's hand can reach ${surface}. ` +
+      "Do not depict that touch as landing, and do not invent movement by either participant to make it land."
+    );
+  }
   return (
-    `- Unestablished reach: the current scene does not establish that the player's hand can reach ${surface}. ` +
-    "Do not depict that touch as landing, and do not invent movement by either participant to make it land."
+    `- Unestablished contact: the current scene does not establish that the player's touch on ${surface} happens. ` +
+    "Do not depict it as landing or as already having landed. " +
+    "Do not depict it as refused, blocked, resisted, or unwelcome either — neither outcome is established. " +
+    "Write the reply so it settles neither: respond to the attempt without confirming the contact."
   );
 }
 
@@ -394,11 +417,11 @@ export function renderChatPhysicalGuidance(input: ChatPhysicalGuidanceRenderInpu
   return [
     // Tier order is the compiler's, not this file's: what the player's own act actually
     // did outranks everything, corrections are about the message in front of the
-    // narrator, and constraints are standing truths about the body. The reach premise
-    // rides with the action tier — it is about the act the player just wrote — and
-    // renders where the unresolved outcome it accompanies renders nothing.
+    // narrator, and constraints are standing truths about the body. The unresolved
+    // premise rides with the action tier — it is about the act the player just wrote —
+    // and renders where the unresolved outcome it accompanies renders nothing.
     ...input.guidance.actionOutcomes.map((outcome) => actionOutcomeLine(outcome, input)),
-    ...(input.reachPremise === undefined ? [] : [reachPremiseLine(input.reachPremise)]),
+    ...(input.unresolvedPremise === undefined ? [] : [unresolvedPremiseLine(input.unresolvedPremise)]),
     ...input.guidance.corrections.map((correction) => correctionLine(correction, input)),
     ...input.guidance.constraints.map((constraint) => constraintLine(constraint, input.possessive)),
     // The transition tier renders last — the compiler's order, not a ranking
