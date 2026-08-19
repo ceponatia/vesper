@@ -45,13 +45,30 @@ export type ChatReplyFailureCode = (typeof chatReplyFailureCodes)[number];
  *
  * - `model_silent` — a clean stop with nothing generated. The one case where
  *   "it finished without saying anything" is literally true.
- * - `reasoning_or_length` — the provider billed output tokens, or hit the length
- *   cap, without producing prose. Usually a thinking model whose chain ate the
- *   whole budget.
+ * - `reasoning_spent` — the provider REPORTED reasoning tokens and no prose. The
+ *   only cause allowed to blame a thinking chain, because it is the only one a
+ *   measured reasoning count backs.
+ * - `length_capped` — the generation hit the length cap with no prose, and the
+ *   provider attributed no tokens to reasoning.
+ * - `hidden_output` — the provider billed output tokens that never arrived as
+ *   text, on a clean finish, with no reasoning split reported.
  * - `normalizer_erased` — the model DID write prose and Vesper's own output
  *   normalizers discarded all of it. This one is not the model's fault.
+ *
+ * The middle three were ONE cause (`reasoning_or_length`) whose copy asserted a
+ * reasoning chain in all three cases. That is false wherever thinking is off: the
+ * Featherless narrators send `enable_thinking: false` and report no
+ * `completion_tokens_details` at all, so a burned budget there can never be
+ * evidence of reasoning. A cause may only name a mechanism the generation
+ * metadata actually measured.
  */
-export const chatReplyFailureCauses = ["model_silent", "reasoning_or_length", "normalizer_erased"] as const;
+export const chatReplyFailureCauses = [
+  "model_silent",
+  "reasoning_spent",
+  "length_capped",
+  "hidden_output",
+  "normalizer_erased",
+] as const;
 
 export type ChatReplyFailureCause = (typeof chatReplyFailureCauses)[number];
 
@@ -59,7 +76,12 @@ export const chatReplyFailureSchema = z.object({
   code: z.enum(chatReplyFailureCodes).catch("unknown"),
   /** What the provider actually said (classifyProviderError) — the popup's fine print. */
   detail: z.string().catch(""),
-  /** Why an `empty_reply` was empty, when the generation metadata said. Absent otherwise. */
+  /**
+   * Why an `empty_reply` was empty, when the generation metadata said. Absent
+   * otherwise — including for a row written under a retired cause name, which
+   * catches to undefined and falls back to the unrefined `empty_reply` copy
+   * rather than to a stale explanation.
+   */
   cause: z.enum(chatReplyFailureCauses).optional().catch(undefined),
   /** The narrator model the failed exchange ran, so the popup can name it. */
   model: z.string().catch(""),

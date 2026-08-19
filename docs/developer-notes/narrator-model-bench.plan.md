@@ -136,8 +136,12 @@ call that answers it.
   stream with no error, so every such failure was described as an empty reply. The
   server now reads how the generation actually ended and says so: a warming model, a
   rejected key, an exhausted balance and a rate limit each get their own honest
-  message, and a model that spent its whole answer thinking is no longer described
-  as having said nothing. This one model is also asked with its author's own
+  message. An empty reply that burned its budget is no longer described as having
+  said nothing — and each such reply now says only what the provider measured,
+  telling a spent thinking chain apart from a hit output limit and from output
+  that was billed but never arrived. Only the first blames reasoning, because
+  only it comes with a reasoning count; the Featherless narrators are asked with
+  thinking switched off and report no such count at all. This one model is also asked with its author's own
   sampling settings, and a single invisible retry covers a one-off silent reply so
   the player never has to ask twice. Nothing changes for any other narrator or
   agent, and every other narrator gains the same honest failure messages for free.

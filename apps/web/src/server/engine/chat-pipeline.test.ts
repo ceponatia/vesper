@@ -228,12 +228,12 @@ describe("resolveReplyFailure", () => {
       expect(result).toMatchObject({ code: "empty_reply", cause: "model_silent" });
     });
 
-    it("records a length burn as a reasoning/length failure, not a generic empty", () => {
+    it("records a length burn as a length cap, not a generic empty", () => {
       const result = resolveReplyFailure({
         ...none,
         completion: completion({ finishReason: "length", outputTokens: 298 }),
       });
-      expect(result).toMatchObject({ code: "empty_reply", cause: "reasoning_or_length" });
+      expect(result).toMatchObject({ code: "empty_reply", cause: "length_capped" });
     });
 
     it("records a content-filter finish as moderation and an error finish as a provider error", () => {
