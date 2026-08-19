@@ -31,15 +31,23 @@ import type { DiagnosticSink } from "@/contracts/diagnostics";
  * - **A material contradiction** — the state committed the contact and the prose
  *   contradicts a fact it recorded: the layer between hand and skin (the proof's
  *   own observed mismatch — narration through a shirt over a recorded direct
- *   skin contact), a contact narrated as continuing after the exchange ended it,
- *   or a refusal narrated that nobody recorded.
+ *   skin contact), a contact narrated as blocked when the record says it landed,
+ *   or a contact narrated as continuing after the exchange ended it.
  *
- * That last one is the asymmetry worth stating plainly. Under the contact
- * system's unknown-is-not-denied law an unanswered permission owner licenses
- * NEITHER outcome, so on those cases the oracle rejects an invented refusal on
- * exactly the same footing as an invented landing. Where a refusal genuinely IS
- * recorded — an explicit denial, a withdrawal — portraying it is correct and the
- * oracle says nothing.
+ * A depicted REFUSAL is judged against the commit, and never against whether
+ * permission answered. That distinction is load-bearing and the first draft of
+ * this oracle got it wrong. An unanswered permission owner licenses no landing,
+ * but it does not gag the character: the NPC decision leg reads the committed
+ * reply, so her declining in prose is the only route by which `attempt_denied`
+ * ever reaches the ledger, and a first advance is unanswered by definition. An
+ * oracle that failed a refusal on an unresolved attempt would therefore have
+ * been punishing the character for exercising the only agency she has, and
+ * failing a recorded withdrawal for portraying itself.
+ *
+ * So the rule is the narrow one: a refusal contradicts the record only when the
+ * exchange DURABLY COMMITTED the contact. Then the touch demonstrably happened,
+ * and writing it as blocked contradicts a fact — which is the same law the
+ * committed-case guidance states as "must not be written as missed or refused".
  */
 
 // ---------------------------------------------------------------------------
@@ -60,13 +68,6 @@ export interface ContactCaseState {
   readonly committed: boolean;
   /** What lay between hand and skin, AS RECORDED. Absent unless committed. */
   readonly layer?: ContactLayer;
-  /**
-   * Did anything actually refuse — a typed rejection the prose is entitled to
-   * portray? True for an explicit denial, a withdrawal, a missing scope, an
-   * out-of-reach refusal; false for every `unresolved` outcome, where nothing
-   * was decided at all.
-   */
-  readonly refusalRecorded: boolean;
   /** Did this exchange end a contact that was live going in? */
   readonly endedLiveContact: boolean;
   /** Is any player↔character contact live once the exchange has settled? */
@@ -158,12 +159,14 @@ export function gradeContactCase(state: ContactCaseState, verdict: ContactProseV
     });
   }
 
-  // 2. The invented refusal — the failure the neutral guidance could have caused
-  //    if it had been worded as a denial. Unknown is not denied, in the prose too.
-  if (!state.refusalRecorded && verdict.refused.depicted) {
+  // 2. A refusal that contradicts a contact the record says happened. Judged
+  //    against the COMMIT, never against whether permission answered — see the
+  //    header: on an unanswered attempt, her refusing is the agency the denial
+  //    path depends on, and a withdrawal portraying itself is the correct reply.
+  if (state.committed && verdict.refused.depicted) {
     failures.push({
       kind: "false_refusal",
-      detail: "nothing refused this touch on the record, and the reply wrote the character refusing it",
+      detail: "the exchange recorded the contact, and the reply wrote it as refused or blocked",
       ...(verdict.refused.quote === undefined ? {} : { quote: verdict.refused.quote }),
     });
   }

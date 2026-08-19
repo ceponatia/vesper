@@ -118,8 +118,10 @@ The proof's two findings are now closed in code, and neither has been observed
 live yet:
 
 - **A refusal is no longer silent.** An unanswered permission owner renders a
-  narrator line that forbids depicting the touch as landing and, equally,
-  forbids depicting a refusal nobody recorded. Contract:
+  narrator line that forbids depicting the touch as landing, asserts no refusal
+  of its own, and explicitly leaves declining open as the character's — which it
+  must, because her declining in prose is the only route by which a denial
+  reaches the ledger. Contract:
   `romantic-contact-affordances.spec.permission.md`.
 - **A character can be named the way players name them.** A unique first name
   and a name of more than one word both resolve; an ambiguous one is still
@@ -504,19 +506,28 @@ Do not infer one from the existence of telemetry.
    Status: built 2026-08-18 — unproven live. The owner set both as rollout
    conditions.
    - **Neutral guidance for an unanswered permission owner** — the touch is not
-     depicted as landing, and no refusal is invented. Contract and wording
-     constraints: `romantic-contact-affordances.spec.permission.md`.
+     depicted as landing, and the line asserts no refusal while leaving the
+     character free to decline. Owner ruling 2026-08-18: an unanswered attempt
+     does not have to settle neither way; the reply may author a denial, which
+     the decision leg then records. Contract and wording constraints:
+     `romantic-contact-affordances.spec.permission.md`.
    - **Naming a character** — a unique first name and a name of more than one
      word both resolve. The proof recorded that a first name alone did not work;
      in fact no written form reached a two-word name at all, so ordinary writing
      met silence.
 10. Rerun the live proof against the closed gaps, capturing evidence rather than
     a summary.
-    Status: next — owner-run. The instrument is built and its grading is tested
+    Status: next — owner-run. The instrument is built, its grading is tested, and
+    its database half runs against a real Postgres
     (`scripts/trial/romantic-contact/`); the run itself needs a Fly deploy and
     the proof flags for the window only. It preserves per case the sanitized
-    input, the actual reply, the guidance handed to the narrator, and the state
-    either side, then grades each case against what was recorded.
+    input, the actual reply, the guidance handed to the narrator, and the pair's
+    contact state before setup, after setup and after the exchange.
+    Each case is graded TWICE and must pass both: what it required of the world
+    (act, resolver status and reason, durable commits, live and ended pair
+    contacts, permission standing, denial binding, guidance kind, retake
+    identity), and whether the prose contradicts what was recorded. Prose
+    consistency alone cannot pass a case.
     Required cases: no grant, explicit denial, natural named phrasing, commit,
     withdrawal, retake.
 11. Decide the production rollout of that **specific** romantic action surface. Do

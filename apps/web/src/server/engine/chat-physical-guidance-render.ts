@@ -303,17 +303,24 @@ function actionOutcomeLine(outcome: PhysicalActionOutcome, input: ChatPhysicalGu
  * The PERMISSION line is the harder one to word, and the difficulty is the
  * point. The contact system's standing law is that something unknown is not
  * something denied, so this line has to foreclose the landing WITHOUT
- * manufacturing the refusal nobody recorded. It therefore fences both
- * directions and says so — not landed, not refused — and hands the turn a third
- * option (leave it unsettled) so the model is not forced to pick one of the two
- * it was just told not to write. It also never mentions permission, consent, a
- * record, or a decision: naming the mechanic would leak the ledger the
- * disclosure rule keeps out of the prompt, and would imply a ruling that does
- * not exist.
+ * manufacturing the refusal nobody recorded.
  *
- * What it deliberately does NOT do is script the character's reaction. The
- * target's response to a gesture is hers, and a line that told the narrator how
- * to deflect would be this layer writing her behaviour.
+ * The trap is that those two obligations look like one, and reading them as one
+ * produces a line that forbids depicting a refusal at all. That would be a
+ * serious mistake, and not a cosmetic one: the NPC permission decision leg reads
+ * the COMMITTED REPLY, so the character declining in prose is the only way an
+ * `attempt_denied` ever reaches the ledger. A first advance is always unanswered
+ * — there is no grant yet by definition — so a line that gagged the refusal
+ * would make the denial path unreachable in practice and leave the character no
+ * way to say no to anything.
+ *
+ * So the two obligations are kept apart. The line refuses to assert a refusal —
+ * it never says the touch was not allowed, and never names permission, consent,
+ * a record, or a decision, because naming the mechanic leaks the ledger the
+ * disclosure rule keeps out of the prompt and implies a ruling that does not
+ * exist. And it explicitly leaves declining available as HERS, because that is
+ * her agency rather than the system's answer. What it forecloses is one thing
+ * only: narrating the touch as completed.
  */
 function unresolvedPremiseLine(premise: ChatContactUnresolvedPremise): string {
   const surface = premise.locus === undefined ? premise.targetName : `${premise.targetName}'s ${premise.locus}`;
@@ -323,11 +330,12 @@ function unresolvedPremiseLine(premise: ChatContactUnresolvedPremise): string {
       "Do not depict that touch as landing, and do not invent movement by either participant to make it land."
     );
   }
+  const name = premise.targetName;
   return (
     `- Unestablished contact: the current scene does not establish that the player's touch on ${surface} happens. ` +
-    "Do not depict it as landing or as already having landed. " +
-    "Do not depict it as refused, blocked, resisted, or unwelcome either — neither outcome is established. " +
-    "Write the reply so it settles neither: respond to the attempt without confirming the contact."
+    "Do not depict it as landing or as already having landed, and do not invent movement by either participant to make it land. " +
+    `How ${name} answers the attempt is ${name}'s own to decide — welcoming it, ignoring it, or refusing it outright are all open. ` +
+    "The one thing not open is narrating the touch as completed."
   );
 }
 

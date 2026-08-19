@@ -485,21 +485,33 @@ unresolved reason; every other unresolved reason still renders nothing. The
 underlying attempt is unchanged and still `unresolved` — no ledger row, no scene
 fold, no acknowledgment.
 
-The wording carries the whole design, and four constraints hold it:
+The wording carries the whole design, and the constraint that shapes it is the
+one that only looks like a second copy of the first:
 
-| Must                                  | Must not                               |
-| ------------------------------------- | -------------------------------------- |
-| foreclose depicting the touch landing | assert a refusal, block, or resistance |
-| offer a third option — settle neither | name permission, consent, or a record  |
-| leave the character's response hers   | script a reaction or a withdrawal      |
-| state only the gap                    | claim a distance or a decision         |
+| Must                                   | Must not                              |
+| -------------------------------------- | ------------------------------------- |
+| foreclose depicting the touch landing  | assert that a refusal happened        |
+| leave refusing open as the character's | name permission, consent, or a record |
+| state only the gap                     | claim a distance or a decision        |
 
-The second column is the load-bearing one. Wording this as
-`permission_denied` does — "that has not been allowed" — would trade a false
-landing for a false refusal and manufacture a decision the character never made,
-which is the resolver's unknown-is-not-refused law broken in the prose instead of
-in the state. Naming the mechanic would additionally leak the ledger that
-§"Mandatory stop handoff" keeps out of the prompt.
+**Do not ASSERT a refusal is not the same as do not DEPICT one**, and reading
+them as one produces a line that forbids the refusal outright. That would be a
+serious error rather than a cosmetic one. The NPC permission decision leg reads
+the COMMITTED REPLY, so the character declining in prose is the only route by
+which an `attempt_denied` ever reaches the ledger — and a first advance is
+unanswered by definition, because no grant exists yet. A line that gagged the
+refusal would therefore make the denial path unreachable in practice and leave
+the character no way to say no to anything.
+
+So the line refuses to assert a refusal, explicitly leaves declining available as
+HERS, and forecloses exactly one thing: narrating the touch as completed.
+
+Owner ruling (2026-08-18): an unanswered attempt does **not** have to settle
+neither way. The reply may author a denial, and the decision leg then records it,
+after which a retake of that same exchange resolves `permission_denied` — the
+event ref is stable across a retake, so the attempt id is reproduced. What the
+reply may not do is narrate the touch as having landed, because nothing recorded
+it.
 
 An explicit `attempt_denied` still yields its own blocking line through the
 rejection lexicon, and that path is unchanged.

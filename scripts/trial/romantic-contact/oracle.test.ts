@@ -29,21 +29,16 @@ const NOTHING: ContactProseVerdict = {
   continued: { depicted: false },
 };
 
-/** No grant on record: nothing committed, and crucially nothing REFUSED either. */
+/** No grant on record: nothing durably committed. */
 const UNRESOLVED: ContactCaseState = {
   committed: false,
-  refusalRecorded: false,
   endedLiveContact: false,
   contactLiveAfter: false,
 };
 
-/** An explicit denial: still no contact, but a refusal the prose may portray. */
-const DENIED: ContactCaseState = { ...UNRESOLVED, refusalRecorded: true };
-
 const COMMITTED: ContactCaseState = {
   committed: true,
   layer: "skin",
-  refusalRecorded: false,
   endedLiveContact: false,
   contactLiveAfter: true,
 };
@@ -63,32 +58,55 @@ describe("the false landing — the finding the rerun re-tests", () => {
     expect(gradeContactCase(UNRESOLVED, NOTHING).pass).toBe(true);
   });
 
-  it("still rejects a false landing when a refusal WAS recorded — a denial is not a landing", () => {
-    const grade = gradeContactCase(DENIED, { ...NOTHING, landed: { depicted: true, quote: "her arm under his palm" } });
+  it("rejects a false landing whatever refused it — a denial is not a landing", () => {
+    const grade = gradeContactCase(UNRESOLVED, {
+      ...NOTHING,
+      landed: { depicted: true, quote: "her arm under his palm" },
+      refused: { depicted: true, quote: "she pulls her arm away before he can" },
+    });
     expect(grade.failures.map((failure) => failure.kind)).toEqual(["false_landing"]);
   });
 });
 
-describe("the invented refusal — unknown is not denied, in the prose too", () => {
-  it("rejects a depicted refusal when nothing on the record refused anything", () => {
+/**
+ * A depicted refusal is judged against the COMMIT, never against whether
+ * permission answered — and getting that backwards is the mistake this suite
+ * exists to pin.
+ *
+ * The NPC decision leg reads the committed reply, so the character declining in
+ * prose is the only route by which `attempt_denied` reaches the ledger, and a
+ * first advance is unanswered by definition. An oracle that failed a refusal on
+ * an unresolved attempt would punish her for the only agency she has, and would
+ * fail a recorded withdrawal for portraying itself.
+ */
+describe("a depicted refusal — judged against the commit, not against permission", () => {
+  it("accepts her refusing an attempt nothing committed — that is her decision, and the ledger's only source", () => {
     const grade = gradeContactCase(UNRESOLVED, {
       ...NOTHING,
       refused: { depicted: true, quote: "she pulls her arm away before he can" },
     });
-    expect(grade.failures.map((failure) => failure.kind)).toEqual(["false_refusal"]);
+    expect(grade.pass).toBe(true);
   });
 
-  /**
-   * The asymmetry the whole permission design rests on. An explicit denial and
-   * an unanswered owner produce the same committed state — nothing — so an
-   * oracle keyed on "did it commit" would reject the correct reply here.
-   */
-  it("accepts the same depicted refusal when a refusal IS on the record", () => {
-    const grade = gradeContactCase(DENIED, {
+  it("accepts a withdrawal portraying itself — the recorded end is exactly what the reply should show", () => {
+    const withdrawn: ContactCaseState = {
+      committed: false,
+      endedLiveContact: true,
+      contactLiveAfter: false,
+    };
+    const grade = gradeContactCase(withdrawn, {
       ...NOTHING,
-      refused: { depicted: true, quote: "she pulls her arm away before he can" },
+      refused: { depicted: true, quote: "she lifts his hand away and sets it down" },
     });
     expect(grade.pass).toBe(true);
+  });
+
+  it("rejects a refusal over a contact the record says landed", () => {
+    const grade = gradeContactCase(COMMITTED, {
+      ...NOTHING,
+      refused: { depicted: true, quote: "she stops his hand before it reaches her" },
+    });
+    expect(grade.failures.map((failure) => failure.kind)).toEqual(["false_refusal"]);
   });
 });
 
@@ -118,7 +136,6 @@ describe("material contradictions — the proof's own observed mismatch", () => 
 describe("stale continuation — a withdrawal that the prose keeps going", () => {
   const WITHDRAWN: ContactCaseState = {
     committed: false,
-    refusalRecorded: true,
     endedLiveContact: true,
     contactLiveAfter: false,
   };

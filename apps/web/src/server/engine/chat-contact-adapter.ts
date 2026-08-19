@@ -498,22 +498,32 @@ function resolveContactTarget(
 }
 
 /**
- * A written name as a CAPTURE fragment: one word, plus up to two capitalised
- * continuations of two letters or more.
+ * A written name as a CAPTURE fragment: one word, plus up to two more words of
+ * two letters or more.
  *
  * Every owner capture in this lane used to be a single word, which left a
  * two-word roster name unreachable by ANY phrasing — "Sabrina Vale's arm"
  * matched nothing, and neither did "Sabrina Vale" as a destination. This is the
  * smallest widening that reaches them.
  *
- * Two restrictions stop it swallowing the rest of the sentence. Continuations
- * must be CAPITALISED, so "I walk over to Wren and sit down" still stops at the
- * name; and they must be two letters or more, so the very ordinary "I walk over
- * to Wren I think" does not capture the pronoun. The cost is that an
- * all-lowercase two-word name is read as its first word alone — which the
- * unique-first-name rule then resolves anyway.
+ * **The continuations are deliberately NOT restricted to capitals**, and the
+ * reason is worth stating because the opposite looks obviously right. Every
+ * pattern this fragment is spliced into carries the `i` flag, and under case
+ * folding `\p{Lu}` matches lowercase letters too — so a capitalised-continuation
+ * rule would not have constrained anything. Worse, it would not have been
+ * inert: `\p{Lu}` matches only letters that HAVE a case mapping, so it silently
+ * excludes every caseless script, and a character named さくら or 中村 would have
+ * been unreachable in exactly the way this fragment exists to fix.
+ *
+ * What actually keeps the capture from swallowing the sentence is the RESOLVER,
+ * not the pattern: `resolveNamePhrasePrefix` takes the longest leading run that
+ * names somebody, so "I walk over to Wren and sit down" captures three words and
+ * resolves one. The two-letter minimum stays because it is the one thing the
+ * resolver cannot do — "I walk over to Wren I think" would otherwise capture the
+ * pronoun as part of the name, and `i` folding makes that no harder to write
+ * than to read.
  */
-const NAME_PHRASE = "[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+\\p{Lu}[\\p{L}\\p{N}'’-]+){0,2}";
+const NAME_PHRASE = "[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+[\\p{L}][\\p{L}\\p{N}'’-]+){0,2}";
 
 /** A resolved destination, with the words it actually spent. */
 interface ResolvedNamePhrase {
@@ -1133,10 +1143,16 @@ export function chatContactGestureBands(gesture: ChatContactActGesture): {
 /**
  * Whose body the sentence named. The possessive is the anchor that makes the
  * multi-word branch safe here: the owner must END at `'s` and the body noun must
- * follow it immediately, so "Sabrina Vale's arm" parses as one possessor and a
- * mis-parse ("top of Sabrina Vale's") simply fails to resolve.
+ * follow it immediately, so "Sabrina Vale's arm" parses as one possessor.
+ *
+ * This site has no longest-prefix fallback — the phrase ends where the sentence
+ * says it does — so it leans entirely on the resolver failing closed. It does:
+ * "my wife Sabrina's shoulder" captures the whole possessor, matches no roster
+ * name and no unique first name, and produces nothing. Refusing a touch that was
+ * arguably fine is the safe direction; resolving a possessor's last word would
+ * be this layer picking a body out of a phrase that named somebody else.
  */
-const CONTACT_OWNER = `your|her|his|their|[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+\\p{Lu}[\\p{L}\\p{N}'’-]+){0,2}['’]s`;
+const CONTACT_OWNER = `your|her|his|their|[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+[\\p{L}][\\p{L}\\p{N}'’-]+){0,2}['’]s`;
 
 /** "I rest my hand on your shoulder" — the hand is the object, the body part the destination. */
 const CONTACT_PLACE_RE = new RegExp(

@@ -425,6 +425,59 @@ describe("approach detection", () => {
       expect(approach("I walk over to Wren's Desk.", SOLO)).toBeNull();
     });
 
+    /**
+     * The capture spans several words REGARDLESS OF CASE, and the resolver is
+     * what stops it running away — not the pattern.
+     *
+     * The obvious design here was a capitalised-continuation rule, and it would
+     * have been silently inert: every pattern this fragment splices into carries
+     * `i`, and case folding makes `\p{Lu}` match lowercase. These cases pin the
+     * behaviour that actually holds, so a future "tightening" back to `\p{Lu}`
+     * fails here rather than shipping a guard that does nothing.
+     */
+    it.each([
+      ["I walk over to Wren and sit down by the fire.", "ordinary lowercase prose after the name"],
+      ["I walk over to Wren then wait quietly.", "a lowercase continuation that is not a clause break"],
+      ["I walk over to wren.", "the name itself written lower-case"],
+    ])("%s still resolves to the person (%s)", (message) => {
+      expect(approach(message, SOLO)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("a lower-case multi-word name resolves, because case never gated the capture", () => {
+      expect(approach("I walk over to sabrina vale.", VALE)).toEqual({ targetSubject: WREN, band: "close" });
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress sabrina vale's arm.",
+          narratorInput: false,
+          characters: VALE,
+          eventRef: EVENT,
+        })?.targetLocationId,
+      ).toBe("arms");
+    });
+
+    /**
+     * A caseless script has no uppercase form at all, so `\p{Lu}` excluded it
+     * even under folding: a character named this way was unreachable by the very
+     * fragment written to reach multi-word names. The touch path proves the fix,
+     * because its owner capture is followed by whitespace rather than `\b`.
+     *
+     * The APPROACH path still cannot name them, and the cause is elsewhere:
+     * JavaScript's `\b` is ASCII-only even under `u`, so the destination's
+     * trailing boundary never matches after a non-Latin character. That is a
+     * pre-existing limitation of every pattern in this lane, not of this
+     * fragment, and it is left alone rather than fixed under cover of a
+     * capitalisation change.
+     */
+    it("a caseless-script name can be touched — the old capitalised rule excluded it entirely", () => {
+      const roster = [member(WREN, "さくら 中村")];
+      for (const message of ["I caress さくら 中村's arm.", "I caress さくら's arm."]) {
+        expect(
+          detectChatRomanticTouch({ message, narratorInput: false, characters: roster, eventRef: EVENT })
+            ?.targetLocationId,
+        ).toBe("arms");
+      }
+    });
+
     it.each([
       ["I caress Sabrina's arm.", "arms"],
       ["I caress Sabrina Vale's arm.", "arms"],

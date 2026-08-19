@@ -213,48 +213,56 @@ describe("the unresolved-premise line", () => {
   });
 
   /**
-   * The permission line, and the reason it is worded differently from every
-   * other fence in this file.
+   * The permission line, and the two obligations that only look like one.
    *
-   * The contact system's standing law is that something unknown is not
-   * something denied. The 2026-08-18 romantic proof found the practical
-   * consequence: an unanswered permission owner rendered NOTHING, so the reply
-   * described the caress as landing. Closing that with the obvious wording —
-   * "that has not been allowed", the phrase `permission_denied` already uses —
-   * would trade a false landing for a false REFUSAL, inventing a decision the
-   * character never made.
+   * The 2026-08-18 romantic proof found that an unanswered permission owner
+   * rendered NOTHING, so the reply described the caress as landing. Closing that
+   * with the obvious wording — "that has not been allowed", the phrase
+   * `permission_denied` already uses — would trade a false landing for a false
+   * REFUSAL, asserting a decision the character never made.
    *
-   * So this line is graded on three things at once, and the third is the one a
-   * plausible implementation gets wrong: it forecloses the landing, it
-   * forecloses the refusal, and it names no mechanic — no permission, consent,
-   * allowance, or record — because naming one both leaks the ledger the
-   * disclosure rule keeps out of the prompt and implies a ruling that does not
-   * exist.
+   * Reading "do not invent a refusal" as "do not depict a refusal" is the
+   * mistake this suite exists to prevent, and it is not cosmetic. The NPC
+   * permission decision leg reads the COMMITTED REPLY, so the character
+   * declining in prose is the only route by which `attempt_denied` ever reaches
+   * the ledger — and a first advance is unanswered by definition, because no
+   * grant exists yet. A line that forbade the refusal would therefore make the
+   * denial path unreachable and leave the character no way to refuse anything.
+   *
+   * So the line is graded on three separable things: it forecloses the landing,
+   * it asserts no refusal of its own while explicitly leaving refusal open as
+   * HERS, and it names no mechanic.
    */
-  describe("the permission line — unknown is not denied, in the prose too", () => {
+  describe("the permission line — unknown is not denied, without gagging her", () => {
     const line = () => premiseRender({ kind: "permission", targetName: "Sabrina", locus: "shoulder" })[0] ?? "";
 
-    it("forecloses the landing without asserting a refusal", () => {
+    it("forecloses the landing and nothing else", () => {
       expect(line()).toBe(
         "- Unestablished contact: the current scene does not establish that the player's touch on Sabrina's shoulder happens. " +
-          "Do not depict it as landing or as already having landed. " +
-          "Do not depict it as refused, blocked, resisted, or unwelcome either — neither outcome is established. " +
-          "Write the reply so it settles neither: respond to the attempt without confirming the contact.",
+          "Do not depict it as landing or as already having landed, and do not invent movement by either participant to make it land. " +
+          "How Sabrina answers the attempt is Sabrina's own to decide — welcoming it, ignoring it, or refusing it outright are all open. " +
+          "The one thing not open is narrating the touch as completed.",
       );
     });
 
-    it("never names the mechanic behind the gap", () => {
-      const lowered = line().toLowerCase();
-      for (const leak of ["permission", "consent", "allowed", "not been allowed", "record", "ledger", "granted"]) {
-        expect(lowered).not.toContain(leak);
-      }
+    /**
+     * The agency clause, asserted on its own so it cannot be quietly dropped by
+     * a future tightening of the wording. Without it the character can never say
+     * no to a first advance.
+     */
+    it("leaves refusing open as the character's own choice", () => {
+      expect(line()).toContain("refusing it outright");
+      expect(line()).toContain("is Sabrina's own to decide");
     });
 
-    it("states no positive fact about the character — it fences claims and scripts nothing", () => {
+    it("asserts no refusal of its own, and names no mechanic behind the gap", () => {
       const lowered = line().toLowerCase();
-      // Each of these would be the renderer deciding her behaviour for her.
-      for (const scripted of ["pulls away", "draws back", "she refuses", "objects", "stiffens", "does not want"]) {
-        expect(lowered).not.toContain(scripted);
+      for (const leak of ["permission", "consent", "allowed", "record", "ledger", "granted"]) {
+        expect(lowered).not.toContain(leak);
+      }
+      // The renderer never states that a refusal HAPPENED, only that one is open.
+      for (const asserted of ["has been refused", "she refuses", "was refused", "is unwelcome", "pulls away"]) {
+        expect(lowered).not.toContain(asserted);
       }
     });
   });

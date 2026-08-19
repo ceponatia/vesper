@@ -278,6 +278,8 @@ export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "r
  * behind that would let a trial grade itself against facts the prompt never
  * carried.
  */
+export type { ChatContactPremiseKind } from "./chat-contact-adapter";
+
 export interface ChatContactTurnRecord {
   /** Absent when the message produced no contact act at all. */
   readonly act?: {
@@ -1697,6 +1699,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const postScene = committed === null ? planned.scene : withSceneContacts(planned.scene, committed.state);
         let scene = postScene;
         let acknowledgment: ContactPersistenceAcknowledgment | undefined;
+        // Whether the ledger ACCEPTED this exchange's rows. Distinct from
+        // `acknowledgment`, which additionally requires this turn to have
+        // committed a contact of its own: an exchange that only ENDS contacts
+        // (a withdrawal) writes real rows and earns no acknowledgment, and
+        // conflating the two would report those ends as never having happened.
+        let commitsRecorded = commits.length === 0;
         if (commits.length > 0) {
           const appended = await appendChatContactEventsWithScene({
             chatId,
@@ -1707,6 +1715,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             scene: postScene,
           });
           if (appended.status === "recorded") {
+            commitsRecorded = true;
             // Only now, and only for a write this turn's own rows are provably part of.
             if (act !== null && committed !== null) {
               acknowledgment = chatContactAcknowledgment({ commit: committed, eventRef, actionId: act.actionId });
@@ -1750,7 +1759,20 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // The observer's half of the record — everything but the guidance lines,
         // which are rendered further down. Assembled here because this is the only
         // scope holding the act and the fold.
+        //
+        // DURABILITY IS THE ACKNOWLEDGMENT'S TO REPORT, never the plan's. A
+        // planned commit is what the resolver decided; `acknowledgment` is what
+        // the ledger accepted, and the two part company on a mismatch — that path
+        // rolls the scene back, writes no rows, and withholds the acknowledgment
+        // precisely so the outcome resolves to silence. Reporting the plan here
+        // would tell a consumer a contact exists that it could not find, and a
+        // trial grading narration against it would be grading prose against a
+        // contact nobody recorded. `outcomeCommitted` is the same signal the
+        // narrator's own action outcome runs on, so the record and the prompt
+        // cannot disagree about whether the touch happened.
         if (input.onContactTurn !== undefined) {
+          const outcomeCommitted = contactActionOutcomes[0]?.status === "committed";
+          const durable = outcomeCommitted && acknowledgment !== undefined ? committed : null;
           contactTurnFacts = {
             ...(act === null
               ? {}
@@ -1765,14 +1787,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             ...(resolution === null ? {} : { status: resolution.status }),
             ...(resolution !== null && "reason" in resolution ? { reason: resolution.reason } : {}),
             resultCodes: contactActionOutcomes[0]?.resultCodes ?? [],
-            committed: committed !== null,
-            ...(committed === null ? {} : { contactId: committed.contact.contactId }),
-            ...(committed === null
-              ? {}
-              : { directSkinContact: committed.contact.transmission.directSkinContact }),
-            ended: [...endedCommits, ...planned.ended]
-              .filter((entry) => entry.kind === "contact_ended")
-              .map((entry) => ({ contactId: String(entry.contactId), reason: String(entry.reason) })),
+            committed: durable !== null,
+            ...(durable === null ? {} : { contactId: durable.contact.contactId }),
+            ...(durable === null ? {} : { directSkinContact: durable.contact.transmission.directSkinContact }),
+            // Ends are reported on the same terms: a rolled-back append ended
+            // nothing, however many ends the plan carried into it.
+            ended: commitsRecorded
+              ? commits
+                  .filter((entry) => entry.kind === "contact_ended")
+                  .map((entry) => ({ contactId: String(entry.contactId), reason: String(entry.reason) }))
+              : [],
             ...(contactUnresolvedPremise === null ? {} : { premiseKind: contactUnresolvedPremise.kind }),
           };
         }
