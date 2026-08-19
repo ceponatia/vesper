@@ -18,7 +18,6 @@ import { deleteOwnedImage, imageMeta, readImageBytes } from "./assets";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { latestChatLook } from "./chat-look";
 import {
-  apparentAgeAnchor,
   characterAppearanceSummary,
   identityAnchorSummary,
   sceneRevealAppearance,
@@ -131,7 +130,9 @@ function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
     wardrobeTracked: true,
     appearance,
     identityAnchors: identityAnchorSummary(resolved, member.profile),
-    ageAnchor: apparentAgeAnchor(member.name, resolved),
+    // Age is deliberately absent from scene-image text. `profile.age` belongs to
+    // narrators; `identity.apparent_age` belongs to portrait generation. Scene
+    // renders inherit visible age from the portrait/chat-look reference instead.
     lowerBody: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: false }),
     intimateAppearance: sceneRevealAppearance(resolved, exposure, member.profile, { intimate: true }),
   };
