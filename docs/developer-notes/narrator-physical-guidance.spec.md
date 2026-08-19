@@ -743,9 +743,12 @@ premise, corrections, constraints, transitions. Slice 2's own two lines:
 ```
 
 Two presentation-only inputs ride beside the compiled guidance rather than
-through it. `reachPremise` words a contact attempt whose reach the scene could
-not establish — the underlying attempt stays `unresolved`, and this line only
-fences the prose from inventing the landing; it exists only under
+through it. `unresolvedPremise` words a contact attempt the scene could not
+settle, carrying a `kind` that says which gap it is about: `reach` for a hand
+whose reach was never established, `permission` for a contact whose permission
+owner never answered. Every other unresolved reason renders nothing. In both
+cases the underlying attempt stays `unresolved`, and the line only fences the
+prose from inventing the landing; it exists only under
 `CHAT_PHYSICAL_CONSTRAINTS`. `subjectNames` supplies display names for
 transition participants, and a transition it cannot name renders the generic
 stop line rather than a sentence with a hole in it.

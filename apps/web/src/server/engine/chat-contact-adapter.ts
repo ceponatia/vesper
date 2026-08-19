@@ -427,28 +427,155 @@ function endingSentences(input: ChatContactDetectionInput): readonly string[] {
 const PRONOUN_OWNERS: ReadonlySet<string> = new Set(["you", "your", "her", "him", "his", "them", "their", "theirs"]);
 
 /**
- * Who a written owner token names, or `null`.
+ * One written name phrase, comparable — case-folded, internal whitespace
+ * collapsed, one trailing possessive removed — or `null` for a phrase this
+ * layer must not read as a name at all.
  *
- * A NAME (or an authored alias) always resolves. A pronoun — `you`, `your`,
- * `her`, `him`, `their` — resolves ONLY when exactly one character is present,
- * because in a group it names somebody the sentence has not identified, and
- * picking one would be this layer choosing who got touched.
+ * The INTERNAL-possessive refusal is the load-bearing part. "Sabrina's sister"
+ * names a third party the roster does not contain, and a first-name rule that
+ * looked at its leading word would answer "Sabrina" — touching a body the
+ * sentence explicitly did not name. Any word but the last carrying `'s`
+ * therefore makes the whole phrase unreadable rather than merely unmatched.
+ */
+function normalizedNamePhrase(written: string): string | null {
+  const trimmed = written.trim().replace(/['’]s$/iu, "");
+  if (trimmed.length === 0) return null;
+  const words = trimmed.split(/\s+/u);
+  if (words.some((word) => /['’]s$/iu.test(word))) return null;
+  return words.map((word) => word.toLowerCase()).join(" ");
+}
+
+/** The leading word of a roster name — "Sabrina" of "Sabrina Vale". */
+function firstNameOf(written: string): string {
+  const normalized = normalizedNamePhrase(written);
+  return normalized === null ? "" : (normalized.split(" ")[0] ?? "");
+}
+
+/**
+ * Who a written owner phrase names, or `null`.
+ *
+ * Three ways to land, tried in that order, and the order is the whole design:
+ *
+ * 1. **The full name or an authored alias**, matched as a PHRASE. A roster name
+ *    is routinely two words, and the capture that feeds this resolves the whole
+ *    of it, so "Sabrina Vale's arm" names Sabrina Vale.
+ * 2. **A unique first name.** Players write "Sabrina", not "Sabrina Vale", and
+ *    before this the sentence produced nothing at all. It resolves only when
+ *    exactly ONE present character answers to that leading word: two Sabrinas in
+ *    the room make it silence, by the same law that makes an ambiguous pronoun
+ *    silence. Uniqueness is asked of the PRESENT roster, so a character who
+ *    walked out cannot make a first name ambiguous for the people still there.
+ * 3. **A pronoun** — `you`, `your`, `her`, `him`, `their` — ONLY when exactly one
+ *    character is present, because in a group it names somebody the sentence has
+ *    not identified, and picking one would be this layer choosing who got touched.
+ *
+ * An exact name outranks a first name so that a character literally named
+ * "Vale" is never lost to somebody else's surname, and a first name that
+ * resolves ambiguously stops there rather than falling through to the pronoun
+ * rule — "Sabrina" is not a pronoun, and treating an ambiguous name as one
+ * would hand a two-character room to whoever the roster happened to list.
  */
 function resolveContactTarget(
   owner: string,
   characters: readonly ChatContactRosterMember[],
 ): ChatContactRosterMember | null {
-  const token = owner.trim().replace(/['’]s$/iu, "").toLowerCase();
-  if (token.length === 0) return null;
+  const phrase = normalizedNamePhrase(owner);
+  if (phrase === null) return null;
   const named = characters.find(
     (member) =>
-      member.name.trim().toLowerCase() === token ||
-      member.aliases.some((alias) => alias.trim().toLowerCase() === token),
+      normalizedNamePhrase(member.name) === phrase ||
+      member.aliases.some((alias) => normalizedNamePhrase(alias) === phrase),
   );
   if (named !== undefined) return named;
-  if (!PRONOUN_OWNERS.has(token)) return null;
+  // First names come from the roster NAME and never from an alias, and a pronoun
+  // never reaches this pass at all. Both exclusions are the same guard against
+  // the same mistake: an alias is free authored text, so its leading word is as
+  // likely to be a descriptor's article as a person's given name.
+  //
+  // "her ladyship" would otherwise donate "her", and a pronoun resolving here
+  // would skip the sole-character rule below entirely — turning a two-character
+  // room, where a pronoun is silence by law, into a guess that commits a durable
+  // touch on a body the sentence never identified. "the redhead" and "my love"
+  // donate "the" and "my", which ordinary movement prose writes constantly, so
+  // "I walk over to the window" would resolve as walking over to her.
+  //
+  // The cost is that a multi-word ALIAS can no longer be reached by its first
+  // word alone; the whole alias still matches exactly, above. That is a refusal
+  // where a commit was arguably fine, which is the direction this lane pays in.
+  const byFirstName = PRONOUN_OWNERS.has(phrase)
+    ? []
+    : characters.filter((member) => firstNameOf(member.name) === phrase);
+  if (byFirstName.length > 0) return byFirstName.length === 1 ? (byFirstName[0] ?? null) : null;
+  if (!PRONOUN_OWNERS.has(phrase)) return null;
   const sole = characters.length === 1 ? characters[0] : undefined;
   return sole ?? null;
+}
+
+/**
+ * A written name as a CAPTURE fragment: one word, plus up to two more words of
+ * two letters or more.
+ *
+ * Every owner capture in this lane used to be a single word, which left a
+ * two-word roster name unreachable by ANY phrasing — "Sabrina Vale's arm"
+ * matched nothing, and neither did "Sabrina Vale" as a destination. This is the
+ * smallest widening that reaches them.
+ *
+ * **The continuations are deliberately NOT restricted to capitals**, and the
+ * reason is worth stating because the opposite looks obviously right. Every
+ * pattern this fragment is spliced into carries the `i` flag, and under case
+ * folding `\p{Lu}` matches lowercase letters too — so a capitalised-continuation
+ * rule would not have constrained anything. Worse, it would not have been
+ * inert: `\p{Lu}` matches only letters that HAVE a case mapping, so it silently
+ * excludes every caseless script, and a character named さくら or 中村 would have
+ * been unreachable in exactly the way this fragment exists to fix.
+ *
+ * What actually keeps the capture from swallowing the sentence is the RESOLVER,
+ * not the pattern: `resolveNamePhrasePrefix` takes the longest leading run that
+ * names somebody, so "I walk over to Wren and sit down" captures three words and
+ * resolves one. The two-letter minimum stays because it is the one thing the
+ * resolver cannot do — "I walk over to Wren I think" would otherwise capture the
+ * pronoun as part of the name, and `i` folding makes that no harder to write
+ * than to read.
+ */
+const NAME_PHRASE = "[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+[\\p{L}][\\p{L}\\p{N}'’-]+){0,2}";
+
+/** A resolved destination, with the words it actually spent. */
+interface ResolvedNamePhrase {
+  readonly member: ChatContactRosterMember;
+  /** The written words this used — what the possessive guard must inspect. */
+  readonly consumed: string;
+  /** Whether an ordinary word followed those, captured or not. */
+  readonly followedByWord: boolean;
+}
+
+/**
+ * The LONGEST leading run of a captured phrase that names somebody, or `null`.
+ *
+ * The fragment above is deliberately greedy, and greed alone would LOSE targets
+ * that resolve today: "I walk over to Wren Vaelith" captures two names, and a
+ * resolver that only ever asked about the whole capture would answer nothing
+ * where the one-word capture used to answer Wren. Trying the full phrase first
+ * and then shortening lets "Sabrina Vale" resolve as a person while leaving
+ * every one-word case exactly as it was — so this can only resolve MORE than
+ * the capture it replaces, never differently.
+ *
+ * `followedByWord` is reported against the words actually spent rather than the
+ * whole capture, because the possessive guard's question is about what follows
+ * the NAME: in "I walk over to Wren Vaelith" the name is one word, and another
+ * word does follow it.
+ */
+function resolveNamePhrasePrefix(
+  phrase: string,
+  trailingWord: boolean,
+  characters: readonly ChatContactRosterMember[],
+): ResolvedNamePhrase | null {
+  const words = phrase.trim().split(/\s+/u).filter((word) => word.length > 0);
+  for (let take = words.length; take > 0; take -= 1) {
+    const consumed = words.slice(0, take).join(" ");
+    const member = resolveContactTarget(consumed, characters);
+    if (member !== null) return { member, consumed, followedByWord: take < words.length || trailingWord };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,7 +621,7 @@ const APPROACH_TOUCHING: ReadonlySet<string> = new Set([
  * later clause still starts immediately after the destination token.
  */
 const APPROACH_RE = new RegExp(
-  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${APPROACH_VERBS})\\b[^.?!;:]{0,60}?\\b(${APPROACH_ADJACENCY})\\s+([\\p{L}][\\p{L}\\p{N}'’-]*)\\b(?=(\\s+[\\p{L}])?)`,
+  `\\bi\\s+(?:[\\p{L}']+\\s+){0,2}?(?:${APPROACH_VERBS})\\b[^.?!;:]{0,60}?\\b(${APPROACH_ADJACENCY})\\s+(${NAME_PHRASE})\\b(?=(\\s+[\\p{L}])?)`,
   "giu",
 );
 
@@ -553,14 +680,15 @@ function approachInSentence(
   // person, and stopping there would throw away the movement that happened.
   // `matchAll` clones the regex, so the module-level `lastIndex` is never shared.
   for (const match of sentence.matchAll(APPROACH_RE)) {
-    const token = match[2] ?? "";
+    // Resolve BEFORE guarding, because the capture may hold more words than the
+    // name does and the guard's question is about what follows the NAME.
+    const resolved = resolveNamePhrasePrefix(match[2] ?? "", (match[3] ?? "").length > 0, characters);
+    if (resolved === null) continue;
     // A possessed destination keeps SCANNING rather than ending the sentence:
     // "I walk over to her desk, then I step closer to Wren" still moves.
-    if (destinationIsPossessive(token, (match[3] ?? "").length > 0)) continue;
-    const target = resolveContactTarget(token, characters);
-    if (target === null) continue;
+    if (destinationIsPossessive(resolved.consumed, resolved.followedByWord)) continue;
     const adjacency = (match[1] ?? "").toLowerCase();
-    return { targetSubject: target.subjectId, band: APPROACH_TOUCHING.has(adjacency) ? "touching" : "close" };
+    return { targetSubject: resolved.member.subjectId, band: APPROACH_TOUCHING.has(adjacency) ? "touching" : "close" };
   }
   return null;
 }
@@ -693,7 +821,7 @@ const DEPARTURE_DISTANCE_RE =
   /\bi\s+(?:[\p{L}']+\s+){0,2}?(?:put|puts|putting)\s+(?:some\s+|a\s+little\s+|a\s+bit\s+of\s+)?distance\s+between\s+us\b/iu;
 
 /** "…from her", "…from Wren" — who the sentence said the player moved off from. */
-const DEPARTURE_FROM_RE = /\bfrom\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b(?=(\s+[\p{L}])?)/iu;
+const DEPARTURE_FROM_RE = new RegExp(`\\bfrom\\s+(?:the\\s+)?(${NAME_PHRASE})\\b(?=(\\s+[\\p{L}])?)`, "iu");
 
 /**
  * How far this sentence put them, or `null` for a sentence that is not a
@@ -756,10 +884,10 @@ export function detectChatDeparture(input: ChatContactDetectionInput): ChatDepar
     if (approachInSentence(sentence, input.characters) !== null) continue;
     const from = DEPARTURE_FROM_RE.exec(sentence);
     if (from === null) return { targetSubject: null, band };
-    if (destinationIsPossessive(from[1] ?? "", (from[2] ?? "").length > 0)) continue;
-    const target = resolveContactTarget(from[1] ?? "", input.characters);
-    if (target === null) continue;
-    return { targetSubject: target.subjectId, band };
+    const resolved = resolveNamePhrasePrefix(from[1] ?? "", (from[2] ?? "").length > 0, input.characters);
+    if (resolved === null) continue;
+    if (destinationIsPossessive(resolved.consumed, resolved.followedByWord)) continue;
+    return { targetSubject: resolved.member.subjectId, band };
   }
   return null;
 }
@@ -1026,7 +1154,19 @@ export function chatContactGestureBands(gesture: ChatContactActGesture): {
  * so the classifier schema and the evidence verifiers can never accept a
  * surface this detector cannot produce.
  */
-const CONTACT_OWNER = "your|her|his|their|[\\p{L}][\\p{L}\\p{N}'’-]*['’]s";
+/**
+ * Whose body the sentence named. The possessive is the anchor that makes the
+ * multi-word branch safe here: the owner must END at `'s` and the body noun must
+ * follow it immediately, so "Sabrina Vale's arm" parses as one possessor.
+ *
+ * This site has no longest-prefix fallback — the phrase ends where the sentence
+ * says it does — so it leans entirely on the resolver failing closed. It does:
+ * "my wife Sabrina's shoulder" captures the whole possessor, matches no roster
+ * name and no unique first name, and produces nothing. Refusing a touch that was
+ * arguably fine is the safe direction; resolving a possessor's last word would
+ * be this layer picking a body out of a phrase that named somebody else.
+ */
+const CONTACT_OWNER = `your|her|his|their|[\\p{L}][\\p{L}\\p{N}'’-]*(?:\\s+[\\p{L}][\\p{L}\\p{N}'’-]+){0,2}['’]s`;
 
 /** "I rest my hand on your shoulder" — the hand is the object, the body part the destination. */
 const CONTACT_PLACE_RE = new RegExp(
@@ -1336,7 +1476,7 @@ const RELEASE_RES: readonly RegExp[] = [
 ];
 
 /** "…of her hand", "…from Wren's shoulder", "…off the railing" — who or what was let go of. */
-const RELEASE_OF_RE = /\b(?:of|from|off(?:\s+of)?)\s+(?:the\s+)?([\p{L}][\p{L}\p{N}'’-]*)\b/iu;
+const RELEASE_OF_RE = new RegExp(`\\b(?:of|from|off(?:\\s+of)?)\\s+(?:the\\s+)?(${NAME_PHRASE})\\b`, "iu");
 
 /**
  * The player's release this turn, or `null`.
@@ -1353,9 +1493,9 @@ export function detectChatContactRelease(input: ChatContactDetectionInput): Chat
     if (!RELEASE_RES.some((pattern) => pattern.test(sentence))) continue;
     const owner = RELEASE_OF_RE.exec(sentence);
     if (owner === null) return { targetSubject: null };
-    const target = resolveContactTarget(owner[1] ?? "", input.characters);
-    if (target === null) continue;
-    return { targetSubject: target.subjectId };
+    const resolved = resolveNamePhrasePrefix(owner[1] ?? "", false, input.characters);
+    if (resolved === null) continue;
+    return { targetSubject: resolved.member.subjectId };
   }
   return null;
 }
@@ -2453,29 +2593,40 @@ export function chatContactActionOutcome(input: ChatContactOutcomeInput): Physic
 }
 
 // ---------------------------------------------------------------------------
-// The reach premise
+// The unresolved premise
 // ---------------------------------------------------------------------------
 
 /**
- * A concrete act whose reach the scene could not establish — the ONE unresolved
- * case that earns a presentation line.
+ * Which unresolved reasons earn a presentation line, and what each one is ABOUT.
  *
- * An `unresolved` outcome is silence by contract, and that stays true: no
- * ledger row, no scene fold, no acknowledgment, and the outcome's own wording is
- * still empty. What the S3 trial showed is that silence alone does not stop the
- * PROSE from inventing the landing — the player wrote a touch, the guidance said
- * nothing, and the narrator depicted a hand crossing a room nobody measured. So
- * exactly one unresolved reason — `geometry_unavailable`, the typed "no
- * pose/reach owner could place these two surfaces" — produces a premise the
- * renderer words as a fence: reach is NOT ESTABLISHED, do not depict the touch
- * landing, do not invent movement to make it land.
+ * An `unresolved` outcome is silence by contract, and that stays true for both:
+ * no ledger row, no scene fold, no acknowledgment, and the outcome's own wording
+ * is still empty. What two live trials showed is that silence alone does not
+ * stop the PROSE from inventing the landing — the player wrote a touch, the
+ * guidance said nothing, and the reply depicted it happening.
  *
- * It states only the gap. It never claims the target is far away, pulled back,
- * or refused — those are positive facts the scene does not own, and the reasons
- * that DO own them (`out_of_reach`, the reposition/close-distance requirements)
- * keep their existing typed handling instead of degrading to this.
+ * - `reach` — `geometry_unavailable`, the typed "no pose/reach owner could place
+ *   these two surfaces". The gap is whether the hand could get there.
+ * - `permission` — `permission_unresolved`, an interpersonal contact whose
+ *   permission owner gave no answer. The gap is whether the contact is the
+ *   player's to make.
+ *
+ * Keeping BOTH in one discriminated seam is deliberate: the property that makes
+ * this safe is that the list of unresolved reasons earning a line is decided in
+ * exactly one place, against the resolution's own typed reason, and every other
+ * reason — material, support, control, agency — still renders nothing.
+ *
+ * Each states only its own gap. Neither claims the target is far away, pulled
+ * back, or refused: those are positive facts the scene does not own, and the
+ * reasons that DO own them (`out_of_reach`, `permission_denied`,
+ * `permission_withdrawn`, the reposition requirements) keep their existing typed
+ * handling instead of degrading to this.
  */
-export interface ChatContactReachPremise {
+export type ChatContactPremiseKind = "reach" | "permission";
+
+export interface ChatContactUnresolvedPremise {
+  /** What the scene could not establish. */
+  readonly kind: ChatContactPremiseKind;
   /** The resolved target's display name — "Sabrina". */
   readonly targetName: string;
   /** The written surface ("shoulder"), when the lexicon can word the locus. */
@@ -2483,26 +2634,38 @@ export interface ChatContactReachPremise {
 }
 
 /**
- * The reach premise this turn's resolved attempt earns, or `null`.
+ * The unresolved reasons that earn a line, mapped to what the line is about.
  *
- * Typed end to end: the trigger is the resolution's own `unresolved /
- * geometry_unavailable` pair, never a diagnostic string. Every other status and
- * every other unresolved reason — material, support, control, agency — returns
- * `null`, because wording those as a reach problem would mislabel a different
- * gap.
+ * A lookup rather than a switch so that adding a reason is a data edit that
+ * cannot silently mislabel an existing one, and so an unlisted reason is
+ * `undefined` — silence — by construction.
  */
-export function chatContactReachPremise(input: {
+const CHAT_CONTACT_PREMISE_KINDS: Readonly<Partial<Record<ContactUnresolvedReason, ChatContactPremiseKind>>> = {
+  geometry_unavailable: "reach",
+  permission_unresolved: "permission",
+};
+
+/**
+ * The premise this turn's resolved attempt earns, or `null`.
+ *
+ * Typed end to end: the trigger is the resolution's own `unresolved` reason,
+ * never a diagnostic string.
+ */
+export function chatContactUnresolvedPremise(input: {
   readonly act: ChatContactAct | null;
   readonly resolution: ContactResolution | null;
   readonly characters: readonly ChatContactRosterMember[];
-}): ChatContactReachPremise | null {
+}): ChatContactUnresolvedPremise | null {
   const { act, resolution } = input;
   if (act === null || resolution === null) return null;
-  if (resolution.status !== "unresolved" || resolution.reason !== "geometry_unavailable") return null;
+  if (resolution.status !== "unresolved") return null;
+  const kind = CHAT_CONTACT_PREMISE_KINDS[resolution.reason];
+  if (kind === undefined) return null;
   const target = input.characters.find((member) => member.subjectId === act.targetSubject);
   if (target === undefined) return null;
   const locus = chatContactPhrase(locusCode(act.targetLocationId));
   return {
+    kind,
     targetName: target.name,
     ...(locus === undefined ? {} : { locus: locus.phrase }),
   };

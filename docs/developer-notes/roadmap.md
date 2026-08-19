@@ -25,9 +25,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — affectionate player
-  contact is live and the narrow player-romantic action producer it was missing
-  now exists, leaving the NPC shadow review and the first controlled
-  `romantic_touch` proof as the two parallel gates.
+  contact is live and the romantic producer passed its first controlled proof,
+  which exposed two gaps now closed in code: a refusal the narrator was never
+  told about, and character names players could not write. A rerun against the
+  fixed lane gates the rollout ruling; the NPC shadow review runs in parallel.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·
