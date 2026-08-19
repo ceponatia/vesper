@@ -546,8 +546,9 @@ travels out-of-band instead:
    it hit the length cap or that Vesper's own normalizers erased the reply. **No
    cause's copy names a mechanism the metadata did not measure**: only
    `reasoning_spent` carries a reported reasoning-token count, so only it blames a
-   thinking chain — which matters because the Featherless narrators are asked with
-   `enable_thinking: false` and report no reasoning split at all. Credential
+   thinking chain — which matters because no Featherless narrator reports a reasoning
+   split at all: the thinking rows are asked with `enable_thinking: false`, and the
+   rest never emit a chain. Credential
    failures name the upstream only when the recorded model id identifies one
    (`narrativeModelProvider`), and say "the model provider" otherwise — the narrator
    list is multi-provider. No record ⇒ honest "no cause recorded" copy.

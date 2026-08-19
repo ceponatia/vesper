@@ -56,10 +56,10 @@ export type ChatReplyFailureCode = (typeof chatReplyFailureCodes)[number];
  *   normalizers discarded all of it. This one is not the model's fault.
  *
  * The middle three were ONE cause (`reasoning_or_length`) whose copy asserted a
- * reasoning chain in all three cases. That is false wherever thinking is off: the
- * Featherless narrators send `enable_thinking: false` and report no
- * `completion_tokens_details` at all, so a burned budget there can never be
- * evidence of reasoning. A cause may only name a mechanism the generation
+ * reasoning chain in all three cases. That is false wherever nothing is thinking: no
+ * Featherless narrator reports `completion_tokens_details` at all — the thinking rows
+ * because they are sent `enable_thinking: false`, the rest because they never emit a
+ * chain — so a burned budget there can never be evidence of reasoning. A cause may only name a mechanism the generation
  * metadata actually measured.
  */
 export const chatReplyFailureCauses = [
