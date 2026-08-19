@@ -794,13 +794,18 @@ Raw mode bypasses fact-completeness and collision guarantees by design and is la
 
 ### Stage 0 — research and current-behavior freeze
 
-Status: in progress — the research document exists; the payload-hash freeze and the architecture tests against new embedded exclusions are remaining.
+Status: complete — 2026-08-19.
 
 - record the endpoint/version evidence matrix;
 - freeze current positive and negative payload hashes for representative routes;
 - record provider defaults and hidden prompt sources;
 - add architecture tests preventing new embedded “no X” boilerplate in production prompt builders;
 - identify all raw-prompt escape-hatch callers.
+
+Nine lanes are frozen — two avatar styles, two portrait variants, three scene
+renders and the two chat lanes — and the embedded-exclusion census holds sixteen
+phrases across five modules. Both are pinned so that changing one of those lanes
+is a deliberate cutover rather than a diff nobody compared.
 
 ### Stage 1 — prompt-program and dialect contracts
 
@@ -859,7 +864,14 @@ Status: in progress — guarded blocks, the collision linter and the transport r
 
 ### Stage 6 — negative transport promotion
 
-Status: blocked on probing the Qwen Image 2512 version and running the first pinned image trial.
+Status: blocked on the owner — the trial instrument is built and prints both arms for free (`scripts/eval/prompt-programs/entity-negative-ab.ts`), but running it costs provider spend, and promoting the result means activating the Qwen 2512 version on production.
+
+The instrument holds seed, packs, world and positive prompt constant across seven
+fixed rows and varies only whether the compiled exclusions are sent, which is the
+exact boundary a version probe crosses. It reads no database, so gathering the
+evidence changes nothing in production; activating afterwards is a separate owner
+action, and not a scoped one — pinning that row's version also switches on the
+`steps` and `go_fast` settings that sit inert on the three portrait profiles.
 
 Promote per endpoint/profile only after A/B evidence:
 
@@ -990,6 +1002,16 @@ The plan is accepted when:
   visually; "cool to the touch" does not. It is classified `nonvisual` today so the
   projection does not invent visual claims from prose about another sense. Splitting
   the field or promoting it needs an owner call.
+- **How does authored lettering become a protected claim?** `item.marking` and
+  `location.signage` are the two concepts that take the text exclusions off the
+  table, and neither has a producer: an item or location whose authored
+  description names lettering — a door plate reading EXIT, a shop window painted
+  ALDWIN & SON — reaches the compile as ordinary optional prose, so the render is
+  simultaneously asked to spell the words and told to exclude unintended text.
+  Both cases are in the Stage 6 trial so the pictures say how much it costs.
+  Closing it needs a decision about where the lettering comes from: a new
+  authored field on the item and location rows, or a narrower reading of what the
+  text exclusions may forbid when a description contains a quoted string.
 
 ## Owner decisions before implementation
 

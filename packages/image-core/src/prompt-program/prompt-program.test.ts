@@ -428,17 +428,44 @@ describe("world digest construction", () => {
 // ---------------------------------------------------------------------------
 
 describe("compiling a prompt program", () => {
-  const itemWorld = (): ImageWorldDigest =>
+  const itemWorld = (description = "a scuffed pocket compass"): ImageWorldDigest =>
     world({
       operation: operation({ task: "item", subjectCount: 0 }),
       items: [
         entity("item", "i1", [
           fact({ key: "i1.identity", concept: "item.identity", value: "a product photograph of a brass compass", disposition: "required_visual", priority: 1 }),
-          fact({ key: "i1.form", concept: "item.form", value: "a scuffed pocket compass", priority: 0.9 }),
+          fact({ key: "i1.form", concept: "item.form", value: description, priority: 0.9 }),
         ]),
       ],
       sourceRevisions: [{ owner: "item.library", entityId: "i1", revision: "r1" }],
     });
+
+  /**
+   * Falsified against the shipped lane, which put "a scuffed pocket compass.."
+   * in every product prompt. The item projection passes an authored description
+   * VERBATIM — authored prose ends in its own full stop — and every dialect
+   * wording appends one. A description long enough to be excerpted was worse: the
+   * projection ends a truncation with an ellipsis, so the appended stop made "…".
+   *
+   * An authored `!` or `?` survives as itself, because flattening it would be the
+   * dialect editing prose it was only asked to place.
+   */
+  it("terminates a clause once, whatever punctuation the authored value brought", () => {
+    // The dialect sentence-cases each clause, which is its business — these
+    // expectations state the terminator, and carry the capital only so the
+    // substring matches.
+    for (const [authored, expected] of [
+      ["a scuffed pocket compass.", "A scuffed pocket compass."],
+      ["a scuffed pocket compass…", "A scuffed pocket compass…"],
+      ["what a compass!", "What a compass!"],
+      ["a scuffed pocket compass", "A scuffed pocket compass."],
+    ]) {
+      const result = compileImagePromptProgram(compileInput(itemWorld(authored)));
+      if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+      expect(result.compiled.positiveText).toContain(expected);
+      expect(result.compiled.positiveText).not.toMatch(/[.!?…][.…]/u);
+    }
+  });
 
   /**
    * The end-to-end vertical slice: world digest → claims → constraints → linter →

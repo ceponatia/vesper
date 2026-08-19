@@ -27,8 +27,9 @@ summary to correct.
 | Stored provenance shapes                      | `packages/image-core/src/prompt-program/provenance.ts`           |
 | Source-field disposition registry             | `apps/web/src/contracts/images/world-projection.ts`              |
 | Item and location projections                 | `apps/web/src/contracts/images/entity-digest.ts`                 |
-| Character slice over `VisualImageDigest`      | `apps/web/src/contracts/images/subject-digest.ts`                |
+| Character translation scaffold (unbound)      | `apps/web/src/contracts/images/subject-digest.ts`                |
 | Entity lane read, compile and refusal         | `apps/web/src/server/images/entity-prompt-program.ts`            |
+| Stage 6 negative-transport trial              | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
 
 ## What is built
 
@@ -41,12 +42,94 @@ Two production lanes consume it: library **item** and **location** renders.
 `prompts-entity.ts` is deleted. Every other image lane keeps its existing prompt
 path until its own cutover.
 
-The character slice (`projectSubjectDigests`) is **written but neither bound nor
-covered**. No character-bearing lane is bound to a dialect, nothing imports it,
-and no test exercises it — the package's collision cases build their digests
-directly rather than through this adapter. Its first execution would be its
-first. Binding a character lane therefore starts with covering it or deleting
-it, not with wiring it up.
+The character slice (`projectSubjectDigests`) is a **tested structural
+translation seam, not production-bound**. It is covered by
+`apps/web/src/contracts/images/subject-digest.test.ts`, and it is still not
+imported by any lane, bound to any dialect, or capable of producing a complete
+character prompt on its own — see [The character scaffold](#the-character-scaffold).
+
+## The character scaffold
+
+`subject-digest.ts` is forward infrastructure for the character cutover. It is
+**not** a complete character prompt projection, and it must not be wired into a
+production character lane on the strength of existing.
+
+### What it actually does
+
+One job: translate one closed vocabulary into another. The visual digest's
+prompt-segment classification becomes the prompt program's concept registry, its
+required/optional lanes become projection dispositions, and its species feature
+groups gain the morphology protection tags the negative anatomy blocks read.
+Keys, source refs, truth fingerprints and priorities travel through untouched.
+
+It adds no truth and re-ranks nothing, which is the plan's "wrap, don't replace"
+ruling made structural rather than aspirational.
+
+### The ownership boundary it exists to hold
+
+The character cutover has five owners and this file is one of them. Written out,
+because getting it wrong is how a fourth route-specific appearance formatter gets
+born:
+
+| Layer                       | Owns                                              |
+| --------------------------- | ------------------------------------------------- |
+| visual state                | which facts apply, and required vs camera-visible |
+| canonical character owners  | the semantic VALUE of each selected fact          |
+| the character image adapter | joining those two atomically into a world digest  |
+| the prompt-program layer    | semantic claims and negative constraints          |
+| the endpoint dialect        | the final wording, and nothing else               |
+
+The character image adapter is the piece that does not exist yet. When it is
+written it CONSUMES this file; it does not replace it.
+
+### Truth fingerprints are provenance, never prompt semantics
+
+Ordinary appearance facts reach a snapshot through
+`apps/web/src/contracts/visual-state/compat.ts`, which adapts
+`ProjectedFeatureTruth` — a shape carrying a `truthFingerprint` and no semantic
+value at all — so it files the fingerprint as the feature's `value`. The
+fingerprint is canonical JSON, so it looks readable (`"crooked"`,
+`{"state":"absent"}`), which is exactly the hazard: a dialect that passed it
+through would put a change-detection token in a provider payload while appearing
+to describe a nose.
+
+The ruling: this adapter never treats a fingerprint as prompt semantics and never
+decodes one. It does not humanize, guess, or infer meaning from a fingerprint,
+because inventing appearance is the failure the whole layer exists to prevent.
+
+The mechanism is the caller-supplied `semanticValue` resolver, consulted **only**
+for facts that carry no value of their own — so a canonical owner cannot
+override truth the snapshot already holds (a species feature group's
+`{ group: "wings" }` never goes through it). A fact nobody can value is
+suppressed with `visual_state.value_unresolved`, and a required one additionally
+lands in `missingRequired`, so a lane compiled with `refuseOnMissingRequired`
+fails closed rather than rendering a character whose anchors turned into hashes.
+
+### What is still missing before a character lane can bind
+
+Four gaps, each a deliberate absence rather than an oversight:
+
+1. **Apparent age.** `VisualImageDigest` classifies `identity.apparent_age` into
+   the protected `age` segment, but no appearance catalog entry projects it, so
+   no age fact reaches this adapter and existing image routes still source age
+   from the attribute registry directly. There is no character prompt parity
+   until age has a canonical semantic path into the world digest.
+2. **Exposure and coverage.** Exposure is a composition read over the garment
+   coverage readout, not an ordinary `VisualImageFact` — `visualImageFactSegmentKind`
+   deliberately never returns `exposure`. The character image adapter must add
+   authoritative exposure/coverage claims itself. Expecting `projectSubjectDigests`
+   to produce them would silently drop wardrobe authority.
+3. **Authored absences.** `subject.absence` — the concept that takes
+   `missing_limbs` and `missing_digits` off the negative channel's table — needs
+   to know an anatomy fact says "absent". That is semantic content this adapter
+   does not have, so an amputation currently arrives opaque and is suppressed
+   rather than mistagged. Fail-closed, not yet correct.
+4. **Feature values are not prompt-ready.** Some visual-state values are records
+   carrying ids beside their semantics — a garment's is
+   `{ name, locus: { actorId }, definitionId }`. The Qwen dialect reads `name`
+   first, so nothing leaks today, but a value with no readable member falls back
+   to flattening the record. Resolving prompt-ready values is the character
+   adapter's job, not the dialect's fallback's.
 
 ## Rulings the build settled
 
@@ -107,6 +190,48 @@ visible: repointing the item or location profile at an unbound model takes that
 lane out of service until somebody adds a binding. The plan carries this as an
 open question.
 
+### Authored lettering is not yet a protected claim
+
+`item.marking` and `location.signage` are the concepts that take `text`,
+`letters`, `logo` and `caption` off the negative channel's table, and neither has
+a producer. The item and location projections classify every authored free-text
+field as `item.form` / `location.contents`, which protect nothing, so a door
+plate reading EXIT or a shop window painted ALDWIN & SON reaches the compile as
+ordinary prose — and the render is told to spell the words and to exclude
+unintended text in the same payload.
+
+This is the plan's own canonical collision case arriving from a direction the
+guards cannot see, because the guard is a claim and the lettering is not one.
+Both cases are cells in the Stage 6 trial, so the pictures decide how much it
+actually costs before anybody changes a schema. The plan carries the open
+question.
+
+### A dialect terminates a clause once
+
+Every Qwen wording ends its clause with a full stop, which is right for a
+single-word value and wrong for the authored prose half of them carry: the item
+projection passes a description verbatim, authored descriptions end in their own
+stop, and the lane shipped "a worn leather lanyard.." in every product prompt. An
+excerpted description was worse — the projection ends a truncation with an
+ellipsis, so the appended stop made "…".
+
+`sentence()` in the dialect normalizes the segment's terminator once, rather than
+each of the twenty wordings guarding its own. An authored `!` or `?` survives as
+itself: flattening it would be the dialect editing prose it was only asked to
+place.
+
+### The location lane's shot is cropped before the prompt is judged
+
+The location card is 3:2 and the seeded `qwen/qwen-image-2512` row offers
+`1:1`, `16:9`, `9:16`, `4:3` and `3:4`. Shape negotiation therefore lands every
+location render on 4:3 and the pipeline crops the remainder — designed behavior
+owned by the capability layer, not a prompt failure.
+
+It matters here because the Stage 6 trial grades composition, and a score that
+blames the prompt for a crop the aspect menu caused would promote or reject a
+negative pack for the wrong reason. The trial script reports the negotiated shape
+per case so the grader knows.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input
@@ -135,6 +260,17 @@ The plan sketches shapes; these are the ones the build changed, and why.
   bands mirror the application's viewing vocabulary member for member; the copy is
   deliberate, so a game-side change surfaces in the adapter rather than reaching a
   negative guard as an unrecognized string.
+- **`subject.body_language` sits in the `pose` segment kind, not `current_state`.**
+  Visual state classifies its body-language layer as `pose`, and two vocabularies
+  disagreeing meant a posture claim emitting later in the prompt than the
+  classification asked for. A translation preserves a fact's segment kind; it does
+  not re-file it somewhere cheaper. `subject.expression` stays `current_state` — a
+  face is not a posture.
+- **`projectSubjectDigests` takes an input object and returns suppressions.** It
+  needs three things a positional `(digest, labels)` call could not carry: the
+  `semanticValue` resolver, the suppression list `buildImageWorldDigest` collects
+  across every projection, and the distinction between "the digest never had this
+  fact" and "nobody could value it". Nothing consumed the old signature.
 
 ## Test ownership
 
@@ -148,6 +284,22 @@ projection decisions the deleted prose tests protected, and
 `apps/web/src/server/images/world-projection-coverage.test.ts` is the tripwire
 that fails when a table column or definition member has no projection decision.
 
+`apps/web/src/server/images/prompt-freeze.test.ts` pins the Stage 0 payload
+freeze — nine uncut lanes, one hash and character count each — and
+`scripts/image-prompt-exclusions.test.ts` is the census of the sixteen negative
+constraints still embedded in positive prose, across five modules. Both sets may
+shrink as lanes cut over and may never grow: re-pinning a frozen hash to match a
+new string would defeat the shadow comparison the freeze exists to protect.
+
+`apps/web/src/contracts/images/subject-digest.test.ts` owns the character seam's
+three claims: a fact's segment classification survives the translation into a
+concept (derived over whatever the digest selected, not a written table); a
+fingerprint standing in for a value is suppressed rather than compiled, with the
+real compatibility adapter as the tripwire on that condition; and a lost
+mandatory anchor reaches `missingRequired` instead of vanishing. Which segment
+kind a feature belongs to stays `visual-digest.test.ts`'s, and how a claim is
+worded stays the dialect's.
+
 Per-concept wording, per-block guards in isolation and pack contents are
 deliberately untested: the first two are covered through the collision table and
 the end-to-end compile, and enumerating a registry proves only that the list was
@@ -155,10 +307,15 @@ typed twice.
 
 ## Remaining
 
-- Probe the Qwen Image 2512 version so the compiled exclusions reach the provider.
-- Run the first pinned image trial for item and location renders.
-- Freeze the current payload hashes for the lanes not yet cut over (Stage 0).
-- Add architecture tests preventing new embedded "no X" boilerplate in the
-  remaining prose builders.
-- Cut over the character-bearing lanes, each behind its own dialect and trial.
+- Run `scripts/eval/prompt-programs/entity-negative-ab.ts --render` and grade it.
+  The instrument is built and prints both arms for free; the renders cost
+  provider spend, which makes running it an owner action.
+- Probe and activate the Qwen Image 2512 version so the compiled exclusions reach
+  the provider. Not a scoped change: pinning that row also switches on the `steps`
+  and `go_fast` settings that sit inert on the three portrait profiles today, so
+  it needs the trial's verdict first.
+- Write the character image adapter that joins visual state's selection to the
+  canonical owners' semantic values, then cut over the character-bearing lanes —
+  each behind its own shadow compile, dialect and trial. The four gaps in
+  [The character scaffold](#the-character-scaffold) are its scope.
 - Move packs and bindings into tables with admin promotion and rollback.
