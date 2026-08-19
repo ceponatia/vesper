@@ -43,10 +43,15 @@ import { buildVariantInstruction } from "./prompts-variant";
  * - The reference scene lanes narrow to identity anchors plus the reveal line,
  *   losing species, gender and morphology entirely: they lean on the reference
  *   image for those.
- * - The chat-look lane states apparent age and the requested outfit and NOTHING
- *   else — no identity, morphology, or exposure fact at all. Same for the
- *   variant lane. Both take their age anchor as a caller-supplied string, which
- *   is the coupling Stage 4 replaces with a mandatory `age` segment.
+ * - The chat-look lane states the requested outfit and NOTHING else — no
+ *   identity, morphology, exposure or age fact at all. The variant lane states
+ *   the same plus apparent age, which it takes as a caller-supplied string —
+ *   the coupling Stage 4 replaces with a mandatory `age` segment.
+ *
+ * Age moved on 2026-08-19 (#143, "Separate narrative and visual age contexts"):
+ * the scene and chat-look lanes are now age-neutral by rule and inherit visible
+ * age from the portrait/chat-look reference, so `apparentAge` left every cell
+ * below except the avatar's (which CREATES the reference) and the variant's.
  *
  * A lane that gains a fact it never had, or loses one it has, fails here first.
  */
@@ -124,7 +129,6 @@ describe("image lane characterization — dressed subject", () => {
       "horns",
       "wings",
       "tail",
-      "apparentAge",
       "garment",
       "legBuild",
       // `toenails` is the drift this plan exists to remove, not an intended
@@ -143,7 +147,6 @@ describe("image lane characterization — dressed subject", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
-      "apparentAge",
       "garment",
       // Shape reads through clothing; the covered `skin` facts do not.
       "legBuild",
@@ -160,24 +163,21 @@ describe("image lane characterization — dressed subject", () => {
     // Identical to the single-reference lane's fact set, which is the one thing
     // the two assemblers currently agree on — they reach it through different
     // wording, ordering and budgets (audit finding 4).
-    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "apparentAge", "garment", "legBuild"]);
+    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "garment", "legBuild"]);
   });
 
-  it("chat look: apparent age and the requested outfit, and no other character fact", () => {
+  it("chat look: the requested outfit, and no other character fact — age included", () => {
     const prompt = buildChatLookPrompt({
       outfit: "a floor-length wine-red silk kimono",
       outfitExposed: false,
-      ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
     });
-    expectLaneFacts(prompt, ["apparentAge", "garment"]);
+    expectLaneFacts(prompt, ["garment"]);
   });
 
   it("portrait variant: apparent age and the requested change, and no other character fact", () => {
-    const prompt = buildVariantInstruction(
-      "outfit",
-      "wearing a floor-length wine-red silk kimono",
-      apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
-    );
+    const prompt = buildVariantInstruction("outfit", "wearing a floor-length wine-red silk kimono", {
+      ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
+    });
     expectLaneFacts(prompt, ["apparentAge", "garment"]);
   });
 });
@@ -194,7 +194,6 @@ describe("image lane characterization — bare subject", () => {
       "horns",
       "wings",
       "tail",
-      "apparentAge",
       "bareTorso",
       "legBuild",
       "toenails",
@@ -213,7 +212,6 @@ describe("image lane characterization — bare subject", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
-      "apparentAge",
       "bareTorso",
       "legBuild",
       "toenails",
@@ -282,22 +280,26 @@ describe("image lane invariants that hold across the migration", () => {
     }
   });
 
-  it("every character-bearing lane states apparent age when the anchor is supplied", () => {
-    // The 2026-07-29 owner ruling: the avatar cannot be the sole age source,
-    // because an edit model re-reads an ambiguous reference a step older each
-    // generation. Every lane below states it, three of them from an anchor the
-    // caller passes in — which is exactly the coupling Stage 4 replaces with a
-    // mandatory `age` segment.
+  it("the portrait lanes state apparent age; the scene-supporting lanes state none", () => {
+    // Two rulings meet here. The 2026-07-29 ruling says a portrait lane cannot
+    // let the avatar be the sole age source, because an edit model re-reads an
+    // ambiguous reference a step older each generation. The 2026-08-19 split
+    // (#143) says the opposite for scene work: those renders inherit visible age
+    // from the reference image and state no age word at all, so the narrator's
+    // `profile.age` can never reach an image prompt through them.
     const anchor = apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, []));
     expect(anchor).toContain("late twenties");
     const anchored: ReadonlyArray<string> = [
       buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
-      buildSceneRenderPrompt(scenePlan(), {}),
-      buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
-      buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false, ageAnchor: anchor }),
-      buildVariantInstruction("outfit", "wearing a kimono", anchor),
+      buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
     ];
     for (const prompt of anchored) expect(presentVisualFacts(prompt)).toContain("apparentAge");
+    const ageNeutral: ReadonlyArray<string> = [
+      buildSceneRenderPrompt(scenePlan(), {}),
+      buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
+      buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false }),
+    ];
+    for (const prompt of ageNeutral) expect(presentVisualFacts(prompt)).not.toContain("apparentAge");
   });
 
   it("the probe vocabulary itself stays stable", () => {

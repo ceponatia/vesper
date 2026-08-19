@@ -92,7 +92,9 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   {
     lane: "variant.pose",
     prompt: () =>
-      buildVariantInstruction("pose", "sitting on the workshop stool", "She appears to be in her late twenties."),
+      buildVariantInstruction("pose", "sitting on the workshop stool", {
+        ageAnchor: "She appears to be in her late twenties.",
+      }),
   },
   {
     lane: "variant.outfit",
@@ -100,12 +102,7 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
   {
     lane: "chat.look",
-    prompt: () =>
-      buildChatLookPrompt({
-        outfit: "a canvas work coat",
-        outfitExposed: false,
-        ageAnchor: "She appears to be in her late twenties.",
-      }),
+    prompt: () => buildChatLookPrompt({ outfit: "a canvas work coat", outfitExposed: false }),
   },
   {
     lane: "chat.place",
@@ -132,13 +129,21 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
 ];
 
-/** Frozen 2026-08-19, before any character-bearing lane's cutover. */
+/**
+ * Frozen 2026-08-19, before any character-bearing lane's cutover.
+ *
+ * `chat.look` was re-pinned the same day, for the one reason the note above
+ * allows: #143 removed the age anchor from that builder deliberately (scene-
+ * supporting renders inherit visible age from their reference), so the old hash
+ * described a builder that no longer exists. Every other lane still carries its
+ * original pin.
+ */
 const BASELINE: Readonly<Record<string, { readonly hash: string; readonly chars: number }>> = {
   "avatar.realistic": { hash: "c6dd7ea2", chars: 510 },
   "avatar.stylized": { hash: "38c60558", chars: 519 },
   "variant.pose": { hash: "e344beeb", chars: 355 },
   "variant.outfit": { hash: "c070533a", chars: 262 },
-  "chat.look": { hash: "1a38d981", chars: 453 },
+  "chat.look": { hash: "455a434e", chars: 413 },
   "chat.place": { hash: "889fbf13", chars: 170 },
   "scene.text_to_image": { hash: "69ea4ebe", chars: 630 },
   "scene.single_reference": { hash: "85f18ee1", chars: 883 },
