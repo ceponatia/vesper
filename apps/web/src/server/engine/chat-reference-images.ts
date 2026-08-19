@@ -6,14 +6,13 @@ import {
   emptyCharacterProfile,
   emptyChatSceneMemory,
   garmentActorForCharacter,
-  resolveAttributes,
   samePlaceName,
   withPlaceImage,
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db } from "../db";
-import { apparentAgeAnchor, chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
+import { chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
 import { loadChatScenario, loadChatState } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
@@ -97,9 +96,8 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
     lookKey,
     outfit: wardrobe.garments,
     outfitExposed: wardrobe.exposed,
-    // The sheet's age overrules the reference's apparent age (owner ruling
-    // 2026-07-29) — without it every look mint drifts a step older.
-    ageAnchor: apparentAgeAnchor(ctx.name, resolveAttributes(ctx.profile.attributes, [])),
+    // Visible age comes from the portrait reference itself. Scene-supporting
+    // look renders never receive chronological or apparent-age fields.
   });
 }
 
