@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { portraitVariantKindSchema } from "@/contracts";
 import { generateVariant } from "@/server/images";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
 import { hasLiveCharacterJob } from "@/server/db";
@@ -9,7 +10,7 @@ import { listOwnedPortraits } from "./owned";
 type Params = { id: string };
 
 const portraitBodySchema = z.object({
-  kind: z.enum(["pose", "outfit", "expression", "setting"]),
+  kind: portraitVariantKindSchema,
   instruction: z.string().trim().min(1).max(1000),
   /** Registry model id from the New Variant picker; unknown ids fall back downstream. */
   modelId: z.string().trim().max(64).optional(),
