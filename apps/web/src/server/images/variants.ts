@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
-import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
+import { IMAGE_TARGET_ASPECT, type ImageLoraRenderBinding, type ResolvedImageProfile } from "@vesper/image-core";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
 import { isDemoMode } from "../ai";
@@ -13,8 +13,9 @@ import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
-import { apparentAgeAnchor } from "./prompts-appearance";
-import { buildVariantInstruction, type VariantKind } from "./prompts-variant";
+import { pairProfileWithNsfwLora } from "./nsfw-lora";
+import { apparentAgeAnchor, intimateAnatomySummary } from "./prompts-appearance";
+import { buildVariantInstruction, NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
 
 export interface GenerateVariantInput {
   characterId: string;
@@ -24,6 +25,27 @@ export interface GenerateVariantInput {
   /** Registry model id from the New Variant picker; absent uses the surface default. */
   modelId?: string;
   sink?: DiagnosticSink;
+}
+
+/** The bench kind's refusal, or the wrapper + weights it will run on. */
+type NsfwTestRoute = { ok: true; profile: ResolvedImageProfile; binding: ImageLoraRenderBinding } | { ok: false; error: string };
+
+/**
+ * The `nsfw_test` kind's model swap — the studio's half of the anatomy-LoRA
+ * route (`nsfw-lora.ts`, shared with the chat scene lane).
+ *
+ * It FAILS rather than degrades, which is the one place this kind departs from
+ * the scene lane. A chat render that cannot assemble the LoRA still owes the
+ * player a picture, so it falls back to the stock model and says so in a
+ * diagnostic. A bench render exists to exercise the weights: quietly producing
+ * the tame render on the ordinary variant model would answer a question the
+ * owner did not ask, bill for it, and look like a result. The failed row carries
+ * the missing leg's own words, which is what the studio tile shows.
+ */
+async function resolveNsfwTestRoute(profile: ResolvedImageProfile, sink?: DiagnosticSink): Promise<NsfwTestRoute> {
+  const paired = await pairProfileWithNsfwLora(profile, sink);
+  if (!paired.ok) return { ok: false, error: `the NSFW test LoRA is unavailable (${paired.leg}): ${paired.message}` };
+  return { ok: true, profile: paired.profile, binding: paired.binding };
 }
 
 /**
@@ -50,7 +72,15 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // The New Variant section now has its OWN model picker (image-model-registry):
   // before the registry, only one provider model could edit, so this lane had no
   // choice to make and silently used it.
-  const resolved = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
+  const picked = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
+  const nsfwTest = input.kind === NSFW_TEST_VARIANT_KIND;
+  // Resolved BEFORE the row is reserved, like every other model decision in this
+  // lane: the row records the model it will run on, so a swap decided later would
+  // be a row that lies about its own render.
+  const nsfwRoute = nsfwTest && picked ? await resolveNsfwTestRoute(picked, input.sink) : null;
+  // The picked profile ON the LoRA wrapper for the bench kind; the picked profile
+  // itself for every other variant, unchanged.
+  const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
   const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
@@ -60,8 +90,15 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     undefined,
     "characters.profile",
   );
-  const ageAnchor = apparentAgeAnchor(character?.name ?? "", resolveAttributes(profile.attributes, []));
-  const prompt = buildVariantInstruction(input.kind, input.instruction, ageAnchor);
+  const attributes = resolveAttributes(profile.attributes, []);
+  const ageAnchor = apparentAgeAnchor(character?.name ?? "", attributes);
+  const prompt = buildVariantInstruction(input.kind, input.instruction, {
+    ageAnchor,
+    // Stated for the bench kind alone. Every other variant leans on the
+    // reference portrait for the body it already shows, and naming anatomy a
+    // waist-up edit cannot depict only fights the picture.
+    ...(nsfwTest ? { anatomy: intimateAnatomySummary(attributes, profile) } : {}),
+  });
   const packIdentity: IdentityPackRenderReferencesResult | null =
     !demo && character && resolved
       ? await identityPackRenderReferences({
@@ -85,6 +122,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         variantKind: input.kind,
         demo,
         model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
+        // The weights this row ran on, by id — the same field the scene lane
+        // records, and never the locator.
+        ...(nsfwRoute?.ok ? { lora: nsfwRoute.binding.id } : {}),
         ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
       },
     },
@@ -95,6 +135,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
       // Precondition this lane can't satisfy, not a generation that failed: no diagnostic.
       if (!resolved) return { ok: false, error: "no image model is registered for portrait variants" };
+      // The bench kind IS its LoRA: a missing leg fails the row with the reason
+      // rather than rendering the tame picture the owner was testing against.
+      if (nsfwRoute && !nsfwRoute.ok) return { ok: false, error: nsfwRoute.error };
       // The pack refusal: an ineligible pack REFUSES the render — the
       // substitution the integration spec forbids. The evaluation already
       // pushed its diagnostic, and a character with no usable canonical
@@ -111,6 +154,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
           // candidate references for the resolved profile.
           references: packSelection.references.map((entry) => entry.reference),
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
+          // Already resolved against this model, version and task above, so the
+          // render path leaves it alone and sends exactly these weights.
+          ...(nsfwRoute?.ok ? { resolvedLora: nsfwRoute.binding } : {}),
         },
         input.sink,
       );

@@ -1,16 +1,7 @@
-import {
-  baseImageModelSlug,
-  type ImageLoraRenderBinding,
-  pinnedImageModelVersion,
-  profileEligibility,
-  redactImageLoraLocator,
-  type ResolvedImageProfile,
-} from "@vesper/image-core";
+import type { ImageLoraRenderBinding, ResolvedImageProfile } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
-import { resolveImageLoraForRender } from "./image-loras";
-import { civitaiApiToken, loraLocatorNeedsCivitaiToken } from "./lora-credentials";
-import { loadImageModels } from "./models";
+import { pairProfileWithNsfwLora, type NsfwLoraMissingLeg } from "./nsfw-lora";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 
 /**
@@ -23,11 +14,13 @@ import type { SceneRenderPlan } from "./prompts-scene-plan";
  * through Replicate's LoRA-capable Qwen edit wrapper — rendered every acceptance
  * act on the same prompts (finished/scene-composition.spec.md §Probe results).
  *
- * This module is the whole of that decision: which renders take the LoRA, and
- * what it costs when a piece of the configuration is missing. It answers with a
- * MODEL SWAP plus a binding rather than a flag, because the LoRA lives on a
- * different endpoint than the scene default — the wrapper is a generation behind
- * 2511 and off every picker, which is why nothing but this route may reach it.
+ * This module owns WHICH chat renders take the LoRA and what a missing piece of
+ * the configuration costs them. Assembling the pairing itself — wrapper model,
+ * library row, credential — is `nsfw-lora.ts`, shared with the portrait studio's
+ * `nsfw_test` variant. The answer is a MODEL SWAP plus a binding rather than a
+ * flag, because the LoRA lives on a different endpoint than the scene default:
+ * the wrapper is a generation behind 2511 and off every picker, which is why
+ * only these two routes may reach it.
  *
  * Three properties are load-bearing:
  *
@@ -60,7 +53,7 @@ export const SCENE_LORA_ROUTE_CODE = "images.scene_render.lora_route";
 export const SCENE_LORA_UNAVAILABLE_CODE = "images.scene_render.lora_unavailable";
 
 /** Which leg of the route was missing, for the degrade diagnostic's context. */
-export type SceneLoraMissingLeg = "wrapper_model" | "wrapper_eligibility" | "library_row" | "credential";
+export type SceneLoraMissingLeg = NsfwLoraMissingLeg;
 
 /** What the render path does differently when the route is on: a model, and a LoRA. */
 export interface IntimateSceneLoraRoute {
@@ -148,60 +141,29 @@ export async function resolveIntimateSceneLoraRoute(
   // below type-narrows without an assertion.
   if (!intimateSceneLoraApplies(input) || profile === null) return null;
 
-  const models = await loadImageModels(sink);
-  const wrapper = models.find((model) => baseImageModelSlug(model.slug) === INTIMATE_SCENE_LORA_WRAPPER_SLUG);
-  if (!wrapper) {
-    return unavailable(sink, "wrapper_model", `no registered image model matches ${INTIMATE_SCENE_LORA_WRAPPER_SLUG}`);
-  }
+  const paired = await pairProfileWithNsfwLora(profile, sink);
+  if (!paired.ok) return unavailable(sink, paired.leg, paired.message);
 
-  // The same gate the lab applies before a recipe run: a profile paired with a
-  // model that cannot mechanically or safely do the job would be refused one
-  // layer down anyway, and refusing here turns a failed render into a fallback.
-  const eligibility = profileEligibility(profile.profile, wrapper);
-  if (!eligibility.ok) {
-    return unavailable(
-      sink,
-      "wrapper_eligibility",
-      `${wrapper.slug} cannot run the ${profile.profile.key} profile: ${eligibility.reason}`,
-    );
-  }
-
-  // No `scale` on the selection: the row's own curated default is the proven
-  // strength (1), and stating a number here would outrank an admin who retuned
-  // the band. The version asked about is whatever pins the wrapper row, the same
-  // rule `renderImageIntent` uses for a caller that did not resolve its own LoRA.
-  const resolved = await resolveImageLoraForRender(
-    { id: INTIMATE_SCENE_LORA_ID },
-    { model: wrapper, versionId: pinnedImageModelVersion(wrapper), task: profile.profile.task },
-    sink,
-  );
-  // The refusal's own `image_lora.*` diagnostic is already on the sink, in the
-  // vocabulary the library decided it in; this one says what the SCENE did about it.
-  if (!resolved.ok) return unavailable(sink, "library_row", resolved.message);
-
-  const { binding } = resolved;
-  if (loraLocatorNeedsCivitaiToken(binding.locator) && civitaiApiToken() === null) {
-    return unavailable(
-      sink,
-      "credential",
-      `${binding.label} is hosted at ${redactImageLoraLocator(binding.locator)}, which needs a credential this deployment has not got`,
-    );
-  }
-
+  const { binding } = paired;
   sink?.push(
-    diag("info", SCENE_LORA_ROUTE_CODE, `intimate staged scene rendering through ${binding.label} on ${wrapper.slug}`, {
-      path: "image_loras",
-      // Ids and a number — never the locator, which is the one field on a
-      // binding that may carry a credential once the transport completes it.
-      context: {
-        staging: input.plan.staging?.id ?? null,
-        slug: wrapper.slug,
-        lora: binding.id,
-        scale: binding.scale,
+    diag(
+      "info",
+      SCENE_LORA_ROUTE_CODE,
+      `intimate staged scene rendering through ${binding.label} on ${paired.profile.model.slug}`,
+      {
+        path: "image_loras",
+        // Ids and a number — never the locator, which is the one field on a
+        // binding that may carry a credential once the transport completes it.
+        context: {
+          staging: input.plan.staging?.id ?? null,
+          slug: paired.profile.model.slug,
+          lora: binding.id,
+          scale: binding.scale,
+        },
       },
-    }),
+    ),
   );
-  return { profile: { profile: profile.profile, model: wrapper }, binding };
+  return { profile: paired.profile, binding };
 }
 
 /** Report one missing leg and fall back to today's render. */

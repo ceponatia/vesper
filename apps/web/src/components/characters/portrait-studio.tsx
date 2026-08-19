@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   charactersApi,
   imageProfilesApi,
+  portraitVariantKindLabel,
   portraitVariantKinds,
-
   type ImageRecord,
   type PortraitVariantKind,
 } from "@/lib/client/api";
@@ -42,7 +42,8 @@ function generationError(image: ImageRecord): string | null {
 
 function portraitKindLabel(image: ImageRecord): string {
   if (image.kind === "avatar") return "avatar";
-  return image.meta?.variantKind?.trim() || image.kind.replaceAll("_", " ");
+  const variant = image.meta?.variantKind?.trim();
+  return variant ? portraitVariantKindLabel(variant) : image.kind.replaceAll("_", " ");
 }
 
 /**
@@ -93,6 +94,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
     if (avatarImageId) setGeneratingAvatar(false);
   }
 
+  const nsfwTest = kind === "nsfw_test";
   const rows = portraits.data?.portraits ?? [];
   // A portrait job is live server-side — covers the stretch between the queue
   // 202 and the job reserving its pending row, where the list alone says
@@ -288,7 +290,7 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
               <Select id={id} value={kind} onChange={(e) => setKind(e.target.value as PortraitVariantKind)}>
                 {portraitVariantKinds.map((k) => (
                   <option key={k} value={k}>
-                    {k}
+                    {portraitVariantKindLabel(k)}
                   </option>
                 ))}
               </Select>
@@ -316,7 +318,9 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
                 rows={2}
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
-                placeholder="leaning on the harbor rail at dusk, wind in her hair"
+                placeholder={
+                  nsfwTest ? "lying back across the bed, one knee raised" : "leaning on the harbor rail at dusk, wind in her hair"
+                }
               />
             )}
           </Field>
@@ -330,6 +334,17 @@ export function PortraitStudio({ characterId, name, avatarImageId, onAvatarChang
             Create variant
           </Button>
         </div>
+        {/* The bench kind swaps the MODEL out from under the picked profile, so
+            say so where the picker is: the profile still decides prompt strategy,
+            references and controls, but the render leaves on the anatomy LoRA's
+            wrapper. Clothing is deliberately unmentioned — the instruction owns it. */}
+        {nsfwTest ? (
+          <p className="text-xs text-paper-500">
+            Renders the canonical portrait through the NSFW LoRA on its Qwen edit wrapper, whichever profile is
+            picked, and states this character’s intimate attributes in the prompt. Describe the shot — including what
+            they are or aren’t wearing — in the instruction.
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-3">

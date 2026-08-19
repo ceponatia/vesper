@@ -48,6 +48,49 @@ export function characterAppearanceSummary(
 }
 
 /**
+ * Char cap on the bench line. Wider than the scene lane's 200 because the budget
+ * is not comparable: a scene prompt spends its 1500 characters on a cast, a
+ * setting, a camera and a staging, while the variant instruction it shares the
+ * ceiling with is about 350 characters end to end. A fully authored sheet runs
+ * past 200 here, and a bench render that silently drops half the anatomy it was
+ * asked to test is worse than a longer prompt.
+ */
+const NSFW_TEST_ANATOMY_CHARS = 400;
+
+/**
+ * The character sheet's intimate anatomy, exposure-free — the portrait studio's
+ * `nsfw_test` variant and nothing else.
+ *
+ * Every other image path gates intimate attributes on a coverage state
+ * (`sceneRevealAppearance`), because a chat render describes a body inside
+ * whatever it is wearing at that beat. The studio has no beat and no wardrobe
+ * state: the owner types the clothing (or its absence) into the instruction, so
+ * gating here would either need a garment state that does not exist or would
+ * silently drop the very detail the bench run is testing. What stays is the rest
+ * of the sheet's own discipline — `excludeFromPrompts`, the realized body's
+ * applicability, and the sensory skip, because scent and taste never render.
+ */
+export function intimateAnatomySummary(
+  attributes: ReadonlyArray<AttributeValue>,
+  profile?: CharacterProfile,
+  maxChars = NSFW_TEST_ANATOMY_CHARS,
+): string {
+  const realizedBody = profile ? realizedBodyForProfile(profile) : undefined;
+  const parts: string[] = [];
+  for (const value of attributes) {
+    const def = attributeRegistry.byId(value.id);
+    if (!def) continue;
+    if (def.excludeFromPrompts) continue;
+    if (!isIntimateAttribute(def)) continue;
+    if (def.kind === "sensory") continue; // scent/taste don't render in an image
+    if (realizedBody && !realizedBody.isAttributeApplicable(def)) continue;
+    const formatted = formatAttribute(def, value.value);
+    if (formatted) parts.push(formatted);
+  }
+  return excerpt(parts.join("; "), maxChars);
+}
+
+/**
  * Identity-critical attributes for the reference-anchored render (chat-scene-fidelity.plan.md
  * slice 3): the features an identity-locked edit drifts on ever so slightly — facial identity
  * plus skin and hair. Deliberately a whitelist (a full appearance dump would fight the

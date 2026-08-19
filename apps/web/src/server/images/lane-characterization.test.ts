@@ -169,11 +169,9 @@ describe("image lane characterization — dressed subject", () => {
   });
 
   it("portrait variant: apparent age and the requested change, and no other character fact", () => {
-    const prompt = buildVariantInstruction(
-      "outfit",
-      "wearing a floor-length wine-red silk kimono",
-      apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
-    );
+    const prompt = buildVariantInstruction("outfit", "wearing a floor-length wine-red silk kimono", {
+      ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
+    });
     expectLaneFacts(prompt, ["apparentAge", "garment"]);
   });
 });
@@ -288,7 +286,7 @@ describe("image lane invariants that hold across the migration", () => {
 
     for (const prompt of [
       buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
-      buildVariantInstruction("outfit", "wearing a kimono", anchor),
+      buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
     ]) {
       expect(presentVisualFacts(prompt)).toContain("apparentAge");
     }

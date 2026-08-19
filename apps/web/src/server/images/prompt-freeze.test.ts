@@ -99,7 +99,9 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   {
     lane: "variant.pose",
     prompt: () =>
-      buildVariantInstruction("pose", "sitting on the workshop stool", "She appears to be in her late twenties."),
+      buildVariantInstruction("pose", "sitting on the workshop stool", {
+        ageAnchor: "She appears to be in her late twenties.",
+      }),
   },
   {
     lane: "variant.outfit",
