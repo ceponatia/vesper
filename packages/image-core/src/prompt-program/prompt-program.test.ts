@@ -488,16 +488,18 @@ describe("compiling a prompt program", () => {
     expect(positiveText).not.toContain("no text");
     expect(positiveText).not.toContain("watermark");
 
-    expect(negativeText).toContain("watermark");
-    expect(negativeText).toContain("unintended text");
-    // No person in the frame, so nothing anatomical has anything to defend.
-    expect(negativeText).not.toContain("fingers");
-    expect(negativeText).not.toContain("limbs");
+    // No negative field: Qwen Image ignores `negative_prompt`, measured 16/16
+    // against a contradictory canary (trials A and A2, 2026-08-19), so the
+    // dialect declares `unsupported` and every exclusion drops with a reason
+    // rather than spending prompt budget on text that changes nothing.
+    expect(negativeText).toBeNull();
+    const negativeOutcomes = promptProgramProvenance.negativeOutcomes;
+    expect(negativeOutcomes.length).toBeGreaterThan(0);
+    expect(negativeOutcomes.every((outcome) => outcome.transport === "dropped")).toBe(true);
 
     expect(promptProgramProvenance.promptDialectId).toBe("qwen_2512_description");
     expect(promptProgramProvenance.positivePackVersionId).toBe(qwenImage2512PositivePack.id);
     expect(promptProgramProvenance.negativePackVersionId).toBe(qwenImage2512NegativePack.id);
-    expect(promptProgramProvenance.negativeOutcomes.every((entry) => entry.transport === "dedicated_field")).toBe(true);
   });
 
   /**
@@ -576,21 +578,23 @@ describe("compiling a prompt program", () => {
   });
 
   /**
-   * Falsified against a fingerprint taken over the linted constraint list alone.
-   * Probing this version flips `negativeFieldAvailable` with no other change, so
-   * the packs, the linter and the world are identical either side of that
-   * boundary — and the two renders ask the provider for materially different
-   * pictures. Identity has to follow the payload, or "same program" stops
-   * meaning "same picture was asked for" at exactly the moment it matters.
+   * Probing this version is now a no-op for the negative channel, and that is the
+   * claim worth pinning. The dialect declares `unsupported`, so nothing is
+   * delivered whether or not the row exposes a field — a later probe cannot
+   * quietly start sending exclusions this endpoint ignores.
+   *
+   * Falsified against the previous dialect, which declared `dedicated_field` and
+   * would have begun sending on the day somebody activated the version.
    */
-  it("fingerprints a render that sent its exclusions apart from one that dropped them", () => {
+  it("delivers no exclusions whether or not the version exposes a negative field", () => {
     const digest = itemWorld();
-    const sent = compileImagePromptProgram(compileInput(digest));
-    const dropped = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: false }));
-    if (!sent.ok || !dropped.ok) throw new Error("unexpected refusal");
-    expect(dropped.compiled.program.deliveredNegativeIds).toEqual([]);
-    expect(sent.compiled.program.deliveredNegativeIds.length).toBeGreaterThan(0);
-    expect(dropped.compiled.program.fingerprint).not.toBe(sent.compiled.program.fingerprint);
+    const exposed = compileImagePromptProgram(compileInput(digest));
+    const absent = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: false }));
+    if (!exposed.ok || !absent.ok) throw new Error("unexpected refusal");
+    expect(exposed.compiled.program.deliveredNegativeIds).toEqual([]);
+    expect(absent.compiled.program.deliveredNegativeIds).toEqual([]);
+    expect(exposed.compiled.negativeText).toBeNull();
+    expect(exposed.compiled.program.fingerprint).toBe(absent.compiled.program.fingerprint);
   });
 
   /**

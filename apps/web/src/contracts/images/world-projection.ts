@@ -52,7 +52,7 @@ export const IMAGE_LOCATION_PROJECTION_OWNER = "location.library";
  */
 const ITEM_FIELDS: readonly ImageFieldProjection[] = [
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "name", disposition: "required_visual", concept: "item.identity", note: "what the object IS; a product shot without it has no subject" },
-  { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "kind", disposition: "required_visual", concept: "item.presentation", note: "clothing is shot on a ghost mannequin, an object isolated on seamless ground" },
+  { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "kind", disposition: "required_visual", concept: "item.presentation", note: "clothing hangs in its own shape naming no support, an object isolated on seamless ground" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "description", disposition: "optional_visual", concept: "item.form", note: "the authored look, first to go under a budget squeeze" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.sensory.appearance", disposition: "optional_visual", concept: "item.material", note: "the surface note an author wrote for the eye" },
   { owner: IMAGE_ITEM_PROJECTION_OWNER, field: "definition.color", disposition: "optional_visual", concept: "item.color", note: "shade is prompt-bearing free text; family and accent are filter vocabulary" },

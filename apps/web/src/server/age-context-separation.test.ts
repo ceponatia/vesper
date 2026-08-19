@@ -1,12 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { attr, makeProfile } from "@/server/test-support";
-// Relative rather than `@/server/<module>/<file>`: the deep alias is lint-banned
-// (barrel discipline), and `buildCanonBlock` is not on the engine barrel — this
-// suite reads three builders across two modules to prove one boundary.
-import { buildCharacterChatSystemPrompt } from "./engine/prompts/character-chat";
-import { buildCanonBlock } from "./engine/prompts/sim-render";
-import { buildAvatarPrompt } from "./images/prompts-avatar";
+import { buildCanonBlock, buildCharacterChatSystemPrompt } from "@/server/engine";
+import { buildAvatarPrompt } from "@/server/images";
 
 /**
  * Age has two intentionally different owners:

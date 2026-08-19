@@ -20,15 +20,22 @@ import { buildVariantInstruction } from "./prompts-variant";
  * is only worth anything if "production" has not quietly moved underneath it.
  *
  * So these hashes are a FREEZE, not a snapshot of nice-to-have wording. A failure
- * here means one of two things:
+ * here means one of three things, and only the third permits a new hash:
  *
- * - an unintended edit reached a frozen builder, and the fix is to revert it; or
+ * - an unintended edit reached a frozen builder, and the fix is to revert it;
  * - this lane is being cut over, in which case the pin is deleted along with the
- *   builder — not updated to match a new string.
+ *   builder — not updated to match a new string;
+ * - a deliberate, reviewed product change altered the lane while it is still on
+ *   its old prompt path. Re-pin, and say why in `BASELINE` with a date and the
+ *   change that caused it.
  *
- * "Update the hash" is the one wrong answer. A frozen lane whose baseline gets
- * re-pinned every time it changes is not frozen, and the shadow comparison it
- * exists to protect would be measuring the thing being replaced.
+ * The third case is real and was underestimated when this file was written: the
+ * narrative/visual age split (#143) made chat look age-neutral, and this test is
+ * what surfaced it. Re-pinning silently would have been the failure mode — a
+ * frozen lane whose baseline quietly follows its own edits is not frozen, and the
+ * shadow comparison it protects would be measuring the thing being replaced. A
+ * re-pin with a recorded reason keeps the freeze meaningful; the note is the
+ * difference between the two.
  *
  * Structural assertions about these same prompts live in `prompts.test.ts` and
  * stay there: this file deliberately says nothing about what the text CONTAINS,
@@ -132,11 +139,11 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
 /**
  * Frozen 2026-08-19, before any character-bearing lane's cutover.
  *
- * `chat.look` was re-pinned the same day, for the one reason the note above
- * allows: #143 removed the age anchor from that builder deliberately (scene-
- * supporting renders inherit visible age from their reference), so the old hash
- * described a builder that no longer exists. Every other lane still carries its
- * original pin.
+ * Re-pins, newest first — every one names the reviewed change that caused it:
+ *
+ * - `chat.look` 2026-08-19: the narrative/visual age split (#143) removed the
+ *   apparent-age anchor from this lane, so the prompt lost that sentence
+ *   (453 → 413 characters). A deliberate product change, not prompt drift.
  */
 const BASELINE: Readonly<Record<string, { readonly hash: string; readonly chars: number }>> = {
   "avatar.realistic": { hash: "c6dd7ea2", chars: 510 },

@@ -221,6 +221,7 @@ export {
   providerDefaultOverrideConstraint,
   qwenImage2512Bindings,
   qwenImage2512Dialect,
+  qwenImage2512NegativePhrase,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
   registerImageNegativePack,

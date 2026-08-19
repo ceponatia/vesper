@@ -43,15 +43,10 @@ import { buildVariantInstruction } from "./prompts-variant";
  * - The reference scene lanes narrow to identity anchors plus the reveal line,
  *   losing species, gender and morphology entirely: they lean on the reference
  *   image for those.
- * - The chat-look lane states the requested outfit and NOTHING else — no
- *   identity, morphology, exposure or age fact at all. The variant lane states
- *   the same plus apparent age, which it takes as a caller-supplied string —
- *   the coupling Stage 4 replaces with a mandatory `age` segment.
- *
- * Age moved on 2026-08-19 (#143, "Separate narrative and visual age contexts"):
- * the scene and chat-look lanes are now age-neutral by rule and inherit visible
- * age from the portrait/chat-look reference, so `apparentAge` left every cell
- * below except the avatar's (which CREATES the reference) and the variant's.
+ * - The chat-look lane states apparent age and the requested outfit and NOTHING
+ *   else — no identity, morphology, or exposure fact at all. Same for the
+ *   variant lane. Both take their age anchor as a caller-supplied string, which
+ *   is the coupling Stage 4 replaces with a mandatory `age` segment.
  *
  * A lane that gains a fact it never had, or loses one it has, fails here first.
  */
@@ -166,11 +161,10 @@ describe("image lane characterization — dressed subject", () => {
     expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "garment", "legBuild"]);
   });
 
-  it("chat look: the requested outfit, and no other character fact — age included", () => {
-    const prompt = buildChatLookPrompt({
-      outfit: "a floor-length wine-red silk kimono",
-      outfitExposed: false,
-    });
+  it("chat look: the requested outfit and no other character fact, age included", () => {
+    const prompt = buildChatLookPrompt({ outfit: "a floor-length wine-red silk kimono", outfitExposed: false });
+    // Age left the chat-look lane with the narrative/visual age split (#143):
+    // the builder no longer takes an anchor, so the garment is the only fact.
     expectLaneFacts(prompt, ["garment"]);
   });
 
@@ -280,26 +274,33 @@ describe("image lane invariants that hold across the migration", () => {
     }
   });
 
-  it("the portrait lanes state apparent age; the scene-supporting lanes state none", () => {
-    // Two rulings meet here. The 2026-07-29 ruling says a portrait lane cannot
-    // let the avatar be the sole age source, because an edit model re-reads an
-    // ambiguous reference a step older each generation. The 2026-08-19 split
-    // (#143) says the opposite for scene work: those renders inherit visible age
-    // from the reference image and state no age word at all, so the narrator's
-    // `profile.age` can never reach an image prompt through them.
+  it("states apparent age in the two lanes that still carry it, and in no other", () => {
+    // The 2026-07-29 owner ruling made the avatar not the sole age source: an
+    // edit model re-reads an ambiguous reference a step older every generation,
+    // so a text anchor had to hold it. The narrative/visual age split (#143)
+    // then narrowed WHICH lanes say it — scene renders and chat look became
+    // age-neutral, and the portrait pair kept the anchor because those are the
+    // lanes an edit model drifts.
     const anchor = apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, []));
     expect(anchor).toContain("late twenties");
-    const anchored: ReadonlyArray<string> = [
+
+    for (const prompt of [
       buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
       buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
-    ];
-    for (const prompt of anchored) expect(presentVisualFacts(prompt)).toContain("apparentAge");
-    const ageNeutral: ReadonlyArray<string> = [
+    ]) {
+      expect(presentVisualFacts(prompt)).toContain("apparentAge");
+    }
+
+    // Age-neutral since #143. Stated as an explicit absence rather than left
+    // unasserted, because "this lane says no age" is the product decision — a
+    // lane that quietly regained one would otherwise pass.
+    for (const prompt of [
       buildSceneRenderPrompt(scenePlan(), {}),
       buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
       buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false }),
-    ];
-    for (const prompt of ageNeutral) expect(presentVisualFacts(prompt)).not.toContain("apparentAge");
+    ]) {
+      expect(presentVisualFacts(prompt)).not.toContain("apparentAge");
+    }
   });
 
   it("the probe vocabulary itself stays stable", () => {

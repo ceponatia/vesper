@@ -864,14 +864,24 @@ Status: in progress — guarded blocks, the collision linter and the transport r
 
 ### Stage 6 — negative transport promotion
 
-Status: blocked on the owner — the trial instrument is built and prints both arms for free (`scripts/eval/prompt-programs/entity-negative-ab.ts`), but running it costs provider spend, and promoting the result means activating the Qwen 2512 version on production.
+Status: in progress — the first production-pack A/B ran 2026-08-19 and is recorded as harness verification, not a verdict. The promotion evidence is the block-by-block induction program (`scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`); its matrix is what an activation decision reads.
 
-The instrument holds seed, packs, world and positive prompt constant across seven
-fixed rows and varies only whether the compiled exclusions are sent, which is the
-exact boundary a version probe crosses. It reads no database, so gathering the
-evidence changes nothing in production; activating afterwards is a separate owner
-action, and not a scoped one — pinning that row's version also switches on the
-`steps` and `go_fast` settings that sit inert on the three portrait profiles.
+The first run (`entity-negative-ab.ts`, seven cases, one seed per cell) proved
+the transport plumbing end to end and surfaced collateral candidates, but most
+of its no-negative arms did not contain the failures the negative blocks exist
+to suppress, so the negative arm had little opportunity to show anything. An
+absent failure is insufficient induction, not proof of no effect. It supports no
+global promote-or-reject verdict for this endpoint, and no verdict is recorded
+from it. Detail in [the spec](model-aware-image-prompts.spec.md).
+
+The per-block program actively induces or selects each failure mode, holds
+everything but one negative block constant within a comparison, runs paired seed
+sets rather than single renders, and scores binary facts before any subjective
+quality. Its output is a matrix — endpoint × block × failure →
+helpful / neutral / harmful / inconclusive — not a single thumbs-up. Activating
+the Qwen 2512 version remains a separate owner action after the matrix review,
+and not a scoped one: pinning that row also switches on the `steps` and
+`go_fast` settings that sit inert on the three portrait profiles.
 
 Promote per endpoint/profile only after A/B evidence:
 
