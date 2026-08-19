@@ -42,13 +42,13 @@ async function loadRenderContext(chatId: string, characterId: string) {
     .where(eq(characterChats.id, chatId))
     .limit(1);
   const [character] = await db()
-    .select({ name: characters.name, profile: characters.profile, avatarImageId: characters.avatarImageId })
+    .select({ profile: characters.profile, avatarImageId: characters.avatarImageId })
     .from(characters)
     .where(eq(characters.id, characterId))
     .limit(1);
   if (!chat || !character) return null;
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
-  return { ownerId: chat.ownerId, name: character.name, profile, avatarImageId: character.avatarImageId };
+  return { ownerId: chat.ownerId, profile, avatarImageId: character.avatarImageId };
 }
 
 /** Run one look mint. Exported for tests. */
