@@ -483,21 +483,28 @@ describe("compiling a prompt program", () => {
     expect(positiveText).toContain("No people are present");
     expect(positiveText).toContain("brass compass");
     expect(positiveText).toContain("scuffed pocket compass");
-    // The exclusions moved out of the positive prose, which is the migration's
-    // whole point — a hidden "no text, no watermark" tail could never be linted.
-    expect(positiveText).not.toContain("no text");
-    expect(positiveText).not.toContain("watermark");
 
-    expect(negativeText).toContain("watermark");
-    expect(negativeText).toContain("unintended text");
-    // No person in the frame, so nothing anatomical has anything to defend.
-    expect(negativeText).not.toContain("fingers");
-    expect(negativeText).not.toContain("limbs");
+    // This endpoint's negative field is behaviourally inert (trial 2026-08-19),
+    // so the exclusions travel as AFFIRMATIVE claims and no field is written.
+    expect(negativeText).toBeNull();
+    expect(positiveText).toContain("clean and unsigned");
+    expect(positiveText).toContain("background is clean and empty");
+    // Affirmative, never the forbidden-outcome spelling: "no watermark" in a
+    // positive paragraph is the un-lintable tail this whole migration removed.
+    expect(positiveText).not.toContain("no watermark");
+    expect(positiveText).not.toContain("no text");
+    // No person in the frame, so nothing anatomical has anything to assert.
+    expect(positiveText).not.toContain("five well-formed fingers");
+    expect(positiveText).not.toContain("anatomically complete");
 
     expect(promptProgramProvenance.promptDialectId).toBe("qwen_2512_description");
     expect(promptProgramProvenance.positivePackVersionId).toBe(qwenImage2512PositivePack.id);
     expect(promptProgramProvenance.negativePackVersionId).toBe(qwenImage2512NegativePack.id);
-    expect(promptProgramProvenance.negativeOutcomes.every((entry) => entry.transport === "dedicated_field")).toBe(true);
+    // Every exclusion is accounted for, and each one names the constraint it
+    // came from — the provenance a replacement must not lose by becoming prose.
+    expect(promptProgramProvenance.negativeOutcomes.every((entry) => entry.transport === "positive_replacement")).toBe(
+      true,
+    );
   });
 
   /**
@@ -561,36 +568,52 @@ describe("compiling a prompt program", () => {
   });
 
   /**
-   * Falsified against a compiler that trusted the dialect's declared transport:
-   * the dialect says Qwen has a `negative_prompt` field, but whether THIS version
-   * exposes one is a probe fact, and inventing the key is exactly the guessing
-   * the capability layer exists to prevent.
+   * The owner ruling this protects (2026-08-19): probing this version must not
+   * change what Qwen 2512 renders. The endpoint's `negative_prompt` was measured
+   * inert, the dialect therefore never asks for the field, and
+   * `negativeFieldAvailable` has nothing to gate — so both compiles produce the
+   * same payload AND the same program fingerprint.
+   *
+   * Falsified against the previous dedicated-field dialect, where flipping this
+   * one probe fact silently changed every item and location render. Someone
+   * activating the model version for an unrelated reason — the portrait
+   * profiles' `steps` settings are the live example — would have switched
+   * negative prompting on for two production lanes as a side effect.
+   *
+   * The compiler's own "a dialect claims a field this version lacks" guard is
+   * unexercised while no registered dialect claims one; it earns its test back
+   * with the first endpoint that does.
    */
-  it("drops every exclusion when the running version exposes no negative field", () => {
-    const result = compileImagePromptProgram(compileInput(itemWorld(), { negativeFieldAvailable: false }));
-    if (!result.ok) throw new Error("unexpected refusal");
-    expect(result.compiled.negativeText).toBeNull();
-    expect(result.compiled.transports.every((entry) => entry.transport.kind === "dropped")).toBe(true);
-    // Still recorded, so an operator can see what the render WOULD have excluded.
-    expect(result.compiled.promptProgramProvenance.negativeOutcomes.length).toBeGreaterThan(0);
+  it("renders identically whether or not the version exposes a negative field", () => {
+    const digest = itemWorld();
+    const unprobed = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: false }));
+    const probed = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: true }));
+    if (!unprobed.ok || !probed.ok) throw new Error("unexpected refusal");
+    expect(probed.compiled.negativeText).toBeNull();
+    expect(unprobed.compiled.negativeText).toBeNull();
+    expect(probed.compiled.positiveText).toBe(unprobed.compiled.positiveText);
+    expect(probed.compiled.program.fingerprint).toBe(unprobed.compiled.program.fingerprint);
+    // Delivered either way — the exclusions travel in the positive channel, so
+    // the probe boundary is not what decides whether they reach the provider.
+    expect(probed.compiled.program.deliveredNegativeIds.length).toBeGreaterThan(0);
+    expect(probed.compiled.program.deliveredNegativeIds).toEqual(unprobed.compiled.program.deliveredNegativeIds);
   });
 
   /**
-   * Falsified against a fingerprint taken over the linted constraint list alone.
-   * Probing this version flips `negativeFieldAvailable` with no other change, so
-   * the packs, the linter and the world are identical either side of that
-   * boundary — and the two renders ask the provider for materially different
-   * pictures. Identity has to follow the payload, or "same program" stops
-   * meaning "same picture was asked for" at exactly the moment it matters.
+   * A replacement claim must carry the constraint that produced it. Without
+   * `fromConstraintId` an affirmative clause is indistinguishable from a fact
+   * the world asserted, and the collision report could no longer say which
+   * exclusion displaced what.
    */
-  it("fingerprints a render that sent its exclusions apart from one that dropped them", () => {
-    const digest = itemWorld();
-    const sent = compileImagePromptProgram(compileInput(digest));
-    const dropped = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: false }));
-    if (!sent.ok || !dropped.ok) throw new Error("unexpected refusal");
-    expect(dropped.compiled.program.deliveredNegativeIds).toEqual([]);
-    expect(sent.compiled.program.deliveredNegativeIds.length).toBeGreaterThan(0);
-    expect(dropped.compiled.program.fingerprint).not.toBe(sent.compiled.program.fingerprint);
+  it("keeps negative provenance on every affirmative replacement", () => {
+    const result = compileImagePromptProgram(compileInput(itemWorld()));
+    if (!result.ok) throw new Error("unexpected refusal");
+    const replacements = result.compiled.program.positive.filter((claim) => claim.fromConstraintId !== undefined);
+    expect(replacements.length).toBeGreaterThan(0);
+    expect(replacements.every((claim) => claim.source.owner === "image.negative_pack")).toBe(true);
+    // Droppable by construction: an exclusion is a preference about how the
+    // render turns out and must never outrank a fact the world asserted.
+    expect(replacements.every((claim) => !claim.required)).toBe(true);
   });
 
   /**

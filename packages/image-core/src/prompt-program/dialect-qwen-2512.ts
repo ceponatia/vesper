@@ -50,6 +50,12 @@ const DIALECT_ID = "qwen_2512_description" as const;
  * (docs/image-models/qwen-image-2512.md), so there is nothing to neutralize, and
  * recording that explicitly is what lets provenance distinguish "the provider
  * added nothing" from "nobody checked".
+ *
+ * The field is recorded here even though this dialect never writes it. It exists
+ * on the endpoint schema, it is part of the effective prompt in the sense this
+ * record tracks, and its measured inertness is exactly the kind of fact a future
+ * reader needs — the entry is what stops somebody rediscovering the field and
+ * assuming it works.
  */
 const HIDDEN_SOURCES = [
   { kind: "provider_default_negative", field: "negative_prompt", value: "", overridable: true },
@@ -251,143 +257,184 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
 // ---------------------------------------------------------------------------
 
 /**
- * How this endpoint spells one forbidden outcome.
+ * How this endpoint states, AFFIRMATIVELY, the outcome an exclusion asks for.
  *
- * Short noun phrases joined by commas, which is the shape of the official model
- * card's own negative example. Exhaustive over the conflict vocabulary for the
- * same reason `renderClaim` is: a new key must be worded deliberately rather than
- * silently forbidden by nothing.
+ * This dialect has no working negative channel. Qwen Image 2512's Replicate
+ * endpoint exposes a `negative_prompt` field, and a controlled Vesper trial
+ * (2026-08-19, `qwen-2512-negative-blocks.ts` trials A/A2) found it produces no
+ * measurable semantic response: with positive prompt, seed, aspect and controls
+ * held constant, a negative of "red apple, apple" left a requested red apple in
+ * 10/10 renders on the default sampling path and 6/6 with `go_fast: false`. The
+ * pixels differ between arms, so the string reaches the sampler — the CONTENT
+ * does not move. A schema field is not a capability until a trial says so.
+ *
+ * So every constraint compiles to a positive claim instead: the outcome is
+ * stated as something the image SHOULD contain rather than something it must
+ * not. That is also how this model's own documentation asks to be instructed,
+ * and it keeps the whole constraint system intact — the pack still owns which
+ * blocks apply, the guards still decide applicability, and the collision linter
+ * still prevents a replacement from contradicting world truth exactly as it
+ * prevented a forbidden phrase from doing so. Only the TRANSPORT changed.
+ *
+ * Exhaustive over the conflict vocabulary for the same reason `renderClaim` is:
+ * a new key must be worded deliberately rather than silently asserting nothing.
+ * Returning null is legitimate — some outcomes have no honest affirmative
+ * opposite, and claiming one would spend prompt budget on a sentence that does
+ * not describe the picture.
  */
-function negativePhrase(key: ImageConflictKey): string {
+function affirmativePhrase(key: ImageConflictKey): string | null {
   switch (key) {
+    // --- Marks and lettering --------------------------------------------------
+    // One clause covers the family: the linter has already removed these keys
+    // when the world authored lettering, so reaching here means the render wants
+    // clean surfaces.
     case "text":
-      return "unintended text";
+      return "every surface is clean and unmarked, carrying no lettering beyond what is described";
     case "letters":
-      return "garbled letters";
     case "caption":
-      return "captions";
+      return "any lettering that does appear is crisp and correctly formed";
     case "logo":
-      return "logos";
+      return "surfaces carry no brand marks or logos";
     case "signature":
-      return "artist signature";
     case "watermark":
-      return "watermark";
+      return "the image is clean and unsigned, free of watermarks or overlaid marks";
+
+    // --- Anatomy --------------------------------------------------------------
+    // Affirmative anatomy statements, reached only after intended morphology and
+    // authored absences have been subtracted by the guard.
     case "extra_limbs":
-      return "extra limbs";
-    case "extra_digits":
-      return "extra fingers";
     case "extra_appendages":
-      return "extra appendages";
-    case "missing_limbs":
-      return "missing limbs";
+      return "the figure has an ordinary, correct number of limbs";
+    case "extra_digits":
     case "missing_digits":
-      return "missing fingers";
+      return "each hand has exactly five well-formed fingers";
+    case "missing_limbs":
+      return "the figure is whole and anatomically complete";
     case "malformed_hands":
-      return "malformed hands";
+      return "the hands are well-formed and naturally posed";
     case "duplicated_anatomy":
-      return "duplicated body parts";
     case "disconnected_anatomy":
-      return "disconnected limbs";
+      return "the body is coherent, with every limb correctly attached";
+
+    // --- Subject integrity ----------------------------------------------------
     case "multiple_people":
-      return "additional people";
+      return "only the named subjects are present";
     case "duplicate_face":
-      return "duplicated faces";
+      return "each person appears exactly once";
     case "identity_drift":
-      return "a different face from the reference";
+      return "the face matches the reference image exactly";
+
+    // --- Composition and camera -----------------------------------------------
     case "cropped":
-      return "awkward cropping";
-    case "close_up":
-      return "extreme close-up";
-    case "blur":
-      return "blurry";
     case "out_of_frame":
-      return "subject cut off by the frame";
+      return "the complete subject is visible from end to end with comfortable margin inside the frame";
+    case "close_up":
+      return "the framing keeps its stated distance from the subject";
+    case "blur":
+      return "the subject is sharp and in focus";
     case "confused_composition":
-      return "confused composition";
+      return "the composition is clear and readable";
     case "impossible_overlap":
-      return "impossible overlapping geometry";
+      return "objects sit in plausible physical relation to one another";
+
+    // --- Surface, medium and fidelity -----------------------------------------
     case "synthetic_skin":
-      return "waxy plastic skin";
     case "excessive_smoothing":
-      return "excessive skin smoothing";
+      return "skin has natural texture and real pore detail";
     case "oversaturation":
-      return "oversaturated colour";
+      return "colour is natural and true to life";
     case "low_resolution":
-      return "low resolution";
     case "low_quality":
-      return "low quality";
+      return "the image is high resolution with fine detail throughout";
+    // The medium keys say what the render is NOT in, and the style claim already
+    // says what it IS. A second sentence asserting the same medium would be the
+    // duplication the collision rules exist to prevent.
     case "photographic":
-      return "photographic realism";
     case "illustration":
-      return "illustration";
     case "anime":
-      return "anime style";
     case "painting":
-      return "painterly brushwork";
     case "render_3d":
-      return "3D render look";
+      return null;
+
+    // --- Scene ----------------------------------------------------------------
     case "background_clutter":
-      return "cluttered background";
+      return "the background is clean and empty";
     case "extra_objects":
-      return "unrelated objects";
+      return "the target subject appears alone, with no additional objects";
   }
 }
 
 /**
- * Compile the dedicated `negative_prompt`.
+ * The claim id one constraint's replacement carries.
  *
- * Every surviving constraint travels the same way here, because this endpoint has
- * a real field — the interesting transport cases (inline exclusion, positive
- * replacement, refusal) belong to the endpoints that do not, and inventing them
- * for Qwen would be untested code pretending to be a capability.
+ * Prefixed so provenance can tell a projected fact from an exclusion that became
+ * one, and so two blocks contributing the same conflict key cannot collide.
+ */
+function replacementClaimId(constraintId: string): string {
+  return `negative.${constraintId}`;
+}
+
+/**
+ * Compile every surviving exclusion as affirmative positive guidance.
  *
- * A keyless constraint is the provider-default override. It contributes no
- * phrase, but its transport is still `dedicated_field`: writing this field at all
- * is what replaces the wrapper's default, so the override is satisfied by the
- * payload carrying the key rather than by any particular words in it.
+ * Returns no dedicated-field text at all: this endpoint's field is
+ * behaviourally inert (see {@link affirmativePhrase}), and writing a string
+ * nobody reads would put an unread payload in provenance and invite a future
+ * reader to believe it worked.
+ *
+ * A keyless constraint is the provider-default override. It has no affirmative
+ * opposite to state, and on this endpoint it has nothing to override either —
+ * the wrapper's `negative_prompt` default is blank and inert — so it is dropped
+ * with its own reason rather than silently disappearing.
+ *
+ * Claims land in `quality`, the last segment kind and the first a budget squeeze
+ * gives up. That is deliberate: an exclusion is a preference about how the
+ * render turns out, and it must never outrank a fact the world actually
+ * asserted. The fitter enforces the ordering; this only has to file them
+ * correctly.
  */
 function compileNegative(input: ImageDialectNegativeInput): ImageCompiledNegativePrompt {
-  const phrases: string[] = [];
+  const replacementClaims: ImagePositiveClaim[] = [];
   const outcomes: ImageNegativeTransportOutcome[] = [];
-  let overrideOnly = false;
+  const said = new Set<string>();
 
   for (const constraint of input.constraints) {
     if (constraint.conflictKeys.length === 0) {
-      overrideOnly = true;
-      outcomes.push({ constraintId: constraint.id, transport: { kind: "dedicated_field", text: "" } });
+      outcomes.push({
+        constraintId: constraint.id,
+        transport: { kind: "dropped", reason: "no_provider_default_to_override" },
+      });
       continue;
     }
-    const own = constraint.conflictKeys.map(negativePhrase).filter((phrase) => !phrases.includes(phrase));
-    if (own.length === 0) {
-      // Every phrase this constraint would contribute is already in the field.
-      // Repeating it would spend the negative budget restating an exclusion the
-      // model has already been given.
-      outcomes.push({ constraintId: constraint.id, transport: { kind: "dropped", reason: "duplicate_phrasing" } });
+    const phrases: string[] = [];
+    for (const key of constraint.conflictKeys) {
+      const phrase = affirmativePhrase(key);
+      // Deduplicated across the whole program: two blocks both asking for a
+      // clean background would otherwise say it twice in one paragraph.
+      if (phrase === null || said.has(phrase)) continue;
+      said.add(phrase);
+      phrases.push(phrase);
+    }
+    if (phrases.length === 0) {
+      outcomes.push({ constraintId: constraint.id, transport: { kind: "dropped", reason: "no_affirmative_wording" } });
       continue;
     }
-    phrases.push(...own);
-    outcomes.push({ constraintId: constraint.id, transport: { kind: "dedicated_field", text: own.join(", ") } });
+    const claim: ImagePositiveClaim = {
+      id: replacementClaimId(constraint.id),
+      concept: "style.quality",
+      segmentKind: "quality",
+      value: phrases,
+      semanticTags: [],
+      required: false,
+      priority: constraint.priority,
+      source: { owner: "image.negative_pack", key: constraint.id },
+      fromConstraintId: constraint.id,
+    };
+    replacementClaims.push(claim);
+    outcomes.push({ constraintId: constraint.id, transport: { kind: "positive_replacement", claims: [claim] } });
   }
 
-  const joined = phrases.join(", ");
-  const budget = input.budget.maxCharacters;
-  // Trimming from the tail is safe here in a way it would not be on the positive
-  // side: constraints arrive priority-descending, so the tail is the weakest
-  // exclusion, and each phrase is independent rather than part of a sentence.
-  const text = budget !== undefined && joined.length > budget ? trimPhrases(phrases, budget) : joined;
-  if (text.length === 0) return { text: overrideOnly ? "" : null, replacementClaims: [], inlineText: [], outcomes };
-  return { text, replacementClaims: [], inlineText: [], outcomes };
-}
-
-/** The longest comma-joined prefix of `phrases` that fits `budget`. */
-function trimPhrases(phrases: readonly string[], budget: number): string {
-  const kept: string[] = [];
-  for (const phrase of phrases) {
-    const candidate = [...kept, phrase].join(", ");
-    if (candidate.length > budget) break;
-    kept.push(phrase);
-  }
-  return kept.join(", ");
+  return { text: null, replacementClaims, inlineText: [], outcomes };
 }
 
 // ---------------------------------------------------------------------------
@@ -598,8 +645,12 @@ function sentence(text: string): string {
 export const qwenImage2512Dialect: ImagePromptDialectDefinition = {
   id: DIALECT_ID,
   positiveSyntax: "natural_language",
-  negativeSyntax: "natural_language",
-  negativeTransport: "dedicated_field",
+  // No working negative channel on this endpoint. The schema exposes
+  // `negative_prompt`; a controlled trial found it produces no semantic
+  // response, so the constraints travel as affirmative positive guidance and
+  // the field is not written at all.
+  negativeSyntax: "none",
+  negativeTransport: "positive_replacement",
   // The single `image` input is strength-based image-to-image rather than a
   // numbered composition slot, so this endpoint has no reference syntax to speak.
   referenceSyntax: "none",
