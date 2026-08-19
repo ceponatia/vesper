@@ -130,7 +130,14 @@ const CONCEPT_TABLE = [
   { id: "subject.appearance", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.pose", channel: "subject", segmentKind: "pose", protects: [] },
   { id: "subject.expression", channel: "subject", segmentKind: "current_state", protects: [] },
-  { id: "subject.body_language", channel: "subject", segmentKind: "current_state", protects: [] },
+  // `pose`, not `current_state`: how a body is HELD is what the pose segment
+  // says, and the application's visual digest already classifies its
+  // body-language layer as `pose`. Two vocabularies disagreeing here would have
+  // meant a posture claim silently emitting later in the prompt than the
+  // classification asked for — the character adapter's translation is supposed
+  // to preserve a fact's segment kind, not re-file it somewhere cheaper. An
+  // expression stays `current_state`: a face is not a posture.
+  { id: "subject.body_language", channel: "subject", segmentKind: "pose", protects: [] },
   { id: "subject.current_state", channel: "subject", segmentKind: "current_state", protects: [] },
   { id: "subject.wardrobe", channel: "subject", segmentKind: "wardrobe", protects: [] },
   { id: "subject.exposure", channel: "subject", segmentKind: "exposure", protects: [] },
