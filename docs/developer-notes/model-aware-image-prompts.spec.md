@@ -266,15 +266,27 @@ Observations retained from the first run (evidence in
 - ordinary interior and outdoor renders showed no targeted defect in either
   arm, which is why they carried no signal.
 
-### The clothing presentation wording is a tracked defect
+### Naming a thing summons it — the clothing presentation fix
 
-`ITEM_PRESENTATION.clothing` says "presented on an invisible ghost mannequin,
-holding the garment's own shape", and naming the mannequin puts one in the
-picture: both arms of both garment cases rendered a visible support. The fix is
-a positive rewording that says what SHOULD be present without naming the thing
-being avoided — Trial B's no-negative arm renders exactly that candidate
-wording, so the production edit follows that evidence rather than another
-guess. The reword is independent of the negative A/B and lands separately.
+`ITEM_PRESENTATION.clothing` used to say "presented on an invisible ghost
+mannequin, holding the garment's own shape". That is the industry term for
+exactly this shot, and it put a plainly visible dress form in **12 of 12**
+renders across a scarf and a coat. The word "invisible" subtracts nothing.
+
+Wording that names no support at all — "hanging in its own shape with nothing
+else in the frame, the garment alone" — renders **0 of 12**, at the same seeds,
+with scarf translucency and the coat's authored scorched cuffs unaffected
+(model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B; evidence in
+`evidence/qwen-2512-ghost-mannequin/`).
+
+The generalizable ruling, and the reason this sits in the spec rather than only
+in a trial doc: **a positive prompt may not name the thing it wants absent.**
+Diffusion conditioning has no "not". The same trial's inline arm — an explicit
+"do not include a mannequin, dress form, torso, bust, hanger" appended to the
+positive — produced the only non-shipped render with a visible support. Every
+projection writing prompt-bearing text is subject to this, which is why
+`entity-digest.test.ts` now asserts the clothing fact matches no support noun at
+all rather than asserting one particular phrasing.
 
 ### Qwen Image 2512 ignores its negative field
 

@@ -76,6 +76,14 @@ interface TrialArm {
    * clause varies.
    */
   readonly positiveSuffix?: string;
+  /**
+   * A wholly different positive, replacing the fixture's.
+   *
+   * One legitimate use: a `production` control arm carrying the prompt the
+   * shipped lane compiles TODAY, so a proposed rewording is measured against
+   * what it would replace at matched seeds rather than against a recollection.
+   */
+  readonly positiveOverride?: string;
 }
 
 interface TrialFixture {
@@ -120,6 +128,20 @@ const ANTI_SUPPORT = "mannequin, dress form, torso, bust, human body, visible su
  */
 const SUPPORT_AFFIRMATIVE =
   "The garment floats freely in empty space, held in its own shape by nothing at all, with clear empty background visible all around and through it.";
+/**
+ * What the item lane compiles TODAY for these two rows, verbatim.
+ *
+ * The control arm, and now FROZEN HISTORY: its "invisible ghost mannequin" clause
+ * was the defect, naming the mannequin is what put one in the picture, and the
+ * item lane was reworded on this trial's evidence. The text stays verbatim so the
+ * measured before/after remains reproducible — do not update it to match the
+ * current lane, or the comparison it exists for stops meaning anything.
+ */
+const PRODUCTION_SCARF =
+  "No people are present anywhere in the frame. A product photograph of Silk gauze scarf. Presented on an invisible ghost mannequin, holding the garment's own shape. A long scarf of loosely woven silk gauze. Coloured pale rose. Made of sheer, semi-transparent fabric. Rendered as a photograph, with real optics and natural surface detail. Studio lighting with soft shadows. A seamless light-grey background. Centred composition. Sharp focus and high detail. E-commerce catalogue product photography.";
+const PRODUCTION_COAT =
+  "No people are present anywhere in the frame. A product photograph of Canvas work coat. Presented on an invisible ghost mannequin, holding the garment's own shape. A heavy waxed-canvas work coat, scorched at both cuffs. Made of dull olive canvas with a waxy sheen. Coloured olive drab. Outerwear. Rendered as a photograph, with real optics and natural surface detail. Studio lighting with soft shadows. A seamless light-grey background. Centred composition. Sharp focus and high detail. E-commerce catalogue product photography.";
+
 const SUPPORT_INLINE =
   "Do not include a mannequin, dress form, torso, bust, hanger, stand, or any other visible means of support.";
 
@@ -209,6 +231,7 @@ const TRIALS: readonly NegativeBlockTrial[] = [
       },
     ],
     arms: [
+      { id: "production", negative: null, positiveOverride: PRODUCTION_SCARF },
       { id: "neutral", negative: null },
       { id: "affirmative", negative: null, positiveSuffix: SUPPORT_AFFIRMATIVE },
       { id: "inline", negative: null, positiveSuffix: SUPPORT_INLINE },
@@ -231,6 +254,7 @@ const TRIALS: readonly NegativeBlockTrial[] = [
       },
     ],
     arms: [
+      { id: "production", negative: null, positiveOverride: PRODUCTION_COAT },
       { id: "neutral", negative: null },
       { id: "affirmative", negative: null, positiveSuffix: SUPPORT_AFFIRMATIVE },
       { id: "inline", negative: null, positiveSuffix: SUPPORT_INLINE },
@@ -406,7 +430,8 @@ const TRIALS: readonly NegativeBlockTrial[] = [
 
 /** The positive prompt this arm sends: the fixture's, plus the arm's own clause. */
 function armPositive(fixture: TrialFixture, arm: TrialArm): string {
-  return arm.positiveSuffix === undefined ? fixture.positive : `${fixture.positive} ${arm.positiveSuffix}`;
+  const base = arm.positiveOverride ?? fixture.positive;
+  return arm.positiveSuffix === undefined ? base : `${base} ${arm.positiveSuffix}`;
 }
 
 /** The ON negative for one fixture — per-fixture wording wins over the arm's. */

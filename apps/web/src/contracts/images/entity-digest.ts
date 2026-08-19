@@ -55,13 +55,27 @@ export interface ItemProjectionInput {
 /**
  * How each item kind is presented.
  *
- * Clothing gets a ghost mannequin so its shape reads without a wearer; anything
- * else is isolated on seamless ground. This is the one item fact that is a
- * decision about the SHOT rather than about the object, which is why it is
- * `item.presentation` — a framing concept — rather than a form or material one.
+ * Clothing hangs in its own shape without a wearer; anything else is isolated on
+ * seamless ground. This is the one item fact that is a decision about the SHOT
+ * rather than about the object, which is why it is `item.presentation` — a
+ * framing concept — rather than a form or material one.
+ *
+ * The clothing wording NAMES NO SUPPORT, and that is the whole point. It used to
+ * say "presented on an invisible ghost mannequin", which is the industry term for
+ * exactly this shot and which put a plainly visible dress form in the picture
+ * every single time: 6 of 6 renders for a scarf and 6 of 6 for a coat, measured
+ * against this replacement at matched seeds
+ * (model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B). The word
+ * "invisible" does not subtract the mannequin; naming it is what summons it.
+ *
+ * Describing the desired outcome instead — the garment holding its own shape,
+ * nothing else in frame — drops that to 0 of 6 on both fixtures, with drape
+ * quality and the authored scorched cuffs unaffected. Affirmative replacement is
+ * also the plan's default transport for an endpoint whose negative field does not
+ * work, which this one's does not.
  */
 const ITEM_PRESENTATION: Readonly<Record<ItemProjectionInput["kind"], string>> = {
-  clothing: "presented on an invisible ghost mannequin, holding the garment's own shape",
+  clothing: "hanging in its own shape with nothing else in the frame, the garment alone",
   object: "isolated on a clean seamless surface",
   container: "isolated on a clean seamless surface",
 };
