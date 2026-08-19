@@ -253,7 +253,10 @@ async function requireCleanBaseline(target: TrialTarget): Promise<void> {
   const baseline = await readPermissionState(target.chatId, target.subjectId);
   if (baseline.eventCount > 0) {
     throw new Error(
-      `chat ${target.chatId} already holds ${baseline.eventCount} romantic-permission entries for this pair. ` +
+      // The count is the WHOLE chat's ledger, not this pair's — deliberately
+      // stricter than the case needs, so say so rather than sending whoever runs
+      // this to inspect a pair that is already clean.
+      `chat ${target.chatId} already holds ${baseline.eventCount} romantic-permission entries. ` +
         "The no-grant case needs a ledger nobody has answered on, and a ledger cannot be edited back to that. " +
         "Use a fresh QA chat.",
     );
@@ -347,7 +350,10 @@ async function runExchange(input: {
 function printPlan(): void {
   console.log("Romantic contact rollout rerun — plan\n");
   for (const entry of TRIAL_CASES) {
-    const how = entry.rerun === undefined ? "send" : `rerun:${entry.rerun}`;
+    // Both rerun shapes, named the way the runner actually decides them: the
+    // retake reruns the previous case's line, and the denial case reruns its own
+    // after binding a denial to the attempt its first send produced.
+    const how = entry.rerun === "previous" ? "rerun:previous" : entry.bindDenial === true ? "deny+rerun" : "send";
     console.log(`  ${entry.id.padEnd(16)} setup=${entry.setup.padEnd(9)} ${how.padEnd(14)} ${JSON.stringify(entry.line)}`);
     console.log(`  ${" ".repeat(16)} requires: ${describeExpectation(entry)}`);
   }

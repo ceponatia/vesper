@@ -1,3 +1,9 @@
+import type {
+  ContactRejectionReason,
+  ContactResolutionStatus,
+  ContactUnresolvedReason,
+  RomanticPermissionStanding,
+} from "@/contracts";
 import type { ChatContactPremiseKind, ChatContactTurnRecord } from "@/server/engine";
 import type { ContactCaseState } from "./oracle";
 
@@ -31,9 +37,16 @@ export interface ExpectedAct {
 export interface CaseExpectation {
   /** The act the line must build, or `"none"` for a line that writes no touch. */
   readonly act: ExpectedAct | "none";
-  /** The resolver's status, and its typed reason where it has one. */
-  readonly status: string | "none";
-  readonly reason?: string;
+  /**
+   * The resolver's status, and its typed reason where it has one.
+   *
+   * The closed unions, not `string`. Against a bare `string` a case expecting
+   * `"commitable"` compiles, never matches, and reports a lane defect that does
+   * not exist — a false red, which on a rollout ruling costs the same as the
+   * false green this instrument was built to prevent.
+   */
+  readonly status: ContactResolutionStatus | "none";
+  readonly reason?: ContactRejectionReason | ContactUnresolvedReason;
   /** Contacts this exchange must DURABLY commit — acknowledged, not merely planned. */
   readonly durableCommits: number;
   /** Live player↔target contacts once the exchange has settled. */
@@ -43,7 +56,7 @@ export interface CaseExpectation {
   /** The premise the narrator must have been handed, if any. */
   readonly guidanceKind: ChatContactPremiseKind | "none";
   /** The standing the permission ledger must hold for this pair when the line is sent. */
-  readonly permissionStanding: "granted" | "withdrawn" | "none";
+  readonly permissionStanding: RomanticPermissionStanding | "none";
   /** Whether a denial bound to THIS attempt's action id must be on the ledger. */
   readonly attemptDeniedBound?: boolean;
   /**
@@ -66,11 +79,18 @@ export interface TrialCase {
   /** The player's line, verbatim. */
   readonly line: string;
   /**
-   * Re-run an exchange instead of sending a fresh line. `"self"` sends the line,
-   * binds a denial to the attempt it produced, and reruns it; `"previous"`
-   * reruns the previous case's persisted user message.
+   * Rerun the PREVIOUS case's persisted user message instead of sending a fresh
+   * line — the retake, which only means something if it re-runs the committing
+   * exchange.
+   *
+   * There is deliberately no `"self"` value. A self-rerun is what `bindDenial`
+   * does (send, bind a denial to the attempt that send produced, rerun it), and
+   * carrying a second field that named the same behaviour meant one of them did
+   * nothing: the runner only ever tested for `"previous"`, so a case setting
+   * `rerun: "self"` without `bindDenial` was silently sent once and graded
+   * against the wrong exchange.
    */
-  readonly rerun?: "self" | "previous";
+  readonly rerun?: "previous";
   /** Bind an `attempt_denied` to the first send's action id before the rerun. */
   readonly bindDenial?: boolean;
   readonly expect: CaseExpectation;
@@ -115,7 +135,6 @@ export const TRIAL_CASES: readonly TrialCase[] = [
     proves: "a denial bound to the attempt refuses it, and the narration may say so",
     setup: "none",
     line: "I step closer to you. I caress your arm.",
-    rerun: "self",
     bindDenial: true,
     expect: {
       act: { kind: "romantic", gesture: "caress", targetLocationId: "arms" },
@@ -226,7 +245,7 @@ export interface ObservedCase {
   /** After the exchange has settled. */
   readonly afterExchange: PairContactSnapshot;
   /** The pair's standing on the permission ledger when the line was sent. */
-  readonly permissionStanding: "granted" | "withdrawn" | "none";
+  readonly permissionStanding: RomanticPermissionStanding | "none";
   /** Whether the ledger holds a denial bound to this attempt's action id. */
   readonly attemptDeniedBound: boolean;
   /** The pair contacts the PREVIOUS case left, for the retake's identity check. */

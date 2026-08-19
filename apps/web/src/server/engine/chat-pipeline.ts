@@ -35,6 +35,9 @@ import {
   type ContactEndReason,
   type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
+  type ContactRejectionReason,
+  type ContactResolutionStatus,
+  type ContactUnresolvedReason,
   type DiagnosticSink,
   type EffectiveCoverageRead,
   type PhysicalActionOutcome,
@@ -268,6 +271,8 @@ import {
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 
+export type { ChatContactPremiseKind } from "./chat-contact-adapter";
+
 /**
  * One exchange's physical act, as the narrator was told about it.
  *
@@ -278,8 +283,6 @@ export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "r
  * behind that would let a trial grade itself against facts the prompt never
  * carried.
  */
-export type { ChatContactPremiseKind } from "./chat-contact-adapter";
-
 export interface ChatContactTurnRecord {
   /** Absent when the message produced no contact act at all. */
   readonly act?: {
@@ -288,9 +291,22 @@ export interface ChatContactTurnRecord {
     readonly targetLocationId: string;
     readonly actionId: string;
   };
-  /** The resolver's own status, and its typed reason when it has one. */
-  readonly status?: string;
-  readonly reason?: string;
+  /**
+   * The resolver's own status, and its typed reason when it has one.
+   *
+   * Both carry their closed unions rather than `string`. This record is the
+   * whole input to an instrument that gates a rollout ruling, and against a bare
+   * `string` a misspelled expectation compiles, never matches, and reports a
+   * lane defect that does not exist.
+   *
+   * `reason` spans BOTH reason vocabularies, because two different statuses
+   * carry one: `rejected` names a rejection reason and `unresolved` names an
+   * unresolved one. Narrowing this to the unresolved half would have made the
+   * explicit-denial case — `rejected` / `permission_denied`, one of the six the
+   * rerun must cover — untypeable.
+   */
+  readonly status?: ContactResolutionStatus;
+  readonly reason?: ContactRejectionReason | ContactUnresolvedReason;
   /** The outcome's stable result codes — the same list the fingerprint folds. */
   readonly resultCodes: readonly string[];
   /** True only when the exchange durably recorded the contact. */
@@ -1797,7 +1813,15 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                   .filter((entry) => entry.kind === "contact_ended")
                   .map((entry) => ({ contactId: String(entry.contactId), reason: String(entry.reason) }))
               : [],
-            ...(contactUnresolvedPremise === null ? {} : { premiseKind: contactUnresolvedPremise.kind }),
+            // The premise the narrator was HANDED, which is not the same as the
+            // one the seam derived. `CHAT_PHYSICAL_CONSTRAINTS` owns whether
+            // these bytes reach the prompt, so with that flag off the premise is
+            // computed and then dropped — and reporting it here would tell a
+            // trial the prose was fenced when nothing fenced it, which is the
+            // exact failure the rerun exists to detect.
+            ...(physicalConstraintsEnabled && contactUnresolvedPremise !== null
+              ? { premiseKind: contactUnresolvedPremise.kind }
+              : {}),
           };
         }
       } catch (error) {

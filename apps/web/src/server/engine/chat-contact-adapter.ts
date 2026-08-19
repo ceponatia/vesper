@@ -487,10 +487,24 @@ function resolveContactTarget(
       member.aliases.some((alias) => normalizedNamePhrase(alias) === phrase),
   );
   if (named !== undefined) return named;
-  const byFirstName = characters.filter(
-    (member) =>
-      firstNameOf(member.name) === phrase || member.aliases.some((alias) => firstNameOf(alias) === phrase),
-  );
+  // First names come from the roster NAME and never from an alias, and a pronoun
+  // never reaches this pass at all. Both exclusions are the same guard against
+  // the same mistake: an alias is free authored text, so its leading word is as
+  // likely to be a descriptor's article as a person's given name.
+  //
+  // "her ladyship" would otherwise donate "her", and a pronoun resolving here
+  // would skip the sole-character rule below entirely — turning a two-character
+  // room, where a pronoun is silence by law, into a guess that commits a durable
+  // touch on a body the sentence never identified. "the redhead" and "my love"
+  // donate "the" and "my", which ordinary movement prose writes constantly, so
+  // "I walk over to the window" would resolve as walking over to her.
+  //
+  // The cost is that a multi-word ALIAS can no longer be reached by its first
+  // word alone; the whole alias still matches exactly, above. That is a refusal
+  // where a commit was arguably fine, which is the direction this lane pays in.
+  const byFirstName = PRONOUN_OWNERS.has(phrase)
+    ? []
+    : characters.filter((member) => firstNameOf(member.name) === phrase);
   if (byFirstName.length > 0) return byFirstName.length === 1 ? (byFirstName[0] ?? null) : null;
   if (!PRONOUN_OWNERS.has(phrase)) return null;
   const sole = characters.length === 1 ? characters[0] : undefined;

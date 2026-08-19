@@ -492,6 +492,40 @@ describe("approach detection", () => {
     });
 
     /**
+     * Falsified against a first-name pass that also read the leading word of
+     * every ALIAS. An alias is free authored text, so its first word is as
+     * likely to be a descriptor's article as a person's given name — and both
+     * ways of getting that wrong commit a durable touch on a body the sentence
+     * never identified.
+     *
+     * The pronoun case is the worse of the two, because it does not merely add a
+     * wrong match: it SKIPS the sole-character rule entirely, turning a
+     * two-character room — where a pronoun is silence by law — into a guess.
+     */
+    it("an alias beginning with a pronoun does not make that pronoun resolve in a group", () => {
+      const roster = [member(WREN, "Wren", ["her ladyship"]), member(VAEL, "Vaelith")];
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress her arm.",
+          narratorInput: false,
+          characters: roster,
+          eventRef: EVENT,
+        }),
+      ).toBeNull();
+      // The alias itself still resolves in full — only its leading word stopped.
+      expect(approach("I walk over to her ladyship.", roster)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("an alias beginning with an ordinary word does not capture ordinary prose", () => {
+      const roster = [member(WREN, "Wren", ["the redhead"])];
+      // "the" is not a possessive pronoun, so nothing downstream would have
+      // caught this: the turn recorded an approach TOWARD her for a sentence
+      // that walked away.
+      expect(approach("I walk over to the window.", roster)).toBeNull();
+      expect(approach("I walk over to the redhead.", roster)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    /**
      * The first-name rule's own failure mode: "Sabrina's sister" names somebody
      * the roster does not contain, and a resolver that read its leading word
      * would commit a durable touch on the wrong body. An internal possessive

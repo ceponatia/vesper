@@ -5,6 +5,7 @@ import {
   DiagnosticCollector,
   type AffordanceSubjectId,
   type RomanticPermissionEvent,
+  type RomanticPermissionStanding,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { characterChatMessages, characterChats, characters, chatParticipants, db } from "@/server/db";
@@ -132,7 +133,15 @@ export async function readPairContacts(chatId: string, target: AffordanceSubject
 }
 
 export interface PermissionState {
-  readonly standing: "granted" | "withdrawn" | "none";
+  /**
+   * The pair's standing, or `"none"` when the ledger holds no entry for it.
+   *
+   * Carries the ledger's own vocabulary rather than a two-way collapse. A
+   * `relationship_revoked` sets `revoked`, and folding that into `withdrawn`
+   * would have made the withdrawal case pass on a revocation and printed the
+   * wrong ledger fact into the report a rollout ruling is made from.
+   */
+  readonly standing: RomanticPermissionStanding | "none";
   /** Action ids this pair currently has recorded denials for. */
   readonly deniedAttemptActionIds: readonly string[];
   readonly eventCount: number;
@@ -147,9 +156,8 @@ export async function readPermissionState(chatId: string, target: AffordanceSubj
       candidate.grantingTargetId === target &&
       candidate.scope === ROMANTIC_SCOPE,
   );
-  const standing = entry?.standing;
   return {
-    standing: standing === "granted" ? "granted" : standing === undefined ? "none" : "withdrawn",
+    standing: entry?.standing ?? "none",
     deniedAttemptActionIds: projection.denials
       .filter(
         (denial) =>

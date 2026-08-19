@@ -244,11 +244,13 @@ describe("the denial case — the denial must be bound to this attempt", () => {
 describe("the act itself", () => {
   const expectation = expectationFor("commit");
 
+  // A turn that built no act carries no status at all — the field is absent, and
+  // `assertRequiredState` is what turns that absence into the "none" an
+  // expectation compares against. The fixture says `undefined` rather than the
+  // string, because a record carrying `status: "none"` is a shape the pipeline
+  // cannot produce and grading against it proved nothing about the real one.
   it("fails when the line produced no act at all — silence is not a refusal", () => {
-    const failures = assertRequiredState(
-      observed({ turn: turn({ status: "none" }), permissionStanding: "granted" }),
-      expectation,
-    );
+    const failures = assertRequiredState(observed({ turn: turn(), permissionStanding: "granted" }), expectation);
     expect(fields(failures)).toContain("act");
   });
 
