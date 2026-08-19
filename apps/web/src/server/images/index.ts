@@ -213,11 +213,12 @@ export {
   SELFIE_FRAMING,
 } from "./prompts-scene-render";
 export {
-  buildItemImagePrompt,
-  buildLocationImagePrompt,
-  type ItemImageInput,
-  type LocationImageInput,
-} from "./prompts-entity";
+  buildEntityPromptProgram,
+  isEntityPromptRefusal,
+  type EntityPromptProgram,
+  type EntityPromptProgramInput,
+  type EntityPromptProgramResult,
+} from "./entity-prompt-program";
 export * from "./avatar";
 export * from "./variants";
 export * from "./upload";

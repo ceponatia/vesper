@@ -9,7 +9,7 @@ import { purgeImagesWhere, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { monogramSvg } from "./monogram";
-import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts-entity";
+import { buildEntityPromptProgram, isEntityPromptRefusal } from "./entity-prompt-program";
 
 export type EntityImageKind = "item" | "location";
 
@@ -40,11 +40,21 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
   // lane used when it borrowed the portrait surface.
   const resolved = demo ? null : await resolveImageProfileForTask(input.entityKind, null, input.sink);
   const model = resolved?.model ?? null;
-  const loaded =
-    input.entityKind === "item"
-      ? await loadItemPrompt(input.entityId, input.userId)
-      : await loadLocationPrompt(input.entityId, input.userId);
-  const prompt = loaded?.prompt ?? "";
+  // Demo mode paints a monogram and never reaches a provider, so it needs the
+  // entity's NAME and nothing else — compiling a prompt program for it would be
+  // a database read and a full compile in service of a letter on a coloured tile.
+  const program =
+    model === null
+      ? await loadEntityName(input.entityKind, input.entityId, input.userId)
+      : await buildEntityPromptProgram({
+          entityKind: input.entityKind,
+          entityId: input.entityId,
+          ownerId: input.userId,
+          model,
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        });
+  const compiled = program !== null && !isEntityPromptRefusal(program) ? program : null;
+  const prompt = compiled?.prompt ?? "";
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -53,14 +63,20 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
       entityKind: input.entityKind,
       entityId: input.entityId,
       prompt,
-      meta: { model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo },
+      meta: { model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo, ...(compiled?.meta ?? {}) },
     },
     // A missing entity still leaves a failed row behind — no event, no diagnostic.
-    failedPrecondition: loaded
-      ? demo || model
-        ? null
-        : "no image model is registered for entity images"
-      : `${input.entityKind} ${input.entityId} not found`,
+    // A prompt-program refusal is louder: the row carries the reason, because a
+    // lane pointed at an endpoint with no registered dialect is a configuration
+    // problem an operator has to see rather than a render that quietly stops.
+    failedPrecondition:
+      program === null
+        ? `${input.entityKind} ${input.entityId} not found`
+        : isEntityPromptRefusal(program)
+          ? program.refusal
+          : demo || model
+            ? null
+            : "no image model is registered for entity images",
     // Only reached once the entity loaded, so the name fallback never fires.
     // Item and location shots are SFW (product / establishing) and are the one
     // lane that does NOT want 3:4 — items are square, locations landscape. The
@@ -69,9 +85,21 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     // remainder is cropped. A failure still THROWS (this lane's ruled failure
     // shape), so provenance is recorded only on success.
     produce: async () => {
-      if (demo || !resolved) return { ok: true, image: monogramSvg(loaded?.name ?? "") };
+      if (demo || !resolved) return { ok: true, image: monogramSvg(compiled?.name ?? "") };
       const result = await renderImageIntent(
-        { profile: resolved, prompt, references: [], target: { aspectRatio: parseAspectValue(ASPECT[input.entityKind]) ?? 1 } },
+        {
+          profile: resolved,
+          prompt,
+          references: [],
+          target: { aspectRatio: parseAspectValue(ASPECT[input.entityKind]) ?? 1 },
+          // The compiled exclusions ride the normalized control, so they reach the
+          // provider only through the version's own probed `negative_prompt`
+          // binding and are recorded as a dropped control otherwise. Null means
+          // this version exposes no field, and no key is invented for it.
+          ...(compiled?.negativePrompt === null || compiled?.negativePrompt === undefined
+            ? {}
+            : { controls: { negativePrompt: compiled.negativePrompt } }),
+        },
         input.sink,
       );
       if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
@@ -107,44 +135,25 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
   return imageId;
 }
 
-interface LoadedPrompt {
-  name: string;
-  prompt: string;
-}
-
-async function loadItemPrompt(entityId: string, ownerId: string): Promise<LoadedPrompt | null> {
+/**
+ * The entity's display name, for the demo path's monogram.
+ *
+ * Returns null for a missing row, which is the same signal
+ * `buildEntityPromptProgram` gives, so the pipeline's not-found branch reads one
+ * way regardless of whether a model was resolved.
+ */
+async function loadEntityName(
+  kind: EntityImageKind,
+  entityId: string,
+  ownerId: string,
+): Promise<{ name: string; prompt: string; negativePrompt: null; meta: Record<string, unknown> } | null> {
+  const table = kind === "item" ? items : locations;
   const [row] = await db()
-    .select({ name: items.name, description: items.description, kind: items.kind, definition: items.definition })
-    .from(items)
-    .where(and(eq(items.id, entityId), eq(items.ownerId, ownerId)))
+    .select({ name: table.name })
+    .from(table)
+    .where(and(eq(table.id, entityId), eq(table.ownerId, ownerId)))
     .limit(1);
-  if (!row) return null;
-  const def = row.definition as { sensory?: { appearance?: unknown } } | null;
-  const appearance = typeof def?.sensory?.appearance === "string" ? def.sensory.appearance : undefined;
-  return {
-    name: row.name,
-    prompt: buildItemImagePrompt({ name: row.name, description: row.description, kind: row.kind, appearance }),
-  };
-}
-
-async function loadLocationPrompt(entityId: string, ownerId: string): Promise<LoadedPrompt | null> {
-  const [row] = await db()
-    .select({
-      name: locations.name,
-      description: locations.description,
-      scale: locations.scale,
-      ambient: locations.ambient,
-    })
-    .from(locations)
-    .where(and(eq(locations.id, entityId), eq(locations.ownerId, ownerId)))
-    .limit(1);
-  if (!row) return null;
-  const ambient = row.ambient as { light?: unknown } | null;
-  const light = typeof ambient?.light === "string" ? ambient.light : undefined;
-  return {
-    name: row.name,
-    prompt: buildLocationImagePrompt({ name: row.name, description: row.description, scale: row.scale, light }),
-  };
+  return row ? { name: row.name, prompt: "", negativePrompt: null, meta: {} } : null;
 }
 
 async function setEntityImage(kind: EntityImageKind, id: string, ownerId: string, imageId: string): Promise<void> {

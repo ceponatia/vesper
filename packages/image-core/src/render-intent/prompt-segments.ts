@@ -499,7 +499,24 @@ export function compileImagePromptSegments(
   sink?: DiagnosticSink,
 ): string {
   const fitted = fitImagePromptSegments(normalizeImagePromptSegments(segments, sink), budget);
+  reportImagePromptFitting(fitted, budget, sink);
+  return joinImagePromptSegments(fitted.segments);
+}
 
+/**
+ * Report what fitting cost, without joining anything.
+ *
+ * Split out of {@link compileImagePromptSegments} so a caller that needs the
+ * FITTED SEGMENTS as well as the text — the prompt-program dialects, which have
+ * to say which semantic claim a budget squeeze removed — reports the same three
+ * events rather than growing a second, drifting copy of them. The compile
+ * function is still the ordinary entry point and its behavior is unchanged.
+ */
+export function reportImagePromptFitting(
+  fitted: FittedImagePromptSegments,
+  budget: ImagePromptBudget = {},
+  sink?: DiagnosticSink,
+): void {
   if (fitted.removed.length > 0 || fitted.compressed.length > 0) {
     sink?.push(
       diag("info", "image_prompt.segments_trimmed", "this prompt did not fit its budget and gave up optional detail", {
@@ -538,5 +555,4 @@ export function compileImagePromptSegments(
       }),
     );
   }
-  return joinImagePromptSegments(fitted.segments);
 }
