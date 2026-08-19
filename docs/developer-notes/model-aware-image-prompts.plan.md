@@ -1,8 +1,10 @@
 # Model-aware image prompt programs
 
-Status: proposed (2026-08-18)
+Status: active (2026-08-18)
 
 Research basis: [model-aware-image-prompts.research.md](model-aware-image-prompts.research.md)
+
+Implementation state and build rulings: [model-aware-image-prompts.spec.md](model-aware-image-prompts.spec.md)
 
 Parent owner: [image render quality](image-render-quality.plan.md)
 
@@ -140,6 +142,14 @@ A hidden provider negative, prompt preamble, prompt upsampler, or score-tag inje
 A research finding creates a candidate pack version. It does not mutate production. Promotion requires compiler tests and the relevant fixed image trial against the pinned endpoint/version.
 
 ## Target architecture
+
+The contract sketches in this section and the two below it are the DESIGN. The
+shapes that were actually built, and the handful of places they differ, live in
+[the spec](model-aware-image-prompts.spec.md) — read that first when writing code.
+This plan still carries more type-level detail than a plan should; folding the
+remaining sketches into the spec is worth doing as its own pass rather than
+alongside a feature change.
+
 
 ```text
 canonical source owners
@@ -754,9 +764,10 @@ The initial surface should be read-only or candidate-only for pack content if un
 
 ### Item and location module
 
-- `prompts-entity.ts` is replaced by `LocationImageDigest` and `ImageItemDigest` adapters plus task claims.
-- Every current field remains represented during migration.
-- Future fields enter through owner projection/classification rather than another hand-edited prose template.
+Done. `prompts-entity.ts` is deleted; item and location renders project their rows
+into world-digest facts and compile through the Qwen 2512 dialect. Every field the
+old builders used is still represented, and a new field now enters through the
+projection registry rather than through another hand-edited prose template.
 
 ### Scene modules
 
@@ -783,7 +794,7 @@ Raw mode bypasses fact-completeness and collision guarantees by design and is la
 
 ### Stage 0 — research and current-behavior freeze
 
-Status: research document created; behavior freeze remaining.
+Status: in progress — the research document exists; the payload-hash freeze and the architecture tests against new embedded exclusions are remaining.
 
 - record the endpoint/version evidence matrix;
 - freeze current positive and negative payload hashes for representative routes;
@@ -792,6 +803,8 @@ Status: research document created; behavior freeze remaining.
 - identify all raw-prompt escape-hatch callers.
 
 ### Stage 1 — prompt-program and dialect contracts
+
+Status: complete — 2026-08-18.
 
 - add semantic positive claims and negative constraints;
 - add dialect/transport registry contracts;
@@ -803,6 +816,8 @@ No production prompt changes in this stage.
 
 ### Stage 2 — atomic world digest
 
+Status: complete — 2026-08-18 for items, locations and the character wrapper; concurrent-mutation and branch-restore cases remain with the character-lane cutover that will exercise them.
+
 - wrap the existing `VisualImageDigest` as the character slice;
 - add location and item digest adapters;
 - add source projection dispositions and CI classification checks;
@@ -811,12 +826,16 @@ No production prompt changes in this stage.
 
 ### Stage 3 — shadow prompt-program compilation
 
+Status: void — the item and location lanes cut over directly. Shadow mode exists to de-risk a lane whose output an operator already trusts; these two had no identity to lose and their previous prompt was a hand-formatted paragraph, so comparing against it would have measured the thing being replaced. It remains the right approach for every character-bearing lane.
+
 - build positive claims and negative constraints beside legacy strings;
 - compile candidate prompts without sending them;
 - compare fact coverage, reference roles, mandatory survival, collision decisions, and payload length;
 - persist shadow diagnostics only on admin/dev trials.
 
 ### Stage 4 — positive dialect cutover
+
+Status: in progress — item and location renders run on the Qwen Image 2512 dialect; every other lane keeps its existing prompt path. The cutover order below is revised: item and location moved first because they carry no identity risk.
 
 Cut over one endpoint/task lane at a time:
 
@@ -831,12 +850,16 @@ Each cutover requires semantic parity plus a pinned visual trial. Do not migrate
 
 ### Stage 5 — negative system in shadow mode
 
+Status: in progress — guarded blocks, the collision linter and the transport record are live for item and location renders. The compiled exclusions do not yet reach the provider: the Qwen 2512 row's `negative_prompt` field is unprobed, so the control drops as `no_binding` and every outcome is recorded as dropped. Probing the version is what turns this stage into Stage 6 for this endpoint.
+
 - activate named blocks and collision linting without sending new negative text;
 - verify intended morphology, literal text, style, and subject-count protections;
 - record dedicated/inline/replacement/drop decisions;
 - confirm provider-default overrides are represented.
 
 ### Stage 6 — negative transport promotion
+
+Status: blocked on probing the Qwen Image 2512 version and running the first pinned image trial.
 
 Promote per endpoint/profile only after A/B evidence:
 
@@ -849,12 +872,16 @@ Promote per endpoint/profile only after A/B evidence:
 
 ### Stage 7 — pack management and evidence workflow
 
+Status: in progress — the pack, version, binding and evidence contracts exist and the Qwen 2512 pair is code-owned and version-pinned. The tables, the admin surfaces and the promotion/rollback actions are remaining.
+
 - add immutable pack versions and atomic bindings;
 - add admin previews, diffs, source records, trial status, promotion, and rollback;
 - add review-expiry and endpoint-version-change warnings;
 - keep active production packs guarded from unvalidated free-form edits.
 
 ### Stage 8 — legacy retirement and enforcement
+
+Status: in progress — `prompts-entity.ts` is deleted and its embedded exclusions are gone. The character-bearing prose builders remain until their lanes cut over.
 
 - delete superseded route-specific prose builders and exact-string rewrites;
 - remove embedded negative phrases from positive prompt modules;
@@ -950,6 +977,19 @@ The plan is accepted when:
 10. provenance can reproduce the source revisions, pack versions, dialect, constraints, compiled hashes, and transport decisions;
 11. pinned image trials approve each promoted endpoint/task pack;
 12. superseded route-specific model prose and embedded negative boilerplate are deleted.
+
+## Open questions
+
+- **Does a lane with no registered dialect refuse, or keep a legacy prompt?** The
+  item and location lanes currently refuse and record the reason on the failed
+  image row, which follows this plan's "refusal beats a generic prompt" ruling. It
+  means repointing one of those profiles at an unbound model takes the lane out of
+  service until a binding exists. Detail in
+  [the spec](model-aware-image-prompts.spec.md).
+- **Is `definition.sensory.tactile` visual enough to project?** Texture reads
+  visually; "cool to the touch" does not. It is classified `nonvisual` today so the
+  projection does not invent visual claims from prose about another sense. Splitting
+  the field or promoting it needs an owner call.
 
 ## Owner decisions before implementation
 

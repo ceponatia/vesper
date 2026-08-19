@@ -62,6 +62,15 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   visual-state digest seam are in — Stage 2's server-side assembly is the
   next step.
 
+- **Model-aware image prompt programs** —
+  [plan](model-aware-image-prompts.plan.md) ·
+  [spec](model-aware-image-prompts.spec.md) ·
+  [research](model-aware-image-prompts.research.md) — one immutable set of world
+  facts feeds a positive prompt and a separately versioned negative prompt, with a
+  linter that stops an exclusion forbidding something the world requires; the core
+  and the Qwen Image 2512 slice are live on item and location renders, and the
+  negative field starts travelling as soon as that version is probed.
+
 - **Narrator model test bench** — [plan](narrator-model-bench.plan.md) ·
   [spec](narrator-model-bench.spec.md) — twelve roleplay and low-refusal
   narrators are pickable from the chat menu, now including one served by a

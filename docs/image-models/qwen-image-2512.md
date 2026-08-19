@@ -47,6 +47,12 @@ is its task's global default ([providers.md](../images/providers.md)):
 All four carry empty control defaults, so resolving one reproduces the payload
 below.
 
+`item-standard` and `location-standard` additionally carry an active **prompt
+binding** (`qwen_2512_description` plus the seeded positive and negative pack
+pair), so those two lanes compile their prompt from a world digest rather than
+from a hand-written builder. `portrait-standard` and `chat-place-standard` do not
+yet, and keep their existing prompt path.
+
 Two curated portrait profiles trade speed against detail. Neither is a default;
 each runs only when picked:
 
@@ -65,18 +71,36 @@ the model row's `advancedCapabilities` is empty they drop as recorded
 
 ## Negative-prompt ruling
 
-The provider's `negative_prompt` default is empty. The transitional shared render
-seam leaves it empty and does not invent a generic block.
+The provider's `negative_prompt` default is empty. Vesper does not invent a
+generic block for it.
 
-This model serves portraits, items, locations, and chat-place images. Terms that
-look like universal cleanup are not actually universal here: signs and clothing
-may require text or logos, motion blur may be requested, and low-resolution media
-may be an intentional style. Anatomy terms also require the character's intended
-morphology.
+This row is the first endpoint on the **prompt-program** path
+([prompt-programs.md](../images/prompt-programs.md)): its `qwen_2512_description`
+dialect compiles long concrete prose for the positive channel and a comma-joined
+list of short phrases for the negative one, and both are derived from the world
+digest rather than written per lane. Exclusions come from guarded, versioned
+blocks — accidental lettering, watermarks, anatomy duplication, hand artifacts,
+single-subject integrity, composition failures, background clutter, and the media
+this render is not in.
 
-Task/style/morphology-aware profiles may add conflict-checked negative steering
-later. Until then, Qwen Image 2512 remains byte-identical at the quality-policy
-seam.
+None of them is universal here, which is the point. This model serves portraits,
+items, locations and chat-place images, so signs and garments may require legible
+text, an android's skin may be correctly synthetic, a species may correctly carry
+extra appendages, and blur or a crop may be exactly what the camera asked for. The
+collision linter subtracts every conflict key the render's own world facts require
+before any phrase is emitted, and a dropped exclusion is recorded with the claim
+that displaced it.
+
+The seeded pack leaves `identity_drift` OFF. This row's reviewed identity
+preservation is `weak` and its reference input is a strength-based repaint, so
+there is no identity to hold and a negative term claiming otherwise would be
+superstition.
+
+**The field is not yet sent.** `negative_prompt` reaches the payload only through
+the version's probed control binding, and this row's `advancedCapabilities` is
+empty, so the control drops as `no_binding` and every exclusion is recorded with a
+`dropped` transport. Probing the version is the only change needed to start
+sending them; nothing invents the key in the meantime.
 
 ## Reference-image caveat
 
