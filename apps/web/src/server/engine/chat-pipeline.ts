@@ -35,6 +35,9 @@ import {
   type ContactEndReason,
   type ContactLifecycleCommit,
   type ContactPersistenceAcknowledgment,
+  type ContactRejectionReason,
+  type ContactResolutionStatus,
+  type ContactUnresolvedReason,
   type DiagnosticSink,
   type EffectiveCoverageRead,
   type PhysicalActionOutcome,
@@ -72,13 +75,15 @@ import {
   chatContactActionOutcome,
   chatContactEventRef,
   chatContactMaterialAtCut,
-  chatContactReachPremise,
+  chatContactUnresolvedPremise,
   chatSceneAfterDiscontinuity,
   CHAT_CONTACT_PLAYER_SUBJECT,
   endAllChatContacts,
   planChatContactTurn,
+  type ChatContactAct,
   type ChatContactPolicySource,
-  type ChatContactReachPremise,
+  type ChatContactPremiseKind,
+  type ChatContactUnresolvedPremise,
   type ChatContactRosterMember,
 } from "./chat-contact-adapter";
 import {
@@ -266,6 +271,58 @@ import {
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
 
+export type { ChatContactPremiseKind } from "./chat-contact-adapter";
+
+/**
+ * One exchange's physical act, as the narrator was told about it.
+ *
+ * Deliberately a projection rather than the internals: the resolved outcome, the
+ * premise the seam chose, and the rendered guidance lines — never the permission
+ * ledger, the evidence chain, or the policy read. A consumer grading whether the
+ * prose honoured the state needs what the state SAID; giving it the record
+ * behind that would let a trial grade itself against facts the prompt never
+ * carried.
+ */
+export interface ChatContactTurnRecord {
+  /** Absent when the message produced no contact act at all. */
+  readonly act?: {
+    readonly kind: ChatContactAct["actionKind"];
+    readonly gesture: string;
+    readonly targetLocationId: string;
+    readonly actionId: string;
+  };
+  /**
+   * The resolver's own status, and its typed reason when it has one.
+   *
+   * Both carry their closed unions rather than `string`. This record is the
+   * whole input to an instrument that gates a rollout ruling, and against a bare
+   * `string` a misspelled expectation compiles, never matches, and reports a
+   * lane defect that does not exist.
+   *
+   * `reason` spans BOTH reason vocabularies, because two different statuses
+   * carry one: `rejected` names a rejection reason and `unresolved` names an
+   * unresolved one. Narrowing this to the unresolved half would have made the
+   * explicit-denial case — `rejected` / `permission_denied`, one of the six the
+   * rerun must cover — untypeable.
+   */
+  readonly status?: ContactResolutionStatus;
+  readonly reason?: ContactRejectionReason | ContactUnresolvedReason;
+  /** The outcome's stable result codes — the same list the fingerprint folds. */
+  readonly resultCodes: readonly string[];
+  /** True only when the exchange durably recorded the contact. */
+  readonly committed: boolean;
+  /** The committed contact's id, when there is one. */
+  readonly contactId?: string;
+  /** Skin or through a layer, as RECORDED — absent unless the contact committed. */
+  readonly directSkinContact?: boolean;
+  /** Contacts this exchange ended, with the reason each ended for. */
+  readonly ended: readonly { readonly contactId: string; readonly reason: string }[];
+  /** Which unresolved gap earned a narrator line, when one did. */
+  readonly premiseKind?: ChatContactPremiseKind;
+  /** The exact physical-guidance lines handed to the narrator this turn. */
+  readonly guidanceLines: readonly string[];
+}
+
 export interface SubmitChatMessageInput {
   /** The conversation (already authorized + not archived — the route owns both checks). */
   chatId: string;
@@ -356,6 +413,23 @@ export interface SubmitChatMessageInput {
    * kinds) so the consumer never re-reads the transcript for it.
    */
   onSettled?: (info: { assistantMessageId: string; content: string }) => void;
+  /**
+   * Contact-turn observer: fired once, AFTER the physical-guidance block for this
+   * exchange is rendered and BEFORE the reply streams, with what the narrator was
+   * actually told about the player's physical act.
+   *
+   * It exists because the turn's guidance is deliberately not persisted — it is
+   * recomputable from the same cut and the same message, which is what makes a
+   * retake reproduce it. That equivalence holds only BEFORE the exchange folds
+   * its commits, so a trial that re-derived the guidance afterwards would be
+   * reading it against state the turn had already changed. Anything grading a
+   * live romantic turn has to see the bytes the model saw, at the moment it saw
+   * them.
+   *
+   * Read-only and fire-and-forget, like the other hooks here: a throwing observer
+   * is logged and swallowed, never allowed to cost the exchange.
+   */
+  onContactTurn?: (record: ChatContactTurnRecord) => void;
   /**
    * Diagnostics observer: every diagnostic this exchange files is teed here as it
    * is pushed, alongside the pipeline's own collector (which still drives the
@@ -1425,7 +1499,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // and no outcome — which is the flag-off path — and never costs the exchange.
     let contactActionOutcomes: readonly PhysicalActionOutcome[] = [];
     let currentContactAttempt: { readonly actionId: string; readonly contactId?: string } | undefined;
-    let contactReachPremise: ChatContactReachPremise | null = null;
+    let contactUnresolvedPremise: ChatContactUnresolvedPremise | null = null;
+    /** The contact-turn record minus its guidance lines — only assembled when observed. */
+    let contactTurnFacts: Omit<ChatContactTurnRecord, "guidanceLines"> | null = null;
     // The current-cut coverage reads the contact leg derived, keyed by garment
     // actor. Threaded into the finalizer's `affordanceCoverage` so settlement
     // persists the EXACT objects the contact resolver consumed — never an
@@ -1622,7 +1698,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // could not establish stays `unresolved` — no row, no fold, no
         // acknowledgment — but the guidance block (when `CHAT_PHYSICAL_CONSTRAINTS`
         // is on) gets one typed premise fencing the prose from inventing the landing.
-        contactReachPremise = chatContactReachPremise({ act, resolution, characters: contactRoster });
+        contactUnresolvedPremise = chatContactUnresolvedPremise({ act, resolution, characters: contactRoster });
         // ONE combined, ordered commit list per exchange — hook ends, then the ends
         // the plan folded from the player's own act (the release's `withdrawn`, then
         // the departure's `separated`), then the touch (with whatever it had to end to
@@ -1639,6 +1715,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const postScene = committed === null ? planned.scene : withSceneContacts(planned.scene, committed.state);
         let scene = postScene;
         let acknowledgment: ContactPersistenceAcknowledgment | undefined;
+        // Whether the ledger ACCEPTED this exchange's rows. Distinct from
+        // `acknowledgment`, which additionally requires this turn to have
+        // committed a contact of its own: an exchange that only ENDS contacts
+        // (a withdrawal) writes real rows and earns no acknowledgment, and
+        // conflating the two would report those ends as never having happened.
+        let commitsRecorded = commits.length === 0;
         if (commits.length > 0) {
           const appended = await appendChatContactEventsWithScene({
             chatId,
@@ -1649,6 +1731,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             scene: postScene,
           });
           if (appended.status === "recorded") {
+            commitsRecorded = true;
             // Only now, and only for a write this turn's own rows are provably part of.
             if (act !== null && committed !== null) {
               acknowledgment = chatContactAcknowledgment({ commit: committed, eventRef, actionId: act.actionId });
@@ -1688,6 +1771,58 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               sink,
             }),
           ];
+        }
+        // The observer's half of the record — everything but the guidance lines,
+        // which are rendered further down. Assembled here because this is the only
+        // scope holding the act and the fold.
+        //
+        // DURABILITY IS THE ACKNOWLEDGMENT'S TO REPORT, never the plan's. A
+        // planned commit is what the resolver decided; `acknowledgment` is what
+        // the ledger accepted, and the two part company on a mismatch — that path
+        // rolls the scene back, writes no rows, and withholds the acknowledgment
+        // precisely so the outcome resolves to silence. Reporting the plan here
+        // would tell a consumer a contact exists that it could not find, and a
+        // trial grading narration against it would be grading prose against a
+        // contact nobody recorded. `outcomeCommitted` is the same signal the
+        // narrator's own action outcome runs on, so the record and the prompt
+        // cannot disagree about whether the touch happened.
+        if (input.onContactTurn !== undefined) {
+          const outcomeCommitted = contactActionOutcomes[0]?.status === "committed";
+          const durable = outcomeCommitted && acknowledgment !== undefined ? committed : null;
+          contactTurnFacts = {
+            ...(act === null
+              ? {}
+              : {
+                  act: {
+                    kind: act.actionKind,
+                    gesture: act.gesture,
+                    targetLocationId: act.targetLocationId,
+                    actionId: act.actionId,
+                  },
+                }),
+            ...(resolution === null ? {} : { status: resolution.status }),
+            ...(resolution !== null && "reason" in resolution ? { reason: resolution.reason } : {}),
+            resultCodes: contactActionOutcomes[0]?.resultCodes ?? [],
+            committed: durable !== null,
+            ...(durable === null ? {} : { contactId: durable.contact.contactId }),
+            ...(durable === null ? {} : { directSkinContact: durable.contact.transmission.directSkinContact }),
+            // Ends are reported on the same terms: a rolled-back append ended
+            // nothing, however many ends the plan carried into it.
+            ended: commitsRecorded
+              ? commits
+                  .filter((entry) => entry.kind === "contact_ended")
+                  .map((entry) => ({ contactId: String(entry.contactId), reason: String(entry.reason) }))
+              : [],
+            // The premise the narrator was HANDED, which is not the same as the
+            // one the seam derived. `CHAT_PHYSICAL_CONSTRAINTS` owns whether
+            // these bytes reach the prompt, so with that flag off the premise is
+            // computed and then dropped — and reporting it here would tell a
+            // trial the prose was fenced when nothing fenced it, which is the
+            // exact failure the rerun exists to detect.
+            ...(physicalConstraintsEnabled && contactUnresolvedPremise !== null
+              ? { premiseKind: contactUnresolvedPremise.kind }
+              : {}),
+          };
         }
       } catch (error) {
         log.error("engine.chat", "chat contact leg failed", { error: describeError(error) });
@@ -1771,7 +1906,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // The unestablished-reach premise (S3): presentation only, and owned by
           // THIS flag — the underlying attempt stays `unresolved` either way, and
           // with the flag off these bytes do not exist.
-          ...(physicalConstraintsEnabled && contactReachPremise !== null ? { reachPremise: contactReachPremise } : {}),
+          ...(physicalConstraintsEnabled && contactUnresolvedPremise !== null ? { unresolvedPremise: contactUnresolvedPremise } : {}),
           // The stop line's display names: the roster plus the reserved player
           // subject. Presentation only, and only when a stop is in play.
           ...(permissionStopTransitions.length > 0
@@ -1788,6 +1923,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       } catch (error) {
         log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
         if (permissionStopTransitions.length > 0) throw error;
+      }
+    }
+
+    // The contact-turn record ships here — after the guidance exists, before the
+    // model sees it. Fire-and-forget: a throwing observer costs a log line and
+    // nothing else, because a trial watching a turn may not break it.
+    if (input.onContactTurn !== undefined && contactTurnFacts !== null) {
+      try {
+        input.onContactTurn({ ...contactTurnFacts, guidanceLines: physicalGuidanceLines });
+      } catch (error) {
+        log.error("engine.chat", "contact turn observer failed", { error: describeError(error) });
       }
     }
 
@@ -3606,7 +3752,7 @@ async function previewChatContactOutcomes(input: {
   cut: Awaited<ReturnType<typeof loadChatPreviewCut>>;
   message: { id: string | null; content: string; narrator: boolean };
   sink: DiagnosticCollector;
-}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; reachPremise: ChatContactReachPremise | null }> {
+}): Promise<{ outcomes: readonly PhysicalActionOutcome[]; unresolvedPremise: ChatContactUnresolvedPremise | null }> {
   const { cut } = input;
   try {
     // No player line yet ⇒ no act is detectable, so the fallback ref is only ever a
@@ -3683,7 +3829,7 @@ async function previewChatContactOutcomes(input: {
       ...(permissionPolicy === undefined ? {} : { permissionPolicy }),
       sink: input.sink,
     });
-    if (act === null || resolution === null) return { outcomes: [], reachPremise: null };
+    if (act === null || resolution === null) return { outcomes: [], unresolvedPremise: null };
     const acknowledgment =
       commit?.status === "committed"
         ? chatContactAcknowledgment({ commit, eventRef, actionId: act.actionId })
@@ -3701,11 +3847,11 @@ async function previewChatContactOutcomes(input: {
       ],
       // The same typed premise the live leg derives — the inspector and the
       // prompt preview must both explain (or show) the reach fence the turn built.
-      reachPremise: chatContactReachPremise({ act, resolution, characters }),
+      unresolvedPremise: chatContactUnresolvedPremise({ act, resolution, characters }),
     };
   } catch (error) {
     log.error("engine.chat", "chat contact preview failed", { error: describeError(error) });
-    return { outcomes: [], reachPremise: null };
+    return { outcomes: [], unresolvedPremise: null };
   }
 }
 
@@ -3777,7 +3923,7 @@ export async function previewChatPhysicalGuidance(input: {
       guidance: stages.guidance,
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
-      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
+      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
       sink,
     }),
     diagnostics: [...stages.guidance.diagnostics, ...sink.items.filter((item) => item.code.startsWith("guidance."))],
@@ -3837,7 +3983,7 @@ export async function previewChatPrompt(input: {
     // it is showing prompt bytes, so a flag-off preview has to BE the flag-off bytes.
     const contact = chatContactActionsEnabled()
       ? await previewChatContactOutcomes({ chatId: input.chatId, character: input.character, cut, message, sink })
-      : { outcomes: [] as readonly PhysicalActionOutcome[], reachPremise: null };
+      : { outcomes: [] as readonly PhysicalActionOutcome[], unresolvedPremise: null };
     previewPhysicalGuidance = renderChatPhysicalGuidance({
       guidance: buildChatPhysicalGuidance({
         read: read.read,
@@ -3856,7 +4002,7 @@ export async function previewChatPrompt(input: {
       }),
       characterName: input.character.name,
       possessive: `${input.character.name}'s`,
-      ...(contact.reachPremise === null ? {} : { reachPremise: contact.reachPremise }),
+      ...(contact.unresolvedPremise === null ? {} : { unresolvedPremise: contact.unresolvedPremise }),
       sink,
     });
   }

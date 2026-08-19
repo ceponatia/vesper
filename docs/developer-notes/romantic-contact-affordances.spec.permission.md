@@ -468,20 +468,53 @@ This proof does **not** require general NPC scene-decision movement/start/update
 authority unless the chosen fixture asks the target NPC to reposition. The NPC
 authority shadow review remains a parallel operational gate.
 
-### Confirmed live: a refusal is silent to the narrator
+### The unresolved premise: what the narrator is told when nobody answered
 
-The 2026-08-18 proof established this and it outranks everything else in this
-section for the rollout ruling. With no grant on record the resolver returns
-`unresolved` / `permission_unresolved`, `rendered` is empty, and **no narrator
-line is produced** — so the reply described the caress as landing while nothing
-was committed and the ledger stayed empty. Only an explicit `attempt_denied`
-yields a blocking line.
+Status: built 2026-08-18 — unproven live.
 
-This is the resolver's own unknown-is-not-refused law working as designed, so it
-is not a defect. Its consequence is the part to carry forward: enabling
-`CHAT_ROMANTIC_PERMISSION` governs **committed world state**, not prose. Closing
-the gap means giving the narrator something to say about an unresolved refusal,
-which is separate work and is not in this slice.
+The 2026-08-18 proof found the gap this closes. With no grant on record the
+resolver returns `unresolved` / `permission_unresolved`, and at the time nothing
+was rendered — so the reply described the caress as landing while nothing was
+committed and the ledger stayed empty. Enabling `CHAT_ROMANTIC_PERMISSION`
+governed committed world state, not prose.
+
+`permission_unresolved` now earns a presentation line, alongside
+`geometry_unavailable`, from the same typed seam
+(`chatContactUnresolvedPremise`). Both are keyed on the resolution's own
+unresolved reason; every other unresolved reason still renders nothing. The
+underlying attempt is unchanged and still `unresolved` — no ledger row, no scene
+fold, no acknowledgment.
+
+The wording carries the whole design, and the constraint that shapes it is the
+one that only looks like a second copy of the first:
+
+| Must                                   | Must not                              |
+| -------------------------------------- | ------------------------------------- |
+| foreclose depicting the touch landing  | assert that a refusal happened        |
+| leave refusing open as the character's | name permission, consent, or a record |
+| state only the gap                     | claim a distance or a decision        |
+
+**Do not ASSERT a refusal is not the same as do not DEPICT one**, and reading
+them as one produces a line that forbids the refusal outright. That would be a
+serious error rather than a cosmetic one. The NPC permission decision leg reads
+the COMMITTED REPLY, so the character declining in prose is the only route by
+which an `attempt_denied` ever reaches the ledger — and a first advance is
+unanswered by definition, because no grant exists yet. A line that gagged the
+refusal would therefore make the denial path unreachable in practice and leave
+the character no way to say no to anything.
+
+So the line refuses to assert a refusal, explicitly leaves declining available as
+HERS, and forecloses exactly one thing: narrating the touch as completed.
+
+Owner ruling (2026-08-18): an unanswered attempt does **not** have to settle
+neither way. The reply may author a denial, and the decision leg then records it,
+after which a retake of that same exchange resolves `permission_denied` — the
+event ref is stable across a retake, so the attempt id is reproduced. What the
+reply may not do is narrate the touch as having landed, because nothing recorded
+it.
+
+An explicit `attempt_denied` still yields its own blocking line through the
+rejection lexicon, and that path is unchanged.
 
 ### Expect this on the first flag-on turn
 

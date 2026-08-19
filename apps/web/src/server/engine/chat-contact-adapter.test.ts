@@ -52,7 +52,7 @@ import {
   chatContactMaterialLayers,
   chatContactMaterialSource,
   chatContactPhrase,
-  chatContactReachPremise,
+  chatContactUnresolvedPremise,
   chatDepartureSceneIntents,
   CHAT_CONTACT_PLAYER_SUBJECT,
   CHAT_SCENE_GROUND_SUPPORT,
@@ -374,6 +374,172 @@ describe("approach detection", () => {
         targetSubject: WREN,
         band: "close",
       });
+    });
+  });
+
+  /**
+   * The 2026-08-18 romantic proof recorded that "a character's first name alone
+   * is not recognized". It was worse than that: EVERY owner capture in this lane
+   * was one word, so a character named "Sabrina Vale" could not be named at all
+   * — "Sabrina's arm" missed, and so did "Sabrina Vale's arm". Players write
+   * first names constantly, and most authored characters have two-word names, so
+   * the shipped lane answered ordinary writing with silence.
+   *
+   * These live here rather than beside each detector because the rule is one
+   * resolver's, and the approach path is where the widened capture can do damage
+   * — it is the only site where over-capturing changes a target that used to
+   * resolve.
+   */
+  describe("naming a character — a unique first name, and a name of more than one word", () => {
+    const VALE = [member(WREN, "Sabrina Vale")];
+    const TWO_SABRINAS = [member(WREN, "Sabrina Vale"), member(VAEL, "Sabrina Cruz")];
+
+    it.each([
+      ["I walk over to Sabrina.", "a unique first name — the case the trial hit"],
+      ["I walk over to Sabrina Vale.", "the full name, which nothing could match before"],
+      ["I walk over to sabrina.", "the same, written lower-case"],
+    ])("%s reaches her (%s)", (message) => {
+      expect(approach(message, VALE)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("an ambiguous first name is silence, exactly as an ambiguous pronoun is", () => {
+      expect(approach("I walk over to Sabrina.", TWO_SABRINAS)).toBeNull();
+      // The full name still separates them.
+      expect(approach("I walk over to Sabrina Vale.", TWO_SABRINAS)).toEqual({
+        targetSubject: WREN,
+        band: "close",
+      });
+    });
+
+    /**
+     * The hazard the widened capture creates, and the only way it could LOSE a
+     * target: greedily taking a second capitalised word and then failing to
+     * resolve the pair. Falling back to the longest resolvable prefix is what
+     * keeps "Wren Vaelith" an approach to Wren.
+     */
+    it("a second name after the first still moves the player to the first", () => {
+      expect(approach("I walk over to Wren Vaelith.", PAIR)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("the possessive guard survives a capitalised possession", () => {
+      expect(approach("I walk over to Wren's Desk.", SOLO)).toBeNull();
+    });
+
+    /**
+     * The capture spans several words REGARDLESS OF CASE, and the resolver is
+     * what stops it running away — not the pattern.
+     *
+     * The obvious design here was a capitalised-continuation rule, and it would
+     * have been silently inert: every pattern this fragment splices into carries
+     * `i`, and case folding makes `\p{Lu}` match lowercase. These cases pin the
+     * behaviour that actually holds, so a future "tightening" back to `\p{Lu}`
+     * fails here rather than shipping a guard that does nothing.
+     */
+    it.each([
+      ["I walk over to Wren and sit down by the fire.", "ordinary lowercase prose after the name"],
+      ["I walk over to Wren then wait quietly.", "a lowercase continuation that is not a clause break"],
+      ["I walk over to wren.", "the name itself written lower-case"],
+    ])("%s still resolves to the person (%s)", (message) => {
+      expect(approach(message, SOLO)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("a lower-case multi-word name resolves, because case never gated the capture", () => {
+      expect(approach("I walk over to sabrina vale.", VALE)).toEqual({ targetSubject: WREN, band: "close" });
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress sabrina vale's arm.",
+          narratorInput: false,
+          characters: VALE,
+          eventRef: EVENT,
+        })?.targetLocationId,
+      ).toBe("arms");
+    });
+
+    /**
+     * A caseless script has no uppercase form at all, so `\p{Lu}` excluded it
+     * even under folding: a character named this way was unreachable by the very
+     * fragment written to reach multi-word names. The touch path proves the fix,
+     * because its owner capture is followed by whitespace rather than `\b`.
+     *
+     * The APPROACH path still cannot name them, and the cause is elsewhere:
+     * JavaScript's `\b` is ASCII-only even under `u`, so the destination's
+     * trailing boundary never matches after a non-Latin character. That is a
+     * pre-existing limitation of every pattern in this lane, not of this
+     * fragment, and it is left alone rather than fixed under cover of a
+     * capitalisation change.
+     */
+    it("a caseless-script name can be touched — the old capitalised rule excluded it entirely", () => {
+      const roster = [member(WREN, "さくら 中村")];
+      for (const message of ["I caress さくら 中村's arm.", "I caress さくら's arm."]) {
+        expect(
+          detectChatRomanticTouch({ message, narratorInput: false, characters: roster, eventRef: EVENT })
+            ?.targetLocationId,
+        ).toBe("arms");
+      }
+    });
+
+    it.each([
+      ["I caress Sabrina's arm.", "arms"],
+      ["I caress Sabrina Vale's arm.", "arms"],
+    ])("%s is a romantic act on %s", (message, locationId) => {
+      const act = detectChatRomanticTouch({
+        message,
+        narratorInput: false,
+        characters: VALE,
+        eventRef: EVENT,
+      });
+      expect(act?.targetLocationId).toBe(locationId);
+    });
+
+    /**
+     * Falsified against a first-name pass that also read the leading word of
+     * every ALIAS. An alias is free authored text, so its first word is as
+     * likely to be a descriptor's article as a person's given name — and both
+     * ways of getting that wrong commit a durable touch on a body the sentence
+     * never identified.
+     *
+     * The pronoun case is the worse of the two, because it does not merely add a
+     * wrong match: it SKIPS the sole-character rule entirely, turning a
+     * two-character room — where a pronoun is silence by law — into a guess.
+     */
+    it("an alias beginning with a pronoun does not make that pronoun resolve in a group", () => {
+      const roster = [member(WREN, "Wren", ["her ladyship"]), member(VAEL, "Vaelith")];
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress her arm.",
+          narratorInput: false,
+          characters: roster,
+          eventRef: EVENT,
+        }),
+      ).toBeNull();
+      // The alias itself still resolves in full — only its leading word stopped.
+      expect(approach("I walk over to her ladyship.", roster)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    it("an alias beginning with an ordinary word does not capture ordinary prose", () => {
+      const roster = [member(WREN, "Wren", ["the redhead"])];
+      // "the" is not a possessive pronoun, so nothing downstream would have
+      // caught this: the turn recorded an approach TOWARD her for a sentence
+      // that walked away.
+      expect(approach("I walk over to the window.", roster)).toBeNull();
+      expect(approach("I walk over to the redhead.", roster)).toEqual({ targetSubject: WREN, band: "close" });
+    });
+
+    /**
+     * The first-name rule's own failure mode: "Sabrina's sister" names somebody
+     * the roster does not contain, and a resolver that read its leading word
+     * would commit a durable touch on the wrong body. An internal possessive
+     * makes the whole phrase unreadable rather than merely unmatched.
+     */
+    it("a possessed third party is not the character whose name it borrows", () => {
+      expect(
+        detectChatRomanticTouch({
+          message: "I caress Sabrina's sister's arm.",
+          narratorInput: false,
+          characters: VALE,
+          eventRef: EVENT,
+        }),
+      ).toBeNull();
     });
   });
 
@@ -1799,13 +1965,13 @@ describe("the narrator seam", () => {
 // The reach premise (S3)
 // ---------------------------------------------------------------------------
 
-describe("the reach premise — one unresolved case earns a presentation fence", () => {
+describe("the unresolved premise — the reasons that earn a presentation fence", () => {
   /** The plan for one line over one scene — the premise's whole input surface. */
   function planned(scene: SceneState, message: string, characters: readonly ChatContactRosterMember[] = SOLO) {
     const plan = planChatContactTurn({ scene, message, narratorInput: false, characters, eventRef: EVENT, storyTime: AT });
     return {
       plan,
-      premise: chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters }),
+      premise: chatContactUnresolvedPremise({ act: plan.act, resolution: plan.resolution, characters }),
     };
   }
 
@@ -1817,7 +1983,7 @@ describe("the reach premise — one unresolved case earns a presentation fence",
     if (plan.resolution?.status !== "unresolved") return;
     expect(plan.resolution.reason).toBe("geometry_unavailable");
     // The premise exists, names the resolved target, and words the surface.
-    expect(premise).toEqual({ targetName: "Wren", locus: "shoulder" });
+    expect(premise).toEqual({ kind: "reach", targetName: "Wren", locus: "shoulder" });
     // The underlying result is untouched: no commit, no ends.
     expect(plan.commit).toBeNull();
     expect(plan.ended).toEqual([]);
@@ -1881,7 +2047,7 @@ describe("the reach premise — one unresolved case earns a presentation fence",
       storyTime: AT,
     });
     expect(plan.act).toBeNull();
-    expect(chatContactReachPremise({ act: plan.act, resolution: plan.resolution, characters: SOLO })).toBeNull();
+    expect(chatContactUnresolvedPremise({ act: plan.act, resolution: plan.resolution, characters: SOLO })).toBeNull();
   });
 
   it("words the surface only when the lexicon can — an unwordable locus still names the target", () => {
@@ -1889,12 +2055,56 @@ describe("the reach premise — one unresolved case earns a presentation fence",
     // lexicon phrase must not sink the premise with it.
     const act = touch(TOUCH);
     if (act === null) throw new Error("fixture: the touch must detect");
-    const premise = chatContactReachPremise({
+    const premise = chatContactUnresolvedPremise({
       act: { ...act, targetLocationId: "collarbone" },
       resolution: { status: "unresolved", reason: "geometry_unavailable", evidence: [] },
       characters: SOLO,
     });
-    expect(premise).toEqual({ targetName: "Wren" });
+    expect(premise).toEqual({ kind: "reach", targetName: "Wren" });
+  });
+
+  /**
+   * The 2026-08-18 romantic proof's headline finding: with no permission on
+   * record the resolver correctly commits nothing, but `unresolved` renders no
+   * narrator line, so the reply still described the caress as landing.
+   *
+   * Kills the two implementations that look right and are not: reusing the
+   * reach premise for it (which would tell the narrator reach is unknown when
+   * the two are standing together), and leaving it unmapped (the shipped
+   * behaviour — silence, and prose that invents the landing).
+   */
+  it("an unanswered permission owner earns its OWN premise, not the reach one", () => {
+    const act = touch(TOUCH);
+    if (act === null) throw new Error("fixture: the touch must detect");
+    expect(
+      chatContactUnresolvedPremise({
+        act,
+        resolution: { status: "unresolved", reason: "permission_unresolved", evidence: [] },
+        characters: SOLO,
+      }),
+    ).toEqual({ kind: "permission", targetName: "Wren", locus: "shoulder" });
+  });
+
+  /**
+   * The selection rule itself. Every OTHER unresolved reason still renders
+   * nothing, so widening the premise seam cannot quietly start narrating gaps
+   * whose wording nobody chose.
+   */
+  it.each([
+    ["material_unavailable"],
+    ["support_unavailable"],
+    ["actor_control_unresolved"],
+    ["target_agency_unresolved"],
+  ] as const)("%s earns no premise — an unlisted reason is still silence", (reason) => {
+    const act = touch(TOUCH);
+    if (act === null) throw new Error("fixture: the touch must detect");
+    expect(
+      chatContactUnresolvedPremise({
+        act,
+        resolution: { status: "unresolved", reason, evidence: [] },
+        characters: SOLO,
+      }),
+    ).toBeNull();
   });
 });
 
@@ -2091,6 +2301,45 @@ describe("the romantic producer — everything it refuses", () => {
     ).toBeNull();
     expect(romantic('"I caress your arm."')).toBeNull();
     expect(romantic("((I caress your arm))")).toBeNull();
+  });
+});
+
+/**
+ * Approach and romantic touch in ONE message, written as two sentences.
+ *
+ * The shape every romantic case has to use, because the producer is anchored to
+ * the whole sentence and the scene does not remember a walk across the room from
+ * one turn to the next. So "I walk over to Sabrina and I caress Sabrina's arm"
+ * — one sentence with a leading clause — commits nothing at all, while the same
+ * content split at the full stop closes the distance AND lands the act.
+ *
+ * The distinction is worth a test of its own because both readings look correct
+ * in prose and only one produces anything, and the failure is silent: the turn
+ * resolves to nothing, which is indistinguishable from a refusal unless somebody
+ * checks the act was built. (The romantic rollout rerun sends exactly these two
+ * shapes — `scripts/trial/romantic-contact/`. Its case lines are its own; the
+ * workspace boundary keeps the two apart, and its runner refuses to continue
+ * when a case that must produce an act produces none.)
+ */
+describe("closing the distance and touching in one message", () => {
+  const SABRINA = affordanceSubjectId("char_sabrina");
+  const ROSTER = [member(SABRINA, "Sabrina Vale")];
+  const romantic = (message: string) =>
+    detectChatRomanticTouch({ message, narratorInput: false, characters: ROSTER, eventRef: EVENT });
+
+  it.each([
+    ["I walk over to Sabrina. I caress Sabrina's arm.", "a name in both sentences"],
+    ["I step closer to you. I caress your arm.", "a pronoun, sole character present"],
+  ])("%s produces the act (%s)", (message) => {
+    expect(romantic(message)?.actionKind).toBe("romantic");
+    expect(detectChatApproach({ message, narratorInput: false, characters: ROSTER })).toEqual({
+      targetSubject: SABRINA,
+      band: "close",
+    });
+  });
+
+  it("the same content in ONE sentence produces nothing — the trailing clause refuses it", () => {
+    expect(romantic("I walk over to Sabrina and I caress Sabrina's arm.")).toBeNull();
   });
 });
 

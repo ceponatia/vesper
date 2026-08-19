@@ -12,13 +12,17 @@ core, durable contact lifecycle, scene/body-relations owner, player-authored
 affectionate action lane, narrow player-authored romantic action producer, NPC
 deterministic ending floor, NPC reply-scene authority implementation, and
 directional `romantic_touch` permission owner all exist, and the first live
-romantic contact proof passed on 2026-08-18. The NPC authority increments and the
-romantic permission owner remain gated: the proof flags were reverted after the
-run, and the romantic producer only runs when a permission owner is wired, so
-with the flag off the lane behaves exactly as it did before the producer existed.
-What is left on the romantic track is the owner's rollout decision, not code. The foot domain is built but
-deliberately unregistered. Contact effects and intimate-region mechanics remain
-future work.
+romantic contact proof passed on 2026-08-18. That proof exposed two gaps, both
+since closed in code and neither yet seen live: an unanswered permission owner
+told the narrator nothing, so the prose described the touch as landing; and no
+written form of a character's name reached a two-word name at all. The NPC
+authority increments and the romantic permission owner remain gated: the proof
+flags were reverted after the run, and the romantic producer only runs when a
+permission owner is wired, so with the flag off the lane behaves exactly as it
+did before the producer existed. What is left on the romantic track is a rerun
+against the fixed lane and then the owner's rollout decision. The foot domain is
+built but deliberately unregistered. Contact effects and intimate-region
+mechanics remain future work.
 
 This reconciliation changes the continuation design in two important ways:
 
@@ -108,10 +112,24 @@ The narrator renders those answers. It does not become the owner of them.
   withdrawal sweep and the narrator stop handoff all ran in production for the
   first time during that proof.
 
-Both flags were enabled for the proof window only and reverted afterwards. The
-proof also established that a refusal is silent to the narrator — see the
-[first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md),
-which is the input to the item-9 rollout decision.
+Both flags were enabled for the proof window only and reverted afterwards.
+
+The proof's two findings are now closed in code, and neither has been observed
+live yet:
+
+- **A refusal is no longer silent.** An unanswered permission owner renders a
+  narrator line that forbids depicting the touch as landing, asserts no refusal
+  of its own, and explicitly leaves declining open as the character's — which it
+  must, because her declining in prose is the only route by which a denial
+  reaches the ledger. Contract:
+  `romantic-contact-affordances.spec.permission.md`.
+- **A character can be named the way players name them.** A unique first name
+  and a name of more than one word both resolve; an ambiguous one is still
+  silence.
+
+Neither fix is proven live, so the item-9 rollout decision now rests on a rerun
+rather than on the first proof. See the
+[first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md).
 
 **Built, gated, not yet proven live**
 
@@ -484,14 +502,39 @@ Do not infer one from the existence of telemetry.
    live contact, and a regenerate left no duplicate. Both flags reverted after
    the run. Report:
    [first romantic proof trial](romantic-contact-affordances.trial.romantic-proof.md).
-9. Decide the production rollout of that **specific** romantic action surface. Do
-   not infer support for kissing, undressing, intimate touch, or sex.
-   Status: **next — the live owner decision.** The proof surfaced the fact this
-   ruling turns on: with no permission on record the state correctly refuses, but
-   a refusal renders nothing, so the prose still describes the touch as landing.
-   Enabling the flag governs committed world state, not what the story says. The
-   options are to ship this surface, keep it test-only, or close the silent-refusal
-   gap first. Nothing in the code is waiting on the answer.
+9. Close the two gaps the first proof exposed, before any rollout ruling.
+   Status: built 2026-08-18 — unproven live. The owner set both as rollout
+   conditions.
+   - **Neutral guidance for an unanswered permission owner** — the touch is not
+     depicted as landing, and the line asserts no refusal while leaving the
+     character free to decline. Owner ruling 2026-08-18: an unanswered attempt
+     does not have to settle neither way; the reply may author a denial, which
+     the decision leg then records. Contract and wording constraints:
+     `romantic-contact-affordances.spec.permission.md`.
+   - **Naming a character** — a unique first name and a name of more than one
+     word both resolve. The proof recorded that a first name alone did not work;
+     in fact no written form reached a two-word name at all, so ordinary writing
+     met silence.
+10. Rerun the live proof against the closed gaps, capturing evidence rather than
+    a summary.
+    Status: next — owner-run. The instrument is built, its grading is tested, and
+    its database half runs against a real Postgres
+    (`scripts/trial/romantic-contact/`); the run itself needs a Fly deploy and
+    the proof flags for the window only. It preserves per case the sanitized
+    input, the actual reply, the guidance handed to the narrator, and the pair's
+    contact state before setup, after setup and after the exchange.
+    Each case is graded TWICE and must pass both: what it required of the world
+    (act, resolver status and reason, durable commits, live and ended pair
+    contacts, permission standing, denial binding, guidance kind, retake
+    identity), and whether the prose contradicts what was recorded. Prose
+    consistency alone cannot pass a case.
+    Required cases: no grant, explicit denial, natural named phrasing, commit,
+    withdrawal, retake.
+11. Decide the production rollout of that **specific** romantic action surface. Do
+    not infer support for kissing, undressing, intimate touch, or sex.
+    Status: blocked on item 10. The options are unchanged — ship this surface,
+    keep it test-only, or hold — but the first proof is no longer the input to
+    the ruling, because the behaviour it measured has changed.
 
 Track B does not wait for NPC movement/start/update authority unless the chosen
 fixture requires an NPC voluntary adjustment.
