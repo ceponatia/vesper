@@ -29,7 +29,8 @@ summary to correct.
 | Item and location projections                 | `apps/web/src/contracts/images/entity-digest.ts`                 |
 | Character translation scaffold (unbound)      | `apps/web/src/contracts/images/subject-digest.ts`                |
 | Entity lane read, compile and refusal         | `apps/web/src/server/images/entity-prompt-program.ts`            |
-| Stage 6 negative-transport trial              | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
+| Production-pack A/B harness (Trial J's base)  | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
+| Per-block negative induction trials A–I       | `scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`      |
 
 ## What is built
 
@@ -232,6 +233,49 @@ blames the prompt for a crop the aspect menu caused would promote or reject a
 negative pack for the wrong reason. The trial script reports the negotiated shape
 per case so the grader knows.
 
+### The first negative A/B is harness verification, not evidence
+
+The 2026-08-19 run of `entity-negative-ab.ts` — seven cases, one seed per cell,
+whole pack on versus off — verified the transport end to end and nothing more.
+Most of its no-negative arms did not contain the failures the blocks exist to
+suppress, and a block cannot be judged neutral against a failure that never
+appeared: that is insufficient induction, not proof of no effect. One seed per
+cell also cannot separate a block's steering from ordinary seed-to-seed drift.
+No promote-or-reject verdict is recorded from this run.
+
+Owner ruling (2026-08-19): promotion evidence must come from failure-inducing,
+paired-seed, one-block-at-a-time trials scored on binary facts, reported as an
+endpoint × block × failure matrix. A block whose failure never appeared in the
+no-negative arm is `inconclusive`, never `neutral`. The per-block program in
+`qwen-2512-negative-blocks.ts` is that instrument.
+
+Observations retained from the first run (evidence in
+`evidence/entity-negative-ab-r1/`):
+
+- the clothing lane's positive wording ("presented on an invisible ghost
+  mannequin") produced a plainly visible dress form or glass bust in BOTH arms
+  of both garment cases — a live positive-prompt defect in the shipped item
+  lane, independent of the negative channel, tracked below;
+- the negative-on compass render weakened the dial's cardinal letters and
+  degree markings relative to the off arm at the tested seed — a collateral
+  candidate for the broad text exclusions over objects whose lettering is
+  intrinsic structure (dials, gauges, clocks, labels), now Trial E;
+- both authored-lettering cases (EXIT, ALDWIN & SON) survived the negative arm
+  at the tested seed; the text-collision architecture stays as designed, and
+  one surviving seed neither proves nor retires it;
+- ordinary interior and outdoor renders showed no targeted defect in either
+  arm, which is why they carried no signal.
+
+### The clothing presentation wording is a tracked defect
+
+`ITEM_PRESENTATION.clothing` says "presented on an invisible ghost mannequin,
+holding the garment's own shape", and naming the mannequin puts one in the
+picture: both arms of both garment cases rendered a visible support. The fix is
+a positive rewording that says what SHOULD be present without naming the thing
+being avoided — Trial B's no-negative arm renders exactly that candidate
+wording, so the production edit follows that evidence rather than another
+guess. The reword is independent of the negative A/B and lands separately.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input
@@ -307,13 +351,16 @@ typed twice.
 
 ## Remaining
 
-- Run `scripts/eval/prompt-programs/entity-negative-ab.ts --render` and grade it.
-  The instrument is built and prints both arms for free; the renders cost
-  provider spend, which makes running it an owner action.
-- Probe and activate the Qwen Image 2512 version so the compiled exclusions reach
-  the provider. Not a scoped change: pinning that row also switches on the `steps`
-  and `go_fast` settings that sit inert on the three portrait profiles today, so
-  it needs the trial's verdict first.
+- Run and grade the per-block induction trials (A–I), then report the
+  endpoint × block × failure matrix for owner review.
+- After the matrix review: revise the negative pack wording per the verdicts,
+  run Trial J (the combined candidate pack over a representative suite, on the
+  `entity-negative-ab.ts` harness), and only then decide activation.
+- Reword the clothing presentation fact once Trial B's no-negative arm shows
+  what the neutral wording does on its own.
+- Probe and activate the Qwen Image 2512 version only after the above. Not a
+  scoped change: pinning that row also switches on the `steps` and `go_fast`
+  settings that sit inert on the three portrait profiles today.
 - Write the character image adapter that joins visual state's selection to the
   canonical owners' semantic values, then cut over the character-bearing lanes —
   each behind its own shadow compile, dialect and trial. The four gaps in
