@@ -83,13 +83,28 @@ export interface NarratorCompletion {
  */
 const HIDDEN_GENERATION_MIN_OUTPUT_TOKENS = 8;
 
-/** True when the provider's counts say it generated substantially more than reached us. */
-function generatedHiddenTokens(completion: NarratorCompletion): boolean {
-  if ((completion.reasoningTokens ?? 0) > 0) return true;
+/**
+ * The provider explicitly attributed output tokens to a reasoning chain. This is
+ * the ONLY evidence that justifies telling the player a thinking chain ate the
+ * reply — a provider that reports no split (Featherless returns
+ * `completion_tokens` alone) can never satisfy it, which is correct: those
+ * narrators are asked with `enable_thinking: false`.
+ */
+function measuredReasoning(completion: NarratorCompletion): boolean {
+  return (completion.reasoningTokens ?? 0) > 0;
+}
+
+/** The provider billed output tokens, and none of them reached us as text. */
+function billedUnseenOutput(completion: NarratorCompletion): boolean {
   return (
     completion.rawTextLength === 0 &&
     (completion.outputTokens ?? 0) >= HIDDEN_GENERATION_MIN_OUTPUT_TOKENS
   );
+}
+
+/** True when the provider's counts say it generated substantially more than reached us. */
+function generatedHiddenTokens(completion: NarratorCompletion): boolean {
+  return measuredReasoning(completion) || billedUnseenOutput(completion);
 }
 
 /**
@@ -101,22 +116,30 @@ function generatedHiddenTokens(completion: NarratorCompletion): boolean {
  * The returned `code` stays inside the existing closed failure vocabulary
  * (contracts/turns/chat-reply-failure.ts); the `cause` refines the `empty_reply`
  * class so the popup can stop asserting the model said nothing when the server
- * knows better. Two of the five outcomes are not empty replies at all and route to
- * the classes that already describe them:
+ * knows better. Two of the outcomes below are not empty replies at all, and route
+ * to the classes that already describe them:
  *
- * | Evidence                                    | Recorded as                          |
- * | ------------------------------------------- | ------------------------------------ |
- * | `content-filter` finish                     | `moderation_blocked`                 |
- * | `error` finish                              | `provider_error`                     |
- * | raw text > 0, nothing survived normalizing  | `empty_reply` / `normalizer_erased`  |
- * | `length` finish, or billed-but-unseen tokens | `empty_reply` / `reasoning_or_length` |
- * | `stop` finish with no such evidence         | `empty_reply` / `model_silent`       |
- * | none of the above                           | `empty_reply`, no cause              |
+ * | Evidence                                   | Recorded as                         |
+ * | ------------------------------------------ | ----------------------------------- |
+ * | `content-filter` finish                    | `moderation_blocked`                |
+ * | `error` finish                             | `provider_error`                    |
+ * | raw text > 0, nothing survived normalizing | `empty_reply` / `normalizer_erased` |
+ * | reasoning tokens reported, no prose        | `empty_reply` / `reasoning_spent`   |
+ * | `length` finish, no reasoning reported     | `empty_reply` / `length_capped`     |
+ * | billed output tokens that never arrived    | `empty_reply` / `hidden_output`     |
+ * | `stop` finish with no such evidence        | `empty_reply` / `model_silent`      |
+ * | none of the above                          | `empty_reply`, no cause             |
  *
  * The normalizer check comes FIRST among the empty causes on purpose. If the model
  * produced prose and Vesper deleted it, that is this repo's bug and the honest
  * record must name it — reporting a normalizer erasure as a model failure would
  * point every future investigation at the wrong system.
+ *
+ * Reasoning comes first among the remaining three for the mirror-image reason:
+ * naming a mechanism is only honest when the metadata measured it. A `length`
+ * finish and a pile of unattributed output tokens are each compatible with a
+ * thinking chain, but neither is evidence of one, so each gets a cause that
+ * claims only what is known.
  */
 export function classifyEmptyNarratorCompletion(completion: NarratorCompletion): {
   code: ChatReplyFailureCode;
@@ -150,12 +173,30 @@ export function classifyEmptyNarratorCompletion(completion: NarratorCompletion):
         `discarded all of them (finish: ${describeFinish(completion)})`,
     };
   }
-  if (finish === "length" || generatedHiddenTokens(completion)) {
+  if (measuredReasoning(completion)) {
     return {
       code: "empty_reply",
-      cause: "reasoning_or_length",
+      cause: "reasoning_spent",
       detail:
-        `the model spent ${describeOutput(completion)} without producing any prose ` +
+        `the model spent ${completion.reasoningTokens} reasoning tokens without producing any prose ` +
+        `(finish: ${describeFinish(completion)})`,
+    };
+  }
+  if (finish === "length") {
+    return {
+      code: "empty_reply",
+      cause: "length_capped",
+      detail:
+        `the model reached its output limit after ${describeOutput(completion)} without producing any prose ` +
+        `(finish: ${describeFinish(completion)})`,
+    };
+  }
+  if (billedUnseenOutput(completion)) {
+    return {
+      code: "empty_reply",
+      cause: "hidden_output",
+      detail:
+        `the provider billed ${describeOutput(completion)} but no text reached the server ` +
         `(finish: ${describeFinish(completion)})`,
     };
   }
@@ -196,7 +237,7 @@ export function narratorEmptyRetryWorthwhile(completion: NarratorCompletion): bo
 /**
  * Whether this empty completion is the "true immediate empty stop" the retry may
  * put a minimum-generation floor under: a clean stop with nothing generated at
- * all. A length/reasoning-only empty must NOT get the floor — the model already
+ * all. An empty that burned tokens must NOT get the floor — the model already
  * generated plenty, just not prose, and forcing more tokens would treat a
  * configuration failure as a length problem.
  */
@@ -214,11 +255,12 @@ function describeFinish(completion: NarratorCompletion): string {
   return raw && raw !== completion.finishReason ? `${completion.finishReason} (${raw})` : completion.finishReason;
 }
 
-/** The most specific true statement available about what the output budget went on. */
+/**
+ * How much the generation was billed for, without claiming what it went on. The
+ * reasoning cause names reasoning itself; the two causes that reach here have no
+ * reasoning count behind them, so neither may imply one.
+ */
 function describeOutput(completion: NarratorCompletion): string {
-  if (typeof completion.reasoningTokens === "number" && completion.reasoningTokens > 0) {
-    return `${completion.reasoningTokens} reasoning tokens`;
-  }
   if (typeof completion.outputTokens === "number") return `${completion.outputTokens} output tokens`;
   return "its output budget";
 }

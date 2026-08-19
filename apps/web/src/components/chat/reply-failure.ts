@@ -42,15 +42,26 @@ const DESCRIPTIONS: Record<ChatReplyFailureCode, string> = {
 
 /**
  * Copy for an `empty_reply` the server could explain (`ChatReplyFailureCause`). Only
- * `model_silent` is the plain "said nothing" story; the other two are cases where the
- * old blanket copy was actively false — the model DID generate, it just produced no
- * prose, or produced prose that Vesper then discarded.
+ * `model_silent` is the plain "said nothing" story; the rest are cases where the old
+ * blanket copy was actively false — the model DID generate, it just produced no prose,
+ * or produced prose that Vesper then discarded.
+ *
+ * **No message names a mechanism the server did not measure.** Only `reasoning_spent`
+ * comes with a reported reasoning-token count, so only it may blame a thinking chain;
+ * a length cap and a pile of unattributed output tokens each get copy that describes
+ * what was observed and stops there. The three used to share one message asserting
+ * internal reasoning, which read as plainly wrong on the narrators that are asked with
+ * thinking switched off.
  */
 const EMPTY_CAUSES: Record<ChatReplyFailureCause, string> = {
   model_silent:
     "The narrator model finished without generating anything — no error, just silence. Another take usually fixes it.",
-  reasoning_or_length:
-    "The narrator model used up its whole response on internal reasoning and never wrote the reply. Another take usually fixes it; if this model keeps doing it, pick a different narrator from the menu.",
+  reasoning_spent:
+    "The narrator model spent its whole response on internal reasoning and never got to the reply. Another take usually fixes it; if this model keeps doing it, pick a different narrator from the menu.",
+  length_capped:
+    "The narrator model hit its output limit before it wrote any of the reply. Another take usually fixes it; if this model keeps doing it, pick a different narrator from the menu.",
+  hidden_output:
+    "The narrator model generated a response that never arrived — the provider counted the output, but no text reached the server. Another take usually fixes it; if this model keeps doing it, pick a different narrator from the menu.",
   normalizer_erased:
     "The narrator model did write a reply, but it was all discarded as repetition or stray formatting before it reached you. Another take usually fixes it.",
 };

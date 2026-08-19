@@ -41,25 +41,40 @@ describe("classifyEmptyNarratorCompletion", () => {
   });
 
   // The reproduced failure: `finish_reason "length"`, 298 completion tokens, zero
-  // characters of content. Recorded as a length/reasoning failure, NOT as generic empty.
-  it("calls a length finish a reasoning/length failure and says what the budget went on", () => {
+  // characters of content — on a Featherless model asked with `enable_thinking:
+  // false`, which reports no reasoning split at all. It is a length cap and nothing
+  // more, and neither the cause nor the detail may reach for a reasoning story the
+  // provider never told.
+  it("calls a length finish with no reasoning split a length cap, and says only that", () => {
     const result = classifyEmptyNarratorCompletion(empty({ finishReason: "length", outputTokens: 298 }));
     expect(result.code).toBe("empty_reply");
-    expect(result.cause).toBe("reasoning_or_length");
+    expect(result.cause).toBe("length_capped");
     expect(result.detail).toContain("298 output tokens");
+    expect(result.detail).not.toContain("reasoning");
   });
 
-  it("names reasoning tokens when the provider splits them out", () => {
+  it("names reasoning only when the provider splits the tokens out", () => {
     const result = classifyEmptyNarratorCompletion(
       empty({ finishReason: "stop", outputTokens: 1_284, reasoningTokens: 1_284, textTokens: 0 }),
     );
-    expect(result.cause).toBe("reasoning_or_length");
+    expect(result.cause).toBe("reasoning_spent");
     expect(result.detail).toContain("1284 reasoning tokens");
   });
 
-  it("infers hidden generation from billed output tokens a provider that reports no split", () => {
+  // Reasoning outranks the cap when both are present: a model that reported a
+  // reasoning chain AND ran out of room spent its budget reasoning, and that is the
+  // half the reader can act on. Checking `length` first would bury it.
+  it("prefers the measured reasoning story over the length cap", () => {
+    const result = classifyEmptyNarratorCompletion(
+      empty({ finishReason: "length", outputTokens: 900, reasoningTokens: 900 }),
+    );
+    expect(result.cause).toBe("reasoning_spent");
+  });
+
+  it("records billed-but-unseen output from a provider that reports no split", () => {
     const result = classifyEmptyNarratorCompletion(empty({ finishReason: "stop", outputTokens: 300 }));
-    expect(result.cause).toBe("reasoning_or_length");
+    expect(result.cause).toBe("hidden_output");
+    expect(result.detail).not.toContain("reasoning");
   });
 
   it("routes a content-filter finish to the existing moderation class", () => {

@@ -103,14 +103,20 @@ describe("replyFailureToast", () => {
       expect(seen.size).toBe(chatReplyFailureCauses.length);
     });
 
-    it("stops claiming the model said nothing when it burned its budget reasoning", () => {
-      const { description } = replyFailureToast(
-        "Wren",
-        failure({ code: "empty_reply", cause: "reasoning_or_length" }),
-        NOW,
-      );
-      expect(description).toContain("internal reasoning");
-      expect(description).not.toContain("without saying anything");
+    // Falsified against the previous single `reasoning_or_length` cause, whose copy
+    // blamed internal reasoning for all three burned-budget shapes. Featherless
+    // narrators are asked with `enable_thinking: false` and report no reasoning
+    // split at all, so on exactly those models the popup explained the empty reply
+    // with a mechanism that was switched off.
+    it("blames internal reasoning only for the cause a measured reasoning count backs", () => {
+      const reasoning = replyFailureToast("Wren", failure({ code: "empty_reply", cause: "reasoning_spent" }), NOW);
+      expect(reasoning.description).toContain("internal reasoning");
+      expect(reasoning.description).not.toContain("without saying anything");
+      for (const cause of ["length_capped", "hidden_output"] as const) {
+        const { description } = replyFailureToast("Wren", failure({ code: "empty_reply", cause }), NOW);
+        expect(description).not.toMatch(/reasoning|thinking/i);
+        expect(description).not.toContain("without saying anything");
+      }
     });
 
     it("says Vesper discarded the reply when the normalizers erased it", () => {
