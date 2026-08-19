@@ -71,36 +71,31 @@ the model row's `advancedCapabilities` is empty they drop as recorded
 
 ## Negative-prompt ruling
 
-The provider's `negative_prompt` default is empty. Vesper does not invent a
-generic block for it.
+**This endpoint ignores `negative_prompt`, so Vesper does not send one.**
 
-This row is the first endpoint on the **prompt-program** path
-([prompt-programs.md](../images/prompt-programs.md)): its `qwen_2512_description`
-dialect compiles long concrete prose for the positive channel and a comma-joined
-list of short phrases for the negative one, and both are derived from the world
-digest rather than written per lane. Exclusions come from guarded, versioned
-blocks — accidental lettering, watermarks, anatomy duplication, hand artifacts,
-single-subject integrity, composition failures, background clutter, and the media
-this render is not in.
+The parameter exists in the Replicate schema and its provider default is empty,
+but Qwen Image does not act on it. Vesper measured this directly: a render asked
+for a red apple, with `red apple, apple` in the negative field, kept the apple in
+16 of 16 paired renders across both the accelerated (`go_fast: true`) and
+non-accelerated sampling paths. Upstream reporting gives the mechanism — the
+model was not trained on negative conditioning, the parameter is present for
+pipeline compatibility, and the official examples pass a single space.
 
-None of them is universal here, which is the point. This model serves portraits,
-items, locations and chat-place images, so signs and garments may require legible
-text, an android's skin may be correctly synthetic, a species may correctly carry
-extra appendages, and blur or a crop may be exactly what the camera asked for. The
-collision linter subtracts every conflict key the render's own world facts require
-before any phrase is emitted, and a dropped exclusion is recorded with the claim
-that displaced it.
+The `qwen_2512_description` dialect therefore declares `negativeTransport:
+"unsupported"`. Every exclusion the negative pack selects is dropped with the
+reason `endpoint_ignores_negative_field` and recorded in provenance, so an
+operator can still see what this render would have excluded on an endpoint that
+could carry it. Probing or activating this row does not change that — the drop is
+a dialect fact, not a missing control binding.
 
-The seeded pack leaves `identity_drift` OFF. This row's reviewed identity
-preservation is `weak` and its reference input is a strength-based repaint, so
-there is no identity to hold and a negative term claiming otherwise would be
-superstition.
+The positive channel is the only one that steers here. Exclusions that matter for
+a render must be expressed as affirmative claims describing what the picture
+should contain ([prompt-programs.md](../images/prompt-programs.md)).
 
-**The field is not yet sent.** `negative_prompt` reaches the payload only through
-the version's probed control binding, and this row's `advancedCapabilities` is
-empty, so the control drops as `no_binding` and every exclusion is recorded with a
-`dropped` transport. Probing the version is the only change needed to start
-sending them; nothing invents the key in the meantime.
+This row still serves portraits, items, locations and chat-place images, so the
+collision linter continues to matter for the positive side: a sign that must read
+legibly and an android's correctly synthetic skin are still world facts a prompt
+must not contradict.
 
 ## Reference-image caveat
 

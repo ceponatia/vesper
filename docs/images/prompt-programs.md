@@ -169,6 +169,15 @@ running version actually exposes the field is a probe fact supplied by the calle
 when it does not, every exclusion is recorded with a `dropped` transport and no
 key is invented.
 
+**And a field that exists is not a field that works.** `qwen/qwen-image-2512`
+exposes `negative_prompt` and ignores it: a render asked for a red apple with
+`red apple, apple` in the negative kept the apple in 16 of 16 paired renders,
+on both the accelerated and non-accelerated sampling paths. Its dialect declares
+`unsupported`, so every exclusion drops with the reason
+`endpoint_ignores_negative_field` — recorded, never sent — and probing the row
+cannot change that. On an endpoint like this the positive channel is the only one
+that steers, and exclusions that matter have to become affirmative claims.
+
 A binding naming a dialect with no registered compiler **refuses**. Falling back
 to a generic prompt would silently drop every guarantee this layer provides.
 
@@ -227,11 +236,9 @@ Two sibling keys on the image row's `meta`, beside the existing `render` and
   positive and negative text, and the final reference bindings.
 
 The program fingerprint covers **which exclusions were delivered**, not only
-which were selected. A version whose negative field has not been probed drops
-every exclusion, and probing it later sends them all with no other change — so
-the packs, the linter and the world are identical either side of that boundary
-while the payloads differ. Identity follows the payload, so those two renders
-fingerprint apart.
+which were selected — two renders whose packs, linter and world are identical
+still fingerprint apart when one carried its exclusions and the other dropped
+them, because identity follows the payload rather than the intent.
 
 Identifiers and fingerprints, never copies of the world. A developer inspector
 resolves current definitions separately and can say plainly when they no longer

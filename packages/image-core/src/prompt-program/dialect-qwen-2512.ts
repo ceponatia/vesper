@@ -8,7 +8,6 @@ import {
   type ImageCompiledPositivePrompt,
   type ImageDialectNegativeInput,
   type ImageDialectPositiveInput,
-  type ImageNegativeTransportOutcome,
   type ImagePromptDialectDefinition,
 } from "./dialects";
 import type { ImagePositiveClaim } from "./positive-claims";
@@ -258,7 +257,7 @@ function compilePositive(input: ImageDialectPositiveInput): ImageCompiledPositiv
  * same reason `renderClaim` is: a new key must be worded deliberately rather than
  * silently forbidden by nothing.
  */
-function negativePhrase(key: ImageConflictKey): string {
+export function qwenImage2512NegativePhrase(key: ImageConflictKey): string {
   switch (key) {
     case "text":
       return "unintended text";
@@ -333,61 +332,48 @@ function negativePhrase(key: ImageConflictKey): string {
   }
 }
 
+/** The reason every exclusion drops on this endpoint. */
+const IGNORES_NEGATIVE_FIELD = "endpoint_ignores_negative_field";
+
 /**
- * Compile the dedicated `negative_prompt`.
+ * Compile the negative channel — which on this endpoint means dropping all of it.
  *
- * Every surviving constraint travels the same way here, because this endpoint has
- * a real field — the interesting transport cases (inline exclusion, positive
- * replacement, refusal) belong to the endpoints that do not, and inventing them
- * for Qwen would be untested code pretending to be a capability.
+ * The Replicate schema exposes `negative_prompt` and Qwen Image does not act on
+ * it. Vesper's own canary is the direct measurement: a render asked for a red
+ * apple with `red apple, apple` in the negative field kept the apple in 16 of 16
+ * paired renders, across the accelerated and non-accelerated sampling paths
+ * (`scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`, trials A and A2,
+ * 2026-08-19). Upstream reporting gives the mechanism: the model was not trained
+ * on negative conditioning, the parameter exists for pipeline compatibility, and
+ * the official examples pass a single space.
  *
- * A keyless constraint is the provider-default override. It contributes no
- * phrase, but its transport is still `dedicated_field`: writing this field at all
- * is what replaces the wrapper's default, so the override is satisfied by the
- * payload carrying the key rather than by any particular words in it.
+ * So this is the plan's "endpoint/version behavior outranks model-family
+ * assumptions" ruling doing its job. A field the wrapper offers does not exist
+ * for Vesper until the endpoint proves it works, and this one proved the
+ * opposite. Sending exclusions anyway would spend prompt budget on text that
+ * changes nothing while letting provenance claim the render excluded something.
+ *
+ * Every constraint therefore drops with a reason, and the drop is RECORDED —
+ * an operator can still see exactly what this render would have excluded on an
+ * endpoint that could carry it. The constraints themselves are not wrong; this
+ * endpoint simply has no channel for them.
+ *
+ * What is deliberately NOT done here: inventing an inline or positive-replacement
+ * transport. Whether affirmative wording inside the positive prompt achieves what
+ * the field could not is an evidence question the plan requires a fixed trial to
+ * answer, and until that trial says so this dialect states the honest `unsupported`
+ * rather than a capability it has not earned.
  */
 function compileNegative(input: ImageDialectNegativeInput): ImageCompiledNegativePrompt {
-  const phrases: string[] = [];
-  const outcomes: ImageNegativeTransportOutcome[] = [];
-  let overrideOnly = false;
-
-  for (const constraint of input.constraints) {
-    if (constraint.conflictKeys.length === 0) {
-      overrideOnly = true;
-      outcomes.push({ constraintId: constraint.id, transport: { kind: "dedicated_field", text: "" } });
-      continue;
-    }
-    const own = constraint.conflictKeys.map(negativePhrase).filter((phrase) => !phrases.includes(phrase));
-    if (own.length === 0) {
-      // Every phrase this constraint would contribute is already in the field.
-      // Repeating it would spend the negative budget restating an exclusion the
-      // model has already been given.
-      outcomes.push({ constraintId: constraint.id, transport: { kind: "dropped", reason: "duplicate_phrasing" } });
-      continue;
-    }
-    phrases.push(...own);
-    outcomes.push({ constraintId: constraint.id, transport: { kind: "dedicated_field", text: own.join(", ") } });
-  }
-
-  const joined = phrases.join(", ");
-  const budget = input.budget.maxCharacters;
-  // Trimming from the tail is safe here in a way it would not be on the positive
-  // side: constraints arrive priority-descending, so the tail is the weakest
-  // exclusion, and each phrase is independent rather than part of a sentence.
-  const text = budget !== undefined && joined.length > budget ? trimPhrases(phrases, budget) : joined;
-  if (text.length === 0) return { text: overrideOnly ? "" : null, replacementClaims: [], inlineText: [], outcomes };
-  return { text, replacementClaims: [], inlineText: [], outcomes };
-}
-
-/** The longest comma-joined prefix of `phrases` that fits `budget`. */
-function trimPhrases(phrases: readonly string[], budget: number): string {
-  const kept: string[] = [];
-  for (const phrase of phrases) {
-    const candidate = [...kept, phrase].join(", ");
-    if (candidate.length > budget) break;
-    kept.push(phrase);
-  }
-  return kept.join(", ");
+  return {
+    text: null,
+    replacementClaims: [],
+    inlineText: [],
+    outcomes: input.constraints.map((constraint) => ({
+      constraintId: constraint.id,
+      transport: { kind: "dropped", reason: IGNORES_NEGATIVE_FIELD },
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -598,8 +584,10 @@ function sentence(text: string): string {
 export const qwenImage2512Dialect: ImagePromptDialectDefinition = {
   id: DIALECT_ID,
   positiveSyntax: "natural_language",
-  negativeSyntax: "natural_language",
-  negativeTransport: "dedicated_field",
+  // The schema exposes `negative_prompt`; the model does not act on it, measured
+  // 16/16 against a contradictory canary. See `compileNegative`.
+  negativeSyntax: "none",
+  negativeTransport: "unsupported",
   // The single `image` input is strength-based image-to-image rather than a
   // numbered composition slot, so this endpoint has no reference syntax to speak.
   referenceSyntax: "none",

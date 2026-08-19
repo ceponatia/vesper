@@ -4,12 +4,45 @@ Paid, manually run trials for the prompt-program layer
 (`packages/image-core/src/prompt-program/`). Not a `pnpm test` gate — every
 question here is answered by looking at a picture.
 
-## `entity-negative-ab.ts`
+## `qwen-2512-negative-blocks.ts` — the per-block induction trials
 
-The Stage 6 trial for Qwen Image 2512's negative transport. The item and
-location lanes already compile guarded exclusions and record a transport
-decision for each; what is missing is evidence that **sending** them beats not
-sending them on this endpoint.
+The Stage 6 promotion evidence. One trial per negative block, each built to
+INDUCE the failure that block exists to suppress, because a block judged
+against renders where the failure never appears is not neutral — it is
+untested. Paired seed sets, one variable per comparison, binary scoring first,
+and the output is a matrix (block × failure → helpful / neutral / harmful /
+inconclusive), never a single global verdict.
+
+```bash
+pnpm tsx scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts             # free: prints every arm, writes scoring templates
+AB_TRIAL=B1 pnpm tsx scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts --render   # PAID: one trial
+AB_TRIAL=all ... --render                                                       # PAID: everything
+pnpm tsx scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts --report    # rates + deltas from the graded CSVs
+```
+
+Renders land in `screenshots/qwen-negative-blocks/<trial>/`, one file per
+fixture × arm × seed, plus a labeled contact sheet per fixture × arm for
+grading, a `manifest.json` recording the executed version id per render, and a
+`scores-<trial>.csv` template (never overwritten once it exists). Grade the
+binary columns, then `--report` computes per-arm rates and OFF→ON deltas; the
+verdict stays human.
+
+Trial A is a deliberately contradictory lab canary (`red apple, apple` in the
+negative against a requested red apple) proving the transport steers at all —
+it bypasses the production collision linter by design and is not a production
+wording. Trials B–I each test one block against an induced failure. Trial J —
+the combined candidate pack over a representative suite — runs later on the
+`entity-negative-ab.ts` harness, after the owner reviews the matrix and the
+pack wording is revised.
+
+## `entity-negative-ab.ts` — the production-pack A/B harness
+
+Compiles the real production packs over projected rows with everything held
+constant except `negativeFieldAvailable` — the exact boundary a version probe
+crosses. The 2026-08-19 run (one seed per cell) is recorded as harness
+verification: it proved the plumbing and surfaced the dress-form and
+compass-dial observations, but supports no promote/reject verdict. Trial J
+re-uses this harness with paired seeds once a reviewed candidate pack exists.
 
 Two arms over seven fixed rows — four items, three locations — with the seed,
 the packs, the world and the positive prompt held constant. The only variable is

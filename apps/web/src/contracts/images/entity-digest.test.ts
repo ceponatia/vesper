@@ -13,7 +13,7 @@ import {
  *
  * These cases are the surviving half of the deleted `buildItemImagePrompt` /
  * `buildLocationImagePrompt` tests. The product decisions they protected are
- * unchanged — clothing hangs on a ghost mannequin, an open scale is an outdoor
+ * unchanged — clothing hangs in its own shape, an open scale is an outdoor
  * view, an entity shot has nobody in it — but they are now facts rather than
  * sentences, so the assertions moved down to where the decision is made. How
  * those facts are WORDED is `@vesper/image-core`'s dialect and is tested there;
@@ -27,10 +27,14 @@ const factValue = (facts: readonly { concept: string; value: unknown }[], concep
   String(facts.find((fact) => fact.concept === concept)?.value ?? "");
 
 describe("item projection", () => {
-  it("presents clothing on a mannequin and everything else isolated", () => {
-    expect(factValue(projectItemDigest({ ...item, kind: "clothing" }).facts, "item.presentation")).toContain(
-      "ghost mannequin",
-    );
+  it("presents clothing unsupported and everything else isolated", () => {
+    // Names no support, deliberately: "invisible ghost mannequin" rendered a
+    // plainly visible dress form 12/12 across two fixtures, and this wording 0/12
+    // (model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B). A future
+    // edit that reintroduces the industry term reintroduces the mannequin.
+    const clothing = factValue(projectItemDigest({ ...item, kind: "clothing" }).facts, "item.presentation");
+    expect(clothing).toContain("its own shape");
+    expect(clothing).not.toMatch(/mannequin|dress form|bust|torso|hanger/i);
     expect(factValue(projectItemDigest(item).facts, "item.presentation")).toContain("seamless surface");
     expect(factValue(projectItemDigest({ ...item, kind: "container" }).facts, "item.presentation")).toContain(
       "seamless surface",

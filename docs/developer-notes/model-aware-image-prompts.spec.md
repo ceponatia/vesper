@@ -29,7 +29,8 @@ summary to correct.
 | Item and location projections                 | `apps/web/src/contracts/images/entity-digest.ts`                 |
 | Character translation scaffold (unbound)      | `apps/web/src/contracts/images/subject-digest.ts`                |
 | Entity lane read, compile and refusal         | `apps/web/src/server/images/entity-prompt-program.ts`            |
-| Stage 6 negative-transport trial              | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
+| Production-pack A/B harness (Trial J's base)  | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
+| Per-block negative induction trials A–I       | `scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`      |
 
 ## What is built
 
@@ -232,6 +233,100 @@ blames the prompt for a crop the aspect menu caused would promote or reject a
 negative pack for the wrong reason. The trial script reports the negotiated shape
 per case so the grader knows.
 
+### The first negative A/B is harness verification, not evidence
+
+The 2026-08-19 run of `entity-negative-ab.ts` — seven cases, one seed per cell,
+whole pack on versus off — verified the transport end to end and nothing more.
+Most of its no-negative arms did not contain the failures the blocks exist to
+suppress, and a block cannot be judged neutral against a failure that never
+appeared: that is insufficient induction, not proof of no effect. One seed per
+cell also cannot separate a block's steering from ordinary seed-to-seed drift.
+No promote-or-reject verdict is recorded from this run.
+
+Owner ruling (2026-08-19): promotion evidence must come from failure-inducing,
+paired-seed, one-block-at-a-time trials scored on binary facts, reported as an
+endpoint × block × failure matrix. A block whose failure never appeared in the
+no-negative arm is `inconclusive`, never `neutral`. The per-block program in
+`qwen-2512-negative-blocks.ts` is that instrument.
+
+Observations retained from the first run (evidence in
+`evidence/entity-negative-ab-r1/`):
+
+- the clothing lane's positive wording ("presented on an invisible ghost
+  mannequin") produced a plainly visible dress form or glass bust in BOTH arms
+  of both garment cases — a live positive-prompt defect in the shipped item
+  lane, independent of the negative channel, tracked below;
+- the negative-on compass render weakened the dial's cardinal letters and
+  degree markings relative to the off arm at the tested seed — a collateral
+  candidate for the broad text exclusions over objects whose lettering is
+  intrinsic structure (dials, gauges, clocks, labels), now Trial E;
+- both authored-lettering cases (EXIT, ALDWIN & SON) survived the negative arm
+  at the tested seed; the text-collision architecture stays as designed, and
+  one surviving seed neither proves nor retires it;
+- ordinary interior and outdoor renders showed no targeted defect in either
+  arm, which is why they carried no signal.
+
+### Naming a thing summons it — the clothing presentation fix
+
+`ITEM_PRESENTATION.clothing` used to say "presented on an invisible ghost
+mannequin, holding the garment's own shape". That is the industry term for
+exactly this shot, and it put a plainly visible dress form in **12 of 12**
+renders across a scarf and a coat. The word "invisible" subtracts nothing.
+
+Wording that names no support at all — "hanging in its own shape with nothing
+else in the frame, the garment alone" — renders **0 of 12**, at the same seeds,
+with scarf translucency and the coat's authored scorched cuffs unaffected
+(model-aware-image-prompts.trial.qwen-2512-negative.md, Trial B; evidence in
+`evidence/qwen-2512-ghost-mannequin/`).
+
+The generalizable ruling, and the reason this sits in the spec rather than only
+in a trial doc: **a positive prompt may not name the thing it wants absent.**
+Diffusion conditioning has no "not". The same trial's inline arm — an explicit
+"do not include a mannequin, dress form, torso, bust, hanger" appended to the
+positive — produced the only non-shipped render with a visible support. Every
+projection writing prompt-bearing text is subject to this, which is why
+`entity-digest.test.ts` now asserts the clothing fact matches no support noun at
+all rather than asserting one particular phrasing.
+
+### Qwen Image 2512 ignores its negative field
+
+Owner-facing headline: **the endpoint exposes `negative_prompt` and does not act
+on it**, so Vesper does not send one.
+
+The measurement is Vesper's own canary, the easiest test that could exist — ask
+for a red apple, put `red apple, apple` in the negative field, and see whether
+the apple survives. It did, 16 times out of 16, across the accelerated
+(`go_fast: true`, production's setting) and non-accelerated sampling paths
+(`scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`, trials A and A2,
+2026-08-19; renders in `evidence/qwen-2512-negative-canary/`). Upstream reporting
+supplies the mechanism independently: the model was not trained on negative
+conditioning, the parameter exists for pipeline compatibility, and the official
+examples pass a single space.
+
+Consequences in code: `qwen_2512_description` declares `negativeSyntax: "none"`
+and `negativeTransport: "unsupported"`, and `compileNegative` returns every
+constraint as `dropped` with the reason `endpoint_ignores_negative_field`. The
+drop is RECORDED, so provenance still shows what a render would have excluded on
+an endpoint that could carry it — the constraints are not wrong, this endpoint
+simply has no channel for them. Probing or activating the version no longer
+changes anything about the negative channel, which removes what was previously
+the blocking owner action for Stage 6 on this endpoint.
+
+This is the plan's "endpoint/version behavior outranks model-family assumptions"
+ruling doing exactly its job, and it is worth stating as a general lesson: a
+field the wrapper offers does not exist for Vesper until the endpoint proves it
+works. The capability layer already refused to invent a key; what it could not
+know is that the key was inert.
+
+**A correction this evidence forces.** The first A/B's observation that the
+negative-on compass had weaker dial markings does not survive. Every OFF/ON pair
+in every run differs at byte level — including the canary pairs where the content
+is provably unsteered — so a changed conditioning tensor perturbs the sampling
+trajectory without steering it. That perturbation, not collateral damage, is what
+the compass showed. Reading a single image pair as evidence of a block's effect
+was the error; a determinism control (the same arm rendered twice at one seed)
+would have caught it and was not run.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input
@@ -307,13 +402,16 @@ typed twice.
 
 ## Remaining
 
-- Run `scripts/eval/prompt-programs/entity-negative-ab.ts --render` and grade it.
-  The instrument is built and prints both arms for free; the renders cost
-  provider spend, which makes running it an owner action.
-- Probe and activate the Qwen Image 2512 version so the compiled exclusions reach
-  the provider. Not a scoped change: pinning that row also switches on the `steps`
-  and `go_fast` settings that sit inert on the three portrait profiles today, so
-  it needs the trial's verdict first.
+- Run and grade the per-block induction trials (A–I), then report the
+  endpoint × block × failure matrix for owner review.
+- After the matrix review: revise the negative pack wording per the verdicts,
+  run Trial J (the combined candidate pack over a representative suite, on the
+  `entity-negative-ab.ts` harness), and only then decide activation.
+- Reword the clothing presentation fact once Trial B's no-negative arm shows
+  what the neutral wording does on its own.
+- Probe and activate the Qwen Image 2512 version only after the above. Not a
+  scoped change: pinning that row also switches on the `steps` and `go_fast`
+  settings that sit inert on the three portrait profiles today.
 - Write the character image adapter that joins visual state's selection to the
   canonical owners' semantic values, then cut over the character-bearing lanes —
   each behind its own shadow compile, dialect and trial. The four gaps in
