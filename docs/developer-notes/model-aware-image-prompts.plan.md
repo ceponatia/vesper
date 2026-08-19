@@ -794,13 +794,18 @@ Raw mode bypasses fact-completeness and collision guarantees by design and is la
 
 ### Stage 0 — research and current-behavior freeze
 
-Status: in progress — the research document exists; the payload-hash freeze and the architecture tests against new embedded exclusions are remaining.
+Status: complete — 2026-08-19.
 
 - record the endpoint/version evidence matrix;
 - freeze current positive and negative payload hashes for representative routes;
 - record provider defaults and hidden prompt sources;
 - add architecture tests preventing new embedded “no X” boilerplate in production prompt builders;
 - identify all raw-prompt escape-hatch callers.
+
+Nine lanes are frozen — two avatar styles, two portrait variants, three scene
+renders and the two chat lanes — and the embedded-exclusion census holds sixteen
+phrases across five modules. Both are pinned so that changing one of those lanes
+is a deliberate cutover rather than a diff nobody compared.
 
 ### Stage 1 — prompt-program and dialect contracts
 

@@ -241,6 +241,13 @@ projection decisions the deleted prose tests protected, and
 `apps/web/src/server/images/world-projection-coverage.test.ts` is the tripwire
 that fails when a table column or definition member has no projection decision.
 
+`apps/web/src/server/images/prompt-freeze.test.ts` pins the Stage 0 payload
+freeze — nine uncut lanes, one hash and character count each — and
+`scripts/image-prompt-exclusions.test.ts` is the census of the sixteen negative
+constraints still embedded in positive prose, across five modules. Both sets may
+shrink as lanes cut over and may never grow: re-pinning a frozen hash to match a
+new string would defeat the shadow comparison the freeze exists to protect.
+
 `apps/web/src/contracts/images/subject-digest.test.ts` owns the character seam's
 three claims: a fact's segment classification survives the translation into a
 concept (derived over whatever the digest selected, not a written table); a
@@ -259,9 +266,6 @@ typed twice.
 
 - Probe the Qwen Image 2512 version so the compiled exclusions reach the provider.
 - Run the first pinned image trial for item and location renders.
-- Freeze the current payload hashes for the lanes not yet cut over (Stage 0).
-- Add architecture tests preventing new embedded "no X" boilerplate in the
-  remaining prose builders.
 - Write the character image adapter that joins visual state's selection to the
   canonical owners' semantic values, then cut over the character-bearing lanes —
   each behind its own shadow compile, dialect and trial. The four gaps in
