@@ -108,36 +108,39 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // architectural outlier that keeps the bench from being one family in wigs.
   { id: "minimax/minimax-m2-her", label: "MiniMax M2-her" },
 
-  // ## Featherless rows (added 2026-08-17) — served by FEATHERLESS_API_TOKEN
+  // ## Featherless rows (first added 2026-08-17) — served by FEATHERLESS_API_TOKEN
   //
   // Featherless serves community Hugging Face merges that no OpenRouter vendor
   // hosts, over an OpenAI-compatible endpoint. Every row is checked against
   // `GET /v1/models` before it is added — a catalog page on the website is NOT
   // evidence the API serves it, and an id that is merely published answers
   // `400 model_not_deployed` on every turn (two candidates were rejected this way
-  // on 2026-08-17). Measured on this account before each row was added: the model is
-  // on-plan, streams `[Name]` speaker tags correctly, and returns coherent scene
-  // prose. Three operational facts a picker should know:
+  // on 2026-08-17). Measured through the production narrator seam
+  // (`pnpm probe:featherless-narrator`, PROBE_MODEL=<id>) before each row is added:
+  // the model is on-plan, streams `[Name]` speaker tags correctly, and returns
+  // coherent scene prose. Two operational facts hold for EVERY row here:
   //
-  // - **They are thinking models, asked with thinking OFF, on their author's sampler
-  //   baseline.** Left alone each spends ~1,100–1,300 tokens of chain before any prose —
-  //   which misses the chat lane's first-token budget AND, under a bounded output budget,
-  //   returns an empty reply. `FEATHERLESS_MODEL_POLICY` in server/ai/provider.ts
-  //   suppresses the chain and applies the merges' recommended non-thinking sampling
-  //   (temp 0.7 / top-p 0.8 / top-k 20 / presence 1.5), after which warm calls measure
-  //   0.7–2.8s to first token and 2–6s to a full reply. Removing an entry makes that
-  //   row unusable, not merely slower. These are the ONLY bench rows with a sampler
-  //   profile; a comparison including one must read those settings as part of the arm.
-  //   The flag is probed per model, never assumed from the family.
   // - **They cold-start.** The first call to an idle model fails while Featherless loads
   //   the weights (503 `capacity_exhausted`, or an error frame on a 200). It surfaces
   //   after ~14s as a `provider_error` reply failure quoting the vendor's "temporarily
   //   at capacity" wording; the next send usually lands on a warm model. It is NOT an
   //   empty reply, and the hidden retry below deliberately does not cover it. Each model
   //   warms independently, so a second row is a second cold start, not a shared one.
-  // - **They get one hidden retry for a zero-text reply.** Exact-model, and only when
-  //   nothing reached the player (`narratorHiddenRetryModel`). No OpenRouter narrator
-  //   has it.
+  // - **Nothing here is configured by family.** Thinking suppression, the sampler
+  //   baseline and the hidden empty-reply retry all live in `FEATHERLESS_MODEL_POLICY`
+  //   (server/ai/provider.ts), keyed to an EXACT id and earned by that id's own probe.
+  //   A row with no entry is asked exactly the way every OpenRouter narrator is asked.
+  //
+  // What is NOT shared is whether a row thinks. The two DavidAU rows below are thinking
+  // models asked with thinking OFF: left alone each spends ~1,100–1,300 tokens of chain
+  // before any prose, which misses the chat lane's first-token budget AND, under a
+  // bounded output budget, returns an empty reply. Their policy entry suppresses the
+  // chain and applies the merges' recommended non-thinking sampling (temp 0.7 / top-p
+  // 0.8 / top-k 20 / presence 1.5), after which warm calls measure 0.7–2.8s to first
+  // token and 2–6s to a full reply; removing that entry makes those rows unusable, not
+  // merely slower. They are also the only bench rows carrying a sampler profile, so a
+  // comparison including one must read those settings as part of the arm. The Slimaki
+  // row emits no chain at all and therefore has no policy entry.
   //
   // `(32K)` is the usual context marker; see the note above the RP bench for what
   // it binds.
@@ -154,6 +157,22 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   {
     id: "DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic",
     label: "F451 Ultra Pro Writer 27B (32K)",
+    provider: "featherless",
+  },
+  // Owner ask, 2026-08-19. A Mistral-Small-24B roleplay merge, and the first Featherless
+  // row that is NOT a DavidAU Qwen3.6: it reopens a candidate this bench originally
+  // dropped as unreachable (narrator-model-bench.spec.md §Rejected candidates), and at
+  // $0.20/$0.32 per M it is the cheapest row on the whole bench, Featherless or not.
+  //
+  // Probed on 2026-08-19 through the production seam: eleven warm calls, every one
+  // `finish_reason: "stop"` with prose and **zero** reasoning tokens — no chain to
+  // suppress, so it takes no policy entry, no sampler override and no hidden retry.
+  // First token 0.9–1.6s on a small prompt and 5.1s behind a Vesper-sized ~8.9K-token
+  // prefill; `[Name]` speaker tags land at line start with no stray bracketed names.
+  // It is a bench candidate, not a promotion: no verdict has been recorded on it.
+  {
+    id: "Naphula/Slimaki-Tavern-24B-v1.3",
+    label: "Slimaki Tavern 24B (32K)",
     provider: "featherless",
   },
 ];

@@ -140,8 +140,8 @@ call that answers it.
   said nothing — and each such reply now says only what the provider measured,
   telling a spent thinking chain apart from a hit output limit and from output
   that was billed but never arrived. Only the first blames reasoning, because
-  only it comes with a reasoning count; the Featherless narrators are asked with
-  thinking switched off and report no such count at all. This one model is also asked with its author's own
+  only it comes with a reasoning count; this model is asked with thinking switched
+  off and reports no such count at all. It is also asked with its author's own
   sampling settings, and a single invisible retry covers a one-off silent reply so
   the player never has to ask twice. Nothing changes for any other narrator or
   agent, and every other narrator gains the same honest failure messages for free.
@@ -154,6 +154,13 @@ call that answers it.
   could not be added: Featherless publishes catalog pages for them but does not
   actually serve them, and every turn would have failed. Adding a model now requires
   confirming the provider serves it first.
+- **Slice 1e — a cheap non-thinking model from the same provider.** Status: built
+  2026-08-19 — awaiting an owner run on the deployed app. The narrator menu gains
+  "Slimaki Tavern 24B", a roleplay merge the owner asked for. It is the cheapest model
+  on the whole bench and, unlike the two rows before it, it answers straight away
+  instead of thinking first — so it needed no special handling at all and is asked
+  exactly the way the long-standing narrators are. Nothing about any other model
+  changes.
 - **Slice 2 — one narrator identity and profile governs each call.** Status: next.
   Resolve the curated model once before building either narrator prompt, carry
   that same resolved identity through generation and retry, and record the
@@ -191,7 +198,7 @@ call that answers it.
 ## Where the work stands
 
 - **[narrator-model-bench.spec.md](narrator-model-bench.spec.md)** — replanned
-  2026-08-17. Slices 1, 1b, 1c and 1d are built; the model/profile seam, immersive
+  2026-08-17. Slices 1, 1b, 1c, 1d and 1e are built; the model/profile seam, immersive
   profile, successor parity and comparison campaign are not started.
 
 ## Success criteria

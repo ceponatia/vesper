@@ -38,6 +38,11 @@ them may name a provider.
   policy object as Fable Fusion, so the two differ only by merge recipe. Two further
   candidates were rejected as undeployed; see
   [Rejected candidates](#rejected-candidates-and-why).
+- **Slice 1e — a non-thinking Featherless row** — built 2026-08-19, awaiting an owner
+  run. Adds `Naphula/Slimaki-Tavern-24B-v1.3` on owner request. It is a list entry and
+  nothing else: the row emits no reasoning chain, so it takes no policy entry, and the
+  probe harness was generalized to take a `PROBE_MODEL` id rather than only its first
+  subject. See [The Featherless rows](#the-featherless-rows).
 - **Slice 2 — a recorded comparison** — not started.
 - **Slice 3 — a default ruling** — not started, blocked on slice 2.
 
@@ -74,9 +79,10 @@ onto GPU infrastructure remains the answer if a model no host serves ever wins.
 
 ## The bench roster
 
-Every id is verified present in its provider's live catalog and called once to confirm
-it narrates. Prices are dollars per million tokens, prompt/completion, as quoted by the
-catalog on 2026-08-17. The OpenRouter rows come first; the Featherless rows have their
+Every id is verified present in its provider's live catalog and called through the
+production narrator seam to confirm it narrates. Prices are dollars per million tokens,
+prompt/completion, as quoted by the catalog when the row was added (2026-08-17, except
+the Slimaki row on 2026-08-19). The OpenRouter rows come first; the Featherless rows have their
 own table below, because their operating characteristics differ enough that mixing them
 into one grid would hide the differences that matter.
 
@@ -103,9 +109,10 @@ The Dolphin row's full id is
 | ---------------------------------------- | ------: | ---------: | ------------------------ |
 | `DavidAU/Qwen3.6-27B-Fable-Fusion-711-…` |     32K |  1.06–2.60 | Uncensored Qwen3.6 merge |
 | `DavidAU/Qwen3.6-27B-F451-AND-TRI-…`     |     32K |  1.06–2.60 | Writer-tuned counterpart |
+| `Naphula/Slimaki-Tavern-24B-v1.3`        |     32K |  0.20–0.32 | Mistral-Small RP merge   |
 
 Full ids: `DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP` and
-`DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic`, both
+`DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic`, all three
 added on owner request.
 
 The two are a **matched pair on purpose**: same author, same Qwen3.6-27B base, same
@@ -138,6 +145,20 @@ Measured against the live endpoint (the Fable numbers below; F451's own probe is
   person, and produces scene-like description rather than chat-length answers — which
   is the property the whole bench exists to find.
 
+**Slimaki Tavern 24B is the counter-example that keeps the policy honest.** It shares
+the provider, the 32K window and the `(32K)` marker with the pair above and nothing
+else: it is a Mistral-Small-24B roleplay merge by a different author, it is the
+cheapest row on the entire bench at $0.20/$0.32 per M, and it does not think. Eleven
+warm calls through the production seam on 2026-08-19 all finished `stop` with prose and
+**zero** reasoning tokens; first token measured 0.9–1.6s on a small prompt and 5.1s
+behind a Vesper-sized ~8.9K-token prefill; replies ran 450–1,000 characters with
+line-opening `[Mira]` tags and no stray bracketed names. It therefore takes **no**
+`FEATHERLESS_MODEL_POLICY` entry — no thinking suppression, no sampler override, no
+hidden retry — and is asked exactly the way every OpenRouter narrator is asked. Its
+model card recommends no sampler baseline of its own, so inventing one would have been
+the family guess this spec forbids. The cold-start behavior is the one Featherless fact
+it does share.
+
 Two rows are controls rather than candidates, and are there to answer a question the
 candidates cannot. **Hermes 4 70B** is not narration-tuned, so it measures how much
 of the result comes from the fine-tune versus from Vesper's own prompt and state
@@ -159,7 +180,9 @@ listed above were dropped for one of these reasons, all of them checkable:
   served by OpenRouter, and Hugging Face's router serves none of them either.
   **Featherless reopened this bucket the same day** — its catalog runs to ~21,700
   Hugging Face models and includes these families. Reachability is no longer the
-  reason to drop one; context window and speed still are.
+  reason to drop one; context window and speed still are. Slimaki-Tavern-24B was
+  taken out of this bucket on 2026-08-19 and is now a listed Featherless row; the
+  rest of the names here remain unrequested rather than re-rejected.
 - **Near-duplicate of a listed row.** `nousresearch/hermes-4-405b` and
   `hermes-3-llama-3.1-70b` add cost, not a lane, over Hermes 4 70B.
 - **Published on Featherless but not served by it.**
@@ -198,9 +221,9 @@ A typical chat therefore presents somewhere near **17,000 tokens** per narrator 
 and a verbose long-running one materially more. That yields three bands:
 
 - **Under ~16K** — cannot work. The system prompt alone crowds out the conversation.
-- **32K** — works in the typical case, can overflow a verbose long chat. The three
-  rows in this band carry a `(32K)` marker in their dropdown label so the constraint
-  is visible at the point of choosing.
+- **32K** — works in the typical case, can overflow a verbose long chat. Every row in
+  this band carries a `(32K)` marker in its dropdown label so the constraint is
+  visible at the point of choosing.
 - **65K and above** — comfortable.
 
 ## Providers investigated
@@ -499,8 +522,9 @@ The reasoning check comes first among the rest for the mirror-image reason. A bu
 budget has three tellable stories — a measured reasoning chain, a length cap, and output
 tokens that were billed but never arrived — and only the first is evidence of thinking.
 Collapsing them into one cause is what let the popup blame internal reasoning on the
-Featherless rows, which are asked with `enable_thinking: false` and report no
-`completion_tokens_details` at all. **A cause may only name a mechanism the metadata
+Featherless rows, which report no `completion_tokens_details` at all — the thinking
+ones because they are asked with `enable_thinking: false`, the rest because they never
+emit a chain. **A cause may only name a mechanism the metadata
 measured.**
 
 "Billed-but-unseen tokens" needs a floor, because a stop sequence or a lone

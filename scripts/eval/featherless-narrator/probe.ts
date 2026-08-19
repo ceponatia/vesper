@@ -4,13 +4,20 @@ import { FABLE_FUSION_711_ID, hasFeatherless, type NarratorCompletion } from "@/
 import { streamCharacterChat } from "@/server/engine";
 
 /**
- * Opt-in live probe of the exact Fable narrator on Featherless — the evidence behind
- * this model's request policy (narrator-model-bench.spec.md §The Featherless rows).
+ * Opt-in live probe of one exact Featherless narrator — the evidence behind a
+ * Featherless row's request policy (narrator-model-bench.spec.md §The Featherless rows).
  * Not part of any suite and never run by `pnpm verify`: it makes real, billed calls.
  * Without `FEATHERLESS_API_TOKEN` it prints why it skipped and exits 0, so a clean
  * checkout can run it harmlessly.
  *
  *   pnpm probe:featherless-narrator
+ *   PROBE_MODEL=Naphula/Slimaki-Tavern-24B-v1.3 pnpm probe:featherless-narrator
+ *
+ * `PROBE_MODEL` names the curated row to measure and defaults to Fable Fusion 711, the
+ * first row probed this way. It exists because the questions this answers — does the
+ * model spend the reply thinking, does it hold the first-token budget, does it ever
+ * return nothing — have to be re-asked per model rather than inherited from a family,
+ * and that rule is only cheap to follow if adding a row can reuse this harness.
  *
  * It records COUNTS AND FINISH STATE ONLY — attempt, finish reason, token counts,
  * raw/visible text lengths, TTFT, total latency. No prompt, no prose, no reasoning
@@ -37,6 +44,13 @@ import { streamCharacterChat } from "@/server/engine";
 
 /** Attempts per case — a zero-text completion is intermittent, so one call proves nothing. */
 const ATTEMPTS = Number(process.env.PROBE_ATTEMPTS ?? 3);
+
+/**
+ * The curated narrator row under test. Any id is accepted rather than only Featherless
+ * ones: the guard below is curation, not provider, so the same harness can measure an
+ * OpenRouter row for comparison when a verdict needs a baseline.
+ */
+const MODEL_ID = process.env.PROBE_MODEL?.trim() || FABLE_FUSION_711_ID;
 
 /** The sampler/thinking fields worth reporting off the wire — never message content. */
 const WIRE_KEYS = [
@@ -110,7 +124,7 @@ async function runCall(args: {
       history: [{ role: "user", content: args.player }],
       name: "Mira",
       names: { speakers: ["Mira"], plain: ["Brian"] },
-      model: FABLE_FUSION_711_ID,
+      model: MODEL_ID,
       onCompletion: (value) => {
         completion = value;
       },
@@ -139,10 +153,11 @@ async function main(): Promise<void> {
     console.log("skipped: FEATHERLESS_API_TOKEN is not set (this probe makes real, billed calls).");
     return;
   }
-  if (!NARRATIVE_MODELS.some((option) => option.id === FABLE_FUSION_711_ID)) {
-    console.log(`skipped: ${FABLE_FUSION_711_ID} is no longer a curated narrator row.`);
+  if (!NARRATIVE_MODELS.some((option) => option.id === MODEL_ID)) {
+    console.log(`skipped: ${MODEL_ID} is not a curated narrator row.`);
     return;
   }
+  console.log(`model: ${MODEL_ID}`);
 
   const tiny = "You narrate one short scene beat in third person, present tense. Open the line with [Mira].";
   // A Vesper-sized prefill, without shipping a real narrator prompt into this file:

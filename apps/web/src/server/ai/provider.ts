@@ -350,6 +350,14 @@ const DAVIDAU_QWEN36_NON_THINKING: FeatherlessModelPolicy = {
   retryMinTokens: 48,
 };
 
+/**
+ * Absence is a measurement, not an omission. `Naphula/Slimaki-Tavern-24B-v1.3` is a
+ * curated Featherless narrator with no entry here on purpose: its 2026-08-19 probe
+ * returned prose and zero reasoning tokens on every call, so there is no chain to
+ * suppress, and its model card recommends no sampler baseline to adopt. Giving it one
+ * anyway — by provider, or by "it is a 24B merge like the others" — is exactly the
+ * family guess the per-model keying exists to prevent.
+ */
 const FEATHERLESS_MODEL_POLICY: Readonly<Record<string, FeatherlessModelPolicy>> = {
   [FABLE_FUSION_711_ID]: DAVIDAU_QWEN36_NON_THINKING,
   [F451_ULTRA_PRO_WRITER_ID]: DAVIDAU_QWEN36_NON_THINKING,
