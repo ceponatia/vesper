@@ -2911,7 +2911,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
  * reports how the generation actually finished, that record is built from the
  * evidence instead (`classifyEmptyNarratorCompletion`): a content filter and a
  * generation error route to the classes that already describe them, and a genuine
- * empty is told apart from reasoning/length exhaustion and from Vesper's own
+ * empty is told apart from a burned output budget and from Vesper's own
  * normalizers erasing the reply. With no completion record — a provider that
  * reported nothing, or a lane that supplies none — it stays the honest bare
  * `empty_reply`.

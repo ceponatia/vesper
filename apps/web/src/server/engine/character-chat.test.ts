@@ -211,7 +211,7 @@ describe("the hidden empty-reply retry", () => {
     expect(script.requests[1]?.providerOptions).toEqual({ featherless: { min_tokens: 48 } });
   });
 
-  // A length/reasoning empty already generated plenty — just not prose. Forcing MORE
+  // An empty that burned tokens already generated plenty — just not prose. Forcing MORE
   // tokens would treat a configuration failure as a length problem.
   it("withholds the floor when the first attempt burned its budget without prose", async () => {
     await run({

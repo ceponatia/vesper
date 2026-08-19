@@ -401,8 +401,8 @@ export function narratorHiddenRetryModel(modelId: string): boolean {
  * policy above.
  *
  * Only ever called for a retry that follows a genuinely silent stop
- * (`narratorEmptyWasSilentStop`) — see the field doc for why a length/reasoning empty must
- * not get a floor.
+ * (`narratorEmptyWasSilentStop`) — see the field doc for why an empty that burned
+ * tokens must not get a floor.
  */
 export function narratorRetryFloorOptions(
   modelId: string,

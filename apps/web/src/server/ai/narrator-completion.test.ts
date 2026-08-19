@@ -31,7 +31,12 @@ describe("classifyEmptyNarratorCompletion", () => {
     const result = classifyEmptyNarratorCompletion(empty({ finishReason: "stop" }));
     expect(result.code).toBe("empty_reply");
     expect(result.cause).toBe("model_silent");
-    expect(result.detail).toContain("without generating any tokens");
+    // What is absent is PROSE. The detail used to say "without generating any
+    // tokens", which is the right story here and a false one a few lines under
+    // the hidden-output floor — so the wording claims only the prose either way,
+    // and the count rides along when the provider reported one.
+    expect(result.detail).toContain("without producing any prose");
+    expect(result.detail).not.toContain("output tokens");
   });
 
   // A couple of billed output tokens on a silent completion is an end-of-turn token,
@@ -51,6 +56,34 @@ describe("classifyEmptyNarratorCompletion", () => {
     expect(result.cause).toBe("length_capped");
     expect(result.detail).toContain("298 output tokens");
     expect(result.detail).not.toContain("reasoning");
+  });
+
+  /**
+   * Falsified against a detail built as "reached its output limit after
+   * ${describeOutput}" over a fallback that read "its output budget" — a
+   * provider reporting a length finish with no usage block then persisted
+   * "reached its output limit after its output budget", which is the sentence an
+   * owner reads when investigating a narrator. Both branches of the count must
+   * compose after a preposition.
+   */
+  it("still reads as a sentence when the provider reports a length finish and no token count", () => {
+    const result = classifyEmptyNarratorCompletion(empty({ finishReason: "length" }));
+    expect(result.cause).toBe("length_capped");
+    expect(result.detail).toContain("an unreported number of output tokens");
+    expect(result.detail).not.toContain("its output budget");
+  });
+
+  /**
+   * The hidden-output floor sits at eight because a stop sequence or an
+   * end-of-turn marker can bill one or two on a genuinely silent completion.
+   * Underneath it the cause is right and the old detail was measurably wrong:
+   * it claimed no tokens were generated while the provider had billed some.
+   */
+  it("does not claim zero tokens on a silent stop the provider billed for", () => {
+    const result = classifyEmptyNarratorCompletion(empty({ finishReason: "stop", outputTokens: 3 }));
+    expect(result.cause).toBe("model_silent");
+    expect(result.detail).not.toContain("without generating any tokens");
+    expect(result.detail).toContain("3 output tokens");
   });
 
   it("names reasoning only when the provider splits the tokens out", () => {

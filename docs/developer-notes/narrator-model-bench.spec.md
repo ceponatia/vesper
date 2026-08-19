@@ -585,8 +585,8 @@ sample usually lands outside whatever the collapse rules matched.
 the first attempt was a genuinely silent stop. Featherless accepts `min_tokens` (probed
 2026-08-17); it is passed per-call as `providerOptions.featherless`, which the
 openai-compatible transport spreads into the body — that is what scopes it to one call
-rather than the transport-wide policy. A length/reasoning empty deliberately does **not**
-get the floor: that model already generated plenty, just not prose, and forcing more
+rather than the transport-wide policy. An empty that burned tokens deliberately does
+**not** get the floor: that model already generated plenty, just not prose, and forcing more
 tokens would treat a configuration failure as a length problem. There is no global
 minimum response length, and there must not be — that is how narrator padding gets
 resurrected.

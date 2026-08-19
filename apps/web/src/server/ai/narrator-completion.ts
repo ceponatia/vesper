@@ -102,7 +102,10 @@ function billedUnseenOutput(completion: NarratorCompletion): boolean {
   );
 }
 
-/** True when the provider's counts say it generated substantially more than reached us. */
+/**
+ * True when the provider's counts say it generated substantially more than
+ * reached us — the retry floor's disqualifier, and its only caller.
+ */
 function generatedHiddenTokens(completion: NarratorCompletion): boolean {
   return measuredReasoning(completion) || billedUnseenOutput(completion);
 }
@@ -201,10 +204,16 @@ export function classifyEmptyNarratorCompletion(completion: NarratorCompletion):
     };
   }
   if (finish === "stop") {
+    // Names the absence of PROSE, not the absence of tokens. A genuinely silent
+    // completion can still bill one or two for a stop sequence or an
+    // end-of-turn marker — that is why the hidden-output floor sits at eight —
+    // so the old "without generating any tokens" was measurably false in the
+    // gap beneath it. The count rides along whenever the provider reported one.
+    const billed = typeof completion.outputTokens === "number" ? `, ${completion.outputTokens} output tokens` : "";
     return {
       code: "empty_reply",
       cause: "model_silent",
-      detail: `the model ended its turn without generating any tokens (finish: ${describeFinish(completion)})`,
+      detail: `the model ended its turn without producing any prose (finish: ${describeFinish(completion)}${billed})`,
     };
   }
   // The provider offered no usable evidence — keep the honest unrefined class.
@@ -259,10 +268,15 @@ function describeFinish(completion: NarratorCompletion): string {
  * How much the generation was billed for, without claiming what it went on. The
  * reasoning cause names reasoning itself; the two causes that reach here have no
  * reasoning count behind them, so neither may imply one.
+ *
+ * Both branches read as a QUANTITY, because both callers put this after a
+ * preposition. The old fallback was "its output budget", which composed with the
+ * wording it was written for and then stopped composing when the length cause
+ * gained a prefix — "reached its output limit after its output budget".
  */
 function describeOutput(completion: NarratorCompletion): string {
   if (typeof completion.outputTokens === "number") return `${completion.outputTokens} output tokens`;
-  return "its output budget";
+  return "an unreported number of output tokens";
 }
 
 /**
