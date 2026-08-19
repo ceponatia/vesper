@@ -4,11 +4,13 @@ import path from "node:path";
 import {
   activeImagePromptBinding,
   buildImageWorldDigest,
+  chooseAspect,
   compileImagePromptProgram,
   emptyImageModelAdvancedCapabilities,
   imageNegativePack,
   imagePositivePack,
   imagePromptBudgetFromBinding,
+  parseAspectValue,
   type ImageModel,
   type ImageWorldDigest,
 } from "@vesper/image-core";
@@ -183,7 +185,8 @@ const LOCATION_CASES: readonly { readonly id: string; readonly row: LocationProj
 interface Cell {
   readonly id: string;
   readonly kind: "item" | "location";
-  readonly aspect: string;
+  /** What the lane ASKS for. What the row can offer is negotiated at render time. */
+  readonly requestedAspect: `${number}:${number}`;
   readonly digest: ImageWorldDigest;
 }
 
@@ -193,8 +196,7 @@ function cells(): readonly Cell[] {
     return {
       id: entry.id,
       kind: "item",
-      // The lane's own shapes: a catalogue tile is square, a location card is 3:2.
-      aspect: "1:1",
+      requestedAspect: "1:1",
       digest: buildImageWorldDigest({
         read: { kind: "transactional_projection", token: entityReadToken(revisions) },
         items: [projectItemDigest(entry.row)],
@@ -208,7 +210,7 @@ function cells(): readonly Cell[] {
     return {
       id: entry.id,
       kind: "location",
-      aspect: "3:2",
+      requestedAspect: "3:2",
       digest: buildImageWorldDigest({
         read: { kind: "transactional_projection", token: entityReadToken(revisions) },
         location: projectLocationDigest(entry.row),
@@ -288,7 +290,9 @@ function trialModel(negativeField: boolean): ImageModel {
     maxReferences: 1,
     referenceTransport: "file",
     aspectMode: "aspect_ratio",
-    supportedAspects: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2"],
+    // Migration 0098's menu verbatim. Widening it here would let the trial render
+    // shapes production cannot ask for.
+    supportedAspects: ["1:1", "16:9", "9:16", "4:3", "3:4"],
     outputFormat: "webp",
     extraInput: { output_quality: 95, go_fast: true, disable_safety_checker: true },
     probedVersionId: null,
@@ -307,9 +311,14 @@ function trialModel(negativeField: boolean): ImageModel {
 }
 
 async function render(cell: Cell, arm: Arm, seed: number): Promise<Buffer | null> {
-  const result = await replicateClient().runRegistryImageModel(trialModel(arm.negative !== null), {
+  const model = trialModel(arm.negative !== null);
+  const result = await replicateClient().runRegistryImageModel(model, {
     prompt: arm.positive,
-    aspect: cell.aspect,
+    // Negotiated, not requested. The seeded row offers no 3:2, so a location
+    // render lands on the nearest offered shape and the pipeline crops the
+    // remainder — and evidence rendered at a shape production never sends would
+    // be graded on the wrong picture.
+    aspect: chooseAspect(model, parseAspectValue(cell.requestedAspect) ?? 1).value,
     // Already-mapped provider fields. The seed is what makes the two arms
     // comparable at all; the negative key rides here only when this arm has one,
     // so the "off" arm sends exactly what production sends today.
@@ -356,7 +365,10 @@ async function main(): Promise<void> {
     if (off.positive !== on.positive) throw new Error(`${cell.id}: the arms disagree on the positive prompt`);
     if (off.delivered.length > 0) throw new Error(`${cell.id}: the off arm delivered exclusions it should have dropped`);
 
-    console.log(`\n=== ${cell.id} (${cell.kind}, ${cell.aspect}) ===`);
+    const shape = chooseAspect(trialModel(true), parseAspectValue(cell.requestedAspect) ?? 1);
+    console.log(
+      `\n=== ${cell.id} (${cell.kind}, asks ${cell.requestedAspect}, renders ${shape.value ?? "model default"}${shape.needsCrop ? ", cropped" : ""}) ===`,
+    );
     console.log(`POSITIVE  ${off.positive}`);
     console.log(`NEGATIVE  ${on.negative ?? "(none compiled)"}`);
     console.log(`DELIVERED ${on.delivered.join(", ") || "(none)"}`);

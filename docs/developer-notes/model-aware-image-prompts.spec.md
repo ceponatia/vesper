@@ -220,6 +220,18 @@ each of the twenty wordings guarding its own. An authored `!` or `?` survives as
 itself: flattening it would be the dialect editing prose it was only asked to
 place.
 
+### The location lane's shot is cropped before the prompt is judged
+
+The location card is 3:2 and the seeded `qwen/qwen-image-2512` row offers
+`1:1`, `16:9`, `9:16`, `4:3` and `3:4`. Shape negotiation therefore lands every
+location render on 4:3 and the pipeline crops the remainder — designed behavior
+owned by the capability layer, not a prompt failure.
+
+It matters here because the Stage 6 trial grades composition, and a score that
+blames the prompt for a crop the aspect menu caused would promote or reject a
+negative pack for the wrong reason. The trial script reports the negotiated shape
+per case so the grader knows.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input

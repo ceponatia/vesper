@@ -38,6 +38,12 @@ rests on into `evidence/` — see `evidence/README.md`.
 literal, not by probing the database row: activating that row's version would
 repin four seeded profiles at once, so the evidence has to come first.
 
+Worth knowing before grading composition: the seeded `qwen/qwen-image-2512` row
+offers no 3:2, so a location render — whose card is 3:2 — is produced at 4:3 and
+cropped. The script reports the negotiated shape per case. That crop is the
+capability layer working as designed, not a prompt failure, and a composition
+score that blames the prompt for it is measuring the wrong thing.
+
 Two of the seven rows — `lettered_sign` and `shop_front` — author lettering in
 prose that no projection turns into a protected claim, so today's compile sends
 the text exclusions anyway. Whether the model then refuses to draw the words is
