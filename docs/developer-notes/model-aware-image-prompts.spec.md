@@ -276,6 +276,45 @@ being avoided — Trial B's no-negative arm renders exactly that candidate
 wording, so the production edit follows that evidence rather than another
 guess. The reword is independent of the negative A/B and lands separately.
 
+### Qwen Image 2512 ignores its negative field
+
+Owner-facing headline: **the endpoint exposes `negative_prompt` and does not act
+on it**, so Vesper does not send one.
+
+The measurement is Vesper's own canary, the easiest test that could exist — ask
+for a red apple, put `red apple, apple` in the negative field, and see whether
+the apple survives. It did, 16 times out of 16, across the accelerated
+(`go_fast: true`, production's setting) and non-accelerated sampling paths
+(`scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`, trials A and A2,
+2026-08-19; renders in `evidence/qwen-2512-negative-canary/`). Upstream reporting
+supplies the mechanism independently: the model was not trained on negative
+conditioning, the parameter exists for pipeline compatibility, and the official
+examples pass a single space.
+
+Consequences in code: `qwen_2512_description` declares `negativeSyntax: "none"`
+and `negativeTransport: "unsupported"`, and `compileNegative` returns every
+constraint as `dropped` with the reason `endpoint_ignores_negative_field`. The
+drop is RECORDED, so provenance still shows what a render would have excluded on
+an endpoint that could carry it — the constraints are not wrong, this endpoint
+simply has no channel for them. Probing or activating the version no longer
+changes anything about the negative channel, which removes what was previously
+the blocking owner action for Stage 6 on this endpoint.
+
+This is the plan's "endpoint/version behavior outranks model-family assumptions"
+ruling doing exactly its job, and it is worth stating as a general lesson: a
+field the wrapper offers does not exist for Vesper until the endpoint proves it
+works. The capability layer already refused to invent a key; what it could not
+know is that the key was inert.
+
+**A correction this evidence forces.** The first A/B's observation that the
+negative-on compass had weaker dial markings does not survive. Every OFF/ON pair
+in every run differs at byte level — including the canary pairs where the content
+is provably unsteered — so a changed conditioning tensor perturbs the sampling
+trajectory without steering it. That perturbation, not collateral damage, is what
+the compass showed. Reading a single image pair as evidence of a block's effect
+was the error; a determinism control (the same arm rendered twice at one seed)
+would have caught it and was not run.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input

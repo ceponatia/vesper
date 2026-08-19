@@ -67,6 +67,15 @@ interface TrialArm {
   readonly id: string;
   /** The exact negative_prompt this arm sends; null sends no field at all. */
   readonly negative: string | null;
+  /**
+   * Text appended to the positive prompt for this arm.
+   *
+   * The positive-side transports an endpoint with no working negative field is
+   * left with: affirmative replacement, and inline exclusion. Held to a SUFFIX
+   * so the baseline prompt is byte-identical across arms and only the added
+   * clause varies.
+   */
+  readonly positiveSuffix?: string;
 }
 
 interface TrialFixture {
@@ -84,6 +93,11 @@ interface NegativeBlockTrial {
   readonly block: string;
   /** The failure this trial induces, in one line. */
   readonly failure: string;
+  /**
+   * Provider fields held CONSTANT across every arm of this trial — a canary
+   * diagnostic varying the sampler configuration, never a per-arm variable.
+   */
+  readonly providerControls?: Readonly<Record<string, unknown>>;
   readonly seeds: number;
   readonly fixtures: readonly TrialFixture[];
   readonly arms: readonly TrialArm[];
@@ -94,6 +108,20 @@ interface NegativeBlockTrial {
 }
 
 const ANTI_SUPPORT = "mannequin, dress form, torso, bust, human body, visible support structure, hanger";
+
+/**
+ * The two ways an exclusion can reach an endpoint that ignores its negative
+ * field, per the plan's transport vocabulary.
+ *
+ * `AFFIRMATIVE` is the plan's default: say what the picture SHOULD contain and
+ * let the unwanted thing have no room, never naming it. `INLINE` names it inside
+ * an instruction, which the plan permits only after a fixed A/B wins — so these
+ * two are arms of that A/B, not settled wordings.
+ */
+const SUPPORT_AFFIRMATIVE =
+  "The garment floats freely in empty space, held in its own shape by nothing at all, with clear empty background visible all around and through it.";
+const SUPPORT_INLINE =
+  "Do not include a mannequin, dress form, torso, bust, hanger, stand, or any other visible means of support.";
 
 const TRIALS: readonly NegativeBlockTrial[] = [
   {
@@ -117,11 +145,61 @@ const TRIALS: readonly NegativeBlockTrial[] = [
     collateral: ["blue_mug_preserved"],
   },
   {
+    id: "A2",
+    title: "Transport canary — go_fast off",
+    block: "none — instrumentation",
+    failure: "is the negative field applied only on the non-accelerated sampling path",
+    // Accelerated/distilled sampling classically skips negative conditioning.
+    // Production sends go_fast: true, so if the field works ONLY here, it is
+    // inert in production configuration — which is the actual Stage 6 answer.
+    providerControls: { go_fast: false },
+    seeds: 6,
+    fixtures: [
+      {
+        id: "apple_mug",
+        positive: "A studio photograph of a bright red apple beside a blue ceramic mug on a plain white surface.",
+        aspect: "1:1",
+      },
+    ],
+    arms: [
+      { id: "off", negative: null },
+      { id: "on", negative: "red apple, apple" },
+    ],
+    metrics: ["red_apple_present", "any_apple_present"],
+    collateral: ["blue_mug_preserved"],
+  },
+  {
+    id: "A3",
+    title: "Transport canary — go_fast off, high guidance",
+    block: "none — instrumentation",
+    failure: "does negative conditioning appear only at high guidance",
+    providerControls: { go_fast: false, guidance: 9 },
+    seeds: 6,
+    fixtures: [
+      {
+        id: "apple_mug",
+        positive: "A studio photograph of a bright red apple beside a blue ceramic mug on a plain white surface.",
+        aspect: "1:1",
+      },
+    ],
+    arms: [
+      { id: "off", negative: null },
+      { id: "on", negative: "red apple, apple" },
+    ],
+    metrics: ["red_apple_present", "any_apple_present"],
+    collateral: ["blue_mug_preserved"],
+  },
+  {
     id: "B1",
-    title: "Garment support suppression — sheer scarf",
-    block: "support suppression (candidate)",
+    title: "Garment support — sheer scarf, positive-side transports",
+    block: "support suppression, as positive replacement vs inline exclusion",
     failure: "a mannequin/dress form/support appears in a garment-only product shot",
-    seeds: 8,
+    seeds: 6,
+    // Three POSITIVE prompts, no negative field anywhere: this endpoint ignores
+    // it (trials A/A2), so the only channels left are the two the plan's
+    // transport vocabulary offers for such an endpoint. `neutral` is the
+    // baseline that measures how often the failure happens unprompted, and it
+    // doubles as the candidate rewording for the shipped ghost-mannequin defect.
     fixtures: [
       {
         id: "scarf",
@@ -131,18 +209,19 @@ const TRIALS: readonly NegativeBlockTrial[] = [
       },
     ],
     arms: [
-      { id: "off", negative: null },
-      { id: "on", negative: ANTI_SUPPORT },
+      { id: "neutral", negative: null },
+      { id: "affirmative", negative: null, positiveSuffix: SUPPORT_AFFIRMATIVE },
+      { id: "inline", negative: null, positiveSuffix: SUPPORT_INLINE },
     ],
     metrics: ["support_visible", "hanger_visible", "garment_alone"],
     collateral: ["translucency_preserved", "too_opaque", "drape_1_5"],
   },
   {
     id: "B2",
-    title: "Garment support suppression — work coat",
-    block: "support suppression (candidate)",
-    failure: "a mannequin/dress form/support appears; or its removal collapses the garment's shape",
-    seeds: 8,
+    title: "Garment support — work coat, positive-side transports",
+    block: "support suppression, as positive replacement vs inline exclusion",
+    failure: "a mannequin/dress form/support appears; or removing it collapses the garment's shape",
+    seeds: 6,
     fixtures: [
       {
         id: "coat",
@@ -152,8 +231,9 @@ const TRIALS: readonly NegativeBlockTrial[] = [
       },
     ],
     arms: [
-      { id: "off", negative: null },
-      { id: "on", negative: ANTI_SUPPORT },
+      { id: "neutral", negative: null },
+      { id: "affirmative", negative: null, positiveSuffix: SUPPORT_AFFIRMATIVE },
+      { id: "inline", negative: null, positiveSuffix: SUPPORT_INLINE },
     ],
     metrics: ["support_visible", "hanger_visible"],
     collateral: ["coat_shape_plausible", "scorched_cuffs_retained"],
@@ -324,6 +404,11 @@ const TRIALS: readonly NegativeBlockTrial[] = [
   },
 ];
 
+/** The positive prompt this arm sends: the fixture's, plus the arm's own clause. */
+function armPositive(fixture: TrialFixture, arm: TrialArm): string {
+  return arm.positiveSuffix === undefined ? fixture.positive : `${fixture.positive} ${arm.positiveSuffix}`;
+}
+
 /** The ON negative for one fixture — per-fixture wording wins over the arm's. */
 function armNegative(fixture: TrialFixture, arm: TrialArm): string | null {
   if (arm.negative === null) return null;
@@ -387,12 +472,15 @@ async function renderOne(
   negative: string | null,
   aspect: string,
   seed: number,
+  providerControls?: Readonly<Record<string, unknown>>,
 ): Promise<{ image: Buffer; executedVersionId: string | null; predictionId: string | null } | null> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const result = await replicateClient().runRegistryImageModel(trialModel(), {
       prompt: positive,
       aspect,
-      controlInput: { seed, ...(negative === null ? {} : { negative_prompt: negative }) },
+      // controlInput merges LAST, so a trial's go_fast/guidance overrides the
+      // model literal's extraInput constant — for BOTH arms alike.
+      controlInput: { seed, ...providerControls, ...(negative === null ? {} : { negative_prompt: negative }) },
     });
     if (result.ok && result.image) {
       return {
@@ -492,7 +580,8 @@ async function runTrial(trial: NegativeBlockTrial, shouldRender: boolean): Promi
     console.log(`    POSITIVE ${fixture.positive}`);
     for (const arm of trial.arms) {
       const negative = armNegative(fixture, arm);
-      console.log(`    ${arm.id.toUpperCase().padEnd(7)} ${negative ?? "(no negative field)"}`);
+      console.log(`    ${arm.id.toUpperCase().padEnd(12)} +${arm.positiveSuffix ?? " (bare positive)"}`);
+      console.log(`    ${"".padEnd(12)} neg: ${negative ?? "(no negative field)"}`);
     }
 
     for (const seed of seeds) {
@@ -503,7 +592,7 @@ async function runTrial(trial: NegativeBlockTrial, shouldRender: boolean): Promi
         if (!shouldRender) continue;
         if (await fileExists(file)) continue;
         await fs.mkdir(path.dirname(file), { recursive: true });
-        const rendered = await renderOne(fixture.positive, negative, fixture.aspect, seed);
+        const rendered = await renderOne(armPositive(fixture, arm), negative, fixture.aspect, seed, trial.providerControls);
         if (rendered === null) {
           console.log(`    FAILED   ${file}`);
           records.pop();
