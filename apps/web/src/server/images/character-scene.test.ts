@@ -83,7 +83,7 @@ describe("buildCharacterSceneContext", () => {
   // The failure this guards against is the one that makes a two-character render
   // worthless: one person wearing another's clothes, or described with another's
   // hair. Every per-person fact has to come off that person's own member.
-  it("never crosses one member's appearance, outfit or age anchor onto another", () => {
+  it("never crosses one member's appearance or outfit onto another", () => {
     const context = buildCharacterSceneContext({ ...base, cast: [member("Mira", "red"), member("Sayed", "black")] });
     const [mira, sayed] = context.present;
     // Two different sheets must not compile to one description.
@@ -92,9 +92,21 @@ describe("buildCharacterSceneContext", () => {
     expect(mira?.outfitDescription).toContain("Mira's coat");
     expect(mira?.outfitDescription).not.toContain("Sayed");
     expect(sayed?.outfitDescription).toContain("Sayed's coat");
-    // The age anchor is a name-bound sentence — the name has to be the owner's.
-    expect(mira?.ageAnchor ?? "").not.toContain("Sayed");
-    expect(sayed?.ageAnchor ?? "").not.toContain("Mira");
+  });
+
+  it("passes neither chronological nor apparent age into scene-image context", () => {
+    const profile = makeProfile({
+      age: "25",
+      attributes: [
+        attr("hair.color", "red", "base"),
+        attr("identity.apparent_age", "forties", "base"),
+      ],
+    });
+    const context = buildCharacterSceneContext({ ...base, cast: [member("Mira", "red", { profile })] });
+    const mira = context.present[0];
+    expect(mira?.ageAnchor).toBeUndefined();
+    expect(mira?.appearance).not.toContain("forties");
+    expect(JSON.stringify(mira)).not.toContain("25 years old");
   });
 
   it("folds each member's own garment notes into their own outfit line", () => {

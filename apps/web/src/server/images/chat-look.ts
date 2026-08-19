@@ -79,8 +79,12 @@ export function chatLookKey(input: {
   return fnv1aHex(`${worn}|${input.overlay.trim().toLowerCase()}|${exposure}|${overlays}${garments}`);
 }
 
-/** The identity-locked look-edit instruction: same person, new outfit, neutral framing — age-anchored (2026-07-29 ruling). */
-export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean; ageAnchor?: string }): string {
+/**
+ * The identity-locked look-edit instruction: same person, new outfit, neutral
+ * framing. Age is inherited from the portrait reference; neither chronological
+ * nor apparent-age fields are accepted by this scene-supporting render.
+ */
+export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean }): string {
   const outfit = input.outfit.trim();
   const wearing = outfit
     ? `Change the outfit: now wearing ${outfit}. Depict only this clothing — remove anything the reference wears that is not listed.`
@@ -89,7 +93,6 @@ export function buildChatLookPrompt(input: { outfit: string; outfitExposed: bool
       : "Keep a simple, casual outfit.";
   return [
     PORTRAIT_IDENTITY_LOCK,
-    input.ageAnchor ?? "",
     wearing,
     "Standing, relaxed neutral pose, facing the viewer; plain softly lit neutral backdrop; waist-up to three-quarter frame.",
   ]
@@ -149,8 +152,6 @@ export interface RenderChatLookInput {
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
-  /** The sheet's apparent-age anchor (apparentAgeAnchor) — text-authoritative over the reference. */
-  ageAnchor?: string;
   sink?: DiagnosticSink;
 }
 
@@ -217,7 +218,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     const identity = await chatLookIdentity(input, resolved, sink);
     if (!identity) return null;
     const model = resolved.model;
-    const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed, ageAnchor: input.ageAnchor });
+    const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed });
     const { imageId, status } = await runImagePipeline({
       asset: {
         ownerId: input.userId,

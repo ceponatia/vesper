@@ -114,10 +114,12 @@ describe("look/place prompts", () => {
     expect(buildChatLookPrompt({ outfit: "", outfitExposed: false })).toContain("simple, casual outfit");
   });
 
-  it("carries the sheet's age anchor after the identity lock (2026-07-29 ruling)", () => {
-    const anchor = "Kristin is in her late twenties; her skin, hands and legs read smooth and youthful.";
-    const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false, ageAnchor: anchor });
-    expect(prompt).toContain(`apparent age. ${anchor} Change the outfit`);
+  it("inherits visible age from the portrait reference without an explicit age value", () => {
+    const prompt = buildChatLookPrompt({ outfit: "a linen sundress", outfitExposed: false });
+    // The identity lock preserves what the portrait depicts, but no age field or
+    // age band is supplied to this scene-supporting image model.
+    expect(prompt).toContain("Preserve face, hair color and style, skin tone, body proportions, and apparent age.");
+    expect(prompt).not.toMatch(/\b(?:eighteen|twenties|thirties|forties|fifties|sixties|\d+\s+years old)\b/i);
   });
 
   it("the place shot is the sketch, empty of people", () => {
