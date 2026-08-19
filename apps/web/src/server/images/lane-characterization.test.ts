@@ -124,7 +124,6 @@ describe("image lane characterization — dressed subject", () => {
       "horns",
       "wings",
       "tail",
-      "apparentAge",
       "garment",
       "legBuild",
       // `toenails` is the drift this plan exists to remove, not an intended
@@ -143,7 +142,6 @@ describe("image lane characterization — dressed subject", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
-      "apparentAge",
       "garment",
       // Shape reads through clothing; the covered `skin` facts do not.
       "legBuild",
@@ -160,16 +158,12 @@ describe("image lane characterization — dressed subject", () => {
     // Identical to the single-reference lane's fact set, which is the one thing
     // the two assemblers currently agree on — they reach it through different
     // wording, ordering and budgets (audit finding 4).
-    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "apparentAge", "garment", "legBuild"]);
+    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "garment", "legBuild"]);
   });
 
-  it("chat look: apparent age and the requested outfit, and no other character fact", () => {
-    const prompt = buildChatLookPrompt({
-      outfit: "a floor-length wine-red silk kimono",
-      outfitExposed: false,
-      ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
-    });
-    expectLaneFacts(prompt, ["apparentAge", "garment"]);
+  it("chat look: the requested outfit, and no other character fact", () => {
+    const prompt = buildChatLookPrompt({ outfit: "a floor-length wine-red silk kimono", outfitExposed: false });
+    expectLaneFacts(prompt, ["garment"]);
   });
 
   it("portrait variant: apparent age and the requested change, and no other character fact", () => {
@@ -194,7 +188,6 @@ describe("image lane characterization — bare subject", () => {
       "horns",
       "wings",
       "tail",
-      "apparentAge",
       "bareTorso",
       "legBuild",
       "toenails",
@@ -213,7 +206,6 @@ describe("image lane characterization — bare subject", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
-      "apparentAge",
       "bareTorso",
       "legBuild",
       "toenails",
@@ -282,22 +274,30 @@ describe("image lane invariants that hold across the migration", () => {
     }
   });
 
-  it("every character-bearing lane states apparent age when the anchor is supplied", () => {
-    // The 2026-07-29 owner ruling: the avatar cannot be the sole age source,
-    // because an edit model re-reads an ambiguous reference a step older each
-    // generation. Every lane below states it, three of them from an anchor the
-    // caller passes in — which is exactly the coupling Stage 4 replaces with a
-    // mandatory `age` segment.
+  it("states apparent age only in the lanes that still carry it", () => {
+    // The 2026-07-29 owner ruling stands where it applies: an edit model re-reads
+    // an ambiguous reference a step older each generation, so a lane that renders
+    // a face from a portrait states the age rather than letting the picture decide.
+    //
+    // #143 narrowed WHERE that applies, separating narrative age from visual age:
+    // scene renders and chat look are deliberately age-neutral now. This asserts
+    // the boundary in both directions, because a one-sided version would pass
+    // just as well if age quietly returned to the neutral lanes.
     const anchor = apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, []));
     expect(anchor).toContain("late twenties");
-    const anchored: ReadonlyArray<string> = [
+
+    const stated = [
       buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
-      buildSceneRenderPrompt(scenePlan(), {}),
-      buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
-      buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false, ageAnchor: anchor }),
       buildVariantInstruction("outfit", "wearing a kimono", anchor),
     ];
-    for (const prompt of anchored) expect(presentVisualFacts(prompt)).toContain("apparentAge");
+    for (const prompt of stated) expect(presentVisualFacts(prompt)).toContain("apparentAge");
+
+    const neutral = [
+      buildSceneRenderPrompt(scenePlan(), {}),
+      buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
+      buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false }),
+    ];
+    for (const prompt of neutral) expect(presentVisualFacts(prompt)).not.toContain("apparentAge");
   });
 
   it("the probe vocabulary itself stays stable", () => {

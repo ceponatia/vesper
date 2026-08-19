@@ -100,12 +100,7 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
   {
     lane: "chat.look",
-    prompt: () =>
-      buildChatLookPrompt({
-        outfit: "a canvas work coat",
-        outfitExposed: false,
-        ageAnchor: "She appears to be in her late twenties.",
-      }),
+    prompt: () => buildChatLookPrompt({ outfit: "a canvas work coat", outfitExposed: false }),
   },
   {
     lane: "chat.place",
@@ -132,13 +127,24 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
 ];
 
-/** Frozen 2026-08-19, before any character-bearing lane's cutover. */
+/**
+ * Frozen 2026-08-19, before any character-bearing lane's cutover.
+ *
+ * `chat.look` was RE-PINNED the same day, and the reason is the one case the
+ * rule above does not cover. It is neither an accidental edit to revert nor a
+ * cutover: #143 ("Separate narrative and visual age contexts") deliberately
+ * stopped feeding apparent age into chat look renders, removing the parameter
+ * outright, and the freeze caught it as a 40-character drop. A reviewed,
+ * already-merged change to a frozen lane re-pins WITH its reason recorded —
+ * which is the freeze working, not the freeze being overridden. A move with no
+ * line like this one is still the failure the pin exists to catch.
+ */
 const BASELINE: Readonly<Record<string, { readonly hash: string; readonly chars: number }>> = {
   "avatar.realistic": { hash: "c6dd7ea2", chars: 510 },
   "avatar.stylized": { hash: "38c60558", chars: 519 },
   "variant.pose": { hash: "e344beeb", chars: 355 },
   "variant.outfit": { hash: "c070533a", chars: 262 },
-  "chat.look": { hash: "1a38d981", chars: 453 },
+  "chat.look": { hash: "455a434e", chars: 413 },
   "chat.place": { hash: "889fbf13", chars: 170 },
   "scene.text_to_image": { hash: "69ea4ebe", chars: 630 },
   "scene.single_reference": { hash: "85f18ee1", chars: 883 },

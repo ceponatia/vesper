@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { attr, makeProfile } from "@/server/test-support";
-import { buildCharacterChatSystemPrompt } from "@/server/engine/prompts/character-chat";
-import { buildCanonBlock } from "@/server/engine/prompts/sim-render";
-import { buildAvatarPrompt } from "@/server/images/prompts-avatar";
+import { buildCanonBlock, buildCharacterChatSystemPrompt } from "@/server/engine";
+import { buildAvatarPrompt } from "@/server/images";
 
 /**
  * Age has two intentionally different owners:
