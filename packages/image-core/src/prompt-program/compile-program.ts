@@ -70,6 +70,17 @@ export interface ImagePromptProgram {
   readonly operation: ImageOperationContract;
   readonly positive: readonly ImagePositiveClaim[];
   readonly negative: readonly ImageNegativeConstraint[];
+  /**
+   * The subset of {@link negative} the payload actually carried.
+   *
+   * Separate from `negative` because the two answer different questions. The
+   * constraint list is what the packs and the linter decided; this is what the
+   * endpoint could be told, after the version's probed field availability. They
+   * part company on exactly the case this system is currently in — a dialect
+   * that declares a `negative_prompt` field bound to a version nobody has probed
+   * — and identity has to follow the payload, not the intent.
+   */
+  readonly deliveredNegativeIds: readonly string[];
   readonly positivePackVersionId: string;
   readonly negativePackVersionId: string;
   readonly bindingVersionId: string;
@@ -216,15 +227,19 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     );
   }
   const adjustments = positivePack.manifest.priorityAdjustments;
-  const packClaims = orderImagePositiveClaims([
-    ...selected
+  // Suppression governs BOTH claim sources. The pack's own rendering-intent
+  // descriptors used to be appended after this filter, so a pack that suppressed
+  // `style.descriptor` — the reason to suppress it is a model that degrades when
+  // style words appear — still emitted its own. A concept a pack says this
+  // endpoint may not carry is one it may not carry from any source.
+  const packClaims = orderImagePositiveClaims(
+    [...selected, ...renderingIntentClaims(positivePack, digest.operation)]
       .filter((claim) => !suppressed.has(claim.concept))
       .map((claim) => {
         const delta = adjustments[claim.concept];
         return delta === undefined ? claim : { ...claim, priority: claim.priority + delta };
       }),
-    ...renderingIntentClaims(positivePack, digest.operation),
-  ]);
+  );
 
   // --- 4. Negative constraints, selected by guard and pack ------------------
   const guard = imageNegativeGuardOf(digest);
@@ -308,6 +323,15 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     );
   }
 
+  // The exclusions that actually TRAVEL, after the version's real field
+  // availability has had its say. Everything downstream of transport reasons
+  // about this list rather than `linted.constraints`: a constraint the payload
+  // does not carry cannot contradict anything, and cannot change the picture.
+  const deliveredIds = new Set(
+    transports.filter((outcome) => outcome.transport.kind !== "dropped").map((outcome) => outcome.constraintId),
+  );
+  const deliveredConstraints = linted.constraints.filter((constraint) => deliveredIds.has(constraint.id));
+
   // --- 8. Merge replacement claims and re-check -----------------------------
   const mergedClaims = orderImagePositiveClaims([...packClaims, ...negativeCompiled.replacementClaims]);
   const mergedProtections = imagePositiveProtections({
@@ -315,7 +339,11 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     operation: digest.operation,
     camera: digest.camera,
   });
-  const postMerge = imagePostMergeCollisions({ constraints: linted.constraints, protections: mergedProtections });
+  // Checked against the DELIVERED exclusions, not every linted one. A dialect
+  // that turns exclusions into affirmative claims can otherwise refuse the whole
+  // render over a contradiction with an exclusion this version already dropped
+  // for having no field to put it in — a refusal about a payload nobody sent.
+  const postMerge = imagePostMergeCollisions({ constraints: deliveredConstraints, protections: mergedProtections });
   if (postMerge.length > 0) {
     return refuse("image_prompt_program.post_merge_collision", "a replacement claim contradicts a surviving exclusion", {
       collisions: postMerge.map((entry) => ({ key: entry.key, claim: entry.claimId })),
@@ -350,6 +378,7 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
     operation: digest.operation,
     positive: keptClaims,
     negative: linted.constraints,
+    deliveredNegativeIds: deliveredConstraints.map((constraint) => constraint.id),
     positivePackVersionId: positivePack.id,
     negativePackVersionId: negativePack.id,
     bindingVersionId: binding.id,
@@ -432,6 +461,13 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
  * The compiled TEXT is deliberately absent: it is hashed separately in
  * provenance, so a dialect wording fix moves the prompt hash without invalidating
  * every stored program fingerprint that described the same request.
+ *
+ * Exclusions contribute TWICE — the constraint list, and the subset that was
+ * actually delivered — because the same reasoning applies to them. A render
+ * before its version was probed drops every exclusion, and one after it sends
+ * them all; the packs, the linter and the world are identical across that
+ * boundary, so the constraint list alone would give the two the same identity
+ * while they asked the provider for materially different pictures.
  */
 export function imagePromptProgramFingerprint(program: Omit<ImagePromptProgram, "fingerprint">): string {
   return fnv1aHex(
@@ -443,6 +479,7 @@ export function imagePromptProgramFingerprint(program: Omit<ImagePromptProgram, 
       negativePack: program.negativePackVersionId,
       positive: program.positive.map((claim) => [claim.id, claim.concept, claim.value, claim.required, claim.priority]),
       negative: program.negative.map((constraint) => [constraint.id, [...constraint.conflictKeys]]),
+      delivered: [...program.deliveredNegativeIds].sort(),
       operation: {
         kind: program.operation.kind,
         task: program.operation.task,

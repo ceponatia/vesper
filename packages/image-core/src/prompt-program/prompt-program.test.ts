@@ -407,6 +407,20 @@ describe("world digest construction", () => {
     expect(Object.isFrozen(digest)).toBe(true);
     expect(Object.isFrozen(digest.subjects[0]?.facts[0])).toBe(true);
   });
+
+  /**
+   * Falsified against a freeze that used `Object.isFrozen` as its repeat-visit
+   * guard. Shallow frozen-ness is not evidence of deep frozen-ness, so a
+   * projection handing in an already-frozen wrapper around mutable children —
+   * a module-level frozen default, a value that passed some other shallow
+   * freeze — was skipped at its root and left every child writable inside a
+   * digest the compilers are told is immutable.
+   */
+  it("freezes inside a branch that arrived already shallow-frozen", () => {
+    const revisions = Object.freeze([{ owner: "item.library", entityId: "i1", revision: "r1" }]);
+    const digest = world({ sourceRevisions: revisions });
+    expect(Object.isFrozen(digest.sourceRevisions[0])).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -532,6 +546,48 @@ describe("compiling a prompt program", () => {
     expect(result.compiled.transports.every((entry) => entry.transport.kind === "dropped")).toBe(true);
     // Still recorded, so an operator can see what the render WOULD have excluded.
     expect(result.compiled.promptProgramProvenance.negativeOutcomes.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Falsified against a fingerprint taken over the linted constraint list alone.
+   * Probing this version flips `negativeFieldAvailable` with no other change, so
+   * the packs, the linter and the world are identical either side of that
+   * boundary — and the two renders ask the provider for materially different
+   * pictures. Identity has to follow the payload, or "same program" stops
+   * meaning "same picture was asked for" at exactly the moment it matters.
+   */
+  it("fingerprints a render that sent its exclusions apart from one that dropped them", () => {
+    const digest = itemWorld();
+    const sent = compileImagePromptProgram(compileInput(digest));
+    const dropped = compileImagePromptProgram(compileInput(digest, { negativeFieldAvailable: false }));
+    if (!sent.ok || !dropped.ok) throw new Error("unexpected refusal");
+    expect(dropped.compiled.program.deliveredNegativeIds).toEqual([]);
+    expect(sent.compiled.program.deliveredNegativeIds.length).toBeGreaterThan(0);
+    expect(dropped.compiled.program.fingerprint).not.toBe(sent.compiled.program.fingerprint);
+  });
+
+  /**
+   * Falsified against a compile that filtered only the digest-derived claims.
+   * The pack's own rendering-intent descriptors were appended after the
+   * suppression pass, so a pack suppressing `style.descriptor` — which you do
+   * because the model degrades when style words appear — still emitted its own.
+   * A concept a pack says this endpoint may not carry may not arrive from any
+   * source, including the pack.
+   */
+  it("suppresses a concept in the pack's own rendering intent, not just in the world", () => {
+    const suppressing = {
+      ...qwenImage2512PositivePack,
+      manifest: { ...qwenImage2512PositivePack.manifest, suppressedConcepts: ["style.descriptor" as const] },
+    };
+    const plain = compileImagePromptProgram(compileInput(itemWorld()));
+    const result = compileImagePromptProgram(compileInput(itemWorld(), { positivePack: suppressing }));
+    if (!plain.ok || !result.ok) throw new Error("unexpected refusal");
+    // The descriptors are the pack's, and reach the prompt when nothing suppresses
+    // them. Matched case-insensitively: the dialect sentence-cases each clause,
+    // and which end of a sentence a descriptor lands on is its business.
+    expect(plain.compiled.positiveText).toMatch(/sharp focus throughout/i);
+    expect(result.compiled.positiveText).not.toMatch(/sharp focus throughout/i);
+    expect(result.compiled.positiveText).not.toMatch(/high detail/i);
   });
 
   /**

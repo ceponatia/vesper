@@ -41,9 +41,12 @@ Two production lanes consume it: library **item** and **location** renders.
 `prompts-entity.ts` is deleted. Every other image lane keeps its existing prompt
 path until its own cutover.
 
-The character slice (`projectSubjectDigests`) is built and exercised by the
-package's collision cases, but no character-bearing lane is bound to a dialect
-yet, so nothing routes through it in production.
+The character slice (`projectSubjectDigests`) is **written but neither bound nor
+covered**. No character-bearing lane is bound to a dialect, nothing imports it,
+and no test exercises it — the package's collision cases build their digests
+directly rather than through this adapter. Its first execution would be its
+first. Binding a character lane therefore starts with covering it or deleting
+it, not with wiring it up.
 
 ## Rulings the build settled
 

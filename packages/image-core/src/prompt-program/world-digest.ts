@@ -714,14 +714,24 @@ function compact<T>(values: readonly (T | null)[]): T[] {
  *
  * Recursive rather than a shallow `Object.freeze`, because the property being
  * bought is that a dialect cannot edit a fact's `value` record or push onto a
- * fact list — a shallow freeze leaves both open. Cycles are impossible here (the
- * digest is a tree of plain data), so no visited set is needed; `Object.isFrozen`
- * short-circuits repeat visits to shared literals anyway.
+ * fact list — a shallow freeze leaves both open.
+ *
+ * The repeat-visit guard is a visited set rather than `Object.isFrozen`, and the
+ * difference is the whole correctness of this function. Shallow frozen-ness is
+ * not evidence of deep frozen-ness: a projection that hands in an already-frozen
+ * wrapper around mutable children — a module-level `Object.freeze`d default, a
+ * value that passed through some other shallow freeze — would have been skipped
+ * at its root and left every child writable inside a digest documented as
+ * immutable. Asking "have I been here" answers the question the recursion
+ * actually has; asking "is this frozen" answers a different one.
  */
-function deepFreeze<T>(value: T): T {
-  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
-  Object.freeze(value);
-  for (const entry of Object.values(value as Record<string, unknown>)) deepFreeze(entry);
+function deepFreeze<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+  if (value === null || typeof value !== "object") return value;
+  const node = value as object;
+  if (seen.has(node)) return value;
+  seen.add(node);
+  Object.freeze(node);
+  for (const entry of Object.values(node as Record<string, unknown>)) deepFreeze(entry, seen);
   return value;
 }
 

@@ -184,6 +184,12 @@ may **not** contain executable code, a condition expression or a whole-prompt
 template — a malformed or adversarial template must not become production
 behaviour through an admin field.
 
+A positive pack's **suppressed concepts govern every claim source, including the
+pack's own rendering-intent descriptors**. You suppress `style.descriptor`
+because the model degrades when style words appear, so a pack that went on
+emitting its own would defeat the setting it declared. Suppressing a concept the
+render may not lose refuses instead.
+
 Evidence carries a source type, a URL, a review date, the endpoint version and a
 confidence. A community or Reddit finding can justify a trial; only an
 authoritative endpoint source or a Vesper trial verdict satisfies a promotion.
@@ -219,6 +225,13 @@ Two sibling keys on the image row's `meta`, beside the existing `render` and
   constraint's transport outcome with the keys it kept and lost and the claim that
   displaced each, the endpoint's hidden prompt sources, hashes of the compiled
   positive and negative text, and the final reference bindings.
+
+The program fingerprint covers **which exclusions were delivered**, not only
+which were selected. A version whose negative field has not been probed drops
+every exclusion, and probing it later sends them all with no other change — so
+the packs, the linter and the world are identical either side of that boundary
+while the payloads differ. Identity follows the payload, so those two renders
+fingerprint apart.
 
 Identifiers and fingerprints, never copies of the world. A developer inspector
 resolves current definitions separately and can say plainly when they no longer

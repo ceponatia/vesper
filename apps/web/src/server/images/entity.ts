@@ -43,6 +43,14 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
   // Demo mode paints a monogram and never reaches a provider, so it needs the
   // entity's NAME and nothing else — compiling a prompt program for it would be
   // a database read and a full compile in service of a letter on a coloured tile.
+  //
+  // This DOES change what a demo row records: it used to store the prompt the
+  // old paragraph builder produced, and now stores an empty one. That is forced
+  // rather than chosen. A prompt program compiles against a resolved model's
+  // dialect and pack binding, and demo mode has no model to resolve — so the
+  // only way to keep a prompt on these rows would be to keep the paragraph
+  // builder alive purely for demo, which is the fallback path this lane exists
+  // to delete. A demo row now says, accurately, that no prompt was built.
   const program =
     model === null
       ? await loadEntityName(input.entityKind, input.entityId, input.userId)
