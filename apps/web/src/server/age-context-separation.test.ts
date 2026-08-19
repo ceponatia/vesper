@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { attr, makeProfile } from "@/server/test-support";
 import { buildCharacterChatSystemPrompt } from "@/server/engine/prompts/character-chat";
@@ -51,5 +52,19 @@ describe("age context separation", () => {
     expect(prompt).toContain("forties");
     expect(prompt).not.toContain("25 years old");
     expect(prompt).not.toMatch(/\bchronological\b/i);
+  });
+
+  it("keeps production scene-image assembly disconnected from both age fields", () => {
+    const scene = readFileSync(new URL("./images/character-scene.ts", import.meta.url), "utf8");
+    const lookJob = readFileSync(new URL("./engine/chat-reference-images.ts", import.meta.url), "utf8");
+    const lookRender = readFileSync(new URL("./images/chat-look.ts", import.meta.url), "utf8");
+
+    // These are source-boundary tripwires: a future scene change must not quietly
+    // reintroduce the old explicit apparent-age anchor or an age-bearing look input.
+    expect(scene).not.toMatch(/\bapparentAgeAnchor\b/);
+    expect(scene).not.toMatch(/\bageAnchor\s*:/);
+    expect(lookJob).not.toMatch(/\bapparentAgeAnchor\b/);
+    expect(lookJob).not.toMatch(/\bageAnchor\s*:/);
+    expect(lookRender).not.toMatch(/\bageAnchor\b/);
   });
 });
