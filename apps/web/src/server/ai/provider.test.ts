@@ -110,7 +110,7 @@ describe("narrativeProviderOptions", () => {
 // lib/narrative-models.ts §"Which upstream serves a row".
 // ---------------------------------------------------------------------------
 
-/** The curated Featherless row, read off the list so a re-labelled row cannot rot this file. */
+/** The first curated Featherless row, read off the list so a re-labelled row cannot rot this file. */
 const FEATHERLESS_MODEL_ID = NARRATIVE_MODELS.find((o) => o.provider === "featherless")?.id ?? "";
 
 describe("multi-provider narrator routing", () => {
