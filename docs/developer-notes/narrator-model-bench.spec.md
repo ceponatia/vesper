@@ -486,22 +486,27 @@ feeds the normalizers, and the finish promises are awaited afterwards with
 It is only reached for an exchange that produced no visible reply, was not stopped by the
 player, did not trip a watchdog and threw nothing — those all outrank it, unchanged.
 
-| Evidence                                     | Recorded as                           |
-| -------------------------------------------- | ------------------------------------- |
-| `content-filter` finish                      | `moderation_blocked`                  |
-| `error` finish                               | the provider error's own class        |
-| raw text > 0, nothing survived normalizing   | `empty_reply` / `normalizer_erased`   |
-| `length` finish, or billed-but-unseen tokens | `empty_reply` / `reasoning_or_length` |
-| `stop` finish with no such evidence          | `empty_reply` / `model_silent`        |
-| none of the above                            | `empty_reply`, no cause               |
+The evidence-to-verdict mapping itself is live behavior, so it is owned by
+[the exchange pipeline reference](../character-chat/pipeline.md) §Reply failures
+rather than restated here. What this
+spec owns is why it is shaped that way.
 
 The normalizer check comes first among the empty causes deliberately: if the model
 produced prose and Vesper discarded it, that is this repo's bug, and a record blaming the
 model would point every future investigation at the wrong system.
 
+The reasoning check comes first among the rest for the mirror-image reason. A burned
+budget has three tellable stories — a measured reasoning chain, a length cap, and output
+tokens that were billed but never arrived — and only the first is evidence of thinking.
+Collapsing them into one cause is what let the popup blame internal reasoning on the
+Featherless rows, which are asked with `enable_thinking: false` and report no
+`completion_tokens_details` at all. **A cause may only name a mechanism the metadata
+measured.**
+
 "Billed-but-unseen tokens" needs a floor, because a stop sequence or a lone
 end-of-turn token can be billed on a genuinely silent completion. The rule is
-`reasoningTokens > 0`, or **8+ output tokens with zero characters of text**.
+**8+ output tokens with zero characters of text**; a reported `reasoningTokens > 0`
+is separate evidence and takes the reasoning cause outright.
 
 No new failure code was added. `ChatReplyFailureCause` is an optional refinement of
 `empty_reply` on the same jsonb record (`character_chats.last_reply_failure`), so no
@@ -580,8 +585,8 @@ sample usually lands outside whatever the collapse rules matched.
 the first attempt was a genuinely silent stop. Featherless accepts `min_tokens` (probed
 2026-08-17); it is passed per-call as `providerOptions.featherless`, which the
 openai-compatible transport spreads into the body — that is what scopes it to one call
-rather than the transport-wide policy. A length/reasoning empty deliberately does **not**
-get the floor: that model already generated plenty, just not prose, and forcing more
+rather than the transport-wide policy. An empty that burned tokens deliberately does
+**not** get the floor: that model already generated plenty, just not prose, and forcing more
 tokens would treat a configuration failure as a length problem. There is no global
 minimum response length, and there must not be — that is how narrator padding gets
 resurrected.

@@ -523,14 +523,16 @@ travels out-of-band instead:
    threw, timed out nor stopped is classified from the completion record
    (`classifyEmptyNarratorCompletion`) rather than assumed silent:
 
-| Evidence                                     | Recorded as                           |
-| -------------------------------------------- | ------------------------------------- |
-| `content-filter` finish                      | `moderation_blocked`                  |
-| `error` finish                               | the provider error's own class        |
-| raw text > 0, none survived normalizing      | `empty_reply` / `normalizer_erased`   |
-| `length` finish, or billed-but-unseen tokens | `empty_reply` / `reasoning_or_length` |
-| `stop` finish with no such evidence          | `empty_reply` / `model_silent`        |
-| no usable evidence                           | `empty_reply`, no cause               |
+| Evidence                                | Recorded as                         |
+| --------------------------------------- | ----------------------------------- |
+| `content-filter` finish                 | `moderation_blocked`                |
+| `error` finish                          | the provider error's own class      |
+| raw text > 0, none survived normalizing | `empty_reply` / `normalizer_erased` |
+| reasoning tokens reported, no prose     | `empty_reply` / `reasoning_spent`   |
+| `length` finish, no reasoning reported  | `empty_reply` / `length_capped`     |
+| billed output tokens that never arrived | `empty_reply` / `hidden_output`     |
+| `stop` finish with no such evidence     | `empty_reply` / `model_silent`      |
+| no usable evidence                      | `empty_reply`, no cause             |
 
 4. The verdict is written to `character_chats.last_reply_failure` (cleared by any
    exchange that settles) **before the generator returns**, so the route's drain —
@@ -541,7 +543,11 @@ travels out-of-band instead:
    (quoting the provider's words where they add signal) with a 10-minute staleness
    guard. An `empty_reply` carrying a cause takes that cause's copy instead of the
    class copy, so the popup never claims the model said nothing when the server knows
-   it hit the length cap or that Vesper's own normalizers erased the reply. Credential
+   it hit the length cap or that Vesper's own normalizers erased the reply. **No
+   cause's copy names a mechanism the metadata did not measure**: only
+   `reasoning_spent` carries a reported reasoning-token count, so only it blames a
+   thinking chain — which matters because the Featherless narrators are asked with
+   `enable_thinking: false` and report no reasoning split at all. Credential
    failures name the upstream only when the recorded model id identifies one
    (`narrativeModelProvider`), and say "the model provider" otherwise — the narrator
    list is multi-provider. No record ⇒ honest "no cause recorded" copy.
