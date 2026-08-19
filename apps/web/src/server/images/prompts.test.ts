@@ -26,7 +26,6 @@ import {
   sceneRevealAppearance,
 } from "./prompts-appearance";
 import { buildAvatarPrompt, visibleAvatarOutfit } from "./prompts-avatar";
-import { buildItemImagePrompt, buildLocationImagePrompt } from "./prompts-entity";
 import {
   buildSceneComposerPrompt,
   emptySceneSpec,
@@ -420,56 +419,6 @@ describe("visibleAvatarOutfit", () => {
       { name: "Coat", coverage: ["chest", "back"], layer: 3, description: "a wool overcoat", appearance: "storm-grey" },
     ]);
     expect(outfit[0]).toEqual({ name: "Coat", description: "a wool overcoat", appearance: "storm-grey" });
-  });
-});
-
-describe("buildItemImagePrompt", () => {
-  it("frames clothing on a ghost mannequin and objects isolated, with fields folded in", () => {
-    const clothing = buildItemImagePrompt({
-      name: "Black abaya",
-      kind: "clothing",
-      description: "flowing floor-length robe",
-      appearance: "matte black crepe",
-    });
-    expect(clothing).toContain("Black abaya");
-    expect(clothing).toContain("ghost mannequin");
-    expect(clothing).toContain("flowing floor-length robe");
-    expect(clothing).toContain("matte black crepe");
-    expect(clothing).toContain("no people, no text, no watermark");
-
-    const object = buildItemImagePrompt({ name: "Brass compass", kind: "object" });
-    expect(object).toContain("clean seamless surface");
-    expect(object).not.toContain("ghost mannequin");
-  });
-
-  it("tolerates a nameless item and unknown kind", () => {
-    const prompt = buildItemImagePrompt({ name: "" });
-    expect(prompt).toContain("an object");
-    expect(prompt).toContain("seamless surface"); // defaults to the object framing
-  });
-});
-
-describe("buildLocationImagePrompt", () => {
-  it("uses a landscape for open/expanse scales and an interior otherwise", () => {
-    const outdoor = buildLocationImagePrompt({ name: "Tidal Flats", scale: "expanse", description: "salt marsh" });
-    expect(outdoor).toContain("landscape photograph");
-    expect(outdoor).not.toContain("interior");
-
-    const indoor = buildLocationImagePrompt({ name: "The Study", scale: "room", description: "book-lined" });
-    expect(indoor).toContain("interior");
-    expect(indoor).not.toContain("landscape photograph");
-  });
-
-  it("includes the description and ambient light, and never people", () => {
-    const prompt = buildLocationImagePrompt({
-      name: "Lantern Hall",
-      scale: "hall",
-      description: "vaulted timber ceiling",
-      light: "warm lantern glow",
-    });
-    expect(prompt).toContain("vaulted timber ceiling");
-    expect(prompt).toContain("warm lantern glow");
-    expect(prompt).toContain("no people");
   });
 });
 
