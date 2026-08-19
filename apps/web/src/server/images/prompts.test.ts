@@ -23,6 +23,7 @@ import {
   characterAppearanceSummary,
   identityAnchorSummary,
   imageAgeWord,
+  intimateAnatomySummary,
   sceneRevealAppearance,
 } from "./prompts-appearance";
 import { buildAvatarPrompt, visibleAvatarOutfit } from "./prompts-avatar";
@@ -434,6 +435,22 @@ describe("buildVariantInstruction", () => {
     const prompt = buildVariantInstruction("outfit", "a winter coat");
     expect(prompt).toContain("Change the outfit: a winter coat.");
     expect(prompt).not.toContain("Keep the same outfit");
+  });
+
+  // The bench kind renders whatever the owner types, INCLUDING undress, so a
+  // sentence pinning the reference's clothes would contradict the instruction the
+  // render exists to test. It states the sheet's anatomy instead, and still
+  // anchors the age. Kills the obvious defect: a kind added to the tuple that
+  // silently inherits the outfit lock, or an anatomy line that stops travelling.
+  it("nsfw_test states the sheet's anatomy, keeps the age anchor, and never mentions the outfit", () => {
+    const prompt = buildVariantInstruction("nsfw_test", "lying back across the bed", {
+      ageAnchor: "She appears to be in her late twenties.",
+      anatomy: "Breast size: full; Nipples: large",
+    });
+    expect(prompt).toContain("Restage the subject: lying back across the bed.");
+    expect(prompt).toContain("Anatomy: Breast size: full; Nipples: large.");
+    expect(prompt).toContain("late twenties");
+    expect(prompt).not.toContain("outfit");
   });
 });
 
@@ -852,6 +869,20 @@ describe("sceneRevealAppearance (shape reads through clothing; skin needs exposu
 
   it("returns nothing without exposure state", () => {
     expect(sceneRevealAppearance(attrs, undefined, profile, { intimate: false })).toBe("");
+  });
+
+  // The portrait studio's bench line has NO exposure state to gate on — the owner
+  // types the clothing — so it states the sheet's intimate anatomy outright. The
+  // defect this kills is the tempting one: routing it through
+  // `sceneRevealAppearance` above, which answers "" with no exposure and would
+  // quietly render a bench prompt with no anatomy in it at all.
+  it("intimateAnatomySummary states intimate anatomy with no exposure state, and nothing else", () => {
+    const summary = intimateAnatomySummary(attrs, profile);
+    expect(summary).toContain("Breast size: full");
+    expect(summary).toContain("Nipples: large");
+    expect(summary).toContain("Labia minora: protruding");
+    expect(summary).not.toContain("scent"); // sensory never renders visually
+    expect(summary).not.toContain("Leg build"); // non-intimate: the reference carries it
   });
 });
 
@@ -1883,7 +1914,9 @@ describe("apparent-age anchor + image age floor (owner ruling 2026-07-29)", () =
   });
 
   it("slots into the variant instruction between the lock and the change", () => {
-    const prompt = buildVariantInstruction("pose", "leaning on a railing", "Kristin is in her late twenties.");
+    const prompt = buildVariantInstruction("pose", "leaning on a railing", {
+      ageAnchor: "Kristin is in her late twenties.",
+    });
     expect(prompt).toContain("apparent age. Kristin is in her late twenties. Change the pose");
     expect(buildVariantInstruction("pose", "leaning on a railing")).not.toContain("late twenties");
   });

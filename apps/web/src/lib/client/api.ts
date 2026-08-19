@@ -4,7 +4,7 @@ import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
-import { activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
+import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
   type IdentityPackAdminOverrideRequest,
   type IdentityPackAdminRevision,
@@ -772,8 +772,12 @@ export const imageRecordSchema = z.object({
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 
-export const portraitVariantKinds = ["pose", "outfit", "expression", "setting"] as const;
-export type PortraitVariantKind = (typeof portraitVariantKinds)[number];
+// The variant kinds are a pure contract (`contracts/images/portrait-variant`) —
+// the studio dropdown, the POST body schema and the prompt builder all read that
+// one tuple. Re-exported here so components keep importing them from the client
+// API surface, the same way the image-model record contract is.
+export { portraitVariantKindLabel, portraitVariantKinds };
+export type { PortraitVariantKind };
 
 // The image-model registry is DATA now (image-model-registry.plan.md) — the
 // pickers fetch it rather than importing a key union. The record contract is
