@@ -54,6 +54,7 @@ export * from "./prompts/chat-scene-sketch";
 export * from "./prompts/chat-summary";
 export * from "./prompts/chat-state";
 export * from "./prompts/character-chat";
+export * from "./prompts/sim-render";
 // prompts/constants re-exports engine constants; only its unique values here.
 export {
   AGENT_INPUT_CAP,

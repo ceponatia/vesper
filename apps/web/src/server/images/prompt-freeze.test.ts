@@ -20,15 +20,22 @@ import { buildVariantInstruction } from "./prompts-variant";
  * is only worth anything if "production" has not quietly moved underneath it.
  *
  * So these hashes are a FREEZE, not a snapshot of nice-to-have wording. A failure
- * here means one of two things:
+ * here means one of three things, and only the third permits a new hash:
  *
- * - an unintended edit reached a frozen builder, and the fix is to revert it; or
+ * - an unintended edit reached a frozen builder, and the fix is to revert it;
  * - this lane is being cut over, in which case the pin is deleted along with the
- *   builder — not updated to match a new string.
+ *   builder — not updated to match a new string;
+ * - a deliberate, reviewed product change altered the lane while it is still on
+ *   its old prompt path. Re-pin, and say why in `BASELINE` with a date and the
+ *   change that caused it.
  *
- * "Update the hash" is the one wrong answer. A frozen lane whose baseline gets
- * re-pinned every time it changes is not frozen, and the shadow comparison it
- * exists to protect would be measuring the thing being replaced.
+ * The third case is real and was underestimated when this file was written: the
+ * narrative/visual age split (#143) made chat look age-neutral, and this test is
+ * what surfaced it. Re-pinning silently would have been the failure mode — a
+ * frozen lane whose baseline quietly follows its own edits is not frozen, and the
+ * shadow comparison it protects would be measuring the thing being replaced. A
+ * re-pin with a recorded reason keeps the freeze meaningful; the note is the
+ * difference between the two.
  *
  * Structural assertions about these same prompts live in `prompts.test.ts` and
  * stay there: this file deliberately says nothing about what the text CONTAINS,
@@ -100,12 +107,7 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
   {
     lane: "chat.look",
-    prompt: () =>
-      buildChatLookPrompt({
-        outfit: "a canvas work coat",
-        outfitExposed: false,
-        ageAnchor: "She appears to be in her late twenties.",
-      }),
+    prompt: () => buildChatLookPrompt({ outfit: "a canvas work coat", outfitExposed: false }),
   },
   {
     lane: "chat.place",
@@ -132,13 +134,21 @@ const FROZEN: readonly { readonly lane: string; readonly prompt: () => string }[
   },
 ];
 
-/** Frozen 2026-08-19, before any character-bearing lane's cutover. */
+/**
+ * Frozen 2026-08-19, before any character-bearing lane's cutover.
+ *
+ * Re-pins, newest first — every one names the reviewed change that caused it:
+ *
+ * - `chat.look` 2026-08-19: the narrative/visual age split (#143) removed the
+ *   apparent-age anchor from this lane, so the prompt lost that sentence
+ *   (453 → 413 characters). A deliberate product change, not prompt drift.
+ */
 const BASELINE: Readonly<Record<string, { readonly hash: string; readonly chars: number }>> = {
   "avatar.realistic": { hash: "c6dd7ea2", chars: 510 },
   "avatar.stylized": { hash: "38c60558", chars: 519 },
   "variant.pose": { hash: "e344beeb", chars: 355 },
   "variant.outfit": { hash: "c070533a", chars: 262 },
-  "chat.look": { hash: "1a38d981", chars: 453 },
+  "chat.look": { hash: "455a434e", chars: 413 },
   "chat.place": { hash: "889fbf13", chars: 170 },
   "scene.text_to_image": { hash: "69ea4ebe", chars: 630 },
   "scene.single_reference": { hash: "85f18ee1", chars: 883 },
