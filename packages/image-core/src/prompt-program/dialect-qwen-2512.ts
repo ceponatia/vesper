@@ -74,7 +74,7 @@ const HIDDEN_SOURCES = [
 function renderClaim(claim: ImagePositiveClaim, input: ImageDialectPositiveInput): ImagePromptSegment | null {
   const say = (text: string): ImagePromptSegment => ({
     kind: claim.segmentKind,
-    text,
+    text: sentence(text),
     mandatory: claim.required,
     priority: claim.priority,
   });
@@ -564,6 +564,31 @@ function mediumSentence(medium: ImageStyleMedium): string {
 
 function capitalize(text: string): string {
   return text.length === 0 ? text : `${text[0]?.toUpperCase() ?? ""}${text.slice(1)}`;
+}
+
+const SENTENCE_TAIL = /[\s.!?…]+$/u;
+
+/**
+ * One sentence, terminated exactly once.
+ *
+ * Every wording above ends its clause with a full stop, which is right for a
+ * single-word value and wrong for the authored prose half of them carry: an item
+ * description usually ends in its own stop, so the lane shipped "a worn leather
+ * lanyard.." in every product prompt. A description long enough to be excerpted
+ * was worse — the projection ends a truncation with an ellipsis, and the appended
+ * stop made "…".
+ *
+ * Normalizing here rather than at twenty call sites, because the invariant is
+ * about the SEGMENT that reaches a payload, not about any one concept's phrasing.
+ * An authored `!` or `?` is kept: it is the author's sentence, and flattening it
+ * to a stop would be this dialect editing prose it was only asked to place.
+ */
+function sentence(text: string): string {
+  const tail = SENTENCE_TAIL.exec(text)?.[0] ?? "";
+  const body = text.slice(0, text.length - tail.length);
+  if (body.length === 0) return "";
+  if (tail.includes("…")) return `${body}…`;
+  return `${body}${tail.includes("!") ? "!" : tail.includes("?") ? "?" : "."}`;
 }
 
 // ---------------------------------------------------------------------------

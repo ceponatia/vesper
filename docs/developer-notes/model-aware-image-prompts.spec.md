@@ -29,6 +29,7 @@ summary to correct.
 | Item and location projections                 | `apps/web/src/contracts/images/entity-digest.ts`                 |
 | Character translation scaffold (unbound)      | `apps/web/src/contracts/images/subject-digest.ts`                |
 | Entity lane read, compile and refusal         | `apps/web/src/server/images/entity-prompt-program.ts`            |
+| Stage 6 negative-transport trial              | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
 
 ## What is built
 
@@ -189,6 +190,36 @@ visible: repointing the item or location profile at an unbound model takes that
 lane out of service until somebody adds a binding. The plan carries this as an
 open question.
 
+### Authored lettering is not yet a protected claim
+
+`item.marking` and `location.signage` are the concepts that take `text`,
+`letters`, `logo` and `caption` off the negative channel's table, and neither has
+a producer. The item and location projections classify every authored free-text
+field as `item.form` / `location.contents`, which protect nothing, so a door
+plate reading EXIT or a shop window painted ALDWIN & SON reaches the compile as
+ordinary prose — and the render is told to spell the words and to exclude
+unintended text in the same payload.
+
+This is the plan's own canonical collision case arriving from a direction the
+guards cannot see, because the guard is a claim and the lettering is not one.
+Both cases are cells in the Stage 6 trial, so the pictures decide how much it
+actually costs before anybody changes a schema. The plan carries the open
+question.
+
+### A dialect terminates a clause once
+
+Every Qwen wording ends its clause with a full stop, which is right for a
+single-word value and wrong for the authored prose half of them carry: the item
+projection passes a description verbatim, authored descriptions end in their own
+stop, and the lane shipped "a worn leather lanyard.." in every product prompt. An
+excerpted description was worse — the projection ends a truncation with an
+ellipsis, so the appended stop made "…".
+
+`sentence()` in the dialect normalizes the segment's terminator once, rather than
+each of the twenty wordings guarding its own. An authored `!` or `?` survives as
+itself: flattening it would be the dialect editing prose it was only asked to
+place.
+
 ### The seeded negative pack leaves `identity_drift` off
 
 Qwen Image 2512's reviewed identity preservation is `weak` and its reference input
@@ -264,8 +295,13 @@ typed twice.
 
 ## Remaining
 
-- Probe the Qwen Image 2512 version so the compiled exclusions reach the provider.
-- Run the first pinned image trial for item and location renders.
+- Run `scripts/eval/prompt-programs/entity-negative-ab.ts --render` and grade it.
+  The instrument is built and prints both arms for free; the renders cost
+  provider spend, which makes running it an owner action.
+- Probe and activate the Qwen Image 2512 version so the compiled exclusions reach
+  the provider. Not a scoped change: pinning that row also switches on the `steps`
+  and `go_fast` settings that sit inert on the three portrait profiles today, so
+  it needs the trial's verdict first.
 - Write the character image adapter that joins visual state's selection to the
   canonical owners' semantic values, then cut over the character-bearing lanes —
   each behind its own shadow compile, dialect and trial. The four gaps in
