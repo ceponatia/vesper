@@ -767,6 +767,9 @@ export const imageRecordSchema = z.object({
        * loose: the Gallery only carries it, and a strict shape here would strip
        * a record written by a newer deploy. */
       render: z.record(z.string(), z.unknown()).optional().catch(undefined),
+      /** The visual-state provenance a digest-fed lane records at reserve time
+       * (`VisualImageProvenance`) — loose for the same reason as `render`. */
+      visualState: z.record(z.string(), z.unknown()).optional().catch(undefined),
     })
     .catch({}),
 });

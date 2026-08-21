@@ -10,10 +10,11 @@ import {
   presentVisualFacts,
   VISUAL_FACT_PROBES,
 } from "@/server/test-support";
+import { buildAvatarSegments } from "./avatar-segments";
 import { buildCharacterSceneContext, type SceneCastMember } from "./character-scene";
 import { buildChatLookPrompt } from "./chat-look";
 import { apparentAgeAnchor } from "./prompts-appearance";
-import { buildAvatarPrompt } from "./prompts-avatar";
+import type { AvatarWardrobeItem } from "./prompts-avatar";
 import { resolveScenePlan } from "./prompts-scene-plan";
 import { sceneSpecSchema } from "./prompts-scene-composer";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
@@ -34,8 +35,10 @@ import { buildVariantInstruction } from "./prompts-variant";
  * Reading the matrix: the lanes disagree, and the disagreements ARE the plan's
  * premise.
  *
- * - The avatar lane states identity, morphology, age and wardrobe from the sheet,
- *   and drops everything below the waist (waist-up framing).
+ * - The avatar lane (cut over to the Stage 3 digest assembly, 2026-08-21) states
+ *   identity, morphology, age and wardrobe — morphology now through the visual
+ *   digest, the rest still from the sheet — and drops everything below the waist
+ *   (waist-up framing). Its fact set is unchanged from the pre-cutover freeze.
  * - The text-to-image scene lane states the whole sheet through
  *   `characterAppearanceSummary`, which applies no coverage gate — so it
  *   describes skin a garment is covering, while the reference lanes, routing the
@@ -55,6 +58,27 @@ const profile = laneProbeProfile();
 const dressed = laneProbeWardrobe();
 const dressedExposure = laneProbeDressedExposure();
 const bareExposure = laneProbeBareExposure();
+
+/**
+ * The avatar lane, through the PRODUCTION Stage 3 assembly (`buildAvatarSegments`
+ * — standalone visual digest + semantic segments). Re-frozen 2026-08-21 with an
+ * UNCHANGED fact set: the digest's morphology segment took over the feature
+ * groups the sheet traversal used to state, and every other fact still arrives
+ * exactly once. The helper also asserts render eligibility, because a freeze
+ * over a prompt production would refuse to send proves nothing.
+ */
+function avatarPrompt(wardrobe: ReadonlyArray<AvatarWardrobeItem>, style: "realistic" | "stylized" = "realistic"): string {
+  const built = buildAvatarSegments({
+    characterId: "probe-character",
+    name: LANE_PROBE_NAME,
+    profile,
+    style,
+    wardrobe,
+    readToken: "lane-probe-token",
+  });
+  expect(built.missingRequired).toEqual([]);
+  return built.prompt;
+}
 
 const castMember = (over: Partial<SceneCastMember> = {}): SceneCastMember => ({
   characterId: "probe-character",
@@ -98,7 +122,7 @@ function expectLaneFacts(prompt: string, expected: readonly string[]): void {
 
 describe("image lane characterization — dressed subject", () => {
   it("avatar: sheet identity, morphology, age and wardrobe; nothing below the waist", () => {
-    expectLaneFacts(buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed), [
+    expectLaneFacts(avatarPrompt(dressed), [
       "gender",
       "ethnicity",
       "species",
@@ -215,7 +239,7 @@ describe("image lane characterization — bare subject", () => {
   });
 
   it("avatar: bare or dressed, the portrait studio states no intimate anatomy", () => {
-    const prompt = buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", []);
+    const prompt = avatarPrompt([]);
     const present = presentVisualFacts(prompt);
     expect(present).not.toContain("bustSize");
     expect(present).not.toContain("nipples");
@@ -227,7 +251,7 @@ describe("image lane characterization — bare subject", () => {
 
 describe("image lane invariants that hold across the migration", () => {
   const lanes = (): ReadonlyArray<{ lane: string; prompt: string }> => [
-    { lane: "avatar", prompt: buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed) },
+    { lane: "avatar", prompt: avatarPrompt(dressed) },
     { lane: "scene_t2i", prompt: buildSceneRenderPrompt(scenePlan(), {}) },
     { lane: "scene_ref", prompt: buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }) },
     {
@@ -285,7 +309,7 @@ describe("image lane invariants that hold across the migration", () => {
     expect(anchor).toContain("late twenties");
 
     for (const prompt of [
-      buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
+      avatarPrompt(dressed),
       buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
     ]) {
       expect(presentVisualFacts(prompt)).toContain("apparentAge");
