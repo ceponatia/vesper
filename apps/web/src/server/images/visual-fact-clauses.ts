@@ -1,7 +1,26 @@
 import { attributeRegistry, type AttributeValue } from "@/contracts/attributes";
+import { bodyLocationRegistry } from "@/contracts/body/locations";
 import { visualImageMorphologyOf, type VisualImageFact } from "@/contracts/images/visual-digest";
 import type { VisualFactClause, VisualFactClauseResolver } from "@/contracts/images/visual-segments";
-import { visualStateSpeciesFeatureGroupValueSchema } from "@/contracts/visual-state";
+import {
+  visualStateActiveConditionValueSchema,
+  visualStateBodySurfaceWetnessValueSchema,
+  visualStateSpeciesFeatureGroupValueSchema,
+  VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+  VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
+  VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
+  VISUAL_STATE_GARMENT_CONDITION_KIND_ID,
+  VISUAL_STATE_GARMENT_DAMAGE_KIND_ID,
+  VISUAL_STATE_GARMENT_DEPOSIT_KIND_ID,
+  VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID,
+  VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+  VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
+  VISUAL_STATE_WARDROBE_ITEM_KIND_ID,
+} from "@/contracts/visual-state";
 import type { RealizedBody } from "@/contracts/species";
 import { capitalizeFirst, formatAttribute, formatAttributeValue, isNonVisualAttribute } from "./prompts-format";
 
@@ -29,9 +48,11 @@ import { capitalizeFirst, formatAttribute, formatAttributeValue, isNonVisualAttr
  * The three answers mean different things downstream (`visual-segments.ts`):
  * a string is the clause; `{ omit }` is a deliberate lane/registry cut recorded
  * as a suppression; `undefined` is degradation, which costs a REQUIRED fact its
- * render eligibility. Kinds with no arm here yet (wardrobe, current state, body
- * language, anatomy departures) resolve `undefined` on purpose — fail-closed
- * per the subject digest's own ruling — and gain arms as their lanes cut over.
+ * render eligibility. The scene cutover (WP-C) added the wardrobe,
+ * garment-state, body-language, condition and body-surface arms below; kinds
+ * still without one (anatomy departures, located facts, presentation choices,
+ * affordance observations) resolve `undefined` on purpose — fail-closed per the
+ * subject digest's own ruling — and gain arms as their lanes cut over.
  *
  * Pure: registry + passed-in values only.
  */
@@ -46,6 +67,33 @@ export const VISUAL_CLAUSE_OMIT_NONVISUAL = "nonvisual";
 export const VISUAL_CLAUSE_OMIT_ELIDED = "value_elided";
 /** The realized body gates this attribute off — a stale value must not outlive the body. */
 export const VISUAL_CLAUSE_OMIT_INAPPLICABLE = "body_inapplicable";
+/**
+ * A garment identity fact deliberately routed to the lane's own authoritative
+ * wardrobe line (the scene queue's resolved outfit text; the avatar's occlusion-
+ * filtered "Wearing" segment). One garment, one statement: until Stage 5 unifies
+ * transport, the route-owned line is richer than the digest's `{ name, locus }`
+ * value — and a REQUIRED worn-garment fact must resolve deliberately here, or
+ * every chat with a garment store refuses its renders over a fact the prompt
+ * states anyway.
+ */
+export const VISUAL_CLAUSE_OMIT_WARDROBE_ROUTE = "route_wardrobe_authoritative";
+/**
+ * A garment CURRENT-STATE fact (wet, open, rolled, stained) deliberately routed
+ * to the chat lane's garment narration (`buildChatGarmentNarration` scene notes,
+ * possessive-labelled per actor). Phrasing it here too would state the same
+ * arrangement twice in one prompt — the duplication failure mode the lane
+ * characterization freezes against.
+ */
+export const VISUAL_CLAUSE_OMIT_GARMENT_NOTES = "route_garment_notes";
+/**
+ * A body-language fact (posture, facing, support, contact) deliberately left to
+ * the scene plan: committed scene facts already reach the shot through the
+ * composer's authoritative context, the resolved camera, and the staging
+ * registry — the pose policy this consolidation explicitly does not redesign
+ * (image-lane-consolidation.plan.md §Boundaries). A digest clause beside the
+ * staged sentence would put the same body in two poses in one prompt.
+ */
+export const VISUAL_CLAUSE_OMIT_SCENE_PLAN = "scene_plan_owned";
 
 export interface VisualFactClauseSources {
   /** The subject's RESOLVED attribute values — the canonical owner attribute facts phrase from. */
@@ -95,6 +143,59 @@ function speciesGroupClause(fact: VisualImageFact, sources: VisualFactClauseSour
 }
 
 /**
+ * Wardrobe identity — the garment/item facts — resolves as a deliberate
+ * omission everywhere: every consuming lane still carries its own authoritative
+ * wardrobe line (see {@link VISUAL_CLAUSE_OMIT_WARDROBE_ROUTE}).
+ */
+const WARDROBE_ROUTE_KIND_IDS: ReadonlySet<string> = new Set([
+  VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
+  VISUAL_STATE_WARDROBE_ITEM_KIND_ID,
+]);
+
+/** Garment current state — owned by the lane's garment narration, not a digest clause. */
+const GARMENT_NOTE_KIND_IDS: ReadonlySet<string> = new Set([
+  VISUAL_STATE_GARMENT_CONDITION_KIND_ID,
+  VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+  VISUAL_STATE_GARMENT_DEPOSIT_KIND_ID,
+  VISUAL_STATE_GARMENT_DAMAGE_KIND_ID,
+  VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID,
+]);
+
+/** Body language — owned by the scene plan's camera/staging/pose resolution. */
+const SCENE_PLAN_KIND_IDS: ReadonlySet<string> = new Set([
+  VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
+]);
+
+/**
+ * An active condition, stated by its canonical key ("soaked", "blindfolded") —
+ * the condition system's own committed identity, the one value that can name a
+ * condition without inventing a second vocabulary. Its attribute EFFECTS are
+ * not restated here: they already resolve into the subject's attributes.
+ */
+function activeConditionClause(fact: VisualImageFact): VisualFactClause {
+  const parsed = visualStateActiveConditionValueSchema.safeParse(fact.value);
+  return parsed.success ? parsed.data.condition : undefined;
+}
+
+/**
+ * Standing wetness on skin or hair — "hair soaked", "skin damp". The location
+ * word comes from the body-location registry; an unresolvable locus is
+ * degradation, never a guessed surface.
+ */
+function bodySurfaceWetnessClause(fact: VisualImageFact): VisualFactClause {
+  const parsed = visualStateBodySurfaceWetnessValueSchema.safeParse(fact.value);
+  if (!parsed.success) return undefined;
+  if (fact.locus.kind !== "body") return undefined;
+  const location = bodyLocationRegistry.byId(fact.locus.locus.bodyLocationId);
+  if (location === undefined) return undefined;
+  return `${location.label.toLowerCase()} ${parsed.data.band}`;
+}
+
+/**
  * The shared resolver over one subject's canonical owners. Deterministic over
  * its inputs; consult it through `buildVisualSubjectSegments` only.
  */
@@ -106,10 +207,20 @@ export function visualFactClauseResolver(sources: VisualFactClauseSources): Visu
     if (fact.sourceRef.kind === "appearance" && fact.sourceRef.ref.kind === "attribute") {
       return attributeClause(fact.sourceRef.ref.attributeId, sources);
     }
-    // No canonical phrasing arm yet (anatomy departures, located facts, and the
-    // scene-owned kinds). Degradation by design: a required fact lands in
-    // `missingRequired` and the route refuses before spend rather than painting
-    // a fingerprint (spec.prompts.md §Failure behavior).
+    // The scene cutover's arms (WP-C). The omissions are ROUTE decisions, not
+    // gaps: each of these owners already reaches the prompt through a richer
+    // route-owned line, and a second statement would be the duplication failure
+    // the characterization matrix freezes against.
+    if (WARDROBE_ROUTE_KIND_IDS.has(fact.kindId)) return { omit: VISUAL_CLAUSE_OMIT_WARDROBE_ROUTE };
+    if (GARMENT_NOTE_KIND_IDS.has(fact.kindId)) return { omit: VISUAL_CLAUSE_OMIT_GARMENT_NOTES };
+    if (SCENE_PLAN_KIND_IDS.has(fact.kindId)) return { omit: VISUAL_CLAUSE_OMIT_SCENE_PLAN };
+    if (fact.kindId === VISUAL_STATE_CONDITION_ACTIVE_KIND_ID) return activeConditionClause(fact);
+    if (fact.kindId === VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID) return bodySurfaceWetnessClause(fact);
+    // No canonical phrasing arm yet (anatomy departures, located facts,
+    // presentation choices, affordance observations). Degradation by design: a
+    // required fact lands in `missingRequired` and the route refuses before
+    // spend rather than painting a fingerprint (spec.prompts.md §Failure
+    // behavior).
     return undefined;
   };
 }

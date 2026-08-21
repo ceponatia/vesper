@@ -26,6 +26,12 @@ import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scen
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
+import { applySceneSubjectVisual, visualStateNote } from "./scene-subject-visual";
+import type { VisualStateShadowInput } from "@/server/visual-state";
+
+// The meter note moved to the cast-1 cutover module with WP-C; the legacy
+// cast ≥2 path below and existing consumers keep this import surface.
+export { visualStateNote } from "./scene-subject-visual";
 
 export const DEFAULT_CHAT_ROOM =
   "A warm, softly lit room — a comfortable couch, a low wooden table, shelves of books along one wall, and a tall window letting in natural light.";
@@ -97,27 +103,31 @@ export interface RenderCharacterSceneInput {
    * IMAGE model that paints it. Unknown/absent ⇒ the curated composer default.
    */
   composerModel?: string;
+  /**
+   * The single subject's committed chat cut as a camera-less shadow input
+   * (image-lane-consolidation Stage 3, WP-C) — the queue builds it through
+   * `chatVisualStateShadowInput` when the effective cast is one person. When
+   * present (and matching the lone cast member), the visual image digest — with
+   * the plan's committed camera bound into its one selection pass — becomes the
+   * character-fact source for the focal spec, and a digest that cannot be built
+   * fails the row before provider spend. Absent (pre-digest callers: tests, the
+   * lab baseline), the legacy field production stands.
+   */
+  subjectVisual?: Omit<VisualStateShadowInput, "sink" | "camera">;
   sink?: DiagnosticSink;
 }
 
-/** A compact image-specific description of visible meter state. */
-export function visualStateNote(meters: Record<string, number> = {}): string {
-  const parts: string[] = [];
-  const intoxication = meters.intoxication ?? 0;
-  if (intoxication > 0.7) parts.push("visibly unsteady from drink, eyes glassy and unfocused, posture slack");
-  else if (intoxication > 0.35) parts.push("loose and warm from a drink or two, gaze a little unfocused");
-  const hygiene = meters.hygiene ?? 1;
-  if (hygiene < 0.3) parts.push("unwashed — hair gone lank, skin sheened, clothes rumpled");
-  else if (hygiene < 0.55) parts.push("a little disheveled, hair loosened and skin damp");
-  const energy = meters.energy ?? 1;
-  if (energy < 0.2) parts.push("exhausted and heavy-lidded");
-  else if (energy < 0.45) parts.push("tired, eyes heavy");
-  const arousal = meters.arousal ?? 0;
-  if (arousal > 0.55) parts.push("eyes bright and heavy-lidded, lips parted, breath shallow, a faint sheen of sweat");
-  return parts.join("; ");
-}
-
-/** One cast member's composer entry — everything the shot needs about that person. */
+/**
+ * One cast member's composer entry — everything the shot needs about that person.
+ *
+ * LEGACY field production (image-lane-consolidation Stage 3 scope ruling): for
+ * an effective cast of ONE with a supplied `subjectVisual` cut, the appearance,
+ * identity-anchor and reveal fields written here are replaced after the plan
+ * resolves by `applySceneSubjectVisual` — the digest-sourced production with the
+ * committed camera bound in. A cast of 2+ keeps exactly this code path until
+ * Stage 4. The composer prompt reads none of those fields, so the pre-plan
+ * values never steer the shot either way.
+ */
 function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
   const exposure: RegionExposure =
     member.exposure ?? (member.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
@@ -228,7 +238,36 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,
   });
-  const plan = await composeSceneSpec({ ...context, sink: input.sink, composerModel: input.composerModel });
+  let plan = await composeSceneSpec({ ...context, sink: input.sink, composerModel: input.composerModel });
+
+  // The cast-1 digest cutover (image-lane-consolidation Stage 3, WP-C): applied
+  // AFTER the plan resolves because the committed scene camera is `plan.camera`
+  // and it must enter the digest's ONE selection pass. Cast ≥2 keeps the legacy
+  // `presentCharacter` production untouched (Stage 4), and a selfie's forced
+  // single-subject cast rides the new path. A refusal here reaches the row as a
+  // failed precondition — reserved, failed, never sent to a provider.
+  let visualRefusal: string | null = null;
+  let visualStateMeta: Record<string, unknown> | undefined;
+  const soleMember = cast.length === 1 ? cast[0] : undefined;
+  if (soleMember !== undefined && input.subjectVisual !== undefined) {
+    if (input.subjectVisual.subjectId !== soleMember.characterId) {
+      input.sink?.push(
+        diag("warn", "images.scene_render.visual_subject_mismatch", "subject visual cut names a different character — digest skipped", {
+          context: { cut: input.subjectVisual.subjectId, cast: soleMember.characterId },
+        }),
+      );
+    } else {
+      const applied = applySceneSubjectVisual({
+        plan,
+        member: soleMember,
+        shadow: input.subjectVisual,
+        ...(input.sink === undefined ? {} : { sink: input.sink }),
+      });
+      plan = applied.plan;
+      visualRefusal = applied.refusal;
+      visualStateMeta = applied.digestMeta;
+    }
+  }
 
   // The chat's stored scene-model pick, resolved against the profile registry. A
   // pick that no longer exists degrades to the scene task's default (owner ruling
@@ -365,8 +404,14 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
       // have answered before a later member's refusal stopped the scene, and
       // those references are never sent (renderResolvedScene would drop them
       // from the row anyway — this keeps the lane's own output coherent).
-      ...(identityProvenance.length > 0 && identityRefusal === null ? { identityProvenance } : {}),
-      failedPrecondition: identityRefusal,
+      ...(identityProvenance.length > 0 && identityRefusal === null && visualRefusal === null
+        ? { identityProvenance }
+        : {}),
+      // The digest's `meta.visualState` fragment, written at reserve time so it
+      // survives failures — which visual moment fed this render, whatever the
+      // provider then did with it.
+      ...(visualStateMeta === undefined ? {} : { visualStateMeta }),
+      failedPrecondition: identityRefusal ?? visualRefusal,
       linkage: {
         ownerId: input.userId,
         entityKind: "character",
@@ -386,8 +431,9 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   };
 
   const first = await renderOnce(plan, true);
-  // A refused identity render retries into the same refusal — return the record.
-  if (!selfie || identityRefusal !== null) return first;
+  // A refused render — identity or visual-digest — retries into the same
+  // refusal; return the record.
+  if (!selfie || identityRefusal !== null || visualRefusal !== null) return first;
 
   const firstError = await imageFailure(first);
   if (firstError === null) return first;

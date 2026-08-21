@@ -4,10 +4,21 @@ import type { VisualImageFact } from "@/contracts/images/visual-digest";
 import {
   VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID,
   VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+  VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
+  VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
+  VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
   VISUAL_STATE_SPECIES_FEATURE_GROUP_KIND_ID,
+  VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
 } from "@/contracts/visual-state";
 import { attr } from "@/server/test-support";
-import { visualFactClauseResolver, VISUAL_CLAUSE_OMIT_CURATED } from "./visual-fact-clauses";
+import {
+  visualFactClauseResolver,
+  VISUAL_CLAUSE_OMIT_CURATED,
+  VISUAL_CLAUSE_OMIT_GARMENT_NOTES,
+  VISUAL_CLAUSE_OMIT_SCENE_PLAN,
+  VISUAL_CLAUSE_OMIT_WARDROBE_ROUTE,
+} from "./visual-fact-clauses";
 
 /**
  * The shared clause resolver's THREE-ANSWER contract with
@@ -85,5 +96,77 @@ describe("visualFactClauseResolver", () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  // The WP-C scene arms. The wardrobe case is the load-bearing one: a WORN
+  // garment fact rides the digest's REQUIRED lane, so an arm that answered
+  // `undefined` would put it in `missingRequired` and refuse every cast-1 scene
+  // render in a chat with a garment store — over a garment the route-owned
+  // outfit line states anyway. The others are the double-statement guards: the
+  // garment narration owns garment-state prose, the scene plan owns pose.
+  it.each([
+    [
+      "a worn garment defers to the route's authoritative outfit line",
+      fact({
+        kindId: VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
+        locus: { kind: "item", itemInstanceId: "g1" },
+        sourceRef: { kind: "garment", garmentInstanceId: "g1" },
+        value: { name: "silk kimono", locus: { kind: "worn" } },
+        segmentKind: "wardrobe",
+      }),
+      { omit: VISUAL_CLAUSE_OMIT_WARDROBE_ROUTE },
+    ],
+    [
+      "garment current state defers to the garment narration",
+      fact({
+        kindId: VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+        locus: { kind: "garment_part", garmentInstanceId: "g1", partId: "front" },
+        sourceRef: { kind: "garment_part", garmentInstanceId: "g1", partId: "front" },
+        value: { channel: "closure", band: "open" },
+        segmentKind: "current_state",
+        required: false,
+      }),
+      { omit: VISUAL_CLAUSE_OMIT_GARMENT_NOTES },
+    ],
+    [
+      "body language defers to the scene plan's staging and pose",
+      fact({
+        kindId: VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
+        locus: { kind: "subject", subjectId: "s" },
+        sourceRef: { kind: "scene_relation", relationId: "r1" },
+        value: { posture: "kneeling" },
+        segmentKind: "pose",
+        required: false,
+      }),
+      { omit: VISUAL_CLAUSE_OMIT_SCENE_PLAN },
+    ],
+  ])("%s", (_name, subject, expected) => {
+    expect(visualFactClauseResolver({ attributes: [] })(subject)).toEqual(expected);
+  });
+
+  it("phrases current-state owners, and degrades a malformed value to silence", () => {
+    const resolve = visualFactClauseResolver({ attributes: [] });
+    const condition = fact({
+      kindId: VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
+      locus: { kind: "subject", subjectId: "s" },
+      sourceRef: { kind: "body_condition", conditionId: "c1" },
+      value: { condition: "blindfolded" },
+      segmentKind: "current_state",
+      required: false,
+    });
+    expect(resolve(condition)).toBe("blindfolded");
+    const wetness = fact({
+      kindId: VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
+      locus: { kind: "body", locus: { bodyLocationId: "hair" } },
+      sourceRef: { kind: "body_surface", subjectId: "s", locationId: "hair" },
+      value: { band: "soaked" },
+      segmentKind: "current_state",
+      required: false,
+    });
+    expect(resolve(wetness)).toBe("hair soaked");
+    // A value that fails its own schema is degradation — silence, never a
+    // fingerprint or a guessed band in a provider prompt.
+    expect(resolve({ ...condition, value: '"fingerprint"' })).toBeUndefined();
+    expect(resolve({ ...wetness, value: { band: "dripping" } })).toBeUndefined();
   });
 });
