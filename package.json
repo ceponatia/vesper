@@ -25,7 +25,6 @@
     "test:int:strict": "REQUIRE_INTEGRATION_DB=true vitest run --no-file-parallelism --project=app-int",
     "verify": "bash scripts/verify.sh",
     "verify:full": "bash scripts/verify.sh full",
-    "prepare": "husky",
     "db:up": "docker compose up -d --wait",
     "db:create": "tsx scripts/db-create.ts",
     "db:generate": "drizzle-kit generate",
@@ -76,9 +75,6 @@
     "test:rollout-r2": "vitest run --no-file-parallelism apps/web/src/server/engine/sim-narrator.int.test.ts",
     "test:rollout-r3": "vitest run --no-file-parallelism apps/web/src/app/api/chats/sim-routes.int.test.ts apps/web/src/server/engine/simulation/rollout-world.int.test.ts"
   },
-  "lint-staged": {
-    "*.{ts,tsx}": "eslint --max-warnings 0"
-  },
   "dependencies": {
     "@vesper/image-core": "workspace:*",
     "@vesper/image-replicate": "workspace:*",
@@ -96,9 +92,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.28.0",
     "eslint-config-next": "^16.3.0",
-    "husky": "^9.1.7",
     "jscpd": "^5.0.9",
-    "lint-staged": "^17.0.7",
     "madge": "^8.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.8.3",

@@ -172,8 +172,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
       - name: Type-aware ESLint
         run: pnpm lint
         env:
@@ -195,8 +193,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
       - name: Circular-import check
         run: pnpm lint:cycles
       - name: Route-authorization guard
@@ -227,8 +223,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
       - name: Pure test suite
         run: pnpm test
 
@@ -245,8 +239,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
       - name: Start Postgres 17 and pgvector
         run: docker compose up -d --wait
       - name: Apply migrations from zero
@@ -286,8 +278,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        env:
-          HUSKY: 0
       - name: Next.js production build
         run: pnpm build
         env:

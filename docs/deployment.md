@@ -24,9 +24,8 @@ Machine with a persistent volume — so `auto_stop_machines` must be **off**.
 
 ## The Dockerfile (key choices)
 
-- **No `pnpm prune --prod`.** Pruning re-runs the husky `prepare` hook *after*
-  husky is removed (`husky: not found` → build fails) and also deletes `tsx`,
-  which migrations need. `HUSKY=0` is set so the hook is a no-op regardless.
+- **No `pnpm prune --prod`.** Pruning deletes `tsx`, which the release-command
+  migrations need at runtime.
 - **Full dependency tree at runtime** so `pnpm db:migrate` (runs via `tsx`) works
   from the release command.
 - **Binds to `$PORT` (8080)** by calling the root launcher (`node scripts/web.mjs
@@ -134,27 +133,24 @@ Deploys are **manual** — pushing to GitHub does **not** auto-deploy (there is 
 Fly↔GitHub integration firing; every release so far has been a hand-run
 `fly deploy`). So a `git push` ships nothing on its own — run the deploy after.
 
-- **First, verify `main` — locally.** There is no CI on GitHub, so the release
-  candidate is validated on your machine: bring the dev database up
-  (`pnpm db:up && pnpm db:migrate`), then run **`pnpm verify:full`** on a clean
-  `main`. That is the widest target of `scripts/verify.sh` — the push gate (lint,
-  static checks, typecheck, the pure test suite, jscpd) plus the two gates too
-  slow to pay for on every push: the DB-backed engine suite, which carries the
-  Gate 1 benchmark as its final step, and the production build. The engine gate
-  **hard-fails when the database container isn't running** rather than skipping
-  itself — a gate that reports success must actually have run. Gates run one at a
-  time in memory-capped cgroups, and a failure doesn't abort the run: it finishes
-  the set, prints per-gate durations, and names every gate that failed. Deploy
-  only when it exits clean.
-- **This run is the only thing that compiles the app before Fly does.** The
-  `.husky/pre-push` hook gates every code push, but it runs the `all` target,
-  which deliberately leaves the build out — the build is minutes long, and
-  charging it to every push would make pushing unusable. App-code and
-  package-internal changes therefore reach `main` linted, typechecked and tested
-  but never built, so skipping `pnpm verify:full` means `fly deploy` is the first
-  thing to compile them. The build gate pins the heap to 4096 MB to match the
-  Dockerfile's build stage, so a build that would exhaust the Fly builder fails
-  on your machine first (see Troubleshooting).
+- **First, verify `main` — with the full CI dispatch.** Run
+  **`gh workflow run CI --ref main`** and wait for green
+  (`gh run watch`). A dispatch runs every gate unconditionally: lint, static
+  checks, typecheck, the pure suite, jscpd, the DB-backed engine suite with the
+  Gate 1 benchmark, and the production build. That matters because PR CI runs
+  the build only when the build surface itself moves — the dispatch is what
+  guarantees the release candidate compiles before Fly does, with the build heap
+  pinned to 4096 MB to match the Dockerfile's stage, so a build that would
+  exhaust the Fly builder fails in CI first (see Troubleshooting).
+- **Deploy the same tree CI validated.** `fly deploy` ships your working tree,
+  not a git ref — deploy from a clean `main` checkout at the commit the
+  dispatch ran against.
+- **Local fallback:** `pnpm verify:full` on a clean `main` with the dev database
+  up (`pnpm db:up && pnpm db:migrate`) covers the same gates on your machine
+  when CI is unavailable. The engine gate hard-fails when the database container
+  isn't running rather than skipping itself; gates run one at a time in
+  memory-capped cgroups, and a failure doesn't abort the run — it finishes the
+  set and names every gate that failed.
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
   remote builder, runs the `release_command` (`pnpm -w run db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
@@ -194,10 +190,11 @@ moves through a **promotion PR**.
 
 - Pull request required before merging (0 required approvals — solo repo; GitHub
   won't let you approve your own PR, so requiring one would lock you out).
-- **No required status check.** Nothing on GitHub produces one any more, and a
-  check that never reports blocks every merge permanently. Verification moved
-  earlier: `.husky/pre-push` gates code on its way to `main`, and
-  `pnpm verify:full` gates the promotion itself.
+- **Required status check: `verify`** — the aggregate result of the
+  CodeBuild-runner CI workflow. A promotion PR (base `prod`) always runs the
+  full suite, engine and build included, so the check is meaningful on exactly
+  the PR it guards. `main` requires the same check, without admin enforcement,
+  so direct documentation pushes still work.
 - Force-pushes and branch deletion blocked.
 - **Enforced for admins too** — even the owner merges via a PR. For a
   genuine emergency, toggle protection off in the GitHub UI
@@ -222,8 +219,6 @@ a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`
 
 ## Troubleshooting
 
-- **`husky: not found` during `pnpm prune --prod`** — the original build failure;
-  fixed by dropping the prune + `HUSKY=0` (see Dockerfile).
 - **`archive/tar: unknown file mode ?rwxr-xr-x` while transferring build
   context** — a Windows junction reached the tar. `.dockerignore` patterns are
   anchored at the context root unless they start with `**/`, so a bare

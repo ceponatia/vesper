@@ -119,14 +119,14 @@ pnpm db:migrate
 pnpm db:studio                              # drizzle studio
 ```
 
-> **`pnpm verify` is the only verification gate — there is no hosted CI.**
-> `.husky/pre-push` (installed by `pnpm install`) runs it automatically before any
-> push that touches code, so a failing gate stops the push; documentation-only
-> pushes skip it, and `VESPER_SKIP_GATES=1 git push` opts out when you have just
-> run the gates yourself. It runs each gate serially under a memory cap and
-> refuses to start without a few GB of free RAM, so close heavy apps first. Run
-> `pnpm verify:full` before a deploy — it adds the engine suites (which need the
-> local Postgres up and migrated) and the production build.
+> **CI is the verification gate.** GitHub Actions runs on AWS CodeBuild managed
+> runners (`.github/workflows/ci.yml`); the aggregate `verify` status check is
+> required on `main` and `prod`, so a PR merges only when it is green. There are
+> no local git hooks — commits and pushes run nothing. `pnpm verify` remains
+> available for a local pre-flight (each gate serial under a memory cap; it
+> refuses to start without a few GB of free RAM), and `pnpm verify:full` adds
+> the engine suites (local Postgres up and migrated) and the production build.
+> Before a deploy, run the full CI dispatch: `gh workflow run CI --ref main`.
 > See [testing.md](testing.md) and [deployment.md](deployment.md).
 
 Vesper owns its local `vesper-postgres` container and `vesper_dev` database.

@@ -8,11 +8,8 @@ LABEL fly_launch_runtime="Next.js"
 # /app/apps/web. Keeping the operational root here is what preserves the Fly
 # volume mount at /app/data and the root release/SSH commands.
 WORKDIR /app
-# HUSKY=0 stops the `prepare` git-hook script (package.json: "prepare":"husky")
-# from running during install/prune — there is no .git in the image.
 # PORT/HOSTNAME match Fly's defaults.
 ENV NEXT_TELEMETRY_DISABLED=1 \
-    HUSKY=0 \
     PORT=8080 \
     HOSTNAME=0.0.0.0
 # Pin to the exact version in package.json's "packageManager" so Corepack uses
@@ -49,10 +46,8 @@ COPY . .
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm run build
 
 # ---- runner ----
-# Keep the FULL dependency tree (no `pnpm prune --prod`). Two reasons:
-#   1. Pruning re-runs the husky `prepare` hook after husky is gone → the build
-#      failure ("husky: not found"). HUSKY=0 + no prune avoids it entirely.
-#   2. `pnpm db:migrate` runs via tsx (a devDependency) at release time.
+# Keep the FULL dependency tree (no `pnpm prune --prod`):
+# `pnpm db:migrate` runs via tsx (a devDependency) at release time.
 FROM base AS runner
 # DATA_ROOT is set EXPLICITLY rather than inherited from the process working
 # directory. The Fly volume is mounted at /app/data, and `dataRoot()` falls back

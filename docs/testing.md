@@ -178,18 +178,14 @@ that run. The **`build` target** pins the heap to 4096 MB to match the
 Dockerfile's build stage, so a build that would exhaust the Fly builder fails
 here instead of during a deploy ([deployment.md](deployment.md)).
 
-`.husky/pre-push` runs `scripts/verify.sh all` automatically before every push,
-so nothing reaches the remote unverified. It skips branch deletions and
-documentation-only pushes (every changed path under `docs/` or ending `.md`), and
-fails loudly with instructions when `node_modules` is missing rather than passing
-a push it could not verify. To opt out — usually because you just ran the gates
-yourself — use `VESPER_SKIP_GATES=1 git push` or `git push --no-verify`.
-`.husky/pre-commit` is the narrower one: `pnpm lint-staged`, ESLint over staged
-`*.ts`/`*.tsx` only.
+There are no local git hooks: commits and pushes run nothing. The gate is CI —
+GitHub Actions on AWS CodeBuild runners (`.github/workflows/ci.yml`), whose
+aggregate `verify` status check is required on `main` and `prod`. Draft PRs run
+no jobs; mark a PR ready to run the applicable gates.
 
-Run the gates through `pnpm verify` rather than chaining `pnpm lint && pnpm
-typecheck && pnpm test` by hand — the serial, capped, RAM-checked execution is
-the point.
+For a local pre-flight, run the gates through `pnpm verify` rather than chaining
+`pnpm lint && pnpm typecheck && pnpm test` by hand — the serial, capped,
+RAM-checked execution is the point.
 
 ## Commands
 
