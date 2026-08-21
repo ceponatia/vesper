@@ -21,8 +21,16 @@ vi.mock("./avatar-segments", async (importOriginal) => {
 import { isDemoMode } from "../ai";
 import { db } from "../db";
 import { runImagePipeline } from "./assets";
-import { AVATAR_DIGEST_INELIGIBLE, defaultOutfitPhrase, generateAvatar, loadDefaultWardrobe, wardrobeOutfitText } from "./avatar";
+import {
+  AVATAR_DIGEST_INELIGIBLE,
+  defaultOutfitPhrase,
+  generateAvatar,
+  loadDefaultWardrobe,
+  loadDefaultWardrobeWithRevisions,
+  wardrobeOutfitText,
+} from "./avatar";
 import { buildAvatarSegments } from "./avatar-segments";
+import { laneProbeProfile, LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID } from "@/server/test-support";
 
 const { buildAvatarSegments: actualBuildAvatarSegments } =
   await vi.importActual<typeof import("./avatar-segments")>("./avatar-segments");
@@ -175,6 +183,36 @@ describe("loadDefaultWardrobe degradation", () => {
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
     expect(recorded[0]?.context).toMatchObject({ itemIds: ["item-1", "item-2"] });
+  });
+
+  it("marks a thrown lookup as failed — unknown wardrobe, not a confirmed empty one", async () => {
+    mockDb.mockImplementation(() => {
+      throw new Error("connection refused");
+    });
+    const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1"], new DiagnosticCollector());
+    expect(load).toMatchObject({ wardrobe: [], revisions: [], failed: true });
+  });
+
+  it("a failed wardrobe load never becomes exposure claims — a genuinely empty wardrobe still does", () => {
+    // Kills the regression the Stage 3 review caught: a transient item-table
+    // failure degraded to `[]`, which the digest path then read as a confirmed
+    // undressed character and rendered a topless portrait against the saved
+    // outfit. Unknown coverage must stay silent; only CONFIRMED bare states it.
+    const base = {
+      characterId: LANE_PROBE_SUBJECT_ID,
+      name: LANE_PROBE_NAME,
+      profile: laneProbeProfile(),
+      style: "realistic" as const,
+      wardrobe: [],
+      readToken: "unavailable-wardrobe-token",
+    };
+    const unavailable = actualBuildAvatarSegments({ ...base, wardrobeUnavailable: true });
+    expect(unavailable.segments.some((s) => s.kind === "exposure")).toBe(false);
+    expect(unavailable.prompt).not.toMatch(/\bbare\b|\btopless\b|\bnude\b/i);
+    expect(unavailable.missingRequired).toEqual([]); // degraded, still render-eligible
+
+    const confirmedBare = actualBuildAvatarSegments(base);
+    expect(confirmedBare.segments.some((s) => s.kind === "exposure")).toBe(true);
   });
 
   it("an empty outfit skips the lookup entirely — no query, no diagnostic", async () => {

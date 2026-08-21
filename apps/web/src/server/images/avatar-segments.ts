@@ -5,6 +5,7 @@ import {
   attributeRegistry,
   bodyLocationRegistry,
   exposedRegions,
+  FULLY_COVERED,
   isBelowWaist,
   isFeatureAttributeCategory,
   resolveVisualViewingConditions,
@@ -282,6 +283,14 @@ export interface AvatarSegmentAssemblyInput {
    * committed-cut name.
    */
   readonly readToken: string;
+  /**
+   * The wardrobe lookup FAILED — `wardrobe` is unknown state, not a confirmed
+   * undressed character. The assembly then treats coverage as unreadable:
+   * no exposure claims, no coverage-gated reveals, no wardrobe line — the
+   * attributes-only degradation the lane has always promised on this failure
+   * (`images.avatar.outfit_load_failed` fires at the load site).
+   */
+  readonly wardrobeUnavailable?: boolean;
   readonly sink?: DiagnosticSink;
 }
 
@@ -308,8 +317,11 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
   const worn = toWornInputs(input.wardrobe);
   // The canonical exposure readout, computed ONCE over the FULL wardrobe
   // (before the waist-up garment filter): a covering garment still hides its
-  // region even when it is dropped from the visible outfit.
-  const exposure = exposedRegions(worn);
+  // region even when it is dropped from the visible outfit. A FAILED wardrobe
+  // load is unknown state, not a bare body: coverage degrades to fully covered
+  // so the prompt stays silent about exposure (silence IS covered in the
+  // builder's contract) instead of asserting a nudity the saved outfit denies.
+  const exposure = input.wardrobeUnavailable === true ? FULLY_COVERED : exposedRegions(worn);
 
   const assembly = assembleVisualStateSnapshot({
     scope: { kind: "standalone_character", characterId: input.characterId },

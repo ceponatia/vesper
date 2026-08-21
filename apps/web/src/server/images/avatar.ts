@@ -131,6 +131,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
           profile,
           style,
           wardrobe: load.wardrobe,
+          ...(load.failed === true ? { wardrobeUnavailable: true } : {}),
           // The character row's own revision plus every wardrobe row read for
           // this render — an edit to either mints a different token.
           readToken: standaloneCharacterReadToken({
@@ -232,6 +233,12 @@ export interface AvatarWardrobeLoad {
   wardrobe: AvatarWardrobeItem[];
   /** One `items.updatedAt` revision per loaded row, in wardrobe order. */
   revisions: ImageSourceRevision[];
+  /**
+   * The lookup THREW — the empty wardrobe above is unknown state, not a
+   * confirmed undressed character. The segment assembly must not turn it into
+   * exposure claims; it degrades to the attributes-only prompt instead.
+   */
+  failed?: boolean;
 }
 
 /**
@@ -291,7 +298,7 @@ export async function loadDefaultWardrobeWithRevisions(
         },
       }),
     );
-    return { wardrobe: [], revisions: [] };
+    return { wardrobe: [], revisions: [], failed: true };
   }
 }
 
