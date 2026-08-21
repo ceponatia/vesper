@@ -12,11 +12,37 @@ snapshot and selection primitives; this spec owns only their image-lane use.
   `VisualImageDigest` / `VisualImageFact` / `VisualImageProvenance` in
   `apps/web/src/contracts/images/visual-digest.ts` realize this spec's
   `ImageVisualDigest` / `ImageVisualFact` / `ImageVisualProvenance` sketch
-  (names follow visual-state conventions, as §Contract allows). Remaining for
-  Stage 2: the server-side assembly that feeds a live snapshot in and persists
-  provenance, and route consumption.
-- Avatar and scene consumers: remaining.
-- Visual provenance persistence: remaining.
+  (names follow visual-state conventions, as §Contract allows).
+- Stage 2 server assembly: built 2026-08-21.
+  `apps/web/src/server/visual-state/image-digest.ts` realizes the digest over a
+  live cut and returns `{ digest, provenance, meta }`, where `meta` is the
+  `meta.visualState` fragment a render row merges beside `meta.render` — the
+  shape `images/entity-prompt-program.ts` already uses for its own provenance
+  keys. It is pure over passed-in committed state, never throws across the seam,
+  and returns a fail-closed digest (empty facts, suppressions, diagnostic) so
+  the caller owns the render-eligibility decision.
+- Reuse, never re-select: `buildVisualStateSelections` now carries out the image
+  `VisualAttentionContext` it builds (`VisualStateSelections.imageContext`,
+  threaded onto `VisualStateShadowBuild`), so realization runs over the exact
+  snapshot, selection and context that produced the selection. A rebuilt
+  look-alike context would fingerprint a camera nobody selected under, and the
+  digest's consistency gate only sees the subject/key half of that mistake.
+- Camera: still the `visual_state_shadow` placeholder viewpoint. The module
+  takes the context as an argument so a route cutover binds a committed scene
+  camera through `visualCameraReadsOfSceneCamera` without changing this seam.
+- Consumers: the admin chat inspector only, on both lanes. Realization happens
+  inside `visual-state/preview.ts`, which `previewChatVisualState` and
+  `previewSimVisualState` share, so the payload's `imageDigest` field (subjects
+  with their required/optional facts and segment kinds, the missing-mandatory
+  report, suppression reasons with counts, the three fingerprints, the cut id,
+  and the provenance record) is identical in shape across lanes. Production
+  render behavior is unchanged.
+- Avatar and scene consumers: remaining (Stage 3).
+- Visual provenance persistence: remaining. Nothing writes `meta.visualState` on
+  a real image row yet; the fragment lands with the first consuming route.
+- Standalone-portrait read token: remaining. An avatar or portrait render
+  outside a chat has no committed cut to name, so its `transactional_projection`
+  token is Stage 3 work.
 
 ## Ownership boundary
 

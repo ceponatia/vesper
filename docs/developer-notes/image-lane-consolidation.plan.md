@@ -149,12 +149,12 @@ lanes carry no identity or morphology fact at all.
 
 ### Stage 2 — one image visual digest
 
-Status: next — unblocked. The snapshot and image-selection contracts this stage
-waited on arrived with visual-state slice 8 on 2026-08-16, so what is left is
-the server-side assembly that feeds a live snapshot in, the provenance
-persistence beside it, and route consumption. None of that is written yet;
-[the companion spec](image-lane-consolidation.spec.visual-state.md) tracks which
-half is which.
+Status: in progress — the assembly is built 2026-08-21 and route consumption
+remains. A live conversation can now be turned into the single set of visual
+facts a picture of that character would use, and the admin inspector shows it
+for both chat lanes, but no image route reads it yet and nothing is recorded on
+a saved image. [The companion spec](image-lane-consolidation.spec.visual-state.md)
+lists exactly what is built and what is left.
 
 Add the application adapter that selects required and optional camera-visible
 facts from one snapshot. Preserve source keys, fingerprints, snapshot/source
