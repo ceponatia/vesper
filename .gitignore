@@ -10,9 +10,20 @@ data/
 .playwright-mcp/
 # Playwright/manual UI-testing screenshots live in screenshots/ (never the repo
 # root or docs/) and stay LOCAL — they are ephemeral working artifacts.
-# Graded render evidence goes in the tracked evidence/ folder instead, so a
-# verdict can be reviewed from another workstation; see evidence/README.md.
 screenshots/
+
+# Render evidence IMAGES are local-only (owner ruling 2026-08-21): generated
+# imagery must not enter git history. The verdict data beside them — README.md
+# and scores CSVs — stays tracked; see evidence/README.md.
+evidence/**/*.png
+evidence/**/*.jpg
+evidence/**/*.jpeg
+evidence/**/*.gif
+evidence/**/*.webp
+evidence/**/*.avif
+evidence/**/*.bmp
+evidence/**/*.tif
+evidence/**/*.tiff
 docs/developer-notes/ux-audit-assets/
 docs/prompts/
 
