@@ -15,6 +15,7 @@ import {
   visualStateFeatureFixture,
   visualStateFeaturesFingerprint,
   visualStateNonHumanBody,
+  visualStateScopeKey,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_INTIMATE_GATED,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
@@ -372,6 +373,15 @@ describe("visualImageProvenanceOf", () => {
     }
     const reparsed = parseVisualImageProvenance(JSON.parse(JSON.stringify(provenance)));
     expect(reparsed).toEqual(provenance);
+  });
+
+  it("pins the standalone-character scope key a stored portrait row will carry", () => {
+    // A persisted wire format (VisualImageProvenance.scopeKey): the Stage 3
+    // avatar route stores this for renders outside any conversation, so the
+    // literal is deliberate — changing it orphans stored provenance.
+    expect(visualStateScopeKey({ kind: "standalone_character", characterId: "chr_9" })).toBe(
+      "standalone_character:chr_9",
+    );
   });
 
   it("degrades a malformed stored record to absent provenance with the boundary diagnostic", () => {

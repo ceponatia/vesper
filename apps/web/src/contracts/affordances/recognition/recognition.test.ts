@@ -256,7 +256,11 @@ describe("visual memory", () => {
       scope: { kind: "world_branch", branchId: "grp_1" },
       observer: { kind: "player_viewpoint", viewpointId: "vp_a" },
     });
-    expect(new Set([left, right, otherScope]).size).toBe(3);
+    const standalone = visualMemoryBindingKey({
+      scope: { kind: "standalone_character", characterId: "grp_1" },
+      observer: { kind: "player_viewpoint", viewpointId: "vp_a" },
+    });
+    expect(new Set([left, right, otherScope, standalone]).size).toBe(4);
   });
 
   it("creates on first notice and strengthens on repeat without deleting anything", () => {

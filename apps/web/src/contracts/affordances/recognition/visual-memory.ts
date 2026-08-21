@@ -70,11 +70,17 @@ export type VisualObserverRef = z.infer<typeof visualObserverRefSchema>;
  * Which continuity the memory belongs to. Chat memory follows the chat memory
  * group so "continue our history" retains recognition while a fresh/AU
  * conversation stays isolated; successor memory is branch-scoped so a fork or a
- * retake cannot leak later visual knowledge backward.
+ * retake cannot leak later visual knowledge backward. A standalone-character
+ * scope is a render of one character outside any conversation (library avatar,
+ * portrait); no observer remembers anything there, but the union stays
+ * member-for-member identical to `VisualStateScopeRef` — the keep-in-step
+ * ruling recorded in `visual-state/scope.ts`, held by the identity conversions
+ * in `visual-attention.ts`.
  */
 export const visualMemoryScopeRefSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("chat"), memoryGroupId: z.string().min(1) }),
   z.object({ kind: z.literal("world_branch"), branchId: z.string().min(1) }),
+  z.object({ kind: z.literal("standalone_character"), characterId: z.string().min(1) }),
 ]);
 
 export type VisualMemoryScopeRef = z.infer<typeof visualMemoryScopeRefSchema>;
@@ -94,6 +100,8 @@ export function visualMemoryScopeKey(ref: VisualMemoryScopeRef): string {
       return `chat:${ref.memoryGroupId}`;
     case "world_branch":
       return `branch:${ref.branchId}`;
+    case "standalone_character":
+      return `standalone_character:${ref.characterId}`;
   }
 }
 

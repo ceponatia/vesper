@@ -242,6 +242,35 @@ describe("buildVisualStateShadow", () => {
     expect(build.staircase.candidates.some((candidate) => candidate.detailTier === 3)).toBe(true);
   });
 
+  it("binds a committed scene camera into the one image selection pass — and only there", () => {
+    // Falsified against a build that hands the camera to the digest without
+    // re-running the selection under it (the re-select mistake, reversed), or
+    // that lets the binding leak into the narrator's viewing conditions.
+    const bound = buildVisualStateShadow({
+      ...chatShadowInput(),
+      camera: { cameraId: "cam_render", spec: { orientation: "profile", distance: "close", height: "eye_level" } },
+    });
+    expect(bound.imageContext.viewpoint).toEqual({ kind: "camera", cameraId: "cam_render" });
+    expect(bound.imageContext.distance).toEqual({ status: "known", value: "close" });
+    expect(bound.imageContext.angle).toEqual({ status: "known", value: "side_on" });
+    expect(bound.imageContext.framing).toEqual({ status: "known", value: "portrait" });
+    // Lighting and motion stay lane-derived: the camera proves where the frame
+    // is, not what the light does.
+    expect(bound.imageContext.lighting).toEqual({ status: "known", value: "bright", declared: true });
+    // The narrator's viewing keeps the scene's own facing — image-lane only.
+    expect(bound.viewing.angle).toEqual({ status: "known", value: "toward" });
+    // Without a binding, the placeholder viewpoint and the lane reads are
+    // untouched — the chat, sim and inspector builds must not shift.
+    const unbound = buildVisualStateShadow(chatShadowInput());
+    expect(unbound.imageContext.viewpoint).toEqual({ kind: "camera", cameraId: "visual_state_shadow" });
+    expect("framing" in unbound.imageContext).toBe(false);
+    // The digest realized over the bound build fingerprints the bound camera
+    // and asserts its framing fact.
+    const boundDigest = visualStateImageDigestOfShadow(bound).digest;
+    expect(boundDigest.cameraFingerprint).not.toBe(visualStateImageDigestOfShadow(unbound).digest.cameraFingerprint);
+    expect(boundDigest.cameraFacts.some((fact) => fact.component === "framing" && fact.band === "portrait")).toBe(true);
+  });
+
   it("keeps mandatory identity in the image lane even while visibility is closed", () => {
     const build = buildVisualStateShadow(simShadowInput());
     // The succubus feature groups are mandatory-for-identity; a closed
