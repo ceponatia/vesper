@@ -36,7 +36,7 @@ import {
   orderedAppearanceClauses,
   subjectDescriptor,
 } from "./prompts-format";
-import { visualFactClauseResolver } from "./visual-fact-clauses";
+import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
  * THE AVATAR LANE'S SEGMENT ASSEMBLY (image-lane-consolidation.plan.md Stage 3;
@@ -132,6 +132,21 @@ const AVATAR_OMIT_ATTRIBUTE_IDS: ReadonlySet<string> = new Set([
   "teeth.condition",
   "lips.shape",
   "horns.texture",
+]);
+
+/**
+ * What the DIGEST's clause resolver withholds: the curated waist-up cut above,
+ * plus the catalog-derived residue set — a recognition-catalog attribute with a
+ * distinctive value (a crooked nose, prominent freckling) projects into the
+ * digest as a mark AND survives {@link residualSheetClauses}, and letting both
+ * speak states the fact twice (the WP-C duplication finding; same resolution as
+ * the scene lane's `visualFactClauseResolverForScene`). The residual sheet
+ * keeps the only statement; the resolver's `{ omit }` records lane policy,
+ * never degradation.
+ */
+const AVATAR_CLAUSE_OMIT_ATTRIBUTE_IDS: ReadonlySet<string> = new Set([
+  ...AVATAR_OMIT_ATTRIBUTE_IDS,
+  ...RECOGNITION_RESIDUE_ATTRIBUTE_IDS,
 ]);
 
 /**
@@ -337,7 +352,7 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     clause: visualFactClauseResolver({
       attributes: resolved,
       realizedBody: assembly.realizedBody,
-      omitAttributeIds: AVATAR_OMIT_ATTRIBUTE_IDS,
+      omitAttributeIds: AVATAR_CLAUSE_OMIT_ATTRIBUTE_IDS,
     }),
     ...(sink === undefined ? {} : { sink }),
   });

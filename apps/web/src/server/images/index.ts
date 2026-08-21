@@ -152,6 +152,7 @@ export * from "./models";
 export * from "./model-profiles";
 export * from "./model-versions";
 export * from "./render-intent";
+export * from "./render-intent-capture";
 export * from "./render-fingerprint";
 export * from "./route-safe";
 export * from "./chat-look";

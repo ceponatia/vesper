@@ -1,6 +1,5 @@
 import type { ImagePromptSegment } from "@vesper/image-core";
 import {
-  appearanceAttributeRecognitionCatalog,
   attributeRegistry,
   conditionAttributeOverlays,
   diag,
@@ -32,7 +31,7 @@ import {
   realizedBodyForProfile,
 } from "./prompts-format";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
-import { visualFactClauseResolver } from "./visual-fact-clauses";
+import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
 
 /**
  * THE SINGLE-CHARACTER SCENE LANE'S VISUAL-DIGEST CUTOVER
@@ -118,19 +117,6 @@ export const SCENE_VISUAL_CAMERA_ID = "chat_scene";
 export const SCENE_VISUAL_DIGEST_UNAVAILABLE = "images.scene_render.visual_digest_unavailable";
 /** A required digest fact resolved no clause; the cast-1 render refuses before spend. */
 export const SCENE_VISUAL_REQUIRED_MISSING = "images.scene_render.visual_required_missing";
-
-/**
- * Attribute ids whose facts CAN reach the digest (the appearance recognition
- * catalog's entries, projected only for distinctive values) but whose phrasing
- * the route-owned residue still owns — the sheet and the anchor whitelist state
- * the whole attribute vocabulary, distinctive values included, so a digest
- * clause for one would state it twice. Resolved as `{ omit }` (lane policy,
- * never degradation); retires with the residue when the projection grows real
- * attribute owners.
- */
-const SCENE_RESIDUE_ATTRIBUTE_IDS: ReadonlySet<string> = new Set(
-  appearanceAttributeRecognitionCatalog.map((entry) => entry.attributeId),
-);
 
 // ---------------------------------------------------------------------------
 // Meter state note (moved from character-scene.ts with the WP-C cutover;
@@ -376,11 +362,16 @@ export function applySceneSubjectVisual(input: SceneSubjectVisualInput): SceneSu
   };
 }
 
-/** The shared resolver under the scene lane's curated residue cut. */
+/**
+ * The shared resolver under the scene lane's residue cut: the catalog-derived
+ * set (`RECOGNITION_RESIDUE_ATTRIBUTE_IDS`) — a cataloged distinctive mark's
+ * phrasing stays with the sheet and the anchor whitelist, so the digest clause
+ * omits rather than stating the fact twice.
+ */
 function visualFactClauseResolverForScene(resolved: readonly AttributeValue[], realizedBody: RealizedBody) {
   return visualFactClauseResolver({
     attributes: resolved,
     realizedBody,
-    omitAttributeIds: SCENE_RESIDUE_ATTRIBUTE_IDS,
+    omitAttributeIds: RECOGNITION_RESIDUE_ATTRIBUTE_IDS,
   });
 }

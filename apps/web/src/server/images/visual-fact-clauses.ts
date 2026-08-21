@@ -1,3 +1,4 @@
+import { appearanceAttributeRecognitionCatalog } from "@/contracts";
 import { attributeRegistry, type AttributeValue } from "@/contracts/attributes";
 import { bodyLocationRegistry } from "@/contracts/body/locations";
 import { visualImageMorphologyOf, type VisualImageFact } from "@/contracts/images/visual-digest";
@@ -94,6 +95,21 @@ export const VISUAL_CLAUSE_OMIT_GARMENT_NOTES = "route_garment_notes";
  * staged sentence would put the same body in two poses in one prompt.
  */
 export const VISUAL_CLAUSE_OMIT_SCENE_PLAN = "scene_plan_owned";
+
+/**
+ * Attribute ids whose facts CAN reach the digest (the appearance recognition
+ * catalog's entries, projected only for distinctive values) but whose phrasing
+ * each lane's route-owned residue still owns — the residual attribute sheets
+ * and the scene anchor whitelist state the whole attribute vocabulary,
+ * distinctive values included, so a digest clause for one would state the fact
+ * twice (the duplication failure the lane characterization pins). ONE derived
+ * set for every consuming lane: resolved as `{ omit }` (lane policy, never
+ * degradation), and it retires with the residues when the projection grows
+ * real attribute owners.
+ */
+export const RECOGNITION_RESIDUE_ATTRIBUTE_IDS: ReadonlySet<string> = new Set(
+  appearanceAttributeRecognitionCatalog.map((entry) => entry.attributeId),
+);
 
 export interface VisualFactClauseSources {
   /** The subject's RESOLVED attribute values — the canonical owner attribute facts phrase from. */

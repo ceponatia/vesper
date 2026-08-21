@@ -1,24 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { affordancePerceptionView } from "@/contracts";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import {
   duplicatedVisualFacts,
   LANE_PROBE_NAME,
+  laneProbeAvatarSegments,
   laneProbeBareExposure,
-  laneProbeDressedExposure,
+  laneProbeCastMember,
+  laneProbeMarkedProfile,
   laneProbeProfile,
+  laneProbeScenePlan,
+  laneProbeShadowInput,
   laneProbeWardrobe,
   presentVisualFacts,
   VISUAL_FACT_PROBES,
 } from "@/server/test-support";
-import type { VisualStateShadowInput } from "@/server/visual-state";
-import { buildAvatarSegments } from "./avatar-segments";
-import { buildCharacterSceneContext, type SceneCastMember } from "./character-scene";
+import type { SceneCastMember } from "./character-scene";
 import { buildChatLookPrompt } from "./chat-look";
 import { apparentAgeAnchor } from "./prompts-appearance";
 import type { AvatarWardrobeItem } from "./prompts-avatar";
-import { resolveScenePlan } from "./prompts-scene-plan";
-import { sceneSpecSchema } from "./prompts-scene-composer";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
 import { buildVariantInstruction } from "./prompts-variant";
 import { applySceneSubjectVisual } from "./scene-subject-visual";
@@ -62,96 +61,42 @@ import { applySceneSubjectVisual } from "./scene-subject-visual";
 
 const profile = laneProbeProfile();
 const dressed = laneProbeWardrobe();
-const dressedExposure = laneProbeDressedExposure();
 const bareExposure = laneProbeBareExposure();
 
 /**
  * The avatar lane, through the PRODUCTION Stage 3 assembly (`buildAvatarSegments`
- * — standalone visual digest + semantic segments). Re-frozen 2026-08-21 with an
- * UNCHANGED fact set: the digest's morphology segment took over the feature
- * groups the sheet traversal used to state, and every other fact still arrives
- * exactly once. The helper also asserts render eligibility, because a freeze
- * over a prompt production would refuse to send proves nothing.
+ * — standalone visual digest + semantic segments, via the shared probe builder).
+ * Re-frozen 2026-08-21 with an UNCHANGED fact set: the digest's morphology
+ * segment took over the feature groups the sheet traversal used to state, and
+ * every other fact still arrives exactly once. The helper also asserts render
+ * eligibility, because a freeze over a prompt production that would refuse to
+ * send proves nothing.
  */
 function avatarPrompt(wardrobe: ReadonlyArray<AvatarWardrobeItem>, style: "realistic" | "stylized" = "realistic"): string {
-  const built = buildAvatarSegments({
-    characterId: "probe-character",
-    name: LANE_PROBE_NAME,
-    profile,
-    style,
-    wardrobe,
-    readToken: "lane-probe-token",
-  });
+  const built = laneProbeAvatarSegments(wardrobe, style);
   expect(built.missingRequired).toEqual([]);
   return built.prompt;
 }
 
-const castMember = (over: Partial<SceneCastMember> = {}): SceneCastMember => ({
-  characterId: "probe-character",
-  name: LANE_PROBE_NAME,
-  profile,
-  avatarImageId: null,
-  outfit: "a floor-length wine-red silk kimono",
-  exposure: dressedExposure,
-  ...over,
-});
-
-/**
- * The probe subject's committed cut as a camera-less shadow input — the same
- * shape the scene queue hands the render through `chatVisualStateShadowInput`.
- * Built literally here because the probe has no chat to load: attributes and
- * species realization are the owners the fixture actually authors, the
- * sight-only perception view is the sim lane's own honest floor, and every
- * absent owner (wardrobe store, body surface, scene relations) is the recorded
- * lane-unavailable degradation, not a shortcut — nothing the fixture's digest
- * carries rides the optional lane, so a full per-location view would change no
- * frozen cell.
- */
-function probeShadow(): Omit<VisualStateShadowInput, "sink" | "camera"> {
-  return {
-    lane: "character_chat",
-    scope: { kind: "chat", memoryGroupId: "probe-group" },
-    cutId: "lane-probe-cut",
-    atMinutes: 0,
-    subjectId: "probe-character",
-    attributes: profile.attributes,
-    realize: {
-      ...(profile.speciesId === undefined ? {} : { speciesId: profile.speciesId }),
-      ...(profile.heritageId === undefined ? {} : { heritageId: profile.heritageId }),
-      ...(profile.bodyPlanId === undefined ? {} : { bodyPlanId: profile.bodyPlanId }),
-      ...(profile.intimateRegions === undefined ? {} : { intimateRegions: profile.intimateRegions }),
-      ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
-    },
-    perception: affordancePerceptionView({ exposure: {}, channels: { sight: "available" } }),
-    observerId: "probe-owner",
-    observer: { kind: "player_viewpoint", viewpointId: "probe-owner" },
-  };
-}
-
 /**
  * The scene plan a lane renders, built through the production seams end to end:
- * context → composer-spec resolve → the cast-1 digest patch the render job
- * applies once the committed camera exists (`applySceneSubjectVisual`). The
- * refusal assertion matters here for the same reason the avatar helper asserts
- * eligibility — a freeze over a plan the production path would refuse to render
- * proves nothing.
+ * context → composer-spec resolve (`laneProbeScenePlan`) → the cast-1 digest
+ * patch the render job applies once the committed camera exists
+ * (`applySceneSubjectVisual`). The refusal assertion matters here for the same
+ * reason the avatar helper asserts eligibility — a freeze over a plan the
+ * production path would refuse to render proves nothing.
  */
-function scenePlan(member: SceneCastMember = castMember()) {
-  const context = buildCharacterSceneContext({
-    cast: [member],
-    room: "a lamplit study, rain on the window",
-    recentChat: [`${LANE_PROBE_NAME} settles into the chair by the window.`],
+function scenePlan(member: SceneCastMember = laneProbeCastMember()) {
+  const applied = applySceneSubjectVisual({
+    plan: laneProbeScenePlan(member),
+    member,
+    shadow: laneProbeShadowInput(member.profile),
   });
-  const plan = resolveScenePlan(
-    sceneSpecSchema.parse({ focalCharacter: LANE_PROBE_NAME, pose: "settling into the chair", setting: "a lamplit study" }),
-    context,
-  );
-  const applied = applySceneSubjectVisual({ plan, member, shadow: probeShadow() });
   expect(applied.refusal).toBeNull();
   return applied.plan;
 }
 
-const bareMember = castMember({ outfit: "", exposure: bareExposure });
+const bareMember = laneProbeCastMember({ outfit: "", exposure: bareExposure });
 
 /**
  * Freeze one lane: exactly these facts, and none of them stated twice.
@@ -399,6 +344,28 @@ describe("image lane invariants that hold across the migration", () => {
     }
   });
 
+  it("a cataloged distinctive mark is stated exactly once per lane — the residue owns the phrasing", () => {
+    // The duplication seam the digest cutover opened (WP-C report): a
+    // recognition-catalog attribute with a distinctive value (`nose.shape:
+    // "crooked"`) projects into the visual digest as a mark AND survives the
+    // route-owned residual attribute sheet, so a lane that lets both speak
+    // states the same fact twice — the exact failure mode the spec's comparison
+    // rule names ("fail on … duplicated … character facts"). Both cutover lanes
+    // resolve it the same way: the catalog-derived residue set rides the shared
+    // clause resolver as `{ omit }`, so the residue keeps the only statement.
+    const marked = laneProbeMarkedProfile();
+
+    const avatar = laneProbeAvatarSegments(dressed, "realistic", marked);
+    expect(avatar.missingRequired).toEqual([]);
+    expect(presentVisualFacts(avatar.prompt)).toContain("noseShape");
+    expect(duplicatedVisualFacts(avatar.prompt)).toEqual([]);
+
+    const member = laneProbeCastMember({ profile: marked });
+    const scene = buildSceneRenderPrompt(scenePlan(member), {});
+    expect(presentVisualFacts(scene)).toContain("noseShape");
+    expect(duplicatedVisualFacts(scene)).toEqual([]);
+  });
+
   it("the probe vocabulary itself stays stable", () => {
     // A probe key rename would silently re-bless every matrix above, so the key
     // set is frozen too. Adding a probe is a deliberate edit here.
@@ -409,6 +376,9 @@ describe("image lane invariants that hold across the migration", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
+      // Added with the WP-D duplication pin (2026-08-21): authored only by the
+      // marked fixture, so no matrix above gained a cell.
+      "noseShape",
       "horns",
       "wings",
       "tail",

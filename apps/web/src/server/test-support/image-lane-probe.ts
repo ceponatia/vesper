@@ -1,7 +1,20 @@
+import { affordancePerceptionView } from "@/contracts";
 import type { AttributeValue } from "@/contracts/attributes";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { type AvatarWardrobeItem, toWornInputs } from "@/server/images";
+import {
+  type AvatarSegmentAssembly,
+  type AvatarStyle,
+  type AvatarWardrobeItem,
+  buildAvatarSegments,
+  buildCharacterSceneContext,
+  resolveScenePlan,
+  type SceneCastMember,
+  type SceneRenderPlan,
+  sceneSpecSchema,
+  toWornInputs,
+} from "@/server/images";
+import type { VisualStateShadowInput } from "@/server/visual-state";
 import { attr, makeProfile } from "./profile-fixtures";
 
 /**
@@ -75,6 +88,15 @@ export const VISUAL_FACT_PROBES: readonly VisualFactProbe[] = [
   { key: "hairColor", bucket: "identity", mandatory: true, tokens: ["deep violet"] },
   { key: "eyeColor", bucket: "identity", mandatory: true, tokens: ["amber"] },
   { key: "skinTone", bucket: "identity", mandatory: true, tokens: ["bronze"] },
+  /**
+   * A recognition-catalog DISTINCTIVE mark (`nose.shape: "crooked"`), authored
+   * only by {@link laneProbeMarkedProfile} — the base fixture leaves it unset, so
+   * every pre-existing frozen matrix is untouched. It exists to catch the
+   * duplication seam the digest cutover opened: a cataloged distinctive value
+   * can reach a lane through BOTH the digest's mark clause and the route-owned
+   * residual attribute sheet, and only one of them may phrase it.
+   */
+  { key: "noseShape", bucket: "identity", mandatory: false, tokens: ["crooked"] },
   { key: "horns", bucket: "morphology", mandatory: true, tokens: ["spiraled"] },
   { key: "wings", bucket: "morphology", mandatory: true, tokens: ["membranous"] },
   { key: "tail", bucket: "morphology", mandatory: true, tokens: ["spaded"] },
@@ -133,6 +155,20 @@ export function laneProbeProfile(overrides: Partial<CharacterProfile> = {}): Cha
 /** The fixture's name — one place, since it appears in name-bound prompt sentences. */
 export const LANE_PROBE_NAME = "Nyx";
 
+/** The fixture's subject id — the one id the assemblies, digests and captures all name. */
+export const LANE_PROBE_SUBJECT_ID = "probe-character";
+
+/**
+ * The base fixture plus one recognition-catalog distinctive mark
+ * (`nose.shape: "crooked"`, the catalog's canonical attribute example). Used by
+ * the duplication pin: the mark can reach a prompt through the digest AND the
+ * residual sheet, and the `noseShape` probe counts how many of them spoke.
+ */
+export function laneProbeMarkedProfile(): CharacterProfile {
+  const base = laneProbeProfile();
+  return { ...base, attributes: [...base.attributes, attr("nose.shape", "crooked", "base")] };
+}
+
 /**
  * The dressed wardrobe: fully clothed, chest through feet, so every
  * `imageReveal: "skin"` probe is exposure-suppressed and a lane that describes
@@ -174,6 +210,99 @@ export function laneProbeDressedExposure(): RegionExposure {
 /** Coverage state with nothing worn — every region bare. */
 export function laneProbeBareExposure(): RegionExposure {
   return exposedRegions([]);
+}
+
+/**
+ * The avatar lane's PRODUCTION Stage 3 assembly over the probe fixture — the
+ * exact call `generateAvatar` makes, minus the database around it. One builder,
+ * consumed by both the lane characterization freeze and the legacy-vs-digest
+ * cutover comparison, so the two suites can never quietly assemble the "same"
+ * avatar differently.
+ */
+export function laneProbeAvatarSegments(
+  wardrobe: ReadonlyArray<AvatarWardrobeItem>,
+  style: AvatarStyle = "realistic",
+  profile: CharacterProfile = laneProbeProfile(),
+): AvatarSegmentAssembly {
+  return buildAvatarSegments({
+    characterId: LANE_PROBE_SUBJECT_ID,
+    name: LANE_PROBE_NAME,
+    profile,
+    style,
+    wardrobe,
+    readToken: "lane-probe-token",
+  });
+}
+
+/** The probe subject as one scene cast member, dressed unless overridden. */
+export function laneProbeCastMember(over: Partial<SceneCastMember> = {}): SceneCastMember {
+  return {
+    characterId: LANE_PROBE_SUBJECT_ID,
+    name: LANE_PROBE_NAME,
+    profile: laneProbeProfile(),
+    avatarImageId: null,
+    outfit: "a floor-length wine-red silk kimono",
+    exposure: laneProbeDressedExposure(),
+    ...over,
+  };
+}
+
+/**
+ * The scene plan a lane renders, built through the production seams — context →
+ * composer-spec resolve — and stopped THERE: this is the legacy
+ * `presentCharacter`-field plan, before the cast-1 digest patch
+ * (`applySceneSubjectVisual`) the render job applies once the committed camera
+ * exists. The characterization freeze applies the patch on top; the cutover
+ * comparison renders both sides of it.
+ */
+export function laneProbeScenePlan(member: SceneCastMember = laneProbeCastMember()): SceneRenderPlan {
+  const context = buildCharacterSceneContext({
+    cast: [member],
+    room: "a lamplit study, rain on the window",
+    recentChat: [`${LANE_PROBE_NAME} settles into the chair by the window.`],
+  });
+  return resolveScenePlan(
+    sceneSpecSchema.parse({
+      focalCharacter: LANE_PROBE_NAME,
+      pose: "settling into the chair",
+      setting: "a lamplit study",
+    }),
+    context,
+  );
+}
+
+/**
+ * The probe subject's committed cut as a camera-less shadow input — the same
+ * shape the scene queue hands the render through `chatVisualStateShadowInput`.
+ * Built literally here because the probe has no chat to load: attributes and
+ * species realization are the owners the fixture actually authors, the
+ * sight-only perception view is the sim lane's own honest floor, and every
+ * absent owner (wardrobe store, body surface, scene relations) is the recorded
+ * lane-unavailable degradation, not a shortcut — nothing the fixture's digest
+ * carries rides the optional lane, so a full per-location view would change no
+ * frozen cell.
+ */
+export function laneProbeShadowInput(
+  profile: CharacterProfile = laneProbeProfile(),
+): Omit<VisualStateShadowInput, "sink" | "camera"> {
+  return {
+    lane: "character_chat",
+    scope: { kind: "chat", memoryGroupId: "probe-group" },
+    cutId: "lane-probe-cut",
+    atMinutes: 0,
+    subjectId: LANE_PROBE_SUBJECT_ID,
+    attributes: profile.attributes,
+    realize: {
+      ...(profile.speciesId === undefined ? {} : { speciesId: profile.speciesId }),
+      ...(profile.heritageId === undefined ? {} : { heritageId: profile.heritageId }),
+      ...(profile.bodyPlanId === undefined ? {} : { bodyPlanId: profile.bodyPlanId }),
+      ...(profile.intimateRegions === undefined ? {} : { intimateRegions: profile.intimateRegions }),
+      ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
+    },
+    perception: affordancePerceptionView({ exposure: {}, channels: { sight: "available" } }),
+    observerId: "probe-owner",
+    observer: { kind: "player_viewpoint", viewpointId: "probe-owner" },
+  };
 }
 
 /** How many times each probed fact appears in a compiled prompt. */

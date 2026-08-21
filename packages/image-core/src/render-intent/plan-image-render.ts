@@ -109,6 +109,13 @@ export interface PlannedImageRender {
   model: ImageModel;
   /** The strategy-compiled, model-dialect-prepared prompt. */
   prompt: string;
+  /**
+   * The negative text that will actually accompany this render, or null —
+   * the compile step's own resolution ({@link ProfileRenderPlan.negativePrompt}),
+   * surfaced so a caller recording render provenance (the Stage 3 render-intent
+   * capture) can state the negative half without recomputing the merge.
+   */
+  negativePrompt: string | null;
   references: Buffer[];
   /**
    * Structural controls this version gave a field of their own, keyed by that
@@ -312,6 +319,7 @@ export function planImageRender(
     plan: {
       model,
       prompt: compiled.plan.finalPrompt,
+      negativePrompt: compiled.plan.negativePrompt,
       references: primary.map((reference) => reference.buffer),
       controlReferences: dedicated.map((input) => ({
         field: input.field,
