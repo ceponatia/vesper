@@ -209,6 +209,10 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           garmentNotes,
           meters: stored?.meters,
           conditions: stored?.conditions,
+          // The same persisted overlays the look key above hashes — the render
+          // has to RESOLVE them too, or a recorded haircut invalidates the
+          // anchor without ever reaching the prompt that describes the hair.
+          attributeOverlays: stored?.attributeOverlays,
           lookKey,
         };
       }),

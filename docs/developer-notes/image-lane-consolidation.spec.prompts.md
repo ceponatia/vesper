@@ -176,6 +176,17 @@ by giving every lane one coverage-aware selection:
   change and no other character fact at all, leaning entirely on the reference
   image, and take their age anchor as a caller-supplied string.
 
+A third disagreement surfaced after the freeze and is closed in code rather
+than waiting on Stage 2: the chat scene lane resolved condition overlays but
+not the chat's persisted narrative `attributeOverlays`, so a recorded haircut
+or dye reached the narrator prompt and the visual-state projection while the
+scene prompt's identity anchor still asserted the authored hair. Closed
+2026-08-21 by giving `character-scene.ts` the same base → persisted → condition
+resolve `resolveShadowAttributes` takes; the digest cutover must preserve that
+layering. The chat-look mint and the variant lane still resolve no overlays at
+all (`visual-state.audit.md` finding 6) — a Stage 3/4 cutover decision, not a
+patch here.
+
 One invariant is asserted across every lane rather than frozen per lane, because
 it holds today and must survive every stage: covered intimate **skin** is never
 described, including on the uncensored routes, where the gate is coverage and
