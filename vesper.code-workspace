@@ -7,11 +7,14 @@
     }
   ],
   "settings": {
-    // ── Explorer: file nesting ────────────────────────────────────────────
-    // Nesting patterns live in .vscode/settings.json — the folder settings
-    // take precedence over this file for that object setting, so a second
-    // copy here would be masked (that split is exactly what once left
-    // deferred/ plan families flat). Keep all nesting config there.
+    // ── Explorer: file nesting ─────────────────────────────────────────────
+    // Nesting patterns live in .vscode/settings.json. Folder settings take
+    // precedence over workspace settings for that object, so don't duplicate
+    // explorer.fileNesting.patterns here.
+    //
+    // explorer.fileNesting.expand is workspace-scoped and therefore must live
+    // here rather than in the folder's .vscode/settings.json.
+    "explorer.fileNesting.expand": false,
     // ── TypeScript ────────────────────────────────────────────────────────
     "js/ts.tsdk.path": "node_modules/typescript/lib",
     "js/ts.tsdk.promptToUseWorkspaceVersion": true,
