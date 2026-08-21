@@ -57,6 +57,12 @@ const EXCLUSION_PATTERNS: readonly RegExp[] = [
 const APPROVED: Readonly<Record<string, number>> = {
   // The two style suffixes, each ending "no text, no watermark".
   "apps/web/src/server/images/prompts-avatar.ts": 2,
+  // The SAME two suffix sentences, carried verbatim through the Stage 3 avatar
+  // cutover as the route-owned `quality` segment (avatar wording is preserved
+  // behavior). Not a new exclusion: this copy and the legacy one above retire
+  // together when Stage 6 deletes `buildAvatarPrompt` and the tail moves into a
+  // versioned negative pack under the model-aware plan.
+  "apps/web/src/server/images/avatar-segments.ts": 2,
   // The variant instruction's tail, on every portrait edit.
   "apps/web/src/server/images/prompts-variant.ts": 1,
   // The POV rule's "never visible", the two cast-integrity lines, the

@@ -16,6 +16,7 @@ import {
   assembleVisualStateSnapshot,
   buildVisualStateSelections,
   type VisualStateAssemblyInput,
+  type VisualStateCameraBinding,
   type VisualStateLane,
   type VisualStateLaneScene,
 } from "./assemble";
@@ -48,6 +49,12 @@ export interface VisualStateShadowInput extends VisualStateAssemblyInput {
   readonly cues?: VisualCueState;
   /** The lane's resolved worn garment ids — the garment-summary comparison set. */
   readonly wornGarmentIds?: readonly string[];
+  /**
+   * The render's committed scene camera, bound into the image selection pass.
+   * Absent for the shadow builds (chat, sim, inspector), which stay
+   * byte-identical to today; a consuming render route supplies one.
+   */
+  readonly camera?: VisualStateCameraBinding;
 }
 
 export interface VisualStateShadowBuild {
@@ -104,6 +111,7 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     ...(input.sceneRelations === undefined ? {} : { scene: input.sceneRelations.scene }),
     ...(observerParticipantId === undefined ? {} : { observerParticipantId }),
     ...(subjectParticipantId === undefined ? {} : { subjectParticipantId }),
+    ...(input.camera === undefined ? {} : { camera: input.camera }),
     ...(input.sink === undefined ? {} : { sink: input.sink }),
   });
   const measurements = measureVisualState({

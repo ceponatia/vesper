@@ -18,6 +18,7 @@ import {
   imageSubjectFactNeedsSemanticValue,
   projectSubjectDigests,
   projectCameraFacts,
+  standaloneCharacterReadToken,
   IMAGE_SUBJECT_VALUE_UNRESOLVED,
 } from "./subject-digest";
 import {
@@ -409,5 +410,29 @@ describe("camera facts", () => {
       context: visualAttentionContextFixture("image", { motion: { status: "unknown" } }),
     });
     expect(projectCameraFacts(digest).map((fact) => fact.component)).not.toContain("motion");
+  });
+});
+
+describe("standaloneCharacterReadToken", () => {
+  /**
+   * The `entityReadToken` core (stability, revision movement) is owned by
+   * `entity-digest.test.ts`; what this wrapper adds — and what a defect here
+   * silently loses — is the EXTRA owners. A token minted from the character row
+   * alone would let a wardrobe or identity-pack edit reuse the old token, so a
+   * retry quietly renders the new outfit under the old composition's name.
+   */
+  it("moves when any contributing owner moves, not just the character row", () => {
+    const base = { characterId: "chr_1", revision: "2026-08-21T00:00:00.000Z" };
+    const pack = { owner: "identity_pack", entityId: "pack_1", revision: "r1" };
+    const worn = { owner: "item.library", entityId: "itm_1", revision: "r1" };
+    const token = standaloneCharacterReadToken({ ...base, extraRevisions: [pack, worn] });
+    expect(standaloneCharacterReadToken({ ...base, extraRevisions: [worn, pack] })).toBe(token); // sorted, order-free
+    expect(standaloneCharacterReadToken({ ...base, extraRevisions: [pack, { ...worn, revision: "r2" }] })).not.toBe(
+      token,
+    );
+    expect(standaloneCharacterReadToken(base)).not.toBe(token);
+    expect(standaloneCharacterReadToken({ ...base, revision: "2026-08-22T00:00:00.000Z" })).not.toBe(
+      standaloneCharacterReadToken(base),
+    );
   });
 });

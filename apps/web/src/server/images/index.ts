@@ -152,6 +152,7 @@ export * from "./models";
 export * from "./model-profiles";
 export * from "./model-versions";
 export * from "./render-intent";
+export * from "./render-intent-capture";
 export * from "./render-fingerprint";
 export * from "./route-safe";
 export * from "./chat-look";
@@ -220,6 +221,23 @@ export {
   type EntityPromptProgramResult,
 } from "./entity-prompt-program";
 export * from "./avatar";
+export {
+  AVATAR_PORTRAIT_CAMERA,
+  AVATAR_PORTRAIT_CAMERA_ID,
+  AVATAR_SEGMENT_POLICY,
+  buildAvatarSegments,
+  type AvatarSegmentAssembly,
+  type AvatarSegmentAssemblyInput,
+} from "./avatar-segments";
+export {
+  VISUAL_CLAUSE_OMIT_CURATED,
+  VISUAL_CLAUSE_OMIT_ELIDED,
+  VISUAL_CLAUSE_OMIT_INAPPLICABLE,
+  VISUAL_CLAUSE_OMIT_NONVISUAL,
+  VISUAL_CLAUSE_OMIT_REGISTRY,
+  visualFactClauseResolver,
+  type VisualFactClauseSources,
+} from "./visual-fact-clauses";
 export * from "./variants";
 export * from "./upload";
 export * from "./entity";

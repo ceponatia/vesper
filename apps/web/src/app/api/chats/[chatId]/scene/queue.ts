@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   affordanceSubjectId,
   characterProfileSchema,
@@ -13,21 +13,25 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { startJob } from "@/server/api";
-import { characterChatMessages, db, hasLiveChatJob } from "@/server/db";
+import { characterChatMessages, chatParticipants, db, hasLiveChatJob } from "@/server/db";
 import {
   buildChatGarmentNarration,
   CHAT_CONTACT_PLAYER_SUBJECT,
   chatGarmentCuesEnabled,
   chatGarmentLookKey,
+  chatVisualStateShadowInput,
   enqueueChatPlaceImage,
   loadChatComposerModel,
   loadChatScenario,
   loadChatState,
   resolveChatWardrobe,
   resolvePlayerWardrobe,
+  seedChatScenario,
+  seedChatState,
 } from "@/server/engine";
 import { resolveChatPersona } from "@/server/players";
 import { chatLookKey, normalizeName, renderCharacterSceneImage } from "@/server/images";
+import type { VisualStateShadowInput } from "@/server/visual-state";
 import { log } from "@/server/log";
 
 export const SCENE_CHAT_CONTEXT = 6;
@@ -149,7 +153,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // single combined call returns one flat list that the composer would then
     // attach to whichever character it was handed to — dressing one person in
     // another's clothes.
-    const cast = await Promise.all(
+    const castDetail = await Promise.all(
       cleanCast.map(async ({ member, stored }) => {
         const profile = parseOr(
           characterProfileSchema,
@@ -199,24 +203,78 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
               }).sceneNotes
             : undefined;
         return {
-          characterId: member.id,
-          name: member.name,
-          profile,
-          avatarImageId: member.avatarImageId,
-          outfit: wardrobe?.garments ?? "",
-          outfitExposed: wardrobe?.exposed ?? false,
-          exposure: wardrobe?.exposure,
-          garmentNotes,
-          meters: stored?.meters,
-          conditions: stored?.conditions,
-          // The same persisted overlays the look key above hashes — the render
-          // has to RESOLVE them too, or a recorded haircut invalidates the
-          // anchor without ever reaching the prompt that describes the hair.
-          attributeOverlays: stored?.attributeOverlays,
-          lookKey,
+          member: {
+            characterId: member.id,
+            name: member.name,
+            profile,
+            avatarImageId: member.avatarImageId,
+            outfit: wardrobe?.garments ?? "",
+            outfitExposed: wardrobe?.exposed ?? false,
+            exposure: wardrobe?.exposure,
+            garmentNotes,
+            meters: stored?.meters,
+            conditions: stored?.conditions,
+            // The same persisted overlays the look key above hashes — the render
+            // has to RESOLVE them too, or a recorded haircut invalidates the
+            // anchor without ever reaching the prompt that describes the hair.
+            attributeOverlays: stored?.attributeOverlays,
+            lookKey,
+          },
+          // Kept beside the member for the cast-1 visual cut below — the SAME
+          // state and wardrobe resolution the member's fields came from, never
+          // a second load that could disagree with them.
+          stored,
+          wardrobe,
         };
       }),
     );
+    const cast = castDetail.map((detail) => detail.member);
+
+    // The cast-1 digest cut (image-lane-consolidation Stage 3, WP-C): when one
+    // subject will be drawn — a lone present member, or any selfie — hand the
+    // render their committed chat cut as a camera-less shadow input through the
+    // SHARED factory the inspector preview uses. The render binds the resolved
+    // plan's committed camera into the one selection pass and produces the
+    // focal spec's character fields from the digest; a cast of 2+ passes
+    // nothing and keeps the legacy field production untouched (Stage 4).
+    let subjectVisual: Omit<VisualStateShadowInput, "sink" | "camera"> | undefined;
+    const sole = cast.length === 1 ? castDetail[0] : undefined;
+    if (sole !== undefined) {
+      const [participant] = await db()
+        .select({ memoryGroupId: chatParticipants.memoryGroupId })
+        .from(chatParticipants)
+        .where(
+          and(eq(chatParticipants.chatId, args.chatId), eq(chatParticipants.characterId, sole.member.characterId)),
+        )
+        .limit(1);
+      if (participant) {
+        subjectVisual = chatVisualStateShadowInput({
+          characterId: sole.member.characterId,
+          memoryGroupId: participant.memoryGroupId,
+          // A job-local cut id: the render realizes the cut it assembles, so
+          // the digest's `forCutId` gate matches by construction and the row's
+          // provenance names the moment it was asked over.
+          cutId: `chat_scene:${anchorMessageId ?? args.chatId}`,
+          cut: {
+            profile: sole.member.profile,
+            // The raw stored cut the member's own fields resolve from, seeded
+            // exactly as a first exchange would seed it when no row exists yet.
+            state: sole.stored ?? seedChatState(sole.member.profile),
+            scenario: scenario ?? seedChatScenario(sole.member.profile),
+            ...(sole.wardrobe === null ? {} : { wardrobe: sole.wardrobe }),
+            owner: args.userId,
+          },
+        });
+      } else {
+        // A structurally guaranteed row is missing — corrupt membership.
+        // Degrade to the legacy field production (a degraded default over a
+        // failed turn) rather than refusing over a continuity id.
+        log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
+          chatId: args.chatId,
+          characterId: sole.member.characterId,
+        });
+      }
+    }
     // What the chat's typed movements have actually COMMITTED about each cast member and the
     // player (scene-composition.plan.md slice 3) — posture, facing, distance, touch. A
     // provenance-carrying fact outranks anything the shot planner infers from prose, so these
@@ -271,6 +329,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           place: place?.imageId ? { name: place.name, imageId: place.imageId } : undefined,
           sceneModel: scenario?.sceneModel,
           composerModel,
+          subjectVisual,
         }),
       }),
     });

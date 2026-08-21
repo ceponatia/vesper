@@ -192,6 +192,14 @@ export interface RenderResolvedSceneInput {
    */
   identityProvenance?: IdentityReferenceProvenance[];
   /**
+   * The app-owned `meta.visualState` fragment from the visual image digest
+   * (image-lane-consolidation Stage 3) — `{ visualState: <provenance> }`,
+   * exactly as `visualStateImageDigestOfShadow` returns it. Merged into the
+   * row's reserve-time meta as a SIBLING of the package-owned render provenance,
+   * so a failed or refused render still records which visual moment fed it.
+   */
+  visualStateMeta?: Record<string, unknown>;
+  /**
    * Non-null refuses the render before generation: the row is reserved and
    * failed with this text, no provider is called. The flag-on identity-pack
    * refusal settles here — a scene may not substitute another reference for a
@@ -341,6 +349,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // the same on every rung, so a fallback needs no correction pass.
           camera: plan.camera,
           ...(plan.staging ? { staging: plan.staging.id } : {}),
+          // App-owned visual provenance (`meta.visualState`), beside the shot
+          // facts above. Reserve-time like the camera: the digest describes the
+          // committed cut the render was asked over, which no rung or failure
+          // changes — so it needs no fallback correction pass and survives a
+          // refused or failed row.
+          ...(input.visualStateMeta ?? {}),
           // The LoRA that drew it, by library id — the other half of the
           // provenance `meta.model` starts (the wrapper slug lands there through
           // `modelFor`). The id, never the locator: a locator is completed with a

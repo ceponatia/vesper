@@ -3,11 +3,13 @@ import type {
   ImageConceptId,
   ImagePromptSegmentKind,
   ImageSourceRef,
+  ImageSourceRevision,
   ImageSubjectDigest,
   ImageWorldFact,
   ImageWorldSuppression,
 } from "@vesper/image-core";
 import { visualStateLocusKey } from "../visual-state";
+import { entityReadToken } from "./entity-digest";
 import type { VisualImageDigest, VisualImageFact } from "./visual-digest";
 
 /**
@@ -354,4 +356,43 @@ export function projectCameraFacts(digest: VisualImageDigest): readonly ImageCam
         return { component: "lighting", band: fact.band, source };
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Standalone-character read token
+// ---------------------------------------------------------------------------
+
+/** The character row's revision record — one entry in the standalone read token. */
+export function standaloneCharacterSourceRevision(characterId: string, revision: string): ImageSourceRevision {
+  return { owner: IMAGE_SUBJECT_PROJECTION_OWNER, entityId: characterId, revision };
+}
+
+export interface StandaloneCharacterReadInput {
+  readonly characterId: string;
+  /** The character row's own revision — `characters.updatedAt` as an ISO string. */
+  readonly revision: string;
+  /**
+   * Every OTHER owner the projection read in the same transaction — wardrobe
+   * item rows, the identity pack — each in its owner's own terms. Omitting an
+   * owner that fed the render means an edit to that owner mints the SAME token,
+   * and a retry quietly renders the new state under the old composition's name.
+   */
+  readonly extraRevisions?: readonly ImageSourceRevision[];
+}
+
+/**
+ * The `transactional_projection` token for a character render OUTSIDE any
+ * conversation (image-lane-consolidation.spec.visual-state.md
+ * §"Standalone-portrait read token"). An avatar or library portrait has no
+ * committed cut to name, so the token — a hash over the sorted source
+ * revisions, exactly as the item/location lanes mint theirs — stands in for
+ * one: the caller uses it as the assembly `cutId` and the digest's `forCutId`,
+ * and pairs it with a `{ kind: "standalone_character" }` scope. Two reads of
+ * unchanged rows mint the same token; any source moving mints a new one.
+ */
+export function standaloneCharacterReadToken(input: StandaloneCharacterReadInput): string {
+  return entityReadToken([
+    standaloneCharacterSourceRevision(input.characterId, input.revision),
+    ...(input.extraRevisions ?? []),
+  ]);
 }

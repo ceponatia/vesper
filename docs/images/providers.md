@@ -328,7 +328,8 @@ applied and dropped controls, the reference roles actually sent (truncated to
 what the byte budget let through), the prediction id, and the version the
 provider says it executed — on failures too where the lane's failure shape
 returns rather than throws. That record is what a retry of the same composition
-reads.
+reads. The character-fact lanes file a second, sibling provenance key beside it —
+`images.meta.visualState`, the visual-digest record ([pipelines.md](pipelines.md)).
 
 **Eligibility composes the mechanical and the reviewed** (`profileEligibility` →
 `operation_unsupported` | `edit_kind_none` | `identity_too_weak` |

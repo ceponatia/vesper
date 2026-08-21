@@ -6,20 +6,22 @@ import { logEvent } from "../events";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
 import { outfitItems } from "@/contracts";
-import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
+import { IMAGE_TARGET_ASPECT, type ImageSourceRevision } from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
+import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
+import { IMAGE_ITEM_PROJECTION_OWNER } from "@/contracts/images/world-projection";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
+import { buildAvatarSegments, type AvatarSegmentAssembly } from "./avatar-segments";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import {
   type AvatarStyle,
   type AvatarWardrobeItem,
-  buildAvatarPrompt,
   toWornInputs,
   wardrobeGarmentKey,
 } from "./prompts-avatar";
@@ -35,13 +37,75 @@ export interface GenerateAvatarInput {
 }
 
 /**
- * Avatar pipeline: registry prompt → the picked registry model's text-to-image
- * (3:4), or monogram in demo mode, through the shared reserve/save/fail
- * lifecycle.
+ * A refused avatar render's diagnostic: the standalone visual digest could not
+ * make the character render-eligible — a required fact resolved no clause, or
+ * the assembly itself failed. The row is failed BEFORE any provider spend
+ * (spec.prompts.md §Failure behavior); production never falls back to the
+ * legacy prose builder.
+ */
+export const AVATAR_DIGEST_INELIGIBLE = "images.avatar.visual_digest_ineligible";
+
+/**
+ * The pure segment assembly, run at the route boundary: a throw here is a
+ * defect, but the resilient shape is a failed row carrying a diagnostic, not a
+ * lost turn — so it degrades to `null` and the pipeline refuses pre-spend.
+ */
+function tryBuildAvatarSegments(
+  input: {
+    characterId: string;
+    name: string;
+    profile: CharacterProfile;
+    style: AvatarStyle;
+    wardrobe: AvatarWardrobeItem[];
+    readToken: string;
+  },
+  sink?: DiagnosticSink,
+): AvatarSegmentAssembly | null {
+  try {
+    return buildAvatarSegments({ ...input, ...(sink === undefined ? {} : { sink }) });
+  } catch (err) {
+    sink?.push(
+      diag("warn", AVATAR_DIGEST_INELIGIBLE, "avatar segment assembly failed", {
+        path: "images.avatar",
+        context: {
+          characterId: input.characterId,
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+        },
+      }),
+    );
+    return null;
+  }
+}
+
+/** The refusal text for an ineligible digest, or null when the render may proceed. */
+function avatarDigestRefusal(
+  assembly: AvatarSegmentAssembly | null,
+  characterId: string,
+  sink?: DiagnosticSink,
+): string | null {
+  if (assembly === null) return "the avatar's visual digest could not be assembled";
+  if (assembly.missingRequired.length === 0) return null;
+  sink?.push(
+    diag("warn", AVATAR_DIGEST_INELIGIBLE, "a required visual fact resolved no prompt clause", {
+      path: "images.avatar",
+      context: { characterId, missingRequired: [...assembly.missingRequired] },
+    }),
+  );
+  return "the avatar's visual digest is missing required facts";
+}
+
+/**
+ * Avatar pipeline: the standalone visual digest's semantic segments → the
+ * picked registry model's text-to-image (3:4), or monogram in demo mode,
+ * through the shared reserve/save/fail lifecycle.
  *
  * The profile is resolved BEFORE the pipeline reserves a row so the row's meta
  * can record which model produced it. A pick that is no longer offered degrades
  * to the portrait task's default rather than failing (owner ruling 5).
+ *
+ * The digest's `meta.visualState` provenance is attached at RESERVE time,
+ * beside `style`/`model`/`demo`: a thrown produce carries no meta, and the
+ * visual moment that shaped the prompt must survive a failed render.
  */
 export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
   const style = input.style ?? "realistic";
@@ -56,8 +120,31 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
     input.sink,
     "characters.profile",
   );
-  const wardrobe = character ? await loadDefaultWardrobe(input.userId, outfitItems(profile), input.sink) : [];
-  const prompt = character ? buildAvatarPrompt(character.name, profile, style, wardrobe) : "";
+  const load = character
+    ? await loadDefaultWardrobeWithRevisions(input.userId, outfitItems(profile), input.sink)
+    : { wardrobe: [], revisions: [] };
+  const assembly = character
+    ? tryBuildAvatarSegments(
+        {
+          characterId: input.characterId,
+          name: character.name,
+          profile,
+          style,
+          wardrobe: load.wardrobe,
+          ...(load.failed === true ? { wardrobeUnavailable: true } : {}),
+          // The character row's own revision plus every wardrobe row read for
+          // this render — an edit to either mints a different token.
+          readToken: standaloneCharacterReadToken({
+            characterId: input.characterId,
+            revision: character.updatedAt.toISOString(),
+            extraRevisions: load.revisions,
+          }),
+        },
+        input.sink,
+      )
+    : null;
+  const digestRefusal = character ? avatarDigestRefusal(assembly, input.characterId, input.sink) : null;
+  const prompt = assembly?.prompt ?? "";
 
   const { imageId } = await runImagePipeline({
     asset: {
@@ -66,22 +153,34 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
       entityKind: "character",
       entityId: input.characterId,
       prompt,
-      meta: { style, model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`, demo },
+      meta: {
+        style,
+        model: demo ? "demo" : `replicate/${model?.slug ?? "none"}`,
+        demo,
+        ...(assembly?.digestMeta ?? {}),
+      },
     },
     failedPrecondition: character
-      ? demo || model
-        ? null
-        : "no image model is registered for portraits"
+      ? (digestRefusal ??
+        (demo || model ? null : "no image model is registered for portraits"))
       : `character ${input.characterId} not found`,
     // Text-to-image at Vesper's 3:4, with no references — the simplest intent
-    // there is. A failure still THROWS (this lane's ruled failure shape: the
+    // there is. The semantic segments are authoritative; `prompt` is the same
+    // segments compiled, stored on the row and carried as the intent's string
+    // form. A failure still THROWS (this lane's ruled failure shape: the
     // shell's warn diagnostic plus the error-carrying event line), which is why
-    // its provenance is recorded only on success — a thrown produce has no meta
-    // channel.
+    // render provenance is recorded only on success — a thrown produce has no
+    // meta channel. The digest provenance already landed at reserve time.
     produce: async () => {
       if (demo || !resolved) return { ok: true, image: monogramSvg(character?.name ?? "") };
       const result = await renderImageIntent(
-        { profile: resolved, prompt, references: [], target: { aspectRatio: IMAGE_TARGET_ASPECT } },
+        {
+          profile: resolved,
+          prompt,
+          ...(assembly ? { promptSegments: assembly.segments } : {}),
+          references: [],
+          target: { aspectRatio: IMAGE_TARGET_ASPECT },
+        },
         input.sink,
       );
       if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
@@ -129,40 +228,66 @@ const outfitExtrasSchema = z.object({
   tags: z.array(z.string()).catch([]),
 });
 
-/** Load the character's default outfit as raw coverage-bearing wardrobe items. */
-export async function loadDefaultWardrobe(
+/** The default outfit plus each row's revision — the read-token's wardrobe half. */
+export interface AvatarWardrobeLoad {
+  wardrobe: AvatarWardrobeItem[];
+  /** One `items.updatedAt` revision per loaded row, in wardrobe order. */
+  revisions: ImageSourceRevision[];
+  /**
+   * The lookup THREW — the empty wardrobe above is unknown state, not a
+   * confirmed undressed character. The segment assembly must not turn it into
+   * exposure claims; it degrades to the attributes-only prompt instead.
+   */
+  failed?: boolean;
+}
+
+/**
+ * Load the character's default outfit as raw coverage-bearing wardrobe items,
+ * plus the item-row revisions the standalone read token folds in — so an edit
+ * to a worn item mints a new token rather than reusing the old composition's
+ * name. Degrades to an empty load (attributes-only prompt) with a diagnostic.
+ */
+export async function loadDefaultWardrobeWithRevisions(
   ownerId: string,
   itemIds: readonly string[],
   sink?: DiagnosticSink,
-): Promise<AvatarWardrobeItem[]> {
-  if (itemIds.length === 0) return [];
+): Promise<AvatarWardrobeLoad> {
+  if (itemIds.length === 0) return { wardrobe: [], revisions: [] };
   try {
     const rows = await db()
-      .select({ id: items.id, name: items.name, description: items.description, definition: items.definition })
+      .select({
+        id: items.id,
+        name: items.name,
+        description: items.description,
+        definition: items.definition,
+        updatedAt: items.updatedAt,
+      })
       .from(items)
       .where(and(eq(items.ownerId, ownerId), inArray(items.id, [...itemIds])));
     const byId = new Map(rows.map((row) => [row.id, row]));
-    return itemIds.flatMap((id) => {
+    const wardrobe: AvatarWardrobeItem[] = [];
+    const revisions: ImageSourceRevision[] = [];
+    for (const id of itemIds) {
       const row = byId.get(id);
-      if (!row) return [];
+      if (!row) continue;
       const parsed = outfitExtrasSchema.safeParse(row.definition ?? {});
       const extras = parsed.success ? parsed.data : outfitExtrasSchema.parse({});
       const description = row.description?.trim() ?? "";
-      return [
-        {
-          id: row.id,
-          name: row.name,
-          coverage: extras.coverage,
-          layer: extras.layer,
-          opacity: extras.opacity,
-          ...(description ? { description } : {}),
-          ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
-          ...(extras.subtype ? { subtype: extras.subtype } : {}),
-          ...(extras.category ? { category: extras.category } : {}),
-          ...(extras.tags.length > 0 ? { tags: extras.tags } : {}),
-        },
-      ];
-    });
+      wardrobe.push({
+        id: row.id,
+        name: row.name,
+        coverage: extras.coverage,
+        layer: extras.layer,
+        opacity: extras.opacity,
+        ...(description ? { description } : {}),
+        ...(extras.sensory?.appearance ? { appearance: extras.sensory.appearance } : {}),
+        ...(extras.subtype ? { subtype: extras.subtype } : {}),
+        ...(extras.category ? { category: extras.category } : {}),
+        ...(extras.tags.length > 0 ? { tags: extras.tags } : {}),
+      });
+      revisions.push({ owner: IMAGE_ITEM_PROJECTION_OWNER, entityId: row.id, revision: row.updatedAt.toISOString() });
+    }
+    return { wardrobe, revisions };
   } catch (err) {
     sink?.push(
       diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — avatar prompt degrades to attributes only", {
@@ -173,8 +298,17 @@ export async function loadDefaultWardrobe(
         },
       }),
     );
-    return [];
+    return { wardrobe: [], revisions: [], failed: true };
   }
+}
+
+/** Load the character's default outfit as raw coverage-bearing wardrobe items. */
+export async function loadDefaultWardrobe(
+  ownerId: string,
+  itemIds: readonly string[],
+  sink?: DiagnosticSink,
+): Promise<AvatarWardrobeItem[]> {
+  return (await loadDefaultWardrobeWithRevisions(ownerId, itemIds, sink)).wardrobe;
 }
 
 /** Render the occlusion-filtered default outfit as one readable prompt phrase. */

@@ -227,3 +227,22 @@ export function exposureRegionsTouched(
   expandCoverage(coverage, registry, reached);
   return EXPOSURE_REGIONS.filter((region) => EXPOSURE_REGION_LOCATIONS[region].some((loc) => reached.has(loc)));
 }
+
+/**
+ * WHICH exposure region one body location belongs to — the reverse question of
+ * `exposureRegionsTouched`, asked from a fact's own location rather than from a
+ * garment's coverage. A location under a region's representative roots (breasts
+ * under `chest` → `torso`, vulva under `groin` → `pelvis`) answers that region;
+ * a location no region reaches (hair, hands, a wing) answers `undefined`, which
+ * a coverage-gated caller must treat as "coverage unknown", never as bare. Same
+ * private region table, so the four-region vocabulary still has exactly one
+ * definition. PURE.
+ */
+export function exposureRegionOf(
+  locationId: string,
+  registry: BodyLocationRegistry = bodyLocationRegistry,
+): keyof RegionExposure | undefined {
+  return EXPOSURE_REGIONS.find((region) =>
+    EXPOSURE_REGION_LOCATIONS[region].some((root) => root === locationId || registry.expand(root).includes(locationId)),
+  );
+}

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { attr, makeProfile } from "@/server/test-support";
 import { buildCanonBlock, buildCharacterChatSystemPrompt } from "@/server/engine";
-import { buildAvatarPrompt } from "@/server/images";
+import { buildAvatarPrompt, buildAvatarSegments } from "@/server/images";
 
 /**
  * Age has two intentionally different owners:
@@ -47,10 +47,24 @@ describe("age context separation", () => {
   });
 
   it("portrait generation gets apparent age and never chronological age", () => {
-    const prompt = buildAvatarPrompt("Mira", profile, "realistic");
-    expect(prompt).toContain("forties");
-    expect(prompt).not.toContain("25 years old");
-    expect(prompt).not.toMatch(/\bchronological\b/i);
+    // Both the production Stage 3 segment assembly and the legacy builder it
+    // will replace at Stage 6 — the invariant must hold across the cutover.
+    const prompts = [
+      buildAvatarSegments({
+        characterId: "chr-mira",
+        name: "Mira",
+        profile,
+        style: "realistic",
+        wardrobe: [],
+        readToken: "age-probe",
+      }).prompt,
+      buildAvatarPrompt("Mira", profile, "realistic"),
+    ];
+    for (const prompt of prompts) {
+      expect(prompt).toContain("forties");
+      expect(prompt).not.toContain("25 years old");
+      expect(prompt).not.toMatch(/\bchronological\b/i);
+    }
   });
 
   it("keeps production scene-image assembly disconnected from both age fields", () => {

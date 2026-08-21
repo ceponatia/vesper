@@ -23,6 +23,7 @@ import {
   selectVisualImageFacts,
   selectVisualNarratorCues,
   unsupportedCurrentStateSuppressions,
+  visualCameraReadsOfSceneCamera,
   visualComponentKnown,
   visualStateFeatureKey,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
@@ -38,6 +39,7 @@ import {
   type EffectiveCoverageRead,
   type RealizeBodyInput,
   type RealizedBody,
+  type SceneCameraSpec,
   type SceneState,
   type VisualAttentionBuild,
   type VisualAttentionContext,
@@ -437,6 +439,19 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
 // Selections
 // ---------------------------------------------------------------------------
 
+/**
+ * A committed scene camera, bound into the ONE image selection pass
+ * (image-lane-consolidation.spec.visual-state.md §Camera). The id names the
+ * viewpoint the selection runs under; the spec supplies the distance, angle and
+ * framing reads through `visualCameraReadsOfSceneCamera`. Lighting and motion
+ * deliberately stay lane-derived — the scene camera proves where the frame is,
+ * not what the light does.
+ */
+export interface VisualStateCameraBinding {
+  readonly cameraId: string;
+  readonly spec: SceneCameraSpec;
+}
+
 export interface VisualStateSelectionsInput {
   readonly snapshot: VisualStateSnapshot;
   /** The lane's observer exposure/channel view (the affordance read's). */
@@ -467,6 +482,14 @@ export interface VisualStateSelectionsInput {
   readonly observerParticipantId?: string;
   /** The scene participant being looked at. */
   readonly subjectParticipantId?: string;
+  /**
+   * The render's committed camera, when a route has one. Present, it replaces
+   * the shadow placeholder viewpoint and overrides the image context's
+   * distance, angle and framing with the camera's own reads — inside this one
+   * selection pass, never re-selected downstream. Absent, the image selection
+   * is byte-identical to the camera-less shadow build.
+   */
+  readonly camera?: VisualStateCameraBinding;
   readonly sink?: DiagnosticSink;
 }
 
@@ -567,16 +590,23 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
     ...(sink === undefined ? {} : { sink }),
   });
 
-  // The shadow camera takes the same reads. It has no committed camera of its
-  // own — a real render supplies one through `visualCameraReadsOfSceneCamera`
-  // when the consolidation plan cuts the routes over — and leaving it unknown
-  // would keep slice 6's image measurement at a permanent zero, which measures
-  // the placeholder rather than the projection.
+  // The image camera. A route that holds a committed scene camera binds it
+  // here — the real viewpoint id, plus the camera's own distance, angle and
+  // framing reads over the lane's lighting and motion — so the camera enters
+  // the ONE selection pass and the digest fingerprints the camera the facts
+  // were actually selected under. Without a binding, the shadow placeholder
+  // takes the lane reads unchanged: leaving them unknown would keep slice 6's
+  // image measurement at a permanent zero, which measures the placeholder
+  // rather than the projection.
+  const cameraReads = input.camera === undefined ? undefined : visualCameraReadsOfSceneCamera(input.camera.spec);
   const imageContext: VisualAttentionContext = {
-    viewpoint: { kind: "camera", cameraId: "visual_state_shadow" },
+    viewpoint: { kind: "camera", cameraId: input.camera?.cameraId ?? "visual_state_shadow" },
     perception: input.perception,
     perceptionBySubject,
     ...components,
+    ...(cameraReads === undefined
+      ? {}
+      : { distance: cameraReads.distance, angle: cameraReads.angle, framing: cameraReads.framing }),
     intimateAllowed: false,
     consumer: "image",
   };

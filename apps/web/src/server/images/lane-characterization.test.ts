@@ -3,21 +3,24 @@ import { resolveAttributes } from "@/contracts/attributes/value";
 import {
   duplicatedVisualFacts,
   LANE_PROBE_NAME,
+  laneProbeAvatarSegments,
   laneProbeBareExposure,
-  laneProbeDressedExposure,
+  laneProbeCastMember,
+  laneProbeMarkedProfile,
   laneProbeProfile,
+  laneProbeScenePlan,
+  laneProbeShadowInput,
   laneProbeWardrobe,
   presentVisualFacts,
   VISUAL_FACT_PROBES,
 } from "@/server/test-support";
-import { buildCharacterSceneContext, type SceneCastMember } from "./character-scene";
+import type { SceneCastMember } from "./character-scene";
 import { buildChatLookPrompt } from "./chat-look";
 import { apparentAgeAnchor } from "./prompts-appearance";
-import { buildAvatarPrompt } from "./prompts-avatar";
-import { resolveScenePlan } from "./prompts-scene-plan";
-import { sceneSpecSchema } from "./prompts-scene-composer";
+import type { AvatarWardrobeItem } from "./prompts-avatar";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
 import { buildVariantInstruction } from "./prompts-variant";
+import { applySceneSubjectVisual } from "./scene-subject-visual";
 
 /**
  * The pre-migration freeze for every character-bearing image lane
@@ -34,15 +37,20 @@ import { buildVariantInstruction } from "./prompts-variant";
  * Reading the matrix: the lanes disagree, and the disagreements ARE the plan's
  * premise.
  *
- * - The avatar lane states identity, morphology, age and wardrobe from the sheet,
- *   and drops everything below the waist (waist-up framing).
- * - The text-to-image scene lane states the whole sheet through
- *   `characterAppearanceSummary`, which applies no coverage gate — so it
- *   describes skin a garment is covering, while the reference lanes, routing the
- *   same fact through the exposure-gated reveal line, do not.
- * - The reference scene lanes narrow to identity anchors plus the reveal line,
- *   losing species, gender and morphology entirely: they lean on the reference
- *   image for those.
+ * - The avatar lane (cut over to the Stage 3 digest assembly, 2026-08-21) states
+ *   identity, morphology, age and wardrobe — morphology now through the visual
+ *   digest, the rest still from the sheet — and drops everything below the waist
+ *   (waist-up framing). Its fact set is unchanged from the pre-cutover freeze.
+ * - The SCENE lanes (cut over to the cast-1 digest production, WP-C 2026-08-21;
+ *   `applySceneSubjectVisual`) now share ONE coverage-aware selection. Two
+ *   deliberate fact-set changes came with that, each frozen below:
+ *   - the text-to-image lane STOPPED describing covered `imageReveal: "skin"`
+ *     detail (the recorded toenails-under-slippers leak is closed — the freeze
+ *     comment that used to mark the drift now marks the fix);
+ *   - every scene lane GAINED the digest's mandatory morphology anchors
+ *     (horns/wings/tail), closing the recorded "reference lanes lose morphology
+ *     entirely" gap — a species appendage is exactly the anchor an edit model
+ *     "corrects" away when only the reference asserts it.
  * - The chat-look lane states apparent age and the requested outfit and NOTHING
  *   else — no identity, morphology, or exposure fact at all. Same for the
  *   variant lane. Both take their age anchor as a caller-supplied string, which
@@ -53,33 +61,42 @@ import { buildVariantInstruction } from "./prompts-variant";
 
 const profile = laneProbeProfile();
 const dressed = laneProbeWardrobe();
-const dressedExposure = laneProbeDressedExposure();
 const bareExposure = laneProbeBareExposure();
 
-const castMember = (over: Partial<SceneCastMember> = {}): SceneCastMember => ({
-  characterId: "probe-character",
-  name: LANE_PROBE_NAME,
-  profile,
-  avatarImageId: null,
-  outfit: "a floor-length wine-red silk kimono",
-  exposure: dressedExposure,
-  ...over,
-});
-
-/** The scene plan a lane renders, built through the production context + resolve seam. */
-function scenePlan(member: SceneCastMember = castMember()) {
-  const context = buildCharacterSceneContext({
-    cast: [member],
-    room: "a lamplit study, rain on the window",
-    recentChat: [`${LANE_PROBE_NAME} settles into the chair by the window.`],
-  });
-  return resolveScenePlan(
-    sceneSpecSchema.parse({ focalCharacter: LANE_PROBE_NAME, pose: "settling into the chair", setting: "a lamplit study" }),
-    context,
-  );
+/**
+ * The avatar lane, through the PRODUCTION Stage 3 assembly (`buildAvatarSegments`
+ * — standalone visual digest + semantic segments, via the shared probe builder).
+ * Re-frozen 2026-08-21 with an UNCHANGED fact set: the digest's morphology
+ * segment took over the feature groups the sheet traversal used to state, and
+ * every other fact still arrives exactly once. The helper also asserts render
+ * eligibility, because a freeze over a prompt production that would refuse to
+ * send proves nothing.
+ */
+function avatarPrompt(wardrobe: ReadonlyArray<AvatarWardrobeItem>, style: "realistic" | "stylized" = "realistic"): string {
+  const built = laneProbeAvatarSegments(wardrobe, style);
+  expect(built.missingRequired).toEqual([]);
+  return built.prompt;
 }
 
-const bareMember = castMember({ outfit: "", exposure: bareExposure });
+/**
+ * The scene plan a lane renders, built through the production seams end to end:
+ * context → composer-spec resolve (`laneProbeScenePlan`) → the cast-1 digest
+ * patch the render job applies once the committed camera exists
+ * (`applySceneSubjectVisual`). The refusal assertion matters here for the same
+ * reason the avatar helper asserts eligibility — a freeze over a plan the
+ * production path would refuse to render proves nothing.
+ */
+function scenePlan(member: SceneCastMember = laneProbeCastMember()) {
+  const applied = applySceneSubjectVisual({
+    plan: laneProbeScenePlan(member),
+    member,
+    shadow: laneProbeShadowInput(member.profile),
+  });
+  expect(applied.refusal).toBeNull();
+  return applied.plan;
+}
+
+const bareMember = laneProbeCastMember({ outfit: "", exposure: bareExposure });
 
 /**
  * Freeze one lane: exactly these facts, and none of them stated twice.
@@ -98,7 +115,7 @@ function expectLaneFacts(prompt: string, expected: readonly string[]): void {
 
 describe("image lane characterization — dressed subject", () => {
   it("avatar: sheet identity, morphology, age and wardrobe; nothing below the waist", () => {
-    expectLaneFacts(buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed), [
+    expectLaneFacts(avatarPrompt(dressed), [
       "gender",
       "ethnicity",
       "species",
@@ -113,7 +130,16 @@ describe("image lane characterization — dressed subject", () => {
     ]);
   });
 
-  it("scene, text-to-image: the appearance summary carries the sheet, exposure-blind", () => {
+  it("scene, text-to-image: the digest-fed description is coverage-aware", () => {
+    // Re-frozen for the WP-C cast-1 cutover. One change from the pre-cutover
+    // row, and it is the fix the plan promised: `toenails` — a covered
+    // `imageReveal: "skin"` fact the exposure-blind appearance summary used to
+    // leak into text-to-image prompts — is now ABSENT, because the residual
+    // sheet applies the same coverage gate the reveal lanes always had. Every
+    // other fact is unchanged: identity and the sheet still state the person,
+    // and the morphology anchors now arrive through the digest's mandatory
+    // clauses instead of the sheet's feature-group traversal (same facts, one
+    // owner).
     expectLaneFacts(buildSceneRenderPrompt(scenePlan(), {}), [
       "gender",
       "ethnicity",
@@ -126,22 +152,23 @@ describe("image lane characterization — dressed subject", () => {
       "tail",
       "garment",
       "legBuild",
-      // `toenails` is the drift this plan exists to remove, not an intended
-      // feature: `characterAppearanceSummary` applies NO coverage gate, so the
-      // painted toenails under the slippers reach a text-to-image render — while
-      // the reference lanes below, which route the same fact through the
-      // exposure-gated reveal line, correctly stay silent about them. Stage 2
-      // gives both one coverage-aware selection; until then this cell records
-      // that the two disagree.
-      "toenails",
     ]);
   });
 
-  it("scene, single reference: identity anchors replace the full appearance summary", () => {
+  it("scene, single reference: identity anchors now carry the digest's morphology", () => {
+    // Re-frozen for WP-C: the row GAINS horns/wings/tail. The pre-cutover
+    // reference lanes carried no morphology fact at all — they leaned entirely
+    // on the reference image, and a species appendage is exactly the anchor an
+    // edit model "corrects" away when nothing in the text asserts it (the same
+    // reasoning that put morphology in the avatar's digest segment). The
+    // attribute anchors (hair/eyes/skin) and the reveal line are unchanged.
     expectLaneFacts(buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }), [
       "hairColor",
       "eyeColor",
       "skinTone",
+      "horns",
+      "wings",
+      "tail",
       "garment",
       // Shape reads through clothing; the covered `skin` facts do not.
       "legBuild",
@@ -157,8 +184,13 @@ describe("image lane characterization — dressed subject", () => {
     });
     // Identical to the single-reference lane's fact set, which is the one thing
     // the two assemblers currently agree on — they reach it through different
-    // wording, ordering and budgets (audit finding 4).
-    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "garment", "legBuild"]);
+    // wording, ordering and budgets (audit finding 4). Re-frozen with the same
+    // morphology gain as the single-reference row: this fixture is a CAST OF
+    // ONE handed multi-reference transport (the character plus a location
+    // image), so it exercises the cast-1 digest production — the cast ≥2 field
+    // path stays legacy and is pinned by `character-scene.test.ts`'s two-member
+    // suite, not here.
+    expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "horns", "wings", "tail", "garment", "legBuild"]);
   });
 
   it("chat look: the requested outfit and no other character fact, age included", () => {
@@ -178,6 +210,9 @@ describe("image lane characterization — dressed subject", () => {
 
 describe("image lane characterization — bare subject", () => {
   it("scene, text-to-image: exposure is stated, intimate anatomy is not (censored route)", () => {
+    // Byte-identical fact set to the pre-cutover freeze: with nothing covered,
+    // the new coverage gate excludes nothing, so `toenails` correctly STAYS —
+    // proving the dressed row's absence is the gate, not a lost fact.
     expectLaneFacts(buildSceneRenderPrompt(scenePlan(bareMember), {}), [
       "gender",
       "ethnicity",
@@ -202,10 +237,16 @@ describe("image lane characterization — bare subject", () => {
       referenceName: LANE_PROBE_NAME,
       allowIntimate: true,
     });
+    // Re-frozen for WP-C with the same single change as the dressed reference
+    // row — the digest's morphology anchors join. The reveal machinery
+    // (exposure-gated skin, route-gated intimate detail) is unchanged.
     expectLaneFacts(prompt, [
       "hairColor",
       "eyeColor",
       "skinTone",
+      "horns",
+      "wings",
+      "tail",
       "bareTorso",
       "legBuild",
       "toenails",
@@ -215,7 +256,7 @@ describe("image lane characterization — bare subject", () => {
   });
 
   it("avatar: bare or dressed, the portrait studio states no intimate anatomy", () => {
-    const prompt = buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", []);
+    const prompt = avatarPrompt([]);
     const present = presentVisualFacts(prompt);
     expect(present).not.toContain("bustSize");
     expect(present).not.toContain("nipples");
@@ -227,7 +268,7 @@ describe("image lane characterization — bare subject", () => {
 
 describe("image lane invariants that hold across the migration", () => {
   const lanes = (): ReadonlyArray<{ lane: string; prompt: string }> => [
-    { lane: "avatar", prompt: buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed) },
+    { lane: "avatar", prompt: avatarPrompt(dressed) },
     { lane: "scene_t2i", prompt: buildSceneRenderPrompt(scenePlan(), {}) },
     { lane: "scene_ref", prompt: buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }) },
     {
@@ -285,7 +326,7 @@ describe("image lane invariants that hold across the migration", () => {
     expect(anchor).toContain("late twenties");
 
     for (const prompt of [
-      buildAvatarPrompt(LANE_PROBE_NAME, profile, "realistic", dressed),
+      avatarPrompt(dressed),
       buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
     ]) {
       expect(presentVisualFacts(prompt)).toContain("apparentAge");
@@ -303,6 +344,28 @@ describe("image lane invariants that hold across the migration", () => {
     }
   });
 
+  it("a cataloged distinctive mark is stated exactly once per lane — the residue owns the phrasing", () => {
+    // The duplication seam the digest cutover opened (WP-C report): a
+    // recognition-catalog attribute with a distinctive value (`nose.shape:
+    // "crooked"`) projects into the visual digest as a mark AND survives the
+    // route-owned residual attribute sheet, so a lane that lets both speak
+    // states the same fact twice — the exact failure mode the spec's comparison
+    // rule names ("fail on … duplicated … character facts"). Both cutover lanes
+    // resolve it the same way: the catalog-derived residue set rides the shared
+    // clause resolver as `{ omit }`, so the residue keeps the only statement.
+    const marked = laneProbeMarkedProfile();
+
+    const avatar = laneProbeAvatarSegments(dressed, "realistic", marked);
+    expect(avatar.missingRequired).toEqual([]);
+    expect(presentVisualFacts(avatar.prompt)).toContain("noseShape");
+    expect(duplicatedVisualFacts(avatar.prompt)).toEqual([]);
+
+    const member = laneProbeCastMember({ profile: marked });
+    const scene = buildSceneRenderPrompt(scenePlan(member), {});
+    expect(presentVisualFacts(scene)).toContain("noseShape");
+    expect(duplicatedVisualFacts(scene)).toEqual([]);
+  });
+
   it("the probe vocabulary itself stays stable", () => {
     // A probe key rename would silently re-bless every matrix above, so the key
     // set is frozen too. Adding a probe is a deliberate edit here.
@@ -313,6 +376,9 @@ describe("image lane invariants that hold across the migration", () => {
       "hairColor",
       "eyeColor",
       "skinTone",
+      // Added with the WP-D duplication pin (2026-08-21): authored only by the
+      // marked fixture, so no matrix above gained a cell.
+      "noseShape",
       "horns",
       "wings",
       "tail",

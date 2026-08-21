@@ -149,12 +149,12 @@ lanes carry no identity or morphology fact at all.
 
 ### Stage 2 — one image visual digest
 
-Status: in progress — the assembly is built 2026-08-21 and route consumption
-remains. A live conversation can now be turned into the single set of visual
-facts a picture of that character would use, and the admin inspector shows it
-for both chat lanes, but no image route reads it yet and nothing is recorded on
-a saved image. [The companion spec](image-lane-consolidation.spec.visual-state.md)
-lists exactly what is built and what is left.
+Status: complete — 2026-08-21. A live conversation or a standalone character
+can be turned into the single set of visual facts a picture of that character
+would use, the admin inspector shows it for both chat lanes, and the first
+production routes now read it and record it on saved images.
+[The companion spec](image-lane-consolidation.spec.visual-state.md) lists what
+is built.
 
 Add the application adapter that selects required and optional camera-visible
 facts from one snapshot. Preserve source keys, fingerprints, snapshot/source
@@ -163,13 +163,16 @@ compact app-owned visual provenance beside package-owned render provenance.
 
 ### Stage 3 — avatar and single-character cutover
 
-Status: queued — depends on Stage 2.
+Status: built 2026-08-21 — awaiting pinned image trials over live providers
+before Stage 6 removes the fallback assembly.
 
 Move avatar and single-character scene renders from direct attribute, wardrobe,
 age, exposure, and body traversal to the image digest and semantic prompt
 segments. Keep portrait framing, style, camera, and scene composition behavior
 unchanged. Compare final render intent and pinned trial outputs before removing
-fallback assembly.
+fallback assembly. The render-intent comparison is built and green; the two
+companion specs record what each lane consumes and the deliberate fact-set
+changes (the covered-skin fix and the morphology anchors scenes were missing).
 
 ### Stage 4 — remaining character-bearing lanes
 
@@ -266,7 +269,7 @@ Before a legacy path is removed:
 
 ## Open questions
 
-No owner decision blocks Stage 2.
+No owner decision blocks Stage 4.
 
 The following are evidence questions governed by the named neighboring plans,
 not reasons to invent local defaults:

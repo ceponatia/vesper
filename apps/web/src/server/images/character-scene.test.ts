@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { affordancePerceptionView, DiagnosticCollector, type ChatGarmentStore } from "@/contracts";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { attr, makeProfile } from "@/server/test-support";
+import { VISUAL_STATE_SHADOW_FAILED, type VisualStateShadowInput } from "@/server/visual-state";
 import { buildCharacterSceneContext, visualStateNote, type SceneCastMember } from "./character-scene";
+import { resolveScenePlan } from "./prompts-scene-plan";
+import { sceneSpecSchema } from "./prompts-scene-composer";
+import {
+  applySceneSubjectVisual,
+  SCENE_VISUAL_DIGEST_UNAVAILABLE,
+} from "./scene-subject-visual";
 
 describe("visualStateNote", () => {
   it("graders intoxication into tipsy vs drunk wording", () => {
@@ -169,5 +177,121 @@ describe("buildCharacterSceneContext", () => {
       cast: [member("Mira", "red", { outfitExposed: true }), member("Sayed", "black")],
     });
     expect(context.present[0]?.exposure).not.toEqual(context.present[1]?.exposure);
+  });
+});
+
+/**
+ * The cast-1 digest path (image-lane-consolidation Stage 3, WP-C):
+ * `renderCharacterSceneImage` replaces the focal spec's character fields with
+ * `applySceneSubjectVisual`'s output once the plan (and so the committed
+ * camera) exists. The suite above pins the LEGACY production the cast ≥2 path
+ * keeps byte-identical; this one pins the two properties the cutover must not
+ * lose — the three-layer attribute resolve, and the refuse-before-spend rule.
+ */
+describe("applySceneSubjectVisual", () => {
+  const shadowFor = (
+    m: SceneCastMember,
+    over: Partial<Omit<VisualStateShadowInput, "sink" | "camera">> = {},
+  ): Omit<VisualStateShadowInput, "sink" | "camera"> => ({
+    lane: "character_chat",
+    scope: { kind: "chat", memoryGroupId: "group-1" },
+    cutId: "cut-1",
+    atMinutes: 0,
+    subjectId: m.characterId,
+    attributes: m.profile.attributes,
+    ...(m.attributeOverlays === undefined ? {} : { attributeOverlays: m.attributeOverlays }),
+    ...(m.conditions === undefined ? {} : { conditions: m.conditions }),
+    perception: affordancePerceptionView({ exposure: {}, channels: { sight: "available" } }),
+    observerId: "owner-1",
+    observer: { kind: "player_viewpoint", viewpointId: "owner-1" },
+    ...over,
+  });
+
+  const planFor = (m: SceneCastMember) =>
+    resolveScenePlan(
+      sceneSpecSchema.parse({ focalCharacter: m.name, pose: "reading by the window" }),
+      buildCharacterSceneContext({ room: "a rain-streaked library", recentChat: [], cast: [m] }),
+    );
+
+  /**
+   * The digest-path mirror of the legacy layering freeze above: authored sheet
+   * → persisted narrative overlays → condition overlays, resolved identically
+   * for the route-owned anchors and the shadow assembly. Falsified against a
+   * patch that resolved the base sheet alone — the recorded dye would reach the
+   * narrator and the projection while the picture re-asserted the old hair.
+   */
+  it("resolves narrative and condition overlays into the digest-path identity anchors", () => {
+    const soaked: ActiveCondition = {
+      id: "cond-soaked",
+      label: "soaked",
+      startedAtMinutes: 0,
+      attributeEffects: [{ attributeId: "hair.style", value: "rain-flattened and clinging" }],
+    };
+    const mira: SceneCastMember = {
+      characterId: "mira-id",
+      name: "Mira",
+      profile: makeProfile({ attributes: [attr("hair.color", "red", "base")] }),
+      avatarImageId: null,
+      outfit: "Mira's coat",
+      attributeOverlays: [attr("hair.color", "silver", "narrative")],
+      conditions: [soaked],
+    };
+    const applied = applySceneSubjectVisual({ plan: planFor(mira), member: mira, shadow: shadowFor(mira) });
+    expect(applied.refusal).toBeNull();
+    expect(applied.plan.focal?.identityAnchors).toContain("silver");
+    expect(applied.plan.focal?.identityAnchors).not.toContain("red");
+    expect(applied.plan.focal?.identityAnchors).toContain("rain-flattened");
+    // The row's reserve-time `meta.visualState` fragment is produced alongside.
+    expect(applied.digestMeta).toHaveProperty("visualState");
+  });
+
+  it("never states age on the digest path, in any field", () => {
+    const mira: SceneCastMember = {
+      characterId: "mira-id",
+      name: "Mira",
+      profile: makeProfile({
+        age: "25",
+        attributes: [attr("hair.color", "red", "base"), attr("identity.apparent_age", "forties", "base")],
+      }),
+      avatarImageId: null,
+    };
+    const applied = applySceneSubjectVisual({ plan: planFor(mira), member: mira, shadow: shadowFor(mira) });
+    expect(applied.refusal).toBeNull();
+    const focal = JSON.stringify(applied.plan.focal);
+    expect(focal).not.toContain("forties");
+    expect(focal).not.toContain("25 years old");
+    expect(applied.plan.focal?.ageAnchor).toBeUndefined();
+  });
+
+  /**
+   * The spec.prompts §Failure behavior rule: a digest that cannot be built
+   * REFUSES the render before provider spend — never a silent fall-back to the
+   * legacy prose fields. The corrupt garment store stands in for any assembly
+   * throw; `safeBuildVisualStateShadow` converts it to null, and the seam must
+   * turn that null into a refusal plus its own diagnostic, leaving the plan
+   * untouched for the failed row's record.
+   */
+  it("refuses before provider spend when the shadow assembly fails, with the diagnostic pair", () => {
+    const mira: SceneCastMember = {
+      characterId: "mira-id",
+      name: "Mira",
+      profile: makeProfile({ attributes: [attr("hair.color", "red", "base")] }),
+      avatarImageId: null,
+    };
+    const sink = new DiagnosticCollector();
+    const plan = planFor(mira);
+    const applied = applySceneSubjectVisual({
+      plan,
+      member: mira,
+      shadow: shadowFor(mira, {
+        garments: { store: { instances: undefined } as unknown as ChatGarmentStore, actorId: "actor-mira" },
+      }),
+      sink,
+    });
+    expect(applied.refusal).toContain("Mira");
+    expect(applied.plan).toBe(plan);
+    const codes = sink.items.map((entry) => entry.code);
+    expect(codes).toContain(VISUAL_STATE_SHADOW_FAILED);
+    expect(codes).toContain(SCENE_VISUAL_DIGEST_UNAVAILABLE);
   });
 });
