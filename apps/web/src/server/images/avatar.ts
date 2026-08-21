@@ -9,14 +9,14 @@ import { outfitItems } from "@/contracts";
 import { IMAGE_TARGET_ASPECT, type ImageSourceRevision } from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
-import { characterProfileSchema, emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
+import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { IMAGE_ITEM_PROJECTION_OWNER } from "@/contracts/images/world-projection";
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel } from "@/contracts/items/subtypes";
 import { runImagePipeline } from "./assets";
-import { buildAvatarSegments, type AvatarSegmentAssembly } from "./avatar-segments";
+import { buildAvatarSegments, type AvatarSegmentAssembly, type AvatarSegmentAssemblyInput } from "./avatar-segments";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import {
@@ -49,16 +49,14 @@ export const AVATAR_DIGEST_INELIGIBLE = "images.avatar.visual_digest_ineligible"
  * The pure segment assembly, run at the route boundary: a throw here is a
  * defect, but the resilient shape is a failed row carrying a diagnostic, not a
  * lost turn — so it degrades to `null` and the pipeline refuses pre-spend.
+ *
+ * Typed as the assembly's OWN input (minus the sink, threaded separately) so a
+ * degradation flag like `wardrobeUnavailable` can never be silently dropped at
+ * this seam — an inline retype here once omitted it, and a refactor could have
+ * reverted the failed-load-renders-topless fix with no type error.
  */
 function tryBuildAvatarSegments(
-  input: {
-    characterId: string;
-    name: string;
-    profile: CharacterProfile;
-    style: AvatarStyle;
-    wardrobe: AvatarWardrobeItem[];
-    readToken: string;
-  },
+  input: Omit<AvatarSegmentAssemblyInput, "sink">,
   sink?: DiagnosticSink,
 ): AvatarSegmentAssembly | null {
   try {
@@ -132,6 +130,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
           style,
           wardrobe: load.wardrobe,
           ...(load.failed === true ? { wardrobeUnavailable: true } : {}),
+          ...((load.coverageUnreliableIds?.length ?? 0) > 0 ? { coverageUnreliable: true } : {}),
           // The character row's own revision plus every wardrobe row read for
           // this render — an edit to either mints a different token.
           readToken: standaloneCharacterReadToken({
@@ -215,8 +214,19 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   return imageId;
 }
 
+/**
+ * A `coverage` column that is PRESENT but unparseable reads as this sentinel,
+ * never as `[]`: covers-nothing is a positive bare claim, and a malformed row
+ * is unknown state (the PR #152 bug class — bad data must not undress the body
+ * it dresses). An ABSENT column keeps today's covers-nothing read: authored
+ * silence, not damage.
+ */
+const COVERAGE_UNREADABLE = "unreadable";
+
 const outfitExtrasSchema = z.object({
-  coverage: z.array(z.string()).catch([]),
+  coverage: z
+    .union([z.array(z.string()), z.unknown().transform((): typeof COVERAGE_UNREADABLE => COVERAGE_UNREADABLE)])
+    .optional(),
   layer: z
     .union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)])
     .optional()
@@ -239,6 +249,15 @@ export interface AvatarWardrobeLoad {
    * exposure claims; it degrades to the attributes-only prompt instead.
    */
   failed?: boolean;
+  /**
+   * Loaded rows whose `coverage` column could not be parsed — their
+   * `coverage: []` above is unknown state, not covers-nothing. Exposure
+   * computed over a wardrobe containing one of these must degrade toward
+   * covered, never read the regions those garments actually cover as bare
+   * (`images.avatar.coverage_unreadable` fires at the load site). Absent when
+   * every row parsed.
+   */
+  coverageUnreliableIds?: string[];
 }
 
 /**
@@ -267,16 +286,25 @@ export async function loadDefaultWardrobeWithRevisions(
     const byId = new Map(rows.map((row) => [row.id, row]));
     const wardrobe: AvatarWardrobeItem[] = [];
     const revisions: ImageSourceRevision[] = [];
+    const coverageUnreliableIds: string[] = [];
     for (const id of itemIds) {
       const row = byId.get(id);
       if (!row) continue;
       const parsed = outfitExtrasSchema.safeParse(row.definition ?? {});
       const extras = parsed.success ? parsed.data : outfitExtrasSchema.parse({});
+      // Unparseable coverage (or an unparseable definition wholesale) loads the
+      // item with no coverage rows, and the LOAD carries the id — so exposure
+      // consumers degrade toward covered instead of reading a bare region off a
+      // row nobody could parse.
+      const coverageUnreadable = !parsed.success || extras.coverage === COVERAGE_UNREADABLE;
+      if (coverageUnreadable) coverageUnreliableIds.push(row.id);
+      const coverage =
+        extras.coverage === undefined || extras.coverage === COVERAGE_UNREADABLE ? [] : extras.coverage;
       const description = row.description?.trim() ?? "";
       wardrobe.push({
         id: row.id,
         name: row.name,
-        coverage: extras.coverage,
+        coverage,
         layer: extras.layer,
         opacity: extras.opacity,
         ...(description ? { description } : {}),
@@ -287,7 +315,15 @@ export async function loadDefaultWardrobeWithRevisions(
       });
       revisions.push({ owner: IMAGE_ITEM_PROJECTION_OWNER, entityId: row.id, revision: row.updatedAt.toISOString() });
     }
-    return { wardrobe, revisions };
+    if (coverageUnreliableIds.length > 0) {
+      sink?.push(
+        diag("warn", "images.avatar.coverage_unreadable", "worn item coverage column unreadable — exposure degrades toward covered", {
+          path: "items.definition.coverage",
+          context: { itemIds: coverageUnreliableIds },
+        }),
+      );
+    }
+    return { wardrobe, revisions, ...(coverageUnreliableIds.length > 0 ? { coverageUnreliableIds } : {}) };
   } catch (err) {
     sink?.push(
       diag("warn", "images.avatar.outfit_load_failed", "default outfit lookup failed — avatar prompt degrades to attributes only", {
@@ -300,15 +336,6 @@ export async function loadDefaultWardrobeWithRevisions(
     );
     return { wardrobe: [], revisions: [], failed: true };
   }
-}
-
-/** Load the character's default outfit as raw coverage-bearing wardrobe items. */
-export async function loadDefaultWardrobe(
-  ownerId: string,
-  itemIds: readonly string[],
-  sink?: DiagnosticSink,
-): Promise<AvatarWardrobeItem[]> {
-  return (await loadDefaultWardrobeWithRevisions(ownerId, itemIds, sink)).wardrobe;
 }
 
 /** Render the occlusion-filtered default outfit as one readable prompt phrase. */
@@ -339,7 +366,10 @@ export async function defaultOutfitPhrase(
   sink?: DiagnosticSink,
 ): Promise<string> {
   if (itemIds.length === 0) return "";
-  return wardrobeOutfitText(await loadDefaultWardrobe(ownerId, itemIds, sink));
+  // Phrase read only: a failed load's empty phrase degrades to composer
+  // inference, and the load reports itself — the failure marker has no consumer
+  // here. Exposure/mint consumers must read the full load instead.
+  return wardrobeOutfitText((await loadDefaultWardrobeWithRevisions(ownerId, itemIds, sink)).wardrobe);
 }
 
 const AVATAR_BATCH_SIZE = 5;

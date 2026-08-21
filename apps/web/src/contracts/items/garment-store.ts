@@ -1,11 +1,10 @@
-import { diag, type DiagnosticSink } from "../diagnostics";
+import { diag, type Diagnostic, type DiagnosticSink } from "../diagnostics";
 import { samePlaceName } from "../turns/chat-scene-memory";
 import {
   degradedGarmentBlueprint,
   garmentBlueprintHash,
   garmentBlueprintSchema,
-  GARMENT_BLUEPRINT_VERSION,
-  GARMENT_ROOT_PART_ID,
+  isDegradedGarmentBlueprint,
   type GarmentBlueprint,
 } from "./garment-blueprint";
 import { GARMENT_MATERIAL_UNKNOWN, type GarmentMaterialProfileId } from "./garment-material";
@@ -86,9 +85,42 @@ export function garmentInstanceById(
   return store.instances.find((instance) => instance.id === instanceId);
 }
 
-/** The blueprint an instance points at; the degraded root-only graph when the hash dangles. */
+/** A blueprint read that says whether the coverage it carries can be trusted. */
+export interface GarmentBlueprintResolution {
+  blueprint: GarmentBlueprint;
+  /**
+   * `false` when the instance's hash dangles or the stored snapshot is itself
+   * degraded (`isDegradedGarmentBlueprint`). An unreliable read means "coverage
+   * could not be read", never "confirmed wearing something that covers nothing"
+   * — consumers deriving EXPOSURE from this instance must degrade to covered,
+   * never to bare.
+   */
+  reliable: boolean;
+}
+
+/**
+ * Resolve an instance's blueprint WITH reliability. A dangling hash resolves to
+ * the marked degraded sentinel; either way `reliable` is the one flag the
+ * modelled wardrobe path needs to keep a lost snapshot from reading as a
+ * positive nudity claim.
+ */
+export function resolveGarmentBlueprint(
+  store: ChatGarmentStore,
+  instance: GarmentInstanceState,
+): GarmentBlueprintResolution {
+  const stored = store.blueprints[instance.blueprintHash];
+  const blueprint = stored ?? degradedGarmentBlueprint();
+  return { blueprint, reliable: stored !== undefined && !isDegradedGarmentBlueprint(blueprint) };
+}
+
+/**
+ * The blueprint an instance points at; the degraded root-only graph when the
+ * hash dangles. Reads that decide exposure should prefer
+ * `resolveGarmentBlueprint` — this shape keeps the many consumers that only
+ * enumerate parts/behaviors (handles, presentation, readouts) on one call.
+ */
 export function garmentBlueprintFor(store: ChatGarmentStore, instance: GarmentInstanceState): GarmentBlueprint {
-  return store.blueprints[instance.blueprintHash] ?? degradedGarmentBlueprint();
+  return resolveGarmentBlueprint(store, instance).blueprint;
 }
 
 /** Every instance an actor currently WEARS, in store order (the projection's order). */
@@ -185,40 +217,39 @@ export function garmentBlueprintForSeed(seed: GarmentSeed): GarmentBlueprint {
   return garmentBlueprintSchema.parse({ ...template, nodes });
 }
 
-/** The conservative blueprint for a definition that could not be loaded: covers nothing, does nothing. */
-function unresolvedGarmentBlueprint(): GarmentBlueprint {
-  return garmentBlueprintSchema.parse({
-    version: GARMENT_BLUEPRINT_VERSION,
-    rootNodeId: GARMENT_ROOT_PART_ID,
-    nodes: [
-      { id: GARMENT_ROOT_PART_ID, kind: "root", aliases: [], materialProfileId: GARMENT_MATERIAL_UNKNOWN, baselineCoverage: [] },
-    ],
-    edges: [],
-    behaviors: [],
-  });
-}
-
 /**
- * Register a blueprint in the store's content-hash map (OQ2) and return its hash.
- * Two identical shirts — or six uniformed characters — cost exactly one entry. A
- * full map keeps the existing entries and diagnoses; the dangling hash then reads
- * back as the degraded root-only graph rather than failing anything.
+ * Register a blueprint in the store's content-hash map (OQ2). Two identical
+ * shirts — or six uniformed characters — cost exactly one entry.
+ *
+ * A full map first garbage-collects entries NO instance references (evicting an
+ * instance orphans its snapshot, and orphans are what fill a long chat's map —
+ * `gone` garments still pin theirs until the cap evicts them). `stored: false`,
+ * possible only while every entry is still referenced, means the hash was NOT
+ * stored and the caller must not mint an instance pointing at it: a dangling
+ * hash resolves to the degraded sentinel, and "could not store the snapshot"
+ * must degrade openly rather than as a covers-nothing garment.
  */
 function registerBlueprint(
   blueprints: Record<string, GarmentBlueprint>,
   blueprint: GarmentBlueprint,
-  sink?: DiagnosticSink,
-): string {
+  instances: readonly GarmentInstanceState[],
+): { hash: string; stored: boolean } {
   const hash = garmentBlueprintHash(blueprint);
-  if (blueprints[hash]) return hash;
+  if (blueprints[hash]) return { hash, stored: true };
   if (Object.keys(blueprints).length >= CHAT_GARMENT_BLUEPRINTS_MAX) {
-    sink?.push(
-      diag("info", "chat_garments.blueprints_full", `blueprint map at ${CHAT_GARMENT_BLUEPRINTS_MAX} — new snapshot not stored`),
-    );
-    return hash;
+    const referenced = new Set(instances.map((instance) => instance.blueprintHash));
+    for (const stored of Object.keys(blueprints)) {
+      if (!referenced.has(stored)) delete blueprints[stored];
+    }
   }
+  if (Object.keys(blueprints).length >= CHAT_GARMENT_BLUEPRINTS_MAX) return { hash, stored: false };
   blueprints[hash] = blueprint;
-  return hash;
+  return { hash, stored: true };
+}
+
+/** The one degradation message for a map that stayed full after garbage collection. */
+function blueprintsFullDiag(detail: string): Diagnostic {
+  return diag("warn", "chat_garments.blueprints_full", `blueprint map at ${CHAT_GARMENT_BLUEPRINTS_MAX} — ${detail}`);
 }
 
 /**
@@ -232,6 +263,13 @@ function registerBlueprint(
  * template coverage and never subtract anyone's, so it cannot decide intimate
  * coverage. `seeded` is deliberately left alone — minting is not materialization,
  * and flipping the flag would skip the lazy worn-list migration.
+ *
+ * This path always mints (its caller has already promised the garment to the
+ * fiction), so a map that stays full after garbage collection is stored PAST the
+ * cap rather than left dangling. The overfill is bounded at one: every other
+ * entry survived GC because an instance references it, and the store schema's
+ * parse-time cap trims orphans first, so the over-cap snapshot outlives reload
+ * for as long as its instance does.
  */
 export function instantiateGarment(
   store: ChatGarmentStore,
@@ -247,9 +285,14 @@ export function instantiateGarment(
   sink?: DiagnosticSink,
 ): { store: ChatGarmentStore; instance: GarmentInstanceState } {
   const blueprints = { ...store.blueprints };
+  const registration = registerBlueprint(blueprints, input.blueprint, store.instances);
+  if (!registration.stored) {
+    blueprints[registration.hash] = input.blueprint;
+    sink?.push(blueprintsFullDiag("snapshot stored past the cap so the minted instance cannot dangle"));
+  }
   const instance: GarmentInstanceState = {
     id: input.id,
-    blueprintHash: registerBlueprint(blueprints, input.blueprint, sink),
+    blueprintHash: registration.hash,
     ...(input.definitionId ? { definitionId: input.definitionId } : {}),
     name: input.name,
     locus: input.locus,
@@ -386,28 +429,41 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
       continue;
     }
     // Mint. A definition the caller could not load still gets an instance (so the
-    // projection stays byte-identical to today's id list) — with a blueprint that
-    // covers nothing, matching how an unresolvable item contributes no coverage.
+    // projection stays byte-identical to today's id list) — carrying the MARKED
+    // degraded sentinel, so the read side knows its coverage was never real. A
+    // map still full after garbage collection mints NOTHING: the item stays
+    // un-materialized (a later reconcile retries) rather than becoming a worn
+    // instance whose hash dangles and reads covers-nothing.
     const seed = input.seeds.get(definitionId);
     const sibling = instances.find((i) => i.definitionId === definitionId);
     let hash: string;
     let name: string;
     if (seed) {
-      hash = registerBlueprint(blueprints, garmentBlueprintForSeed(seed), sink);
+      const registration = registerBlueprint(blueprints, garmentBlueprintForSeed(seed), instances);
+      if (!registration.stored) {
+        sink?.push(blueprintsFullDiag(`"${definitionId}" left un-materialized rather than minted dangling`));
+        continue;
+      }
+      hash = registration.hash;
       name = seed.name;
     } else if (sibling) {
       // A second copy of something already instantiated: reuse its snapshot.
       hash = sibling.blueprintHash;
       name = sibling.name;
     } else {
+      const registration = registerBlueprint(blueprints, degradedGarmentBlueprint(), instances);
+      if (!registration.stored) {
+        sink?.push(blueprintsFullDiag(`"${definitionId}" left un-materialized rather than minted dangling`));
+        continue;
+      }
       sink?.push(
         diag(
           "info",
           "chat_garments.definition_unresolved",
-          `worn item ${definitionId} could not be loaded — instantiated with an empty blueprint`,
+          `worn item ${definitionId} could not be loaded — instantiated with the degraded blueprint`,
         ),
       );
-      hash = registerBlueprint(blueprints, unresolvedGarmentBlueprint(), sink);
+      hash = registration.hash;
       name = "garment";
     }
     const minted: GarmentInstanceState = {

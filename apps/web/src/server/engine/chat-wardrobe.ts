@@ -1,15 +1,16 @@
 import {
   actorHasGarmentInstances,
+  diag,
   exposedRegions,
   exposureRegionsTouched,
   FULLY_COVERED,
-  garmentBlueprintFor,
   garmentEffectiveCoverage,
   GARMENT_PLAYER_ACTOR,
   intimateRegionsBare,
   outfitItems,
   overlayGarmentReads,
   overlayWornInputs,
+  resolveGarmentBlueprint,
   resolveOutfitPreset,
   resolveWardrobeVisibility,
   wornGarmentInstances,
@@ -28,10 +29,11 @@ import {
 } from "@/contracts";
 import {
   defaultOutfitPhrase,
-  loadDefaultWardrobe,
+  loadDefaultWardrobeWithRevisions,
   toWornInputs,
   wardrobeOutfitText,
   type AvatarWardrobeItem,
+  type AvatarWardrobeLoad,
 } from "../images";
 
 /**
@@ -79,13 +81,43 @@ export async function healOutfitMarker(
   return (await defaultOutfitPhrase(ownerId, preset.items, sink)).trim();
 }
 
-/** Load the worn item definitions (id-keyed, coverage/layer/opacity/subtype/sensory) — reuses the avatar loader. */
+/** The chat wardrobe load: the resolved worn definitions plus the load's own failure markers. */
+export type ChatWardrobeLoad = Omit<AvatarWardrobeLoad, "revisions">;
+
+/**
+ * Load the worn item definitions (id-keyed, coverage/layer/opacity/subtype/sensory)
+ * WITH the load's failure markers — reuses the avatar loader. This is the seam
+ * every exposure or mint consumer reads through (`resolveChatWardrobe`,
+ * `resolvePlayerWardrobe`, `syncChatGarments`): a `failed` or
+ * coverage-unreliable load is unknown state that must degrade toward
+ * covered/no-op, never read as a bare body or become durable minted state.
+ */
+export async function loadChatWardrobeWithStatus(
+  ownerId: string,
+  itemIds: readonly string[],
+  sink?: DiagnosticSink,
+): Promise<ChatWardrobeLoad> {
+  const { wardrobe, failed, coverageUnreliableIds } = await loadDefaultWardrobeWithRevisions(ownerId, itemIds, sink);
+  return {
+    wardrobe,
+    ...(failed === undefined ? {} : { failed }),
+    ...(coverageUnreliableIds === undefined ? {} : { coverageUnreliableIds }),
+  };
+}
+
+/**
+ * The failure-BLIND convenience read: just the items. For descriptor matching,
+ * pool listing and phrase renders, where an empty degraded read is already the
+ * safe outcome and the load reports itself (`images.avatar.outfit_load_failed`).
+ * Never for exposure or minting — those go through `loadChatWardrobeWithStatus`
+ * so a DB blip cannot become a bare body.
+ */
 export async function loadChatWardrobe(
   ownerId: string,
   itemIds: readonly string[],
   sink?: DiagnosticSink,
 ): Promise<AvatarWardrobeItem[]> {
-  return loadDefaultWardrobe(ownerId, itemIds, sink);
+  return (await loadChatWardrobeWithStatus(ownerId, itemIds, sink)).wardrobe;
 }
 
 /**
@@ -121,25 +153,43 @@ export function garmentWardrobeItem(
  * An actor's worn garments as wardrobe items, presentation-aware. ONE item per
  * worn INSTANCE (not per definition id), so two copies of the same shirt are two
  * items and a garment with no library provenance still appears.
+ *
+ * Returned as a load, not a bare array: an instance whose blueprint resolution
+ * is unreliable — the hash dangles, or the snapshot parsed degraded — has `[]`
+ * coverage that would read exactly the regions that garment covers as BARE.
+ * Those instance ids ride `coverageUnreliableIds` so the exposure consumers
+ * degrade to covered, the same arm the definition loader uses for an
+ * unreadable coverage column.
  */
 export async function loadGarmentWardrobeItems(
   store: ChatGarmentStore,
   actorId: string,
   ownerId: string,
   sink?: DiagnosticSink,
-): Promise<AvatarWardrobeItem[]> {
+): Promise<ChatWardrobeLoad> {
   const instances = wornGarmentInstances(store, actorId);
-  if (instances.length === 0) return [];
+  if (instances.length === 0) return { wardrobe: [] };
   const definitionIds = [...new Set(instances.flatMap((i) => (i.definitionId ? [i.definitionId] : [])))];
   const definitions = definitionIds.length > 0 ? await loadChatWardrobe(ownerId, definitionIds, sink) : [];
   const byId = new Map(definitions.flatMap((item) => (item.id ? [[item.id, item] as const] : [])));
-  return instances.map((instance) =>
-    garmentWardrobeItem(
+  const unreliableIds: string[] = [];
+  const wardrobe = instances.map((instance) => {
+    const resolution = resolveGarmentBlueprint(store, instance);
+    if (!resolution.reliable) unreliableIds.push(instance.id);
+    return garmentWardrobeItem(
       instance,
-      garmentBlueprintFor(store, instance),
+      resolution.blueprint,
       instance.definitionId ? byId.get(instance.definitionId) : undefined,
-    ),
-  );
+    );
+  });
+  if (unreliableIds.length > 0) {
+    sink?.push(
+      diag("warn", "chat_garments.blueprint_unreliable", "worn garment blueprint missing or degraded — coverage unknown", {
+        context: { actorId, instanceIds: unreliableIds },
+      }),
+    );
+  }
+  return { wardrobe, ...(unreliableIds.length > 0 ? { coverageUnreliableIds: unreliableIds } : {}) };
 }
 
 /** Loaded wardrobe items → the pure garment-matching descriptors the archivist fold resolves against. */
@@ -192,6 +242,18 @@ export interface ResolvedChatWardrobe {
    * silent rather than assuming an uncovered head.
    */
   worn?: readonly WornItemInput[];
+  /**
+   * The structured item load could not be TRUSTED: the lookup threw
+   * (`images.avatar.outfit_load_failed`) or ≥1 row's coverage column was
+   * unreadable (`images.avatar.coverage_unreadable`). The resolve above is a
+   * covered-degraded stand-in, not the wardrobe truth — prompt consumers may
+   * still read it, but a consumer that MINTS durable state from a resolve (the
+   * look lane's key compare + keep-latest purge) must skip and let the next
+   * change retry. Never set for a load that succeeded over genuinely deleted
+   * rows: that degraded resolve is the best read there will ever be, and
+   * skipping it would park the look forever.
+   */
+  unreliable?: boolean;
 }
 
 /** Per-row occlusion from the shared worn inputs (one pass, reused by exposure). */
@@ -293,17 +355,27 @@ export async function resolveChatWardrobe(
   // The garment store is the truth once this actor is modelled: its instances
   // carry presentation-aware per-part coverage (slice 3), which the shared
   // renderers below consume exactly as they consume a plain definition list.
-  const items =
+  // Its load carries the same coverage-unreliable arm as the definition loader:
+  // a dangling or degraded blueprint covers nothing, and reading that emptiness
+  // as bare is exactly the failure class this resolve degrades against.
+  const load: ChatWardrobeLoad =
     modelled && state.garments && state.garmentActorId
       ? await loadGarmentWardrobeItems(state.garments, state.garmentActorId, ownerId, sink)
       : state.wornItemIds.length > 0
-        ? await loadChatWardrobe(ownerId, state.wornItemIds, sink)
-        : [];
+        ? await loadChatWardrobeWithStatus(ownerId, state.wornItemIds, sink)
+        : { wardrobe: [] };
+  const items = load.wardrobe;
   if (items.length > 0) {
     const garmentPhrase = wardrobeOutfitText(items);
     // ONE pass over the coverage rows feeds exposure, occlusion, and the
     // affordance adapter's coverage read — three consumers, one truth.
     const worn = toWornInputs(items);
+    // A load carrying a coverage-unreliable row cannot answer exposure: the bad
+    // row's `[]` coverage would read exactly the regions that garment covers as
+    // bare. Unknown is covered, never bare — the whole readout degrades to
+    // FULLY_COVERED and the resolve is marked, while the phrase and occlusion
+    // keep the real items (their names parsed fine; only coverage is unknown).
+    const coverageUnreliable = (load.coverageUnreliableIds?.length ?? 0) > 0;
     // Overlay text is wardrobe too: an "Also / instead" reading "pale lavender
     // gown" used to contribute NOTHING, so a modelled thong alone computed
     // torso-bare and the scene prompt drew chest anatomy through the gown. The
@@ -311,7 +383,9 @@ export async function resolveChatWardrobe(
     // the garment phrase stay real items, so no occlusion / cue / affordance read
     // can mistake described prose for something the wardrobe owns. Coverage only
     // ever accumulates, so text can hide anatomy and never bare it.
-    const exposure = exposedRegions([...worn, ...overlayWornInputs(overlay)]);
+    const exposure = coverageUnreliable
+      ? FULLY_COVERED
+      : exposedRegions([...worn, ...overlayWornInputs(overlay)]);
     const garments = [garmentPhrase, overlay].filter(Boolean).join("; ");
     return {
       garments,
@@ -321,7 +395,11 @@ export async function resolveChatWardrobe(
       wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
       overlay,
       partVisibility: partVisibilityOf(worn),
-      worn,
+      // `worn`'s contract makes `undefined` mean "could not be read": a
+      // coverage read through an unreliable row would claim bare skin at the
+      // locations it actually covers, so the rows are withheld and the
+      // affordance adapter fails closed.
+      ...(coverageUnreliable ? { unreliable: true } : { worn }),
     };
   }
   // Free-text / legacy path: heal any id-marker, then decide exposure.
@@ -329,26 +407,31 @@ export async function resolveChatWardrobe(
   // A MODELLED actor wearing nothing is stripped — coverage says so, not the flag
   // (finding 6).
   const stripped = modelled && healed.length === 0;
-  // The overlay nouns may only ANSWER for a wardrobe that is genuinely free text.
-  // Reaching here with worn ids means the item load came back empty — a failed
-  // lookup or deleted rows, not an undressed body — and letting "a borrowed
-  // hoodie" speak there would report every region those unloadable items covered
-  // as BARE. Degraded defaults over failed turns (docs/resilience.md): the covered
-  // default is the conservative read this path had before the overlay carried
-  // coverage at all. `loadChatWardrobe` already reports the failure itself
+  // The overlay nouns — AND the manual `outfitExposed` flag — may only answer
+  // for a wardrobe that is genuinely free text. Reaching here with worn ids
+  // means the item load came back empty — a failed lookup or deleted rows, not
+  // an undressed body — and neither prose nor a stale flag may undress it:
+  // "a borrowed hoodie" would report every region those unloadable items
+  // covered as BARE, and the flag is a leftover the healthy structured path
+  // ignores entirely, so a DB blip must not resurrect its authority. Degraded
+  // defaults over failed turns (docs/resilience.md): the covered default is the
+  // conservative read this path had before the overlay carried coverage at all.
+  // `loadChatWardrobeWithStatus` already reports the failure itself
   // (`images.avatar.outfit_load_failed`), so this gate stays silent rather than
   // double-reporting it.
-  const overlayExposure = state.wornItemIds.length === 0 ? overlayTextExposure(healed) : undefined;
-  // Precedence, owner ruling: a bare claim still WINS. The archivist writes
-  // `exposed: true` for "the gown pooled at her waist", and that beat has to beat
-  // the gown noun still sitting in the text it describes. Only with no such claim
-  // does the text get to speak — per region, so "wearing only a red thong" is
-  // pelvis-covered AND torso-bare instead of the flat FULLY_COVERED that used to
-  // be the only alternative to naked, and "not wearing a shirt" is torso-bare
-  // rather than silently dressed. Prose naming no clothing at all — neither worn
-  // nor denied — keeps the conservative default: an unmodelled wardrobe is
-  // unknown, not nude.
-  const exposure = stripped || state.outfitExposed ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED);
+  const freeText = state.wornItemIds.length === 0;
+  const overlayExposure = freeText ? overlayTextExposure(healed) : undefined;
+  // Precedence, owner ruling: a bare claim still WINS — on the free-text path.
+  // The archivist writes `exposed: true` for "the gown pooled at her waist", and
+  // that beat has to beat the gown noun still sitting in the text it describes.
+  // Only with no such claim does the text get to speak — per region, so
+  // "wearing only a red thong" is pelvis-covered AND torso-bare instead of the
+  // flat FULLY_COVERED that used to be the only alternative to naked, and "not
+  // wearing a shirt" is torso-bare rather than silently dressed. Prose naming no
+  // clothing at all — neither worn nor denied — keeps the conservative default:
+  // an unmodelled wardrobe is unknown, not nude.
+  const exposure =
+    stripped || (freeText && state.outfitExposed) ? exposedRegions([]) : (overlayExposure ?? FULLY_COVERED);
   const exposed = intimateRegionsBare(exposure);
   return {
     garments: healed,
@@ -357,6 +440,10 @@ export async function resolveChatWardrobe(
     wornItemIds: [],
     overlay: healed,
     partVisibility: {},
+    // A THROWN load is transient: mark the resolve so the mint consumers skip
+    // it and the next change retries. Deleted rows stay unmarked — that
+    // degraded resolve is permanent truth's best stand-in.
+    ...(load.failed === true ? { unreliable: true } : {}),
   };
 }
 
@@ -406,6 +493,8 @@ export interface ResolvedPlayerWardrobe {
    * over the player's own surfaces, so this side of the wardrobe had no consumer.
    */
   worn?: readonly WornItemInput[];
+  /** The character twin's marker, same contract (see `ResolvedChatWardrobe.unreliable`). */
+  unreliable?: boolean;
 }
 
 /**
@@ -437,12 +526,13 @@ export async function resolvePlayerWardrobe(
   const overlay = state.overlay.trim();
   const modelled = garmentActorModelled(garments, GARMENT_PLAYER_ACTOR);
   const ids = modelled ? [] : playerWornIds(state, persona);
-  const items =
+  const load: ChatWardrobeLoad =
     modelled && garments
       ? await loadGarmentWardrobeItems(garments, GARMENT_PLAYER_ACTOR, ownerId, sink)
       : ids.length > 0
-        ? await loadChatWardrobe(ownerId, ids, sink)
-        : [];
+        ? await loadChatWardrobeWithStatus(ownerId, ids, sink)
+        : { wardrobe: [] };
+  const items = load.wardrobe;
   if (items.length === 0) {
     // Nothing resolvable. Read as COVERED, never bare: an unauthored wardrobe is
     // unknown, not nude. Only a seeded-then-emptied list means stripped (below) —
@@ -470,17 +560,25 @@ export async function resolvePlayerWardrobe(
       // an unauthored persona or a failed item load stays unknown, so a contact
       // material read through it falls silent rather than claiming bare skin.
       ...(strippedAfterSeeding ? { worn: [] as readonly WornItemInput[] } : {}),
+      // A THROWN load marks the resolve as the character twin's does: a
+      // degraded stand-in the mint consumers must not bake in.
+      ...(load.failed === true ? { unreliable: true } : {}),
     };
   }
   const worn = toWornInputs(items);
+  // The character twin's coverage-unreliable degrade: a bad row's `[]` coverage
+  // must not read its regions bare, so the readout falls to covered and the
+  // resolve is marked; `worn` is withheld so the contact/affordance reads fail
+  // closed instead of finding bare skin under unreadable coverage.
+  const coverageUnreliable = (load.coverageUnreliableIds?.length ?? 0) > 0;
   return {
     garments: [wardrobeOutfitText(items), overlay].filter(Boolean).join("; "),
     // Overlay nouns add coverage here too — the persona twin of the character's
     // union, and the reason a described robe can no longer be seen through.
-    exposure: exposedRegions([...worn, ...overlayWornInputs(overlay)]),
+    exposure: coverageUnreliable ? FULLY_COVERED : exposedRegions([...worn, ...overlayWornInputs(overlay)]),
     wornItemIds: items.flatMap((i) => (i.id ? [i.id] : [])),
     overlay,
     partVisibility: partVisibilityOf(worn),
-    worn,
+    ...(coverageUnreliable ? { unreliable: true } : { worn }),
   };
 }

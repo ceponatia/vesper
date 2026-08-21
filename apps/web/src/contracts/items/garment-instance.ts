@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { garmentDegreeBandSchema, garmentUnitSchema, GARMENT_UNIT_ONE, type GarmentUnit } from "./garment-material";
-import { garmentBlueprintSchema, garmentPartIdSchema, GARMENT_ROOT_PART_ID } from "./garment-blueprint";
+import {
+  garmentBlueprintSchema,
+  garmentPartIdSchema,
+  GARMENT_ROOT_PART_ID,
+  type GarmentBlueprint,
+} from "./garment-blueprint";
 import {
   effectiveCoverageReadSchema,
   emptyEffectiveCoverageRead,
@@ -388,44 +393,85 @@ export function emptyGarmentCueState(): GarmentCueState {
  * `seeded` breaks the same ambiguity `ChatPlayerState.seeded` does: an empty
  * store means "not migrated" before seeding and "wearing nothing" after.
  */
-export const chatGarmentStoreSchema = z.object({
-  seeded: z.boolean().catch(false).default(false),
-  blueprints: z
-    .record(z.string().trim().min(1).max(64), garmentBlueprintSchema)
-    .catch({})
-    .default({})
-    .transform((blueprints) =>
-      Object.fromEntries(Object.entries(blueprints).slice(0, CHAT_GARMENT_BLUEPRINTS_MAX)),
-    ),
-  instances: z
-    .array(garmentInstanceStateSchema)
-    .catch([])
-    .default([])
-    .transform((instances) => capGarmentInstances(instances)),
-  /** Narrator mention history + reported bands (slice 6) — see `garmentCueStateSchema`. */
-  cues: garmentCueStateSchema.catch(emptyGarmentCueState()).default(emptyGarmentCueState()),
-  /**
-   * The CAPTURED effective-coverage read per garment actor handle
-   * (body-attribute-affordances slice 6; the owner ruling "effective coverage is
-   * captured, not reconstructed").
-   *
-   * It rides inside the store for the same structural reason `cues` does: the
-   * store is the presentation cut, and a derived read that lived anywhere else
-   * could be restored one exchange out of step with the garments it describes.
-   * One JSONB field, one rollback anchor (`pre_exchange_scenario`), byte-stable
-   * on a retake.
-   *
-   * DERIVED, never truth: nothing reads it to decide what a garment IS. It
-   * exists so narration, body affordances, retakes, and images share one answer
-   * about what is still concealed rather than each recomputing one.
-   */
-  coverage: z
-    .record(actorHandleSchema, effectiveCoverageReadSchema)
-    .catch({})
-    .default({})
-    .transform((captures) => Object.fromEntries(Object.entries(captures).slice(0, CHAT_GARMENT_COVERAGE_MAX_ACTORS))),
-});
+const garmentBlueprintHashKeySchema = z.string().trim().min(1).max(64);
+
+export const chatGarmentStoreSchema = z
+  .object({
+    seeded: z.boolean().catch(false).default(false),
+    /**
+     * Parsed PER ENTRY, never with a map-wide `.catch({})`: `instances` parse
+     * independently and `seeded` stays true, so a map-wide catch would turn ONE
+     * unreadable snapshot into "every garment in the chat covers nothing" — the
+     * empty-because-failed → confirmed-bare class PR #152 closed. A malformed
+     * entry drops alone; an object entry that lost construction still parses,
+     * as a `degraded`-marked blueprint the resolution layer reports unreliable.
+     */
+    blueprints: z
+      .record(z.string(), z.unknown())
+      .catch({})
+      .default({})
+      .transform((entries) => {
+        const kept: Record<string, GarmentBlueprint> = {};
+        for (const [key, value] of Object.entries(entries)) {
+          const hash = garmentBlueprintHashKeySchema.safeParse(key);
+          const blueprint = garmentBlueprintSchema.safeParse(value);
+          if (hash.success && blueprint.success) kept[hash.data] = blueprint.data;
+        }
+        return kept;
+      }),
+    instances: z
+      .array(garmentInstanceStateSchema)
+      .catch([])
+      .default([])
+      .transform((instances) => capGarmentInstances(instances)),
+    /** Narrator mention history + reported bands (slice 6) — see `garmentCueStateSchema`. */
+    cues: garmentCueStateSchema.catch(emptyGarmentCueState()).default(emptyGarmentCueState()),
+    /**
+     * The CAPTURED effective-coverage read per garment actor handle
+     * (body-attribute-affordances slice 6; the owner ruling "effective coverage is
+     * captured, not reconstructed").
+     *
+     * It rides inside the store for the same structural reason `cues` does: the
+     * store is the presentation cut, and a derived read that lived anywhere else
+     * could be restored one exchange out of step with the garments it describes.
+     * One JSONB field, one rollback anchor (`pre_exchange_scenario`), byte-stable
+     * on a retake.
+     *
+     * DERIVED, never truth: nothing reads it to decide what a garment IS. It
+     * exists so narration, body affordances, retakes, and images share one answer
+     * about what is still concealed rather than each recomputing one.
+     */
+    coverage: z
+      .record(actorHandleSchema, effectiveCoverageReadSchema)
+      .catch({})
+      .default({})
+      .transform((captures) => Object.fromEntries(Object.entries(captures).slice(0, CHAT_GARMENT_COVERAGE_MAX_ACTORS))),
+  })
+  .transform((store) => ({ ...store, blueprints: capGarmentBlueprints(store.blueprints, store.instances) }));
 export type ChatGarmentStore = z.infer<typeof chatGarmentStoreSchema>;
+
+/**
+ * Cap the blueprint map at `CHAT_GARMENT_BLUEPRINTS_MAX`. At or under the cap
+ * the map is returned UNTOUCHED, so every store the reducers produce round-trips
+ * byte-identically. Over it — the bounded overfill `instantiateGarment` may
+ * persist rather than mint a dangling instance — instance-referenced entries are
+ * kept before orphans, each side in stored order, so trimming can never dangle a
+ * hash a live instance points at (a blind first-N slice would cut the NEWEST
+ * entry: exactly the one the over-cap mint just referenced).
+ */
+function capGarmentBlueprints(
+  blueprints: Record<string, GarmentBlueprint>,
+  instances: readonly GarmentInstanceState[],
+): Record<string, GarmentBlueprint> {
+  const entries = Object.entries(blueprints);
+  if (entries.length <= CHAT_GARMENT_BLUEPRINTS_MAX) return blueprints;
+  const referenced = new Set(instances.map((instance) => instance.blueprintHash));
+  const ranked = [
+    ...entries.filter(([hash]) => referenced.has(hash)),
+    ...entries.filter(([hash]) => !referenced.has(hash)),
+  ];
+  return Object.fromEntries(ranked.slice(0, CHAT_GARMENT_BLUEPRINTS_MAX));
+}
 
 /** The empty store — the degraded default and the pre-seed value. */
 export function emptyChatGarmentStore(): ChatGarmentStore {

@@ -3,8 +3,13 @@ import { expectCleanSink, expectDiagnostic, expectDiagnostics } from "@/test/dia
 import { DiagnosticCollector } from "../diagnostics";
 import { clothingCategoryById } from "./clothing-categories";
 import { expandCoverage } from "./coverage";
-import { counterIds, garmentSeed, garmentSeedMap } from "./garment-test-fixtures";
-import { garmentBlueprintHash } from "./garment-blueprint";
+import { counterIds, garmentSeed, garmentSeedMap, wornGarment } from "./garment-test-fixtures";
+import {
+  garmentBlueprintHash,
+  garmentBlueprintSchema,
+  isDegradedGarmentBlueprint,
+  type GarmentBlueprint,
+} from "./garment-blueprint";
 import { garmentCategoryTemplates } from "./garment-templates";
 import { exposedRegions, type WornItemInput } from "./visibility";
 import {
@@ -12,6 +17,7 @@ import {
   chatGarmentStoreSchema,
   emptyChatGarmentStore,
   CHAT_GARMENTS_MAX,
+  CHAT_GARMENT_BLUEPRINTS_MAX,
   type ChatGarmentStore,
   type GarmentInstanceState,
   type GarmentOperation,
@@ -23,9 +29,12 @@ import {
   garmentActorForCharacter,
   garmentBlueprintForSeed,
   garmentBlueprintFor,
+  garmentInstanceById,
   garmentsAtScenePlace,
   GARMENT_PLAYER_ACTOR,
   inferGarmentMaterialProfile,
+  instantiateGarment,
+  resolveGarmentBlueprint,
   retireActorGarments,
   sameGarmentLocus,
   syncWornGarments,
@@ -180,6 +189,9 @@ describe("materialization from worn ids", () => {
     expect(wornGarmentDefinitionIds(store, ALICE)).toEqual(["ghost"]);
     const instance = store.instances[0];
     expect(instance && garmentBlueprintFor(store, instance).nodes.flatMap((n) => n.baselineCoverage)).toEqual([]);
+    // The stored snapshot is the MARKED sentinel: the ghost's covers-nothing
+    // reads as "could not be read", never as "confirmed wearing nothing".
+    expect(instance && resolveGarmentBlueprint(store, instance).reliable).toBe(false);
     expectDiagnostic(sink, "chat_garments.definition_unresolved");
   });
 });
@@ -487,6 +499,87 @@ describe("cap and eviction", () => {
   });
 });
 
+describe("blueprint cap — a mint never points at an unstored hash", () => {
+  // Falsified against the old registerBlueprint, which returned the hash of a
+  // snapshot it had NOT stored: the worn instance then dangled permanently and
+  // read covers-nothing — narrated and rendered as confirmed nudity.
+  function fullBlueprintMap(): Record<string, GarmentBlueprint> {
+    const bare = garmentBlueprintSchema.parse({ rootNodeId: "root", nodes: [{ id: "root", kind: "root" }] });
+    return Object.fromEntries(Array.from({ length: CHAT_GARMENT_BLUEPRINTS_MAX }, (_, i) => [`h${i}`, bare] as const));
+  }
+
+  /** A full map in which every snapshot is pinned by one of Ben's worn instances. */
+  function storeWithReferencedFullMap(): ChatGarmentStore {
+    const blueprints = fullBlueprintMap();
+    return {
+      ...emptyChatGarmentStore(),
+      seeded: true,
+      blueprints,
+      instances: Object.keys(blueprints).map((hash, i) => wornGarment({ id: `w${i}`, actorId: BEN, blueprintHash: hash })),
+    };
+  }
+
+  it("garbage-collects orphaned snapshots at the cap instead of dangling the mint", () => {
+    const full: ChatGarmentStore = { ...emptyChatGarmentStore(), seeded: true, blueprints: fullBlueprintMap() };
+    const store = sync(full, ALICE, ["shirt"], garmentSeedMap([seed("shirt", "top")]), counterIds());
+    expect(wornGarmentDefinitionIds(store, ALICE)).toEqual(["shirt"]);
+    const minted = store.instances[0];
+    expect(minted && resolveGarmentBlueprint(store, minted).reliable).toBe(true);
+    expect(Object.keys(store.blueprints).length).toBeLessThanOrEqual(CHAT_GARMENT_BLUEPRINTS_MAX);
+  });
+
+  it("sync skips the mint openly when every snapshot is referenced, and the un-materialized item retries", () => {
+    const full = storeWithReferencedFullMap();
+    const seeds = garmentSeedMap([seed("shirt", "top")]);
+    const sink = new DiagnosticCollector();
+    const store = syncWornGarments({
+      store: full,
+      actorId: ALICE,
+      wornDefinitionIds: ["shirt"],
+      seeds,
+      mintId: counterIds(),
+      atMinutes: 0,
+      sink,
+    });
+    // Degrade openly: no instance, unchanged map, a warn — and NO dangling hash anywhere.
+    expect(wornGarmentDefinitionIds(store, ALICE)).toEqual([]);
+    expect(store.blueprints).toEqual(full.blueprints);
+    expect(store.instances.every((i) => store.blueprints[i.blueprintHash] !== undefined)).toBe(true);
+    expectDiagnostic(sink, "chat_garments.blueprints_full");
+    // The item stayed un-materialized, so the SAME reconcile succeeds once
+    // instance eviction has since orphaned some snapshots.
+    const retried = sync({ ...store, instances: [] }, ALICE, ["shirt"], seeds, counterIds("m"));
+    expect(wornGarmentDefinitionIds(retried, ALICE)).toEqual(["shirt"]);
+    const minted = retried.instances[0];
+    expect(minted && resolveGarmentBlueprint(retried, minted).reliable).toBe(true);
+  });
+
+  it("instantiateGarment stores past the cap rather than dangling, and reload keeps the over-cap snapshot", () => {
+    const sink = new DiagnosticCollector();
+    const result = instantiateGarment(
+      storeWithReferencedFullMap(),
+      {
+        id: "adhoc1",
+        blueprint: garmentBlueprintForSeed(seed("", "outerwear")),
+        name: "a borrowed hoodie",
+        locus: { kind: "worn", actorId: ALICE },
+        atMinutes: 3,
+      },
+      sink,
+    );
+    expectDiagnostic(sink, "chat_garments.blueprints_full");
+    expect(resolveGarmentBlueprint(result.store, result.instance).reliable).toBe(true);
+    // Bounded overfill: exactly one past the cap, never unbounded growth.
+    expect(Object.keys(result.store.blueprints)).toHaveLength(CHAT_GARMENT_BLUEPRINTS_MAX + 1);
+    // Reload trims orphans first (garment-instance's parse cap), so the
+    // over-cap snapshot survives with its instance instead of being sliced off.
+    const reloaded = chatGarmentStoreSchema.parse(JSON.parse(JSON.stringify(result.store)) as unknown);
+    expect(Object.keys(reloaded.blueprints)).toHaveLength(CHAT_GARMENT_BLUEPRINTS_MAX);
+    const still = garmentInstanceById(reloaded, "adhoc1");
+    expect(still && resolveGarmentBlueprint(reloaded, still).reliable).toBe(true);
+  });
+});
+
 describe("degradation (F17)", () => {
   it("parses a corrupt store to the empty, UNSEEDED one", () => {
     for (const corrupt of [null, 42, "nope", [], { instances: "not an array" }]) {
@@ -506,16 +599,22 @@ describe("degradation (F17)", () => {
     expect(store.instances.every((i) => i.id.length > 0)).toBe(true);
   });
 
-  it("survives a blueprint hash that no longer resolves", () => {
+  it("survives a blueprint hash that no longer resolves — detectably, not as covers-nothing truth", () => {
     const store = sync(emptyChatGarmentStore(), ALICE, ["shirt"], garmentSeedMap([seed("shirt", "top")]), counterIds());
     const orphan: ChatGarmentStore = { ...store, blueprints: {} };
     const instance = orphan.instances[0];
     expect(instance).toBeDefined();
     if (!instance) return;
-    const blueprint = garmentBlueprintFor(orphan, instance);
-    // Degraded = covers nothing and can do nothing: a lost snapshot can never bare a character.
+    const { blueprint, reliable } = resolveGarmentBlueprint(orphan, instance);
+    // Degraded = covers nothing and can do nothing…
     expect(blueprint.nodes.flatMap((n) => n.baselineCoverage)).toEqual([]);
     expect(blueprint.behaviors).toEqual([]);
+    // …and MARKED, because on the modelled wardrobe path an unmarked empty read
+    // is a nudity claim: the consumer must degrade this instance to covered.
+    expect(reliable).toBe(false);
+    expect(isDegradedGarmentBlueprint(blueprint)).toBe(true);
+    // The same instance against the intact store still reads reliable.
+    expect(resolveGarmentBlueprint(store, instance).reliable).toBe(true);
   });
 });
 

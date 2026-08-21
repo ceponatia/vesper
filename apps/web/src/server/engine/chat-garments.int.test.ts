@@ -405,7 +405,7 @@ describe.runIf(ready)("slice 3 — presentation operations through the state rou
     expect(openedWardrobe.exposure.pelvis).toBe(closedWardrobe.exposure.pelvis);
 
     // The image path consumes the SAME rows: identical coverage, identical exposure.
-    const worn = await loadGarmentWardrobeItems(opened.garments, ACTOR(), fixture.userId);
+    const worn = (await loadGarmentWardrobeItems(opened.garments, ACTOR(), fixture.userId)).wardrobe;
     expect(exposedRegions(toWornInputs(worn))).toEqual(openedWardrobe.exposure);
     expect(worn.find((item) => item.garmentId === jacket)?.coverage).not.toContain("chest");
   });

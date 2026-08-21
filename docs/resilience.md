@@ -14,6 +14,7 @@ parseOrNull<T>(schema: ZodType<T>, raw: unknown, sink?: DiagnosticSink, path?: s
 - Never `JSON.parse` + `schema.parse` inline. `parseOr` handles string-or-object input, catches, records a diagnostic, returns the fallback.
 - Fallbacks are **schema defaults**, defined next to the schema (each shape's `empty*()` constructor), not ad-hoc literals at call sites.
 - A failed parse is a diagnostic, not an exception. Exceptions are for programmer errors only.
+- **A fallback must never read as a positive claim.** Empty-because-failed is unknown, not proof of absence. The wardrobe seam is the canonical case: a load that threw, a coverage column that would not parse, or a garment blueprint that dangles degrades exposure toward **covered**, never bare, and the load carries an explicit marker (`failed`, `coverageUnreliableIds`, the resolve's `unreliable`) distinct from a genuinely empty result — a body proven to wear nothing still reads bare. Consumers that MINT durable state or cached assets from a read (garment materialization, the `chat_look` mint) skip on a marked read and retry later rather than baking the degraded stand-in in.
 
 ## 2. Diagnostics
 

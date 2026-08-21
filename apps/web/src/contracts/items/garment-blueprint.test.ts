@@ -9,6 +9,7 @@ import {
   garmentBlueprintSchema,
   garmentPartNode,
   garmentRootNode,
+  isDegradedGarmentBlueprint,
   normalizeGarmentBlueprint,
   GARMENT_ROOT_PART_ID,
   type GarmentBlueprint,
@@ -42,6 +43,10 @@ describe("garment blueprint schema", () => {
     expect(parsed.nodes[0]?.materialProfileId).toBe("unknown");
     expect(parsed.nodes[0]?.baselineCoverage).toEqual([]);
     expect(parsed.nodes[0]?.aliases).toEqual([]);
+    // An ABSENT node list still parses — and reads authored-empty, not degraded.
+    const empty = garmentBlueprintSchema.parse({});
+    expect(empty.nodes).toEqual([]);
+    expect(isDegradedGarmentBlueprint(empty)).toBe(false);
   });
 
   it("catches a bad leaf enum instead of rejecting the node", () => {
@@ -50,6 +55,8 @@ describe("garment blueprint schema", () => {
     });
     expect(parsed.nodes[0]?.kind).toBe("panel");
     expect(parsed.nodes[0]?.materialProfileId).toBe("unknown");
+    // Leaf healing can only mislabel, never strip coverage — so it stays unmarked.
+    expect(isDegradedGarmentBlueprint(parsed)).toBe(false);
   });
 
   it("dedupes and caps aliases and coverage", () => {
@@ -85,6 +92,65 @@ describe("garment blueprint schema", () => {
     const parsed = parseGarmentBlueprint(JSON.stringify(shirt()), sink);
     expect(garmentBlueprintHash(parsed)).toBe(garmentBlueprintHash(shirt()));
     expectCleanSink(sink);
+  });
+});
+
+describe("degraded-blueprint detectability", () => {
+  // Falsified against the old schema, where `nodes: .catch([])` and per-node
+  // `baselineCoverage: .catch([])` healed a corrupt persisted blueprint into a
+  // VALID-looking covers-nothing garment — which the modelled wardrobe path
+  // reads as a positive nudity claim (the PR #152 bug class).
+  const corruptions: readonly { label: string; raw: unknown }[] = [
+    { label: "a non-array nodes value", raw: { rootNodeId: "root", nodes: "nope" } },
+    { label: "a null nodes value", raw: { rootNodeId: "root", nodes: null } },
+    {
+      label: "an unparseable node among valid ones",
+      raw: { rootNodeId: "root", nodes: [{ id: "root", kind: "root", baselineCoverage: ["chest"] }, 42] },
+    },
+    {
+      label: "a node whose coverage list is malformed",
+      raw: { rootNodeId: "root", nodes: [{ id: "root", kind: "root", baselineCoverage: "chest" }] },
+    },
+    {
+      label: "a node id failing its un-caught refinement",
+      raw: { rootNodeId: "root", nodes: [{ id: "bad id", kind: "root" }] },
+    },
+  ];
+  for (const { label, raw } of corruptions) {
+    it(`marks ${label} degraded instead of healing it into authored-looking empty coverage`, () => {
+      expect(isDegradedGarmentBlueprint(garmentBlueprintSchema.parse(raw))).toBe(true);
+    });
+  }
+
+  it("keeps the nodes that did parse when one was lost", () => {
+    const parsed = garmentBlueprintSchema.parse({
+      rootNodeId: "root",
+      nodes: [{ id: "root", kind: "root", baselineCoverage: ["chest"] }, 42],
+    });
+    expect(parsed.nodes.map((node) => node.id)).toEqual(["root"]);
+    expect(parsed.nodes[0]?.baselineCoverage).toEqual(["chest"]);
+  });
+
+  it("re-parses a valid stored blueprint identically and UNMARKED (persisted-format compatibility)", () => {
+    const parsed = garmentBlueprintSchema.parse(JSON.parse(JSON.stringify(shirt())) as unknown);
+    expect(parsed).toEqual(shirt());
+    expect("degraded" in parsed).toBe(false);
+    expect(garmentBlueprintHash(parsed)).toBe(garmentBlueprintHash(shirt()));
+  });
+
+  it("marks the sentinel, keeps the mark across a round trip, and never dedups it onto an authored covers-nothing snapshot", () => {
+    const sentinel = degradedGarmentBlueprint();
+    expect(isDegradedGarmentBlueprint(sentinel)).toBe(true);
+    const reparsed = garmentBlueprintSchema.parse(JSON.parse(JSON.stringify(sentinel)) as unknown);
+    expect(isDegradedGarmentBlueprint(reparsed)).toBe(true);
+    // Same structure, authored on purpose: unmarked, and a DIFFERENT dedup identity —
+    // a chat that stored a real covers-nothing garment must not lend the sentinel its hash.
+    const authored = garmentBlueprintSchema.parse({
+      rootNodeId: "root",
+      nodes: [{ id: "root", kind: "root", aliases: [], baselineCoverage: [] }],
+    });
+    expect(isDegradedGarmentBlueprint(authored)).toBe(false);
+    expect(garmentBlueprintHash(sentinel)).not.toBe(garmentBlueprintHash(authored));
   });
 });
 

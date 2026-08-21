@@ -1,6 +1,7 @@
 import {
   actorHasGarmentInstances,
   buildGarmentDigest,
+  diag,
   emptyChatGarmentStore,
   garmentActorForCharacter,
   garmentBlueprintFor,
@@ -28,7 +29,7 @@ import {
   type WornVisibility,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
-import { loadChatWardrobe, playerWornIds } from "./chat-wardrobe";
+import { loadChatWardrobeWithStatus, playerWornIds } from "./chat-wardrobe";
 
 /**
  * The chat garment store's WRITE seam (clothing-state-graph.plan.md slice 2).
@@ -82,10 +83,50 @@ export async function syncChatGarments(input: {
     ),
   ];
   const seeds = new Map<string, GarmentSeed>();
+  let withheldIds: ReadonlySet<string> | undefined;
   if (missing.length > 0) {
-    const items = await loadChatWardrobe(input.ownerId, missing, input.sink);
-    for (const item of items) {
-      if (!item.id) continue;
+    const load = await loadChatWardrobeWithStatus(input.ownerId, missing, input.sink);
+    if (load.failed === true) {
+      // A THROWN load is unknown state, not deleted rows. Letting these ids
+      // reach the reconcile would permanently mint coverage-less "garment"
+      // instances (`syncWornGarments`'s unresolved arm — which exists for
+      // genuinely MISSING rows, and stays that way) that never heal and read
+      // the actor bare every later turn. They are withheld from this pass
+      // instead: no instance exists for any of them, so omitting them doffs
+      // nothing. An actor not yet modelled keeps them in the worn column (the
+      // projection falls back to the caller's list) and materialization
+      // retries next reconcile; for an already-modelled actor a withheld id
+      // falls out of the projection like an equip that never landed — a lost
+      // addition, never a bare body.
+      withheldIds = new Set(missing);
+      input.sink?.push(
+        diag(
+          "warn",
+          "chat_garments.definition_load_failed",
+          "worn definition load failed — ids withheld from this reconcile; materialization retries on the next one",
+          { path: "chat_garments.sync", context: { itemIds: [...missing] } },
+        ),
+      );
+    } else if ((load.coverageUnreliableIds?.length ?? 0) > 0) {
+      // The durable twin: the row LOADED but its coverage column would not
+      // parse, so its blanked `[]` coverage is unknown state. Seeding it would
+      // snapshot that emptiness into a mint-time blueprint that reads the
+      // garment's regions bare forever. Withheld instead, the id stays on the
+      // legacy definition path, whose coverage-unreliable arm already degrades
+      // exposure to covered while the phrase keeps the garment's name — and a
+      // repaired column materializes normally on a later reconcile.
+      withheldIds = new Set(load.coverageUnreliableIds);
+      input.sink?.push(
+        diag(
+          "warn",
+          "chat_garments.coverage_unreadable",
+          "worn definition coverage unreadable — ids withheld from materialization; the legacy path degrades them to covered",
+          { path: "chat_garments.sync", context: { itemIds: [...(load.coverageUnreliableIds ?? [])] } },
+        ),
+      );
+    }
+    for (const item of load.wardrobe) {
+      if (!item.id || (withheldIds?.has(item.id) ?? false)) continue;
       seeds.set(item.id, {
         definitionId: item.id,
         name: item.name,
@@ -102,7 +143,7 @@ export async function syncChatGarments(input: {
     store = syncWornGarments({
       store,
       actorId: actor.actorId,
-      wornDefinitionIds: actor.wornItemIds.filter((id) => id.trim().length > 0),
+      wornDefinitionIds: actor.wornItemIds.filter((id) => id.trim().length > 0 && !(withheldIds?.has(id) ?? false)),
       seeds,
       mintId: newId,
       atMinutes: input.atMinutes,
