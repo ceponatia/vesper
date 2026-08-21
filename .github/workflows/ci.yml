@@ -1,0 +1,340 @@
+name: CI
+
+# Milestone-gated CI on AWS CodeBuild runners (owner decision 2026-08-21).
+# Jobs run on ephemeral CodeBuild hosts via `runs-on: codebuild-vesper-ci-…` —
+# GitHub-native checks UI, AWS per-minute billing, zero idle cost. The local
+# `pnpm verify` pre-push gate remains the first line; this suite is the shared
+# record and the promotion gate.
+#
+# Draft PRs bill nothing: every job is draft-guarded, so pushes to a draft run
+# zero jobs. Marking a PR ready for review (`gh pr ready`) runs the full
+# applicable suite and produces the aggregate `verify` result; `gh pr ready
+# --undo` returns to free iteration. Manual dispatch (`gh workflow run CI --ref
+# main`) is the deliberate pre-deploy verification and runs every gate.
+# Documentation-only changes stop after classification; database and
+# engine-specific work only runs when affected.
+#
+# Billing shape: CodeBuild bills each workflow job as its own build, so a job's
+# fixed setup (checkout + install) costs as much as its work on short gates.
+# Two consequences are designed for here. The Gate 1 benchmark is a step of the
+# engine job rather than a job of its own — 25s of eval was paying a whole
+# job's setup. And the production build, the slowest gate, runs on PRs only
+# when the build surface itself moves; every other code PR is covered by the
+# `gh workflow run CI --ref main` dispatch that precedes each deploy, which
+# always builds. Lint, static checks, and the pure suite stay unconditional on
+# every ready code PR.
+on:
+  pull_request:
+    branches: [main, prod]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [prod]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: classify changes
+    # Draft gate for the whole workflow: every other job `needs` this one, so
+    # skipping it here skips the entire suite for draft PRs at zero cost.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      code: ${{ steps.classify.outputs.code }}
+      integration: ${{ steps.classify.outputs.integration }}
+      engine: ${{ steps.classify.outputs.engine }}
+      build: ${{ steps.classify.outputs.build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: classify
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Manual runs are deliberate full verification runs.
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            {
+              echo "docs_only=false"
+              echo "code=true"
+              echo "integration=true"
+              echo "engine=true"
+              echo "build=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          zero_sha="0000000000000000000000000000000000000000"
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" == "$zero_sha" ]]; then
+            git diff-tree --no-commit-id --name-only -r "$HEAD_SHA" > changed-files.txt
+          else
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
+          fi
+
+          echo "Changed files:"
+          sed 's/^/  /' changed-files.txt
+
+          docs_only=true
+          code=false
+          integration=false
+          engine=false
+          build=false
+
+          # A promotion to prod is intentionally a full release-candidate run.
+          if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "prod" ]]; then
+            docs_only=false
+            code=true
+            integration=true
+            engine=true
+            build=true
+          fi
+
+          while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+
+            case "$path" in
+              docs/*|*.md|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
+                ;;
+              *)
+                docs_only=false
+                code=true
+                ;;
+            esac
+
+            # Application paths are rooted at `apps/web/` since the Next app
+            # moved out of the repository root. A stale glob here fails OPEN —
+            # the job simply skips and aggregate `verify` stays green — so
+            # these patterns are verified by deliberately touching a file of
+            # each class, not by a green workflow run.
+            #
+            # `scripts/eval/engine-gate1/*` is listed here as well as under the
+            # engine patterns below so that `engine` is a strict subset of
+            # `integration` — the Gate 1 benchmark now runs as a step of the
+            # engine job, and a step cannot run in a job that was skipped.
+            #
+            # The old `*.config.*` catch-all also set `engine`, so an
+            # eslint.config.mjs or next.config.ts edit spun up Postgres and the
+            # eval. Only the configs that actually shape those runs are listed.
+            case "$path" in
+              apps/web/src/server/*|apps/web/src/app/api/*|apps/web/src/contracts/*|apps/web/src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/tsconfig.json|vitest.config.*|drizzle.config.*)
+                integration=true
+                ;;
+            esac
+
+            case "$path" in
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|scripts/eval/engine-gate1/*)
+                engine=true
+                ;;
+            esac
+
+            # Editing this workflow used to force integration + engine, so a
+            # one-line CI change cost a full suite to validate. It is code, so
+            # lint/static/unit still cover it; the pre-deploy dispatch is what
+            # exercises every job end to end.
+            case "$path" in
+              package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/package.json|apps/web/tsconfig.json|packages/*/package.json|packages/*/tsconfig.json|apps/web/next.config.*|Dockerfile|scripts/web.mjs|apps/web/src/proxy.ts|apps/web/src/instrumentation.ts)
+                build=true
+                ;;
+            esac
+          done < changed-files.txt
+
+          {
+            echo "docs_only=$docs_only"
+            echo "code=$code"
+            echo "integration=$integration"
+            echo "engine=$engine"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  lint:
+    name: lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Type-aware ESLint
+        run: pnpm lint
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
+  static:
+    name: static checks
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # lint:authz diffs the PR against origin/main.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Circular-import check
+        run: pnpm lint:cycles
+      - name: Route-authorization guard
+        run: pnpm lint:authz
+      - name: Workspace import integrity
+        run: pnpm lint:package-boundaries
+      # Imports every workspace package by its public name through the installed
+      # workspace, so a broken exports map or link cannot hide behind a tool alias.
+      - name: Workspace package resolution
+        run: pnpm lint:package-resolution
+      - name: Typecheck
+        run: pnpm typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+      - name: Copy-paste threshold
+        run: pnpm jscpd
+
+  unit:
+    name: unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Pure test suite
+        run: pnpm test
+
+  integration:
+    name: engine integration
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Start Postgres 17 and pgvector
+        run: docker compose up -d --wait
+      - name: Apply migrations from zero
+        run: pnpm db:migrate
+      - name: Engine and rollout integration suite
+        run: pnpm test:engine
+        env:
+          VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER: 1
+      - name: Stop successor-engine database
+        if: always()
+        run: docker compose down -v
+
+      # Folded in from the former `engine benchmark` job: the eval needs no
+      # database, and 25s of work was paying a second checkout + install. It
+      # runs after teardown so a benchmark failure cannot leak the container,
+      # and stays gated on `engine` — the classifier keeps that a subset of
+      # `integration`, so this step is never stranded in a skipped job.
+      - name: Gate 1 deterministic-path benchmark
+        if: needs.changes.outputs.engine == 'true'
+        run: pnpm eval:engine-gate1
+
+  production-build:
+    name: production build
+    needs: changes
+    # The slowest gate, and the one the pre-deploy dispatch always repeats, so
+    # PRs pay for it only when the build surface moves (manifests, module
+    # resolution, the Next or Docker build config). `build` is forced true for
+    # workflow_dispatch and for prod-bound PRs, so the release-candidate run
+    # and every promotion still build.
+    if: needs.changes.outputs.build == 'true'
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          HUSKY: 0
+      - name: Next.js production build
+        run: pnpm build
+        env:
+          # Same heap ceiling as the Dockerfile build stage — a build that
+          # would OOM on the Fly builder must fail here, on the PR, first.
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  verify:
+    name: verify
+    # always() so one failed gate can't hide behind a skipped dependent, but
+    # never on drafts — a draft must show no `verify` at all, not a green one.
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    needs:
+      - changes
+      - lint
+      - static
+      - unit
+      - integration
+      - production-build
+    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Require every applicable gate
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          STATIC_RESULT: ${{ needs.static.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          BUILD_RESULT: ${{ needs.production-build.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+        run: |
+          set -euo pipefail
+          for result in \
+            "$CHANGES_RESULT" \
+            "$LINT_RESULT" \
+            "$STATIC_RESULT" \
+            "$UNIT_RESULT" \
+            "$INTEGRATION_RESULT" \
+            "$BUILD_RESULT"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "An applicable CI job ended with: $result"
+              exit 1
+            fi
+          done
+
+          if [[ "$DOCS_ONLY" == "true" ]]; then
+            echo "Documentation-only change: code gates intentionally skipped."
+          else
+            echo "All applicable CI gates passed."
+          fi
