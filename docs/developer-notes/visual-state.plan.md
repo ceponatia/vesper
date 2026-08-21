@@ -448,7 +448,9 @@ enable everywhere on a directional result.
 ### Slice 8 — image digest and render-intent seam
 
 Status: complete — 2026-08-16 (built and reviewed the same day, in the review
-over slices 3–9); ships dark until the consolidation plan cuts routes over.
+over slices 3–9); live since 2026-08-21, when the consolidation plan's Stage 3
+cut the avatar and cast-of-one scene routes over and added the optional
+committed-camera binding to the selection build.
 
 The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
 Produce the required and optional image digest, its camera-relative selection,

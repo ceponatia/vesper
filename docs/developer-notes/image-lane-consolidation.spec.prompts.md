@@ -13,10 +13,43 @@ dialects, negatives, and measured model budgets.
   `apps/web/src/server/test-support/image-lane-probe.ts` and the frozen matrices
   are `apps/web/src/server/images/lane-characterization.test.ts`. See
   [Characterization and comparison](#characterization-and-comparison).
-- Avatar and single-character migration: remaining.
-- Remaining character-bearing lanes: remaining.
-- Unified scene segment builder: remaining.
-- Local string-budget retirement: remaining.
+- Avatar migration: **built 2026-08-21.** `generateAvatar` renders from the
+  standalone visual digest through `buildAvatarSegments`
+  (`server/images/avatar-segments.ts`): one camera-bound selection, segments on
+  `intent.promptSegments` (the compiled join doubles as the stored `prompt`),
+  refusal before provider spend (`images.avatar.visual_digest_ineligible`) when
+  a required fact resolves no clause, `meta.visualState` at reserve time.
+  Identity attributes (hair/eyes/skin, gender, heritage) remain a route-owned
+  residual segment built from the sheet, because visual state projects only
+  species feature groups, anatomy departures, current-state owners, and the
+  cataloged recognition marks today; each residue entry is deleted — not
+  rewritten — as the projection grows an owner for it. `buildAvatarPrompt`
+  stays in the tree, uncalled by production, with its freeze pins, until the
+  Stage 6 gates pass.
+- Single-character scene migration: **built 2026-08-21, fact source only.**
+  For an effective cast of one (selfies included), `applySceneSubjectVisual`
+  (`server/images/scene-subject-visual.ts`) replaces the focal spec's
+  preformatted appearance/identity/reveal fields with digest-sourced clauses
+  after the plan resolves, binding `plan.camera` into the one selection pass.
+  The lane's TRANSPORT stays an opaque prompt on purpose:
+  `buildSceneRenderPrompt`, the 1,500-character budgeter, and the
+  identity-lock adaptation operate on the compiled string, and
+  `promptSegments` would override the adapted string in the kernel — segment
+  transport for scenes lands with Stage 5's unified assembly. Deliberate fact
+  changes: the text-to-image row no longer states covered intimate skin, and
+  every scene row gains the digest's mandatory morphology anchors. A cast of
+  two or more keeps the legacy field production untouched (Stage 4).
+- Render-intent capture and comparison: **built 2026-08-21.**
+  `captureRenderIntent` (`server/images/render-intent-capture.ts`) records the
+  transport half plan-first with no provider IO;
+  `lane-cutover-comparison.test.ts` builds both paths of each cut-over lane
+  from one fixture and fails on any lost, duplicated, newly exposed, or
+  unexplained fact delta (the intentional deltas are named, self-verifying
+  allowlists). Pinned image trials over live providers remain owner-run work
+  before Stage 6 deletes fallback assembly.
+- Remaining character-bearing lanes: remaining (Stage 4).
+- Unified scene segment builder: remaining (Stage 5).
+- Local string-budget retirement: remaining (Stage 6).
 
 ## Production API rule
 
@@ -193,9 +226,13 @@ described, including on the uncensored routes, where the gate is coverage and
 not the route. Intimate **shape** is excluded from that assertion on purpose —
 silhouette reads through clothing by design.
 
-The transport half of the capture (profile/model strategy, prompt and negative
-hashes, reference roles and order) is not built; it belongs with the render
-intent Stage 3 starts comparing.
+The transport half of the capture is built (2026-08-21): `captureRenderIntent`
+records task, profile, prompt strategy, model slug/version, prompt and negative
+hashes, reference roles in send order, target aspect, subject ids, required
+fact keys from the digest provenance, camera fingerprint, and applied/dropped
+controls — plan-first, with no provider call. The comparison suite asserts
+transport equality between the legacy and digest builds of each cut-over lane
+everywhere transport was not supposed to move.
 
 Image trials cover representative avatar, scene, edit, chat-image, realistic,
 stylized, human, non-human, altered anatomy, wardrobe, exposure, and embodied

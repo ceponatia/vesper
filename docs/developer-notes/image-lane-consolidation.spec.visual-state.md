@@ -27,22 +27,47 @@ snapshot and selection primitives; this spec owns only their image-lane use.
   snapshot, selection and context that produced the selection. A rebuilt
   look-alike context would fingerprint a camera nobody selected under, and the
   digest's consistency gate only sees the subject/key half of that mistake.
-- Camera: still the `visual_state_shadow` placeholder viewpoint. The module
-  takes the context as an argument so a route cutover binds a committed scene
-  camera through `visualCameraReadsOfSceneCamera` without changing this seam.
-- Consumers: the admin chat inspector only, on both lanes. Realization happens
-  inside `visual-state/preview.ts`, which `previewChatVisualState` and
-  `previewSimVisualState` share, so the payload's `imageDigest` field (subjects
-  with their required/optional facts and segment kinds, the missing-mandatory
-  report, suppression reasons with counts, the three fingerprints, the cut id,
-  and the provenance record) is identical in shape across lanes. Production
-  render behavior is unchanged.
-- Avatar and scene consumers: remaining (Stage 3).
-- Visual provenance persistence: remaining. Nothing writes `meta.visualState` on
-  a real image row yet; the fragment lands with the first consuming route.
-- Standalone-portrait read token: remaining. An avatar or portrait render
-  outside a chat has no committed cut to name, so its `transactional_projection`
-  token is Stage 3 work.
+- Camera binding: built 2026-08-21 (Stage 3). `VisualStateSelectionsInput` and
+  `VisualStateShadowInput` take an optional
+  `camera: VisualStateCameraBinding { cameraId, spec: SceneCameraSpec }`; when
+  present, the image context is built under the real viewpoint with the
+  camera's `distance`/`angle`/`framing` reads from
+  `visualCameraReadsOfSceneCamera`, while lighting/motion stay lane-derived.
+  Absent, the `visual_state_shadow` placeholder context is byte-identical to
+  before, so narrator, staircase, and inspector paths do not shift. The camera
+  enters the one selection pass; realization never re-selects.
+- Consumers: the admin chat inspector on both lanes (via
+  `visual-state/preview.ts`), the avatar route, and the cast-of-one chat scene
+  route. The avatar builds a standalone snapshot under a `portrait_studio`
+  camera (`server/images/avatar-segments.ts`); the scene render binds the
+  resolved plan's committed camera after `resolveScenePlan`
+  (`server/images/scene-subject-visual.ts`), because the committed camera only
+  exists once the shot is planned. The chat cut is assembled through the shared
+  `chatVisualStateShadowInput` factory (`server/engine/chat-pipeline.ts`),
+  which the inspector preview also rides, so preview and render describe one
+  mapping.
+- Standalone-portrait scope and read token: built 2026-08-21.
+  `VisualStateScopeRef` gained `{ kind: "standalone_character", characterId }`
+  (twin member in `VisualMemoryScopeRef`; scope key
+  `standalone_character:<id>`), and `standaloneCharacterReadToken`
+  (`contracts/images/subject-digest.ts`) mints a `transactional_projection`
+  token over the character row's `updatedAt` plus every wardrobe row read for
+  the render. The token doubles as the assembly `cutId` and digest `forCutId`,
+  so the stale-cut gate becomes a real source-moved check for portraits.
+- Visual provenance persistence: built 2026-08-21. Avatar and cast-of-one scene
+  rows merge the `meta.visualState` fragment at reserve time — a thrown produce
+  carries no meta, and the visual moment that shaped a prompt must survive a
+  failed render. The client `imageRecordSchema` carries `visualState` as a
+  loose record so it reaches the UI unstripped.
+- Digest→segments: built 2026-08-21 under this stage, shared by both lanes —
+  `buildVisualSubjectSegments` (`contracts/images/visual-segments.ts`) with a
+  per-task policy (`age` state/omit, `frame` waist_up/full_figure, `intimate`
+  never/when_bare) plus the lane-neutral clause resolver and its
+  catalog-derived residue set (`server/images/visual-fact-clauses.ts`). A
+  cataloged distinctive mark is stated exactly once per lane; the residue set
+  is the single owner of which attribute ids stay route-phrased.
+- Remaining consumers: multi-character scenes, variants/edits, chat look/selfie
+  mint, and staged renders (Stage 4).
 
 ## Ownership boundary
 
