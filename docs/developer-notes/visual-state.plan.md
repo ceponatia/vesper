@@ -1,9 +1,9 @@
 # Visual state and attention
 
 Status: active (planned 2026-08-05; slices 0–2 built and reviewed 2026-08-16,
-with every review finding fixed in the same merge; slices 3–6, 8 and 9 built
-2026-08-16, awaiting review; slice 7 complete 2026-08-17 behind a per-chat
-switch, off by default; slice 10 queued)
+with every review finding fixed in the same merge; slices 3–6, 8 and 9 built and
+reviewed 2026-08-16, with the review's ten findings fixed in one pass; slice 7
+complete 2026-08-17 behind a per-chat switch, off by default; slice 10 queued)
 
 Outcome: A player can watch a character's appearance carry forward — damp hair
 still damp, one sleeve still rolled, the jacket still on the chair — in both the
@@ -338,7 +338,8 @@ landed.
 
 ### Slice 3 — current state
 
-Status: built 2026-08-16 — awaiting review.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9).
 
 Add adapters for body-surface state, garment gradients and presentation,
 supported physical-affordance observations, active conditions, change stamps,
@@ -347,7 +348,8 @@ physiology, contamination, contact, and fit remain explicit suppressions.
 
 ### Slice 4 — body language and visibility
 
-Status: built 2026-08-16 — awaiting review.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9).
 
 Consume the shipped scene / body-relations owner for posture, support,
 orientation, hand occupation, and committed motion. Add observer/camera
@@ -359,7 +361,8 @@ owner exists.
 
 ### Slice 5 — attention and memory integration
 
-Status: built 2026-08-16 — awaiting review.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9).
 
 Reuse existing fixed-point salience and visual-memory laws. Add change
 significance, action relevance, and consumer relevance without rewriting stored
@@ -368,7 +371,8 @@ strict budgets and preserved observer isolation.
 
 ### Slice 6 — shadow adapters and inspector
 
-Status: built 2026-08-16 — awaiting review; shadow flag defaults off.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9); shadow flag defaults off.
 
 Run the new snapshot and selections beside current inputs in character chat and
 successor chat without changing prompts, images, state, or memory. Add the
@@ -443,8 +447,8 @@ enable everywhere on a directional result.
 
 ### Slice 8 — image digest and render-intent seam
 
-Status: built 2026-08-16 — awaiting review; ships dark until the
-consolidation plan cuts routes over.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9); ships dark until the consolidation plan cuts routes over.
 
 The shared render intent it feeds is live (capabilities slice 2, 2026-08-07).
 Produce the required and optional image digest, its camera-relative selection,
@@ -455,8 +459,8 @@ human/non-human, altered-anatomy, realistic, and stylized acceptance matrix.
 
 ### Slice 9 — reference-image compiler
 
-Status: built 2026-08-16 — awaiting review; admin-only API surface, no
-review UI yet.
+Status: complete — 2026-08-16 (built and reviewed the same day, in the review
+over slices 3–9); admin-only API surface, no review UI yet.
 
 Allow canonical images to propose structured identity and presentation facts
 offline. Store source hash, extractor version, confidence, and diffs. Require

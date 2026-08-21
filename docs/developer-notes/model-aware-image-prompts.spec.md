@@ -29,7 +29,7 @@ summary to correct.
 | Item and location projections                 | `apps/web/src/contracts/images/entity-digest.ts`                 |
 | Character translation scaffold (unbound)      | `apps/web/src/contracts/images/subject-digest.ts`                |
 | Entity lane read, compile and refusal         | `apps/web/src/server/images/entity-prompt-program.ts`            |
-| Production-pack A/B harness (Trial J's base)  | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
+| Whole-pack A/B harness                        | `scripts/eval/prompt-programs/entity-negative-ab.ts`             |
 | Per-block negative induction trials A–I       | `scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`      |
 
 ## What is built
@@ -165,14 +165,20 @@ classifying the blob as a whole would force one answer for all three.
 `unclassifiedImageFields` therefore treats a container as covered once a member
 of it is classified, and the coverage tripwire enumerates the leaves.
 
-### The dialect declares a transport; the probe decides whether it exists
+### Two gates decide whether an exclusion travels
 
+The dialect declares a transport, and the probe says whether the field exists:
 `compileImagePromptProgram` takes `negativeFieldAvailable` from the caller, which
-reads it off the model version's probed control bindings. The Qwen dialect
-declares a dedicated `negative_prompt` field, but the seeded 2512 row has empty
-`advancedCapabilities`, so today every exclusion is recorded with a `dropped`
-transport and no key is invented. Probing the version is the only change needed
-to start sending them.
+reads it off the model version's probed control bindings. Both must agree, and
+neither may invent a key.
+
+Qwen Image 2512 fails the first gate — the dialect declares
+`negativeTransport: "unsupported"` because the endpoint ignores the field it
+exposes (§"Qwen Image 2512 ignores its negative field"), so `compileNegative`
+drops every constraint with `endpoint_ignores_negative_field` before the probe
+gate is consulted. The seeded row's empty `advancedCapabilities` would have
+dropped them at the second gate anyway, with the reason
+`no_negative_field_on_version`; that path is still live for other endpoints.
 
 ### Packs are code-owned until a table exists
 
@@ -198,14 +204,14 @@ open question.
 a producer. The item and location projections classify every authored free-text
 field as `item.form` / `location.contents`, which protect nothing, so a door
 plate reading EXIT or a shop window painted ALDWIN & SON reaches the compile as
-ordinary prose — and the render is told to spell the words and to exclude
-unintended text in the same payload.
+ordinary prose while the text exclusions stay armed against it.
 
 This is the plan's own canonical collision case arriving from a direction the
 guards cannot see, because the guard is a claim and the lettering is not one.
-Both cases are cells in the Stage 6 trial, so the pictures decide how much it
-actually costs before anybody changes a schema. The plan carries the open
-question.
+It costs nothing today: Qwen Image 2512 drops every exclusion before the payload,
+so the two live lanes never actually send the contradiction. That makes it a
+latent defect rather than a fixed one — it lands the day a lane binds an endpoint
+whose negative field works. The plan carries the open question.
 
 ### A dialect terminates a clause once
 
@@ -402,16 +408,22 @@ typed twice.
 
 ## Remaining
 
-- Run and grade the per-block induction trials (A–I), then report the
-  endpoint × block × failure matrix for owner review.
-- After the matrix review: revise the negative pack wording per the verdicts,
-  run Trial J (the combined candidate pack over a representative suite, on the
-  `entity-negative-ab.ts` harness), and only then decide activation.
-- Reword the clothing presentation fact once Trial B's no-negative arm shows
-  what the neutral wording does on its own.
-- Probe and activate the Qwen Image 2512 version only after the above. Not a
-  scoped change: pinning that row also switches on the `steps` and `go_fast`
-  settings that sit inert on the three portrait profiles today.
+- Run the canary on each endpoint that still claims a working negative field —
+  SD 3.5, PuLID, Pony — before buying any block trial there. Trials C–I in
+  `qwen-2512-negative-blocks.ts` are the instrument and only their fixtures are
+  endpoint-neutral; the arms are per endpoint. They are **void for Qwen Image
+  2512**: a channel that cannot remove an apple under direct contradiction will
+  not suppress a mannequin or a watermark.
+- Settle whether the negative pack stays compiled-but-dropped on Qwen Image 2512
+  or its binding is retired for that endpoint. A product call; the plan carries
+  it as an open question.
+- Re-render the library's existing clothing items against the corrected
+  presentation wording. The fix is live in the item lane, but no stored image has
+  been regenerated, so existing clothing images still show the dress form.
+- Probe and activate the Qwen Image 2512 version when a portrait profile wants
+  it. This no longer touches the negative channel, and it is not a scoped change:
+  pinning that row also switches on the `steps` and `go_fast` settings that sit
+  inert on the three portrait profiles today.
 - Write the character image adapter that joins visual state's selection to the
   canonical owners' semantic values, then cut over the character-bearing lanes —
   each behind its own shadow compile, dialect and trial. The four gaps in

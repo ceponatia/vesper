@@ -570,7 +570,7 @@ Required text remains a typed claim with exact spelling, language, casing, place
 
 ### Initial model rulings
 
-- **Qwen Image 2512:** detailed structured prose; guarded, dedicated negatives.
+- **Qwen Image 2512:** detailed structured prose; no negative transport, because the endpoint exposes a negative field and ignores it (measured 2026-08-19).
 - **Qwen Image Edit 2511:** delta-first numbered-reference instruction; no current endpoint negative field.
 - **Seedream 4.5:** concise layered prose and explicit reference roles; budget aggressively before optional decoration.
 - **Seedream 5 Lite:** its own prose pack, initially similar to 4.5 only where trials support parity.
@@ -639,7 +639,8 @@ type ResolvedNegativeTransport =
 
 Examples:
 
-- Qwen 2512, SD 3.5, Pony, and PuLID may receive a dedicated field;
+- SD 3.5, Pony, and PuLID may receive a dedicated field;
+- Qwen 2512 exposes a dedicated field that the endpoint ignores, so its constraints drop with a recorded reason instead;
 - current Qwen Edit 2511 has no dedicated field, so identity and composition constraints become preserve/replacement claims when valid;
 - FLUX and P-Image use positive replacement;
 - Wan uses positive guidance and may use a tested inline exclusion where official endpoint guidance supports it;
@@ -855,7 +856,7 @@ Each cutover requires semantic parity plus a pinned visual trial. Do not migrate
 
 ### Stage 5 — negative system in shadow mode
 
-Status: in progress — guarded blocks, the collision linter and the transport record are live for item and location renders. The compiled exclusions do not yet reach the provider: the Qwen 2512 row's `negative_prompt` field is unprobed, so the control drops as `no_binding` and every outcome is recorded as dropped. Probing the version is what turns this stage into Stage 6 for this endpoint.
+Status: in progress — guarded blocks, the collision linter and the transport record are live for item and location renders. On Qwen Image 2512 the compiled exclusions never reach the provider and never will: that endpoint ignores its negative field, so the dialect declares the transport unsupported and every exclusion drops with a recorded reason. What is left of this stage is the same activation on the endpoints that do carry a negative field, and on the character-bearing lanes when they cut over.
 
 - activate named blocks and collision linting without sending new negative text;
 - verify intended morphology, literal text, style, and subject-count protections;
@@ -864,28 +865,26 @@ Status: in progress — guarded blocks, the collision linter and the transport r
 
 ### Stage 6 — negative transport promotion
 
-Status: in progress — the first production-pack A/B ran 2026-08-19 and is recorded as harness verification, not a verdict. The promotion evidence is the block-by-block induction program (`scripts/eval/prompt-programs/qwen-2512-negative-blocks.ts`); its matrix is what an activation decision reads.
+Status: in progress — closed for Qwen Image 2512, which has no working negative field and so nothing to promote; open for every endpoint that does have one, none of them measured yet.
 
-The first run (`entity-negative-ab.ts`, seven cases, one seed per cell) proved
-the transport plumbing end to end and surfaced collateral candidates, but most
-of its no-negative arms did not contain the failures the negative blocks exist
-to suppress, so the negative arm had little opportunity to show anything. An
-absent failure is insufficient induction, not proof of no effect. It supports no
-global promote-or-reject verdict for this endpoint, and no verdict is recorded
-from it. Detail in [the spec](model-aware-image-prompts.spec.md).
+**Qwen Image 2512 ignores its negative field.** The trial asked for a red apple
+with "red apple, apple" in the negative field and got the apple sixteen times out
+of sixteen, on production's sampling settings and on the slower ones. The dialect
+now declares the transport unsupported, every exclusion drops with a recorded
+reason, and probing or activating that version cannot change it. The verdict, the
+evidence and the clothing-wording fix the same trial produced are in
+[the trial report](model-aware-image-prompts.trial.qwen-2512-negative.md).
 
-The per-block program actively induces or selects each failure mode, holds
-everything but one negative block constant within a comparison, runs paired seed
-sets rather than single renders, and scores binary facts before any subjective
-quality. Its output is a matrix — endpoint × block × failure →
-helpful / neutral / harmful / inconclusive — not a single thumbs-up. Activating
-the Qwen 2512 version remains a separate owner action after the matrix review,
-and not a scoped one: pinning that row also switches on the `steps` and
-`go_fast` settings that sit inert on the three portrait profiles.
+**The per-block harness stays, for other endpoints.** It grades one negative
+block at a time against a failure it deliberately induces, over paired seeds,
+scoring binary facts before any subjective quality, and reporting a matrix —
+endpoint × block × failure → helpful / neutral / harmful / inconclusive — rather
+than a single thumbs-up. That is still the promotion evidence for the endpoints
+that carry a working negative field. Each of them needs its own canary first: a
+channel is not assumed to work because the wrapper exposes the field.
 
 Promote per endpoint/profile only after A/B evidence:
 
-- Qwen 2512 targeted dedicated negatives;
 - SD 3.5 and PuLID compact dedicated negatives;
 - Pony wrapper-aware negative pack;
 - FLUX/P-Image positive replacements;
@@ -1016,12 +1015,20 @@ The plan is accepted when:
   `location.signage` are the two concepts that take the text exclusions off the
   table, and neither has a producer: an item or location whose authored
   description names lettering — a door plate reading EXIT, a shop window painted
-  ALDWIN & SON — reaches the compile as ordinary optional prose, so the render is
-  simultaneously asked to spell the words and told to exclude unintended text.
-  Both cases are in the Stage 6 trial so the pictures say how much it costs.
+  ALDWIN & SON — reaches the compile as ordinary optional prose while the text
+  exclusions stay armed against it. The collision is inert on the two
+  live lanes, because Qwen Image 2512 drops every exclusion before the payload; it
+  returns the day a lane binds an endpoint that carries a working negative field.
   Closing it needs a decision about where the lettering comes from: a new
   authored field on the item and location rows, or a narrower reading of what the
   text exclusions may forbid when a description contains a quoted string.
+
+- **Do the negative blocks stay compiled-but-dropped on Qwen Image 2512, or is
+  the binding retired for that endpoint?** Keeping them costs nothing at render
+  time and preserves the record of what a render would have excluded on an
+  endpoint that could carry it; retiring them removes a channel that will never
+  fire. A product call rather than an evidence one. Detail in
+  [the trial report](model-aware-image-prompts.trial.qwen-2512-negative.md).
 
 ## Owner decisions before implementation
 

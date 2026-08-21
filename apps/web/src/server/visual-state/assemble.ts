@@ -474,6 +474,15 @@ export interface VisualStateSelections {
   readonly narrator: VisualNarratorSelection;
   readonly image: VisualImageSelection;
   /**
+   * The camera context `image` was selected under, carried out rather than
+   * discarded. Realizing the image digest needs the SAME snapshot, selection
+   * and context that produced the selection — rebuilding a look-alike context
+   * downstream is how a digest ends up fingerprinting one camera while
+   * describing another, and the digest's own consistency gate would only catch
+   * the subject/key half of that mistake.
+   */
+  readonly imageContext: VisualAttentionContext;
+  /**
    * The inspector's staircase: every feature scored under a debug viewpoint
    * with ideal viewing conditions, so the panel can show what the projection
    * HOLDS independently of where the scene put the subject.
@@ -591,5 +600,5 @@ export function buildVisualStateSelections(input: VisualStateSelectionsInput): V
     ...(sink === undefined ? {} : { sink }),
   });
 
-  return { narrator, image, staircase, viewing: components };
+  return { narrator, image, imageContext, staircase, viewing: components };
 }

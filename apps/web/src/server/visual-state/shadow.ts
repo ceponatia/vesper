@@ -3,6 +3,7 @@ import {
   type AffordancePerceptionView,
   type DiagnosticSink,
   type VisualAttentionBuild,
+  type VisualAttentionContext,
   type VisualCueState,
   type VisualImageSelection,
   type VisualMemoryState,
@@ -54,6 +55,8 @@ export interface VisualStateShadowBuild {
   readonly snapshot: VisualStateSnapshot;
   readonly narrator: VisualNarratorSelection;
   readonly image: VisualImageSelection;
+  /** The camera context `image` was selected under — the image digest's third input. */
+  readonly imageContext: VisualAttentionContext;
   readonly staircase: VisualAttentionBuild;
   /** The conditions the production reads ran under, declared components included. */
   readonly viewing: VisualViewingConditions;
@@ -121,6 +124,7 @@ export function buildVisualStateShadow(input: VisualStateShadowInput): VisualSta
     snapshot: assembled.snapshot,
     narrator: selections.narrator,
     image: selections.image,
+    imageContext: selections.imageContext,
     staircase: selections.staircase,
     viewing: selections.viewing,
     measurements,

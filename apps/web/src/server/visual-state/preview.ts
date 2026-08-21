@@ -4,11 +4,15 @@ import {
   visualStateSourceKey,
   type Diagnostic,
   type VisualAttentionCandidate,
+  type VisualImageDigest,
+  type VisualImageFact,
+  type VisualImageProvenance,
   type VisualStateFeature,
   type VisualComponentRead,
   type VisualStateSuppression,
   type VisualViewingConditions,
 } from "@/contracts";
+import { visualStateImageDigestOfShadow } from "./image-digest";
 import { emptyVisualStateMeasurements, type VisualStateMeasurements } from "./measure";
 import type { VisualStateShadowBuild } from "./shadow";
 
@@ -131,6 +135,62 @@ export interface VisualStatePreviewDiagnostic {
   readonly message: string;
 }
 
+// ---------------------------------------------------------------------------
+// The realized image digest — image-lane-consolidation Stage 2
+// ---------------------------------------------------------------------------
+
+/** One selected fact, as the panel names it: identity, placement, and lane. */
+export interface VisualStatePreviewDigestFact {
+  readonly key: string;
+  readonly kindId: string;
+  readonly locus: string;
+  readonly segmentKind: string;
+  readonly required: boolean;
+}
+
+export interface VisualStatePreviewDigestSubject {
+  readonly subjectId: string;
+  readonly required: readonly VisualStatePreviewDigestFact[];
+  readonly optional: readonly VisualStatePreviewDigestFact[];
+  /** Mandatory facts the digest LOST to degradation — never a consent-gated absence. */
+  readonly missingMandatory: readonly string[];
+}
+
+/** One suppression reason and how many facts it accounts for. */
+export interface VisualStatePreviewDigestSuppression {
+  readonly code: string;
+  readonly count: number;
+}
+
+/**
+ * What a character-bearing render would consume from THIS cut, plus the record
+ * it would store. The panel shows it beside the raw image selection above it
+ * because the two answer different questions: the selection is what the camera
+ * scored, the digest is what a render actually receives — required and optional
+ * split, each fact routed to the prompt segment its prose belongs in, with the
+ * three fingerprints that let a stored image be traced back to this moment.
+ *
+ * No render consumes it yet; the inspector is Stage 2's only reader.
+ */
+export interface VisualStatePreviewImageDigest {
+  readonly cutId: string;
+  readonly subjectCount: number;
+  /** "Is this the same visual moment?" */
+  readonly snapshotFingerprint: string;
+  /** "Is this the same composition?" */
+  readonly selectionFingerprint: string;
+  /** Everything the camera asserted. */
+  readonly cameraFingerprint: string;
+  readonly subjects: readonly VisualStatePreviewDigestSubject[];
+  readonly requiredCount: number;
+  readonly optionalCount: number;
+  /** Every subject's missing-mandatory report, flattened. */
+  readonly missingMandatory: readonly string[];
+  readonly suppressionReasons: readonly VisualStatePreviewDigestSuppression[];
+  /** The compact record a render row would file under `meta.visualState`. */
+  readonly provenance: VisualImageProvenance;
+}
+
 export interface VisualStatePreviewPayload {
   readonly lane: "character_chat" | "successor";
   /** `CHAT_VISUAL_STATE_SHADOW` — reported, never obeyed. */
@@ -160,6 +220,8 @@ export interface VisualStatePreviewPayload {
     readonly suppressedOptionalCount: number;
     readonly suppressions: readonly VisualStatePreviewSuppression[];
   };
+  /** The realized render digest, or `null` when there was no build to realize it from. */
+  readonly imageDigest: VisualStatePreviewImageDigest | null;
   readonly measurements: VisualStateMeasurements;
   readonly diagnostics: readonly VisualStatePreviewDiagnostic[];
 }
@@ -231,6 +293,56 @@ function previewViewing(viewing: VisualViewingConditions): VisualStatePreviewVie
   };
 }
 
+function previewDigestFact(fact: VisualImageFact): VisualStatePreviewDigestFact {
+  return {
+    key: fact.key,
+    kindId: fact.kindId,
+    locus: visualStateLocusKey(fact.locus),
+    segmentKind: fact.segmentKind,
+    required: fact.required,
+  };
+}
+
+/**
+ * Suppression reasons, tallied by code and ordered most-frequent first (ties
+ * alphabetically, so the panel is stable across refreshes). The per-feature
+ * lists above already carry every key; what a reader wants HERE is which
+ * reasons account for the digest's silence.
+ */
+function previewDigestSuppressions(
+  suppressions: readonly VisualStateSuppression[],
+): VisualStatePreviewDigestSuppression[] {
+  const counts = new Map<string, number>();
+  for (const entry of suppressions) counts.set(entry.code, (counts.get(entry.code) ?? 0) + 1);
+  return [...counts.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code, "en"));
+}
+
+function previewImageDigest(
+  digest: VisualImageDigest,
+  provenance: VisualImageProvenance,
+): VisualStatePreviewImageDigest {
+  return {
+    cutId: digest.cutId,
+    subjectCount: digest.subjectCount,
+    snapshotFingerprint: digest.snapshotFingerprint,
+    selectionFingerprint: digest.selectionFingerprint,
+    cameraFingerprint: digest.cameraFingerprint,
+    subjects: digest.subjects.map((subject) => ({
+      subjectId: subject.subjectId,
+      required: subject.required.map(previewDigestFact),
+      optional: subject.optional.map(previewDigestFact),
+      missingMandatory: subject.missingMandatory,
+    })),
+    requiredCount: digest.mandatoryFacts.length,
+    optionalCount: digest.optionalFacts.length,
+    missingMandatory: digest.subjects.flatMap((subject) => subject.missingMandatory),
+    suppressionReasons: previewDigestSuppressions(digest.suppressions),
+    provenance,
+  };
+}
+
 /**
  * The degraded payload for a build that produced nothing: the diagnostics
  * carry why, everything else is honestly empty rather than a 500 — the
@@ -262,6 +374,9 @@ export function degradedVisualStatePreviewPayload(input: {
       suppressions: [],
     },
     image: { mandatoryKeys: [], optional: [], suppressedOptionalCount: 0, suppressions: [] },
+    // No build means no cut to realize a digest over, and an empty digest here
+    // would claim a moment that was never assembled. Absent, not fabricated.
+    imageDigest: null,
     measurements: emptyVisualStateMeasurements(),
     diagnostics: input.diagnostics.map((entry) => ({
       severity: entry.severity,
@@ -278,6 +393,11 @@ export function visualStatePreviewPayload(input: {
 }): VisualStatePreviewPayload {
   const { build } = input;
   const { snapshot, narrator, image, staircase } = build;
+  // Realized from the build's OWN snapshot, selection and camera context — the
+  // one place both lanes' previews meet, so the chat and successor inspectors
+  // show the digest on identical terms. No `forCutId`: the inspector realizes
+  // the very cut it just assembled.
+  const realized = visualStateImageDigestOfShadow(build);
   return {
     lane: build.lane,
     shadowFlagEnabled: input.shadowFlagEnabled,
@@ -328,6 +448,7 @@ export function visualStatePreviewPayload(input: {
       suppressedOptionalCount: image.suppressedOptionalCount,
       suppressions: previewSuppressions(image.suppressions),
     },
+    imageDigest: previewImageDigest(realized.digest, realized.provenance),
     measurements: build.measurements,
     diagnostics: input.diagnostics.map((entry) => ({
       severity: entry.severity,

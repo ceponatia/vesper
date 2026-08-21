@@ -9,6 +9,10 @@ import {
   visualStateGarmentFixture,
   visualStateSceneFixture,
   visualStateWetHairSurface,
+  VISUAL_DIGEST_SELECTION_MISMATCH,
+  VISUAL_DIGEST_SNAPSHOT_STALE,
+  VISUAL_IMAGE_PROVENANCE_META_KEY,
+  VISUAL_SELECTION_CONTEXT_MISMATCH,
   VISUAL_STATE_SCENE_NPC,
   VISUAL_STATE_SCENE_PLAYER,
   VISUAL_STATE_SOURCE_UNAVAILABLE,
@@ -18,6 +22,7 @@ import {
   type ChatGarmentStore,
 } from "@/contracts";
 import { assembleVisualStateSnapshot, type VisualStateAssemblyInput } from "./assemble";
+import { visualStateImageDigestOfShadow } from "./image-digest";
 import {
   buildVisualStateShadow,
   safeBuildVisualStateShadow,
@@ -302,5 +307,54 @@ describe("safeBuildVisualStateShadow", () => {
     const build = safeBuildVisualStateShadow(chatShadowInput(), sink);
     expect(build).not.toBeNull();
     expect(sink.items.every((entry) => entry.code !== VISUAL_STATE_SHADOW_FAILED)).toBe(true);
+  });
+});
+
+/**
+ * The Stage 2 server seam (image-lane-consolidation.spec.visual-state.md): a
+ * live cut → the digest a character-bearing render consumes and the record it
+ * stores. The digest's own rules are the contracts layer's
+ * (`contracts/images/visual-digest.test.ts`); these three protect the GLUE.
+ */
+describe("visualStateImageDigestOfShadow", () => {
+  it("realizes from the build's own selection and camera context, so no consistency gate fires", () => {
+    const sink = new DiagnosticCollector();
+    const build = buildVisualStateShadow(chatShadowInput());
+    const realized = visualStateImageDigestOfShadow(build, { sink });
+    // Falsified against a seam that re-selects, or hands the digest a rebuilt
+    // look-alike context (or the narrator's): either fails the digest CLOSED
+    // and returns an empty one. Nothing throws, no render notices, and no
+    // other gate can see it — this is the only alarm.
+    expect(sink.items.every((entry) => entry.code !== VISUAL_DIGEST_SELECTION_MISMATCH)).toBe(true);
+    expect(sink.items.every((entry) => entry.code !== VISUAL_SELECTION_CONTEXT_MISMATCH)).toBe(true);
+    expect(realized.digest.mandatoryFacts.map((fact) => fact.key)).toEqual(
+      build.image.mandatory.map((feature) => feature.key),
+    );
+    expect(realized.digest.cutId).toBe(build.snapshot.cutId);
+  });
+
+  it("files the provenance under the image row's meta key, byte-stable across a rebuilt cut", () => {
+    const first = visualStateImageDigestOfShadow(buildVisualStateShadow(chatShadowInput()));
+    const second = visualStateImageDigestOfShadow(buildVisualStateShadow(chatShadowInput()));
+    // This is what a stored image row will carry. Rebuilding the same committed
+    // cut has to reproduce the same record, or the fingerprints cannot tell a
+    // retake of one composition from state that has since moved.
+    expect(JSON.stringify(second.provenance)).toBe(JSON.stringify(first.provenance));
+    expect(first.meta[VISUAL_IMAGE_PROVENANCE_META_KEY]).toBe(first.provenance);
+  });
+
+  it("degrades a foreign committed cut to an empty digest plus the stale diagnostic", () => {
+    const sink = new DiagnosticCollector();
+    const realized = visualStateImageDigestOfShadow(buildVisualStateShadow(chatShadowInput()), {
+      forCutId: "cut_some_other_exchange",
+      sink,
+    });
+    // The seam's promise: a refused digest still comes back whole — empty facts,
+    // an honest provenance record, and its meta fragment — so the caller decides
+    // render eligibility. It never throws and never fabricates a selection.
+    expect(realized.digest.mandatoryFacts).toEqual([]);
+    expect(realized.provenance.subjects.every((subject) => subject.selected.length === 0)).toBe(true);
+    expect(realized.meta[VISUAL_IMAGE_PROVENANCE_META_KEY]).toEqual(realized.provenance);
+    expect(sink.items.some((entry) => entry.code === VISUAL_DIGEST_SNAPSHOT_STALE)).toBe(true);
   });
 });

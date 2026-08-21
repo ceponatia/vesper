@@ -48,6 +48,13 @@ export interface SceneCastMember {
   meters?: Record<string, number>;
   conditions?: ActiveCondition[];
   /**
+   * The chat's PERSISTED narrative attribute overlays for this member
+   * (`ChatState.attributeOverlays`) — a recorded haircut or dye the archivist
+   * wrote down. Absent ⇒ the authored sheet alone, which is what every
+   * non-chat caller (the lab, a bare test render) has.
+   */
+  attributeOverlays?: readonly AttributeValue[];
+  /**
    * This character's look-anchor key. Absent ⇒ anchor on their avatar. Only the
    * primary's look is minted today, so a second cast member normally anchors on
    * their canonical portrait and takes its wardrobe from the prompt's clothing
@@ -114,7 +121,21 @@ export function visualStateNote(meters: Record<string, number> = {}): string {
 function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
   const exposure: RegionExposure =
     member.exposure ?? (member.outfitExposed ? exposedRegions([]) : FULLY_COVERED);
-  const resolved = resolveAttributes(member.profile.attributes, conditionAttributeOverlays(member.conditions ?? []));
+  // Authored base → persisted narrative overlays → this moment's condition
+  // overlays: the same three-layer resolve the narrator prompt takes
+  // (`character-chat.ts`'s `fullResolved`), the affordance read takes
+  // (`chat-affordances.ts`'s `resolveSubjectAttributes`) and the visual-state
+  // projection takes (`visual-state/assemble.ts`'s `resolveShadowAttributes`).
+  // Without the middle layer a recorded haircut or dye reached the narrator and
+  // the projection but not the picture — and hair colour/length/style are
+  // identity ANCHORS here, so the prompt actively re-asserted the old hair
+  // against the reference. `condition` outranks `narrative` in
+  // SOURCE_PRECEDENCE, so the order only settles same-source ties; it is kept
+  // identical to those three anyway so the layers can never quietly diverge.
+  const resolved = resolveAttributes(member.profile.attributes, [
+    ...(member.attributeOverlays ?? []),
+    ...conditionAttributeOverlays(member.conditions ?? []),
+  ]);
   const stateNote = visualStateNote(member.meters);
   const appearance = [characterAppearanceSummary(resolved, undefined, false, member.profile), stateNote]
     .filter(Boolean)
