@@ -19,8 +19,10 @@ Related owners:
 - [visual state and attention](visual-state.plan.md) owns the lane-neutral
   snapshot, source adapters, visibility, attention, and image digest;
 - [image render quality](image-render-quality.plan.md) owns semantic prompt
-  segments, model dialects, negative steering, prompt budgets, and quality
-  trials;
+  segments, prompt budgets, and quality trials;
+- [model-aware image prompt programs](model-aware-image-prompts.plan.md), its
+  child plan, owns the per-endpoint dialects and negative steering this plan's
+  Stage 5 waits on;
 - [image model capabilities](finished/image-model-capabilities.plan.md) owns the
   shared render intent, profile planning, and role-aware reference transport;
 - [scene composition](finished/scene-composition.plan.md) owns camera, staging,
@@ -147,8 +149,12 @@ lanes carry no identity or morphology fact at all.
 
 ### Stage 2 — one image visual digest
 
-Status: queued — depends on the visual-state snapshot and image selection
-contracts needed from visual-state slices 2–5.
+Status: next — unblocked. The snapshot and image-selection contracts this stage
+waited on arrived with visual-state slice 8 on 2026-08-16, so what is left is
+the server-side assembly that feeds a live snapshot in, the provenance
+persistence beside it, and route consumption. None of that is written yet;
+[the companion spec](image-lane-consolidation.spec.visual-state.md) tracks which
+half is which.
 
 Add the application adapter that selects required and optional camera-visible
 facts from one snapshot. Preserve source keys, fingerprints, snapshot/source
@@ -177,7 +183,8 @@ prompts without a character dependency.
 
 ### Stage 5 — one scene assembly and downstream reference ownership
 
-Status: queued — depends on Stage 4 and image-render-quality dialect compilation.
+Status: queued — depends on Stage 4 and on the model-aware plan's dialect
+compilation reaching the character-bearing lanes.
 
 Collapse the single- and multi-reference scene assemblers into one scene segment
 builder. Make role-aware references declarative in the app and let
@@ -214,7 +221,7 @@ image documentation, and record the owner verdict.
 Stage 1 was independent and has landed.
 
 Stages 2–4 consume visual-state work; they do not take ownership of it. Stage 5
-coordinates with image-render-quality dialect work. A coding change must land
+coordinates with the model-aware plan's dialect work. A coding change must land
 under the canonical owning plan when it changes that plan's contract, even when
 this consolidation plan is the reason the work became urgent.
 

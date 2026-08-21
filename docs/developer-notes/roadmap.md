@@ -48,7 +48,8 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [spec](image-render-quality.spec.md) — the content and tuning companion to the
   shipped capabilities plan, now scoped to the Qwen family and the recent seeded
   models; prompt segments and profile controls are live end-to-end on the probed
-  reviewed rows, and the dialect compilers are the next code slice.
+  reviewed rows, and slice 3's dialect and negative work now runs under the
+  model-aware prompt programs plan below.
 
 - **Image lane consolidation — one visual digest, one prompt path, verified
   legacy deletion** —
@@ -68,14 +69,15 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [research](model-aware-image-prompts.research.md) — one immutable set of world
   facts feeds a positive prompt and a separately versioned negative prompt, with a
   linter that stops an exclusion forbidding something the world requires; the core
-  and the Qwen Image 2512 slice are live on item and location renders, and the
-  negative field starts travelling as soon as that version is probed.
+  and the Qwen Image 2512 slice are live on item and location renders, where every
+  exclusion drops with a recorded reason because that endpoint ignores its
+  negative field.
 
 - **Narrator model test bench** — [plan](narrator-model-bench.plan.md) ·
-  [spec](narrator-model-bench.spec.md) — twelve roleplay and low-refusal
-  narrators are pickable from the chat menu, now including one served by a
-  second provider (Featherless) for models no commercial host carries; the
-  recorded comparison that would move a default is still the next step.
+  [spec](narrator-model-bench.spec.md) — fourteen roleplay and low-refusal
+  narrators are pickable from the chat menu, three of them served by a second
+  provider (Featherless) for models no commercial host carries; the recorded
+  comparison that would move a default is still the next step.
 
 ## Next (queued, in dependency order)
 
