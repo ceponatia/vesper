@@ -38,6 +38,10 @@ describe("visualStatePreviewPayload", () => {
     expect(payload.scopeKey).toBe("chat:mg_preview");
     expect(payload.features.length).toBe(build.snapshot.features.length);
     expect(payload.measurements).toEqual(build.measurements);
+    // The realized render digest rides the same payload, and the round trip
+    // above is what proves it stayed plain JSON — the image context it is
+    // realized from carries Maps and Sets a route serializer would drop.
+    expect(payload.imageDigest?.cutId).toBe(build.snapshot.cutId);
   });
 
   it("is deterministic over one cut", () => {

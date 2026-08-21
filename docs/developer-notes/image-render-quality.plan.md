@@ -4,8 +4,10 @@ Status: active (owner rulings settled 2026-08-05; slice 1 — the reviewed
 exact-slug hardening at the shared render seam — shipped 2026-08-05, corrected
 through 2026-08-06; slice 2 — prompt segments and the reviewed settings moved
 into task profiles — built and accepted 2026-08-16, with the reviewed rows
-probed and parity verified live the same day; slice 3 is next, after the three
-review fixes the spec records; reference preparation left this plan for
+probed and parity verified live the same day; slice 3 narrowed 2026-08-18 when
+its dialect and negative-steering work moved to the model-aware prompt programs
+plan, leaving prompt-budget measurement and the three review fixes the spec
+records; reference preparation left this plan for
 [image-identity-packs.plan.md](finished/image-identity-packs.plan.md) on 2026-08-05)
 
 Outcome: A player can generate a portrait or scene that still shows their own
@@ -24,6 +26,11 @@ Sibling plans:
 - [image identity packs](finished/image-identity-packs.plan.md) owns the face reference
   itself — derivation, quality measurement, correction, invalidation, and the
   reference-strategy trial;
+- [model-aware image prompt programs](model-aware-image-prompts.plan.md) is this
+  plan's child, and names it as parent owner: it took slice 3's substance — the
+  atomic world digest, the per-endpoint dialect registry, the separately
+  versioned negative packs, and the conflict linter — and runs them as their own
+  staged delivery;
 - [visual state and attention](visual-state.plan.md) owns the appearance
   projection an image prompt should eventually read;
 - [Qwen advanced image subsystem](finished/qwen-advanced-image-subsystem.plan.md) owns the
@@ -436,11 +443,15 @@ this plan keeps its number as a pointer.
    With the reviewed rows probed, the profile route now carries the settings in
    production; the transitional overlay stays beside it, byte-identical, until
    migration step 4 retires it.
-3. **Dynamic dialects and negatives.** Status: next — after the three review
-   fixes recorded in the spec. Compile
-   prose/SDXL/Pony prompts from segments, measure effective prompt budgets per
-   pinned version, and compose task/style/subject/morphology/text-aware negative
-   blocks with conflict linting.
+3. **Dynamic dialects and negatives.** Status: next — narrowed 2026-08-18. Most
+   of this slice moved to
+   [model-aware image prompt programs](model-aware-image-prompts.plan.md), which
+   owns the per-endpoint dialect registry, the compilers, the versioned negative
+   packs and the conflict linting, and already has the Qwen Image 2512 dialect
+   live on item and location renders. Two pieces stay here because nothing there
+   covers them: measuring each pinned version's effective prompt budget by the
+   sentinel protocol in the spec, and the three slice-2 review fixes the spec
+   records, none of which has landed.
 4. **Identity packs.** Status: void — moved out 2026-08-05. Now
    [image-identity-packs.plan.md](finished/image-identity-packs.plan.md), whose pack-side
    slices shipped 2026-08-06.

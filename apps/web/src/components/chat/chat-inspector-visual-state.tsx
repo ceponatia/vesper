@@ -7,6 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   chatInspectorApi,
   type VisualStateCandidateRow,
+  type VisualStateDigestFactRow,
+  type VisualStateImageDigestRow,
   type VisualStatePreview,
   type VisualStateSetComparisonRow,
   type VisualStateSuppressionRow,
@@ -195,6 +197,10 @@ function PreviewBody({ data }: { data: VisualStatePreview }) {
         </div>
       </Panel>
 
+      <Panel label="Image digest — what a render would consume, and what it would store">
+        <ImageDigestBody digest={data.imageDigest} />
+      </Panel>
+
       {data.diagnostics.length > 0 ? (
         <Panel label={`Diagnostics (${data.diagnostics.length})`}>
           <ul className="flex flex-col gap-1 font-mono text-[11px]">
@@ -287,6 +293,99 @@ function CandidateList({ rows, empty }: { rows: readonly VisualStateCandidateRow
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * The realized image digest (image-lane-consolidation Stage 2): the required
+ * and optional facts a character-bearing render would receive from this cut,
+ * each routed to the prompt segment its prose belongs in, plus the compact
+ * provenance record an image row would store beside its render provenance.
+ *
+ * Nothing renders from it yet — this panel is the digest's only reader, and the
+ * camera is still the shadow placeholder, so the camera fingerprint identifies
+ * that placeholder rather than a committed scene camera.
+ */
+function ImageDigestBody({ digest }: { digest: VisualStateImageDigestRow }) {
+  if (digest === null) {
+    return <p className="text-xs text-paper-500">No build to realize a digest from — the diagnostics say why.</p>;
+  }
+  return (
+    <>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px]">
+        <Row term="cut" value={digest.cutId || "—"} />
+        <Row
+          term="facts"
+          value={`${digest.requiredCount} required · ${digest.optionalCount} optional · ${digest.subjectCount} subjects`}
+        />
+        <Row term="snapshot fp" value={digest.snapshotFingerprint || "—"} />
+        <Row term="selection fp" value={digest.selectionFingerprint || "—"} />
+        <Row term="camera fp" value={digest.cameraFingerprint || "—"} />
+        <Row
+          term="missing mandatory"
+          value={digest.missingMandatory.length > 0 ? digest.missingMandatory.join(", ") : "none"}
+          muted={digest.missingMandatory.length > 0}
+        />
+        <Row
+          term="suppressed"
+          value={
+            digest.suppressionReasons.length === 0
+              ? "nothing"
+              : digest.suppressionReasons.map((reason) => `${reason.code} ${reason.count}`).join(" · ")
+          }
+        />
+      </dl>
+      {digest.subjects.map((subject) => (
+        <div key={subject.subjectId} className="mt-3 border-t border-ink-600 pt-3">
+          <p className="text-[11px] tracking-wide text-paper-500 uppercase">{subject.subjectId}</p>
+          <DigestFactList label="required" rows={subject.required} empty="no required fact reached the digest" />
+          <DigestFactList label="optional" rows={subject.optional} empty="no optional detail survived the camera" />
+          {subject.missingMandatory.length > 0 ? (
+            <p className="mt-1 font-mono text-[11px] text-danger-300">
+              lost mandatory: {subject.missingMandatory.join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ))}
+      <div className="mt-3 border-t border-ink-600 pt-3">
+        <p className="mb-1 text-[11px] tracking-wide text-paper-500 uppercase">
+          Provenance — the record an image row would store
+        </p>
+        <p className="font-mono text-[11px] break-all text-paper-500">{JSON.stringify(digest.provenance)}</p>
+      </div>
+    </>
+  );
+}
+
+function DigestFactList({
+  label,
+  rows,
+  empty,
+}: {
+  label: string;
+  rows: readonly VisualStateDigestFactRow[];
+  empty: string;
+}) {
+  return (
+    <div className="mt-1">
+      <p className="font-mono text-[11px] text-paper-600">
+        {label} ({rows.length})
+      </p>
+      {rows.length === 0 ? (
+        <p className="font-mono text-[11px] text-paper-500">{empty}</p>
+      ) : (
+        <ul className="flex flex-col gap-1 font-mono text-[11px]">
+          {rows.map((row) => (
+            <li key={row.key} className="break-words">
+              <span className="text-paper-200">{row.key}</span>{" "}
+              <span className="text-paper-500">
+                · {row.kindId} · {row.locus} → {row.segmentKind}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

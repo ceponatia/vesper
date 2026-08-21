@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { attr, makeProfile } from "@/server/test-support";
 import { buildCharacterSceneContext, visualStateNote, type SceneCastMember } from "./character-scene";
 
@@ -92,6 +93,44 @@ describe("buildCharacterSceneContext", () => {
     expect(mira?.outfitDescription).toContain("Mira's coat");
     expect(mira?.outfitDescription).not.toContain("Sayed");
     expect(sayed?.outfitDescription).toContain("Sayed's coat");
+  });
+
+  /**
+   * The scene prompt's attribute resolve must take all THREE layers the rest of
+   * the app takes — authored sheet, the chat's persisted narrative overlays, then
+   * this moment's condition overlays — the composition `character-chat.ts`
+   * (`fullResolved`), `chat-affordances.ts` and `visual-state/assemble.ts`
+   * (`resolveShadowAttributes`) each spell out.
+   *
+   * Falsified against the resolve this replaces, which passed condition overlays
+   * ALONE: an archivist-recorded dye reached the narrator and the visual-state
+   * projection but never the picture, and hair is an identity ANCHOR here — so the
+   * prompt actively re-asserted the old hair against the reference image.
+   */
+  it("resolves persisted narrative overlays and condition overlays over the authored sheet", () => {
+    const soaked: ActiveCondition = {
+      id: "cond-soaked",
+      label: "soaked",
+      startedAtMinutes: 0,
+      attributeEffects: [{ attributeId: "hair.style", value: "rain-flattened and clinging" }],
+    };
+    const context = buildCharacterSceneContext({
+      ...base,
+      cast: [
+        member("Mira", "red", {
+          attributeOverlays: [attr("hair.color", "silver", "narrative")],
+          conditions: [soaked],
+        }),
+        member("Sayed", "black"),
+      ],
+    });
+    const [mira, sayed] = context.present;
+    expect(mira?.identityAnchors).toContain("silver");
+    expect(mira?.identityAnchors).not.toContain("red");
+    expect(mira?.identityAnchors).toContain("rain-flattened");
+    // Overlays are per-member chat state, like every other fact on the member.
+    expect(sayed?.identityAnchors).toContain("black");
+    expect(sayed?.identityAnchors).not.toContain("silver");
   });
 
   it("passes neither chronological nor apparent age into scene-image context", () => {

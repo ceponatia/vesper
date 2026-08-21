@@ -318,6 +318,46 @@ const visualStateSetComparisonSchema = z
   .catch(null);
 export type VisualStateSetComparisonRow = z.infer<typeof visualStateSetComparisonSchema>;
 
+/**
+ * The realized image digest (image-lane-consolidation Stage 2): what a
+ * character-bearing render would consume from this cut, and the compact record
+ * it would store under `meta.visualState`. Nullable — a build that produced
+ * nothing has no cut to realize a digest over.
+ */
+const visualStateDigestFactSchema = z.object({
+  key: textOr(""),
+  kindId: textOr(""),
+  locus: textOr(""),
+  segmentKind: textOr(""),
+  required: z.boolean().catch(false),
+});
+export type VisualStateDigestFactRow = z.infer<typeof visualStateDigestFactSchema>;
+
+const visualStateImageDigestSchema = z
+  .object({
+    cutId: textOr(""),
+    subjectCount: z.number().catch(0),
+    snapshotFingerprint: textOr(""),
+    selectionFingerprint: textOr(""),
+    cameraFingerprint: textOr(""),
+    subjects: arrayOf(
+      z.object({
+        subjectId: textOr(""),
+        required: arrayOf(visualStateDigestFactSchema),
+        optional: arrayOf(visualStateDigestFactSchema),
+        missingMandatory: z.array(z.string()).catch([]),
+      }),
+    ),
+    requiredCount: z.number().catch(0),
+    optionalCount: z.number().catch(0),
+    missingMandatory: z.array(z.string()).catch([]),
+    suppressionReasons: arrayOf(z.object({ code: textOr(""), count: z.number().catch(0) })),
+    provenance: z.unknown(),
+  })
+  .nullable()
+  .catch(null);
+export type VisualStateImageDigestRow = z.infer<typeof visualStateImageDigestSchema>;
+
 const visualStateMeasurementsSchema = z
   .object({
     featureCount: z.number().catch(0),
@@ -421,6 +461,7 @@ export const visualStatePreviewSchema = z.object({
       suppressions: arrayOf(visualStateSuppressionSchema),
     })
     .catch({ mandatoryKeys: [], optional: [], suppressedOptionalCount: 0, suppressions: [] }),
+  imageDigest: visualStateImageDigestSchema,
   measurements: visualStateMeasurementsSchema,
   diagnostics: arrayOf(z.object({ severity: textOr("info"), code: textOr(""), message: textOr("") })),
 });

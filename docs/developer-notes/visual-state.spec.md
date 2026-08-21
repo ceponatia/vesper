@@ -547,19 +547,19 @@ start.
 
 ## Implementation status
 
-| Slice | State                              | Owns                         |
-| ----- | ---------------------------------- | ---------------------------- |
-| 0     | reviewed 2026-08-16                | Source + duplication audit   |
-| 1     | reviewed 2026-08-16                | Contract + compat adapter    |
-| 2     | reviewed 2026-08-16                | Identity + presentation      |
-| 3     | built 2026-08-16 — awaiting review | Current state                |
-| 4     | built 2026-08-16 — awaiting review | Body language + visibility   |
-| 5     | built 2026-08-16 — awaiting review | Attention + memory           |
-| 6     | built 2026-08-16 — awaiting review | Shadow + inspector           |
-| 7     | complete — 2026-08-17              | Narrator proving release     |
-| 8     | built 2026-08-16 — awaiting review | Image digest + seam          |
-| 9     | built 2026-08-16 — awaiting review | Reference extraction         |
-| 10    | not started                        | Narrator consolidation       |
+| Slice | State                 | Owns                       |
+| ----- | --------------------- | -------------------------- |
+| 0     | reviewed 2026-08-16   | Source + duplication audit |
+| 1     | reviewed 2026-08-16   | Contract + compat adapter  |
+| 2     | reviewed 2026-08-16   | Identity + presentation    |
+| 3     | reviewed 2026-08-16   | Current state              |
+| 4     | reviewed 2026-08-16   | Body language + visibility |
+| 5     | reviewed 2026-08-16   | Attention + memory         |
+| 6     | reviewed 2026-08-16   | Shadow + inspector         |
+| 7     | complete — 2026-08-17 | Narrator proving release   |
+| 8     | reviewed 2026-08-16   | Image digest + seam        |
+| 9     | reviewed 2026-08-16   | Reference extraction       |
+| 10    | not started           | Narrator consolidation     |
 
 Slice 0 produced [visual-state.audit.md](visual-state.audit.md). Slice 1
 produced `apps/web/src/contracts/visual-state/`: vocabulary, locus, sources,
