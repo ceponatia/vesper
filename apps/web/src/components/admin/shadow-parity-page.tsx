@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
+import { engineComparisonApi, type EngineComparisonStatus } from "@/lib/api-engine-comparison";
+import { chatsApi, type ApiResult } from "@/lib/client/api";
 import {
   shadowApi,
   shadowVerdictLabels,
@@ -23,8 +25,9 @@ import {
  * face of the legacy-vs-successor comparison substrate, so reviewing and ruling
  * never needs a raw API call. The route and storage names retain `shadow` for
  * compatibility; that is now an internal implementation term, not the feature name.
- * `/admin/shadow` lists every chat with recorded rows; `/admin/shadow/[chatId]`
- * shows the computed report, prose pairs side by side, and per-row review controls.
+ * `/admin/shadow` lists every chat with recorded rows and now provisions comparison
+ * mirrors for eligible legacy chats; `/admin/shadow/[chatId]` shows the computed
+ * report, prose pairs side by side, and per-row review controls.
  */
 export function EngineComparisonIndexPage() {
   const isAdmin = useIsAdmin();
@@ -45,48 +48,144 @@ function IndexBody() {
       <div className="mb-6">
         <h1 className="prose-display text-2xl">Engine Comparison</h1>
         <p className="mt-1 text-sm text-paper-400">
-          Legacy chat and the successor engine run against the same player turns. Review recorded rows to decide
-          whether a difference needs work or is acceptable.
+          Keep a legacy conversation playable while a neutral successor mirror evaluates the same player turns.
+          Start a comparison below, then review the recorded differences here.
         </p>
       </div>
-      {list.loading ? (
-        <div className="flex flex-col gap-3" aria-hidden="true">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-card" />
-          ))}
-        </div>
-      ) : list.error ? (
-        <ErrorState error={list.error} onRetry={() => list.reload()} />
-      ) : (list.data?.chats.length ?? 0) === 0 ? (
-        <p className="text-sm text-paper-500">
-          No engine comparisons recorded yet. Put a mapped chat in comparison mode (<code>successor_shadow</code>)
-          and play a few plain-send exchanges.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {list.data?.chats.map((chat) => (
-            <li key={chat.chatId}>
-              <Link
-                href={`/admin/shadow/${chat.chatId}`}
-                className="flex items-center justify-between gap-3 rounded-card border border-ink-600 bg-ink-850 px-4 py-3 transition-colors hover:border-accent-500/50"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm text-paper-200">{chat.title || chat.chatId}</span>
-                  <span className="block text-xs text-paper-500">
-                    {chat.characterName}
-                    {chat.lastAt ? ` · last ${new Date(chat.lastAt).toLocaleString()}` : ""}
+      <ComparisonLauncher onChanged={() => list.reload({ silent: true })} />
+      <div className="mt-6">
+        <h2 className="mb-2 text-sm font-medium text-paper-200">Recorded comparisons</h2>
+        {list.loading ? (
+          <div className="flex flex-col gap-3" aria-hidden="true">
+            {Array.from({ length: 3 }, (_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-card" />
+            ))}
+          </div>
+        ) : list.error ? (
+          <ErrorState error={list.error} onRetry={() => list.reload()} />
+        ) : (list.data?.chats.length ?? 0) === 0 ? (
+          <p className="text-sm text-paper-500">
+            No comparison rows yet. Start Engine Comparison on a one-on-one legacy conversation and play a plain-send exchange.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {list.data?.chats.map((chat) => (
+              <li key={chat.chatId}>
+                <Link
+                  href={`/admin/shadow/${chat.chatId}`}
+                  className="flex items-center justify-between gap-3 rounded-card border border-ink-600 bg-ink-850 px-4 py-3 transition-colors hover:border-accent-500/50"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-paper-200">{chat.title || chat.chatId}</span>
+                    <span className="block text-xs text-paper-500">
+                      {chat.characterName}
+                      {chat.lastAt ? ` · last ${new Date(chat.lastAt).toLocaleString()}` : ""}
+                    </span>
                   </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <Tag tone={chat.open > 0 ? "danger" : "ok"}>{chat.open} unreviewed</Tag>
-                  <Tag>{chat.total} rows</Tag>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <Tag tone={chat.open > 0 ? "danger" : "ok"}>{chat.open} unreviewed</Tag>
+                    <Tag>{chat.total} rows</Tag>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </PageContainer>
+  );
+}
+
+function ComparisonLauncher({ onChanged }: { onChanged: () => void }) {
+  const chats = useAsyncData(() => chatsApi.list(), []);
+  const [chatId, setChatId] = useState("");
+  const [busy, setBusy] = useState<"start" | "stop" | null>(null);
+  const [message, setMessage] = useState("");
+  const status = useAsyncData(
+    () =>
+      chatId
+        ? engineComparisonApi.status(chatId)
+        : Promise.resolve<ApiResult<EngineComparisonStatus | null>>({ ok: true, data: null }),
+    [chatId],
+  );
+  const activeChats = (chats.data ?? []).filter((chat) => !chat.archivedAt);
+  const selected = activeChats.find((chat) => chat.id === chatId);
+
+  const mutate = async (action: "start" | "stop") => {
+    if (!chatId || busy) return;
+    setBusy(action);
+    setMessage("");
+    const result = action === "start" ? await engineComparisonApi.start(chatId) : await engineComparisonApi.stop(chatId);
+    setBusy(null);
+    if (!result.ok) {
+      setMessage(result.error.message);
+      status.reload({ silent: true });
+      return;
+    }
+    setMessage(action === "start" ? "Engine Comparison is active. Play the conversation normally to gather rows." : "Engine Comparison stopped. Recorded rows were kept.");
+    status.reload({ silent: true });
+    chats.reload({ silent: true });
+    onChanged();
+  };
+
+  return (
+    <section className="rounded-card border border-ink-600 bg-ink-850 p-4">
+      <h2 className="text-sm font-medium text-paper-100">Start or stop comparison</h2>
+      <p className="mt-1 text-xs text-paper-500">
+        The mirror is initialized from the selected legacy chat&rsquo;s current clock, presence, body meters and structured wardrobe. Group chats are not supported yet.
+      </p>
+      {chats.loading ? (
+        <Skeleton className="mt-3 h-9 w-full" />
+      ) : chats.error ? (
+        <div className="mt-3"><ErrorState error={chats.error} onRetry={() => chats.reload()} /></div>
+      ) : activeChats.length === 0 ? (
+        <p className="mt-3 text-sm text-paper-500">No active conversations are available.</p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <select
+            value={chatId}
+            onChange={(e) => {
+              setChatId(e.target.value);
+              setMessage("");
+            }}
+            className="h-9 min-w-0 flex-1 rounded-md border border-ink-600 bg-ink-900 px-2 text-sm text-paper-200"
+            aria-label="Conversation for Engine Comparison"
+          >
+            <option value="">Choose a conversation…</option>
+            {activeChats.map((chat) => (
+              <option key={chat.id} value={chat.id}>
+                {chat.title || chat.characterName || chat.id}{chat.characterName && chat.title ? ` — ${chat.characterName}` : ""}
+              </option>
+            ))}
+          </select>
+          {chatId && status.data?.active ? (
+            <Button size="sm" variant="quiet" busy={busy === "stop"} disabled={busy !== null} onClick={() => void mutate("stop")}>
+              Stop comparison
+            </Button>
+          ) : chatId && status.data?.canStart ? (
+            <Button size="sm" variant="primary" busy={busy === "start"} disabled={busy !== null} onClick={() => void mutate("start")}>
+              Start comparison
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {chatId && status.loading && status.data === null ? <p className="mt-2 text-xs text-paper-500">Checking conversation…</p> : null}
+      {chatId && status.error ? <p className="mt-2 text-xs text-danger-300">Couldn&rsquo;t read comparison state.</p> : null}
+      {chatId && status.data && !status.data.active && !status.data.canStart ? (
+        <p className="mt-2 text-xs text-paper-500">{status.data.reason}</p>
+      ) : null}
+      {chatId && status.data?.active ? (
+        <p className="mt-2 text-xs text-ok-400">
+          Active for {selected?.title || selected?.characterName || "this conversation"}. Legacy remains authoritative.
+        </p>
+      ) : null}
+      {message ? <p className="mt-2 text-xs text-paper-300">{message}</p> : null}
+      {chatId && (status.data?.rows ?? 0) > 0 ? (
+        <Link href={`/admin/shadow/${chatId}`} className="mt-2 inline-block text-xs text-accent-300 hover:text-accent-200">
+          Review {status.data?.rows} recorded row{status.data?.rows === 1 ? "" : "s"} →
+        </Link>
+      ) : null}
+    </section>
   );
 }
 
