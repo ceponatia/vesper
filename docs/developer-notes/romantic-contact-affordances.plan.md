@@ -7,10 +7,10 @@ happened — who moved, what was in the way, whether that character had allowed 
 — so that physical moments stop being whatever the narrator improvised that
 turn.
 
-**Proposed package/component:** `contact affordances — the shared contact core, the scene/body-relations owner, and the directional permission ledger`  
-**Primary owner:** `the Vesper web application, character-chat lane`  
-**Primary integration:** `the character-chat turn pipeline and the guidance it hands the narrator`  
-**Provider/dependency:** `no new provider — the two model-assisted legs reuse the chat model already answering the turn, and everything else is deterministic in-app logic`
+**Proposed workstream:** `contact affordances — coordinated contact, scene/body-relations, permission, effects, and presentation work whose truths remain separately owned`  
+**Primary integration lane:** `the Vesper web application's character-chat turn pipeline`  
+**Primary integration:** `contact resolution/lifecycle plus the binding guidance and owner reads the turn pipeline hands downstream`  
+**Provider/dependency:** `no new provider — the two model-assisted classifier legs use Vesper's existing agent-model route; narrator-model selection remains separate, and deterministic validators/owners retain authority`
 
 ## 1. Goal
 
@@ -97,7 +97,7 @@ These are unchanged, and they bind every future slice:
 
 ---
 
-## 3. What the new component owns
+## 3. What the workstream owns
 
 **The contact core owns the physical event itself**, because it is the only
 place that sees the whole attempt at once: which action kind was attempted and
@@ -143,7 +143,7 @@ Delivery state of what this work owns:
 
 ---
 
-## 4. What remains outside the component
+## 4. What remains outside the workstream
 
 **Clothing state owns garments** — identity, presentation, condition, coverage,
 and any material a garment carries. Contact reads the current cut and may
@@ -159,7 +159,13 @@ so contact still cannot commit them.
 **Visual state owns the visual read** — what each observer can see, what is
 worth noticing, what has already been mentioned, how often to repeat it, and
 what reaches the narrator or an image. Contact supplies committed truth and
-stops there. Detail: [visual state and attention](visual-state.plan.md).
+stops there. The current bridge already derives hand occupation from active
+committed contacts, projects committed contact-motion bands, computes
+per-subject exposure and visibility, and — when the separate per-chat
+visual-state narration switch is on — renders visual constraints plus at most
+two optional cues through the single chat visual-state narrator adapter. Those
+partial signals do not yet encode the full source-locus -> target-locus contact
+relation. Detail: [visual state and attention](visual-state.plan.md).
 
 **Narrator physical guidance owns binding prose handoff** — mandatory physical
 constraints, premise corrections, committed action outcomes, and the stop a
@@ -171,9 +177,7 @@ it does not wait for visual-state narration to be switched on. Detail:
 Owner ruling (2026-08-22): these are sibling packages beside visual state rather
 than a generalization of it — the senses share the same broad laws but differ
 enough to own their own contracts. Until they exist, nonvisual phenomena may be
-computed in fixtures but must not reach live narration. During test-stage work
-they may ride bundled beside visual presentation, explicitly marked for
-extraction.
+computed in fixtures but must not reach live narration.
 
 **A future physiology owner must own swelling, temperature, and comparable
 current body facts** before contact may consume them.
@@ -216,20 +220,17 @@ the reply the player sees
 The systems that stay authoritative are the ones named in §4, plus the chat's
 own turn pipeline, its regenerate/retake behavior, and its persistence.
 
-What this work does **not** require:
+For the **current Track B romantic surface and already-built contact path**, no
+new player-facing route, player-facing screen, provider, job type, or package is
+required; players continue to write ordinary prose. The current path uses two
+durable records that already exist, one for the contact lifecycle and one for
+the permission ledger, both scoped to a chat and both pruned when a turn is
+regenerated.
 
-- no new player-facing route;
-- no new player-facing screen — players write prose;
-- no new package;
-- no new provider;
-- no new job type;
-- no new normalized capability outside the ones already built.
-
-What it does use: two durable records that already exist, one for the contact
-lifecycle and one for the permission ledger, both scoped to a chat and both
-pruned when a turn is regenerated. Track D's body-surface work extends an
-existing owner rather than introducing a new one, so it needs no new subsystem
-either.
+Future tracks are intentionally different: Track D extends the existing
+body-surface owner for residue/marks and adds new sibling sensory presentation
+package(s). Those future packages are part of the planned architecture and must
+not be erased merely to keep the current Track B path package-neutral.
 
 ---
 
@@ -272,36 +273,50 @@ Exact shapes belong to the specs listed in §25, not to this plan.
 
 ## 7. Model / provider / implementation strategy
 
-Only two legs of this work involve a model at all, and neither of them commits
-anything.
+Two contact-adjacent classifier legs use model inference:
 
 - **The character reply-scene decision leg** reads a reply the character already
   gave and proposes movement or contact that the prose already states.
 - **The permission decision leg** reads the same committed reply and proposes
   permission events the character authored in it.
 
-Both use the chat model already answering the turn. There is no second provider,
-no separate hosted service, and nothing new to pin or version. A cheap trigger
-decides whether the call is worth making; that trigger is a cost gate and never
-a source of authority. At most one call runs per reply, never one per character.
+Both call Vesper's existing **agent-model route** (`agentModelId()` /
+`generateChecked`), not the narrator model selected to write the chat reply. No
+new provider or separately hosted service is introduced by this work. A cheap
+trigger decides whether each call is worth making; the trigger is a cost gate
+and never authority. Each leg performs at most one classifier call per eligible
+reply, so a reply may incur one scene-decision call and one permission-decision
+call if both independent triggers fire; neither leg ever makes one call per
+character.
 
-Everything else is deliberately model-free. In particular, the player-side
-producers that turn a player's sentence into an attempted action use no model,
-because they author world state from the player's own words and must be
-reproducible and arguable.
+The **model output itself never commits state**. It proposes candidates only.
+Deterministic grounding, attribution, schema/admission checks, the shared
+resolver, and the appropriate owner transaction decide whether an accepted
+candidate becomes authority. In shadow mode the scene leg records its admitted
+plan dry; in authority mode deterministic execution may commit the admitted
+movement/contact through the owning transaction. The permission leg may append
+validated permission events through its guarded permission/contact invalidation
+transaction. In both cases, the model is evidence extraction, never the writer
+of authoritative state.
 
-Recommendation: keep it this way. Do not add a provider, and do not let free
-prose mint authority through an extractor.
+The player-side producers that turn a player's sentence into an attempted action
+remain model-free because they author world state from the player's own words
+and must be reproducible and arguable. The narrator remains a separate consumer
+of the committed/guidance result.
+
+Recommendation: keep these boundaries. Do not add a provider for contact, and do
+not let unvalidated free-prose extraction mint authority.
 
 ---
 
 ## 8. Starting configuration
 
-N/A — this work has no numeric settings that get tuned by experiment. The only
-numbers in it are the acceptance thresholds for character movement authority,
-and those are deliberately pre-registered: fixed before the evidence is read and
-never adjusted afterwards. They belong to evaluation (§20), not to a tuning
-table.
+N/A for model/sampler tuning — this plan introduces no owner-tuned inference
+parameters that should be selected by experiment. The work does contain fixed
+physical vocabularies/tables and pre-registered operational acceptance
+thresholds; those are contract/policy values, not a tuning sweep. The movement
+authority thresholds are fixed before the corpus is read and belong to
+evaluation (§20).
 
 ---
 
@@ -342,10 +357,11 @@ future sensory owner keeps notice-and-mention state, that owner restores it too.
 
 ## 10. Storage and association
 
-N/A — nothing here is trained or generated, so there is no derived resource to
-associate with a character or to check for staleness. The durable records this
-work keeps are described in §6, and how they roll back when a turn is
-regenerated is in §9 and §13.
+There is no trained or generated **asset** in this work that needs character
+association, resource versioning, or staleness checks. The work does create and
+consume runtime classifier outputs and durable authority records; those are
+state/evidence, not generated resources. The durable contact/permission records
+are described in §6, and their regenerate/retake behavior is in §9 and §13.
 
 ---
 
@@ -429,18 +445,24 @@ one; silence, affection, arousal, a relationship label, and anything the player
 wrote about the character cannot.
 
 Owner ruling (2026-08-22): scopes stay exact, directional, and non-inheriting.
-No scope ever implies another, an action may require several exact scopes at
-once with all of them satisfied, and there is no broad "sexual activity" grant —
-each future scope arrives with the action family that needs it, never ahead of
-it. Undressing oneself is the actor's own authority rather than somebody else's
-contact permission.
+No scope ever implies another, and an action may require several exact scopes at
+once with all of them satisfied. The initial planned scope vocabulary beyond
+`romantic_touch` is `kiss`, `intimate_touch`, `clothing_manipulation`, and
+`nudity_exposure`, added only when the matching action family is actually
+implemented. There is no broad `sexual_activity` grant; later sexual action
+families receive their own exact scopes when they exist rather than inheriting
+from one umbrella permission. Undressing oneself is the actor's own authority
+rather than somebody else's contact permission.
 
-Owner ruling (2026-08-22): no relationship change automatically revokes
-permission, which remains something the target authored. A future relationship
-system may one day map an explicit event such as a breakup onto scope-specific
-revocation, but improvement never auto-grants, recovery never restores a revoked
-grant, and a fresh grant from the character is always required. Detail for both
-rulings: [directional permission owner](romantic-contact-affordances.spec.permission.md).
+Owner ruling (2026-08-22): no current familiarity or regard-band transition
+automatically revokes permission, which remains something the target authored.
+A future relationship owner may map a stronger explicit semantic event such as a
+breakup or no-contact transition onto scope-specific revocation, but improvement
+never auto-grants, recovery never restores a revoked grant, and a fresh grant
+from the character is always required. The
+[directional permission owner](romantic-contact-affordances.spec.permission.md)
+is the companion implementation contract and must be reconciled to these
+2026-08-22 rulings before future scope/revocation work begins.
 
 ### The narrow romantic action lane
 
@@ -460,9 +482,11 @@ Detail: [directional permission owner](romantic-contact-affordances.spec.permiss
 ### Character-authored scene decisions
 
 One structured leg reads a reply the character already gave and proposes the
-movements and touches that reply states. It cannot commit anything; every
-proposal passes deterministic checks and then the same resolver a player's
-action uses. Authority is staged — movement first, then starting a touch, then
+movements and touches that reply states. The classifier output cannot commit
+anything. Every proposal passes deterministic admission and then the same scene/
+contact owners used elsewhere; shadow mode records admitted plans dry, while
+authority mode may execute the admitted plan through the guarded owning
+transaction. Authority is staged — movement first, then starting a touch, then
 updating one — and each widening re-runs its own acceptance gate.
 
 ### Contact effects
@@ -475,6 +499,9 @@ one expiry rule — and conserved transfer is the second, because taking materia
 from one surface and putting it on another atomically is a larger piece of
 architecture than a first proof should carry. Detail:
 [observations, effects, and presentation routing](romantic-contact-affordances.spec.effects.md).
+That companion spec is the implementation contract and must be reconciled to
+this 2026-08-22 mark-first/body-surface ruling before Track D implementation
+begins.
 
 ---
 
@@ -496,9 +523,12 @@ a refusal is never disguised as an event.
   metadata, or a diagnostic.
 - **An attempt that is rejected or unresolved** never becomes a live touch and
   never feeds a physical consequence as though it had happened.
-- **Stored state that cannot be read** is dropped rather than repaired. A
-  corrupt placement makes a participant's facts absent, not plausible; a version
-  the build cannot read empties that state rather than trusting it.
+- **Stored state that cannot be read** follows the owning subsystem's explicit
+  fail-closed corruption law; contact does not invent a common repair. Scene
+  state may degrade unreadable placement facts toward absence/unresolved, while
+  body-surface state deliberately quarantines a corrupt location so `unknown`
+  cannot become the convenient default `dry`. In every case, unreadable data
+  must never be laundered into a materially useful claim.
 - **A proposed consequence whose owner does not exist yet** is simply not
   available. Contact keeps no hidden timer and shows nothing.
 - **Retry and regenerate** are idempotent, and a failed prune refuses the
@@ -508,8 +538,10 @@ a refusal is never disguised as an event.
   existed.
 
 Nothing here degrades quietly into materially different behavior: the diagnostic
-channel records genuine failures, while an answer of "she has not allowed that"
-is an answer and is not logged as a fault.
+channel records genuine failures, while an **explicit character-authored
+denial** is an authoritative answer rather than a system fault. An unanswered
+permission owner is different: its neutral guidance must neither depict the
+touch as landing nor invent a refusal.
 
 ---
 
@@ -677,12 +709,13 @@ describes the data instead of gating it. The pre-registered gate is written down
 in the [character actor-control spec](romantic-contact-affordances.spec.actor-control.md)
 and applies to movement alone; each later widening re-runs it.
 
-1. Export and review the shadow corpus collected since 2026-08-10. Status:
-   queued — the instrument exists, a reviewed corpus does not.
-2. Record trigger accuracy, false positives and negatives, drop reasons, the
-   added wait at the median and tail, the timeout rate, and cost per hundred
-   replies. Status: blocked on a human labeling pass, which the reporting tool
-   deliberately does not perform.
+1. Export and review the shadow corpus collected since 2026-08-10 with
+   `pnpm report:npc-scene-decisions`. Status: queued — the instrument exists, a
+   reviewed corpus does not.
+2. Record trigger misses relevant to real actions, false positives and negatives,
+   dominant drop reasons, p50/p95/p99 **settle wait**, timeout rate, token/spend
+   coverage, and cost per hundred replies. Status: accuracy is blocked on a
+   human labeling pass, which the reporting tool deliberately does not perform.
 3. Make and record the owner's cost and quality ruling. Status: queued.
 4. If accepted, widen authority one step at a time — movement, then starting a
    touch, then updating one — with an acceptance check after each. Status:
@@ -704,7 +737,16 @@ item 11 ruled contingent on it 2026-08-22.
    changing the affectionate path. Status: complete — 2026-08-18, with item 5.
 7. Run deterministic and adversarial tests against the real permission seam.
    Status: complete — 2026-08-18; every case is covered by the pure suite except
-   regenerate-and-restore, which the integration layer covers instead.
+   regenerate-and-restore, which the integration layer covers instead. The
+   preserved matrix is:
+   - grant present -> physically valid action commits;
+   - no grant -> no contact commit;
+   - reverse-direction grant -> no commit;
+   - wrong scope -> no commit;
+   - withdrawal -> no commit and dependent existing contact ends;
+   - regenerate/retake -> permission/contact state restores;
+   - ambiguous romantic evidence -> no action;
+   - permission-neutral affectionate touch remains unchanged.
 8. Enable romantic permission for a controlled window and run the first live
    player-to-character scenario. Status: complete — passed 2026-08-18. No grant
    refused the touch, permission did not override distance, an authorized
@@ -719,7 +761,9 @@ item 11 ruled contingent on it 2026-08-22.
 10. Rerun the live proof against the fixed lane, capturing evidence rather than
     a summary. Status: next — owner-run; the instrument is built and its grading
     is tested, and the run needs a deploy plus the proof switches for the window
-    only. What it must prove is in §20.
+    only. For every case preserve the sanitized input, the actual reply, the
+    guidance handed to the narrator, and the pair's contact state before setup,
+    after setup, and after the exchange. What it must prove is in §20.
 11. Decide the production rollout of that specific romantic action surface.
     Status: owner-ruled 2026-08-22, contingent on item 10 — the surface stays
     test-only until the rerun passes, and ships if it does. The ruling waits on
@@ -734,9 +778,12 @@ asks a character to reposition voluntarily.
 
 Status: queued — nothing here is required for the Track B rerun.
 
-12. Add a first-class visual contact relation sourced from committed contact, so
-    that "her hand is on your shoulder" can be rendered from structured truth
-    rather than from the two partial signals available today.
+12. Add a first-class visual contact relation sourced from `CommittedContactRead`,
+    so that "her hand is on your shoulder" can be rendered from structured truth
+    rather than from the two partial signals available today. The feature must
+    carry the contact id, source participant and source locus, target participant
+    and target locus, plus only visually valid material/placement facts. Visual
+    state still owns observer-specific visibility and selection.
 13. Route visual contact phenomena through visual state's own observation path
     rather than any contact-specific ranking.
 14. Evaluate positive visual contact narration under the existing per-chat
@@ -887,39 +934,36 @@ Every other question this plan once carried — the romantic surface's rollout,
 the sensory package boundary, whether the shared observation contract should
 carry a channel, who owns residue and marks, which effect to prove first, the
 shape of future permission scopes, and whether a relationship change should
-revoke permission — was resolved by owner rulings on 2026-08-22. Each ruling is
-recorded where its subject lives: rollout in Track B item 11 above, the sensory
-and body-surface rulings in the
-[effects spec](romantic-contact-affordances.spec.effects.md), and the scope and
-revocation rulings in the
-[permission spec](romantic-contact-affordances.spec.permission.md).
+revoke permission — was resolved by owner rulings on 2026-08-22 and is recorded
+in this plan. The companion
+[effects spec](romantic-contact-affordances.spec.effects.md) and
+[permission spec](romantic-contact-affordances.spec.permission.md) still need to
+be reconciled to those rulings before their respective future implementation
+slices begin; this plan must not claim that reconciliation has already happened.
 
 ---
 
-## 24. Definition of done
+## 24. Definition of done for the next implementation phase
 
-The plan is complete when all of the following are true of the running system:
+This is the promotion gate for the **next implementation phase**, not a claim
+that every Track D/E item in this long-running plan is complete. Before new
+contact-domain mechanics are promoted, documentation and code must agree that:
 
-1. A player writes a romantic touch in ordinary prose, the character's own
-   recorded decision governs whether it becomes true, and the rerun in §20 has
-   passed on both gradings for every required case.
-2. The rollout ruling for that specific surface has been carried out, and no
-   other surface has been enabled by implication.
-3. Character movement authority is either accepted through its pre-registered
-   gate and widened one step at a time, or explicitly closed out.
-4. Every action kind a lane can author has a real producer, and every authority
-   a resolution needs has an owner that fails closed when it cannot answer.
-5. Contact truth commits before anything observes or narrates it.
-6. Visual contact facts reach the player through visual state's own visibility,
-   attention, and memory; nonvisual facts do not enter that path at all, and no
-   second contact-owned cue memory or presentation snapshot exists anywhere.
-7. Regenerating a turn restores contact, permission, effects, and presentation
-   owners to the same single cut.
-8. Permission scope and direction stay orthogonal to physical feasibility, and
-   neither can substitute for the other.
-9. No effect is visible before the owner that holds it commits it.
-10. The tests prove the negative cases as strongly as the positive ones.
-11. Turning every switch off restores the previous behavior with no code change.
+1. A real action producer exists for every action kind being tested.
+2. Every required authority read has an owner; unknown fails closed.
+3. Contact truth commits before any observation or presentation consumes it.
+4. Visual contact facts enter visual state and use its visibility, attention,
+   memory, and selection path.
+5. Nonvisual facts do not enter visual state.
+6. No second contact-owned cue memory or presentation capture exists.
+7. Regenerating/retaking restores contact, permission, effects, and presentation
+   owners to the same cut.
+8. Permission scope/direction and actor control remain orthogonal to physical
+   feasibility.
+9. Effects cannot appear before their owner transaction commits.
+10. Tests prove negative cases as strongly as the happy path.
+11. For any rollout slice whose flag-off identity is part of its contract,
+    turning that switch off restores the previously pinned behavior.
 
 ---
 
@@ -930,6 +974,11 @@ slice lands, its spec records what is built and any ruling the build settled;
 when a spec completes, this plan records that in one line; when behavior ships
 to players, the matching reference doc under `docs/` is updated in the same
 change.
+
+Before Track D or future permission-scope/revocation implementation begins,
+reconcile the effects and permission companion specs to the 2026-08-22 owner
+rulings recorded here; until then this plan is the ruling record and the older
+spec language is not evidence that those questions remain open.
 
 Companion documents for this topic:
 
