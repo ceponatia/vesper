@@ -136,9 +136,10 @@ other.
 
 ## Success criteria
 
-- **`pnpm verify` is green on the branch.** Validation is the local gate (root
-  `CLAUDE.md`): run it yourself, or let `.husky/pre-push` run it before the
-  branch reaches GitHub.
+- **The ready PR's applicable CodeBuild jobs and aggregate `verify` check are green.**
+  CI in `.github/workflows/ci.yml` is the repository gate; there is no local
+  pre-push gate or `pnpm verify` alias. Focused local commands may be used while
+  developing a slice, but they do not replace the PR result.
 - **Every model call reachable from a request goes through the harness.** Verified
   by a census check, not by eyeball — the audit found this class of gap by
   grepping, and the same grep should come back empty afterwards.
