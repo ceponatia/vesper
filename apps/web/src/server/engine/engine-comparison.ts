@@ -49,6 +49,14 @@ async function comparisonRowCount(chatId: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+async function comparisonBranchRowCount(chatId: string, branchId: string): Promise<number> {
+  const [row] = await db()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(simShadowDivergences)
+    .where(and(eq(simShadowDivergences.chatId, chatId), eq(simShadowDivergences.branchId, branchId)));
+  return row?.count ?? 0;
+}
+
 /**
  * Browser-facing status. `open`/`legacy_chat` alone is not enough: comparison
  * requires a complete mirror mapping, and today the recorder is pair-based so
@@ -228,10 +236,14 @@ export async function startEngineComparison(chatId: string, ownerId: string): Pr
 }
 
 /**
- * Return the chat to plain legacy authority. A world minted by this service is
- * deleted after the mapping is removed; historical comparison rows remain on
- * the chat. Older/manual shadow mappings are unlinked but never destructively
- * deleted because this service cannot prove it owns those worlds.
+ * Return the chat to plain legacy authority and clear its live mirror mapping.
+ *
+ * Comparison rows retain a required FK to the branch they observed. Therefore a
+ * managed mirror is deleted only when that branch produced ZERO rows. Once a
+ * session has evidence, its detached world/branch is retained as inert provenance
+ * so stopping comparison cannot erase recorded rows or rulings through the FK's
+ * ON DELETE CASCADE. Older/manual shadow mappings are likewise never destroyed by
+ * this service unless ownership is both known and row-free.
  */
 export async function stopEngineComparison(chatId: string, ownerId: string): Promise<EngineComparisonMutationResult> {
   return withKeyedLock(chatExchangeLockKey(chatId), async () => {
@@ -241,7 +253,10 @@ export async function stopEngineComparison(chatId: string, ownerId: string): Pro
       return failure("comparison_not_active", "Engine Comparison is not active on this conversation.", status);
     }
     const branchId = authority.simBranchId;
-    const mirror = branchId ? await mirrorWorldForBranch(branchId) : null;
+    const [mirror, branchRows] = await Promise.all([
+      branchId ? mirrorWorldForBranch(branchId) : Promise.resolve(null),
+      branchId ? comparisonBranchRowCount(chatId, branchId) : Promise.resolve(0),
+    ]);
 
     const flipped = await setChatEngineAuthority({
       chatId,
@@ -253,18 +268,25 @@ export async function stopEngineComparison(chatId: string, ownerId: string): Pro
     });
     if (!flipped) return failure("comparison_stop_failed", "Could not stop Engine Comparison.", status);
 
-    if (mirror?.managed) {
+    if (mirror?.managed && branchRows === 0) {
       try {
         await deleteSimWorldGraph(mirror.worldId);
       } catch (error) {
         // The chat is already safely unlinked. The ordinary orphan sweeper can
-        // reclaim a failed delete, so this is diagnostic rather than rollback.
-        log.warn("engine.comparison", "comparison mirror cleanup failed after unlink", {
+        // reclaim this row-free failed delete, so this is diagnostic rather than rollback.
+        log.warn("engine.comparison", "row-free comparison mirror cleanup failed after unlink", {
           chatId,
           worldId: mirror.worldId,
           error: error instanceof Error ? error.message : String(error),
         });
       }
+    } else if (mirror?.managed && branchRows > 0) {
+      log.info("engine.comparison", "comparison mirror retained as evidence provenance", {
+        chatId,
+        branchId,
+        worldId: mirror.worldId,
+        rows: branchRows,
+      });
     }
     log.info("engine.comparison", "Engine Comparison stopped", { chatId, branchId });
     return { ok: true, status: await readEngineComparisonStatus(chatId) };
