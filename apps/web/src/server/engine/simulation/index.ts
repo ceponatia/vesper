@@ -182,6 +182,14 @@ export {
   type StarterWorldResult,
 } from "./starter-world";
 export {
+  COMPARISON_RULESET_VERSION,
+  COMPARISON_WORLD_TYPE_ID,
+  provisionComparisonWorld,
+  type ComparisonWorldGarment,
+  type ComparisonWorldResult,
+  type ComparisonWorldSeedInput,
+} from "./comparison-world";
+export {
   DEFAULT_ORPHAN_GRACE_MS,
   deleteSimWorldGraph,
   sweepOrphanSimWorlds,
