@@ -526,6 +526,16 @@ export async function resolvePlayerWardrobe(
   const overlay = state.overlay.trim();
   const modelled = garmentActorModelled(garments, GARMENT_PLAYER_ACTOR);
   const ids = modelled ? [] : playerWornIds(state, persona);
+  // The persisted worn list was only PARTIALLY readable (chat-player-state.ts):
+  // the survivors are real garments — they keep the phrase, and the fold
+  // baseline downstream — but they are not the COMPLETE wardrobe, and the
+  // dropped element may have been the pants. Exposure computed from them would
+  // establish bare regions out of corrupt data, so the resolve degrades exactly
+  // like the coverage-unreliable arm below: covered, `worn` withheld, marked.
+  // A modelled player is exempt — the garment store is the worn truth there,
+  // this column is a projection the next write re-derives, and the marker
+  // itself cannot persist (the schema strips and re-derives it on reparse).
+  const wornIncomplete = !modelled && state.wornItemIdsIncomplete === true;
   const load: ChatWardrobeLoad =
     modelled && garments
       ? await loadGarmentWardrobeItems(garments, GARMENT_PLAYER_ACTOR, ownerId, sink)
@@ -560,17 +570,20 @@ export async function resolvePlayerWardrobe(
       // an unauthored persona or a failed item load stays unknown, so a contact
       // material read through it falls silent rather than claiming bare skin.
       ...(strippedAfterSeeding ? { worn: [] as readonly WornItemInput[] } : {}),
-      // A THROWN load marks the resolve as the character twin's does: a
-      // degraded stand-in the mint consumers must not bake in.
-      ...(load.failed === true ? { unreliable: true } : {}),
+      // A THROWN load — or an incomplete worn list whose survivors resolved to
+      // nothing — marks the resolve as the character twin's does: a degraded
+      // stand-in the mint consumers must not bake in.
+      ...(load.failed === true || wornIncomplete ? { unreliable: true } : {}),
     };
   }
   const worn = toWornInputs(items);
   // The character twin's coverage-unreliable degrade: a bad row's `[]` coverage
   // must not read its regions bare, so the readout falls to covered and the
   // resolve is marked; `worn` is withheld so the contact/affordance reads fail
-  // closed instead of finding bare skin under unreadable coverage.
-  const coverageUnreliable = (load.coverageUnreliableIds?.length ?? 0) > 0;
+  // closed instead of finding bare skin under unreadable coverage. An
+  // INCOMPLETE worn list is the same claim from the other side — here the rows
+  // parse fine but rows are MISSING — and takes the same arm.
+  const coverageUnreliable = (load.coverageUnreliableIds?.length ?? 0) > 0 || wornIncomplete;
   return {
     garments: [wardrobeOutfitText(items), overlay].filter(Boolean).join("; "),
     // Overlay nouns add coverage here too — the persona twin of the character's

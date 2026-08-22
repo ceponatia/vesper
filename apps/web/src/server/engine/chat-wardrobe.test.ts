@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyGarmentOperations,
+  chatPlayerStateSchema,
   DiagnosticCollector,
   emptyCharacterProfile,
   emptyChatPlayerState,
@@ -555,6 +556,29 @@ describe("a wardrobe that failed to load keeps the covered default", () => {
     expect(resolved.exposure).toEqual(FULLY_COVERED);
     expect(resolved.exposed).toBe(false);
     expect(resolved.unreliable).toBe(true);
+  });
+
+  it("a partially-readable persisted worn list cannot establish exposure — survivors read covered and marked", async () => {
+    // The parse kept the shirt and `seeded` but recorded the drop
+    // (`wornItemIdsIncomplete`, chat-player-state.ts): the dropped element may
+    // have been the pants, so the surviving shirt must not become the COMPLETE
+    // wardrobe — every region it misses would read bare off corrupt data. The
+    // survivors keep the phrase; exposure degrades to covered, `worn` is
+    // withheld so contact/affordance reads fail closed, and the resolve is
+    // marked so the mint consumers skip it. The shirt's own row parses FINE —
+    // the degrade comes from the incompleteness, not from its coverage.
+    itemRows([
+      { id: "def_shirt", name: "silk shirt", description: null, definition: { coverage: ["chest"] }, updatedAt: new Date(0) },
+    ]);
+    const resolved = await resolvePlayerWardrobe(
+      chatPlayerStateSchema.parse({ seeded: true, wornItemIds: ["def_shirt", 42] }),
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.unreliable).toBe(true);
+    expect(resolved.worn).toBeUndefined();
+    expect(resolved.garments).toContain("silk shirt");
   });
 
   it("deleted rows degrade the same way but stay RELIABLE — the look lane may mint from them", async () => {

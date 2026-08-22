@@ -61,10 +61,14 @@ export interface ChatGarmentActorWorn {
  * garment needs nothing loaded at all), so a steady-state exchange does no
  * extra item IO.
  *
- * Degrades like everything else on this path: an item that will not load still
+ * Degrades like everything else on this path: a genuinely DELETED item still
  * gets an instance (with an empty blueprint, so it contributes no coverage —
  * exactly what an unresolvable id does today) and the projection stays
- * byte-identical to the id list that came in.
+ * byte-identical to the id list that came in. A load that cannot be TRUSTED —
+ * thrown, or a coverage column that would not parse — withholds its ids and
+ * skips every actor who wanted one this pass: the worst outcome is a lost
+ * outfit change (the store keeps the prior consistent slice until the data
+ * heals), never a doffed-to-bare body.
  */
 export async function syncChatGarments(input: {
   store: ChatGarmentStore;
@@ -91,13 +95,16 @@ export async function syncChatGarments(input: {
       // reach the reconcile would permanently mint coverage-less "garment"
       // instances (`syncWornGarments`'s unresolved arm — which exists for
       // genuinely MISSING rows, and stays that way) that never heal and read
-      // the actor bare every later turn. They are withheld from this pass
-      // instead: no instance exists for any of them, so omitting them doffs
-      // nothing. An actor not yet modelled keeps them in the worn column (the
-      // projection falls back to the caller's list) and materialization
-      // retries next reconcile; for an already-modelled actor a withheld id
-      // falls out of the projection like an equip that never landed — a lost
-      // addition, never a bare body.
+      // the actor bare every later turn. They are withheld from this pass,
+      // and every actor whose desired set contains one SKIPS the reconcile
+      // entirely (the loop below): reconciling to the readable remainder
+      // would doff whatever the withheld garment replaced and leave a
+      // modelled-and-empty wardrobe, which the projection persists and reads
+      // as STRIPPED. An unmodelled actor keeps the ids in the worn column
+      // (the projection falls back to the caller's list) and materialization
+      // retries next reconcile; a modelled actor keeps their prior outfit —
+      // the projection re-persists the old worn set — so the failure costs a
+      // lost outfit CHANGE, never a bare body.
       withheldIds = new Set(missing);
       input.sink?.push(
         diag(
@@ -111,8 +118,9 @@ export async function syncChatGarments(input: {
       // The durable twin: the row LOADED but its coverage column would not
       // parse, so its blanked `[]` coverage is unknown state. Seeding it would
       // snapshot that emptiness into a mint-time blueprint that reads the
-      // garment's regions bare forever. Withheld instead, the id stays on the
-      // legacy definition path, whose coverage-unreliable arm already degrades
+      // garment's regions bare forever. Withheld instead — its wearer skips
+      // the pass exactly as for a thrown load — the id stays on the legacy
+      // definition path, whose coverage-unreliable arm already degrades
       // exposure to covered while the phrase keeps the garment's name — and a
       // repaired column materializes normally on a later reconcile.
       withheldIds = new Set(load.coverageUnreliableIds);
@@ -138,12 +146,22 @@ export async function syncChatGarments(input: {
       });
     }
   }
+  const withheld = withheldIds;
   let store = input.store;
   for (const actor of input.actors) {
+    // One rule for both withhold arms: an actor whose desired set contains a
+    // withheld id keeps their store slice untouched this pass. Reconciling to
+    // the readable remainder would treat "could not read" as "took it off" —
+    // for a modelled actor that doffs the garment the withheld id replaced and
+    // persists an empty worn set, i.e. a bare body minted from a DB blip. For
+    // an unmodelled actor the skip equals the old per-id filter (no instances
+    // to touch), so one rule covers both. Actors with fully readable sets
+    // still reconcile: a withheld id never poisons the whole pass.
+    if (withheld !== undefined && actor.wornItemIds.some((id) => withheld.has(id))) continue;
     store = syncWornGarments({
       store,
       actorId: actor.actorId,
-      wornDefinitionIds: actor.wornItemIds.filter((id) => id.trim().length > 0 && !(withheldIds?.has(id) ?? false)),
+      wornDefinitionIds: actor.wornItemIds.filter((id) => id.trim().length > 0),
       seeds,
       mintId: newId,
       atMinutes: input.atMinutes,

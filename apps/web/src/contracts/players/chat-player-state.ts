@@ -68,7 +68,13 @@ const chatPlayerStateShape = z.object({
  * all dropped, degrades `seeded` to `false` — the persona's default outfit,
  * dressed — because malformed data must never fabricate a proven-naked body.
  * A genuinely stored `[]` keeps its proof, and a partial drop with survivors
- * keeps `seeded` (the survivors are the wardrobe truth we can still read).
+ * keeps `seeded` (the survivors are the wardrobe we can still read) — but
+ * NOT the claim of completeness: the dropped element may have been the pants,
+ * so `wornItemIdsIncomplete` rides the parse and `resolvePlayerWardrobe`
+ * degrades exposure to covered instead of reading every region the survivors
+ * miss as bare. The marker is parse-DERIVED, never persisted truth: healthy
+ * writers never produce it, the shape above strips it as an unknown key on
+ * reparse, and a re-read of the (all-string) survivor list re-derives nothing.
  */
 export const chatPlayerStateSchema = chatPlayerStateShape.transform((state) => {
   const worn = state.wornItemIds;
@@ -78,6 +84,9 @@ export const chatPlayerStateSchema = chatPlayerStateShape.transform((state) => {
     seeded: state.seeded && worn !== undefined && (worn.ids.length > 0 || worn.complete),
     outfitPresetId: state.outfitPresetId,
     overlay: state.overlay,
+    ...(worn !== undefined && !worn.complete && worn.ids.length > 0
+      ? { wornItemIdsIncomplete: true as const }
+      : {}),
   };
 });
 

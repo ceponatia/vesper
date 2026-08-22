@@ -165,9 +165,14 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   next outfit/appearance change retries. Rows genuinely deleted stay unmarked: that degraded
   resolve is permanent truth, and marking it would park the look forever. On the write side,
   garment materialization (`syncChatGarments`) withholds unloadable or coverage-unreadable ids
-  from the reconcile — warn diagnostics `chat_garments.definition_load_failed` /
-  `chat_garments.coverage_unreadable` — instead of minting durable covers-nothing instances;
-  the ids stay in the worn column and materialize on a later healthy reconcile.
+  and SKIPS the reconcile for any actor whose desired set contains one — warn diagnostics
+  `chat_garments.definition_load_failed` / `chat_garments.coverage_unreadable` — instead of
+  minting durable covers-nothing instances or doffing whatever the unreadable garment replaced.
+  An unmodelled actor keeps the ids in the worn column and materializes on a later healthy
+  reconcile; a modelled actor keeps their prior outfit (the projection re-persists the old worn
+  set), so a failed load costs a lost outfit change, never a bare body. A partially readable
+  player worn list (some elements corrupt, survivors kept) likewise cannot establish exposure:
+  the parse marks it incomplete and the resolve takes the coverage-unreliable arm.
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn
