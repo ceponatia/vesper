@@ -4,6 +4,12 @@ Engine Comparison is Vesper's legacy-versus-successor migration harness. It lets
 
 The feature was originally called **Shadow Parity**. That name is retired in user-facing documentation and UI because it obscured the purpose of the system and implied that the two engines are expected to be identical. Internal identifiers such as `successor_shadow`, `/admin/shadow`, `sim_shadow_divergences`, and `shadow-parity.ts` remain for compatibility unless a separate refactor changes them.
 
+## Tracking and authority
+
+Engine Comparison originated in **R4 — shadow mode under chat** in `docs/developer-notes/finished/engine.rollout.plan.md`. R4 exited on 2026-07-22 after the recorder, fixed corpus, analyzer, and review surface were proven, but the setup still depended on manually supplying a simulation branch and actor mappings. The 2026-08-22 comparison-session provisioning work is a **post-exit productization of that same R4 system**: it supplies the missing in-app front door without changing the comparison semantics R4 established.
+
+The live authority and lane-separation contract remains `docs/developer-notes/engine.spec.operations.md` §37.1 and §37.5. This directory is the current operator documentation. The finished R4 plan remains historical evidence of the July exit rather than being rewritten to pretend this UI existed then.
+
 ## What the system is for
 
 Engine Comparison answers a migration question:
