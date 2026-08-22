@@ -145,53 +145,35 @@ force test edits, while broken production logic and crossed policy tripwires
 
 ## The verification gate
 
-`scripts/verify.sh` is the repository's only verification gate — there is no
-hosted CI, so nothing else checks the code before it reaches GitHub.
+The gate is CI: GitHub Actions on AWS CodeBuild managed runners
+(`.github/workflows/ci.yml`). The aggregate `verify` status check is required on
+`main` and `prod`, so a PR merges only when it is green. Draft PRs run no jobs;
+mark a PR ready to run the applicable gates, and `gh workflow run CI --ref main`
+is the deliberate full pre-deploy run (engine and build included).
 
-It runs each gate **serially**, one at a time, inside its own memory-capped
-`systemd-run --user --scope` cgroup and niced, because this is a 16 GB machine
-and a parallel gate chain tips it into OOM territory. It refuses to start below
-~4500 MiB available RAM and warns below ~6500 MiB. It does not stop at the first
-failure: it runs the whole requested set, prints per-gate durations, and exits
-non-zero naming every gate that failed.
+| Job                | Runs                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| lint               | type-aware ESLint at `--max-warnings 0`                       |
+| static checks      | cycles, authz, package boundaries/resolution, typecheck, jscpd |
+| unit tests         | the pure Vitest suite (no database)                           |
+| engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark            |
+| production build   | the Next production build, heap-pinned to 4096 MB             |
 
-| Target      | Runs                                                             |
-| ----------- | ---------------------------------------------------------------- |
-| `all`       | lint → static → typecheck → `pnpm test` → jscpd — the push gate  |
-| `full`      | `all` + `engine` + `build` — the pre-deploy gate                 |
-| `lint`      | type-aware ESLint at `--max-warnings 0`                          |
-| `static`    | `lint:cycles`, `lint:authz`, package boundaries + resolution     |
-| `typecheck` | `tsc` at the root, then each workspace's own `typecheck`         |
-| `test`      | the pure Vitest suite (no database)                              |
-| `jscpd`     | the copy-paste threshold                                         |
-| `engine`    | `pnpm test:engine` (strict) + the Gate 1 benchmark — needs a DB  |
-| `build`     | the Next production build, heap-pinned to 4096 MB                |
+The **engine job** exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and
+`REQUIRE_INTEGRATION_DB=true`, so an unreachable or unmigrated database fails
+the suites rather than letting them self-skip — a gate must never report green
+for a suite it never ran. The **build job** pins the heap to 4096 MB to match
+the Dockerfile's build stage, so a build that would exhaust the Fly builder
+fails in CI instead of during a deploy ([deployment.md](deployment.md)).
 
-`pnpm verify` runs `all`; `pnpm verify:full` runs `full`; any subset runs as
-`bash scripts/verify.sh <target>...`.
-
-The **`engine` target** needs the dev Postgres (`pnpm db:up && pnpm db:migrate`)
-and hard-fails when the container is not running rather than letting the suites
-self-skip — a gate must never report green for a suite it never ran. It exports
-`VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and `REQUIRE_INTEGRATION_DB=true` for
-that run. The **`build` target** pins the heap to 4096 MB to match the
-Dockerfile's build stage, so a build that would exhaust the Fly builder fails
-here instead of during a deploy ([deployment.md](deployment.md)).
-
-There are no local git hooks: commits and pushes run nothing. The gate is CI —
-GitHub Actions on AWS CodeBuild runners (`.github/workflows/ci.yml`), whose
-aggregate `verify` status check is required on `main` and `prod`. Draft PRs run
-no jobs; mark a PR ready to run the applicable gates.
-
-For a local pre-flight, run the gates through `pnpm verify` rather than chaining
-`pnpm lint && pnpm typecheck && pnpm test` by hand — the serial, capped,
-RAM-checked execution is the point.
+There are no local git hooks and no local gate: commits and pushes run nothing,
+and the retired `scripts/verify.sh` wrapper is not part of the workflow. Run an
+individual command (`pnpm test`, `pnpm lint`, `pnpm typecheck`) to answer a
+focused question while developing; the run that counts is CI's.
 
 ## Commands
 
 ```
-pnpm verify             # the push gate (target `all`): lint, static checks, typecheck, pure tests, jscpd
-pnpm verify:full        # the pre-deploy gate: `all` + the engine suites + the production build
 pnpm test               # the app project + every package's own suite: everything that needs no DB
 pnpm test:watch         # the app project in watch mode (a package watches through
                         #   `pnpm --filter @vesper/image-core exec vitest`)

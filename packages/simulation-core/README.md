@@ -83,7 +83,7 @@ and `packages/image-core/README.md` §Boundary for the full statement. In short:
   over the workspace.
 
 `pnpm lint:package-boundaries` and `pnpm lint:package-resolution` enforce all of
-that in the `static` gate of `pnpm verify`.
+that in CI's static-checks job.
 
 ## What stayed in the application
 

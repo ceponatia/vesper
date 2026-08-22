@@ -16,7 +16,7 @@ the results against per-fixture expectations, and **always deletes the scope aga
 few `events` rows (`type: "retrieval"`, null session) — the same observability stream real
 retrieval writes.
 
-**Not wired into `pnpm verify`/CI, ever.** The harness measures; a poor score is a signal
+**Not wired into CI, ever.** The harness measures; a poor score is a signal
 to tune floors/fusion, never a build failure. With a real embedder it makes a handful of
 OpenRouter embedding calls (fractions of a cent).
 

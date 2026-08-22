@@ -8,10 +8,9 @@ description: Verify a vesper change end-to-end against the Fly deploy (the repo'
 Runtime verification happens against the **Fly deploy** — never a local
 `pnpm dev` + Postgres for UI work (CLAUDE.md).
 
-**Do NOT run `pnpm verify`, tests, lint, or typecheck as part of verification.**
-They are code gates, not observation. `pnpm verify` belongs to landing the
-change — `.husky/pre-push` runs it automatically before a code push — and it is
-a slow serial run that tells you nothing about whether the deployed app behaves.
+**Do NOT run tests, lint, or typecheck as part of verification.** They are code
+gates, not observation, and CI on the PR owns them (the root `CLAUDE.md`); local
+gate runs tell you nothing about whether the deployed app behaves.
 
 ## Recipe
 

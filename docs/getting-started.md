@@ -109,8 +109,6 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 
 ```bash
 pnpm dev / build / start
-pnpm verify                                 # the gate: lint, static checks, typecheck, pure tests, jscpd
-pnpm verify:full                            # + the DB-backed engine suites and the production build
 pnpm test / test:watch / test:int / typecheck / lint     # individual runs — see testing.md
 pnpm test:int:strict                        # strict form of test:int — an unreachable DB fails
                                             #   instead of skipping (testing.md §Strict integration mode)
@@ -122,11 +120,9 @@ pnpm db:studio                              # drizzle studio
 > **CI is the verification gate.** GitHub Actions runs on AWS CodeBuild managed
 > runners (`.github/workflows/ci.yml`); the aggregate `verify` status check is
 > required on `main` and `prod`, so a PR merges only when it is green. There are
-> no local git hooks — commits and pushes run nothing. `pnpm verify` remains
-> available for a local pre-flight (each gate serial under a memory cap; it
-> refuses to start without a few GB of free RAM), and `pnpm verify:full` adds
-> the engine suites (local Postgres up and migrated) and the production build.
-> Before a deploy, run the full CI dispatch: `gh workflow run CI --ref main`.
+> no local git hooks — commits and pushes run nothing — and no local gate:
+> push the branch and let CI validate. Before a deploy, run the full CI
+> dispatch: `gh workflow run CI --ref main`.
 > See [testing.md](testing.md) and [deployment.md](deployment.md).
 
 Vesper owns its local `vesper-postgres` container and `vesper_dev` database.

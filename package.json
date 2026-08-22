@@ -23,8 +23,6 @@
     "test:watch": "vitest --project=app",
     "test:int": "vitest run --no-file-parallelism --project=app-int",
     "test:int:strict": "REQUIRE_INTEGRATION_DB=true vitest run --no-file-parallelism --project=app-int",
-    "verify": "bash scripts/verify.sh",
-    "verify:full": "bash scripts/verify.sh full",
     "db:up": "docker compose up -d --wait",
     "db:create": "tsx scripts/db-create.ts",
     "db:generate": "drizzle-kit generate",

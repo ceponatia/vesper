@@ -37,7 +37,7 @@ audit: prompts, replies, raw judge answers) **and `summary.json`** (the same
 round with the narration removed). `data/` is gitignored, so after a real round
 copy `summary.json` to `results/round-<n>-<YYYY-MM-DD>.json` and commit it.
 
-**Not wired into `pnpm verify`, ever.** It spends money and measures a judgment
+**Not wired into CI, ever.** It spends money and measures a judgment
 call. The fixture guard (`harness.test.ts`) *is* pure and runs in `pnpm test`, so
 a projection change that breaks the matrix is visible without spending anything.
 

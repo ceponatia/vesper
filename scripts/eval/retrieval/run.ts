@@ -45,7 +45,7 @@ import { RETRIEVAL_FIXTURES, type RetrievalFixture } from "./fixtures";
  *   pnpm eval:retrieval --dry-run            # print fixtures + plan, no DB
  *
  * The harness MEASURES — a poor score is a signal to tune the floors/fusion,
- * never a build failure. It is deliberately not wired into `pnpm verify`/CI.
+ * never a build failure. It is deliberately not wired into CI.
  * Without OPENROUTER_API_KEY (or with AI_FAKE=1) the app embeds with
  * hash-based pseudo-vectors whose similarity is noise — the run still works
  * as a structural smoke test (pinned force-include, recency window, cleanup)
