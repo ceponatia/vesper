@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
-import type { AffordanceObservation } from "../affordances/core";
+import { affordanceSubjectId, type AffordanceObservation } from "../affordances/core";
+import { routeContactPhenomena } from "../affordances/contact";
 import { DiagnosticCollector } from "../diagnostics";
 import { VISUAL_STATE_LOCUS_INVALID } from "./diagnostics";
 import { VISUAL_STATE_FIXTURE_SUBJECT_ID } from "./fixtures";
@@ -86,5 +87,32 @@ describe("projectObservationFeatures", () => {
   it("produces byte-equal output from the same observations", () => {
     const rows = [observation(), observation({ id: "hair.ends_motion", repeatKey: "hair:motion:ends", intensityBand: "subtle" })];
     expect(JSON.stringify(project(rows))).toBe(JSON.stringify(project(rows)));
+  });
+
+  it("accepts a routed visual contact phenomenon — the one channel the router lets through", () => {
+    // The seam proof for the effects spec's routing law: the contact router's
+    // visual output is exactly the contract this adapter consumes, so a visual
+    // contact candidate reaches visual-state selection through the SAME path as
+    // every other observation — and a nonvisual one, which the router never
+    // adapts, has no path here at all (contact/phenomena.test.ts owns that half).
+    const sink = new DiagnosticCollector();
+    const subject = affordanceSubjectId(SUBJECT);
+    const routing = routeContactPhenomena([
+      {
+        phenomenonId: "contact.surface_indentation",
+        channel: "visual",
+        subjectIds: [subject],
+        locus: { kind: "body", subjectId: subject, locationId: "hair" },
+        intensityBand: "clear",
+        semanticTags: ["pressed"],
+        repeatFamily: "contact:indentation",
+        evidence: [],
+      },
+    ]);
+    const [feature] = project(routing.visual.map((entry) => entry.observation), sink);
+    expect(feature?.kindId).toBe("affordance.observation");
+    expect(feature?.value).toEqual({ phenomenon: "contact.surface_indentation", band: "clear" });
+    expect(feature?.priors.repeatFamily).toBe("contact:indentation");
+    expectCleanSink(sink);
   });
 });

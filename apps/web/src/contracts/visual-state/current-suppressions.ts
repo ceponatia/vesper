@@ -61,7 +61,12 @@ export const VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS: readonly VisualStateUnsuppo
   { family: "contamination", fact: "dirt_on_skin", nearest: "garment deposits (mud, dust)" },
   { family: "contamination", fact: "blood_on_skin", nearest: "garment deposit blood" },
   { family: "contamination", fact: "cosmetics_wear", nearest: "garment deposit cosmetic" },
-  { family: "contact", fact: "contact_marks", nearest: "contact lifecycle (not readable as state)" },
+  // `contact_marks` was tabled here and has been RETIRED per the rule above:
+  // the body-surface owner's marks module commits temporary contact marks and
+  // `projectBodySurfaceFeatures` reads them as `body_surface.contact_mark`
+  // features, so the fact now has an owner and an adapter. The `contact`
+  // family stays in the vocabulary for the current-state facts it still lacks
+  // (an occupied surface, for one).
   { family: "fit", fact: "garment_fit", nearest: "no wardrobe vocabulary member" },
 ];
 

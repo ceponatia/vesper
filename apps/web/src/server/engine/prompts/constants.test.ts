@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   chatContactActionsEnabled,
+  chatContactEffectsEnabled,
   chatNpcSceneDecisionsEnabled,
   chatPhysicalConstraintsEnabled,
   chatRomanticPermissionDevOverrideEnabled,
@@ -10,6 +11,7 @@ import {
 
 const FLAGS = [
   "CHAT_CONTACT_ACTIONS",
+  "CHAT_CONTACT_EFFECTS",
   "CHAT_PHYSICAL_CONSTRAINTS",
   "CHAT_ROMANTIC_PERMISSION",
   "CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE",
@@ -68,6 +70,17 @@ describe("the romantic-permission owner composes over the contact lane", () => {
     expect(chatRomanticPermissionEnabled()).toBe(false);
     expect(chatRomanticPermissionDevOverrideEnabled()).toBe(true);
     delete process.env.CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE;
+  });
+
+  it("contact effects compose over the contact lane the same way — never on their own", () => {
+    // The effects flag would otherwise quietly re-enable the lane that commits
+    // the contacts its proposals are derived from.
+    setFlags(["CHAT_CONTACT_EFFECTS"]);
+    expect(chatContactEffectsEnabled()).toBe(false);
+    setFlags(["CHAT_CONTACT_EFFECTS", "CHAT_CONTACT_ACTIONS"]);
+    expect(chatContactEffectsEnabled()).toBe(true);
+    setFlags(["CHAT_CONTACT_ACTIONS"]);
+    expect(chatContactEffectsEnabled()).toBe(false);
   });
 
   it("leaves the sibling composed flag alone — the constraints block is not its business", () => {

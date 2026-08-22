@@ -53,6 +53,19 @@ lane does.
     requires a committed proposal. The finalize fold applies the environment patch first
     and integrates against the result, so an exchange is attributed to the sky it ends
     under (a documented one-window approximation).
+  - **Temporary contact marks** live beside wetness in the same `BodySurfaceState`
+    (`marks`, keyed by idempotency identity, `bodySurfaceMarkKinds = ["pressure"]` —
+    closed; a stored unknown kind quarantines exactly like corrupt wetness). A mark is
+    committed only by the body-surface transaction (`applyBodyMarkProposals` in
+    `contracts/turns/chat-contact-effects.ts`) from a `BodyMarkProposal` that contact
+    derives from an acknowledged committed touch — firm/moderate pressure with direct
+    skin contact, primary character's body only. Marks **fade lazily on the story
+    clock** (flat rate; the strongest band is gone in ~30 story minutes), reading never
+    mutates, retrying the same causal event cannot double-commit, and the `marks` key is
+    absent until the first commit and dropped when the last mark prunes. The commit leg
+    is gated by `CHAT_CONTACT_EFFECTS` (off by default, and inert without
+    `CHAT_CONTACT_ACTIONS`); the read side projects committed marks into visual state as
+    `body_surface.contact_mark` current-state features.
 - **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness`, both on the
   shared continuity leg): a partial weather patch (absent key = unchanged) and a list of
   `{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer

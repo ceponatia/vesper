@@ -89,6 +89,7 @@ describe("visualStateKindRegistry", () => {
       "presentation.nail_finish",
       "presentation.cosmetic_mark",
       "body_surface.wetness",
+      "body_surface.contact_mark",
       "garment.condition",
       "garment.presentation",
       "garment.deposit",
@@ -101,6 +102,7 @@ describe("visualStateKindRegistry", () => {
       "body_language.facing",
       "body_language.hand_occupation",
       "body_language.motion",
+      "body_language.contact_relation",
     ]);
   });
 

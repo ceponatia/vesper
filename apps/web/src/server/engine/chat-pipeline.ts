@@ -7,7 +7,9 @@ import {
   commitRecognitionMention,
   commitVisualNarratorCueMentions,
   compileNarratorPhysicalGuidance,
+  CONTACT_EFFECT_OWNER_UNAVAILABLE,
   contactCommitEvents,
+  contactMarkProposals,
   currentScenePlace,
   derivePermissionPolicyRead,
   derivePlanSalience,
@@ -27,6 +29,7 @@ import {
   unseenMilestoneReason,
   withSceneContacts,
   type AffordanceSubjectId,
+  type BodyMarkProposal,
   type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCause,
@@ -214,6 +217,7 @@ import {
 import {
   chatAffordanceCuesEnabled,
   chatContactActionsEnabled,
+  chatContactEffectsEnabled,
   chatGarmentCuesEnabled,
   chatPhysicalConstraintsEnabled,
   chatPromptLayout,
@@ -1508,6 +1512,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // persists the EXACT objects the contact resolver consumed — never an
     // independent recompute.
     let contactCoverageCaptures: Readonly<Record<string, EffectiveCoverageRead>> = {};
+    // The effect proposals this exchange's DURABLE contact derived
+    // (`CHAT_CONTACT_EFFECTS`, default OFF — effects spec §15 stage 6). Held
+    // here and committed at SETTLE through the body-surface owner transaction
+    // inside `finalizeChatState`, never applied pre-prompt: the committed mark
+    // becomes observable on the NEXT cut's reads, exactly the §12 law that the
+    // result of a proposal cannot be observed in the cut that proposed it.
+    let contactEffectProposals: readonly BodyMarkProposal[] = [];
     if (chatContactActionsEnabled()) {
       try {
         const eventRef = chatContactEventRef(exchangeGuardMessageId);
@@ -1753,6 +1764,36 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 {
                   path: "chat_contact_events",
                   context: { eventRef, sequences: appended.mismatched.map((key) => key.sequence) },
+                },
+              ),
+            );
+          }
+        }
+        // --- Contact effects (`CHAT_CONTACT_EFFECTS`, default OFF) ------------
+        // The pure derivation (effects spec §12): committed contact → effect
+        // proposal. Gated on the ACKNOWLEDGMENT, not the plan — a proposal may
+        // only be derived from a contact the ledger provably recorded, so the
+        // rolled-back-append path (no acknowledgment) derives nothing, exactly
+        // as it narrates nothing. Contact persists no mark and owns no timer:
+        // the proposals ride to `finalizeChatState`, where the body-surface
+        // owner validates and commits them into the PRIMARY character's state
+        // row — the one surface owner this release implements. A proposal
+        // addressed to any other body (the player, an ensemble member) has no
+        // implemented destination owner and commits nothing (§14), on the
+        // record.
+        if (chatContactEffectsEnabled() && acknowledgment !== undefined && committed !== null) {
+          const proposals = contactMarkProposals(committed.contact);
+          const primarySubject = affordanceSubjectId(characterId);
+          contactEffectProposals = proposals.filter((proposal) => proposal.targetSubjectId === primarySubject);
+          if (proposals.length > contactEffectProposals.length) {
+            sink.push(
+              diag(
+                "info",
+                CONTACT_EFFECT_OWNER_UNAVAILABLE,
+                "a contact-effect proposal targets a body with no implemented surface owner; nothing committed",
+                {
+                  path: "chat.contact_effects",
+                  context: { proposed: proposals.length, owned: contactEffectProposals.length },
                 },
               ),
             );
@@ -2075,7 +2116,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           try {
             visualStateLines = renderChatVisualStateLines({
               digest,
-              subject: { characterName, possessive: `${characterName}'s` },
+              subject: {
+                characterName,
+                possessive: `${characterName}'s`,
+                subjectId: characterId,
+                playerSubjectId: String(CHAT_CONTACT_PLAYER_SUBJECT),
+              },
               garmentNames: visualStateGarmentNames(visualStateBuild.snapshot),
             });
           } catch (error) {
@@ -2612,6 +2658,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // used. When both sources cover the primary they are the identical
           // object by construction.
           ...(Object.keys(settledCoverage).length > 0 ? { affordanceCoverage: settledCoverage } : {}),
+          // This exchange's contact-effect proposals (`CHAT_CONTACT_EFFECTS`):
+          // derived by the contact leg from the DURABLE committed contact,
+          // committed here by the body-surface owner transaction so the mark
+          // rides the same state write, rollback snapshot, and retake cut as
+          // the wetness it lives beside. Absent (the default) ⇒ the surface
+          // fold's result persists untouched, byte-identical to today.
+          ...(contactEffectProposals.length > 0 ? { contactMarkProposals: contactEffectProposals } : {}),
           // The ensemble context (multi-character-chat.plan.md): the roster line
           // arms the archivist's presence field; every present witness's group
           // gets the same extraction filed as their own memory.

@@ -23,6 +23,7 @@ import {
   emptyAffordanceCueState,
   emptySceneState,
   parseSceneState,
+  applyBodyMarkProposals,
   applyEnvironmentProposal,
   applySurfaceWetnessProposals,
   parseSurfaceWetnessProposals,
@@ -31,6 +32,7 @@ import {
   emptyBodySurfaceState,
   emptyChatEnvironment,
   type AffordanceCueState,
+  type BodyMarkProposal,
   type BodySurfaceState,
   type SceneState,
   type ChatEnvironment,
@@ -2151,6 +2153,16 @@ export async function finalizeChatState(input: {
    * about what they still conceal. Absent ⇒ the prior capture rides through.
    */
   affordanceCoverage?: Readonly<Record<string, EffectiveCoverageRead>>;
+  /**
+   * The contact-effect proposals this exchange's DURABLY committed contact
+   * derived (`CHAT_CONTACT_EFFECTS`, default off; effects spec §15 stage 6).
+   * The body-surface owner transaction validates and commits them into the
+   * primary's surface state HERE — after the wetness fold, inside the same
+   * guarded state write — so a committed mark rides one rollback anchor with
+   * the surface it lives on, and a retake restores or removes it with the cut.
+   * Absent (the default) ⇒ the surface fold's result persists untouched.
+   */
+  contactMarkProposals?: readonly BodyMarkProposal[];
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -2565,7 +2577,23 @@ export async function finalizeChatState(input: {
     environment: environmentFold.environment,
     sink: input.sink,
   });
-  const surfaceTrace: ChatSurfaceTraceEntry[] = [...environmentFold.trace, ...surfaceFold.trace];
+  // --- Contact-effect owner transaction (`CHAT_CONTACT_EFFECTS`, default off) ---
+  // The pressure-mark commit (effects spec §8): the body-surface owner
+  // validates each proposal against its own vocabulary and commits at most one
+  // mark per idempotency identity. Runs AFTER the wetness fold so both modules
+  // land in one state value under one rollback anchor, and only when the
+  // pipeline actually derived proposals — the absent case leaves the fold's
+  // result untouched, byte-identical to a build without the flag.
+  const effectFold =
+    input.contactMarkProposals !== undefined && input.contactMarkProposals.length > 0
+      ? applyBodyMarkProposals({
+          surface: surfaceFold.surface,
+          proposals: input.contactMarkProposals,
+          atMinutes: input.scenario.clockMinutes,
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        })
+      : { surface: surfaceFold.surface, trace: [] };
+  const surfaceTrace: ChatSurfaceTraceEntry[] = [...environmentFold.trace, ...surfaceFold.trace, ...effectFold.trace];
   if (surfaceTrace.length > 0) {
     input.sink?.push(
       diag(
@@ -2738,7 +2766,7 @@ export async function finalizeChatState(input: {
       milestones,
       selfieHistory,
       drives: driveResult.drives,
-      bodySurface: surfaceFold.surface,
+      bodySurface: effectFold.surface,
       ...outfitPatch,
       // The worn list is a PROJECTION of the garment store (slice 2), re-derived
       // after the reconcile AND the typed operations above so the column can never

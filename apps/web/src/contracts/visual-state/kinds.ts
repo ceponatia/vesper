@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { APPEARANCE_ANATOMY_PRIORS } from "../appearance-features";
-import { contactMotionBands } from "../affordances/contact";
+import { contactActionKinds, contactMotionBands, contactSurfaceSides } from "../affordances/contact";
 import { affordanceIntensityBands, toUnitInterval } from "../affordances/core";
 import {
   SCENE_MAX_SUPPORT_RELATIONS,
@@ -12,6 +12,7 @@ import {
 } from "../affordances/scene";
 import { FEATURE_GROUPS } from "../body/locations";
 import { conditionSeveritySchema } from "../conditions/condition";
+import { bodySurfaceMarkBands, bodySurfaceMarkKinds } from "../state/body-surface";
 import {
   garmentDamageKinds,
   garmentDepositKinds,
@@ -286,6 +287,8 @@ function presentationPriors(
 
 /** Standing wetness on skin or hair — the body-surface owner's one channel. */
 export const VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID = "body_surface.wetness";
+/** A committed temporary contact mark on skin — the body-surface owner's marks module. */
+export const VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID = "body_surface.contact_mark";
 /** One garment condition channel off its neutral band — wet, soiled, rumpled, worn. */
 export const VISUAL_STATE_GARMENT_CONDITION_KIND_ID = "garment.condition";
 /** One garment part's non-neutral arrangement — open, rolled, tucked, displaced. */
@@ -316,6 +319,18 @@ export const visualStateBodySurfaceWetnessValueSchema = z
   .object({ band: z.enum(bodySurfaceWetnessBands) })
   .strict();
 export type VisualStateBodySurfaceWetnessValue = z.infer<typeof visualStateBodySurfaceWetnessValueSchema>;
+
+/**
+ * One location's strongest current contact mark, in the body-surface owner's
+ * own vocabularies (`bodySurfaceMarkKinds` / `bodySurfaceMarkBands`) — reused
+ * by name for the wetness-band reason: the owner that commits the mark is the
+ * owner that says what kinds and bands exist, and a second list here would
+ * drift. A fully faded mark projects NOTHING; absence is the owner's default.
+ */
+export const visualStateBodySurfaceMarkValueSchema = z
+  .object({ kind: z.enum(bodySurfaceMarkKinds), band: z.enum(bodySurfaceMarkBands) })
+  .strict();
+export type VisualStateBodySurfaceMarkValue = z.infer<typeof visualStateBodySurfaceMarkValueSchema>;
 
 /**
  * One condition channel's NON-NEUTRAL bands, per channel. Each list is its
@@ -418,6 +433,9 @@ export type VisualStateObservationValue = z.infer<typeof visualStateObservationV
  * truth, not dampness.
  */
 const BODY_SURFACE_WETNESS_PRIORS = presentationPriors(3_500, 5_500, 2);
+// A fresh mark is rarer than wetness and reads as recent contact — slightly
+// more unique, comparably important, gone within the story hour either way.
+const BODY_SURFACE_MARK_PRIORS = presentationPriors(5_000, 5_000, 2);
 const GARMENT_CONDITION_PRIORS = presentationPriors(3_000, 5_000, 2);
 const GARMENT_PRESENTATION_CHANNEL_PRIORS = presentationPriors(3_500, 5_500, 2);
 const GARMENT_DEPOSIT_PRIORS = presentationPriors(5_500, 5_000, 2);
@@ -433,6 +451,8 @@ export const VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID = "body_language.support
 export const VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID = "body_language.facing";
 export const VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID = "body_language.hand_occupation";
 export const VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID = "body_language.motion";
+/** The whole committed contact relation — who touches whom, surface to surface. */
+export const VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID = "body_language.contact_relation";
 
 /**
  * Every value vocabulary below is REUSED from the owner that proves the fact —
@@ -521,6 +541,63 @@ export const visualStateBodyLanguageMotionValueSchema = z
   .strict();
 
 export type VisualStateBodyLanguageMotionValue = z.infer<typeof visualStateBodyLanguageMotionValueSchema>;
+
+/**
+ * One end of a committed contact, in the contact owner's own vocabulary: a
+ * registry body location, the owner's side, and the domain's opaque sub-surface
+ * token carried verbatim.
+ */
+const visualStateContactEndLocusSchema = z
+  .object({
+    bodyLocationId: z.string().min(1).max(64),
+    side: z.enum(contactSurfaceSides).optional(),
+    detail: z.string().min(1).max(64).optional(),
+  })
+  .strict();
+
+/**
+ * The first-class contact relation, sourced from `CommittedContactRead`
+ * (romantic-contact-affordances.spec.effects.md §5): both participants, both
+ * loci, the action kind as relation identity, and the committed material
+ * summary. STRICT because the must-not list is load-bearing — permission state,
+ * pressure, motion, emotion, and rejected alternatives may never ride this
+ * value. Motion already has its own kind beside it; pressure is tactile, not
+ * visual; permission is disclosure. The contact id is the feature's relation
+ * locus and source ref, not a value field, matching the motion kind.
+ */
+export const visualStateBodyLanguageContactRelationValueSchema = z
+  .object({
+    actionKind: z.enum(contactActionKinds),
+    source: z
+      .object({ subjectId: z.string().min(1), locus: visualStateContactEndLocusSchema })
+      .strict(),
+    target: z.discriminatedUnion("kind", [
+      z
+        .object({ kind: z.literal("body"), subjectId: z.string().min(1), locus: visualStateContactEndLocusSchema })
+        .strict(),
+      z
+        .object({ kind: z.literal("object"), entityId: z.string().min(1), surfaceId: z.string().min(1) })
+        .strict(),
+    ]),
+    /**
+     * The committed transmission's visually relevant half, verbatim: whether
+     * skin meets skin, and which interposed layers the wardrobe/material owner
+     * named (ids in source→target order — order is identity). A contact only
+     * commits over a SUPPORTED material read, so this is owner-backed truth,
+     * never a guess.
+     */
+    materialBetween: z
+      .object({
+        directSkinContact: z.boolean(),
+        layerIds: z.array(z.string().min(1)).max(16),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type VisualStateBodyLanguageContactRelationValue = z.infer<
+  typeof visualStateBodyLanguageContactRelationValueSchema
+>;
 
 /**
  * CALIBRATION for the five body-language kinds. All are `instantaneous` — true
@@ -698,6 +775,24 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     imageEligible: true,
     priors: BODY_SURFACE_WETNESS_PRIORS,
   }),
+  // Committed contact marks, read from the body-surface owner like wetness
+  // beside it. NOT recognition-eligible — a mark fades inside the story hour,
+  // so "seen before" bookkeeping would outlive the fact. NOT image-eligible for
+  // contact_relation's exact reason: the cast-1 scene digest consumes image
+  // selection live and ungated, and admitting a new kind there is a deliberate
+  // enable once its clause rendering exists, not a registration side effect.
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateBodySurfaceMarkValueSchema,
+    allowedLoci: ["body"],
+    stability: "transient",
+    repeatFamily: "body_surface_contact_mark",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: false,
+    priors: BODY_SURFACE_MARK_PRIORS,
+  }),
   defineVisualStateKind({
     id: VISUAL_STATE_GARMENT_CONDITION_KIND_ID,
     layer: "current",
@@ -866,5 +961,23 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     narratorEligible: true,
     imageEligible: true,
     priors: bodyLanguagePriors(4_000, 5_500, 2),
+  }),
+  // The relation locus is the contact's own id, like motion beside it. Above
+  // motion on importance: "whose hand is on whom" is the relation, the gesture
+  // decorates it. NOT image-eligible yet — the cast-1 scene digest consumes the
+  // image selection live and ungated, and admitting a new kind there is a
+  // deliberate enable once its clause rendering exists, not a registration
+  // side effect; the narrator consumer is gated per chat.
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
+    layer: "body_language",
+    valueSchema: visualStateBodyLanguageContactRelationValueSchema,
+    allowedLoci: ["relation"],
+    stability: "instantaneous",
+    repeatFamily: "contact_relation",
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: false,
+    priors: bodyLanguagePriors(4_500, 6_500, 2),
   }),
 ];

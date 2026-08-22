@@ -1,4 +1,4 @@
-import type { CommittedContactRead } from "../affordances/contact";
+import type { CommittedContactRead, ContactBodySurfaceRef } from "../affordances/contact";
 import {
   affordanceEvidence,
   mergeAffordanceEvidence,
@@ -22,11 +22,13 @@ import {
   type VisualStateFeature,
 } from "./feature";
 import {
+  VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+  type VisualStateBodyLanguageContactRelationValue,
   type VisualStateBodyLanguageFacingValue,
   type VisualStateBodyLanguageHandOccupationValue,
   type VisualStateBodyLanguageMotionValue,
@@ -452,6 +454,117 @@ function projectMotion(state: ProjectionState): void {
 }
 
 // ---------------------------------------------------------------------------
+// The first-class contact relation
+// ---------------------------------------------------------------------------
+
+/** One contact end as the relation value carries it — the owner's ids, verbatim. */
+function contactEndLocus(
+  ref: ContactBodySurfaceRef,
+): VisualStateBodyLanguageContactRelationValue["source"]["locus"] {
+  return {
+    bodyLocationId: ref.locationId,
+    ...(ref.side === undefined ? {} : { side: ref.side }),
+    ...(ref.detail === undefined ? {} : { detail: ref.detail }),
+  };
+}
+
+/**
+ * The relation value: both participants, both loci, the action kind as relation
+ * identity, and the committed transmission's visually relevant half. Subject
+ * ids pass through the participant→subject map exactly as facing's toward end
+ * does, so a consumer can resolve them against the snapshot's subjects.
+ *
+ * Nothing else, on purpose (romantic-contact-affordances.spec.effects.md §5's
+ * must-not list): no permission state, no pressure, no motion (its own kind
+ * carries that), no emotion, and no rejected alternative — the strict value
+ * schema refuses an extra field at validation.
+ */
+function contactRelationValue(
+  state: ProjectionState,
+  contact: CommittedContactRead,
+): VisualStateBodyLanguageContactRelationValue {
+  const map = state.input.subjectsByParticipant;
+  const target: VisualStateBodyLanguageContactRelationValue["target"] =
+    contact.target.kind === "body"
+      ? {
+          kind: "body",
+          subjectId: map.get(contact.target.subjectId) ?? contact.target.subjectId,
+          locus: contactEndLocus(contact.target),
+        }
+      : { kind: "object", entityId: contact.target.entityId, surfaceId: contact.target.surfaceId };
+  return {
+    actionKind: contact.actionKind,
+    source: {
+      subjectId: map.get(contact.source.subjectId) ?? contact.source.subjectId,
+      locus: contactEndLocus(contact.source),
+    },
+    target,
+    materialBetween: {
+      directSkinContact: contact.transmission.directSkinContact,
+      layerIds: [...contact.transmission.layerIds],
+    },
+  };
+}
+
+/**
+ * The whole committed relation as one feature — the gap the effects spec names
+ * before rich positive contact narration: hand occupation and motion are
+ * derivatives, and neither says WHO is touched WHERE.
+ *
+ * Filed under every mapped body participant, actor first: the relation is
+ * visually about both bodies, and observer perception is resolved PER SUBJECT
+ * downstream — filing it under the actor alone would hide a touch from the
+ * one subject whose exposure this lane can actually answer whenever the actor
+ * is the observer. Both features carry the identical value; the key differs by
+ * subject, so neither duplicates the other.
+ *
+ * Evidence carries the lifecycle provenance (start and last-update event refs)
+ * but deliberately NOT the contact's own resolution evidence: that trail names
+ * the policy and authority reads that allowed the contact, which is exactly the
+ * hidden permission state this feature must never carry.
+ */
+function projectContactRelations(state: ProjectionState): void {
+  for (const contact of state.input.scene.contacts.contacts) {
+    const subjectIds: string[] = [];
+    const actorSubject = state.input.subjectsByParticipant.get(contact.actorId);
+    if (actorSubject !== undefined) subjectIds.push(actorSubject);
+    if (contact.target.kind === "body") {
+      const targetSubject = state.input.subjectsByParticipant.get(contact.target.subjectId);
+      if (targetSubject !== undefined && !subjectIds.includes(targetSubject)) subjectIds.push(targetSubject);
+    }
+    if (subjectIds.length === 0) continue;
+    const kind = kindOrReport(state, VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID);
+    if (!kind) return;
+    const value = contactRelationValue(state, contact);
+    const locus: VisualStateLocusRef = { kind: "relation", relationId: contact.contactId };
+    for (const subjectId of subjectIds) {
+      pushValidated(state, {
+        version: 1,
+        key: visualStateFeatureKey(subjectId, locus, VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID),
+        subjectId,
+        kindId: VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
+        layer: kind.layer,
+        locus,
+        sourceRef: { kind: "contact", contactId: contact.contactId },
+        value,
+        truthFingerprint: visualStateFingerprint(value),
+        semanticTags: [contact.actionKind, value.materialBetween.directSkinContact ? "direct" : "through_material"],
+        stability: kind.stability,
+        relationships: [],
+        priors: kind.priors,
+        evidence: [
+          affordanceEvidence("adapter", "visual_state.body_language", "contact_relation"),
+          affordanceEvidence("contact", contact.contactId, contact.actionKind),
+          affordanceEvidence("event", contact.startedByEventRef, "started"),
+          affordanceEvidence("event", contact.lastUpdatedByEventRef, "last_updated"),
+        ],
+        changedAtMinutes: contact.lastUpdatedAt,
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The projection
 // ---------------------------------------------------------------------------
 
@@ -483,6 +596,7 @@ export function projectBodyLanguageFeatures(
   projectFacing(state);
   projectHandOccupation(state);
   projectMotion(state);
+  projectContactRelations(state);
 
   // The three ownerless facts, once per projected subject. `info`, not `warn`:
   // this is the app's permanent designed state (audit finding 14), reported so

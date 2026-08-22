@@ -68,6 +68,7 @@ export * from "./turns/chat-pulse";
 export * from "./turns/chat-archivist";
 export * from "./turns/chat-garment-ops";
 export * from "./turns/chat-surface-ops";
+export * from "./turns/chat-contact-effects";
 export * from "./turns/chat-intimacy";
 export * from "./turns/chat-scene-memory";
 export * from "./turns/chat-supporting-cast";

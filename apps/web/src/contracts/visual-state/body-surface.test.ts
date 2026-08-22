@@ -4,6 +4,7 @@ import { DiagnosticCollector } from "../diagnostics";
 import {
   BODY_SURFACE_INVALID_ENTRY,
   bodySurfaceWetnessAt,
+  commitBodySurfaceMark,
   emptyBodySurfaceState,
   setBodySurfaceWetness,
   type BodySurfaceState,
@@ -186,5 +187,70 @@ describe("projectBodySurfaceFeatures", () => {
   it("produces byte-equal output from the same committed state", () => {
     const state = visualStateWetHairSurface({ level: 7_000, atMinutes: 5, cause: "splash" });
     expect(JSON.stringify(project(state, { atMinutes: 40 }))).toBe(JSON.stringify(project(state, { atMinutes: 40 })));
+  });
+});
+
+/**
+ * The marks read (effects spec §15 stage 6 — "later visual observation reads
+ * committed mark state only"): the projection may only ever restate what the
+ * owner committed, faded forward on the story clock. Two claims worth pinning
+ * beyond the wetness precedents: two marks at one locus collapse to ONE
+ * feature carrying the strongest band (the feature key is per locus per kind,
+ * so a per-mark projection would collide), and a quarantined slot is a
+ * suppression rather than silence — invalid stays distinct from unmarked at
+ * the read side too.
+ */
+describe("projectBodySurfaceFeatures — marks", () => {
+  const marked = commitBodySurfaceMark(emptyBodySurfaceState(), {
+    markId: "evt_1",
+    locationId: "forearms",
+    kind: "pressure",
+    band: "strong",
+    atMinutes: 0,
+  });
+
+  it("projects a committed mark as one banded current-layer feature, and silence once it fades", () => {
+    const sink = new DiagnosticCollector();
+    const { features, suppressions } = project(marked, { sink });
+    expect(suppressions).toEqual([]);
+    expect(features).toHaveLength(1);
+    const [feature] = features;
+    expect(feature?.key).toBe(`${SUBJECT}/forearms/body_surface.contact_mark`);
+    expect(feature?.value).toEqual({ kind: "pressure", band: "strong" });
+    expect(feature?.changedAtMinutes).toBe(0);
+    expect(feature?.sourceRef).toEqual({ kind: "body_surface", subjectId: SUBJECT, locationId: "forearms" });
+    expectCleanSink(sink);
+    // 10 minutes at 20_000/hour: 10_000 − 3_333 = 6_667 → clear band.
+    expect(project(marked, { atMinutes: 10 }).features[0]?.value).toEqual({ kind: "pressure", band: "clear" });
+    // Fully faded: silence, not an "unmarked" feature.
+    expect(project(marked, { atMinutes: 30 }).features).toEqual([]);
+  });
+
+  it("collapses two marks at one locus into the strongest band — one locus, one feature", () => {
+    const twice = commitBodySurfaceMark(marked, {
+      markId: "evt_2",
+      locationId: "forearms",
+      kind: "pressure",
+      band: "clear",
+      atMinutes: 0,
+    });
+    const { features } = project(twice);
+    expect(features).toHaveLength(1);
+    expect(features[0]?.value).toEqual({ kind: "pressure", band: "strong" });
+  });
+
+  it("reports a quarantined mark slot as a suppression, never as marked or unmarked", () => {
+    const sink = new DiagnosticCollector();
+    const state: BodySurfaceState = { wetness: {}, marks: { evt_bad: BODY_SURFACE_INVALID_ENTRY } };
+    const { features, suppressions } = project(state, { sink });
+    expect(features).toEqual([]);
+    expect(suppressions).toEqual([
+      {
+        key: `${SUBJECT}/subject:${SUBJECT}/body_surface.contact_mark`,
+        code: VISUAL_STATE_SOURCE_INVALID,
+        detail: "body_surface_marks",
+      },
+    ]);
+    expectDiagnostic(sink, VISUAL_STATE_SOURCE_INVALID, { times: 1 });
   });
 });

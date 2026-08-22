@@ -404,6 +404,8 @@ export interface VisualStateContactFixtureOptions {
   readonly sourceLocationId?: string;
   readonly sourceSide?: "left" | "right" | "center";
   readonly targetLocationId?: string;
+  /** A whole-target override — the object-surface case. Wins over `targetLocationId`. */
+  readonly target?: ContactSurfaceRef;
   readonly actionKind?: ContactActionKind;
   /** `null` means the contact carries no motion read at all. */
   readonly motionBand?: ContactMotionBand | null;
@@ -428,7 +430,7 @@ export function visualStateContactFixture(
     locationId: options.sourceLocationId ?? "fingers",
     ...(options.sourceSide === undefined ? {} : { side: options.sourceSide }),
   };
-  const target: ContactSurfaceRef = {
+  const target: ContactSurfaceRef = options.target ?? {
     kind: "body",
     subjectId: VISUAL_STATE_SCENE_NPC,
     locationId: options.targetLocationId ?? "shoulders",
