@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import {
   shadowApi,
+  shadowVerdictLabels,
   shadowVerdicts,
   type ShadowReport,
   type ShadowRow,
@@ -18,16 +19,14 @@ import {
 } from "@/lib/api-shadow";
 
 /**
- * The admin Shadow Parity screen (R4, engine.rollout.plan.md): the browser
- * face of the divergence substrate, so reviewing and ruling never needs a raw
- * API call. `/admin/shadow` lists every chat with recorded rows;
- * `/admin/shadow/[chatId]` shows the computed report, the prose pairs side by
- * side, and per-row verdict controls. Admin-gated client-side via `useIsAdmin`
- * (a plain "Not found." for everyone else); real enforcement is the 404-hidden
- * `/api/admin/sim/shadow` family.
+ * The admin Engine Comparison screen (R4, engine.rollout.plan.md): the browser
+ * face of the legacy-vs-successor comparison substrate, so reviewing and ruling
+ * never needs a raw API call. The route and storage names retain `shadow` for
+ * compatibility; that is now an internal implementation term, not the feature name.
+ * `/admin/shadow` lists every chat with recorded rows; `/admin/shadow/[chatId]`
+ * shows the computed report, prose pairs side by side, and per-row review controls.
  */
-
-export function ShadowParityIndexPage() {
+export function EngineComparisonIndexPage() {
   const isAdmin = useIsAdmin();
   if (!isAdmin) {
     return (
@@ -44,9 +43,10 @@ function IndexBody() {
   return (
     <PageContainer>
       <div className="mb-6">
-        <h1 className="prose-display text-2xl">Shadow parity</h1>
+        <h1 className="prose-display text-2xl">Engine Comparison</h1>
         <p className="mt-1 text-sm text-paper-400">
-          Every conversation with recorded shadow comparisons. Open findings need a ruling — fix or intentional.
+          Legacy chat and the successor engine run against the same player turns. Review recorded rows to decide
+          whether a difference needs work or is acceptable.
         </p>
       </div>
       {list.loading ? (
@@ -59,7 +59,8 @@ function IndexBody() {
         <ErrorState error={list.error} onRetry={() => list.reload()} />
       ) : (list.data?.chats.length ?? 0) === 0 ? (
         <p className="text-sm text-paper-500">
-          No shadow comparisons recorded yet. Flip a chat to <code>successor_shadow</code> and play a few exchanges.
+          No engine comparisons recorded yet. Put a mapped chat in comparison mode (<code>successor_shadow</code>)
+          and play a few plain-send exchanges.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -77,7 +78,7 @@ function IndexBody() {
                   </span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5">
-                  <Tag tone={chat.open > 0 ? "danger" : "ok"}>{chat.open} open</Tag>
+                  <Tag tone={chat.open > 0 ? "danger" : "ok"}>{chat.open} unreviewed</Tag>
                   <Tag>{chat.total} rows</Tag>
                 </span>
               </Link>
@@ -89,7 +90,7 @@ function IndexBody() {
   );
 }
 
-export function ShadowParityChatPage({ chatId }: { chatId: string }) {
+export function EngineComparisonChatPage({ chatId }: { chatId: string }) {
   const isAdmin = useIsAdmin();
   if (!isAdmin) {
     return (
@@ -112,7 +113,7 @@ function ChatBody({ chatId }: { chatId: string }) {
     <PageContainer>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="prose-display text-2xl">Shadow parity</h1>
+          <h1 className="prose-display text-2xl">Engine Comparison</h1>
           <p className="mt-1 text-sm text-paper-400">
             Legacy chat and the successor engine, side by side — same player lines, two world models.
           </p>
@@ -122,7 +123,7 @@ function ChatBody({ chatId }: { chatId: string }) {
             Conversation
           </Link>
           <Link href="/admin/shadow" className="text-accent-300 hover:text-accent-200">
-            ← All chats
+            ← All comparisons
           </Link>
         </div>
       </div>
@@ -139,6 +140,7 @@ function ChatBody({ chatId }: { chatId: string }) {
       ) : report.data && rows.data ? (
         <div className="flex flex-col gap-6 pb-10">
           <ReportSummary report={report.data.report} />
+          <ReviewGuide />
           <ExchangeList chatId={chatId} rows={rows.data.rows} onRuled={reload} />
         </div>
       ) : null}
@@ -147,15 +149,17 @@ function ChatBody({ chatId }: { chatId: string }) {
 }
 
 function ReportSummary({ report }: { report: ShadowReport }) {
-  const open = report.totals.byVerdict.open ?? 0;
+  const unreviewed = report.totals.byVerdict.open ?? 0;
   return (
     <section className="rounded-card border border-ink-600 bg-ink-850 p-4">
       {report.findings.length === 0 ? (
-        <p className="text-sm text-ok-400">No open findings — the two lanes agree over everything compared.</p>
+        <p className="text-sm text-ok-400">
+          No automatically detected unresolved findings. Rendered prose still requires human review.
+        </p>
       ) : (
         <div>
           <p className="mb-1.5 text-sm text-danger-300">
-            {report.findings.length} open finding{report.findings.length === 1 ? "" : "s"}:
+            {report.findings.length} unresolved finding{report.findings.length === 1 ? "" : "s"}:
           </p>
           <ul className="list-disc pl-5 text-sm text-paper-300">
             {report.findings.map((finding) => (
@@ -166,9 +170,9 @@ function ReportSummary({ report }: { report: ShadowReport }) {
       )}
       <div className="mt-3 flex flex-wrap gap-1.5 text-xs">
         <Tag>{report.totals.rows} rows</Tag>
-        <Tag tone={open > 0 ? "danger" : "ok"}>{open} open</Tag>
-        <Tag>{report.totals.byVerdict.intentional ?? 0} intentional</Tag>
-        <Tag>{report.totals.byVerdict.fixed ?? 0} fixed</Tag>
+        <Tag tone={unreviewed > 0 ? "danger" : "ok"}>{unreviewed} unreviewed</Tag>
+        <Tag>{report.totals.byVerdict.intentional ?? 0} accepted</Tag>
+        <Tag>{report.totals.byVerdict.fixed ?? 0} fixed &amp; verified</Tag>
         <Tag>
           clock: {report.clock.steps} steps, {report.clock.driftingSteps.length} drifting
           {report.clock.latestSuccessorClock ? ` · now ${report.clock.latestSuccessorClock}` : ""}
@@ -180,6 +184,32 @@ function ReportSummary({ report }: { report: ShadowReport }) {
         <Tag>
           prose: {report.prose.rendered}/{report.prose.pairs} rendered
         </Tag>
+      </div>
+    </section>
+  );
+}
+
+function ReviewGuide() {
+  return (
+    <section className="rounded-card border border-ink-700 bg-ink-850/70 p-4 text-sm text-paper-300">
+      <h2 className="mb-2 font-medium text-paper-100">How to record a ruling</h2>
+      <p className="mb-2 text-paper-400">
+        A row being unreviewed does not mean it is a bug. Review the two lanes first, then choose the status that
+        describes the result.
+      </p>
+      <div className="grid gap-2 md:grid-cols-3">
+        <div>
+          <strong className="text-paper-200">Unreviewed</strong>
+          <p className="text-paper-500">Leave it here while the result is undecided or a needed fix is still outstanding.</p>
+        </div>
+        <div>
+          <strong className="text-paper-200">Accepted / no fix needed</strong>
+          <p className="text-paper-500">Use when the row is clean or the difference is understood and intentionally acceptable.</p>
+        </div>
+        <div>
+          <strong className="text-paper-200">Fixed &amp; verified</strong>
+          <p className="text-paper-500">Use only after a real defect has been corrected and a follow-up comparison confirms it.</p>
+        </div>
       </div>
     </section>
   );
@@ -206,7 +236,7 @@ function ExchangeList({ chatId, rows, onRuled }: { chatId: string; rows: ShadowR
               .slice()
               .sort((a, b) => domainOrder.indexOf(a.domain) - domainOrder.indexOf(b.domain))
               .map((row) => (
-                <DivergenceRow key={row.id} chatId={chatId} row={row} onRuled={onRuled} />
+                <ComparisonRow key={row.id} chatId={chatId} row={row} onRuled={onRuled} />
               ))}
           </div>
         </section>
@@ -215,14 +245,17 @@ function ExchangeList({ chatId, rows, onRuled }: { chatId: string; rows: ShadowR
   );
 }
 
-function DivergenceRow({ chatId, row, onRuled }: { chatId: string; row: ShadowRow; onRuled: () => void }) {
+function ComparisonRow({ chatId, row, onRuled }: { chatId: string; row: ShadowRow; onRuled: () => void }) {
   const [busy, setBusy] = useState<ShadowVerdict | null>(null);
   const rule = async (verdict: ShadowVerdict) => {
     if (busy) return;
     setBusy(verdict);
-    await shadowApi.verdict(chatId, row.id, verdict);
-    setBusy(null);
-    onRuled();
+    try {
+      await shadowApi.verdict(chatId, row.id, verdict);
+      onRuled();
+    } finally {
+      setBusy(null);
+    }
   };
   return (
     <div className="rounded-md border border-ink-700 bg-ink-900/60 p-3">
@@ -231,7 +264,7 @@ function DivergenceRow({ chatId, row, onRuled }: { chatId: string; row: ShadowRo
           <Tag tone={row.verdict === "open" && row.detail ? "danger" : "default"}>{row.domain}</Tag>
           {row.detail ? <span className="text-xs text-paper-400">{row.detail}</span> : null}
         </span>
-        <span className="flex items-center gap-1" role="group" aria-label="Verdict">
+        <span className="flex items-center gap-1" role="group" aria-label="Review status">
           {shadowVerdicts.map((verdict) => (
             <Button
               key={verdict}
@@ -241,7 +274,7 @@ function DivergenceRow({ chatId, row, onRuled }: { chatId: string; row: ShadowRo
               disabled={busy !== null || row.verdict === verdict}
               onClick={() => void rule(verdict)}
             >
-              {verdict}
+              {shadowVerdictLabels[verdict]}
             </Button>
           ))}
         </span>
