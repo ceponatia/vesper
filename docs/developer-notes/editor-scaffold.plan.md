@@ -149,8 +149,9 @@ Slices 1, 2, 3 and 5 are independent of each other and of slice 4.
   describes reality.
 - No behaviour change elsewhere: same tabs, same autosave timing, same
   save-first-then-clone ordering, same foreign-public preview.
-- **`pnpm verify` is green on the branch.** Validation is the local gate (root
-  `CLAUDE.md`) — `.husky/pre-push` runs it before the branch reaches GitHub.
+- **The ready PR's applicable CodeBuild jobs and aggregate `verify` check are green.**
+  `.github/workflows/ci.yml` is the repository gate; there is no local pre-push
+  gate or `pnpm verify` alias.
 
 ## Risks and coordination
 
