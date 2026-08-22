@@ -3,12 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { engineComparisonApi } from "@/lib/api-engine-comparison";
 import { charactersApi, chatPresetsApi, chatsApi, type ApiResult, type CharacterSummary, type ChatPreset } from "@/lib/client/api";
 
 /** Roster cap — mirrors the server's MAX_CHAT_PARTICIPANTS (multi-character-chat.plan.md "2–4 typical"). */
@@ -38,6 +40,7 @@ export function NewChatDialog({
   characterId?: string;
 }) {
   const router = useRouter();
+  const isAdmin = useIsAdmin();
   /** Selection order preserved — index 0 is the primary participant. */
   const [picked, setPicked] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
@@ -45,6 +48,9 @@ export function NewChatDialog({
   const [memory, setMemory] = useState<"shared" | "fresh">("shared");
   const [presetId, setPresetId] = useState("");
   const [title, setTitle] = useState("");
+  const [engineComparison, setEngineComparison] = useState(false);
+  /** If chat creation succeeded but comparison setup failed, retry the setup only. */
+  const [createdChatId, setCreatedChatId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,6 +83,7 @@ export function NewChatDialog({
   );
   const selectedIds = characterId ? [characterId] : picked;
   const filtered = characters.data ?? [];
+  const comparisonEligible = selectedIds.length === 1;
 
   const togglePick = (id: string) => {
     setPicked((prev) =>
@@ -91,6 +98,8 @@ export function NewChatDialog({
     setMemory("shared");
     setPresetId("");
     setTitle("");
+    setEngineComparison(false);
+    setCreatedChatId(null);
     setError(null);
   };
 
@@ -101,22 +110,40 @@ export function NewChatDialog({
   };
 
   const create = async () => {
-    if (selectedIds.length === 0 || creating) return;
+    if ((selectedIds.length === 0 && createdChatId === null) || creating) return;
     setCreating(true);
     setError(null);
-    const result = await chatsApi.create({
-      characterIds: selectedIds,
-      memory,
-      title: title.trim() || undefined,
-      presetId: presetId || undefined,
-    });
-    if (!result.ok) {
-      setError(result.error.message || "could not create the conversation");
-      setCreating(false);
-      return;
+
+    let chatId = createdChatId;
+    if (chatId === null) {
+      const result = await chatsApi.create({
+        characterIds: selectedIds,
+        memory,
+        title: title.trim() || undefined,
+        presetId: presetId || undefined,
+      });
+      if (!result.ok) {
+        setError(result.error.message || "could not create the conversation");
+        setCreating(false);
+        return;
+      }
+      chatId = result.data.id;
     }
+
+    if (isAdmin && engineComparison && comparisonEligible) {
+      const started = await engineComparisonApi.start(chatId);
+      if (!started.ok) {
+        // The conversation itself already exists. Keep its id so another click
+        // retries ONLY comparison setup instead of minting a duplicate chat.
+        setCreatedChatId(chatId);
+        setError(`Conversation created, but Engine Comparison could not start: ${started.error.message}`);
+        setCreating(false);
+        return;
+      }
+    }
+
     // Leave `creating` set — the dialog unmounts with the navigation.
-    router.push(`/chat/${result.data.id}`);
+    router.push(`/chat/${chatId}`);
   };
 
   return (
@@ -129,8 +156,13 @@ export function NewChatDialog({
           <Button onClick={close} disabled={creating}>
             Cancel
           </Button>
-          <Button variant="primary" busy={creating} disabled={selectedIds.length === 0} onClick={() => void create()}>
-            Start chatting
+          <Button
+            variant="primary"
+            busy={creating}
+            disabled={selectedIds.length === 0 && createdChatId === null}
+            onClick={() => void create()}
+          >
+            {createdChatId ? "Retry comparison" : "Start chatting"}
           </Button>
         </>
       }
@@ -236,6 +268,32 @@ export function NewChatDialog({
               Seeds the premise, outfit, cards, and starting relationship from a saved scenario.
             </p>
           </div>
+        ) : null}
+
+        {isAdmin ? (
+          <label
+            className={cx(
+              "flex items-start gap-2 rounded-md border border-ink-600 bg-ink-900/60 px-3 py-2 text-sm",
+              comparisonEligible ? "cursor-pointer" : "opacity-60",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={engineComparison && comparisonEligible}
+              disabled={!comparisonEligible}
+              onChange={(e) => setEngineComparison(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium text-paper-100">Run Engine Comparison</span>
+              <span className="block text-xs text-paper-400">
+                Keep the legacy chat playable while a neutral successor mirror evaluates the same turns for review.
+              </span>
+              {!comparisonEligible ? (
+                <span className="mt-0.5 block text-[11px] text-paper-500">Currently available for one-on-one conversations only.</span>
+              ) : null}
+            </span>
+          </label>
         ) : null}
 
         <div>
