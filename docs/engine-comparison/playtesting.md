@@ -113,7 +113,7 @@ When you no longer want the detached successor leg to run:
 2. choose the conversation;
 3. choose **Stop comparison**.
 
-The chat returns to normal legacy authority. The service deletes a mirror world it created, but **does not delete the comparison rows or rulings** you already gathered.
+The chat returns to normal legacy authority and the live mirror mapping is removed. **Comparison rows and rulings are never deleted by Stop.** If the session never produced a row, its service-created mirror can be deleted immediately. If it did produce evidence, the mirror world/branch is retained as inert provenance because those rows intentionally reference the branch they were measured against.
 
 You can later start comparison again on the same legacy chat. That creates a **new mirror from the then-current legacy state**; historical rows remain attached to the conversation, so note the test session boundary when interpreting a long report.
 
