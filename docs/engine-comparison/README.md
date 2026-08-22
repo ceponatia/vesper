@@ -1,8 +1,14 @@
 # Engine Comparison
 
-Engine Comparison is Vesper's legacy-versus-successor migration harness. It lets a normal legacy character chat remain authoritative while the successor simulation independently evaluates the same player turns against a linked simulation branch. The results are recorded for later review; the successor comparison never rewrites the legacy transcript or legacy chat state.
+Engine Comparison is Vesper's legacy-versus-successor migration harness. It lets a normal legacy character chat remain authoritative while the successor simulation independently evaluates the same player turns against a dedicated mirror world. The results are recorded for later review; the successor comparison never rewrites the legacy transcript or legacy chat state.
 
 The feature was originally called **Shadow Parity**. That name is retired in user-facing documentation and UI because it obscured the purpose of the system and implied that the two engines are expected to be identical. Internal identifiers such as `successor_shadow`, `/admin/shadow`, `sim_shadow_divergences`, and `shadow-parity.ts` remain for compatibility unless a separate refactor changes them.
+
+## Tracking and authority
+
+Engine Comparison originated in **R4 — shadow mode under chat** in `docs/developer-notes/finished/engine.rollout.plan.md`. R4 exited on 2026-07-22 after the recorder, fixed corpus, analyzer, and review surface were proven, but the setup still depended on manually supplying a simulation branch and actor mappings. The 2026-08-22 comparison-session provisioning work is a **post-exit productization of that same R4 system**: it supplies the missing in-app front door without changing the comparison semantics R4 established.
+
+The live authority and lane-separation contract remains `docs/developer-notes/engine.spec.operations.md` §37.1 and §37.5. This directory is the current operator documentation. The finished R4 plan remains historical evidence of the July exit rather than being rewritten to pretend this UI existed then.
 
 ## What the system is for
 
@@ -18,6 +24,56 @@ Legacy is a control sample, **not automatically the correct answer**. A differen
 - the automated comparison found no issue and the row simply has not been reviewed yet.
 
 The purpose of review is therefore to understand differences, not to force the successor to reproduce legacy behavior byte-for-byte.
+
+## Starting Engine Comparison
+
+Engine Comparison is an **admin-only development feature** and currently supports **one-on-one legacy conversations only**. The comparison recorder is pair-based; group chats are refused rather than producing incomplete evidence.
+
+### New conversation
+
+In **New conversation**, select one character and enable **Run Engine Comparison** before choosing **Start chatting**.
+
+Vesper creates the ordinary legacy chat first, then creates and attaches its comparison mirror. If mirror setup fails after the chat was created, the dialog keeps that chat and offers to retry comparison setup rather than creating a duplicate conversation.
+
+### Existing conversation
+
+Open **Account menu → Engine Comparison**. Under **Start or stop comparison**:
+
+1. choose an active conversation;
+2. confirm the conversation is eligible;
+3. choose **Start comparison**.
+
+No simulation identifiers need to be entered manually. The service creates the mirror, maps the player and primary character actors, and selects the historical internal `successor_shadow` authority value in one setup flow.
+
+### What the mirror starts with
+
+An existing chat's mirror is initialized from the chat's **current comparable legacy state**, not from the ordinary successor starter world. It carries:
+
+- the resolved player name/persona identity and primary character name;
+- the current story clock and calendar date;
+- whether the primary character is currently present with the player;
+- the primary character's current body-meter values for meters the successor body contract knows;
+- the primary character's current **structured** worn wardrobe.
+
+The mirror deliberately does **not** mint the normal starter world's neighbor, keepsake, meal, commitments, routines, authored lore, or other invented setting facts. Those would contaminate the comparison before the first turn.
+
+Free-text-only outfit prose is not converted into durable garments. Without structured item coverage there is no trustworthy way to infer a slot/coverage graph. If that matters to a test, move the outfit into structured wardrobe state before starting comparison or treat the missing clothing state as a known test limitation.
+
+After initialization, the two lanes evolve independently from the same compared player turns. Legacy time skips are explicitly mirrored so clock deltas stay meaningful. Engine Comparison is not a continuous bidirectional state synchronizer.
+
+### Stopping comparison
+
+Use the same **Engine Comparison** launcher and choose **Stop comparison**.
+
+Stopping:
+
+- returns the conversation to ordinary `legacy_chat` authority;
+- removes the live mirror branch/actor mappings from the chat;
+- **keeps all recorded comparison rows and rulings** for later review;
+- deletes a service-created mirror only when that mirror produced no comparison rows;
+- retains an evidence-bearing mirror world/branch as inert provenance because recorded rows hold a required branch FK.
+
+A retained mirror is no longer attached to or consulted by the conversation. Starting comparison again creates a new mirror from the chat's then-current state. Historical/manually mapped comparison worlds are likewise never destructively deleted unless the service can prove they are managed and row-free.
 
 ## What runs during a comparison
 
@@ -67,10 +123,13 @@ For the ruling decision process and examples, see [rulings.md](rulings.md).
 
 ## Current surfaces and internal names
 
-- Admin UI: `/admin/shadow` — displayed as **Engine Comparison**.
+- Admin UI and existing-chat launcher: `/admin/shadow` — displayed as **Engine Comparison**.
 - Per-chat review: `/admin/shadow/[chatId]`.
+- Admin session API: `/api/admin/self/engine-comparison/[chatId]`.
 - Internal authority value: `successor_shadow`.
 - Comparison storage: `sim_shadow_divergences`.
+- Mirror provisioner: `apps/web/src/server/engine/simulation/comparison-world.ts`.
+- Session service: `apps/web/src/server/engine/engine-comparison.ts`.
 - Analyzer: `apps/web/src/lib/simulation/shadow-parity.ts`.
 - Recorder: `apps/web/src/server/engine/sim-shadow.ts`.
 - Fixed corpus: `scripts/sim/shadow-corpus.ts`.

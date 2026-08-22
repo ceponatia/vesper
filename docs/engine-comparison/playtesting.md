@@ -4,11 +4,23 @@ This guide describes how to gather useful Engine Comparison data during normal p
 
 ## Before you play
 
-A comparison chat must be mapped to a successor simulation branch and both sides of the primary actor pair. Internally, the required authority value is `successor_shadow`; the chat also needs its simulation branch, player actor, and primary character actor mappings. Use the existing admin engine-authority seam to configure those values.
+Engine Comparison is currently an **admin-only, one-on-one** test surface.
 
-When the setup is correct, the legacy conversation remains the player-visible authority. The successor comparison runs after each settled plain-send exchange and records its result separately.
+For a **new** conversation, choose one character in the New conversation dialog and enable **Run Engine Comparison** before starting the chat.
 
-If `/admin/shadow` shows no rows after several plain sends, first verify the chat is still in `successor_shadow` and still has all three simulation mappings.
+For an **existing** legacy conversation:
+
+1. open **Account menu → Engine Comparison**;
+2. choose the active conversation under **Start or stop comparison**;
+3. choose **Start comparison**.
+
+Vesper creates a dedicated neutral successor mirror automatically. You do not need to choose an engine authority value, simulation branch, or actor ids yourself.
+
+At setup time the mirror copies the current comparable legacy state: clock/calendar, primary presence, body meters known to the successor registry, and structured current wardrobe. It does not use the ordinary starter world, because the starter world's neighbor, lore, items, commitments, routines, and setting would add facts the legacy chat never had.
+
+When setup is correct, the legacy conversation remains the player-visible authority. The successor comparison runs after each settled plain-send exchange and records its result separately.
+
+If the Engine Comparison page says the conversation is ineligible, use the reason shown there. Common cases are a group chat, an archived chat, or a chat that is already successor-routed rather than legacy-authoritative.
 
 ## How much to play
 
@@ -30,6 +42,14 @@ A useful played session should cover several of these behaviors when they fit th
 - narration where the successor could incorrectly invent player actions, NPC decisions, or world facts.
 
 Do not force every test dimension into one scene. Multiple focused sessions are easier to diagnose than one synthetic conversation that does everything at once.
+
+### Remember what initialization does — and does not — guarantee
+
+Starting comparison gives the two lanes a sensible comparable baseline. It is **not** a continuous state synchronization system.
+
+After the mirror is created, the successor world evolves according to successor rules and the compared player turns. Legacy time skips are explicitly mirrored so clock deltas remain useful. Other later differences are evidence to review, not values that the setup service silently copies back and forth.
+
+Free-text-only clothing is also not compiled into successor garment objects during setup. Only structured worn wardrobe can be copied without guessing coverage and slots. If a clothing-specific test starts from free-text-only outfit state, either structure the wardrobe first or record that as a test limitation.
 
 ## What Vesper records automatically
 
@@ -73,7 +93,7 @@ Legacy time skips are mirrored to the comparison branch so the delta remains mea
 
 ## Review after play
 
-Open **Account menu → Engine Comparison**, then select the conversation.
+Open **Account menu → Engine Comparison**, then select the conversation under **Recorded comparisons**.
 
 Review in this order:
 
@@ -85,6 +105,18 @@ Review in this order:
 
 The **unreviewed row count is not a bug count**. Every row starts Unreviewed, including clean rows.
 
+## Stopping a played comparison
+
+When you no longer want the detached successor leg to run:
+
+1. return to **Account menu → Engine Comparison**;
+2. choose the conversation;
+3. choose **Stop comparison**.
+
+The chat returns to normal legacy authority and the live mirror mapping is removed. **Comparison rows and rulings are never deleted by Stop.** If the session never produced a row, its service-created mirror can be deleted immediately. If it did produce evidence, the mirror world/branch is retained as inert provenance because those rows intentionally reference the branch they were measured against.
+
+You can later start comparison again on the same legacy chat. That creates a **new mirror from the then-current legacy state**; historical rows remain attached to the conversation, so note the test session boundary when interpreting a long report.
+
 ## Fixed regression corpus
 
 Run:
@@ -93,7 +125,7 @@ Run:
 pnpm sim:shadow-corpus
 ```
 
-The corpus is versioned in `scripts/sim/shadow-corpus.ts`. It currently exercises four fixed plain sends with a mid-corpus hours skip, awaits every detached comparison leg, and prints the computed report at the end.
+The command retains the historical internal name. The corpus is versioned in `scripts/sim/shadow-corpus.ts`. It currently exercises four fixed plain sends with a mid-corpus hours skip, awaits every detached comparison leg, and prints the computed report at the end.
 
 Use the fixed corpus when:
 
