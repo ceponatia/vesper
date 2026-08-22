@@ -2,9 +2,9 @@ name: CI
 
 # Milestone-gated CI on AWS CodeBuild runners (owner decision 2026-08-21).
 # Jobs run on ephemeral CodeBuild hosts via `runs-on: codebuild-vesper-ci-…` —
-# GitHub-native checks UI, AWS per-minute billing, zero idle cost. The local
-# `pnpm verify` pre-push gate remains the first line; this suite is the shared
-# record and the promotion gate.
+# GitHub-native checks UI, AWS per-minute billing, zero idle cost. There is no
+# local pre-push gate; this workflow is the repository verification gate, shared
+# record, and promotion gate.
 #
 # Draft PRs bill nothing: every job is draft-guarded, so pushes to a draft run
 # zero jobs. Marking a PR ready for review (`gh pr ready`) runs the full
@@ -135,7 +135,7 @@ jobs:
             esac
 
             case "$path" in
-              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|scripts/eval/engine-gate1/*)
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
                 engine=true
                 ;;
             esac

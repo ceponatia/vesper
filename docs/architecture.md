@@ -39,7 +39,7 @@ A package's public surface is whatever its `exports` map enumerates: the root en
 
 ```
 vesper/                  # the workspace root: operational scripts + repo tooling
-  scripts/               # db/migration/seed, evals, simulation errands, the verify gate
+  scripts/               # db/migration/seed, evals, simulation errands, maintenance helpers
   docs/                  # this folder
   drizzle/               # generated SQL migrations (committed)
   data/                  # runtime-generated image assets (gitignored)

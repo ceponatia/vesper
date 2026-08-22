@@ -106,7 +106,7 @@ recording that the v1 judge is gone and what a future version would rebuild.
 ## Delivery slices
 
 Each is independently shippable, on its own pull request with its own green
-`pnpm verify` run.
+applicable CodeBuild CI run and aggregate `verify` check.
 
 1. **Orphan deletion** — E1, E2, E4, E6 plus the relationships doc. Smallest
    slice, biggest legibility gain. Two things survive and must not be caught in
@@ -145,9 +145,9 @@ Each is independently shippable, on its own pull request with its own green
   degradation tests still assert both the fallback and the diagnostic code.
 - The public contracts surface no longer exports test fixtures, and the shared
   affordance helpers exist once, in the domain-neutral core.
-- **A green `pnpm verify` run on each slice**, duplication no worse than before.
-  Validation is the local gate (root `CLAUDE.md`) — `.husky/pre-push` runs it
-  before the branch reaches GitHub.
+- **Each slice's ready PR has green applicable CodeBuild jobs and aggregate
+  `verify`, with duplication no worse than before.** `.github/workflows/ci.yml`
+  is the repository gate; there is no local pre-push gate or `pnpm verify` alias.
 
 ## Risks & coordination
 

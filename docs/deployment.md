@@ -172,14 +172,19 @@ moves through a **promotion PR**.
 
 **To promote dev → prod:**
 
-1. **Verify `main` first.** The same gate as the pre-deploy run above — a green
-   `gh workflow run CI --ref main` dispatch. Nothing on GitHub inspects a
-   promotion PR, so verification happens *before* the PR exists rather than
-   inside it.
-2. **Open the PR.** Either Actions tab → **"Promote dev → prod"** → *Run
-   workflow* (opens a `main → prod` PR for you), or locally:
+1. **Open the promotion PR.** Either Actions tab → **"Promote dev → prod"** →
+   *Run workflow* (opens a `main → prod` PR for you), or locally:
    `gh pr create --base prod --head main`.
+2. **Require the promotion PR's full CI run to pass.** A PR whose base is `prod`
+   forces every CodeBuild gate, engine integration and production build included,
+   regardless of changed paths. The required aggregate `verify` check is the
+   release-candidate gate for the promotion itself.
 3. **Merge** the PR. That's the only way commits reach `prod`.
+
+If the promoted commit will also be deployed to Fly, still run the deliberate
+`gh workflow run CI --ref main` pre-deploy dispatch described above and deploy the
+same clean tree it validated. Promotion-PR CI and pre-deploy CI serve different
+checkpoints; neither is a local wrapper.
 
 **Protection on `prod`** (set via `gh api .../branches/prod/protection`):
 

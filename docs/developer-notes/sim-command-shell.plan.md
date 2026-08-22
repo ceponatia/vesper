@@ -149,18 +149,21 @@ what the three newly-run recorders now touch.
 
 ## Success criteria
 
-- **Every slice reaches a green `pnpm verify` run.** Validation is the local gate
-  (root `CLAUDE.md`), and `.husky/pre-push` runs it before the branch reaches
-  GitHub. Because every slice touches the engine and database surfaces, add the
-  Postgres-backed engine gate too — `pnpm db:up`, then `pnpm verify engine`, which
-  covers the simulation store suites plus the successor route and narrator
-  integration tests. Note that jscpd will *not* certify this work — F1 is why
-  these clones survived the gate in the first place.
+- **Every slice's ready PR reaches a green aggregate `verify` check in CodeBuild CI.**
+  Every slice touches engine/database surfaces, so the PR must also run and pass
+  the `engine integration` job from `.github/workflows/ci.yml`: CI starts
+  Postgres/pgvector, applies migrations, runs `pnpm test:engine`, and then runs the
+  Gate 1 benchmark. If an engine slice does not select that job, the classifier is
+  wrong and must be corrected rather than replaced by a local gate. Note that jscpd
+  will *not* certify this work — F1 is why these clones survived the gate in the
+  first place.
 - **Slice 6 additionally** requires the four gate corpus suites green **before
   and after** the change. Fork parity is the engine's correctness spine, so the
   before-run is the baseline that makes the after-run mean something; a corpus
-  regression here is a stop-work, not a follow-up. Run the engine gate against the
-  pre-change tree and the post-change tree as two separate runs.
+  regression here is a stop-work, not a follow-up. Use the pre-change `main` CI
+  result as the baseline and the slice PR's engine-integration result as the
+  post-change proof; focused local corpus runs may diagnose a failure but are not
+  the repository gate.
 - **Slice 1** shows one event-window query per accepted command instead of five,
   recorder outputs unchanged on a corpus run. **Slice 2** leaves no hand-written
   projection header validator and no duplicated row mapper. **Slice 6** leaves

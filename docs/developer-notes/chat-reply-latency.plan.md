@@ -113,8 +113,10 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
   resolution each run once per member per turn (asserted by call count, not by eye).
 - **Fast re-send.** On the Fly deploy, sending again immediately after a reply
   completes no longer returns `chat_busy` in a manual playtest.
-- **`pnpm verify` is green on the branch.** Validation is the local gate (root
-  `CLAUDE.md`) — `.husky/pre-push` runs it before the branch reaches GitHub.
+- **The ready PR's applicable CodeBuild jobs and aggregate `verify` check are green.**
+  `.github/workflows/ci.yml` is the repository gate; there is no local pre-push
+  gate or `pnpm verify` alias. Focused local checks may support iteration but do
+  not replace the PR result.
 
 ## Risks & coordination
 

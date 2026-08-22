@@ -98,8 +98,8 @@ sets the rules.
 
 ## Delivery slices
 
-Each lands on its own pull request, reaches a green `pnpm verify` run, and
-reviews on its own.
+Each lands on its own pull request, reaches a green applicable CodeBuild CI run
+with aggregate `verify`, and reviews on its own.
 
 - **Slice 0 — the retain list.** Before deleting anything, write down what is
   deliberately callerless and comment each such export with the plan that keeps
@@ -124,9 +124,11 @@ reviews on its own.
   folder, and the engine barrel no longer re-exports simulation internals.
 - The retain-list items (guardrails 1 and 2) survive, now annotated, so the next
   reader need not re-derive their status.
-- **A green `pnpm verify` run at each slice boundary**, plus the gate corpus
-  integration suites on the simulation slice. Validation is the local gate (root
-  `CLAUDE.md`) — `.husky/pre-push` runs it before the branch reaches GitHub.
+- **Each slice's ready PR has green applicable CodeBuild jobs and aggregate
+  `verify`;** slice 5 additionally requires the CI `engine integration` job and
+  the gate corpus integration suites before and after. There is no local
+  pre-push gate or `pnpm verify` alias; focused local runs may support diagnosis
+  but are not the repository gate.
 - No user-visible change other than the corrected site description.
 
 ## Risks & coordination

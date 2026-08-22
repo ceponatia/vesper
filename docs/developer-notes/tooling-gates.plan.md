@@ -4,8 +4,8 @@ Status: draft (F2 and F4 are closed; F1 and C11 remain, sequenced late)
 
 Outcome: A developer can read a green duplication check as proof that no new
 copy-paste slipped into anywhere the repo actually keeps code, so that the next
-pile of duplicated code is caught by the gate that runs before every push rather
-than by six agents reading code for an afternoon.
+pile of duplicated code is caught by CI before merge rather than by six agents
+reading code for an afternoon.
 
 ## Why
 
@@ -47,11 +47,11 @@ open handle. The output-directory default is still spelled with `||` in one runn
 - **F2 — the gate list, closed twice over.** The audit found that the root
   `CLAUDE.md`'s sequential gate list omitted `lint:authz` while `package.json`'s
   `verify` chain required it. Commit `66ecd3b` (2026-07-30) added the line. That
-  list has since been removed entirely, and on 2026-08-13 GitHub Actions CI was
-  deleted outright when its minutes ran out. The gate order now lives in exactly
-  one place — `scripts/verify.sh`, which runs `lint:authz` among the rest, and
-  which `.husky/pre-push` invokes before any code reaches GitHub. A prose list
-  can no longer drift from the required chain, because there is no prose list.
+  prose list was later removed. The temporary local-only arrangement that followed
+  when GitHub Actions minutes ran out was itself retired on 2026-08-21/22: GitHub
+  Actions on AWS CodeBuild is now the sole verification gate, the required order
+  lives in `.github/workflows/ci.yml`, and there is no local pre-push hook or
+  authoritative wrapper to drift from it.
 - **F4 — doc drift.** `unconsumed-character-prose.md` was archived to `finished/`
   on 2026-08-02 (kept rather than deleted because four archived docs link it at
   that path). `docs/database.md`'s `travel_minutes` line now records the retain
@@ -92,7 +92,7 @@ is still there turns it red on its first run.
 **Slice 2 — widen the gate, then choose its grain (F1).** Add `scripts` to the path,
 confirm green, then measure before committing to a budget shape. The governing
 constraint: the gate uses the threshold reporter so it prints **nothing** when clean,
-which keeps the verify run's output readable. Anything chatty — or that flags every
+which keeps the CI static-check output readable. Anything chatty — or that flags every
 legitimately similar test fixture — gets ignored and then disabled, strictly worse than
 today's blind spot. So prefer a few narrow entries with tighter budgets over a global floor drop,
 count false positives against today's tree first, and fall back to a second narrow
@@ -100,15 +100,15 @@ invocation behind the same `pnpm jscpd` if per-folder budgets won't express clea
 
 ## Success criteria
 
-- `pnpm jscpd` covers `scripts/` and prints nothing on a clean tree, proven by a
-  green `pnpm verify` run on this plan's own branch.
+- `pnpm jscpd` covers `scripts/` and prints nothing on a clean tree, proven by the
+  ready PR's green CodeBuild `static checks` job and aggregate `verify` check.
 - Across the six runners: one flag parser, one output default, one exit footer, one
   import style — and every runner that opens a pool closes it.
 - Re-running an eval that needs no model call gives byte-identical results before and
   after the extraction, and no eval writes generated output under `docs/`.
-- Validation is the local gate (root `CLAUDE.md`): `pnpm verify` runs lint, the static
-  checks, typecheck, the pure tests and jscpd serially, and `.husky/pre-push` runs the
-  same set before the branch reaches GitHub.
+- Validation is CI (root `CLAUDE.md` and `.github/workflows/ci.yml`): mark the PR ready
+  and require the applicable CodeBuild jobs plus the aggregate `verify` check to pass.
+  There is no local pre-push gate.
 
 ## Risks & coordination
 
@@ -129,7 +129,7 @@ invocation behind the same `pnpm jscpd` if per-folder budgets won't express clea
   still true. C11's output move therefore breaks no page, and OQ2 is resolved by the
   same deletion: eval output simply moves off `docs/`, no documented exception retained.
 - **Import normalization** touches the module graph the cycles check scans, so this
-  plan's branch must reach a green `pnpm verify` before merging.
+  plan's ready PR must reach a green aggregate `verify` check before merging.
 
 ## Open questions
 

@@ -108,14 +108,18 @@ causes would be misread as a regression from this work.
 
 ## Success criteria
 
-- **A green `pnpm verify` run on the branch.** Validation is the local gate (root
-  `CLAUDE.md`), and `.husky/pre-push` runs it before the branch reaches GitHub.
-  Engine paths are touched, so run the Postgres-backed engine gate too
-  (`pnpm db:up`, then `pnpm verify engine`).
+- **The ready PR's aggregate `verify` check and `engine integration` job are green.**
+  This plan touches simulation/database surfaces, so `.github/workflows/ci.yml`
+  must select the Postgres-backed job that applies migrations, runs
+  `pnpm test:engine`, and executes the Gate 1 benchmark. There is no local
+  pre-push gate; if an applicable change does not select engine integration, fix
+  the classifier rather than substituting a retired wrapper command.
 - **The gate3/4/5/6 corpus integration suites are green before AND after.** Fork
   parity is the engine's correctness spine, so the before-run is not a formality —
-  it is the baseline that makes the after-run mean something. Capture both from the
-  engine gate, run once on the pre-change tree and once on the post-change tree.
+  it is the baseline that makes the after-run mean something. Use the pre-change
+  `main` CI result as the baseline and the ready PR's engine-integration result as
+  the post-change proof; focused local corpus runs may diagnose failures but are
+  not the repository gate.
 - Forking the same branch produces an identical child world before and after the
   change, compared by projection checksum rather than by eye.
 - Fork wall time and query count no worse than the baseline; the removed re-sorts
