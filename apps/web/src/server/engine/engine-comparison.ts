@@ -11,7 +11,7 @@ import {
   simWorlds,
 } from "@/server/db";
 import { log } from "@/server/log";
-import { resolveChatPersona } from "@/server/players/persona";
+import { resolveChatPersona } from "@/server/players";
 import { readChatEngineAuthority, setChatEngineAuthority } from "./chat-authority";
 import { loadChatScenario, loadChatState, seedChatState } from "./chat-state";
 import { loadChatWardrobeWithStatus } from "./chat-wardrobe";
