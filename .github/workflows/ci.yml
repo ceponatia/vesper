@@ -1,26 +1,18 @@
 name: CI
 
 # Milestone-gated CI on AWS CodeBuild runners (owner decision 2026-08-21).
-# Jobs run on ephemeral CodeBuild hosts via `runs-on: codebuild-vesper-ci-…`
-# labels — GitHub-native checks UI, AWS per-minute billing, zero idle cost.
-# This suite is the shared record and the promotion gate.
+# Jobs run on ephemeral CodeBuild hosts via `runs-on: codebuild-vesper-ci-…` —
+# GitHub-native checks UI, AWS per-minute billing, zero idle cost. There is no
+# local pre-push gate; this workflow is the repository verification gate, shared
+# record, and promotion gate.
 #
-# Compute is partitioned per job across two CodeBuild runner projects.
-# Every job except `integration` runs on Lambda compute (linux-lambda,
-# nodejs22 image) via the `vesper-ci-lambda` project, which starts in seconds
-# instead of EC2 instance provisioning: classify and the `verify` aggregate
-# get 4GB; lint, static, unit, and the production build get 8GB (their
-# 6144/4096 MB Node heaps fit). Lambda jobs have a hard 15-minute runtime
-# ceiling, and project-level timeouts do not apply to them. `integration`
-# keeps the bare `vesper-ci` label and that project's EC2 default
-# (LINUX_CONTAINER, privileged): it needs Docker for the Postgres container,
-# which Lambda compute cannot run. Two projects are unavoidable, not styling:
-# privilegedMode is a project-level setting the Docker job requires, and a
-# privileged project SILENTLY ignores Lambda label overrides (verified
-# 2026-08-22 — the jobs fall back to EC2 with green checks), so the Lambda
-# jobs live on an unprivileged twin. The EC2 project timeout is reduced to
-# 15 minutes AWS-side as a runaway-cost guard. Always include the image token
-# in Lambda labels — the docs' image-omitted form also silently falls back.
+# Compute: every job except `integration` runs on CodeBuild Lambda via the
+# unprivileged `vesper-ci-lambda` runner project (linux-lambda nodejs22;
+# 4GB for classify/verify, 8GB for the heavier gates; hard 15-minute Lambda
+# ceiling). `integration` stays on `vesper-ci`'s privileged EC2 default —
+# it needs Docker, and a privileged project silently ignores Lambda label
+# overrides, which is why two projects exist. Always keep the image token in
+# Lambda labels; the image-omitted form silently falls back to EC2.
 #
 # Draft PRs bill nothing: every job is draft-guarded, so pushes to a draft run
 # zero jobs. Marking a PR ready for review (`gh pr ready`) runs the full
@@ -134,73 +126,24 @@ jobs:
             # moved out of the repository root. A stale glob here fails OPEN —
             # the job simply skips and aggregate `verify` stays green — so
             # these patterns are verified by deliberately touching a file of
-            # each class, not by a green workflow run. The backstop for
-            # anything this surface misses: workflow_dispatch and prod-bound
-            # PRs force integration and engine true unconditionally above.
+            # each class, not by a green workflow run.
             #
-            # Derived by import-graph analysis of the 43 files test:engine
-            # runs. Deliberately absent: the old blanket
-            # `apps/web/src/app/api/*` (only the six route trees below are
-            # imported by the suites; the other API dirs' integration tests
-            # live in the manual `app-int` project CI never runs), the root
-            # `Dockerfile` (this job never builds the app image; it still
-            # triggers `production-build` via the build family), and
-            # `drizzle.config.*` (`db:migrate` hardcodes the folder and
-            # connects via pg; the config feeds only dev-time drizzle-kit).
+            # `scripts/eval/engine-gate1/*` is listed here as well as under the
+            # engine patterns below so that `engine` is a strict subset of
+            # `integration` — the Gate 1 benchmark now runs as a step of the
+            # engine job, and a step cannot run in a job that was skipped.
+            #
+            # The old `*.config.*` catch-all also set `engine`, so an
+            # eslint.config.mjs or next.config.ts edit spun up Postgres and the
+            # eval. Only the configs that actually shape those runs are listed.
             case "$path" in
-              # test-support imports the `@/server/engine`, `@/server/images`,
-              # and root `@/contracts` barrels, so both whole trees load at
-              # import time in every suite (38 of the 43 suite files live
-              # under server/). lib/ is in the same closure: lib/ids alone is
-              # imported by 26 suites, ~15 lib modules load via the barrels.
-              # test/ holds the vitest setupFiles (`test/setup.ts` forces
-              # AI_FAKE=1, strips provider keys) every integration run
-              # executes.
-              apps/web/src/server/*|apps/web/src/contracts/*|apps/web/src/lib/*|apps/web/src/test/*)
-                integration=true
-                ;;
-              # Exactly the route directories whose handlers the suites
-              # import (chat sim routes, engine authority, admin sim,
-              # identity-pack trial routes, characters, gallery); their
-              # helper closure stays inside these directories.
-              apps/web/src/app/api/chats/*|apps/web/src/app/api/admin/engine-authority/*|apps/web/src/app/api/admin/sim/*|apps/web/src/app/api/admin/self/identity-packs/*|apps/web/src/app/api/characters/*|apps/web/src/app/api/gallery/*)
-                integration=true
-                ;;
-              # All four workspace packages are reachable: simulation-core
-              # everywhere, image-core in 8 suites plus the db layer,
-              # image-replicate via the images barrel, contracts via both.
-              packages/*)
-                integration=true
-                ;;
-              # The migrations this job applies from zero, the
-              # migrate/hardening scripts that apply them, and the compose
-              # setup (docker/postgres/Dockerfile, the pg17+pgvector service).
-              drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml)
-                integration=true
-                ;;
-              # Listed under the engine patterns below as well, so `engine`
-              # stays a strict subset of `integration` — the Gate 1 benchmark
-              # runs as a step of the integration job, and a step cannot run
-              # in a job that was skipped.
-              scripts/eval/engine-gate1/*)
-                integration=true
-                ;;
-              # Dependency resolution, transform options, and the vitest
-              # project/alias/setup definitions the suite runs under.
-              package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/tsconfig.json|vitest.config.*)
+              apps/web/src/server/*|apps/web/src/app/api/*|apps/web/src/contracts/*|apps/web/src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/tsconfig.json|vitest.config.*|drizzle.config.*)
                 integration=true
                 ;;
             esac
 
-            # The Gate 1 benchmark's entire import closure is
-            # scripts/eval/engine-gate1/run.ts → @vesper/simulation-core →
-            # @vesper/contracts (plus node builtins): no app code, no
-            # database. App engine/simulation code therefore no longer forces
-            # the eval (it still runs the full suite via `integration`), and
-            # the old `apps/web/src/contracts/simulation/*` glob is gone —
-            # that tree lives in packages/simulation-core/src/contracts.
             case "$path" in
-              scripts/eval/engine-gate1/*|packages/simulation-core/*|packages/contracts/*)
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
                 engine=true
                 ;;
             esac
