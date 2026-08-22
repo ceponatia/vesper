@@ -480,7 +480,7 @@ paths (root `CLAUDE.md`). Validate by hand before finishing:
   per `docs/README.md`. **The line guideline does not apply to
   `docs/developer-notes/`** — see [Document length](#document-length).
 
-If the change also touches code, the normal `pnpm verify` gate applies; the docs
+If the change also touches code, the normal CI gates apply on its PR; the docs
 checks above are additional, not a substitute.
 
 ## Templates

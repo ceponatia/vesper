@@ -44,8 +44,8 @@ resolves every import and owns the real answer: cross-workspace containment in
 both directions, exact-name package imports, manifest dependency ownership,
 package-graph direction and cycles, root-barrel wildcards, and this package's
 browser/server portability. `pnpm lint:package-resolution` separately imports the
-package by name through the installed workspace. Both run in the `static` gate
-of `pnpm verify`; the rules and their rationale are in
+package by name through the installed workspace. Both run in CI's static-checks
+job; the rules and their rationale are in
 [the guardrails spec](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md).
 
 The dependency direction is deliberate: the application depends on the package,
@@ -145,13 +145,12 @@ simulation and image worlds.
   checked through the package-local TypeScript project.
 - Resolution runs through pnpm/package `exports`, not tool aliases: TypeScript,
   Vitest and Next all reach this package by name through the workspace link, and
-  `pnpm lint:package-resolution` proves it in the `static` gate of `pnpm verify`.
+  `pnpm lint:package-resolution` proves it in CI's static-checks job.
   If a tool ever needs a mapping
   again, keep it exact-root-only — never `@vesper/* -> packages/*/src`.
 - Dependencies this package imports belong in **its** `package.json`, including
   test-only ones. `pnpm lint:package-boundaries` fails on anything reachable only
   through the root install.
 - Tests live beside their subject and run without application-global setup.
-- Validation is local and push-gated: `pnpm verify` (which `.husky/pre-push`
-  runs automatically) is the only gate, per the root `CLAUDE.md`. There is no
-  GitHub Actions CI.
+- Validation is CI-gated: GitHub Actions on CodeBuild runners is the gate, per
+  the root `CLAUDE.md`. There are no local git hooks and no local gate.

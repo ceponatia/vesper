@@ -311,8 +311,8 @@ When you change Vesper code:
   - pure app test — `pnpm vitest run --project=app <path>`
   - integration test — `pnpm vitest run --project=app-int --no-file-parallelism <path>`
   - package test — `pnpm --filter @vesper/simulation-core exec vitest run <path>`
-- **J.** Let `pnpm verify` handle broad validation — `.husky/pre-push` runs it
-  automatically. Do not run the full gate in a tight loop.
+- **J.** Let CI on the PR handle broad validation. Do not run the full gate set
+  locally.
 
 ## A note for autonomous agents
 

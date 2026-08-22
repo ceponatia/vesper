@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# The repository's verification gate.
-#
-# GitHub Actions CI was removed (Actions minutes are exhausted), so this script
-# IS the gate — nothing else checks the code before it reaches GitHub. The
-# `.husky/pre-push` hook runs it automatically on every push of code, which is
-# what replaces the old `verify` check on pull requests.
+# RETIRED from the workflow (owner decision 2026-08-22). CI on AWS CodeBuild
+# (.github/workflows/ci.yml) is the gate; nothing invokes this script and the
+# `pnpm verify` / `pnpm verify:full` aliases are removed. It is kept only as a
+# hand-run curiosity; prefer pushing the PR and letting CI validate.
 #
 # It runs each gate SERIALLY, one at a time, inside a memory-capped systemd
 # scope, and refuses to start without RAM headroom — this is a 16 GB machine,

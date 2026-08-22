@@ -8,10 +8,9 @@ description: Verify a vesper change end-to-end against the Fly deploy (the repo'
 Runtime verification happens against the **Fly deploy** — never a local
 `pnpm dev` + Postgres for UI work (AGENTS.md).
 
-**Do NOT run `pnpm verify`, tests, lint, or typecheck as part of verification.**
-They are CI-style gates, not observation — and the chained `pnpm verify` run
-OOMs this machine (run gates separately, one at a time, only when asked to run
-the gate itself).
+**Do NOT run tests, lint, or typecheck as part of verification.** They are code
+gates, not observation, and CI on the PR owns them (AGENTS.md); local gate runs
+tell you nothing about whether the deployed app behaves.
 
 ## Recipe
 

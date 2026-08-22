@@ -45,7 +45,7 @@ guarded by `summary.test.ts` in `pnpm test`). Numbers still get quoted into the
 trial doc; they are now checkable against a committed file rather than only a
 transcription.
 
-**Not wired into `pnpm verify`/CI, ever.** It spends money and it measures a
+**Not wired into CI, ever.** It spends money and it measures a
 judgment call. The fixture guard (`harness.test.ts`) *is* pure and does run in
 `pnpm test` — it proves the matrix still fires before anyone spends anything.
 

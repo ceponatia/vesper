@@ -145,12 +145,6 @@ Fly↔GitHub integration firing; every release so far has been a hand-run
 - **Deploy the same tree CI validated.** `fly deploy` ships your working tree,
   not a git ref — deploy from a clean `main` checkout at the commit the
   dispatch ran against.
-- **Local fallback:** `pnpm verify:full` on a clean `main` with the dev database
-  up (`pnpm db:up && pnpm db:migrate`) covers the same gates on your machine
-  when CI is unavailable. The engine gate hard-fails when the database container
-  isn't running rather than skipping itself; gates run one at a time in
-  memory-capped cgroups, and a failure doesn't abort the run — it finishes the
-  set and names every gate that failed.
 - **From the CLI:** `fly deploy -a vesper` — Fly builds the Dockerfile on its
   remote builder, runs the `release_command` (`pnpm -w run db:migrate`) against Neon,
   then cuts the Machine over to the new version. Verify with `fly status -a vesper`.
@@ -171,16 +165,17 @@ there is no second remote:
 | Branch | Role              | How it updates                                                                                                                                             |
 | ------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `main` | **dev** (default) | Your normal workflow. Push here as always; deploying dev is a separate **manual** `fly deploy` after testing — pushing to GitHub does **not** auto-deploy. |
-| `prod` | **production**    | **Protected.** No direct pushes — code arrives only via a pull request from `main`, gated on a green `pnpm verify:full`.                                   |
+| `prod` | **production**    | **Protected.** No direct pushes — code arrives only via a pull request from `main`, gated on the required green `verify` status check.                     |
 
 Day-to-day is unchanged: keep committing to and pushing `main`. `prod` only ever
 moves through a **promotion PR**.
 
 **To promote dev → prod:**
 
-1. **Verify `main` first.** The same gate as the pre-deploy run above — dev
-   database up, then `pnpm verify:full`. Nothing on GitHub inspects a promotion
-   PR, so verification happens *before* the PR exists rather than inside it.
+1. **Verify `main` first.** The same gate as the pre-deploy run above — a green
+   `gh workflow run CI --ref main` dispatch. Nothing on GitHub inspects a
+   promotion PR, so verification happens *before* the PR exists rather than
+   inside it.
 2. **Open the PR.** Either Actions tab → **"Promote dev → prod"** → *Run
    workflow* (opens a `main → prod` PR for you), or locally:
    `gh pr create --base prod --head main`.
