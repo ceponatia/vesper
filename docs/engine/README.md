@@ -5,7 +5,9 @@ places, people, bodies and things that runs on its own clock and hands the
 narrator a perspective-filtered view of what just happened. It is the world
 authority for **successor chats** — conversations born through the `/worlds`
 front door and bound to their own simulated world. The other lane, ordinary
-[character chat](../character-chat/README.md), does not run on it.
+[character chat](../character-chat/README.md), does not use the engine as its
+world authority; [Engine Comparison](../engine-comparison/README.md) can run a
+detached successor view beside a legacy chat for migration testing.
 
 Nothing here is a plan. These pages describe the engine as it runs today.
 
@@ -25,6 +27,7 @@ Nothing here is a plan. These pages describe the engine as it runs today.
 | [lod.md](lod.md)                           | Level of detail: how a large world stays affordable                     |
 | [boundaries.md](boundaries.md)             | The edges: package boundaries, the numeric contract, deliberate limits  |
 | [operations.md](operations.md)             | Running it safely: replay, resilience, security, observability          |
+| [Engine Comparison](../engine-comparison/README.md) | Legacy-vs-successor migration testing, play data, and review rulings |
 
 Start with `kernel.md` and `commands-events.md`. Together they are the causal
 spine every other page assumes: a command produces events, events project into
@@ -51,7 +54,9 @@ one to correct.
 
 - **Character chat.** The legacy lane has its own pipeline, state model and
   prompts ([character-chat/](../character-chat/README.md)). New interaction
-  patterns are still proven there first.
+  patterns are still proven there first. Engine Comparison may observe a
+  linked successor branch, but it never makes the successor authoritative for
+  the legacy chat.
 - **Registries.** Attributes, meters, conditions, fact kinds and body locations
   are data, defined once in [contracts/](../contracts/README.md) and shared by
   both lanes. Vocabulary changes are edits there, never engine changes.
