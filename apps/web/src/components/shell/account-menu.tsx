@@ -91,15 +91,15 @@ export function AccountMenu() {
             Settings
           </Link>
           {isAdmin ? (
-            // Admin-only (R4, engine.rollout.plan.md): the Shadow Parity review
-            // screen — reports and verdicts without touching the API by hand.
+            // Admin-only (R4, engine.rollout.plan.md): the Engine Comparison
+            // review screen — reports and rulings without touching the API by hand.
             <Link
               href="/admin/shadow"
               role="menuitem"
               onClick={() => setOpen(false)}
               className="block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700"
             >
-              Shadow parity
+              Engine Comparison
             </Link>
           ) : null}
           <div className="my-1 border-t border-ink-600" />
