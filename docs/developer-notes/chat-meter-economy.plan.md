@@ -3,7 +3,7 @@
 Status: next — not started in the chat lane. The design is settled and **already
 running in the successor engine** (Gate 5, shipped 2026-07-19/20, which cites this
 topic's spec as its normative semantics source), so the remaining work is a port
-into the legacy chat lane rather than a fresh design.
+into the character-chat lane rather than a fresh design.
 
 Outcome: A player can see a character's body keep time with the story rather than with
 the message count — she cools down after an intimate scene, feels it when it is past her
@@ -60,9 +60,9 @@ signs, climax → afterglow, collapse as forced sleep, and window-crossing rhyth
 with no blanket restore.
 
 That changes what this plan is. It is no longer "invent a meter economy" — it is **bring
-the legacy chat lane up to the behavior the successor lane already has**, reusing the pure
-modules the engine build produced wherever they fit. The inventory of what exists and what
-the chat lane must supply itself lives in
+the character-chat lane up to the behavior the successor lane already has**, reusing the
+pure modules the engine build produced wherever they fit. The inventory of what exists and
+what the chat lane must supply itself lives in
 [chat-meter-economy.spec.md](chat-meter-economy.spec.md) §"What the engine already ships".
 
 ## Constraints
