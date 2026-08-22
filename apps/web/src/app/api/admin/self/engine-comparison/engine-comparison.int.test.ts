@@ -9,6 +9,7 @@ import {
   chatParticipants,
   db,
   simBranches,
+  simShadowDivergences,
   simWorlds,
 } from "@/server/db";
 
@@ -95,7 +96,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ready) return;
-  // If the test failed before the normal stop path, delete the exact mirror it
+  // If the test failed before explicit cleanup, delete the exact mirror it
   // observed rather than scanning/deleting another suite's comparison world.
   if (comparisonWorldId) {
     await db().delete(simWorlds).where(eq(simWorlds.id, comparisonWorldId)).catch(() => undefined);
@@ -104,7 +105,7 @@ afterAll(async () => {
 });
 
 describe.runIf(ready)("Engine Comparison session provisioning", () => {
-  it("mirrors current one-on-one chat state into a neutral world and stops cleanly", async () => {
+  it("mirrors current state and preserves recorded evidence when stopped", async () => {
     const before = await expectJson<{ active: boolean; canStart: boolean; rows: number }>(
       await GET(req(ids.chat, "GET"), ctx(ids.chat)),
       200,
@@ -145,7 +146,7 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     expect(playerLocus?.kind).toBe("at");
     expect(primaryLocus?.kind).toBe("at");
     if (playerLocus?.kind === "at" && primaryLocus?.kind === "at") {
-      // Legacy presence was `away`, so the mirror must not seed a co-present pair.
+      // Character-chat presence was `away`, so the mirror must not seed a co-present pair.
       expect(primaryLocus.zoneId).not.toBe(playerLocus.zoneId);
     }
 
@@ -161,15 +162,57 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     expect(primaryMeters.get("stress")).toBe(7_700);
     expect(primaryMeters.get("mood")).toBe(2_300);
 
-    const stopped = await expectJson<{ active: boolean; canStart: boolean }>(
+    // The row models evidence already gathered by a real shadow exchange. Its
+    // required branch FK is ON DELETE CASCADE, so Stop must retain this mirror
+    // rather than erase the comparison and its ruling.
+    const evidenceId = newId();
+    await db().insert(simShadowDivergences).values({
+      id: evidenceId,
+      chatId: ids.chat,
+      messageId: newId(),
+      branchId,
+      domain: "meters",
+      legacy: { meters: { stress: 0.77 } },
+      successor: { metersFixedPoint: { stress: 7_700 } },
+      verdict: "intentional",
+    });
+
+    const stopped = await expectJson<{ active: boolean; canStart: boolean; rows: number }>(
       await DELETE(req(ids.chat, "DELETE"), ctx(ids.chat)),
       200,
     );
     expect(stopped.active).toBe(false);
     expect(stopped.canStart).toBe(true);
+    expect(stopped.rows).toBe(1);
     const after = await readChatEngineAuthority(ids.chat);
     expect(after?.authority).toBe("legacy_chat");
     expect(after?.simBranchId).toBeNull();
+    expect(await db().select().from(simShadowDivergences).where(eq(simShadowDivergences.id, evidenceId))).toHaveLength(1);
+    expect(await db().select().from(simWorlds).where(eq(simWorlds.id, comparisonWorldId))).toHaveLength(1);
+
+    // Cleanup after proving retention: once the evidence row is gone, deleting
+    // the retained world is safe and keeps this integration suite self-contained.
+    await db().delete(simShadowDivergences).where(eq(simShadowDivergences.id, evidenceId));
+    await db().delete(simWorlds).where(eq(simWorlds.id, comparisonWorldId));
+    comparisonWorldId = "";
+  });
+
+  it("deletes an unused managed mirror when stopped before any rows exist", async () => {
+    const started = await expectJson<{ active: boolean }>(
+      await POST(req(ids.chat, "POST"), ctx(ids.chat)),
+      200,
+    );
+    expect(started.active).toBe(true);
+    const authority = await readChatEngineAuthority(ids.chat);
+    const branchId = authority?.simBranchId ?? "";
+    const [world] = await db()
+      .select({ id: simWorlds.id })
+      .from(simBranches)
+      .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
+      .where(eq(simBranches.id, branchId));
+    comparisonWorldId = world?.id ?? "";
+
+    await DELETE(req(ids.chat, "DELETE"), ctx(ids.chat));
     expect(await db().select().from(simWorlds).where(eq(simWorlds.id, comparisonWorldId))).toHaveLength(0);
     comparisonWorldId = "";
   });
