@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseOr } from "@/lib/parse";
 import { expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
+import { garmentBlueprintSchema } from "./garment-blueprint";
 import { GARMENT_UNIT_ONE } from "./garment-material";
 import {
   capGarmentInstances,
@@ -18,6 +19,7 @@ import {
   pristineGarmentConditionState,
   pristineGarmentConditionVector,
   CHAT_GARMENTS_MAX,
+  CHAT_GARMENT_BLUEPRINTS_MAX,
   GARMENT_MAX_OPERATIONS,
   type GarmentInstanceState,
 } from "./garment-instance";
@@ -153,6 +155,49 @@ describe("chat garment store", () => {
     const store = chatGarmentStoreSchema.parse({ seeded: true, instances: [{ nope: 1 }] });
     expect(store.seeded).toBe(true);
     expect(store.instances).toEqual([]);
+  });
+
+  // Falsified against the old blueprints field, whose map-wide `.catch({})`
+  // emptied EVERY snapshot when one entry was malformed — instances parsed fine
+  // and `seeded` stayed true, so one corrupt entry stripped coverage from every
+  // garment in the chat at once (the PR #152 empty-because-failed class).
+  it("keeps the valid blueprint entries and drops only the malformed ones", () => {
+    const good = garmentBlueprintSchema.parse({
+      rootNodeId: "root",
+      nodes: [{ id: "root", kind: "root", baselineCoverage: ["chest"] }],
+    });
+    const store = chatGarmentStoreSchema.parse({
+      seeded: true,
+      blueprints: { h_good: good, h_bad: 42, "": good },
+      instances: [instance({ blueprintHash: "h_good" })],
+    });
+    expect(store.seeded).toBe(true);
+    expect(Object.keys(store.blueprints)).toEqual(["h_good"]);
+    expect(store.blueprints.h_good?.nodes[0]?.baselineCoverage).toEqual(["chest"]);
+    expect(store.instances).toHaveLength(1);
+  });
+
+  it("degrades a non-record blueprints value to an empty map without touching the instances", () => {
+    const store = chatGarmentStoreSchema.parse({ seeded: true, blueprints: "nope", instances: [instance()] });
+    expect(store.blueprints).toEqual({});
+    expect(store.instances).toHaveLength(1);
+  });
+
+  it("trims an over-cap blueprint map orphans-first so no instance's hash dangles on reload", () => {
+    // Falsified against a blind first-N slice, which cut the NEWEST entry — the
+    // very snapshot `instantiateGarment`'s bounded over-cap mint just referenced.
+    const bare = garmentBlueprintSchema.parse({ rootNodeId: "root", nodes: [{ id: "root", kind: "root" }] });
+    const overfull = Object.fromEntries(
+      Array.from({ length: CHAT_GARMENT_BLUEPRINTS_MAX + 1 }, (_, i) => [`h${i}`, bare] as const),
+    );
+    const wornHash = `h${CHAT_GARMENT_BLUEPRINTS_MAX}`;
+    const store = chatGarmentStoreSchema.parse({
+      seeded: true,
+      blueprints: overfull,
+      instances: [instance({ blueprintHash: wornHash })],
+    });
+    expect(Object.keys(store.blueprints)).toHaveLength(CHAT_GARMENT_BLUEPRINTS_MAX);
+    expect(store.blueprints[wornHash]).toBeDefined();
   });
 
   it("evicts gone garments first when capping", () => {

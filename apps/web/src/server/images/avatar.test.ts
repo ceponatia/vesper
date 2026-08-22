@@ -25,14 +25,14 @@ import {
   AVATAR_DIGEST_INELIGIBLE,
   defaultOutfitPhrase,
   generateAvatar,
-  loadDefaultWardrobe,
   loadDefaultWardrobeWithRevisions,
   wardrobeOutfitText,
 } from "./avatar";
 import { buildAvatarSegments } from "./avatar-segments";
 import { laneProbeProfile, LANE_PROBE_NAME, LANE_PROBE_SUBJECT_ID } from "@/server/test-support";
+import { expectDiagnostic } from "@/test/diagnostics";
 
-const { buildAvatarSegments: actualBuildAvatarSegments } =
+const { buildAvatarSegments: actualBuildAvatarSegments, portraitPerception } =
   await vi.importActual<typeof import("./avatar-segments")>("./avatar-segments");
 
 const mockDb = vi.mocked(db);
@@ -172,13 +172,23 @@ describe("generateAvatar digest wiring", () => {
 });
 
 describe("loadDefaultWardrobe degradation", () => {
+  /** One row of the loader's select, primed onto the db mock. */
+  function primeItemRows(rows: ReadonlyArray<Record<string, unknown>>): void {
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({ from: () => ({ where: () => Promise.resolve(rows) }) }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+  }
+
   it("degrades to no wardrobe AND records images.avatar.outfit_load_failed when the lookup throws", async () => {
     mockDb.mockImplementation(() => {
       throw new Error("connection refused");
     });
     const sink = new DiagnosticCollector();
-    const wardrobe = await loadDefaultWardrobe("u-1", ["item-1", "item-2"], sink);
-    expect(wardrobe).toEqual([]); // degraded: attributes-only prompt
+    const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1", "item-2"], sink);
+    expect(load.wardrobe).toEqual([]); // degraded: attributes-only prompt
     const recorded = sink.items.filter((d) => d.code === "images.avatar.outfit_load_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
@@ -191,6 +201,34 @@ describe("loadDefaultWardrobe degradation", () => {
     });
     const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1"], new DiagnosticCollector());
     expect(load).toMatchObject({ wardrobe: [], revisions: [], failed: true });
+  });
+
+  // A malformed coverage column used to `.catch([])` into covers-nothing — a
+  // positive bare claim off a row nobody could parse. It must load as
+  // coverage-UNRELIABLE (exposure consumers degrade toward covered) with the
+  // warn diagnostic; authored silence (no coverage field) keeps today's
+  // covers-nothing read with no marker and no diagnostic.
+  it.each([
+    ["a non-array coverage value", { coverage: "chest" }],
+    ["an array with a non-string element", { coverage: ["chest", 42] }],
+    ["an unparseable definition wholesale", "not an object"],
+  ])("reads %s as coverage-unreliable, never covers-nothing", async (_case, definition) => {
+    primeItemRows([{ id: "item-1", name: "silk shirt", description: null, definition, updatedAt: new Date(0) }]);
+    const sink = new DiagnosticCollector();
+    const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1"], sink);
+    expect(load.coverageUnreliableIds).toEqual(["item-1"]);
+    expect(load.wardrobe[0]).toMatchObject({ name: "silk shirt", coverage: [] });
+    expect(load.failed).toBeUndefined(); // the ROWS loaded; only their coverage is unknown
+    expectDiagnostic(sink, "images.avatar.coverage_unreadable");
+  });
+
+  it("keeps an absent coverage field as authored covers-nothing — no marker, no diagnostic", async () => {
+    primeItemRows([{ id: "item-1", name: "hairpin", description: null, definition: {}, updatedAt: new Date(0) }]);
+    const sink = new DiagnosticCollector();
+    const load = await loadDefaultWardrobeWithRevisions("u-1", ["item-1"], sink);
+    expect(load.coverageUnreliableIds).toBeUndefined();
+    expect(load.wardrobe[0]).toMatchObject({ coverage: [] });
+    expect(sink.items).toEqual([]);
   });
 
   it("a failed wardrobe load never becomes exposure claims — a genuinely empty wardrobe still does", () => {
@@ -213,11 +251,43 @@ describe("loadDefaultWardrobe degradation", () => {
 
     const confirmedBare = actualBuildAvatarSegments(base);
     expect(confirmedBare.segments.some((s) => s.kind === "exposure")).toBe(true);
+
+    // Coverage-unreliable is the same degrade with the wardrobe LIST intact: a
+    // malformed coverage column loaded the kimono with `coverage: []`, which
+    // must not read as an undressed body — no exposure claims — while the
+    // outfit line keeps its real name.
+    const kimono = { name: "silk kimono", coverage: [] as string[], layer: 1 as const, opacity: "opaque" as const };
+    const unreliable = actualBuildAvatarSegments({ ...base, wardrobe: [kimono], coverageUnreliable: true });
+    expect(unreliable.segments.some((s) => s.kind === "exposure")).toBe(false);
+    expect(unreliable.prompt).not.toMatch(/\bbare\b|\btopless\b|\bnude\b/i);
+    expect(unreliable.prompt).toContain("silk kimono");
+    expect(unreliable.missingRequired).toEqual([]);
+  });
+
+  it("the degraded perception hides what a fully-covering wardrobe hides — and only that", () => {
+    // The perception half of the same degrade: the failed-empty worn list used
+    // to read EVERY body location "visible", so optional digest facts at
+    // covered locations (a chest tattoo under the saved outfit) were selected
+    // and stated even while exposure claimed fully covered. Degraded, every
+    // location an exposure region reaches answers hidden; the identity
+    // locations a portrait requires stay in plain view (mandatory facts bypass
+    // perception entirely — the missingRequired pins above are that half).
+    const degraded = portraitPerception([], true);
+    // Wings and tail sit under back/pelvis in the registry, so a fully-covering
+    // wardrobe hides them too — harmless, because morphology anchors are
+    // mandatory facts and never consult perception.
+    const hidden = ["chest", "breasts", "back", "waist", "groin", "buttocks", "thighs", "feet", "sole", "wings", "tail"];
+    const visible = ["face", "hair", "hands", "forearms", "horns"];
+    for (const location of hidden) expect(degraded.exposure[location], location).toBe("hidden");
+    for (const location of visible) expect(degraded.exposure[location], location).toBe("visible");
+    // The control is the bug: the same failed-empty list, un-degraded, puts the
+    // whole body in the camera's plain view.
+    expect(portraitPerception([], false).exposure["chest"]).toBe("visible");
   });
 
   it("an empty outfit skips the lookup entirely — no query, no diagnostic", async () => {
     const sink = new DiagnosticCollector();
-    expect(await loadDefaultWardrobe("u-1", [], sink)).toEqual([]);
+    expect((await loadDefaultWardrobeWithRevisions("u-1", [], sink)).wardrobe).toEqual([]);
     expect(mockDb).not.toHaveBeenCalled();
     expect(sink.items).toEqual([]);
   });

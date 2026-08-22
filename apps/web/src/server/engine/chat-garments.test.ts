@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  DiagnosticCollector,
   emptyChatGarmentStore,
   emptyGarmentPresentationState,
   garmentActorForCharacter,
@@ -9,6 +10,7 @@ import {
   GARMENT_DEGREE_BAND_VALUES,
   GARMENT_PLAYER_ACTOR,
   GARMENT_UNIT_ONE,
+  wornGarmentInstances,
   type ChatGarmentStore,
   type GarmentBlueprint,
   type GarmentConditionState,
@@ -16,12 +18,28 @@ import {
   type GarmentLocus,
   type GarmentPresentationState,
 } from "@/contracts";
+// Default-throwing db: `syncChatGarments`'s definition load degrades to a FAILED
+// load, the shape the reconcile tests below exercise. Every other test in this
+// file is pure and never reaches IO, so the mock costs them nothing.
+vi.mock("@/server/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/db")>();
+  return {
+    ...actual,
+    db: vi.fn(() => {
+      throw new Error("simulated definition load failure");
+    }),
+  };
+});
+
+import { db } from "@/server/db";
+import { expectDiagnostic } from "@/test/diagnostics";
 import {
   buildChatGarmentNarration,
   chatGarmentLookChanged,
   chatGarmentLookKey,
   chatGarmentNarrationActors,
   garmentReadoutsFor,
+  syncChatGarments,
 } from "./chat-garments";
 
 /**
@@ -190,6 +208,114 @@ describe("buildChatGarmentNarration", () => {
     const second = buildChatGarmentNarration({ store: { ...store, cues: first.nextCues }, actors: actors(), atMinutes: 30 });
     expect(second.cues).toEqual([]);
     expect(second.sceneNotes).toEqual(["Wren's linen shirt is soaked through"]);
+  });
+});
+
+/**
+ * A FAILED definition load must not reach the mint (docs/resilience.md —
+ * degraded defaults over failed turns). Falsified against the old sync: a
+ * thrown load produced zero seeds, and `syncWornGarments` then permanently
+ * minted coverage-less "garment" instances for the unloadable ids — phantom
+ * blueprints that never healed and read the actor bare on every later turn.
+ * A load that SUCCEEDS over a genuinely deleted row keeps the unresolved mint:
+ * that id will never load, and the projection must stay byte-identical.
+ */
+describe("syncChatGarments over a degraded definition load", () => {
+  it("withholds unloadable ids from the reconcile — nothing minted, warn recorded, retry next pass", async () => {
+    const sink = new DiagnosticCollector();
+    const store = await syncChatGarments({
+      store: emptyChatGarmentStore(),
+      ownerId: "owner",
+      actors: [{ actorId: ACTOR, wornItemIds: ["def_shirt"] }],
+      atMinutes: 0,
+      sink,
+    });
+    // The actor stays unmodelled, so the worn column keeps the id and the next
+    // reconcile retries materialization against a healthy load.
+    expect(store.instances).toEqual([]);
+    expectDiagnostic(sink, "chat_garments.definition_load_failed");
+  });
+
+  it("skips the actor wearing a coverage-unreadable id while a clean-set neighbour still mints", async () => {
+    // The durable twin of the thrown load: the row loads, its coverage column
+    // does not parse, and seeding it would snapshot `[]` coverage into a
+    // mint-time blueprint that reads the garment's regions bare forever. The
+    // whole ACTOR skips — reconciling their readable remainder alone would
+    // establish a partial wardrobe as the store truth (and, once modelled,
+    // doff whatever the corrupt id replaced) — while an actor whose set the
+    // load read in full still materializes: one bad row never poisons the pass.
+    vi.mocked(db).mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () =>
+                Promise.resolve([
+                  { id: "def_corrupt", name: "silk shirt", description: null, definition: { coverage: "chest" }, updatedAt: new Date(0) },
+                  { id: "def_ok", name: "wool coat", description: null, definition: { coverage: ["chest"] }, updatedAt: new Date(0) },
+                ]),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+    const sink = new DiagnosticCollector();
+    const store = await syncChatGarments({
+      store: emptyChatGarmentStore(),
+      ownerId: "owner",
+      actors: [
+        { actorId: ACTOR, wornItemIds: ["def_corrupt", "def_ok"] },
+        { actorId: GARMENT_PLAYER_ACTOR, wornItemIds: ["def_ok"] },
+      ],
+      atMinutes: 0,
+      sink,
+    });
+    // The corrupt-set actor stays unmodelled (worn column keeps both ids and
+    // retries next pass); the clean-set actor minted from the same load.
+    expect(wornGarmentInstances(store, ACTOR)).toEqual([]);
+    expect(wornGarmentInstances(store, GARMENT_PLAYER_ACTOR).map((worn) => worn.definitionId)).toEqual(["def_ok"]);
+    expectDiagnostic(sink, "chat_garments.coverage_unreadable");
+  });
+
+  it("keeps a modelled actor's outfit when the replacement's load fails — a lost change, never a bare body", async () => {
+    // Falsified against the pre-fix sync: B's id was withheld but the actor's
+    // reconcile still ran on the filtered (now empty) desired list, doffed A
+    // as no-longer-desired, and left ZERO worn instances — a modelled-and-empty
+    // wardrobe the projection then persisted, which reads STRIPPED (the exact
+    // bug class the withhold exists to close, resurfacing through the write
+    // path). Skipped, the slice keeps its prior consistent state: A stays worn,
+    // the fiction keeps the old outfit until the data heals.
+    const dressed = storeOf([
+      { ...instance({ id: "g_shirt", name: "linen shirt", blueprint: SHIRT }), definitionId: "def_shirt" },
+    ]);
+    const sink = new DiagnosticCollector();
+    const store = await syncChatGarments({
+      store: dressed,
+      ownerId: "owner",
+      actors: [{ actorId: ACTOR, wornItemIds: ["def_dress"] }],
+      atMinutes: 10,
+      sink,
+    });
+    expect(wornGarmentInstances(store, ACTOR).map((worn) => worn.id)).toEqual(["g_shirt"]);
+    expect(store.instances).toHaveLength(1);
+    expectDiagnostic(sink, "chat_garments.definition_load_failed");
+  });
+
+  it("still mints the unresolved instance for a genuinely deleted definition", async () => {
+    vi.mocked(db).mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+    const store = await syncChatGarments({
+      store: emptyChatGarmentStore(),
+      ownerId: "owner",
+      actors: [{ actorId: ACTOR, wornItemIds: ["def_gone"] }],
+      atMinutes: 0,
+      sink: new DiagnosticCollector(),
+    });
+    expect(store.instances).toHaveLength(1);
+    expect(store.instances[0]).toMatchObject({ definitionId: "def_gone" });
   });
 });
 

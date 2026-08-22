@@ -16,7 +16,19 @@ import { z } from "zod";
  * hole straight through the scene-image coverage gate that decides whether the viewer's
  * anatomy renders (scene-pov-embodiment.plan.md).
  */
-export const chatPlayerStateSchema = z.object({
+/**
+ * The worn list, read PER ELEMENT: a malformed element drops alone so the
+ * readable rest keeps its coverage, and the read records whether it was
+ * COMPLETE — i.e. whether an empty result is the stored truth or the residue
+ * of dropped garbage. A value that is not an array at all is unreadable
+ * (`undefined` after the catch below).
+ */
+const wornItemIdsReadSchema = z.array(z.unknown()).transform((raw) => {
+  const ids = raw.filter((id): id is string => typeof id === "string");
+  return { ids, complete: ids.length === raw.length };
+});
+
+const chatPlayerStateShape = z.object({
   /**
    * The persona being played (a `personas.id`). "" ⇒ no pick ⇒ `resolveChatPersona`
    * falls to the owner's default. A dangling id (deleted persona) misses the
@@ -24,7 +36,7 @@ export const chatPlayerStateSchema = z.object({
    */
   personaId: z.string().catch("").default(""),
   /** Worn item-definition ids — THE wardrobe truth, exactly like the character side's `wornItemIds`. */
-  wornItemIds: z.array(z.string()).catch([]).default([]),
+  wornItemIds: wornItemIdsReadSchema.optional().catch(undefined),
   /**
    * Has `wornItemIds` been initialized from the persona's wardrobe yet?
    *
@@ -46,6 +58,36 @@ export const chatPlayerStateSchema = z.object({
    * only: it dresses the prose, and contributes NO coverage, so it can't move exposure.
    */
   overlay: z.string().catch("").default(""),
+});
+
+/**
+ * `seeded: true` over an EMPTY `wornItemIds` is downstream PROOF of a stripped
+ * player (`resolvePlayerWardrobe` reads it as `worn: []` — pelvis bare, the
+ * scene-image viewer-body gates open). That proof may only stand over a worn
+ * list read in full: an unreadable value, or an empty residue whose elements
+ * all dropped, degrades `seeded` to `false` — the persona's default outfit,
+ * dressed — because malformed data must never fabricate a proven-naked body.
+ * A genuinely stored `[]` keeps its proof, and a partial drop with survivors
+ * keeps `seeded` (the survivors are the wardrobe we can still read) — but
+ * NOT the claim of completeness: the dropped element may have been the pants,
+ * so `wornItemIdsIncomplete` rides the parse and `resolvePlayerWardrobe`
+ * degrades exposure to covered instead of reading every region the survivors
+ * miss as bare. The marker is parse-DERIVED, never persisted truth: healthy
+ * writers never produce it, the shape above strips it as an unknown key on
+ * reparse, and a re-read of the (all-string) survivor list re-derives nothing.
+ */
+export const chatPlayerStateSchema = chatPlayerStateShape.transform((state) => {
+  const worn = state.wornItemIds;
+  return {
+    personaId: state.personaId,
+    wornItemIds: worn?.ids ?? [],
+    seeded: state.seeded && worn !== undefined && (worn.ids.length > 0 || worn.complete),
+    outfitPresetId: state.outfitPresetId,
+    overlay: state.overlay,
+    ...(worn !== undefined && !worn.complete && worn.ids.length > 0
+      ? { wornItemIdsIncomplete: true as const }
+      : {}),
+  };
 });
 
 export type ChatPlayerState = z.infer<typeof chatPlayerStateSchema>;

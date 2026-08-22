@@ -1,10 +1,12 @@
 import { and, desc, eq } from "drizzle-orm";
 import {
   affordanceSubjectId,
+  type CharacterProfile,
   characterProfileSchema,
   type CommittedSceneFacts,
   committedSceneFactsFor,
   currentScenePlace,
+  DiagnosticCollector,
   emptyCharacterProfile,
   garmentActorForCharacter,
   personaToCharacterProfile,
@@ -19,6 +21,7 @@ import {
   CHAT_CONTACT_PLAYER_SUBJECT,
   chatGarmentCuesEnabled,
   chatGarmentLookKey,
+  type ChatState,
   chatVisualStateShadowInput,
   enqueueChatPlaceImage,
   loadChatComposerModel,
@@ -32,7 +35,7 @@ import {
 import { resolveChatPersona } from "@/server/players";
 import { chatLookKey, normalizeName, renderCharacterSceneImage } from "@/server/images";
 import type { VisualStateShadowInput } from "@/server/visual-state";
-import { log } from "@/server/log";
+import { log, logDiagnostics } from "@/server/log";
 
 export const SCENE_CHAT_CONTEXT = 6;
 
@@ -62,8 +65,26 @@ export async function hasLiveChatSceneJob(chatId: string): Promise<boolean> {
   return hasLiveChatJob("chat_scene_image", chatId);
 }
 
+/**
+ * The state a cast member's wardrobe, look key and digest cut all resolve from.
+ * A roster member with no chat-state row yet (added to the cast, never settled)
+ * is not "wearing nothing" — they ride the same first-exchange seed a missing
+ * row implies everywhere else, so the SAVED default outfit and its exposure
+ * resolve normally instead of the render inventing casual clothing. A stored
+ * row passes through untouched.
+ */
+export function memberSceneState(stored: ChatState | null, profile: CharacterProfile): ChatState {
+  return stored ?? seedChatState(profile);
+}
+
 /** Queue one detached character-chat scene render with its persisted model/provider choice. */
 export async function queueChatScene(args: QueueChatSceneArgs): Promise<string | null> {
+  // Queue-side sink (docs/resilience.md §8): this queue is fire-and-forget with
+  // no route sink, so a wardrobe that failed to load, a profile that failed to
+  // parse, or a digest cut assembled degraded used to leave NO record — the
+  // render quietly drew the fallback. Collected here and replayed at their own
+  // severities, the same drain the chat-look and scene lanes run.
+  const collected = new DiagnosticCollector();
   try {
     if (await hasLiveChatSceneJob(args.chatId)) return null;
 
@@ -93,7 +114,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       .reverse();
     const anchorMessageId = args.anchorMessageId ?? recent.find((row) => row.role === "assistant")?.id;
 
-    const scenario = await loadChatScenario(args.chatId);
+    const scenario = await loadChatScenario(args.chatId, collected);
     // Read separately from the scenario, and outside it, on purpose: the composer-model
     // override is operational config that a retake must not revert (chat-state.ts).
     const composerModel = await loadChatComposerModel(args.chatId);
@@ -106,7 +127,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // single-subject whoever else is in the room.
     const roster = args.roster?.length ? args.roster : [args.character];
     const states = await Promise.all(
-      roster.map(async (member) => ({ member, stored: await loadChatState(args.chatId, member.id) })),
+      roster.map(async (member) => ({ member, stored: await loadChatState(args.chatId, member.id, collected) })),
     );
     const subject = states.find((entry) => entry.member.id === args.character.id);
     const onlySubject = subject ? [subject] : [{ member: args.character, stored: null }];
@@ -137,7 +158,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
 
     const player = await resolveChatPersona({ ownerId: args.userId, chatId: args.chatId });
     const playerWardrobe = scenario
-      ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile, undefined, scenario.garments)
+      ? await resolvePlayerWardrobe(scenario.playerState, args.userId, player.profile, collected, scenario.garments)
       : null;
     const playerProfile = player.profile ? personaToCharacterProfile(player.profile) : undefined;
     const playerResolved = playerProfile ? resolveAttributes(playerProfile.attributes, []) : [];
@@ -159,33 +180,34 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           characterProfileSchema,
           member.profile ?? {},
           emptyCharacterProfile(),
-          undefined,
+          collected,
           "characters.profile",
         );
         const actor = garmentActorForCharacter(member.id);
-        const wardrobe = stored
-          ? await resolveChatWardrobe(
-              {
-                ...stored,
-                ...(scenario ? { garments: scenario.garments } : {}),
-                garmentActorId: actor,
-              },
-              args.userId,
-              profile,
-            )
-          : null;
-        const lookKey =
-          wardrobe && stored
-            ? chatLookKey({
-                wornItemIds: wardrobe.wornItemIds,
-                overlay: wardrobe.overlay,
-                exposure: wardrobe.exposure,
-                attributeOverlays: stored.attributeOverlays,
-                ...(scenario
-                  ? { garmentKey: chatGarmentLookKey(scenario.garments, [actor], scenario.clockMinutes) }
-                  : {}),
-              })
-            : undefined;
+        // Stored row or the first-exchange seed (`memberSceneState`): a member
+        // whose row has not settled yet used to skip resolution entirely —
+        // wardrobe null → outfit "" → the prompt invented casual clothing over
+        // the character's SAVED default outfit.
+        const state = memberSceneState(stored, profile);
+        const wardrobe = await resolveChatWardrobe(
+          {
+            ...state,
+            ...(scenario ? { garments: scenario.garments } : {}),
+            garmentActorId: actor,
+          },
+          args.userId,
+          profile,
+          collected,
+        );
+        const lookKey = chatLookKey({
+          wornItemIds: wardrobe.wornItemIds,
+          overlay: wardrobe.overlay,
+          exposure: wardrobe.exposure,
+          attributeOverlays: state.attributeOverlays,
+          ...(scenario
+            ? { garmentKey: chatGarmentLookKey(scenario.garments, [actor], scenario.clockMinutes) }
+            : {}),
+        });
         const garmentNotes =
           scenario && chatGarmentCuesEnabled()
             ? buildChatGarmentNarration({
@@ -197,7 +219,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
                     actorId: actor,
                     label: member.name,
                     possessive: `${member.name}'s`,
-                    ...(wardrobe ? { visibility: wardrobe.partVisibility } : {}),
+                    visibility: wardrobe.partVisibility,
                   },
                 ],
               }).sceneNotes
@@ -208,22 +230,22 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             name: member.name,
             profile,
             avatarImageId: member.avatarImageId,
-            outfit: wardrobe?.garments ?? "",
-            outfitExposed: wardrobe?.exposed ?? false,
-            exposure: wardrobe?.exposure,
+            outfit: wardrobe.garments,
+            outfitExposed: wardrobe.exposed,
+            exposure: wardrobe.exposure,
             garmentNotes,
-            meters: stored?.meters,
-            conditions: stored?.conditions,
+            meters: state.meters,
+            conditions: state.conditions,
             // The same persisted overlays the look key above hashes — the render
             // has to RESOLVE them too, or a recorded haircut invalidates the
             // anchor without ever reaching the prompt that describes the hair.
-            attributeOverlays: stored?.attributeOverlays,
+            attributeOverlays: state.attributeOverlays,
             lookKey,
           },
           // Kept beside the member for the cast-1 visual cut below — the SAME
           // state and wardrobe resolution the member's fields came from, never
-          // a second load that could disagree with them.
-          stored,
+          // a second load or seed that could disagree with them.
+          state,
           wardrobe,
         };
       }),
@@ -257,13 +279,14 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           cutId: `chat_scene:${anchorMessageId ?? args.chatId}`,
           cut: {
             profile: sole.member.profile,
-            // The raw stored cut the member's own fields resolve from, seeded
-            // exactly as a first exchange would seed it when no row exists yet.
-            state: sole.stored ?? seedChatState(sole.member.profile),
+            // The stored-or-seeded state the member's own fields resolved from
+            // above, and the wardrobe resolution that rode it.
+            state: sole.state,
             scenario: scenario ?? seedChatScenario(sole.member.profile),
-            ...(sole.wardrobe === null ? {} : { wardrobe: sole.wardrobe }),
+            wardrobe: sole.wardrobe,
             owner: args.userId,
           },
+          sink: collected,
         });
       } else {
         // A structurally guaranteed row is missing — corrupt membership.
@@ -348,5 +371,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
+  } finally {
+    logDiagnostics("chat_scene", collected.items, { chatId: args.chatId, characterId: args.character.id });
   }
 }

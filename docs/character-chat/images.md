@@ -101,7 +101,12 @@ owner rulings 2026-07-11):
   pointer is the images table itself (`meta.lookKey` on the newest ready row =
   `chatLookKey(outfit, exposed, overlays)`), so a regenerate rollback can't desync
   pointer from asset — a stale key just falls back to the avatar. Scenes AND selfies
-  anchor on it when fresh.
+  anchor on it when fresh. The job skips a wardrobe resolve marked `unreliable`
+  (a failed or coverage-unreadable load — warn `images.chat_look.wardrobe_unreliable`):
+  minting from the degraded stand-in would cache a wrongly-dressed look under its key
+  and the keep-latest purge would delete the correct anchor, so nothing renders and the
+  next outfit/appearance change retries. The job drains its own diagnostics into the
+  process log (`images.chat_look_image`).
 - **Place images** (`kind: "chat_place"`): the current scene-memory place's
   establishing shot, minted lazily by `chat_place_image` from its agent-written
   sketch on the **first render there** (`queueChatScene` enqueues; that render still

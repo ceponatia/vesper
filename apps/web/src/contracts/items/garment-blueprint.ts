@@ -20,8 +20,11 @@ import { garmentMaterialProfileIdSchema, GARMENT_MATERIAL_UNKNOWN } from "./garm
  * Structural rules (one root, acyclic `part_of` reaching every node, known
  * endpoints, registry-valid ids, legal behavior bindings) are enforced by
  * `validateGarmentBlueprint` in garment-blueprint-validation.ts — the schema
- * here is deliberately lenient so a malformed row degrades to a default rather
- * than failing a turn (docs/resilience.md §1).
+ * here is deliberately lenient so a malformed row degrades rather than failing
+ * a turn (docs/resilience.md §1). Degradation that loses COVERAGE is marked
+ * (`degraded: true`, `isDegradedGarmentBlueprint`), because a covers-nothing
+ * read that merely looks authored is how a corrupt row turns into a nudity
+ * claim on the modelled wardrobe path.
  */
 
 /** Bumped when the graph shape changes in a way a reader must branch on. */
@@ -92,10 +95,14 @@ export const garmentPartNodeSchema = z.object({
   /**
    * Body-location ids this part covers when nothing is displacing it. Behaviors
    * may only SUBTRACT from this set (OQ6) — nothing ever adds coverage.
+   *
+   * Deliberately NO `.catch([])`: coverage is the one field whose silent healing
+   * can bare a character, so a malformed list fails the NODE and the blueprint
+   * seam below records the loss as `degraded` instead of keeping a node that
+   * looks authored to cover nothing.
    */
   baselineCoverage: z
     .array(z.string().trim().min(1).max(64))
-    .catch([])
     .default([])
     .transform((values) => [...new Set(values)].slice(0, GARMENT_MAX_PART_COVERAGE)),
   /** Layer nudge relative to the garment's own layer (a lining sits inside). */
@@ -184,7 +191,22 @@ export type GarmentBehaviorBinding = z.infer<typeof garmentBehaviorBindingSchema
 
 // --- Blueprint ----------------------------------------------------------------
 
-export const garmentBlueprintSchema = z.object({
+/**
+ * A parsed blueprint. `degraded` is the reliability marker: present (always
+ * `true`) ONLY when coverage-bearing construction was lost — the degraded
+ * sentinel, or a parse that had to drop nodes. Valid stored blueprints never
+ * carry the key, so their persisted form round-trips byte-identically.
+ */
+export interface GarmentBlueprint {
+  version: number;
+  rootNodeId: GarmentPartId;
+  nodes: GarmentPartNode[];
+  edges: GarmentEdge[];
+  behaviors: GarmentBehaviorBinding[];
+  degraded?: true;
+}
+
+const garmentBlueprintShapeSchema = z.object({
   version: z
     .number()
     .int()
@@ -192,11 +214,13 @@ export const garmentBlueprintSchema = z.object({
     .catch(GARMENT_BLUEPRINT_VERSION)
     .default(GARMENT_BLUEPRINT_VERSION),
   rootNodeId: garmentPartIdSchema.catch(GARMENT_ROOT_PART_ID).default(GARMENT_ROOT_PART_ID),
-  nodes: z
-    .array(garmentPartNodeSchema)
-    .catch([])
-    .default([])
-    .transform((nodes) => nodes.slice(0, GARMENT_MAX_PART_NODES)),
+  /**
+   * Raw on purpose — resolved per NODE in the transform below, never
+   * `.catch([])`. `.optional()` because zod treats a bare `unknown` as a
+   * REQUIRED key: an absent list must keep parsing to the empty node list it
+   * always has, not fail the row.
+   */
+  nodes: z.unknown().optional(),
   edges: z
     .array(garmentEdgeSchema)
     .catch([])
@@ -207,15 +231,48 @@ export const garmentBlueprintSchema = z.object({
     .catch([])
     .default([])
     .transform((behaviors) => behaviors.slice(0, GARMENT_MAX_BEHAVIORS)),
+  degraded: z.literal(true).optional().catch(undefined),
 });
-export type GarmentBlueprint = z.infer<typeof garmentBlueprintSchema>;
 
 /**
- * The degraded default: a bare, VALID root-only garment that covers nothing and
- * can do nothing. Conservative in the direction that matters — a blueprint that
- * lost its parts contributes no coverage AND has no behavior able to strip any,
- * so a corrupt row can never bare a character (plan §"Never let a free-text flag
- * decide intimate coverage").
+ * The seams matter here (docs/resilience.md §1, PR #152's bug class): edges and
+ * behaviors keep `.catch([])` because losing them only ever makes a garment
+ * cover MORE (behaviors strictly subtract coverage). Nodes carry the coverage
+ * itself, so they get per-node tolerance instead — one malformed node drops
+ * alone rather than emptying the graph — and ANY loss (a non-array `nodes`
+ * value, or a node that would not parse) marks the result `degraded`, so a
+ * corrupt row lands in the detectable sentinel state instead of masquerading as
+ * a garment authored to cover nothing.
+ */
+export const garmentBlueprintSchema = garmentBlueprintShapeSchema.transform((shape): GarmentBlueprint => {
+  const raw = shape.nodes === undefined ? [] : shape.nodes;
+  const list = Array.isArray(raw) ? raw : null;
+  const nodes: GarmentPartNode[] = [];
+  let lost = list === null;
+  for (const item of list ?? []) {
+    const node = garmentPartNodeSchema.safeParse(item);
+    if (node.success) nodes.push(node.data);
+    else lost = true;
+  }
+  return {
+    version: shape.version,
+    rootNodeId: shape.rootNodeId,
+    nodes: nodes.slice(0, GARMENT_MAX_PART_NODES),
+    edges: shape.edges,
+    behaviors: shape.behaviors,
+    ...(lost || shape.degraded === true ? { degraded: true as const } : {}),
+  };
+});
+
+/**
+ * The degraded default: a bare, VALID root-only garment that covers nothing,
+ * can do nothing, and is MARKED (`degraded: true`). The mark is what keeps the
+ * conservative story honest: coverage-free is only safe where "covers nothing"
+ * is read as unknown — on the modelled wardrobe path it would read as a
+ * positive nudity claim, so consumers deriving exposure must check
+ * `isDegradedGarmentBlueprint` (or `resolveGarmentBlueprint`'s `reliable`) and
+ * degrade to covered, never to bare (plan §"Never let a free-text flag decide
+ * intimate coverage").
  */
 export function degradedGarmentBlueprint(): GarmentBlueprint {
   return garmentBlueprintSchema.parse({
@@ -223,7 +280,19 @@ export function degradedGarmentBlueprint(): GarmentBlueprint {
     nodes: [{ id: GARMENT_ROOT_PART_ID, kind: "root", aliases: [], baselineCoverage: [] }],
     edges: [],
     behaviors: [],
+    degraded: true,
   });
+}
+
+/**
+ * True for blueprints whose coverage cannot be trusted: the degraded sentinel a
+ * dangling hash resolves to, and any parse that lost coverage-bearing nodes.
+ * The one sanctioned way to tell "could not read the garment" from "authored to
+ * cover nothing" — no heuristics on empty coverage (jewelry legitimately covers
+ * nothing).
+ */
+export function isDegradedGarmentBlueprint(blueprint: GarmentBlueprint): boolean {
+  return blueprint.degraded === true;
 }
 
 /** The blueprint's root node, or `undefined` when the graph has lost it. */
@@ -256,10 +325,13 @@ function edgeSortKey(edge: GarmentEdge): string {
  * Canonical form: nodes/edges/behaviors and every id list inside them sorted, so
  * two structurally identical blueprints authored in different orders hash the
  * same. (`simulationHash` key-sorts objects but preserves array order, which is
- * why the arrays are sorted here.)
+ * why the arrays are sorted here.) The `degraded` marker is part of construction
+ * identity: a degraded sentinel must never dedup onto — and thereby masquerade
+ * as — an authored covers-nothing snapshot already in a chat's map.
  */
 export function normalizeGarmentBlueprint(blueprint: GarmentBlueprint): GarmentBlueprint {
   return {
+    ...(blueprint.degraded === true ? { degraded: true as const } : {}),
     version: blueprint.version,
     rootNodeId: blueprint.rootNodeId,
     nodes: [...blueprint.nodes]

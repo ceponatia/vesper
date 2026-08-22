@@ -173,17 +173,49 @@ const AVATAR_STYLE_QUALITY: Record<AvatarStyle, string> = {
 // ---------------------------------------------------------------------------
 
 /**
+ * The wardrobe the degraded perception reads instead of an unreadable one:
+ * opaque cover over the four exposure-region roots — exactly the regions
+ * `FULLY_COVERED` claims — so the camera's per-location answers and the
+ * exposure readout degrade to the SAME fully-covered body. Locations no
+ * exposure region reaches (head, face, hair, hands, arms, wings, horns, tail)
+ * stay in plain view, which is what keeps a portrait's identity and morphology
+ * facts resolvable; the mandatory lane never consults perception at all
+ * (selection invariant 7), so this degrade can only suppress OPTIONAL detail —
+ * a chest tattoo under the saved outfit goes unstated instead of being
+ * asserted onto a body the camera could not actually see.
+ */
+const UNKNOWN_COVERAGE_WORN: readonly WornItemInput[] = [
+  {
+    instanceId: "wardrobe:unknown",
+    garmentId: "wardrobe:unknown",
+    name: "unknown wardrobe",
+    coverage: ["torso", "pelvis", "legs", "feet"],
+    layer: 3,
+    opacity: "opaque",
+  },
+];
+
+/**
  * Per-body-location exposure from the worn coverage — the camera's perception
  * view. The optional selection lane fails closed on an unlisted location, so a
  * studio portrait must positively answer for the whole body: an opaque garment
  * hides what it covers, a sheer one hints it, and everything else is in plain
  * view of the camera. Same coverage expansion as `exposedRegions`, read per
  * location instead of per region.
+ *
+ * `coverageUnreadable` is the perception half of the FULLY_COVERED degrade:
+ * when the wardrobe (or its coverage) could not be read, the camera reads
+ * {@link UNKNOWN_COVERAGE_WORN} instead of the failed-empty list — every
+ * location a fully-covering wardrobe hides answers `hidden`, never `visible`.
+ * Exported so the degrade's per-location answers stay pinned by test.
  */
-function portraitPerception(worn: readonly WornItemInput[]): AffordancePerceptionView {
+export function portraitPerception(
+  worn: readonly WornItemInput[],
+  coverageUnreadable = false,
+): AffordancePerceptionView {
   const opaque = new Set<string>();
   const sheer = new Set<string>();
-  for (const item of worn) {
+  for (const item of coverageUnreadable ? UNKNOWN_COVERAGE_WORN : worn) {
     const into = item.opacity === "sheer" ? sheer : opaque;
     for (const cover of item.coverage) {
       if (bodyLocationRegistry.byId(cover) === undefined) continue;
@@ -291,6 +323,15 @@ export interface AvatarSegmentAssemblyInput {
    * (`images.avatar.outfit_load_failed` fires at the load site).
    */
   readonly wardrobeUnavailable?: boolean;
+  /**
+   * ≥1 loaded garment's coverage column was unreadable
+   * (`AvatarWardrobeLoad.coverageUnreliableIds`) — the wardrobe LIST is real
+   * (the outfit line still renders its names) but its coverage is unknown
+   * state. Exposure and the camera's perception degrade exactly as
+   * `wardrobeUnavailable`'s do: fully covered, no reveals — a malformed row
+   * must not undress the body it dresses.
+   */
+  readonly coverageUnreliable?: boolean;
   readonly sink?: DiagnosticSink;
 }
 
@@ -318,10 +359,14 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
   // The canonical exposure readout, computed ONCE over the FULL wardrobe
   // (before the waist-up garment filter): a covering garment still hides its
   // region even when it is dropped from the visible outfit. A FAILED wardrobe
-  // load is unknown state, not a bare body: coverage degrades to fully covered
-  // so the prompt stays silent about exposure (silence IS covered in the
-  // builder's contract) instead of asserting a nudity the saved outfit denies.
-  const exposure = input.wardrobeUnavailable === true ? FULLY_COVERED : exposedRegions(worn);
+  // load — or one whose coverage columns could not be parsed — is unknown
+  // state, not a bare body: coverage degrades to fully covered so the prompt
+  // stays silent about exposure (silence IS covered in the builder's contract)
+  // instead of asserting a nudity the saved outfit denies. ONE flag drives the
+  // exposure readout AND the perception below, so the two halves cannot
+  // disagree about what the camera may see.
+  const coverageUnreadable = input.wardrobeUnavailable === true || input.coverageUnreliable === true;
+  const exposure = coverageUnreadable ? FULLY_COVERED : exposedRegions(worn);
 
   const assembly = assembleVisualStateSnapshot({
     scope: { kind: "standalone_character", characterId: input.characterId },
@@ -341,7 +386,7 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     ...(sink === undefined ? {} : { sink }),
   });
 
-  const context = portraitContext(portraitPerception(worn));
+  const context = portraitContext(portraitPerception(worn, coverageUnreadable));
   const selection = selectVisualImageFacts({
     snapshot: assembly.snapshot,
     context,

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyGarmentOperations,
+  chatPlayerStateSchema,
   DiagnosticCollector,
   emptyCharacterProfile,
   emptyChatPlayerState,
@@ -22,21 +23,23 @@ import {
   type GarmentSeed,
   emptyGarmentCueState,
 } from "@/contracts";
-// The degraded-load shape, without Postgres: every `db()` throws, so
-// `loadDefaultWardrobe` catches, reports `images.avatar.outfit_load_failed`, and
-// returns [] — the same empty result a deleted-row lookup produces. Every OTHER
-// test in this file stays on the branches that take no IO at all, so the mock
-// costs them nothing.
+// The degraded-load shape, without Postgres: by default every `db()` throws, so
+// the wardrobe load catches, reports `images.avatar.outfit_load_failed`, and
+// comes back empty and FAILED. Tests that need a lookup that SUCCEEDS (deleted
+// rows, malformed coverage) prime one-shot row reads over the same mock. Every
+// OTHER test in this file stays on the branches that take no IO at all, so the
+// mock costs them nothing.
 vi.mock("@/server/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/db")>();
   return {
     ...actual,
-    db: () => {
+    db: vi.fn(() => {
       throw new Error("simulated wardrobe load failure");
-    },
+    }),
   };
 });
 
+import { db } from "@/server/db";
 import { toWornInputs, wardrobeOutfitText, type AvatarWardrobeItem } from "../images";
 import { garmentWardrobeItem, playerWornIds, resolveChatWardrobe, resolvePlayerWardrobe } from "./chat-wardrobe";
 
@@ -491,6 +494,14 @@ describe("an all-denied overlay reads bare per region", () => {
  */
 describe("a wardrobe that failed to load keeps the covered default", () => {
   const profile = emptyCharacterProfile();
+  /** One successful item-rows read, over the file's default always-throwing db. */
+  const itemRows = (rows: ReadonlyArray<Record<string, unknown>>) =>
+    vi.mocked(db).mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({ from: () => ({ where: () => Promise.resolve(rows) }) }),
+        }) as unknown as ReturnType<typeof db>,
+    );
 
   it("the character's overlay cannot bare what the unloadable items covered", async () => {
     const sink = new DiagnosticCollector();
@@ -502,6 +513,8 @@ describe("a wardrobe that failed to load keeps the covered default", () => {
     );
     expect(resolved.exposure).toEqual(FULLY_COVERED);
     expect(resolved.exposed).toBe(false);
+    // A THROWN load marks the resolve, so the look lane skips minting from it.
+    expect(resolved.unreliable).toBe(true);
     // The load reports the degradation itself, so the gate stays silent — one
     // diagnostic for one failure.
     expect(sink.items.map((item) => item.code)).toContain("images.avatar.outfit_load_failed");
@@ -527,6 +540,122 @@ describe("a wardrobe that failed to load keeps the covered default", () => {
     );
     expect(resolved.exposure).toEqual(FULLY_COVERED);
     expect(resolved.wornItemIds).toEqual([]);
+    expect(resolved.unreliable).toBe(true);
+  });
+
+  it("a stale manual exposure flag cannot undress a structured wardrobe whose load failed", async () => {
+    // The healthy structured path ignores `outfitExposed` entirely — a DB blip
+    // lands on the fallback path, where the flag used to speak and resurrect an
+    // author/model coverage bypass over items that are still worn. The flag may
+    // only answer on the genuinely free-text path (the legacy-flag test above).
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: ["def_vanished"], outfit: "", outfitExposed: true },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.exposed).toBe(false);
+    expect(resolved.unreliable).toBe(true);
+  });
+
+  it("a partially-readable persisted worn list cannot establish exposure — survivors read covered and marked", async () => {
+    // The parse kept the shirt and `seeded` but recorded the drop
+    // (`wornItemIdsIncomplete`, chat-player-state.ts): the dropped element may
+    // have been the pants, so the surviving shirt must not become the COMPLETE
+    // wardrobe — every region it misses would read bare off corrupt data. The
+    // survivors keep the phrase; exposure degrades to covered, `worn` is
+    // withheld so contact/affordance reads fail closed, and the resolve is
+    // marked so the mint consumers skip it. The shirt's own row parses FINE —
+    // the degrade comes from the incompleteness, not from its coverage.
+    itemRows([
+      { id: "def_shirt", name: "silk shirt", description: null, definition: { coverage: ["chest"] }, updatedAt: new Date(0) },
+    ]);
+    const resolved = await resolvePlayerWardrobe(
+      chatPlayerStateSchema.parse({ seeded: true, wornItemIds: ["def_shirt", 42] }),
+      "owner",
+      personaProfileSchema.parse({}),
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.unreliable).toBe(true);
+    expect(resolved.worn).toBeUndefined();
+    expect(resolved.garments).toContain("silk shirt");
+  });
+
+  it("deleted rows degrade the same way but stay RELIABLE — the look lane may mint from them", async () => {
+    // A load that SUCCEEDED over rows that no longer exist is permanent truth,
+    // not degradation: marking it would park the look mint forever. The flag
+    // stays gated here too — worn ids mean the wardrobe was never free text.
+    itemRows([]);
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: ["def_deleted"], outfit: "", outfitExposed: true },
+      "owner",
+      profile,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.unreliable).toBeUndefined();
+  });
+
+  it("a worn instance whose blueprint dangles reads covered and marks the resolve — never bare", async () => {
+    // The modelled arm of the same failure class: a corrupted or over-capped
+    // blueprint map leaves the worn instance pointing at nothing, and its `[]`
+    // effective coverage would read exactly the regions the garment covers as
+    // BARE — a fully dressed actor rendered nude off one bad store row.
+    const ACTOR = garmentActorForCharacter("wren");
+    const seeds = new Map<string, GarmentSeed>([
+      ["def_shirt", { definitionId: "def_shirt", name: "linen shirt", categoryId: "top", coverage: ["chest"] }],
+    ]);
+    let ids = 0;
+    const intact = syncWornGarments({
+      store: emptyChatGarmentStore(),
+      actorId: ACTOR,
+      wornDefinitionIds: ["def_shirt"],
+      seeds,
+      mintId: () => `g${++ids}`,
+      atMinutes: 0,
+    });
+    const sink = new DiagnosticCollector();
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "", outfitExposed: false, garments: { ...intact, blueprints: {} }, garmentActorId: ACTOR },
+      "owner",
+      profile,
+      sink,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.unreliable).toBe(true);
+    expect(resolved.worn).toBeUndefined();
+    expect(resolved.garments).toContain("linen shirt");
+    expect(sink.items.map((item) => item.code)).toContain("chat_garments.blueprint_unreliable");
+    // The control: the intact store answers from its real coverage, unmarked.
+    const healthy = await resolveChatWardrobe(
+      { wornItemIds: [], outfit: "", outfitExposed: false, garments: intact, garmentActorId: ACTOR },
+      "owner",
+      profile,
+    );
+    expect(healthy.unreliable).toBeUndefined();
+    expect(healthy.exposure.torso).toBe("covered");
+  });
+
+  it("an unreadable coverage column reads covered and marks the resolve — never bare", async () => {
+    // The row LOADS (its name is fine) but the coverage column is garbage, which
+    // the loader blanks to []. Computing exposure from that would read exactly
+    // the regions the shirt covers as bare; unknown is covered instead, the
+    // resolve is marked so the look lane skips minting, and `worn` is withheld
+    // so the affordance/contact reads fail closed rather than finding bare skin.
+    itemRows([
+      { id: "def_shirt", name: "silk shirt", description: null, definition: { coverage: "chest" }, updatedAt: new Date(0) },
+    ]);
+    const sink = new DiagnosticCollector();
+    const resolved = await resolveChatWardrobe(
+      { wornItemIds: ["def_shirt"], outfit: "", outfitExposed: false },
+      "owner",
+      profile,
+      sink,
+    );
+    expect(resolved.exposure).toEqual(FULLY_COVERED);
+    expect(resolved.unreliable).toBe(true);
+    expect(resolved.worn).toBeUndefined();
+    expect(resolved.garments).toContain("silk shirt");
+    expect(sink.items.map((item) => item.code)).toContain("images.avatar.coverage_unreadable");
   });
 });
 

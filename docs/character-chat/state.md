@@ -155,6 +155,24 @@ look is on), the repurposed free-text `outfit` (an overlay for narrated-but-unow
   DEGRADED load: worn ids that resolve to nothing land on this path too, and the nouns are
   gated on `worn_item_ids` being genuinely empty, so "a borrowed hoodie" can never bare the
   regions the unloadable items were covering ([../resilience.md](../resilience.md)).
+- **Failure is marked, never bare.** The manual `outfit_exposed` flag speaks only on the
+  genuinely free-text path (`worn_item_ids` empty) — with worn ids present a stale flag cannot
+  undress a wardrobe whose load merely failed. A load that threw, a row whose `coverage`
+  column would not parse, or a modelled instance whose blueprint dangles or parsed degraded
+  (`resolveGarmentBlueprint`'s `reliable: false`) degrades exposure to fully covered, withholds
+  `worn` so the contact/affordance reads fail closed, and marks the resolve `unreliable` — the
+  `chat_look` mint skips a marked resolve (no render, no purge of the correct anchor) and the
+  next outfit/appearance change retries. Rows genuinely deleted stay unmarked: that degraded
+  resolve is permanent truth, and marking it would park the look forever. On the write side,
+  garment materialization (`syncChatGarments`) withholds unloadable or coverage-unreadable ids
+  and SKIPS the reconcile for any actor whose desired set contains one — warn diagnostics
+  `chat_garments.definition_load_failed` / `chat_garments.coverage_unreadable` — instead of
+  minting durable covers-nothing instances or doffing whatever the unreadable garment replaced.
+  An unmodelled actor keeps the ids in the worn column and materializes on a later healthy
+  reconcile; a modelled actor keeps their prior outfit (the projection re-persists the old worn
+  set), so a failed load costs a lost outfit change, never a bare body. A partially readable
+  player worn list (some elements corrupt, survivors kept) likewise cannot establish exposure:
+  the parse marks it incomplete and the resolve takes the coverage-unreliable arm.
 - **Archivist changes.** The archivist's `outfit` field (`contracts/turns/chat-archivist.ts`)
   drives two grammars, folded by `foldOutfitProposal` in `finalizeChatState`: a whole-outfit
   `description` naming an authored preset ("her work clothes" → the Work preset) seeds the worn

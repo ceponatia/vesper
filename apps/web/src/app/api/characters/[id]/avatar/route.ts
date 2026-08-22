@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { generateAvatar } from "@/server/images";
 import { imageRenderRejection, jobCapRejection, jsonOk, readBody, startJob, withAuthorizedResource } from "@/server/api";
+import { logDiagnostics } from "@/server/log";
 import { findOwnedCharacter } from "../owned";
 
 type Params = { id: string };
@@ -45,13 +47,24 @@ export const POST = withAuthorizedResource<Params, NonNullable<Awaited<ReturnTyp
       ownerId: user.id,
       payload: { characterId: id, style: body.value.style, modelId: body.value.modelId },
       run: async () => {
-        const imageId = await generateAvatar({
-          characterId: id,
-          userId: user.id,
-          style: body.value.style,
-          ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
-        });
-        return { imageId };
+        // Detached job, no route sink to answer to: the lane's degradation
+        // diagnostics (`images.avatar.outfit_load_failed`, digest-ineligible
+        // warns) drain into the process log or a degraded-but-successful
+        // render leaves no record (docs/resilience.md §8). The finally covers
+        // the thrown-failure path too — a failed render still reports why.
+        const collected = new DiagnosticCollector();
+        try {
+          const imageId = await generateAvatar({
+            characterId: id,
+            userId: user.id,
+            style: body.value.style,
+            sink: collected,
+            ...(body.value.modelId ? { modelId: body.value.modelId } : {}),
+          });
+          return { imageId };
+        } finally {
+          logDiagnostics("images.avatar", collected.items, { characterId: id });
+        }
       },
     });
     if (!job.ok) return jobCapRejection(job, user, req);

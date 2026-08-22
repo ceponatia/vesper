@@ -222,6 +222,24 @@ async function loadChatPlaceImage(ownerId: string, imageId: string): Promise<{ i
 
 /** Compose and render one character-chat scene with the persisted provider choice. */
 export async function renderCharacterSceneImage(input: RenderCharacterSceneInput): Promise<string> {
+  // The scene queue is a detached job and passes no sink, so the route-level
+  // diagnostics — the composer's clamps and fallbacks, a skipped digest, the
+  // profile resolver's degrades, an identity-pack degrade, the selfie retry —
+  // would otherwise vanish exactly when an operator needs them (the collector
+  // pattern's documented tail, docs/resilience.md §2). The spans that answer
+  // for themselves — the LoRA route and `renderResolvedScene`'s attempt chain —
+  // deliberately keep the caller's sink below, so their own drains stay the
+  // single replay of their diagnostics.
+  const routeDiagnostics = new DiagnosticCollector();
+  const sink = input.sink ? teeSink(input.sink, routeDiagnostics) : routeDiagnostics;
+  try {
+    return await renderCharacterSceneWithSink(input, sink);
+  } finally {
+    logDiagnostics("images.character_scene", routeDiagnostics.items, { characterId: input.characterId });
+  }
+}
+
+async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, sink: DiagnosticSink): Promise<string> {
   const selfie = input.flavor === "selfie";
   const room = input.room?.trim() || DEFAULT_CHAT_ROOM;
   // A selfie is the subject's own phone camera and its framing ends "No one else
@@ -238,7 +256,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
     playerAttributes: input.playerAttributes,
     playerProfile: input.playerProfile,
   });
-  let plan = await composeSceneSpec({ ...context, sink: input.sink, composerModel: input.composerModel });
+  let plan = await composeSceneSpec({ ...context, sink, composerModel: input.composerModel });
 
   // The cast-1 digest cutover (image-lane-consolidation Stage 3, WP-C): applied
   // AFTER the plan resolves because the committed scene camera is `plan.camera`
@@ -251,7 +269,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const soleMember = cast.length === 1 ? cast[0] : undefined;
   if (soleMember !== undefined && input.subjectVisual !== undefined) {
     if (input.subjectVisual.subjectId !== soleMember.characterId) {
-      input.sink?.push(
+      sink.push(
         diag("warn", "images.scene_render.visual_subject_mismatch", "subject visual cut names a different character — digest skipped", {
           context: { cut: input.subjectVisual.subjectId, cast: soleMember.characterId },
         }),
@@ -261,7 +279,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
         plan,
         member: soleMember,
         shadow: input.subjectVisual,
-        ...(input.sink === undefined ? {} : { sink: input.sink }),
+        sink,
       });
       plan = applied.plan;
       visualRefusal = applied.refusal;
@@ -274,7 +292,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   // 5) — the legacy Venice keys on pre-registry rows land here and are simply
   // replaced, and a stored MODEL id still resolves to that model's own scene
   // profile rather than moving the chat onto a different model.
-  const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, input.sink);
+  const imageProfile = isDemoMode() ? null : await resolveImageProfileForTask("scene", input.sceneModel, sink);
   const model = imageProfile?.model ?? null;
   const referenceRoute = !isDemoMode() && hasReplicate() && model !== null && model.canEdit;
   // One anchor per cast member, resolved in roster order: this character's own
@@ -305,7 +323,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
         ownerId: input.userId,
         characterId: member.characterId,
         profile: imageProfile,
-        sink: input.sink,
+        sink,
       });
       if (!pack.ok) {
         // An ineligible pack refuses the whole scene rather than dropping this
@@ -438,7 +456,7 @@ export async function renderCharacterSceneImage(input: RenderCharacterSceneInput
   const firstError = await imageFailure(first);
   if (firstError === null) return first;
   const reason = classifyImageFailure(new Error(firstError || "render failed"));
-  input.sink?.push(
+  sink.push(
     diag("info", "images.selfie.retry", `first selfie attempt failed (${reason}) — retrying${reason === "content_rejection" ? " sanitized" : ""}`),
   );
   const retryPlan = reason === "content_rejection" ? sanitizeScenePlan(plan) : plan;

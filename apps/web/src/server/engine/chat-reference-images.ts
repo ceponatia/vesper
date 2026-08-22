@@ -3,13 +3,18 @@ import { z } from "zod";
 import {
   characterProfileSchema,
   chatSceneMemorySchema,
+  diag,
+  DiagnosticCollector,
   emptyCharacterProfile,
   emptyChatSceneMemory,
   garmentActorForCharacter,
   samePlaceName,
+  teeSink,
   withPlaceImage,
+  type DiagnosticSink,
 } from "@/contracts";
 import { parseOr, parseOrNull } from "@/lib/parse";
+import { logDiagnostics } from "@/server/log";
 import { isDemoMode } from "../ai";
 import { characterChats, characters, db } from "../db";
 import { chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
@@ -51,8 +56,8 @@ async function loadRenderContext(chatId: string, characterId: string) {
   return { ownerId: chat.ownerId, profile, avatarImageId: character.avatarImageId };
 }
 
-/** Run one look mint. Exported for tests. */
-export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>): Promise<void> {
+/** Run one look mint. Exported for tests, which may pass a sink to watch the job's diagnostics. */
+export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>, sink?: DiagnosticSink): Promise<void> {
   if (isDemoMode()) return;
   // Image-active gate (ruled): text-only chats never pay for look renders.
   if (!(await chatHasRenders(input.chatId))) return;
@@ -60,45 +65,73 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>)
   if (!ctx?.avatarImageId) return; // no identity source — scenes fall back to text anyway
   const stored = await loadChatState(input.chatId, input.characterId);
   if (!stored) return;
-  // Structured wardrobe (chat-wardrobe-parity): resolve the worn state to its rendered look +
-  // coverage-computed exposure, and key on the sorted worn ids + overlay + exposure fingerprint.
-  // The garment store is the worn truth once the actor is modelled (slice 2) — this job read
-  // only the projection column until slice 6, so an arrangement change could not reach it at all.
-  const scenario = await loadChatScenario(input.chatId);
-  const actorId = garmentActorForCharacter(input.characterId);
-  const wardrobe = await resolveChatWardrobe(
-    { ...stored, ...(scenario ? { garments: scenario.garments } : {}), garmentActorId: actorId },
-    ctx.ownerId,
-    ctx.profile,
-  );
-  const lookKey = chatLookKey({
-    wornItemIds: wardrobe.wornItemIds,
-    overlay: wardrobe.overlay,
-    exposure: wardrobe.exposure,
-    attributeOverlays: stored.attributeOverlays,
-    // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
-    ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
-  });
-  // Scoped to THIS character: a chat-wide freshness read would see a roster
-  // sibling's look and skip minting one for the member whose outfit moved.
-  if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
+  // Detached job, so its own collector drains into the process log (the render
+  // lanes' `DiagnosticCollector` + `logDiagnostics` pattern): the wardrobe
+  // resolve and the skip decision below used to degrade with NO sink at all,
+  // which made a wrong look mint untraceable.
+  const collected = new DiagnosticCollector();
+  const jobSink: DiagnosticSink = sink ? teeSink(sink, collected) : collected;
+  try {
+    // Structured wardrobe (chat-wardrobe-parity): resolve the worn state to its rendered look +
+    // coverage-computed exposure, and key on the sorted worn ids + overlay + exposure fingerprint.
+    // The garment store is the worn truth once the actor is modelled (slice 2) — this job read
+    // only the projection column until slice 6, so an arrangement change could not reach it at all.
+    const scenario = await loadChatScenario(input.chatId);
+    const actorId = garmentActorForCharacter(input.characterId);
+    const wardrobe = await resolveChatWardrobe(
+      { ...stored, ...(scenario ? { garments: scenario.garments } : {}), garmentActorId: actorId },
+      ctx.ownerId,
+      ctx.profile,
+      jobSink,
+    );
+    // A resolve marked unreliable is a covered-degraded stand-in, not the
+    // wardrobe truth. Minting from it would cache a WRONG look under a key the
+    // degraded resolve produced — and the keep-latest purge would then delete
+    // the correct anchor. No render, no purge: the next outfit/appearance
+    // change re-fires the enqueue and retries against a healthy load.
+    if (wardrobe.unreliable === true) {
+      jobSink.push(
+        diag("warn", "images.chat_look.wardrobe_unreliable", "wardrobe resolve degraded — look mint skipped; the next outfit or appearance change retries", {
+          path: "images.chat_look",
+          context: { chatId: input.chatId, characterId: input.characterId },
+        }),
+      );
+      return;
+    }
+    const lookKey = chatLookKey({
+      wornItemIds: wardrobe.wornItemIds,
+      overlay: wardrobe.overlay,
+      exposure: wardrobe.exposure,
+      attributeOverlays: stored.attributeOverlays,
+      // OQ8: the two gates must agree, or the enqueue fires and the job no-ops.
+      ...(scenario ? { garmentKey: chatGarmentLookKey(scenario.garments, [actorId], scenario.clockMinutes) } : {}),
+    });
+    // Scoped to THIS character: a chat-wide freshness read would see a roster
+    // sibling's look and skip minting one for the member whose outfit moved.
+    if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
-  // Identity sourcing lives in the render lane itself (chat-look.ts): the pack
-  // service evaluates the character's canonical portrait for the resolved
-  // profile, and an ineligible pack reserves nothing — the next change
-  // re-fires. The lane drains its own diagnostics into the process log, so a
-  // pack refusal leaves a record even though this detached job has no sink to
-  // hand it.
-  await renderChatLookImage({
-    chatId: input.chatId,
-    userId: ctx.ownerId,
-    characterId: input.characterId,
-    lookKey,
-    outfit: wardrobe.garments,
-    outfitExposed: wardrobe.exposed,
-    // Visible age comes from the portrait reference itself. Scene-supporting
-    // look renders never receive chronological or apparent-age fields.
-  });
+    // Identity sourcing lives in the render lane itself (chat-look.ts): the pack
+    // service evaluates the character's canonical portrait for the resolved
+    // profile, and an ineligible pack reserves nothing — the next change
+    // re-fires. The lane drains its OWN diagnostics into the process log, which
+    // is why it gets no sink here: teeing this job's collector in would log
+    // every render diagnostic twice.
+    await renderChatLookImage({
+      chatId: input.chatId,
+      userId: ctx.ownerId,
+      characterId: input.characterId,
+      lookKey,
+      outfit: wardrobe.garments,
+      outfitExposed: wardrobe.exposed,
+      // Visible age comes from the portrait reference itself. Scene-supporting
+      // look renders never receive chronological or apparent-age fields.
+    });
+  } finally {
+    logDiagnostics("images.chat_look_image", collected.items, {
+      chatId: input.chatId,
+      characterId: input.characterId,
+    });
+  }
 }
 
 /** Run one place mint + CAS write. Exported for tests. */
