@@ -22,11 +22,11 @@ import { simulationSuiteHarness } from "@/server/test-support";
 // behavioral FIX here: this file's hand-rolled probe had diverged to a plain
 // self-skip with no strict/CI rethrow at all, so an unreachable database
 // reported a silently green suite even under `pnpm test:int:strict`.
-// `legacyPlayerMode: false` — the rollout seed runs on a system principal and
-// nothing here submits the legacy player fixture, so the opt-in flag stays
-// irrelevant to this suite. The fixed rollout world is deliberately NOT tracked
-// for teardown: this suite restores the shared clock instead of deleting the
-// world, which is what lets the other rollout-world suites reuse it.
+// `legacyPlayerMode: false` is the historical harness option name — the rollout
+// seed runs on a system principal and nothing here submits that player fixture,
+// so the opt-in flag stays irrelevant to this suite. The fixed rollout world is
+// deliberately NOT tracked for teardown: this suite restores the shared clock
+// instead of deleting the world, which lets the other rollout-world suites reuse it.
 
 const harness = await simulationSuiteHarness({
   suite: "sim-surfaces.int.test",
@@ -127,8 +127,9 @@ describe.runIf(ready)("readSimChatMeters integrates to the branch clock (slice 2
     // must not turn a good read into a hidden panel.
     expect(await readSimChatPresence(ids.chat)).not.toBeNull();
     expect(await readSimChatMeters(ids.chat)).not.toBeNull();
-    // Outfit is "" when nothing is worn — a string, never null, for a routed chat.
-    expect(await readSimChatOutfit(ids.chat)).toBe("");
+    // Known-empty is an explicit world-truth phrase, not an empty string that
+    // truthy transport can silently collapse into "wardrobe unavailable".
+    expect(await readSimChatOutfit(ids.chat)).toBe("no clothing");
     // Cast rows carry stable actor identity for keyed UI rows and future
     // actor-targeted commands; the id is transport data, never display copy.
     const world = await readSimChatWorld(ids.chat);
