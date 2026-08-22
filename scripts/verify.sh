@@ -4,9 +4,9 @@
 # `pnpm verify` / `pnpm verify:full` aliases are removed. It is kept only as a
 # hand-run curiosity; prefer pushing the PR and letting CI validate.
 #
-# It runs each gate SERIALLY, one at a time, inside a memory-capped systemd
+# It runs each check SERIALLY, one at a time, inside a memory-capped systemd
 # scope, and refuses to start without RAM headroom — this is a 16 GB machine,
-# and running the gates concurrently (the old `pnpm verify` chain, or CI's
+# and running the checks concurrently (the old `pnpm verify` chain, or CI's
 # parallel jobs) is what used to tip it into earlyoom territory. Serial and
 # capped is slower by the clock and survivable by the desktop.
 set -euo pipefail
@@ -18,11 +18,15 @@ WARN_AVAILABLE_MIB=6500  # below this it runs, but expect zram swapping
 
 usage() {
   cat >&2 <<'EOF'
-usage: pnpm verify [target...]
+usage: bash scripts/verify.sh [target...]
+
+RETIRED helper — this is not a repository gate. The authoritative gate is
+.github/workflows/ci.yml on AWS CodeBuild. For the full pre-deploy gate run:
+  gh workflow run CI --ref main
 
 Targets (default: all)
-  all         lint, static checks, typecheck, unit tests, jscpd — the push gate
-  full        all + engine (needs Postgres) + build — the pre-deploy gate
+  all         legacy local sequence: lint, static checks, typecheck, unit tests, jscpd
+  full        legacy local sequence + engine (needs Postgres) + build
 
   lint        type-aware ESLint at --max-warnings 0
   static      circular imports, route authorization, package boundaries + resolution
@@ -65,16 +69,16 @@ fi
 # ---------------------------------------------------------------------------
 # Sandboxing
 #
-# Each gate runs in its own systemd scope so a runaway gate is OOM-killed inside
-# its own cgroup instead of taking the desktop down with it. Outside a systemd
-# user session (a bare shell, a container) there is no scope to run in, so the
-# gates still run — just uncapped, and the script says so once.
+# Each check runs in its own systemd scope so a runaway process is OOM-killed
+# inside its own cgroup instead of taking the desktop down with it. Outside a
+# systemd user session (a bare shell, a container) there is no scope to run in,
+# so the checks still run — just uncapped, and the script says so once.
 
 if systemd-run --user --scope --quiet true >/dev/null 2>&1; then
   SANDBOX=systemd
 else
   SANDBOX=none
-  echo "verify: no systemd user session — gates run uncapped (nice only)." >&2
+  echo "verify: no systemd user session — checks run uncapped (nice only)." >&2
 fi
 
 run_capped() {
@@ -90,7 +94,7 @@ run_capped() {
 }
 
 # ---------------------------------------------------------------------------
-# Gates
+# Checks
 
 failed=()
 declare -A DURATIONS=()
@@ -126,10 +130,10 @@ gate_jscpd() { gate jscpd 4G 4096 pnpm jscpd; }
 
 # The engine suite needs the dev Postgres. Missing database is a hard failure
 # here rather than a self-skip: the suites' own skip-tolerance is right for
-# ordinary dev and wrong for a gate that claims to have verified something.
+# ordinary dev and wrong for a check that claims to have exercised the suite.
 gate_engine() {
   if ! docker compose ps --status running --quiet 2>/dev/null | grep -q .; then
-    echo "verify: engine gate needs the dev database — run \`pnpm db:up && pnpm db:migrate\` first." >&2
+    echo "verify: engine check needs the dev database — run \`pnpm db:up && pnpm db:migrate\` first." >&2
     failed+=(engine)
     return 0
   fi
@@ -137,8 +141,7 @@ gate_engine() {
   gate engine-gate1-benchmark 4G 4096 pnpm eval:engine-gate1
 }
 
-# Heap pinned to 4096 to match the Dockerfile build stage: a build that would
-# OOM on the Fly builder must fail here, before the deploy.
+# Heap pinned to 4096 to match the Dockerfile build stage.
 gate_build() { gate build 8G 4096 pnpm build; }
 
 # ---------------------------------------------------------------------------
@@ -194,4 +197,4 @@ if ((${#failed[@]})); then
 fi
 
 echo
-echo "verify: all gates passed in ${elapsed}s (${targets[*]})."
+echo "verify: all requested checks passed in ${elapsed}s (${targets[*]})."
