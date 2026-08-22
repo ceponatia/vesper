@@ -7,7 +7,7 @@ Two related systems live here: **relationships** (how two people relate — repr
 Relationships have **two representations**:
 
 - The live model, used by the **character-chat lane**, is the **two-axis** model — **familiarity × regard** (`record.ts` / `bands.ts` / `law.ts` / `history.ts`; migration 0028). See [Two-axis model](#two-axis-model-familiarity--regard).
-- The single-**affinity** scalar with readable **stage** labels (`stages.ts` — [Relationship stages](#relationship-stages-legacy-affinity-vocabulary) below) is not a *storage* model; nothing keys state on it. Its stage **vocabulary** survives as a **bridge**: the forge's authored stage picks, the bond classifier, mood's touch-welcomeness, and healing legacy chat rows into the two-axis model (`stageToBandIds`).
+- The single-**affinity** scalar with readable **stage** labels (`stages.ts` — [Relationship stages](#relationship-stages-legacy-affinity-vocabulary) below) is not a *storage* model; nothing keys state on it. Its stage **vocabulary** survives as a **bridge**: the forge's authored stage picks, the bond classifier, mood's touch-welcomeness, and healing older character-chat rows into the two-axis model (`stageToBandIds`).
 
 ## Relationship stages (legacy affinity vocabulary)
 
@@ -21,7 +21,7 @@ hostile · wary · cool · stranger · acquaintance · friendly · warm · close
 
 > **Stages, never raw numbers, go in prompts and gate behavior.**
 
-**Authored edges** (`relationships/authored.ts`) — the legacy `{ toward, stage }` cast-edge shape. The live authored stance is the character's own `playerRelationship` band record (two-axis, on `CharacterProfile`; [Two-axis model](#two-axis-model-familiarity--regard)); a legacy `{stage}` value heals into it via `stageToBandIds`. Unknown stage ids self-heal to `stranger`, and the JSONB reads through `parseOr`.
+**Authored edges** (`relationships/authored.ts`) — the compatibility `{ toward, stage }` cast-edge shape. The live authored stance is the character's own `playerRelationship` band record (two-axis, on `CharacterProfile`; [Two-axis model](#two-axis-model-familiarity--regard)); an older `{stage}` value heals into it via `stageToBandIds`. Unknown stage ids self-heal to `stranger`, and the JSONB reads through `parseOr`.
 
 **Bond classification** (`relationships/bond.ts`) — `classifyBond(text)` is a deterministic keyword pass over a cast member's concept/bio text that classifies the player bond:
 
