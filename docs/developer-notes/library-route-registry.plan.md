@@ -132,9 +132,10 @@ view, and so each slice is independently verifiable.
   dispatch, ~180 of route duplication, three duplicate maps gone.
 - **Bounded queries:** alias resolution no longer scales with library size; a
   character save with many forge suggestions issues a bounded statement count.
-- **`pnpm verify` is green on the branch**, including the route-authz check inside
-  the static gate. Validation is the local gate (root `CLAUDE.md`) —
-  `.husky/pre-push` runs it before the branch reaches GitHub.
+- **The ready PR's applicable CodeBuild jobs and aggregate `verify` check are green,**
+  including the route-authorization check inside the CI `static checks` job.
+  `.github/workflows/ci.yml` is the repository gate; there is no local pre-push
+  gate or `pnpm verify` alias.
 
 ## Risks & coordination
 
