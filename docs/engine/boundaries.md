@@ -71,14 +71,22 @@ audit.
 
 ## Reaching the engine from chat
 
-A conversation only talks to the engine once it is **routed** — successor
-lane, `engine_authority` past the view threshold, branch and actors mapped.
-Two chat-scoped routes carry that traffic, both gated by `requireSimChat`; a
-legacy or shadow chat is refused with 409 `not_sim_enabled`. The gate is not
-recomputed client-side: `GET /api/chats/[chatId]` computes `isSimRoutedAuthority`
-once, server-side, and writes the result into the bootstrap payload as a
-plain `simRouted` boolean; the conversation UI only reads that field, so a
-legacy chat never even attempts the read (engine.spec §30).
+**Terminology.** Vesper has two distinct live conversation pipelines: the
+**character-chat pipeline** and the **successor/simulation pipeline**. The
+character-chat pipeline is not deprecated and should not be described as a
+"legacy" system in documentation. The persisted authority enum still uses
+`legacy_chat` as its historical wire value; that identifier remains until a
+separate schema/API migration deliberately renames it.
+
+A conversation only talks to the simulation engine once it is **routed** —
+successor lane, `engine_authority` past the view threshold, branch and actors
+mapped. Two chat-scoped routes carry that traffic, both gated by
+`requireSimChat`; a character-chat-routed or shadow chat is refused with 409
+`not_sim_enabled`. The gate is not recomputed client-side:
+`GET /api/chats/[chatId]` computes `isSimRoutedAuthority` once, server-side,
+and writes the result into the bootstrap payload as a plain `simRouted`
+boolean; the conversation UI only reads that field, so a character-chat
+conversation never even attempts the simulation-only read (engine.spec §30).
 
 | Route                                  | Handler            | Returns                                               |
 | -------------------------------------- | ------------------ | ----------------------------------------------------- |
@@ -92,6 +100,20 @@ whether a scene currently stands. The read is fail-open — a malformed
 projection degrades to `null` (a 503 the client reads as "no card"), never a
 throw, per the read-path default in `docs/resilience.md`. The pure shaping
 lives in `packages/simulation-core/src/lib/world-read.ts`.
+
+**Wardrobe authority follows the routed pipeline.** The successor narrator's
+primary-character outfit comes from `sim_item_holdings` world truth. A
+known-empty worn set is represented explicitly (`"no clothing"`), while
+`null` means the simulation wardrobe read was unavailable/not applicable;
+those states must never collapse into each other. The character-chat wardrobe
+row is not a second authority for a successor-routed primary: the state PATCH
+rejects actual wardrobe edits with `sim_wardrobe_managed_by_world`. Likewise,
+the current character-chat scene-image route refuses new successor renders
+with `scene_visual_authority_unavailable` until the simulation side exposes a
+structured visual wardrobe projection with coverage/presentation data. This
+is deliberately fail-closed: using character-chat clothing for the image
+while narration reads simulation clothing would make two incompatible truths
+for the same scene.
 
 **The command route** carries the typed player commands, each an ordinary
 durable command under the player principal; a refusal returns a public code,
