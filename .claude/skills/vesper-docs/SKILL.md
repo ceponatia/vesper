@@ -35,27 +35,32 @@ checklist.
    delete one side and link to the other.
 3. **Every plan opens with a Status line and an Outcome line.** See
    [The Outcome line](#the-outcome-line).
-4. **Uncertainty has one home: the owning plan's `## Open questions`.** A spec,
+4. **Every new plan is written from the plan template.** `templates/plan.md` is
+   the only allowed plan structure: every numbered section present — filled
+   with `N/A — <why>` when it does not apply, never deleted — and no sections
+   beyond the template. Template gaps go to the project owner, not around the
+   template. See [The plan template](#the-plan-template).
+5. **Uncertainty has one home: the owning plan's `## Open questions`.** A spec,
    audit, trial, or reference doc may raise a question, but it must also appear
    in the plan. Resolving one means removing it from the plan and recording the
    ruling in the detail doc.
-5. **Never write conversation into a document.** See
+6. **Never write conversation into a document.** See
    [The residue guardrail](#the-residue-guardrail).
-6. **Record every finished piece of work one rung up.** A finished slice goes in
+7. **Record every finished piece of work one rung up.** A finished slice goes in
    its spec, a finished spec in its plan, a finished plan in
    `roadmap.shipped.md` — in the same change that finishes it. See
    [The progress ladder](#the-progress-ladder).
-7. **Never mark work shipped because code exists.** A merged PR, a passing test,
+8. **Never mark work shipped because code exists.** A merged PR, a passing test,
    a spec, or a written slice does not close a plan. `shipped` means the WHOLE
    plan is delivered *and accepted*; a behavior claim additionally requires a
    trial or evidence doc that says what was observed. Built-but-unaccepted is its
    own state and must be written as such.
-8. **Prefer deletion to preservation.** Superseded docs get removed or archived,
+9. **Prefer deletion to preservation.** Superseded docs get removed or archived,
    not annotated. This repo does not keep a legacy tier — `finished/` is
    completed work, not an attic for the outdated.
-9. **Tables follow the formatting rules or become lists.** See
-   [Table formatting](#table-formatting). Both tiers, no exceptions.
-10. **Reference docs carry no dates, no slice numbers, and no future tense.** If
+10. **Tables follow the formatting rules or become lists.** See
+    [Table formatting](#table-formatting). Both tiers, no exceptions.
+11. **Reference docs carry no dates, no slice numbers, and no future tense.** If
     you are writing "will", "planned", or "once we", you are writing a plan and
     it belongs in the working tier.
 
@@ -224,6 +229,36 @@ One `.plan.md` is deliberately exempt: `deferred.plan.md` is the parking-lot
 index, not a plan, and carries `Status: parking lot` with no Outcome line. Its
 individual stubs under `deferred/` each carry an `Outcome (provisional):` line.
 
+## The plan template
+
+`templates/plan.md` (beside this file) is the **mandatory structure for every
+new `.plan.md`**, including a deferred stub at the moment it is promoted into a
+real plan. Owner ruling (2026-08-22): the template is enforced, not advisory.
+
+- **Every numbered section appears in the finished plan**, in template order,
+  under the template's headings. There is no such thing as a section that is
+  skipped for brevity.
+- **A section that does not apply is filled, not removed.** Write
+  `N/A — <why it does not apply>` under the heading. A bare `N/A` is
+  acceptable; the reason is better, because it proves the section was
+  considered rather than skipped.
+- **No sections beyond the template.** If a plan needs a section the template
+  does not define, ask the project owner to upgrade the template (via
+  `AskUserQuestion` in an interactive session; otherwise record it under the
+  plan's `## 23. Risks and open questions` and say the template is waiting on
+  an owner ruling). The point is that a template gap gets fixed for every
+  future plan — or ruled out — rather than worked around in one document.
+- The template's trailing **"Planning rules for agents" section is writer
+  instruction**, not plan content. It is the one part of the template that does
+  not appear in the finished plan.
+- **Plans written before the template (adopted 2026-08-22) are migrated in
+  dedicated tasks**, one plan at a time, on the owner's request. When editing a
+  pre-template plan for any other reason, keep its existing structure — do not
+  restructure it to the template as a side effect of another change.
+
+Deferred stubs are not plans and keep using `templates/deferred-stub.md`; the
+plan template applies when the stub graduates.
+
 ## Document length
 
 **The ~400-line guideline is a reference-tier rule only.** It exists because
@@ -317,8 +352,12 @@ mechanically inert" — not as remembered dialogue.
 
 1. Check `roadmap.md` first. Work the top of `## Next` unless told otherwise;
    out-of-order work still gets a roadmap line before you start.
-2. Copy `templates/plan.md`. Fill Status and Outcome before any prose — if you
-   cannot write the Outcome line, the work is not understood well enough to plan.
+2. Copy `templates/plan.md` — the mandatory plan template
+   ([The plan template](#the-plan-template)). Fill Status and Outcome before any
+   prose — if you cannot write the Outcome line, the work is not understood well
+   enough to plan. Then fill every numbered section: `N/A — <why>` where one
+   does not apply, no deletions, no additions, and remove the template's
+   trailing "Planning rules for agents" section once followed.
 3. Put every technical decision in `<topic>.spec.md` from the start. A plan that
    grows type names is a plan that needed a spec three paragraphs ago.
 4. Add the `roadmap.md` line under `## Next` or `## Active`. If the idea came
@@ -386,8 +425,8 @@ and leave the plan where it is.
 ## Validation
 
 There is no automated docs checker in this repo, and a documentation-only change
-runs no code gates — the pre-push hook skips a push whose paths are all under
-`docs/` or end `.md` (root `CLAUDE.md`). Validate by hand before finishing:
+runs no code gates — there are no local git hooks, and CI's gates cover code
+paths (root `CLAUDE.md`). Validate by hand before finishing:
 
 - **Every relative link in `docs/` resolves.** Not just the ones you touched —
   archiving breaks links in files you never opened. Run it, do not eyeball it:
@@ -419,6 +458,12 @@ runs no code gates — the pre-push hook skips a push whose paths are all under
 - Every live plan has a Status line and an Outcome line, and every delivery
   stage or slice you touched carries its one-line status marker
   ([Stage-status lines](#stage-status-lines)).
+- Every plan **created in this change** follows the plan template: all numbered
+  sections present in order, `N/A — <why>` where one does not apply, no
+  sections the template does not define, and the template's "Planning rules
+  for agents" trailer removed ([The plan template](#the-plan-template)).
+  Pre-template plans you merely edited are exempt until their dedicated
+  migration task.
 - **Every piece of dev work in this change is recorded one rung up** — the slice
   in its spec, the completed spec in its plan, the completed plan in
   `roadmap.shipped.md`. Anything built but not yet accepted says so, and names
@@ -441,5 +486,8 @@ checks above are additional, not a substitute.
 ## Templates
 
 In `templates/` beside this file: `plan.md`, `spec.md`, `trial.md`, `audit.md`,
-`deferred-stub.md`, `reference-doc.md`. Copy the file, keep the section order,
-delete sections that genuinely do not apply rather than leaving them empty.
+`deferred-stub.md`, `reference-doc.md`. Copy the file and keep the section
+order. `plan.md` is **mandatory and complete** — every numbered section appears
+in the finished plan, `N/A — <why>` where one does not apply, nothing added
+([The plan template](#the-plan-template)). For the other templates, delete
+sections that genuinely do not apply rather than leaving them empty.

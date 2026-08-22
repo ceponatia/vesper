@@ -4,9 +4,10 @@ Status: reference — folder rules and the stub index for the parking lot.
 
 This folder contains **plan stubs and drafts for later promotion into real
 plans on the roadmap**. Every file here is `Status: draft` — a placeholder
-capturing a parked idea's what/why plus the plan-template skeleton. Nothing
-here is settled, scheduled, or on the roadmap, and **nothing here gets built
-from the stub**.
+capturing a parked idea's what/why in the stub skeleton
+(`templates/deferred-stub.md` in the `vesper-docs` skill), not the full plan
+template. Nothing here is settled, scheduled, or on the roadmap, and **nothing
+here gets built from the stub**.
 
 Rules for agents working in this folder:
 
@@ -20,9 +21,11 @@ Rules for agents working in this folder:
   `<topic>.spec.md` / `<topic>.spec.<area>.md` companions. The audience and
   ownership rules in [../CLAUDE.md](../CLAUDE.md#plan-and-spec-audiences)
   apply here too.
-- **Promotion:** flesh the stub into a real plan, `git mv` it up to
-  `docs/developer-notes/<topic>.plan.md` (add a `<topic>.spec.md` beside it
-  when design detail warrants one), set `Status: next` (or `active`), add the
+- **Promotion:** flesh the stub into a real plan **on the mandatory plan
+  template** (`.claude/skills/vesper-docs/templates/plan.md` — every section
+  present, `N/A — <why>` where one does not apply, no additions), `git mv` it
+  up to `docs/developer-notes/<topic>.plan.md` (add a `<topic>.spec.md` beside
+  it when design detail warrants one), set `Status: next` (or `active`), add the
   corresponding [../roadmap.md](../roadmap.md) line, and leave a one-line
   "graduated → …" tombstone in [../deferred.plan.md](../deferred.plan.md)'s
   anchor section for this backlog.

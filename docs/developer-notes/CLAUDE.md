@@ -57,6 +57,27 @@ here as oversized on line count alone.
   Rehome the meaning as context, a non-goal, an open question, or a dated owner
   ruling (`Owner ruling (<date>): …`).
 
+## Every new plan is written from the plan template
+
+The mandatory structure for a `.plan.md` is the plan template at
+`.claude/skills/vesper-docs/templates/plan.md` (owner ruling 2026-08-22). It
+applies to every plan created from now on, including a deferred stub at the
+moment it is promoted into a real plan.
+
+- **Every numbered template section appears in the plan**, in template order,
+  under the template's headings. A section that does not apply is filled with
+  `N/A — <why it does not apply>` — a bare `N/A` is acceptable, the reason is
+  better. A section is never omitted.
+- **No sections beyond the template.** If a plan needs a section the template
+  does not define, ask the project owner to upgrade the template; never deviate
+  in one document. Unresolved, that request lives in the plan's risks/open
+  questions section as waiting on an owner ruling.
+- The template's trailing "Planning rules for agents" section is writer
+  instruction, not plan content — it does not appear in the finished plan.
+- **Plans written before the template are migrated in dedicated tasks**, on the
+  owner's request. When editing a pre-template plan for another reason, keep
+  its existing structure; do not restructure it as a side effect.
+
 ## Plan and spec audiences
 
 - **Plans are for regular readers, including non-technical product readers.**
