@@ -18,9 +18,9 @@ question by building it. Two things keep it alive:
 
 - **It is the ledger of unowned ideas.** A dozen entries below are built in neither lane
   and sit in no plan. The catalog is where they stay findable, with an honest cost tag.
-- **The two lanes are separate, and the legacy chat lane is still the live product for
-  ordinary chats.** An idea being built engine-side does *not* make it available to a
-  legacy chat. Each catalog entry therefore records both lanes.
+- **The two lanes are separate, and the character-chat pipeline is still the live product
+  for ordinary chats.** An idea being built engine-side does *not* make it available to a
+  character-chat conversation. Each catalog entry therefore records both lanes.
 
 The cost ladder in §2 and the thesis in §1 are the doc's actual contribution and are
 unchanged by the engine's arrival.
@@ -72,14 +72,14 @@ That is not an argument to flip it. It is an argument that deriving costs us no 
 Every candidate below is tagged with the tier it lands in. The tier *is* the feasibility
 argument.
 
-| Tier   | Mechanism                                          | Cost per turn         |
-| ------ | -------------------------------------------------- | --------------------- |
-| **T0** | Pure derivation from authored data + seed + clock  | none                  |
+| Tier   | Mechanism                                           | Cost per turn         |
+| ------ | --------------------------------------------------- | --------------------- |
+| **T0** | Pure derivation from authored data + seed + clock   | none                  |
 | **T1** | Deterministic fold on a write that already happens | none                  |
-| **T2** | One more field on an agent leg that already runs   | a few tokens          |
-| **T3** | A new parallel leg in the post-reply settle        | +1 call, holds lock   |
-| **T4** | A detached background job                          | +1 call, eventual     |
-| **T5** | Anything before the reply                          | +1 call, on turn time |
+| **T2** | One more field on an agent leg that already runs    | a few tokens          |
+| **T3** | A new parallel leg in the post-reply settle         | +1 call, holds lock   |
+| **T4** | A detached background job                           | +1 call, eventual     |
+| **T5** | Anything before the reply                           | +1 call, on turn time |
 
 The house rule already exists: cheap deterministic checks decide what runs, never an AI
 call to decide whether to make an AI call, and nothing slow runs before the reply. **T5 is
@@ -102,10 +102,10 @@ If a thing can be T0, it is a bug to make it T2.
 ## 3. Substrate as it stands
 
 Terse, so the catalog doesn't re-invent it. Detail lives in the linked docs. Note which
-lane each item belongs to — the legacy chat lane and the successor engine are separate
-codebases with separate substrate.
+lane each item belongs to — the character-chat pipeline and the successor engine are
+separate codebases with separate substrate.
 
-**Legacy chat lane** — the live product for ordinary chats:
+**Character-chat pipeline** — the live product for ordinary chats:
 
 - **Clock** — story minutes plus a real-calendar anchor (real months, leap years,
   author-editable), one minute per exchange, four day parts as the one time vocabulary, and
@@ -171,12 +171,12 @@ already runs typed rhythm rows; the authored side is what is missing.
 3. **The teamwork playbook** — deterministic gates decide; focused agents propose in
    parallel *after* the reply; plain code folds; slow work detaches; no AI call before the
    reply. With the standing correction that "agents propose, code disposes" is
-   **aspirational for the legacy lane, not descriptive**: it holds for meters, plan
-   missed-ness and selfies, but for wardrobe, presence, plans struck or kept, drives
+   **aspirational for the character-chat pipeline, not descriptive**: it holds for meters,
+   plan missed-ness and selfies, but for wardrobe, presence, plans struck or kept, drives
    revealed, facts, scene and cast, the "deterministic fold" only *parses the narrator's
    prose* — the narrator is the de facto authority there, and a hallucinated secret reveal
    ratchets permanently. The successor engine is the answer to that gap and enforces the
-   law properly; the legacy lane still doesn't.
+   law properly; the character-chat pipeline still doesn't.
 4. **Authored canon is never machine-edited; evolution is bounded and rolls back.** The
    relationship matrix, authored traits and cast relations are read-only to agents.
    Overlays clamp to one band step. Everything rides the pre-exchange snapshots.
@@ -189,8 +189,8 @@ already runs typed rhythm rows; the authored side is what is missing.
 6. **"No location model."** Answered by owner ruling (2026-07-16) and then built: locations
    came back in the successor lane, simpler — zones with access and privacy policies, and
    movement resolved by a scheduler rather than by making narration wait. §D below records
-   what that means for the legacy lane, which still has no location model and should keep
-   not having one.
+   what that means for the character-chat pipeline, which still has no location model and
+   should keep not having one.
 7. **"Every meter is a character meter."** Answered by owner ruling (2026-07-16): the player
    gets a body. The persona library shipped the identity and wardrobe half — who the player
    is in this conversation and what they are wearing. Player *meters* remain unbuilt.
@@ -262,8 +262,8 @@ wear economy for a detail prose handles).
 
 ### §B — Environment (the world's body)
 
-**Still the biggest genuine gap for the legacy chat lane, explicitly asked for, and almost
-entirely T0.** One thing changed since this was written: the chat lane now has an
+**Still the biggest genuine gap for the character-chat pipeline, explicitly asked for, and
+almost entirely T0.** One thing changed since this was written: the chat lane now has an
 authoritative environment record — wind, precipitation and an indoors flag, chat-wide,
 proposed by the continuity leg. So there is a **consumer and a commit path**; what is
 missing is a *derived source* for it.
@@ -329,18 +329,18 @@ The distinction this doc drew — the old world model failed at **navigation**, 
 **places having properties** — was accepted by the owner and then settled by construction:
 the successor engine built zones, access, privacy and scheduler-resolved movement, and it
 works, because narration never waits on it. That closes the argument for the successor lane
-and changes nothing for the legacy one.
+and changes nothing for the character-chat pipeline.
 
 - **D.1 · place properties** — T1/T2. **Engine: built.** **Chat: partly** — the indoors
   flag exists chat-wide, but the scene-memory places (name, details, connections) carry no
   properties. Adding them is a jsonb field on a leg that already runs. **No graph, no
-  pathfinding, no travel time, no movement authority** in the legacy lane.
-- **D.2 · privacy → the escalation gate** — T1. **Unbuilt in the legacy lane**, and the
-  successor answered the question differently: consent there is **ledger-gated** — a
-  boundary or permission entry under a named scope — and privacy zones gate access and
-  observation rather than escalation. The legacy lane's escalation floor is still keyed to
-  regard only, so a crowded café and a locked bedroom remain mechanically identical. That
-  is still the romance-lane gap this entry names.
+  pathfinding, no travel time, no movement authority** in the character-chat pipeline.
+- **D.2 · privacy → the escalation gate** — T1. **Unbuilt in the character-chat pipeline**,
+  and the successor answered the question differently: consent there is
+  **ledger-gated** — a boundary or permission entry under a named scope — and privacy zones
+  gate access and observation rather than escalation. The character-chat pipeline's
+  escalation floor is still keyed to regard only, so a crowded café and a locked bedroom
+  remain mechanically identical. That is still the romance-lane gap this entry names.
 - **D.3 · a composed scene frame** — T1. **Unbuilt by that name in either lane.** See §6.4.
 - **D.4 · proximity within a scene** — T2. **Engine: built** via zones and perception.
   **Chat: unbuilt** — across the room versus in her lap. A continuity-tracker field, not a
@@ -348,8 +348,8 @@ and changes nothing for the legacy one.
 - **D.5 · a read-only chat story map** — **Cost has gone up.** The generic graph layout and
   map component this entry assumed "would just work" were deleted with the session lane, so
   it is now a build rather than a rewire. Still garnish; still listed only for completeness.
-- **D.6 · travel time / pathfinding / movement authority in the legacy lane** — **Do not
-  build.** This is the thing that broke. Skips are the time mover, and the plan
+- **D.6 · travel time / pathfinding / movement authority in the character-chat pipeline** —
+  **Do not build.** This is the thing that broke. Skips are the time mover, and the plan
   arrival/exit license is the one principled don't-teleport exception, granted by a
   commitment rather than computed from a path. The successor engine builds the authoritative
   version properly; that is not a licence to retrofit it here.
@@ -427,10 +427,11 @@ and changes nothing for the legacy one.
 - **H.1 · cross-chat continuity** — **Answered structurally.** The owner ruled many worlds
   (2026-07-16), and the successor lane realized it: a successor chat is bound to its own
   simulated world, with the engine authoritative. So the question "is a character one person
-  or one per conversation?" has a shipped answer *for successor chats*. The **legacy** lane
-  still keys everything to the chat, and a character in two legacy conversations still has
-  two lives, two bodies and two clocks. That is now a known, bounded limitation of the
-  legacy lane rather than the corpus's largest unscoped question.
+  or one per conversation?" has a shipped answer *for successor chats*. The
+  **character-chat pipeline** still keys everything to the chat, and a character in two
+  character-chat conversations still has two lives, two bodies and two clocks. That is now
+  a known, bounded limitation of that pipeline rather than the corpus's largest unscoped
+  question.
 - **H.2 · long arcs** — T4. **Unowned.** Life events over story-months; the meanwhile pass is
   the vehicle and nothing new is needed.
 - **H.3 · session-lane fate** — **Resolved: deleted** (rollout R6, 2026-07-22). This entry
@@ -529,8 +530,8 @@ first-class, assignable property.
 present and engaged → full settle; present but quiet → pulse only; away → nothing
 per-exchange, since the meanwhile pass covers them. This is also exactly the owner's caveat
 on parking the tier and companion system — in large worlds with many background characters,
-tiers become necessary. **The 4→N path for the legacy lane runs through here, and nothing
-else in this doc is blocked on it.**
+tiers become necessary. **The 4→N path for the character-chat pipeline runs through here,
+and nothing else in this doc is blocked on it.**
 
 ---
 
@@ -580,12 +581,12 @@ All seven were ruled on by the owner in 2026-07-16. Recorded with what happened 
   with their own lore and mechanics over shared core simulation; or characters associated
   with a world *type* at creation, with template types plus user-created ones, so a
   character's attributes align with her world's settings. **Realized** for the successor
-  lane — a chat is bound to its own world. The legacy lane is unchanged (H.1).
+  lane — a chat is bound to its own world. The character-chat pipeline is unchanged (H.1).
 - **OQ2 — Do places get properties?** **Ruled: locations come back, but simpler** — rich
   locations with furniture, linked characters as owners or inhabitants, inclusion in
   routines, and mapping between locations; procedurally generable in-game with strong
   guardrails against hundreds of duplicate or erroneous locations. **Realized** engine-side
-  as zones with access and privacy. The legacy lane still has none (§D).
+  as zones with access and privacy. The character-chat pipeline still has none (§D).
 - **OQ3 — Where's the ceiling on realism?** **Ruled: there is no ceiling.** Order the work
   most-useful-to-the-game first, but leave room for niche and advanced systems later. On the
   romance scene interrupted by a bathroom beat: allow some *sway*, so a character doing
@@ -625,7 +626,7 @@ The dependency order, restated against what now exists:
    because the chat lane now has a place to put the answer. The single biggest felt change
    per line of code in this doc.
 4. **A composed scene frame** (§6.4, D.1–D.2) — unblocks perception-gated arousal signs and
-   privacy-gated escalation in the legacy lane.
+   privacy-gated escalation in the character-chat pipeline.
 5. **The chat-lane ports of what the engine proved** — meter law by class (§6.1), the read
    seam (§6.2), and settle rationing (§6.6). Each now has a working reference
    implementation, which changes them from designs into ports.
@@ -659,7 +660,7 @@ plans build toward, plus the ledger of what nobody owns.
   lane, where much of this catalog was built. Read them for *how* an entry marked "built"
   works; this doc only records that it does.
 - [finished/chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md) owns the
-  legacy lane's world tick. §E.3 and §H.2 extend it rather than parallel it.
+  character-chat pipeline's world tick. §E.3 and §H.2 extend it rather than parallel it.
 - [finished/chat-plans-promises.plan.md](finished/chat-plans-promises.plan.md) owns
   commitments and the one don't-teleport exception. §B.9 and §C.5 feed it.
 - [deferred.plan.md](deferred.plan.md) — this doc is the world-simulation plan its "Old
