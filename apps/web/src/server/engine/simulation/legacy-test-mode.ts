@@ -34,3 +34,5 @@ export const LEGACY_ENGINE_TEST_PLAYER_ENV = "VESPER_ALLOW_LEGACY_ENGINE_TEST_PL
 export function legacyUnanchoredEngineTestMode(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV === "test" && env[LEGACY_ENGINE_TEST_PLAYER_ENV] === "1";
 }
+
+// CI probe: server-tree touch (PR is closed after validation, never merged)

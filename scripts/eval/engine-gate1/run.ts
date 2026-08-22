@@ -118,3 +118,4 @@ console.log(JSON.stringify(result, null, 2));
 if (result.p95Ms > P95_BUDGET_MS) {
   throw new Error(`Gate 1 p95 ${result.p95Ms.toFixed(3)} ms exceeds ${P95_BUDGET_MS.toFixed(1)} ms budget`);
 }
+// CI probe: engine-surface touch (PR is closed after validation, never merged)
