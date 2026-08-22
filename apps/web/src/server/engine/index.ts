@@ -8,6 +8,7 @@ export * from "./chat-reference-enqueue";
 export * from "./chat-reference-images";
 export * from "./chat-action-beat";
 export * from "./chat-authority";
+export * from "./engine-comparison";
 export * from "./sim-beats";
 export * from "./composition-diagnostics";
 export * from "./sim-time-jobs";
