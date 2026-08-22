@@ -162,9 +162,13 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     expect(primaryMeters.get("stress")).toBe(7_700);
     expect(primaryMeters.get("mood")).toBe(2_300);
 
-    // The row models evidence already gathered by a real shadow exchange. Its
-    // required branch FK is ON DELETE CASCADE, so Stop must retain this mirror
-    // rather than erase the comparison and its ruling.
+    // The row models evidence already gathered by a real shadow exchange.
+    // Recorded findings are the whole product of a session, and both the API
+    // and the UI promise stopping keeps them. Falsified against the previous
+    // schema, where `sim_shadow_divergences.branch_id` cascaded from
+    // `sim_branches` and deleting the mirror world erased every comparison row
+    // and ruling; `branch_id` is now a set-null provenance link, so Stop
+    // deletes the mirror and keeps the evidence.
     const evidenceId = newId();
     await db().insert(simShadowDivergences).values({
       id: evidenceId,
@@ -187,34 +191,16 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     const after = await readChatEngineAuthority(ids.chat);
     expect(after?.authority).toBe("legacy_chat");
     expect(after?.simBranchId).toBeNull();
-    expect(await db().select().from(simShadowDivergences).where(eq(simShadowDivergences.id, evidenceId))).toHaveLength(1);
-    expect(await db().select().from(simWorlds).where(eq(simWorlds.id, comparisonWorldId))).toHaveLength(1);
-
-    // Cleanup after proving retention: once the evidence row is gone, deleting
-    // the retained world is safe and keeps this integration suite self-contained.
-    await db().delete(simShadowDivergences).where(eq(simShadowDivergences.id, evidenceId));
-    await db().delete(simWorlds).where(eq(simWorlds.id, comparisonWorldId));
-    comparisonWorldId = "";
-  });
-
-  it("deletes an unused managed mirror when stopped before any rows exist", async () => {
-    const started = await expectJson<{ active: boolean }>(
-      await POST(req(ids.chat, "POST"), ctx(ids.chat)),
-      200,
-    );
-    expect(started.active).toBe(true);
-    const authority = await readChatEngineAuthority(ids.chat);
-    const branchId = authority?.simBranchId ?? "";
-    const [world] = await db()
-      .select({ id: simWorlds.id })
-      .from(simBranches)
-      .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
-      .where(eq(simBranches.id, branchId));
-    comparisonWorldId = world?.id ?? "";
-
-    await DELETE(req(ids.chat, "DELETE"), ctx(ids.chat));
     expect(await db().select().from(simWorlds).where(eq(simWorlds.id, comparisonWorldId))).toHaveLength(0);
     comparisonWorldId = "";
+
+    // The row outlives the branch it was recorded against; its provenance link
+    // is the only thing the mirror's deletion takes with it.
+    const kept = await db()
+      .select({ branchId: simShadowDivergences.branchId, verdict: simShadowDivergences.verdict })
+      .from(simShadowDivergences)
+      .where(eq(simShadowDivergences.id, evidenceId));
+    expect(kept).toEqual([{ branchId: null, verdict: "intentional" }]);
   });
 
   it("refuses group chats instead of collecting pair-only evidence", async () => {

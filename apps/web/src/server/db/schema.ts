@@ -3476,6 +3476,12 @@ export const simEngagements = pgTable(
  * `verdict` is the durable triage state ("ruled intentional" survives here,
  * not in a doc). Rows are observations, never effects — deleting them all
  * changes nothing about either lane.
+ *
+ * Retention is chat-scoped: rows outlive the mirror branch/world they were
+ * recorded against, so stopping a comparison session (which deletes a managed
+ * mirror world) keeps every recorded comparison and ruling. `branch_id` is
+ * provenance only — nothing reads it back — and goes null when its branch is
+ * deleted.
  */
 export const simShadowDivergences = pgTable(
   "sim_shadow_divergences",
@@ -3486,9 +3492,8 @@ export const simShadowDivergences = pgTable(
       .references(() => characterChats.id, { onDelete: "cascade" }),
     /** The settled assistant message this comparison anchors to. */
     messageId: text("message_id").notNull(),
-    branchId: text("branch_id")
-      .notNull()
-      .references(() => simBranches.id, { onDelete: "cascade" }),
+    /** Provenance of the successor side. Null once the mirror branch is gone. */
+    branchId: text("branch_id").references(() => simBranches.id, { onDelete: "set null" }),
     /** Compared domain: prose | presence | meters | clock — vocabulary grows without migration. */
     domain: text("domain").notNull(),
     legacy: jsonb("legacy").notNull(),

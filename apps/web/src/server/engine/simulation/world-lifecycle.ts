@@ -20,7 +20,9 @@ import { log } from "@/server/log";
  * bodies, events, commands, triggers, memory documents, all of it. The
  * chat-side FK (`character_chats.sim_branch_id → sim_branches.id`) is
  * `set null`, so a chat that outlives its world is simply unrouted rather than
- * broken.
+ * broken. `sim_shadow_divergences.branch_id` is `set null` for the same reason:
+ * recorded comparisons and their rulings are chat-scoped observations that must
+ * survive deleting the mirror they were taken against.
  *
  * The standalone verb — deleting a world that no chat is taking with it:
  * provisioning's compensating cleanup (a failed build leaves nothing behind)
