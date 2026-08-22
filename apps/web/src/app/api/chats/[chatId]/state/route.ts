@@ -29,8 +29,10 @@ import {
   selfieHistorySchema,
   driftChatState,
   editChatState,
+  isSimRoutedAuthority,
   loadChatScenario,
   loadChatState,
+  readChatEngineAuthority,
   readSimChatClock,
   readSimChatMeters,
   readSimChatOutfit,
@@ -56,8 +58,8 @@ type Params = { chatId: string };
  *   the provided fields (seeding the rest if absent).
  *
  * The action chips no longer POST here — a tap is now a narrated `action_beat`
- * exchange through the chat pipeline (chat-action-beats.plan.md), which applies the
- * same deterministic effect pre-narration so the reply reflects it.
+ * exchange through the character-chat pipeline (chat-action-beats.plan.md), which
+ * applies the same deterministic effect pre-narration so the reply reflects it.
  */
 
 const editBodySchema = z.object({
@@ -140,6 +142,9 @@ function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string
   return member ? { characterId: member.characterId, profile: member.character.profile } : null;
 }
 
+const sameStrings = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
+
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
   async (user, owned, req: NextRequest, ctx) => {
@@ -176,7 +181,7 @@ export const GET = withOwnedChat<Params, OwnedChat>(
       profile,
       sink,
     );
-    // R5 slice 5: a routed chat's outfit chip reads the mirror's WORN items.
+    // R5 slice 5: a routed chat's outfit chip reads the simulation world's WORN items.
     const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
@@ -189,8 +194,8 @@ export const GET = withOwnedChat<Params, OwnedChat>(
         scenario.clockMinutes,
       ),
       garmentDiagnostics: [],
-      // Sim-routed chats show the WORLD clock, not the legacy scenario clock
-      // (R3 slice 4 + R5 calendar, ruling 17) — null for legacy chats.
+      // Sim-routed chats show the WORLD clock, not the character-chat scenario clock;
+      // null means this conversation uses the character-chat pipeline's clock.
       simClock: await readSimChatClock(chatId),
     });
   },
@@ -209,6 +214,32 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     if (!body.ok) return body.response;
 
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+
+    // Successor-routed primary characters wear simulation material items. The
+    // character-chat state row still exists as compatibility/storage for other
+    // surfaces, but it is NOT a second wardrobe authority. Reject only an actual
+    // wardrobe change (the state-tools form submits its unchanged wardrobe fields
+    // on every save) so unrelated state edits remain usable.
+    if (
+      target.characterId === owned.participant.characterId &&
+      isSimRoutedAuthority(await readChatEngineAuthority(chatId))
+    ) {
+      const current = (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile);
+      const wardrobeChanged =
+        (body.value.garmentOperations?.length ?? 0) > 0 ||
+        (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
+        (body.value.outfitPresetId !== undefined && body.value.outfitPresetId !== current.outfitPresetId) ||
+        (body.value.outfit !== undefined && body.value.outfit !== current.outfit) ||
+        (body.value.outfitExposed !== undefined && body.value.outfitExposed !== current.outfitExposed);
+      if (wardrobeChanged) {
+        return jsonError(
+          "sim_wardrobe_managed_by_world",
+          "this character's clothing is owned by the successor world's material state; change it through world actions rather than character-chat wardrobe controls",
+          409,
+        );
+      }
+    }
+
     // Garment operations degrade rather than fail (docs/resilience.md): a rejected
     // one is a stable-code diagnostic, collected here and handed back so the sheet
     // can say WHY it did not take instead of silently discarding it.
@@ -226,9 +257,11 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       user.id,
       profile,
     );
+    const simOutfit =
+      target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
-      outfitLabel: wardrobe.garments,
+      outfitLabel: simOutfit ?? wardrobe.garments,
       garments: garmentReadoutsFor(
         scenario.garments,
         garmentActorForCharacter(target.characterId),
