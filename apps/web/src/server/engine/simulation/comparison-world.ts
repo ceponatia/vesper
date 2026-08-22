@@ -55,6 +55,10 @@ function fixedPoint(value: number): number {
 /**
  * Provision a fresh, isolated comparison mirror from one legacy chat snapshot.
  * Every causal write goes through the durable simulation seed/command seams.
+ *
+ * Provisioning is compensating: once the material seed creates the world, any
+ * later failure removes that entire graph. A failed click can therefore be
+ * retried without leaving an unreachable comparison world behind.
  */
 export async function provisionComparisonWorld(
   input: ComparisonWorldSeedInput,
@@ -91,106 +95,117 @@ export async function provisionComparisonWorld(
       },
     })),
   };
-  await seedDurableMaterialBranch(material, { database });
 
-  const topology: SpaceTopologySeed = {
-    branchId,
-    locations: [{ id: locationId, worldId, kind: "comparison_scene", defaultAccessPolicy: "public" }],
-    zones: [
-      { id: sceneZoneId, locationId, kind: "room", privacyPolicy: "public" },
-      { id: awayZoneId, locationId, kind: "elsewhere", privacyPolicy: "public" },
-    ],
-    // A real link keeps the topology lawful if later comparison work needs a
-    // movement read, but no automatic movement is authored by this seed.
-    links: [
-      {
-        id: `cmp-${sessionId}-link`,
-        fromZoneId: sceneZoneId,
-        toZoneId: awayZoneId,
-        modes: ["walk"],
-        minimumDurationSeconds: 300,
-        accessPolicy: "public",
-        state: "open",
-      },
-    ],
-    loci: [
-      {
-        kind: "at",
-        actorId: playerActorId,
-        locationId,
-        zoneId: sceneZoneId,
-        since: material.originStorySecond,
-      },
-      {
-        kind: "at",
-        actorId: primaryActorId,
-        locationId,
-        zoneId: input.primaryPresent ? sceneZoneId : awayZoneId,
-        since: material.originStorySecond,
-      },
-    ],
-  };
-  await seedDurableSpaceTopology(topology, { database });
+  try {
+    await seedDurableMaterialBranch(material, { database });
 
-  const envelope = (name: string, payload: Record<string, unknown>) => ({
-    id: `cmp-${sessionId}-cmd-${name}`,
-    branchId,
-    expectedVersion: 0,
-    idempotencyKey: `cmp-${sessionId}-${name}`,
-    principal: {
-      kind: "system" as const,
-      principalId: "engine-comparison-seeder",
-      controlledActorIds: [] as string[],
-    },
-    submittedAtWallClock: new Date().toISOString(),
-    correlationId: `engine-comparison-${sessionId}`,
-    schemaVersion: 1,
-    ...payload,
-  });
-  const admit = { database, admitAtLockedVersion: true };
-
-  for (const [name, actorId] of [
-    ["init-player", playerActorId],
-    ["init-primary", primaryActorId],
-  ] as const) {
-    const initialized = await submitDurableInitializeActorBody(
-      envelope(name, {
-        type: "initialize_actor_body",
-        payload: { actorId, registryVersion: bodyDerivationVersion, baselineOverrides: {} },
-      }),
-      admit,
-    );
-    if (initialized.status !== "accepted") {
-      throw new Error(`comparison world body seed ${name} was not accepted: ${JSON.stringify(initialized)}`);
-    }
-  }
-
-  // Only set meters the successor body contract actually knows. If the legacy
-  // chat tracks an extra key, leaving it absent is intentional: the analyzer
-  // will surface that missing contract instead of the initializer inventing it.
-  const knownMeterKeys = new Set(bodyMeterRegistryByVersion[bodyDerivationVersion].map((definition) => definition.key));
-  for (const [meterKey, value] of Object.entries(input.primaryMeters).sort(([a], [b]) => a.localeCompare(b))) {
-    if (!knownMeterKeys.has(meterKey)) continue;
-    const adjusted = await submitDurableApplyBodySource(
-      envelope(`meter-${meterKey}`, {
-        type: "apply_body_source",
-        payload: {
-          actorId: primaryActorId,
-          meterKey,
-          sourceKind: "adjustment",
-          operation: { kind: "set", valueFixedPoint: fixedPoint(value) },
+    const topology: SpaceTopologySeed = {
+      branchId,
+      locations: [{ id: locationId, worldId, kind: "comparison_scene", defaultAccessPolicy: "public" }],
+      zones: [
+        { id: sceneZoneId, locationId, kind: "room", privacyPolicy: "public" },
+        { id: awayZoneId, locationId, kind: "elsewhere", privacyPolicy: "public" },
+      ],
+      // A real link keeps the topology lawful if later comparison work needs a
+      // movement read, but no automatic movement is authored by this seed.
+      links: [
+        {
+          id: `cmp-${sessionId}-link`,
+          fromZoneId: sceneZoneId,
+          toZoneId: awayZoneId,
+          modes: ["walk"],
+          minimumDurationSeconds: 300,
+          accessPolicy: "public",
+          state: "open",
         },
-      }),
-      admit,
-    );
-    if (adjusted.status !== "accepted") {
-      throw new Error(`comparison world meter ${meterKey} was not accepted: ${JSON.stringify(adjusted)}`);
+      ],
+      loci: [
+        {
+          kind: "at",
+          actorId: playerActorId,
+          locationId,
+          zoneId: sceneZoneId,
+          since: material.originStorySecond,
+        },
+        {
+          kind: "at",
+          actorId: primaryActorId,
+          locationId,
+          zoneId: input.primaryPresent ? sceneZoneId : awayZoneId,
+          since: material.originStorySecond,
+        },
+      ],
+    };
+    await seedDurableSpaceTopology(topology, { database });
+
+    const envelope = (name: string, payload: Record<string, unknown>) => ({
+      id: `cmp-${sessionId}-cmd-${name}`,
+      branchId,
+      expectedVersion: 0,
+      idempotencyKey: `cmp-${sessionId}-${name}`,
+      principal: {
+        kind: "system" as const,
+        principalId: "engine-comparison-seeder",
+        controlledActorIds: [] as string[],
+      },
+      submittedAtWallClock: new Date().toISOString(),
+      correlationId: `engine-comparison-${sessionId}`,
+      schemaVersion: 1,
+      ...payload,
+    });
+    const admit = { database, admitAtLockedVersion: true };
+
+    for (const [name, actorId] of [
+      ["init-player", playerActorId],
+      ["init-primary", primaryActorId],
+    ] as const) {
+      const initialized = await submitDurableInitializeActorBody(
+        envelope(name, {
+          type: "initialize_actor_body",
+          payload: { actorId, registryVersion: bodyDerivationVersion, baselineOverrides: {} },
+        }),
+        admit,
+      );
+      if (initialized.status !== "accepted") {
+        throw new Error(`comparison world body seed ${name} was not accepted: ${JSON.stringify(initialized)}`);
+      }
     }
+
+    // Only set meters the successor body contract actually knows. If the legacy
+    // chat tracks an extra key, leaving it absent is intentional: the analyzer
+    // will surface that missing contract instead of the initializer inventing it.
+    const knownMeterKeys = new Set(
+      bodyMeterRegistryByVersion[bodyDerivationVersion].map((definition) => definition.key),
+    );
+    for (const [meterKey, value] of Object.entries(input.primaryMeters).sort(([a], [b]) => a.localeCompare(b))) {
+      if (!knownMeterKeys.has(meterKey)) continue;
+      const adjusted = await submitDurableApplyBodySource(
+        envelope(`meter-${meterKey}`, {
+          type: "apply_body_source",
+          payload: {
+            actorId: primaryActorId,
+            meterKey,
+            sourceKind: "adjustment",
+            operation: { kind: "set", valueFixedPoint: fixedPoint(value) },
+          },
+        }),
+        admit,
+      );
+      if (adjusted.status !== "accepted") {
+        throw new Error(`comparison world meter ${meterKey} was not accepted: ${JSON.stringify(adjusted)}`);
+      }
+    }
+
+    // Calendar start is presentation configuration, not causal world state. The
+    // branch's storySecond already encodes the legacy chat's current clock.
+    await database.update(simWorlds).set({ calendarStart: input.calendarStart }).where(eq(simWorlds.id, worldId));
+
+    return { worldId, branchId, playerActorId, primaryActorId };
+  } catch (error) {
+    // The material seed is the first stage and owns world creation. If it never
+    // landed this is a no-op; if any later stage failed, the world cascade removes
+    // every partial branch row. Never mask the provisioning error with cleanup.
+    await database.delete(simWorlds).where(eq(simWorlds.id, worldId)).catch(() => undefined);
+    throw error;
   }
-
-  // Calendar start is presentation configuration, not causal world state. The
-  // branch's storySecond already encodes the legacy chat's current clock.
-  await database.update(simWorlds).set({ calendarStart: input.calendarStart }).where(eq(simWorlds.id, worldId));
-
-  return { worldId, branchId, playerActorId, primaryActorId };
 }
