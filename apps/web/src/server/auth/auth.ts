@@ -65,25 +65,54 @@ function configuredTrustedOrigins(): string[] {
 const signupDisabled = process.env.ALLOW_SIGNUP !== "true";
 
 /**
+ * True while `next build` collects page data. The build runs with
+ * NODE_ENV=production inside `docker build`, where the repository `.env` is
+ * dockerignored and Fly secrets do not exist (they are runtime-only) — so every
+ * auth env var is absent there, and so is it in CI's production-build job. The
+ * BUILT server always sees the real environment: `next start` leaves NEXT_PHASE
+ * unset, so nothing keyed off this flag can survive into a running deployment.
+ */
+function isNextBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === "phase-production-build";
+}
+
+/**
  * Hard-fail at init when the secret is missing in production (codebase-review B2):
  * Better Auth otherwise falls back to its built-in dev secret with only a console
  * warning, which would make every session cookie forgeable. Dev keeps the warning
  * (a fixed local secret is a non-issue and zero-config matters there).
  *
- * The `next build` phase is exempt: page-data collection evaluates this module
- * with NODE_ENV=production inside `docker build`, where Fly secrets don't exist
- * (they are runtime-only) — enforcing there breaks every production image build.
- * The guard still fires the moment the BUILT server actually starts (`next
- * start` leaves NEXT_PHASE unset), so no production process can ever run on the
- * forgeable fallback secret.
+ * The `next build` phase is exempt (see `isNextBuildPhase`) — enforcing there
+ * breaks every production image build. The guard still fires the moment the built
+ * server actually starts, so no production process can ever run on the forgeable
+ * fallback secret.
  */
 function requiredSecret(): string | undefined {
   const secret = process.env.BETTER_AUTH_SECRET;
-  const building = process.env.NEXT_PHASE === "phase-production-build";
-  if (!secret && !building && process.env.NODE_ENV === "production") {
+  if (!secret && !isNextBuildPhase() && process.env.NODE_ENV === "production") {
     throw new Error("BETTER_AUTH_SECRET is required in production — set it (e.g. `fly secrets set BETTER_AUTH_SECRET=…`)");
   }
   return secret;
+}
+
+/**
+ * The deployment's canonical origin. OAuth callbacks, magic-link URLs and the
+ * CSRF allow-list (`server/api/csrf.ts`) are all built from `BETTER_AUTH_URL`.
+ *
+ * The build phase gets an unresolvable placeholder for the same reason
+ * `requiredSecret` skips its guard there: the variable is absent during
+ * `next build`, and an absent baseURL makes Better Auth log "[better-auth] Base
+ * URL is not set" on every image build and every CI production-build job. That
+ * warning describes a request-time hazard the build phase cannot have — no
+ * request is served and no prerendered output embeds an auth origin — so the
+ * placeholder removes the noise without weakening the real check: a deployment
+ * that actually lost BETTER_AUTH_URL still fails loudly, because an empty CSRF
+ * allow-list rejects every cookie-bearing mutation.
+ */
+function configuredBaseURL(): string | undefined {
+  const url = process.env.BETTER_AUTH_URL;
+  if (url) return url;
+  return isNextBuildPhase() ? "https://build.invalid" : undefined;
 }
 
 export const auth = betterAuth({
@@ -92,7 +121,7 @@ export const auth = betterAuth({
     schema: { user: users, session: authSessions, account: accounts, verification: verifications },
   }),
   secret: requiredSecret(),
-  baseURL: process.env.BETTER_AUTH_URL,
+  baseURL: configuredBaseURL(),
   trustedOrigins: configuredTrustedOrigins(),
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
