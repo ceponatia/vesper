@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
 import {
   characterChats,
+  characterChatState,
   characters,
   chatParticipants,
   db,
@@ -33,7 +34,7 @@ import {
 import { DELETE, GET, POST } from "./[chatId]/route";
 
 const ready = await probeIntegrationDb("engine-comparison.int.test", "sim_worlds");
-const ids = { owner: "", chat: "", groupChat: "" };
+const ids = { owner: "", primary: "", chat: "", groupChat: "" };
 let comparisonWorldId = "";
 
 const req = (chatId: string, method: "GET" | "POST" | "DELETE"): NextRequest =>
@@ -54,10 +55,18 @@ beforeAll(async () => {
     ])
     .returning({ id: characters.id });
   if (!primary || !secondary) throw new Error("comparison characters were not seeded");
+  ids.primary = primary.id;
 
   const [chat, groupChat] = await db()
     .insert(characterChats)
-    .values([{ ownerId: owner.id }, { ownerId: owner.id }])
+    .values([
+      {
+        ownerId: owner.id,
+        clockMinutes: 125,
+        calendarStart: { year: 2025, month: 11, day: 9, hour: 14, minute: 30 },
+      },
+      { ownerId: owner.id },
+    ])
     .returning({ id: characterChats.id });
   if (!chat || !groupChat) throw new Error("comparison chats were not seeded");
   ids.chat = chat.id;
@@ -67,6 +76,21 @@ beforeAll(async () => {
     { chatId: groupChat.id, characterId: primary.id, memoryGroupId: newId(), sort: 0 },
     { chatId: groupChat.id, characterId: secondary.id, memoryGroupId: newId(), sort: 1 },
   ]);
+  // Deliberately non-default values: the provisioning test must prove it mirrors
+  // the CURRENT character-chat state, not merely that a generic world can boot.
+  await db().insert(characterChatState).values({
+    chatId: chat.id,
+    characterId: primary.id,
+    presence: "away",
+    meters: {
+      energy: 0.41,
+      hygiene: 0.68,
+      arousal: 0.12,
+      stress: 0.77,
+      intoxication: 0.09,
+      mood: 0.23,
+    },
+  });
 });
 
 afterAll(async () => {
@@ -80,7 +104,7 @@ afterAll(async () => {
 });
 
 describe.runIf(ready)("Engine Comparison session provisioning", () => {
-  it("starts from a one-on-one legacy chat, mints a neutral mirror, and stops cleanly", async () => {
+  it("mirrors current one-on-one chat state into a neutral world and stops cleanly", async () => {
     const before = await expectJson<{ active: boolean; canStart: boolean; rows: number }>(
       await GET(req(ids.chat, "GET"), ctx(ids.chat)),
       200,
@@ -109,7 +133,7 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
       .innerJoin(simWorlds, eq(simWorlds.id, simBranches.worldId))
       .where(eq(simBranches.id, branchId));
     expect(world?.worldTypeId).toBe(COMPARISON_WORLD_TYPE_ID);
-    expect(world?.calendarStart).toEqual({ year: 2024, month: 6, day: 1 });
+    expect(world?.calendarStart).toEqual({ year: 2025, month: 11, day: 9 });
     comparisonWorldId = world?.id ?? "";
 
     const space = await readDurableSpaceBranch(branchId);
@@ -120,11 +144,22 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     const primaryLocus = space.loci.find((locus) => locus.actorId === authority?.simPrimaryActorId);
     expect(playerLocus?.kind).toBe("at");
     expect(primaryLocus?.kind).toBe("at");
-    if (playerLocus?.kind === "at" && primaryLocus?.kind === "at") expect(primaryLocus.zoneId).toBe(playerLocus.zoneId);
+    if (playerLocus?.kind === "at" && primaryLocus?.kind === "at") {
+      // Legacy presence was `away`, so the mirror must not seed a co-present pair.
+      expect(primaryLocus.zoneId).not.toBe(playerLocus.zoneId);
+    }
 
     const bodies = await readDurableBodies(branchId);
-    expect(bodies.storySecond).toBe(8 * 60 * 60);
-    expect(bodies.meters.filter((meter) => meter.actorId === authority?.simPrimaryActorId).length).toBeGreaterThan(0);
+    // 14:30 anchor + 125 elapsed minutes = 16:35 on story day zero.
+    expect(bodies.storySecond).toBe((14 * 60 + 30 + 125) * 60);
+    const primaryMeters = new Map(
+      bodies.meters
+        .filter((meter) => meter.actorId === authority?.simPrimaryActorId)
+        .map((meter) => [meter.meterKey, meter.valueFixedPoint]),
+    );
+    expect(primaryMeters.get("energy")).toBe(4_100);
+    expect(primaryMeters.get("stress")).toBe(7_700);
+    expect(primaryMeters.get("mood")).toBe(2_300);
 
     const stopped = await expectJson<{ active: boolean; canStart: boolean }>(
       await DELETE(req(ids.chat, "DELETE"), ctx(ids.chat)),
