@@ -159,6 +159,20 @@ is the deliberate full pre-deploy run (engine and build included).
 | engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark            |
 | production build   | the Next production build, heap-pinned to 4096 MB             |
 
+The **engine job** is the only one that needs Docker, so it is also the only one
+billed on an EC2 runner rather than Lambda. On an ordinary PR into `main` it is
+path-gated, and the gate is written as exclusions rather than an allowlist:
+server code, API routes, workspace packages, migrations, and the Compose and
+install inputs all start it by default, and a short list of surfaces steps
+aside because no `test:engine` suite executes them — the legacy character-chat
+lane, `server/auth`, `server/authoring`, `server/memory`,
+`server/reference-extraction`, and app contracts outside `contracts/images`. A
+new server subsystem or route family therefore starts the job until someone
+deliberately exempts it, because a stale pattern here fails open: the job
+skips and `verify` still reports green. A manual `gh workflow run CI` dispatch
+and every PR into `prod` start it regardless of what changed. The classifier in
+`.github/workflows/ci.yml` carries the reason for each exclusion.
+
 The **engine job** exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and
 `REQUIRE_INTEGRATION_DB=true`, so an unreachable or unmigrated database fails
 the suites rather than letting them self-skip — a gate must never report green
