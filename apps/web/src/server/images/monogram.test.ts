@@ -21,7 +21,9 @@ describe("monogramSvg", () => {
     expect(monogramSvg("   ").toString("utf8")).toContain(">?</text>");
   });
 
-  it("rasterizes to webp at 3:4 via sharp (the saveImageBuffer path)", async () => {
+  // The first SVG-with-text rasterization on a machine builds the fontconfig
+  // cache, which on a cold CI runner can alone exceed the default 5s.
+  it("rasterizes to webp at 3:4 via sharp (the saveImageBuffer path)", { timeout: 30_000 }, async () => {
     const { info } = await sharp(monogramSvg("Mira")).webp().toBuffer({ resolveWithObject: true });
     expect(info.format).toBe("webp");
     expect(info.width).toBe(768);
