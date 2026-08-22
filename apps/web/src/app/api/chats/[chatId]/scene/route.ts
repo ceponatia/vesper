@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, images } from "@/server/db";
+import { isSimRoutedAuthority, readChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 
@@ -16,6 +17,12 @@ type Params = { chatId: string };
  * sibling conversations with the same character never leak in (the cross-chat
  * view is the Gallery's job). Assets stay filed against the character too
  * (kind="scene", entityKind="character"), so they still surface in the Gallery.
+ *
+ * This route currently belongs to the character-chat visual pipeline. A successor-routed
+ * conversation is refused at POST until the simulation side exposes a structured visual
+ * wardrobe projection (item identity + coverage/presentation), because feeding the scene
+ * renderer character-chat wardrobe state while narration reads simulation world truth can
+ * produce two different outfits for the same moment.
  */
 
 /**
@@ -63,6 +70,14 @@ export const POST = withOwnedChat<Params, OwnedChat>(
     const { chatId } = await ctx.params;
     const parsed = await readBody(req, sceneBodySchema);
     if (!parsed.ok) return parsed.response;
+
+    if (isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+      return jsonError(
+        "scene_visual_authority_unavailable",
+        "scene images are temporarily unavailable for successor-world chats until image rendering can read their world-owned wardrobe state",
+        409,
+      );
+    }
 
     const blocked = await imageRenderRejection(user, req);
     if (blocked) return blocked;
