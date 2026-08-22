@@ -11,6 +11,7 @@ import {
   emptySceneState,
   parseSceneState,
   resolveContactAttempt,
+  sceneStateOf,
   withSceneContacts,
   type AffordanceSubjectId,
   type CommittedContactOutcome,
@@ -136,6 +137,17 @@ function permissionEvent(
 }
 
 /**
+ * A scene that PLACES the probe bodies. `parseSceneState` enforces referential
+ * integrity — a housed contact whose participants are not placed in the scene
+ * is dropped as orphaned on every read — so a seeded projection must place the
+ * pair or the invalidation sweep (which reads the stored scene through the same
+ * boundary) sees no active contact to end.
+ */
+function scenePlacing(...subjectIds: readonly AffordanceSubjectId[]): SceneState {
+  return sceneStateOf({ participants: subjectIds.map((subjectId) => ({ subjectId })) });
+}
+
+/**
  * A LIVE romantic contact, durably committed the way the leg commits one: the
  * contact rows and the scene projection in one transactional append, under the
  * exchange guard. The policy stored on it says a grant covered it at commit
@@ -159,7 +171,7 @@ async function seedRomanticContact(chat: ChatSeat): Promise<CommittedContactOutc
     eventRef,
     storyMinute: 100,
     commits: contactCommitEvents(outcome),
-    scene: withSceneContacts(emptySceneState(), outcome.state),
+    scene: withSceneContacts(scenePlacing(PROBE_ACTOR, PROBE_TARGET), outcome.state),
   });
   expect(appended.status).toBe("recorded");
   return outcome;
@@ -212,7 +224,7 @@ async function seedRomanticContacts(
     eventRef,
     storyMinute: 100,
     commits,
-    scene: withSceneContacts(emptySceneState(), state),
+    scene: withSceneContacts(scenePlacing(...pairs.flatMap((pair) => [pair.actor, pair.target])), state),
   });
   expect(appended.status).toBe("recorded");
   return outcomes;

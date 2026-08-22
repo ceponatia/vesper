@@ -381,7 +381,9 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
-    expect((row?.meta as Record<string, unknown>).error).toContain("VENICE_API_KEY");
+    // The stored error names the missing provider credential, so an operator
+    // reading the row knows what to configure (Replicate is THE image backend).
+    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
     const recorded = sink.items.filter((d) => d.code === "images.avatar.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
@@ -404,16 +406,18 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
-    expect((row?.meta as Record<string, unknown>).error).toContain("VENICE_API_KEY");
+    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
     const recorded = sink.items.filter((d) => d.code === "images.variant.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
     expect(recorded[0]?.context).toMatchObject({ characterId, imageId });
   });
 
-  it("a variant with no reference avatar fails the row WITHOUT a diagnostic — a precondition, not a failed generation", async () => {
-    // Deliberately preserved: this branch is the variant lane's counterpart to
-    // entity's not-found, and both stay diagnostic-free.
+  it("a variant with no identity source fails the row with the pack's refusal — a precondition, not a failed generation", async () => {
+    // Since identity packs became the unconditional identity source, a
+    // character with no canonical portrait refuses the render with the pack's
+    // own explanation and diagnostic — and it is still a PRECONDITION: no
+    // `images.variant.generate_failed` fires, because no generation ran.
     const characterId = await seedCharacter("No Avatar Yet");
     const sink = new DiagnosticCollector();
 
@@ -423,7 +427,10 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
-    expect((row?.meta as Record<string, unknown>).error).toBe("no ready canonical avatar to use as reference");
-    expect(sink.items).toEqual([]);
+    expect((row?.meta as Record<string, unknown>).error).toBe(
+      "identity references unavailable (images.identity_pack.source_missing)",
+    );
+    expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.profile_ineligible");
+    expect(sink.items.map((d) => d.code)).not.toContain("images.variant.generate_failed");
   });
 });

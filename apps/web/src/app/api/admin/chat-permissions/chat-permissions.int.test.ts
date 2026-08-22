@@ -11,6 +11,7 @@ import {
   emptySceneState,
   parseSceneState,
   resolveContactAttempt,
+  sceneStateOf,
   withSceneContacts,
   withSceneParticipant,
   type CommittedContactOutcome,
@@ -229,7 +230,13 @@ async function seedPlayerRomanticContact(chat: { chatId: string; messageId: stri
     eventRef,
     storyMinute: 100,
     commits: contactCommitEvents(outcome),
-    scene: withSceneContacts(emptySceneState(), outcome.state),
+    // The seeded scene must PLACE the pair: `parseSceneState` drops a housed
+    // contact whose bodies are not placed participants (referential integrity),
+    // and the override's sweep reads the stored scene through that boundary.
+    scene: withSceneContacts(
+      sceneStateOf({ participants: [{ subjectId: player }, { subjectId: target }] }),
+      outcome.state,
+    ),
   });
   expect(appended.status).toBe("recorded");
   return outcome;
@@ -646,9 +653,14 @@ describe.runIf(ready)("serialization — the override is a writer on the exchang
       expect(await auditRows(chat.chatId)).toHaveLength(1);
       const scene = await storedScene(chat.chatId);
       expect(activeContactsOf(scene.contacts)).toHaveLength(1);
-      expect(scene.participants.map((participant) => String(participant.subjectId))).toEqual([
+      // The other writer's scene stands: npcB is placed there and nowhere else,
+      // and the whole participant list is byte-for-byte the rewrite's.
+      expect(scene.participants.map((participant) => String(participant.subjectId))).toEqual(
+        rewritten.participants.map((participant) => String(participant.subjectId)),
+      );
+      expect(scene.participants.map((participant) => String(participant.subjectId))).toContain(
         String(affordanceSubjectId(ids.npcB)),
-      ]);
+      );
     },
     20_000,
   );

@@ -721,8 +721,12 @@ describe.runIf(ready)("authority presence integration", () => {
 // ---------------------------------------------------------------------------
 
 describe.runIf(ready)("authority mode commits contact starts", () => {
+  // Unset scope defaults to MOVEMENT ONLY (constants.authority.test.ts pins
+  // it): contact authority is an explicit operator opt-in, so every test that
+  // expects a start to execute names the scope it is spending.
   it("an approach and a start in one reply commit in written order, on ONE transaction", async () => {
     process.env.CHAT_NPC_SCENE_DECISIONS = "on";
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start";
     const chat = await newChat(fixture);
     classifier.output = APPROACH_THEN_START;
 
@@ -777,6 +781,7 @@ describe.runIf(ready)("authority mode commits contact starts", () => {
       );
 
     process.env.CHAT_NPC_SCENE_DECISIONS = "on";
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start";
     classifier.output = APPROACH_THEN_START;
     await exchange(chat, { kind: "send", content: "I glance up.", reply: APPROACH_THEN_START_REPLY });
 
@@ -802,6 +807,7 @@ describe.runIf(ready)("authority mode commits contact starts", () => {
       .where(eq(characterChats.id, chat.chatId));
 
     process.env.CHAT_NPC_SCENE_DECISIONS = "on";
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start";
     classifier.output = APPROACH_THEN_START;
     await exchange(chat, { kind: "send", content: "I glance up.", reply: APPROACH_THEN_START_REPLY });
 
@@ -850,6 +856,7 @@ describe.runIf(ready)("authority mode commits contact starts", () => {
     expect(await activeContacts(chat.chatId)).toEqual([]);
 
     process.env.CHAT_NPC_SCENE_DECISIONS = "on";
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start";
     const handle = await beginChatNpcSceneDecision({
       chatId: chat.chatId,
       assistantMessageId: assistantId,
@@ -892,9 +899,14 @@ function updateProposal(gesture: string, evidence: string) {
   };
 }
 
-/** Exchange one, in authority mode: she crosses the room and takes the player's hand. */
+/**
+ * Exchange one, in authority mode: she crosses the room and takes the player's
+ * hand. The seed names the scope its start spends (the unset default is
+ * movement only); a test about updates widens or narrows it afterwards.
+ */
 async function npcHeldTouch(chat: ChatSeat): Promise<void> {
   process.env.CHAT_NPC_SCENE_DECISIONS = "on";
+  process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start";
   classifier.output = APPROACH_THEN_START;
   await exchange(chat, { kind: "send", content: "I glance up.", reply: APPROACH_THEN_START_REPLY });
 }
@@ -912,6 +924,7 @@ describe.runIf(ready)("authority mode commits contact updates", () => {
     const [before] = await activeContacts(chat.chatId);
     expect(before?.pressure).toBe("light");
 
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start,update";
     classifier.output = updateProposal("squeeze", SQUEEZE_REPLY);
     await exchange(chat, { kind: "send", content: "I say nothing.", reply: SQUEEZE_REPLY });
 
@@ -949,6 +962,7 @@ describe.runIf(ready)("authority mode commits contact updates", () => {
     const chat = await newChat(fixture);
     await npcHeldTouch(chat);
 
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start,update";
     classifier.output = updateProposal("rest", STILL_REPLY);
     await exchange(chat, { kind: "send", content: "I say nothing.", reply: STILL_REPLY });
 
@@ -982,6 +996,7 @@ describe.runIf(ready)("authority mode commits contact updates", () => {
     const [before] = await activeContacts(chat.chatId);
     expect(before?.materialBetween.length).toBeGreaterThan(0);
 
+    process.env.CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS = "movement,start,update";
     classifier.output = updateProposal("squeeze", SQUEEZE_REPLY);
     await exchange(chat, { kind: "send", content: "I say nothing.", reply: SQUEEZE_REPLY });
 
