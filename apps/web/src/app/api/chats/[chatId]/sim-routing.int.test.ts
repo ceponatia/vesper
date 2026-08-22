@@ -7,8 +7,8 @@ import { characterChatMessages, db, simBranches, simEvents } from "@/server/db";
 /**
  * Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md §39
  * rulings 18-19): on a sim-routed chat every POST kind either has successor
- * semantics or is refused — never the legacy narrator. AI_FAKE ⇒ zero live model
- * calls (the deterministic render). Self-skips without a database.
+ * semantics or is refused — never the character-chat narrator. AI_FAKE ⇒ zero
+ * live model calls (the deterministic render). Self-skips without a database.
  */
 
 const authState = vi.hoisted(() => ({
@@ -31,6 +31,8 @@ import {
 import { GET as chatGet, POST as chatSend } from "./route";
 import { POST as attachmentUpload } from "./attachments/route";
 import { DELETE as messageDelete, PATCH as messagePatch } from "./messages/[messageId]/route";
+import { POST as scenePost } from "./scene/route";
+import { PATCH as statePatch } from "./state/route";
 import { POST as stopReply } from "./stop/route";
 import { POST as successorCreate } from "../../successor-chats/route";
 
@@ -197,6 +199,38 @@ describe.runIf(ready)("sim routing parity", () => {
     expect(await messages(chatId)).toEqual(before);
   });
 
+  it("keeps successor wardrobe and scene imagery on one authority boundary", async () => {
+    const { chatId } = await provision("Wardrobe Authority Test");
+
+    // The character-chat state row still exists for compatibility, but it is not
+    // allowed to become a second wardrobe owner for a successor-world primary.
+    const wardrobeEdit = await statePatch(
+      apiRequest(`/api/chats/${chatId}/state`, {
+        method: "PATCH",
+        body: { outfit: "a borrowed red coat" },
+      }),
+      ctx(chatId),
+    );
+    await expectApiError(wardrobeEdit, 409, "sim_wardrobe_managed_by_world");
+
+    // Unrelated state edits remain available; the guard is field-specific, not a
+    // blanket refusal of the character sheet.
+    const stateOnly = await statePatch(
+      apiRequest(`/api/chats/${chatId}/state`, {
+        method: "PATCH",
+        body: { mindNote: "thinking about the market" },
+      }),
+      ctx(chatId),
+    );
+    expect(stateOnly.status).toBe(200);
+
+    // The current scene-image pipeline resolves character-chat wardrobe coverage.
+    // Until a simulation visual wardrobe projection exists, it must refuse rather
+    // than paint a different outfit from the successor narrator's world truth.
+    const scene = await scenePost(jsonReq(`/api/chats/${chatId}/scene`, {}), ctx(chatId));
+    await expectApiError(scene, 409, "scene_visual_authority_unavailable");
+  });
+
   it("continue advances time with NO player utterance (ruling 19)", async () => {
     const { chatId, branchId } = await provision("Continue Test");
     expect((await post(chatId, { kind: "send", content: "Good morning." })).status).toBe(200);
@@ -215,7 +249,7 @@ describe.runIf(ready)("sim routing parity", () => {
     expect(await branchSecond(branchId)).toBeGreaterThan(secondBefore); // the span advanced (time moved)
   });
 
-  it("refuses attachment upload, stop, attached sends, and legacy action chips with 409 and no writes", async () => {
+  it("refuses attachment upload, stop, attached sends, and character-chat action chips with 409 and no writes", async () => {
     const { chatId } = await provision("Refuse Test");
     // The GET envelope's client-facing routing flag (the UI hides the affordances off it).
     const envelope = await expectJson<{ chat: { simRouted: boolean } }>(

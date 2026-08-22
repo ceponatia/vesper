@@ -4,6 +4,23 @@ Everything visual the lane exchanges: photos the player attaches, selfies the
 character sends back, and the cached reference anchors renders are built from.
 The render pipeline itself lives in [images/pipelines.md](../images/pipelines.md).
 
+## Pipeline scope
+
+This document describes the **character-chat visual pipeline**. Character chat and the
+successor/simulation pipeline are separate live pipelines; character chat is not a
+"legacy" system. The historical persisted authority value for a character-chat-routed
+conversation is still `legacy_chat`, but documentation uses the pipeline's actual name.
+
+A successor-routed conversation currently gets its primary character's wardrobe from
+simulation-world material truth, while this image pipeline resolves wardrobe from
+character-chat state plus the chat garment store. Until the successor side exposes a
+structured visual wardrobe projection with coverage/presentation data, those sources must
+not be mixed: `POST /api/chats/:chatId/scene` refuses successor-routed chats with
+`scene_visual_authority_unavailable`. Existing scene rows remain readable. This is a
+fail-closed compatibility boundary, not a statement that successor images should use the
+character-chat wardrobe as a fallback; doing that could make the narrator describe one
+outfit while the image model paints another.
+
 ## Player photos (image input)
 
 The player can attach up to **4 photos per message** (owner ruling 2026-07-11 —

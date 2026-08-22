@@ -106,7 +106,9 @@ describe("writeWebpAtomic", () => {
     expect(siblings).toEqual(["img1.webp"]);
   });
 
-  it("rasterizes SVG monograms (the demo-mode pipeline input)", async () => {
+  // The first SVG-with-text rasterization on a machine builds the fontconfig
+  // cache, which on a cold CI runner can alone exceed the default 5s.
+  it("rasterizes SVG monograms (the demo-mode pipeline input)", { timeout: 30_000 }, async () => {
     const target = path.join(tmp, "images", "owner1", "mono.webp");
     const info = await writeWebpAtomic(target, monogramSvg("Mira Vale"));
     expect(info.width).toBe(768);

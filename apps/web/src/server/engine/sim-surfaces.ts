@@ -38,13 +38,13 @@ import {
 } from "./simulation";
 
 /**
- * R5 — successor chats shed their legacy hybrids, surface by surface
- * (engine.rollout.plan.md, re-framed 2026-07-22): these are the read seams
- * the chat UI's envelopes call for ROUTED chats instead of legacy chat-state
- * rows. Slice 3 is presence/space (roster presence from the mirror's
- * physical loci); slice 4 is bodies & meters (the strip's meter chips from
- * the ruling-15 substrate). Legacy chats never reach these — their rows stay
- * authoritative until R6.
+ * R5 — successor chats replace character-chat-owned surfaces with simulation
+ * world truth, surface by surface (engine.rollout.plan.md, re-framed
+ * 2026-07-22). These are the read seams the chat UI's envelopes call for routed
+ * chats instead of character-chat state rows. Slice 3 is presence/space
+ * (roster presence from the mirror's physical loci); slice 4 is bodies & meters
+ * (the strip's meter chips from the ruling-15 substrate). Character-chat-routed
+ * conversations never reach these reads — their own state remains authoritative.
  */
 
 export interface SimChatPresence {
@@ -90,8 +90,7 @@ export function zoneLabelFromKind(zoneId: string, kind: string): string {
 /**
  * Slice 3: the primary character's REAL presence for a routed chat — where
  * their body is in the mirror world relative to the player's, never the
- * legacy chat-state flag. Null for legacy and shadow lanes (their display
- * stays legacy).
+ * character-chat presence flag. Null for character-chat and shadow lanes.
  */
 export async function readSimChatPresence(chatId: string): Promise<SimChatPresence | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -151,9 +150,9 @@ export async function readSimChatPresence(chatId: string): Promise<SimChatPresen
  * chat — where the player is (or is walking to), who else is around and their
  * whereabouts, the open destinations they can walk to, what they're holding,
  * and whether a scene is standing. The `ChatWorldCard` draws THIS. Null for
- * legacy/shadow lanes (no card) and, per docs/resilience.md, on any internal
- * degradation (a malformed projection degrades to null — the card hides —
- * never throws).
+ * character-chat/shadow lanes (no card) and, per docs/resilience.md, on any
+ * internal degradation (a malformed projection degrades to null — the card
+ * hides — never throws).
  */
 export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -292,9 +291,9 @@ export async function readSimChatWorld(chatId: string): Promise<SimChatWorld | n
  * meter drifts from its last material write to the branch clock through the
  * shared `buildMeterView` seam (modifiers + §25.5 self-care folded in, exactly
  * as the command path integrates), so a chip that has drifted for hours reads
- * NOW, not as of its last event. Null for legacy/shadow lanes or when the
- * mirror actor has no meters; degrades to null (a hidden chip, never a 500) on
- * any internal throw.
+ * NOW, not as of its last event. Null for character-chat/shadow lanes or when
+ * the mirror actor has no meters; degrades to null (a hidden chip, never a 500)
+ * on any internal throw.
  */
 export async function readSimChatMeters(chatId: string): Promise<Record<string, number> | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -362,8 +361,9 @@ export interface SimChatRelationship {
  * Slice 7: the primary's disposition toward the player from the RELATIONSHIP
  * LEDGER — directional evidence of what the player did (promises kept,
  * boundaries respected, scenes shared…) folded through §21's read, with
- * authored-prior weights honored. Null for legacy/shadow lanes or an empty
- * ledger with no authored prior (the legacy seed then keeps the chip).
+ * authored-prior weights honored. Null for character-chat/shadow lanes or an
+ * empty ledger with no authored prior (the character-chat seed then keeps the
+ * chip).
  */
 export async function readSimChatRelationship(chatId: string): Promise<SimChatRelationship | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -415,9 +415,11 @@ export async function readSimChatRelationship(chatId: string): Promise<SimChatRe
 }
 
 /**
- * Slice 5: the primary's outfit from world truth — the names of the items
- * WORN by the mapped actor in the mirror, slot-ordered. "" when they wear
- * nothing (the honest empty chip); null for legacy/shadow lanes.
+ * Slice 5: the primary's outfit from world truth — the names of the items WORN
+ * by the mapped actor in the mirror, slot-ordered. A known-empty worn set is
+ * returned as the explicit phrase "no clothing" so downstream truthy-string
+ * transport cannot collapse "wearing nothing" into "wardrobe unavailable".
+ * Null is reserved for character-chat/shadow lanes or a degraded read.
  */
 export async function readSimChatOutfit(chatId: string): Promise<string | null> {
   const authority = await readChatEngineAuthority(chatId);
@@ -448,7 +450,8 @@ export async function readSimChatOutfit(chatId: string): Promise<string | null> 
         ),
       )
       .orderBy(asc(simItemHoldings.slotKey));
-    return rows.map((row) => row.name).join(", ");
+    const names = rows.map((row) => row.name.trim()).filter(Boolean);
+    return names.length > 0 ? names.join(", ") : "no clothing";
   } catch (error) {
     log.warn("engine.sim", "outfit read degraded to null", {
       chatId,

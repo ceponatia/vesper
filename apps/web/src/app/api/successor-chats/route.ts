@@ -22,13 +22,14 @@ import {
 import { log } from "@/server/log";
 import {
   deleteSimWorldGraph,
-  loadChatWardrobe,
+  loadChatWardrobeWithStatus,
   provisionStarterWorld,
   seedChatState,
   setChatEngineAuthority,
   submitDurableRecordRelationshipEntry,
   tryKeyedLock,
 } from "@/server/engine";
+import { successorWardrobeSeed } from "./wardrobe-seed";
 
 /**
  * The successor front door (engine.rollout.plan.md, owner ask 2026-07-22) —
@@ -153,10 +154,10 @@ async function updateRecord(
 /**
  * The honest quota (slice 4, ruling E20-3's sibling). Counts what is REAL:
  * chats the successor engine actually owns (`successor_narrative_view` — the
- * old `ne("legacy_chat")` also counted `successor_shadow` chats, which
- * `requireSimChat` rejects as unplayable), plus this owner's other in-flight
- * provisioning records (an in-flight world is a world; a `failed` one has had
- * its graph cleaned up and holds nothing).
+ * old internal `ne("legacy_chat")` expression also counted `successor_shadow`
+ * chats, which `requireSimChat` rejects as unplayable), plus this owner's other
+ * in-flight provisioning records (an in-flight world is a world; a `failed`
+ * one has had its graph cleaned up and holds nothing).
  *
  * A record whose chat is already counted is not counted twice — that is only
  * reachable in the one-statement window between the authority flip and the
@@ -313,23 +314,32 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
 
   const reached = STATE_RANK[resumeFrom];
   // R5 slice 5: the character's authored default outfit becomes WORN world
-  // items at birth — resolved through the same wardrobe seam the chat seed
-  // uses, so the outfit chip shows the same clothes, now from world truth.
+  // items at birth — resolved through the same wardrobe seam the character-chat
+  // seed uses, so the outfit chip shows the same clothes, now from world truth.
   const profile = parseOr(characterProfileSchema, character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
 
   try {
     // --- Step 1: the world. Idempotent on the derived stamp, so this both
-    // creates a fresh world and completes a half-built one.
+    // creates a fresh world and completes a half-built one. The wardrobe load
+    // is a MINT input, not a display read: unknown coverage must refuse before
+    // `provisionStarterWorld` can persist an empty/partial outfit forever.
     const wornIds = seedChatState(profile).wornItemIds;
-    const wardrobeItems = wornIds.length > 0 ? await loadChatWardrobe(ownerId, wornIds) : [];
+    let primaryGarments: { name: string; slotKey: string }[] = [];
+    if (reached < STATE_RANK.world_created && wornIds.length > 0) {
+      const load = await loadChatWardrobeWithStatus(ownerId, wornIds);
+      const seed = successorWardrobeSeed(load);
+      if (!seed.ok) {
+        throw new Error(
+          `starter wardrobe unavailable (${seed.reason}${seed.itemIds.length > 0 ? `: ${seed.itemIds.join(",")}` : ""})`,
+        );
+      }
+      primaryGarments = seed.garments;
+    }
     const world = await provisionStarterWorld({
       stamp: deriveProvisioningStamp(ownerId, requestId),
       playerName: (input.ownerName || "").split(/\s+/)[0] ?? "",
       primaryName: character.name,
-      primaryGarments: wardrobeItems.map((item, index) => ({
-        name: item.name,
-        slotKey: `${item.coverage[0] ?? "garment"}-${index}`,
-      })),
+      primaryGarments,
     });
     built.worldId = world.worldId;
     if (reached < STATE_RANK.world_created) {
@@ -354,7 +364,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
           ownerId,
           title: input.title || `${character.name}'s world`,
         });
-        // Fresh memory island: successor chats never join a shared legacy history.
+        // Fresh memory island: successor chats never join shared character-chat history.
         await tx
           .insert(chatParticipants)
           .values({ chatId: newChatId, characterId: character.id, memoryGroupId: newId(), sort: 0 });
@@ -372,7 +382,7 @@ async function runProvisioning(input: ProvisionInput): Promise<Response> {
     // an authored_prior ledger entry pair, weighted so the §21 read round-trips
     // the authored regard exactly (trust 36r + attraction 8r ⇒ blended 40r ⇒
     // regard r). No authored record ⇒ no prior ⇒ the ledger starts honest-empty
-    // and the chip keeps the legacy seed until evidence accumulates. The
+    // and the chip keeps the character-chat seed until evidence accumulates. The
     // idempotency keys are branch-derived and the branch id is now stable, so a
     // resume replays the recorded acceptance instead of writing a second pair.
     if (reached < STATE_RANK.relationships_seeded) {
