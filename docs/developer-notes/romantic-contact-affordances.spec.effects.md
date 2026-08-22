@@ -1,10 +1,11 @@
 # Romantic contact affordances — observations, effects, and presentation routing
 
 Status: **not built as a contact-effects slice; architecture reconciled
-2026-08-18.** This spec replaces the earlier contact-specific perception/ranking
-proposal. Visual-state now owns visual visibility, attention, memory, repetition,
-and narrator/image selection. Contact owns physical phenomenon resolution and
-effect proposals only.
+2026-08-18; owner rulings recorded 2026-08-22** (body-surface ownership,
+first-proof order, sensory-subsystem boundaries). This spec replaces the earlier
+contact-specific perception/ranking proposal. Visual-state now owns visual
+visibility, attention, memory, repetition, and narrator/image selection. Contact
+owns physical phenomenon resolution and effect proposals only.
 
 Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
@@ -76,6 +77,19 @@ Tactile, olfactory, and gustatory observations remain pure/diagnostic results
 until a shared nonvisual sensory presentation owner exists. They must not be
 smuggled into visual state, the old affordance cue block, or a new contact-local
 narrator block.
+
+### Owner ruling (2026-08-22) — modality-specific contracts, not one widened type
+
+`AffordanceObservation` does not gain a sensory-channel discriminant merely to
+support contact. Vesper treats visual, auditory, tactile, olfactory, and
+gustatory perception as distinct sensory subsystems under a shared sensory
+presentation architecture. Authoritative domain state may produce
+channel-tagged phenomena for routing — `ContactPhenomenonObservation` above is
+exactly that — and a common routing envelope may retain a channel discriminant,
+but each modality adapts into its own observation contract whose perception
+rules are owned by that subsystem. The individual observation contracts are
+never collapsed into one generic cross-sensory type. Any change to the shared
+affordance contract is designed cross-domain, never from contact alone.
 
 ## Visual presentation is visual-state work
 
@@ -169,20 +183,24 @@ A proposal is not truth.
 
 ## Ownership table
 
-| Effect/current fact | Owner | Contact role |
-| --- | --- | --- |
-| Active contact | contact lifecycle | commit/read directly |
-| Body-surface wetness | body-surface state | consume; may propose transfer that changes it when an owner transaction exists |
-| Garment wetness/condition | wardrobe/garment condition | consume/propose garment mutation |
-| Garment deposit | wardrobe/garment state | propose; wardrobe commits |
-| Garment displacement/closure | wardrobe operation | propose; wardrobe validates/commits |
-| Body residue/product | **missing owner** | cannot commit yet |
-| Dirt/blood/cosmetics wear on skin | **missing owner** | cannot commit yet |
-| Pressure/contact mark | **missing owner** | cannot commit yet |
-| Scratch/skin damage | **missing owner for this feature** | cannot commit yet |
-| Physiology/swelling/flush | physiology/body-state owner | consume only after that owner exists |
-| Permission | permission ledger | consume; never effect state |
-| Visual mention/memory | visual state | contact does not write |
+| Effect/current fact          | Owner                                     | Contact role                              |
+| ---------------------------- | ----------------------------------------- | ----------------------------------------- |
+| Active contact               | contact lifecycle                         | commit/read directly                      |
+| Body-surface wetness         | body-surface state                        | consume; propose owner-committed transfer |
+| Garment wetness/condition    | wardrobe/garment condition                | consume/propose garment mutation          |
+| Garment deposit              | wardrobe/garment state                    | propose; wardrobe commits                 |
+| Garment displacement/closure | wardrobe operation                        | propose; wardrobe validates/commits       |
+| Body residue/product         | body-surface state (ruled — unbuilt)      | cannot commit yet                         |
+| Dirt/blood/cosmetics on skin | body-surface state (ruled — unbuilt)      | cannot commit yet                         |
+| Pressure/contact mark        | body-surface state (ruled — unbuilt)      | cannot commit yet                         |
+| Scratch/skin damage          | **missing owner for this feature**        | cannot commit yet                         |
+| Physiology/swelling/flush    | physiology/body-state owner (future)      | consume only after that owner exists      |
+| Permission                   | permission ledger                         | consume; never effect state               |
+| Visual mention/memory        | visual state                              | contact does not write                    |
+
+“Ruled — unbuilt” rows follow the 2026-08-22 body-surface ownership ruling
+below: the owner is designated, but the expansion does not exist in code yet,
+so contact still cannot commit these effects.
 
 ## Body-surface wetness correction
 
@@ -202,10 +220,30 @@ Therefore:
   wetness alone;
 - known dry and unavailable remain different.
 
+## Body-surface ownership ruling (2026-08-22)
+
+`BodySurfaceState` expands into the authoritative owner for current material
+and temporary condition on skin and hair: wetness (already owned), surface
+products/residues/deposits, and temporary contact marks, all keyed by body
+locus. Contact may propose mutations to that state; it never owns or persists
+them. Visual state remains a read/projection consumer.
+
+Structure: the eventual split is by module — wetness, deposits/residue, and
+marks — inside the one body-surface state domain. Do not create a separate
+subsystem per family, and do not put any of it in contact.
+
+Scratch/skin damage is not covered by this ruling and still has no designated
+owner.
+
 ## Conserved surface transfer
 
-Transfer is the preferred first persistent effect proof once a receiving body
-residue owner exists.
+Owner ruling (2026-08-22): transfer is the **second** persistent effect proof,
+not the first — the temporary pressure mark below goes first. A proper transfer
+must subtract material from the source, add it to the destination (possibly to
+an intermediate garment instead of skin), preserve the amount, commit both
+sides atomically, survive retry without doubling, and reverse both sides
+together on retake. That breadth makes it a strong second proof and too much
+architecture for a first one.
 
 A valid proposal requires:
 
@@ -232,6 +270,13 @@ If a body residue owner is still absent, keep transfer fixture-only or choose a
 garment-to-garment proof whose existing owner can complete the transaction.
 
 ## Temporary marks and scratches
+
+Owner ruling (2026-08-22): the temporary pressure mark is the **first**
+end-to-end effect commit proof — one state owner (the expanded
+`BodySurfaceState`), one target locus, one causal event, one idempotency key,
+one expiry/decay rule, and no physiology requirement. It still proves the full
+commit -> retry -> retake -> subsequent-read chain, which is what the first
+proof exists to exercise.
 
 A pressure mark/scratch needs a body-state owner with:
 
@@ -271,6 +316,14 @@ intimate exposure as an “implicit adjustment.”
 
 Contact needs tactile/scent/taste eventually, but the presentation architecture
 should be shared across domains.
+
+Owner ruling (2026-08-22): this owner is sibling package(s) beside visual
+state, not a generalization of visual state's attention/memory contracts —
+scent, taste, tactile, and aural feedback share the same broad laws but operate
+differently enough to own their own contracts. For testing, nonvisual
+presentation may stay bundled beside the visual presentation code, explicitly
+marked as temporary; the bundling is removed when the sibling owners are
+created. Live narrator cues still wait for the real owner.
 
 The future owner should preserve the same broad laws visual state now proves:
 
@@ -357,12 +410,13 @@ Replay determinism requires:
 3. Define a small channel-tagged contact phenomenon contract in pure code.
 4. Route only `visual` observations into visual state; add a leak test proving
    nonvisual channels cannot reach that adapter.
-5. Choose the first effect whose state owner actually exists, or build the
-   smallest required owner first.
+5. Build the smallest required owner slice — temporary marks in the expanded
+   `BodySurfaceState` — and prove the pressure mark end-to-end first; conserved
+   transfer follows (owner ruling 2026-08-22).
 6. Add the owner transaction with idempotency/retake tests.
 7. Let visual state observe the committed result when visually applicable.
-8. Design the shared nonvisual sensory presentation owner before promoting
-   tactile/olfactory/gustatory cues.
+8. Build the shared nonvisual sensory sibling owner(s) before promoting
+   tactile/olfactory/gustatory cues into live narration.
 9. Register only domain phenomena whose complete source -> commitment ->
    perception path is supported.
 

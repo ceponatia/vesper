@@ -37,9 +37,14 @@ Physiology reads are inputs. They are never evidence of permission.
 The current permission owner knows `romantic_touch`; that scope does **not**
 authorize intimate anatomy, kissing, undressing, nudity exposure, or sex.
 
-Before this domain is enabled, product design must define the exact directional
-scopes relevant to the supported actions. Scope membership remains exact unless
-a future product ruling explicitly defines implications.
+The scope model is ruled (owner ruling 2026-08-22, recorded in the
+[permission spec](romantic-contact-affordances.spec.permission.md)): scopes
+stay exact, directional, and non-inheriting; `kiss`, `intimate_touch`,
+`clothing_manipulation`, and `nudity_exposure` land with their supported action
+families; there is no generic `sexual_activity` scope; and an action may
+require several exact scopes at once, all satisfied. The exact scopes this
+domain needs therefore arrive with its action producers — they are not
+pre-created here.
 
 The NPC -> player exception remains only an authorship rule: Vesper does not
 pre-authorize the player's response. It does not bypass anatomy, exposure,
@@ -359,7 +364,8 @@ Effect proposals follow the shared effects spec:
 ## Prerequisites before implementation
 
 1. First player romantic action seam and `romantic_touch` proof are accepted.
-2. Future intimate permission scopes are explicitly ruled.
+2. The exact scopes for the selected intimate actions exist, per the
+   2026-08-22 scope-model ruling in the permission spec.
 3. Required physiology/body-surface owners exist for the phenomena selected.
 4. Wardrobe access/displacement path is authoritative.
 5. Visual facts have visual-state feature/adapters.

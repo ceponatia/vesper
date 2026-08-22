@@ -1,14 +1,17 @@
 # Romantic contact affordances — NPC actor control through the live lane
 
 Status: **implementation complete; authority on HOLD by owner ruling
-2026-08-18.** The pure decision foundation, durable decision envelope, shadow
+2026-08-18, reaffirmed 2026-08-22.** The pure decision foundation, durable decision envelope, shadow
 leg, and all three authority increments are built. The production shadow
 measurement window was opened on 2026-08-10 on a build carrying the cost/latency
 instrument.
 
-**Owner ruling (2026-08-18):** keep shadow measurement running; do **not** enable
-NPC authority. This is a hold pending evidence, not a rejection — the corpus that
-would justify acceptance does not exist yet. So there is now a ruling but still
+**Owner ruling (2026-08-18, reaffirmed 2026-08-22):** keep shadow measurement
+running; do **not** enable NPC authority. This is a hold pending evidence, not a
+rejection — the corpus that would justify acceptance does not exist yet.
+Movement authority may be reconsidered only after the pre-registered sample
+requirement is met, the corpus receives human accuracy labeling,
+latency/timeout/cost are recorded, and the acceptance gate below is evaluated. So there is now a ruling but still
 no acceptance, and authority remains a rollout decision rather than a completed
 plan step.
 

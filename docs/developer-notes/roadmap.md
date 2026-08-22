@@ -27,8 +27,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [spec index](romantic-contact-affordances.spec.md) — affectionate player
   contact is live and the romantic producer passed its first controlled proof,
   which exposed two gaps now closed in code: a refusal the narrator was never
-  told about, and character names players could not write. A rerun against the
-  fixed lane gates the rollout ruling; the NPC shadow review runs in parallel.
+  told about, and character names players could not write. The owner has ruled
+  the surface ships if the rerun against the fixed lane passes; the NPC shadow
+  review runs in parallel.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·

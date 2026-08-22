@@ -139,8 +139,8 @@ from the recorded state, not the state being wrong.
 ## What happens next
 
 The silent-refusal gap and the naming gap are both closed in code and neither has
-been seen live. The rollout decision is still the owner's and still open, but it
-now waits on a rerun against the fixed lane rather than on this trial: the
-instrument for it is `scripts/trial/romantic-contact/`, and it captures the
-inputs, replies, narrator guidance and before/after state this record could only
-summarise.
+been seen live. The rollout decision has since been made contingent rather than
+open: the owner ruled (2026-08-22) that the surface stays test-only until a rerun
+against the fixed lane passes, and ships if it does. The instrument for that
+rerun is `scripts/trial/romantic-contact/`, and it captures the inputs, replies,
+narrator guidance and before/after state this record could only summarise.

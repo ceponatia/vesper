@@ -9,7 +9,9 @@ The narrow `actionKind: "romantic"` player producer this owner was waiting on is
 now built and its deterministic negative-case suite passes against the real
 permission seam, so enabling the flag produces a real permission-gated attempt.
 The controlled live proof passed on 2026-08-18 and the flags were reverted
-afterwards; what remains is the rollout ruling — owner work, not code work.
+afterwards; what remains is the owner-run rerun against the fixed lane. The
+rollout is owner-ruled (2026-08-22): test-only until that rerun passes, ships
+if it does.
 
 Plan: [romantic-contact-affordances.plan.md](romantic-contact-affordances.plan.md)
 
@@ -410,6 +412,14 @@ is still wanted.
 
 Automatic relationship-based revocation remains reserved, not part of the MVP.
 
+Owner ruling (2026-08-22): no current familiarity or regard-band transition
+automatically revokes permission — permission remains independently
+target-authored. Relationship-triggered revocation is reserved for future
+explicit semantic events, such as an authoritative breakup or no-contact
+transition, at which point a scope-specific revocation matrix can be defined.
+That requires a new system and an expanded/refactored relationship model, both
+outside this plan's scope.
+
 If implemented later:
 
 - relationship owner emits an authoritative transition event;
@@ -461,8 +471,11 @@ The contact resolver never polls a relationship label and derives permission.
    the run. Identifiers, result codes and ledger rows:
    `romantic-contact-affordances.trial.romantic-proof.evidence.md`.
 7. Decide rollout for that **specific romantic action surface** only.
-   Status: next — the live owner decision; see the trial's silent-refusal
-   finding, which is what the ruling turns on.
+   Status: owner-ruled 2026-08-22, contingent on the plan's item-10 rerun — the
+   surface stays test-only until the rerun passes against the fixed lane, and
+   ships if it does. The ruling waits on nothing else: not NPC movement
+   authority, kissing, intimate work, body effects, or the sensory
+   architecture.
 
 This proof does **not** require general NPC scene-decision movement/start/update
 authority unless the chosen fixture asks the target NPC to reposition. The NPC
@@ -532,17 +545,20 @@ runs.
 
 ## Future exact scopes
 
-`romantic_touch` never implicitly authorizes future categories. Product design
-must define exact directional scopes before supporting, at minimum:
+`romantic_touch` never implicitly authorizes future categories.
 
-- kissing;
-- intimate non-penetrative touch;
-- removing/moving another participant's clothing;
-- exposing one's own nudity to another participant;
-- sexual activity.
+Owner ruling (2026-08-22): scopes stay exact, directional, and non-inheriting.
 
-Whether any scope implies another is a future explicit product ruling. The
-current core performs exact membership and does not invent a hierarchy.
+- `kiss`, `intimate_touch`, `clothing_manipulation`, and `nudity_exposure` are
+  added as their supported action families require them — a scope lands with
+  its producer, never ahead of it.
+- There is no generic `sexual_activity` grant; sexual scopes must follow
+  actual implemented action families.
+- An action may require multiple exact scopes, all of which must be satisfied.
+- No scope implies another. The core keeps exact membership and never invents
+  a hierarchy; conjunction of exact scopes replaces inheritance.
+- Self-directed clothing removal/exposure is actor authority, not
+  automatically another participant's contact permission.
 
 ## Required tests
 
