@@ -5,11 +5,13 @@ import {
   VISUAL_STATE_APPEARANCE_ANATOMY_KIND_ID,
   VISUAL_STATE_APPEARANCE_ATTRIBUTE_KIND_ID,
   VISUAL_STATE_APPEARANCE_LOCATED_FACT_KIND_ID,
+  VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+  VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
   VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
   VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
   VISUAL_STATE_GARMENT_CONDITION_KIND_ID,
@@ -96,6 +98,15 @@ export interface ChatVisualStateSubject {
   readonly characterName: string;
   /** Their possessive form ("Mara's"). Blank falls back to the name. */
   readonly possessive: string;
+  /**
+   * The visual subject id the digest files this character under, so a value
+   * that names subjects (the contact relation) can resolve which participant
+   * the possessive belongs to. Absent, such values render nothing rather than
+   * guessing an owner.
+   */
+  readonly subjectId?: string;
+  /** The player viewpoint's visual subject id — the one participant "your" may name. */
+  readonly playerSubjectId?: string;
 }
 
 export interface ChatVisualStateRenderInput {
@@ -216,6 +227,61 @@ function locusPhrase(
   }
 }
 
+/**
+ * How the narrator may name one contact participant: "your" for the player
+ * viewpoint, the possessive for the digest's own character, and NOTHING for
+ * anyone else — a roster member's subject id is an id, and naming an id in
+ * prose is worse than silence (the support-anchor precedent above).
+ */
+function contactOwnerPhrase(
+  subjectId: string | undefined,
+  context: { possessive: string; subjectId?: string; playerSubjectId?: string },
+): string | undefined {
+  if (subjectId === undefined) return undefined;
+  if (context.playerSubjectId !== undefined && subjectId === context.playerSubjectId) return "your";
+  if (context.subjectId !== undefined && subjectId === context.subjectId) return context.possessive;
+  return undefined;
+}
+
+/**
+ * The paired everyday locations whose registry label is a plural: a SIDED
+ * reference names one of the pair, so the clause needs the singular ("left
+ * hand", never "left hands"). Renderer prose calibration only — the registry's
+ * labels stay authoritative everywhere else.
+ */
+const SIDED_SINGULAR_LABEL: Readonly<Record<string, string>> = {
+  eyes: "eye",
+  ears: "ear",
+  shoulders: "shoulder",
+  upper_arms: "upper arm",
+  forearms: "forearm",
+  wrists: "wrist",
+  hands: "hand",
+  hips: "hip",
+  thighs: "thigh",
+  calves: "calf",
+  ankles: "ankle",
+  feet: "foot",
+  arms: "arm",
+  legs: "leg",
+};
+
+/** A contact-end locus as the eye would name it — the bodyPhrase rules, from the relation value's own shape. */
+function contactPartPhrase(locus: Record<string, unknown> | undefined): string | undefined {
+  const location = text(locus?.["bodyLocationId"]);
+  if (location === undefined) return undefined;
+  const detail = text(locus?.["detail"]);
+  const side = text(locus?.["side"]);
+  const sided = side === "left" || side === "right";
+  const label =
+    detail !== undefined
+      ? humanize(detail)
+      : ((sided ? SIDED_SINGULAR_LABEL[location] : undefined) ??
+        bodyLocationRegistry.byId(location)?.label ??
+        humanize(location)).toLowerCase();
+  return sided ? collapse(`${side} ${label}`) : label;
+}
+
 // ---------------------------------------------------------------------------
 // Per-kind clauses
 // ---------------------------------------------------------------------------
@@ -246,6 +312,13 @@ const SURFACE_WETNESS_WORD: Readonly<Record<string, string>> = {
   damp: "damp",
   wet: "wet",
   soaked: "soaked",
+};
+
+/** The body-surface owner's mark bands, as noun phrases — the mark IS the thing named. */
+const SURFACE_MARK_WORD: Readonly<Record<string, string>> = {
+  subtle: "a faint pressure mark",
+  clear: "a visible pressure mark",
+  strong: "a pronounced pressure mark",
 };
 
 const CONDITION_CHANNEL_WORD: Readonly<Record<string, string>> = {
@@ -295,6 +368,8 @@ function featureClause(input: {
   possessive: string;
   characterName: string;
   names: ReadonlyMap<string, string> | undefined;
+  subjectId?: string;
+  playerSubjectId?: string;
 }): string | undefined {
   const { kindId, value, locus, possessive, names } = input;
   const subjectPhrase = possessive.replace(/'s$/u, "");
@@ -317,6 +392,16 @@ function featureClause(input: {
       const band = text(parsed?.["band"]);
       const word = band === undefined ? undefined : SURFACE_WETNESS_WORD[band];
       return word === undefined ? undefined : `${thing} is ${word}`;
+    }
+
+    case VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID: {
+      // `pressure` is the one committed mark kind. A kind this renderer has not
+      // learned is silence, not "a pressure mark" — naming the nearest thing is
+      // exactly the substitution the owner vocabulary exists to prevent.
+      if (text(parsed?.["kind"]) !== "pressure") return undefined;
+      const band = text(parsed?.["band"]);
+      const word = band === undefined ? undefined : SURFACE_MARK_WORD[band];
+      return word === undefined ? undefined : `there is ${word} on ${thing}`;
     }
 
     case VISUAL_STATE_GARMENT_CONDITION_KIND_ID: {
@@ -454,6 +539,24 @@ function featureClause(input: {
       return phrase.length === 0 ? undefined : phrase;
     }
 
+    case VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID: {
+      // The whole committed relation, as a NOUN PHRASE like the appearance
+      // kinds above ("Mara's hand on your shoulder") — verbless, so a plural
+      // location can never break agreement. Both participants must be nameable
+      // and the target must be a body: an object surface id, or a roster member
+      // this digest has no name for, is silence rather than an id in prose.
+      const source = record(parsed?.["source"]);
+      const target = record(parsed?.["target"]);
+      const sourceOwner = contactOwnerPhrase(text(source?.["subjectId"]), input);
+      const sourcePart = contactPartPhrase(record(source?.["locus"]));
+      if (sourceOwner === undefined || sourcePart === undefined) return undefined;
+      if (text(target?.["kind"]) !== "body") return undefined;
+      const targetOwner = contactOwnerPhrase(text(target?.["subjectId"]), input);
+      const targetPart = contactPartPhrase(record(target?.["locus"]));
+      if (targetOwner === undefined || targetPart === undefined) return undefined;
+      return collapse(`${sourceOwner} ${sourcePart} on ${targetOwner} ${targetPart}`);
+    }
+
     case VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID:
     default: {
       // Anything this adapter has not learned. The semantic tags are the only
@@ -515,6 +618,8 @@ export function renderChatVisualStateConstraint(
       possessive,
       characterName: subject.characterName,
       names: garmentNames,
+      ...(subject.subjectId === undefined ? {} : { subjectId: subject.subjectId }),
+      ...(subject.playerSubjectId === undefined ? {} : { playerSubjectId: subject.playerSubjectId }),
     }) ?? ""
   );
 }
@@ -535,6 +640,8 @@ export function renderChatVisualStateCue(
     possessive,
     characterName: subject.characterName,
     names: garmentNames,
+    ...(subject.subjectId === undefined ? {} : { subjectId: subject.subjectId }),
+    ...(subject.playerSubjectId === undefined ? {} : { playerSubjectId: subject.playerSubjectId }),
   });
   if (clause === undefined || clause.length === 0) return "";
   return `${clause} — ${VISUAL_REASON_CLAUSES[cue.reason]}`;

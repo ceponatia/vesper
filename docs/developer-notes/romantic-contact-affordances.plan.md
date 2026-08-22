@@ -138,7 +138,7 @@ Delivery state of what this work owns:
 | Directional romantic-touch permission owner        | Proven live 2026-08-18; flags reverted, rollout pending |
 | Character-authored movement, start, update         | Built; authority on hold pending reviewed evidence      |
 | Foot mechanics                                     | Built as fixtures; deliberately unregistered            |
-| Contact effects                                    | Not built; first proof chosen 2026-08-22                |
+| Contact effects                                    | First proof (pressure mark) built 2026-08-22, switch off |
 | Intimate-region mechanics                          | Not built; blocked on several owners                    |
 
 ---
@@ -163,9 +163,11 @@ stops there. The current bridge already derives hand occupation from active
 committed contacts, projects committed contact-motion bands, computes
 per-subject exposure and visibility, and — when the separate per-chat
 visual-state narration switch is on — renders visual constraints plus at most
-two optional cues through the single chat visual-state narrator adapter. Those
-partial signals do not yet encode the full source-locus -> target-locus contact
-relation. Detail: [visual state and attention](visual-state.plan.md).
+two optional cues through the single chat visual-state narrator adapter. The
+bridge now also carries a first-class contact relation — which hand is on which
+shoulder, as structured truth rather than two partial signals — built 2026-08-22
+and rendered only in chats whose visual-state narration switch is on. Detail:
+[visual state and attention](visual-state.plan.md).
 
 **Narrator physical guidance owns binding prose handoff** — mandatory physical
 constraints, premise corrections, committed action outcomes, and the stop a
@@ -405,6 +407,7 @@ The switches, and what each one bounds:
 | `CHAT_NPC_SCENE_DECISION_AUTHORITY_KINDS`    | Unset means movement only — the fail-safe first step  |
 | `CHAT_ROMANTIC_PERMISSION`                   | Off; requires contact actions                         |
 | `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE`      | Independent admin and test capability                 |
+| `CHAT_CONTACT_EFFECTS`                       | Off; requires contact actions; owns effect commits    |
 
 Visual-state narration is governed by its own per-chat switch, off by default.
 It is not a contact switch, and contact must never assume visual cues are live.
@@ -775,35 +778,48 @@ asks a character to reposition voluntarily.
 
 ### Track C — visual contact continuity and presentation
 
-Status: queued — nothing here is required for the Track B rerun.
+Status: items 12–13 built 2026-08-22; item 14 next — nothing here was required
+for the Track B rerun.
 
 12. Add a first-class visual contact relation sourced from `CommittedContactRead`,
     so that "her hand is on your shoulder" can be rendered from structured truth
     rather than from the two partial signals available today. The feature must
     carry the contact id, source participant and source locus, target participant
     and target locus, plus only visually valid material/placement facts. Visual
-    state still owns observer-specific visibility and selection.
+    state still owns observer-specific visibility and selection. Status:
+    complete — 2026-08-22; narration stays behind the per-chat visual-state
+    switch, and the relation is deliberately not offered to images yet.
 13. Route visual contact phenomena through visual state's own observation path
-    rather than any contact-specific ranking.
+    rather than any contact-specific ranking. Status: complete — 2026-08-22;
+    only visual candidates can reach visual state, every other sense is withheld
+    with a recorded reason, and tests prove the leak is impossible.
 14. Evaluate positive visual contact narration under the existing per-chat
-    switch. Binding action outcomes remain independently available.
+    switch. Binding action outcomes remain independently available. Status:
+    next — chats with the switch on can now receive relation lines, and this
+    evaluation is what decides whether they read well.
 
 ### Track D — grounded contact effects and richer domains
 
-Status: queued — owners designated 2026-08-22, none of them built.
+Status: in progress — the pressure-mark first proof was built 2026-08-22 behind
+a default-off switch; residue, transfer, and the sensory owners remain.
 
 15. Expand the body-surface owner to cover surface material and temporary
     condition — deposits, residue, and contact marks beside the existing wetness
-    — rather than creating owners inside contact.
+    — rather than creating owners inside contact. Status: in progress — the
+    contact-marks half was built 2026-08-22 inside the same body-surface owner;
+    deposits and residue remain.
 16. Add effect transactions: the temporary pressure mark first, conserved
-    transfer second, with garment changes delegated to wardrobe.
+    transfer second, with garment changes delegated to wardrobe. Status: in
+    progress — the pressure-mark transaction was built and proven 2026-08-22
+    (commit, no double-commit on retry, clean removal on regenerate, readable
+    afterward); its switch stays off, and conserved transfer remains.
 17. Build the shared nonvisual sensory presentation owner as sibling packages
     beside visual state, before any touch, smell, or taste cue reaches live
-    narration.
+    narration. Status: queued.
 18. Register only foot phenomena whose complete truth and perception path
-    exists; keep the rest fixture-only.
+    exists; keep the rest fixture-only. Status: queued.
 19. Expand calibration from the foot fixtures using semantic bands and
-    source-backed state only.
+    source-backed state only. Status: queued.
 
 ### Track E — intimate contact
 

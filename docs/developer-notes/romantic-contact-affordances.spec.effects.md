@@ -1,8 +1,8 @@
 # Romantic contact affordances — observations, effects, and sensory routing
 
-Status: **architecture reconciled through the 2026-08-22 owner rulings; no
-contact-effects slice is live yet.** This spec replaces the older
-contact-specific perception/ranking design. Visual state owns visual perception,
+Status: **implementation stages 1–6 built 2026-08-22 — the effect-commit leg
+waits on its default-off switch (`CHAT_CONTACT_EFFECTS`); stages 7–9 remain.**
+This spec replaces the older contact-specific perception/ranking design. Visual state owns visual perception,
 attention, repetition, memory, and narrator/image selection. Contact owns pure
 physical phenomenon resolution and effect proposals. Persistent aftermath is
 owned by body/wardrobe/etc. state owners, and nonvisual presentation waits for
@@ -44,12 +44,12 @@ Current delivery state:
 | Contact-derived hand occupation in visual state | Live |
 | Contact-motion bands in visual state | Live |
 | Generic visual affordance-observation bridge | Live for supported visual facts |
-| Full visual source-locus -> target-locus contact relation | Not built |
-| Channel-tagged contact phenomenon contract | Specified; effect slice not live |
+| Full visual source-locus -> target-locus contact relation | Built 2026-08-22 (`body_language.contact_relation`) |
+| Channel-tagged contact phenomenon contract | Built 2026-08-22; no producer emits phenomena yet |
 | Body-surface wetness owner | Live |
 | Body-surface residues/deposits/products | Owner designated 2026-08-22; not built |
-| Temporary contact marks | Owner designated 2026-08-22; not built |
-| Pressure-mark first end-to-end proof | Chosen 2026-08-22; not built |
+| Temporary contact marks | Built 2026-08-22 inside the body-surface owner |
+| Pressure-mark first end-to-end proof | Built 2026-08-22 behind default-off `CHAT_CONTACT_EFFECTS` |
 | Conserved transfer | Second proof; not built |
 | Scratch/skin damage | No owner yet |
 | Tactile/olfactory/gustatory presentation | Future sibling sensory owners; not live |
@@ -66,7 +66,7 @@ Contact effects deliberately do **not** create a second state system.
 | Body-surface wetness | body-surface state | consume; may propose owner-committed change when supported |
 | Body residue/product/deposit | body-surface state — owner ruled, expansion unbuilt | propose only; cannot commit yet |
 | Dirt/blood/cosmetics on skin | body-surface state — owner ruled, expansion unbuilt | propose only; cannot commit yet |
-| Pressure/contact mark | body-surface state — owner ruled, expansion unbuilt | propose only; cannot commit yet |
+| Pressure/contact mark | body-surface state — marks module built 2026-08-22 | propose; body-surface validates/commits (flag-gated) |
 | Scratch/skin damage | **missing owner** | proposal only; cannot commit |
 | Garment wetness/condition | wardrobe/garment condition | consume/propose mutation |
 | Garment deposit | wardrobe/garment state | propose; wardrobe commits |
@@ -89,7 +89,8 @@ domains, while the current visual-state adapter reasonably assumes that values
 handed to it are visual candidates. Contact spans multiple senses, so contact
 must preserve the channel **before** that adapter boundary.
 
-Current contact-side routing contract:
+Current contact-side routing contract (built 2026-08-22 in
+`contracts/affordances/contact/phenomena.ts`):
 
 ```ts
 type ContactPerceptionChannel =
@@ -102,8 +103,8 @@ interface ContactPhenomenonObservation {
   phenomenonId: string;
   channel: ContactPerceptionChannel;
   subjectIds: readonly AffordanceSubjectId[];
-  locus: BodyLocusRef;
-  targetLocus?: BodyLocusRef;
+  locus: ContactBodySurfaceRef;
+  targetLocus?: ContactSurfaceRef;
   intensityBand: "subtle" | "clear" | "strong";
   semanticTags: readonly string[];
   repeatFamily: string;
@@ -111,7 +112,20 @@ interface ContactPhenomenonObservation {
 }
 ```
 
-This contract is structured data, never prose.
+The loci deliberately use the contact core's own surface refs rather than a bare
+body-locus token: a two-body phenomenon needs the subject identity, the refs
+resolve to the same registry ids, and it keeps contact inside its documented
+import surface. This contract is structured data, never prose. There is no zod
+boundary schema yet because no producer emits phenomena and nothing persists
+them; the schema is added when proposals gain persistence.
+
+The router is `routeContactPhenomena(observations, sink?)`: visual candidates
+come back as adapted `AffordanceObservation` values grouped by subject, and
+every nonvisual candidate becomes a payload-free suppression with
+`CONTACT_CHANNEL_UNROUTED` (`info`, designed withholding); an unknown channel
+fails closed into the withheld set with `CONTACT_CHANNEL_INVALID` (`error`). A
+type-level tripwire keeps the channel-tagged contract from ever becoming
+assignable to `AffordanceObservation` unnoticed.
 
 Routing law:
 
@@ -209,13 +223,35 @@ repeat key into visual-state selection.
 
 These are useful continuity signals, but they do not encode the whole relation.
 
-### Gap — first-class visual contact relation
+### First-class visual contact relation — built 2026-08-22
 
-Before rich positive contact narration is considered complete, add a visual-state
-kind/adaptor sourced directly from `CommittedContactRead`, conceptually such as
-`body_language.contact_relation` (final naming belongs to visual-state).
+The gap is closed: `body_language.contact_relation`
+(`VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID`, registered in
+`contracts/visual-state/kinds.ts`) is projected from `CommittedContactRead` by
+`projectContactRelations` in `contracts/visual-state/body-language.ts`, beside —
+not touching — hand occupation and motion. Build decisions the slice settled:
 
-It must carry:
+- The value carries the action kind, source subject + locus, target (body arm or
+  object arm), and `materialBetween` as `{directSkinContact, layerIds}` — the
+  committed transmission's visually relevant half, always owner-backed. It
+  deliberately excludes pressure, motion, policy, actor control, and target
+  agencies, and the contact's resolution evidence trail is not merged into the
+  feature because that trail names the permission reads.
+- The contact id rides the relation locus plus a `contact` sourceRef (the motion
+  pattern); lifecycle provenance rides evidence as the two event refs.
+- The feature files under **both** mapped body participants (actor first):
+  perception resolves per subject, and only the primary character has an
+  exposure owner in this lane, so actor-only filing would hide every
+  player-initiated touch from the only selection that runs.
+- `narratorEligible: true` behind the existing per-chat visual-state narration
+  switch; `imageEligible: false` because the cast-1 scene digest consumes image
+  selection live and ungated, so admitting the kind there is a later deliberate
+  enable; `recognitionEligible: false`.
+- The narrator clause renders as a verbless noun phrase, and only "your"/the
+  possessive may name a participant — an un-nameable participant yields silence,
+  never an id in prose.
+
+The original requirements, which the build satisfies, were that it carry:
 
 - contact id/relation identity;
 - source participant id + source body locus;
@@ -283,21 +319,27 @@ owner for current material and temporary condition on skin/hair:
 - wetness — already implemented;
 - surface products;
 - residue/deposits, including dirt/blood/cosmetics where represented;
-- temporary pressure/contact marks.
+- temporary pressure/contact marks — **built 2026-08-22** as a marks module
+  inside `contracts/state/body-surface.ts` (see §8 for the shape).
 
 The internal implementation may split by modules such as wetness,
 deposits/residue, and marks, but these remain one body-surface state domain. Do
 not create separate contact-local stores or one subsystem per aftermath family.
+The built marks module follows this: it lives beside wetness under the one
+`BodySurfaceState`, keyed by idempotency identity, with the same fixed-point,
+read-never-mutates, and per-entry quarantine laws — and the `marks` key is
+absent until the first commit and dropped when the last mark prunes, so a
+flag-off row persists byte-identical to before the module existed.
 
 Contact may consume authoritative body-surface reads and propose mutations to
 that owner. Visual state remains a read/projection consumer.
 
-Current rules until the expansion exists:
+Current rules until the residue/product expansion exists:
 
 - contact may consume body wetness where the lane supplies it;
 - contact must not create a second moisture store;
 - residue/product composition may not be inferred from wetness;
-- missing residue/product/mark support remains unavailable;
+- missing residue/product support remains unavailable;
 - known dry is not the same thing as unavailable.
 
 Scratch/skin damage is **not** included in this ruling and still has no owner.
@@ -344,11 +386,66 @@ Contact may calculate that a pressure mark is possible; it may not persist the
 mark, own a hidden expiry timer, or expose it before the body-surface owner
 commits it.
 
-Visual state already records `contact_marks` as an unsupported current-state
-family. That remains correct until the body-surface mark owner is live.
+### Built shape — 2026-08-22
+
+The proof is built end to end, gated by `chatContactEffectsEnabled()`
+(`CHAT_CONTACT_EFFECTS === "on"` **and** the contact-actions flag; default off,
+and with contact actions off nothing runs regardless):
+
+- **Proposal contract** — `contracts/affordances/contact/effects.ts`:
+  `ContactEffectProposal` is a deliberately single-member union over
+  `BodyMarkProposal` (it grows when another owner path actually ships; no
+  speculative stubs). The pure producer is
+  `contactMarkProposals(contact: CommittedContactRead)`.
+- **Qualifying evidence** — committed pressure `moderate -> "clear"` or
+  `firm -> "strong"`, **and** `transmission.directSkinContact === true`, body
+  target only. Unstated pressure proposes nothing (unknown is not trace);
+  through-material proposes nothing, because filtering coarse transmission
+  values into a material-pressure model would be the pretend physics the
+  contact core forbids; trace/light never mark.
+- **Idempotency key** — `"body_mark"` + contactId + `lastUpdatedByEventRef`
+  under the contact core's own separators. A retake replays to the same key
+  (structural no-op); a later contact update committing qualifying pressure is
+  a new physical event with a new key.
+- **Owner state** — marks module in `contracts/state/body-surface.ts`:
+  `bodySurfaceMarkKinds = ["pressure"]` (closed; a stored `"scratch"`
+  quarantines), bands subtle/clear/strong at write magnitudes
+  2 500/5 000/10 000, `commitBodySurfaceMark`, lazy-fade read
+  `bodySurfaceMarkAt`, `pruneFadedBodySurfaceMarks`, per-entry quarantine,
+  bounds (16 marks, key <= 512 chars).
+- **Decay law** — flat 20 000 fixed-point units per story hour toward gone,
+  anchored at `createdAtMinutes` and never restamped: strong fades fully in 30
+  story minutes, clear in 15. Committed pressure tops out at `firm` — a
+  transient non-injuring imprint — and the flat rate mirrors the wetness
+  precedent because no authoritative skin-material axis exists to scale by.
+  Read bands: strong >= 8 000, clear >= 4 000, subtle >= 1.
+- **Transaction** — `applyBodyMarkProposals` in
+  `contracts/turns/chat-contact-effects.ts` (in `turns/` so import direction
+  stays contact -> state, never state -> contact), refusing with
+  `contact_effects.kind_unsupported` / `locus_unknown` / `key_invalid` /
+  `capacity` / `owner_unavailable`; at most `CHAT_CONTACT_EFFECT_MAX = 4`
+  proposals per turn.
+- **Pipeline** — proposals derive only from an acknowledged durable contact
+  commit inside the existing contact leg (a rolled-back append derives
+  nothing), are filtered to the primary character's body (any other target
+  refuses with `owner_unavailable` — ensemble/player surface owners do not
+  exist), and commit at settle inside `finalizeChatState`, so the mark rides
+  the state row's one rollback anchor and is observable from the **next** cut
+  only. Retake restoration is inherited from the pre-exchange snapshot — no new
+  prune machinery.
+- **Visual read** — committed marks project through the existing
+  body-surface current-state adapter as `body_surface.contact_mark`
+  (strongest unfaded mark per location, one banded feature; quarantined slots
+  become suppressions). The former `contact_marks` unsupported-family row is
+  retired. The read side is unconditional — the flag gates writes — so with the
+  flag off no marks exist and snapshots are unchanged. `imageEligible: false`
+  and `recognitionEligible: false`, same deliberate-enable caution as the
+  contact relation.
 
 Pressure mark and scratch are not synonyms. The first proof covers a temporary
-contact mark; scratch/skin damage remains blocked on a future owner.
+contact mark; scratch/skin damage remains blocked on a future owner, is not a
+member of the mark-kind vocabulary, and a stored scratch entry quarantines
+rather than reads.
 
 ---
 
@@ -540,23 +637,33 @@ positive/negative physical state.
 This order aligns with Track C/D of the parent plan:
 
 1. **Preserve the current visual bridge.** Keep hand occupation and committed
-   contact-motion projection unchanged.
+   contact-motion projection unchanged. Built 2026-08-22 — the diff on both
+   paths is purely additive.
 2. **Add the first-class visual contact relation** from `CommittedContactRead`
-   before claiming rich positive visual contact narration.
+   before claiming rich positive visual contact narration. Built 2026-08-22
+   (§5).
 3. **Define the small channel-tagged phenomenon seam** in pure contact code.
+   Built 2026-08-22 (§3); no producer emits phenomena yet.
 4. **Route only visual candidates into visual state** and add a leak test proving
-   nonvisual channels cannot reach that adapter.
+   nonvisual channels cannot reach that adapter. Built 2026-08-22 (§3, §16).
 5. **Expand `BodySurfaceState` for temporary marks** and build the pressure-mark
-   owner transaction.
+   owner transaction. Built 2026-08-22 (§8).
 6. **Prove pressure mark end to end**: commit, duplicate retry, retake, later
-   read, and visual projection where applicable.
+   read, and visual projection where applicable. Built 2026-08-22 — proven by
+   the §16 suites; the commit leg waits on its default-off switch.
 7. **Add residue/deposit support and conserved transfer** as the second proof,
-   including atomic source/destination conservation.
+   including atomic source/destination conservation. Remaining.
 8. **Build modality-specific sensory sibling owners** before promoting tactile,
-   olfactory, or gustatory cues to live narration.
+   olfactory, or gustatory cues to live narration. Remaining.
 9. **Register only domain phenomena whose complete source -> commitment ->
    perception path exists.** Unsupported foot/intimate phenomena remain
-   fixture-only.
+   fixture-only. Remaining.
+
+The pressure-mark visual read is deliberately a **later-cut read of committed
+body-surface state**, not a phenomenon producer: §16's first proof requires the
+observation to read committed mark state only, and stage 9 forbids registering a
+phenomenon before its complete path exists. The routing seam therefore still has
+no producer, and the pressure-mark path does not use it.
 
 Garment changes continue to delegate to wardrobe throughout rather than waiting
 for or duplicating body-surface work.

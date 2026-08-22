@@ -236,6 +236,31 @@ export function chatContactActionsEnabled(): boolean {
 }
 
 /**
+ * The CONTACT-EFFECTS switch (romantic-contact-affordances.spec.effects.md §15
+ * stages 5–6, the pressure-mark first proof) — default-off, and effective ONLY
+ * with `CHAT_CONTACT_ACTIONS=on`: an effect proposal is derived from a contact
+ * this exchange durably committed, so granting effects while the lane that
+ * commits contacts is off would be a flag that quietly re-enables another
+ * flag's feature (the `CHAT_NPC_SCENE_DECISIONS` composition rule).
+ *
+ * OFF (the default, and anything other than `on`) is today's behavior to the
+ * byte: no proposal is derived, no owner transaction runs, and the settle-time
+ * body-surface fold persists exactly what the wetness leg produced. ON derives
+ * a `BodyMarkProposal` from this exchange's acknowledged committed contact
+ * (`contactMarkProposals` — qualifying pressure, direct skin) and commits it
+ * into the PRIMARY character's `ChatState.bodySurface` at settle through the
+ * body-surface owner transaction (`applyBodyMarkProposals`). The committed mark
+ * is observable from the NEXT cut — visual state reads it as a
+ * `body_surface.contact_mark` feature — never in the cut that proposed it
+ * (effects spec §12). Retakes need no flag: the mark rides the state row's
+ * pre-exchange snapshot, so the ordinary rollback restores or removes it with
+ * the story cut. Env-only, no dev route.
+ */
+export function chatContactEffectsEnabled(): boolean {
+  return process.env.CHAT_CONTACT_EFFECTS === "on" && chatContactActionsEnabled();
+}
+
+/**
  * The NPC REPLY-SCENE DECISION SHADOW switch
  * (romantic-contact-affordances.spec.actor-control.md §"Execution, flags, and
  * cost gate"; delivery-order step 3) — experimental, default-off, the same

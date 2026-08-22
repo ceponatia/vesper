@@ -4,9 +4,14 @@ import { diag, type DiagnosticSink } from "../diagnostics";
 import { GARMENT_CONDITION_BAND_LADDERS } from "../items/garment-condition";
 import {
   BODY_SURFACE_DRY_RATE_PER_HOUR,
+  BODY_SURFACE_MARK_FADE_RATE_PER_HOUR,
+  bodySurfaceMarkAt,
+  bodySurfaceMarkBandFloor,
+  bodySurfaceMarkBandOf,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
   isInvalidSurfaceEntry,
+  type BodySurfaceMark,
   type BodySurfaceState,
 } from "../state/body-surface";
 import { precipitationActive, type ChatEnvironment } from "../state/chat-environment";
@@ -19,8 +24,10 @@ import {
 } from "./feature";
 import {
   bodySurfaceWetnessBands,
+  VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
   VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
   type BodySurfaceWetnessBand,
+  type VisualStateBodySurfaceMarkValue,
   type VisualStateBodySurfaceWetnessValue,
 } from "./kinds";
 import { visualStateKindRegistry } from "./registry";
@@ -51,6 +58,15 @@ import type { VisualStateSuppression } from "./suppression";
  * - **known and non-dry** — one feature per location, banded.
  * - **quarantined (`invalid`)** — silence PLUS a suppression and a diagnostic.
  *   A corrupt entry can never read as dry, and it can never read as wet either.
+ *
+ * The owner's MARKS module projects here too (effects spec §15 stage 6 — "later
+ * visual observation reads committed mark state only"): one feature per marked
+ * location carrying the STRONGEST unfaded mark's kind and band. Marks live
+ * keyed by idempotency identity, not by location, so two marks at one locus
+ * collapse to one feature — the feature key is per (subject, locus, kind), and
+ * two features would collide on it. Faded marks are silence; a quarantined
+ * mark slot is silence plus one suppression, and its location is part of what
+ * was lost, so the suppression hangs at the subject locus.
  */
 
 export interface VisualStateBodySurfaceProjectionInput {
@@ -237,6 +253,98 @@ export function projectBodySurfaceFeatures(
     };
     const accepted = validateVisualStateFeature(candidate, input.sink, path);
     if (accepted !== null) features.push(accepted);
+  }
+
+  // --- Marks (the owner's second module) -----------------------------------
+  const markSlots = input.state.marks ?? {};
+  if (Object.keys(markSlots).length > 0) {
+    const markKind = visualStateKindRegistry.byId(VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID);
+    if (!markKind) {
+      input.sink?.push(
+        diag("warn", VISUAL_STATE_KIND_UNKNOWN, `${VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID} is not registered`, {
+          path,
+          context: { subjectId: input.subjectId },
+        }),
+      );
+      return { features, suppressions };
+    }
+
+    // The strongest unfaded mark per location, in sorted key order so the
+    // stored record's insertion order cannot leak into the snapshot. The lazy
+    // read fades each mark forward exactly as the wetness read dries.
+    let invalidSlots = 0;
+    const strongest = new Map<string, { mark: BodySurfaceMark; magnitude: number }>();
+    for (const markId of Object.keys(markSlots).sort(compareStrings)) {
+      const read = bodySurfaceMarkAt(input.state, markId, input.atMinutes);
+      if (read.status === "invalid") {
+        invalidSlots += 1;
+        continue;
+      }
+      if (read.status !== "known") continue;
+      const current = strongest.get(read.mark.locationId);
+      if (current === undefined || read.magnitude > current.magnitude) {
+        strongest.set(read.mark.locationId, { mark: read.mark, magnitude: read.magnitude });
+      }
+    }
+
+    if (invalidSlots > 0) {
+      // A corrupt slot lost its LOCATION along with everything else, so the
+      // suppression hangs at the subject: "some mark state is gone" is the
+      // whole honest sentence.
+      const key = visualStateFeatureKey(
+        input.subjectId,
+        { kind: "subject", subjectId: input.subjectId },
+        VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
+      );
+      suppressions.push({ key, code: VISUAL_STATE_SOURCE_INVALID, detail: "body_surface_marks" });
+      input.sink?.push(
+        diag("warn", VISUAL_STATE_SOURCE_INVALID, `${invalidSlots} body-surface mark slot(s) are quarantined`, {
+          path,
+          context: { subjectId: input.subjectId, invalidSlots },
+        }),
+      );
+    }
+
+    for (const [locationId, { mark, magnitude }] of [...strongest.entries()].sort(([left], [right]) =>
+      compareStrings(left, right),
+    )) {
+      const band = bodySurfaceMarkBandOf(magnitude);
+      if (band === null) continue;
+      const locus = { kind: "body", locus: { bodyLocationId: locationId } } as const;
+      const key = visualStateFeatureKey(input.subjectId, locus, VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID);
+      const value: VisualStateBodySurfaceMarkValue = { kind: mark.kind, band };
+      const candidate: VisualStateFeature = {
+        version: 1,
+        key,
+        subjectId: input.subjectId,
+        kindId: VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
+        layer: markKind.layer,
+        locus,
+        sourceRef: { kind: "body_surface", subjectId: input.subjectId, locationId },
+        value,
+        truthFingerprint: visualStateFingerprint(value),
+        semanticTags: [mark.kind, band],
+        stability: markKind.stability,
+        relationships: modifiedKeys(input.subjectId, locationId, composeAgainst).map((targetKey) => ({
+          kind: "modifies",
+          targetKey,
+        })),
+        priors: markKind.priors,
+        evidence: [
+          affordanceEvidence("adapter", "visual_state.body_surface", locationId),
+          affordanceEvidence("state", `body_surface_mark:${input.subjectId}:${locationId}`, mark.kind),
+        ],
+        changedAtMinutes: mark.createdAtMinutes,
+        // The first minute the current band no longer holds under the owner's
+        // flat fade law — the same exact-integer arithmetic as the wetness
+        // window, against the mark rate.
+        validUntilMinutes:
+          input.atMinutes +
+          Math.ceil((60 * (magnitude - bodySurfaceMarkBandFloor(band) + 1)) / BODY_SURFACE_MARK_FADE_RATE_PER_HOUR),
+      };
+      const accepted = validateVisualStateFeature(candidate, input.sink, path);
+      if (accepted !== null) features.push(accepted);
+    }
   }
 
   return { features, suppressions };

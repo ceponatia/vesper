@@ -25,17 +25,19 @@ describe("unsupportedCurrentStateSuppressions", () => {
       "contamination:dirt_on_skin",
       "contamination:blood_on_skin",
       "contamination:cosmetics_wear",
-      "contact:contact_marks",
       "fit:garment_fit",
     ]);
   });
 
   it("does not declare a fact an adapter now owns", () => {
     // The table retires a row when its owner ships. `body_language.hand_occupation`
-    // (slice 4) derives occupied hands from the committed contacts, so a row for
-    // it would make one snapshot call the fact unavailable and state it at once.
+    // (slice 4) derives occupied hands from the committed contacts, and
+    // `body_surface.contact_mark` (the effects first proof) reads committed
+    // marks from the body-surface owner — a row for either would make one
+    // snapshot call the fact unavailable and state it at once.
     const facts = VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS.map((row) => `${row.family}:${row.fact}`);
     expect(facts).not.toContain("contact:occupied_hands");
+    expect(facts).not.toContain("contact:contact_marks");
   });
 
   it("reports each gap on the sink as context, not as a degradation alarm", () => {

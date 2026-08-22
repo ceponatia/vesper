@@ -2,15 +2,19 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../diagnostics";
 import { parseOr } from "@/lib/parse";
 import {
+  bodySurfaceMarkAt,
   bodySurfaceStateSchema,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
   BODY_SURFACE_DRY_RATE_PER_HOUR,
   BODY_SURFACE_INVALID_ENTRY,
   BODY_SURFACE_MAX_LOCATIONS,
+  BODY_SURFACE_MAX_MARKS,
   BODY_SURFACE_UNIT_ONE,
+  commitBodySurfaceMark,
   emptyBodySurfaceState,
   pruneDryBodySurface,
+  pruneFadedBodySurfaceMarks,
   setBodySurfaceWetness,
   type BodySurfaceReadOptions,
   type BodySurfaceState,
@@ -179,5 +183,101 @@ describe("writes", () => {
     const damp = setBodySurfaceWetness(emptyBodySurfaceState(), { locationId: "hair", level: 1_000, atMinutes: 0 });
     expect(pruneDryBodySurface(damp, HOUR).wetness.hair).toBeUndefined();
     expect(pruneDryBodySurface(damp, HOUR, { suspendDrying: true })).toBe(damp);
+  });
+});
+
+/**
+ * The marks module (romantic-contact-affordances.spec.effects.md §8) — the same
+ * owner, laws 6 and 7: a record keyed by idempotency identity so retry commits
+ * nothing new, a fade anchored at creation and never restamped, quarantine over
+ * repair (which is where a stored `"scratch"` is fenced out), and a `marks` key
+ * that vanishes with its last mark so an effects-flag-off row stays
+ * byte-identical to a pre-marks one.
+ */
+describe("marks", () => {
+  const marked = commitBodySurfaceMark(emptyBodySurfaceState(), {
+    markId: "evt_1",
+    locationId: "forearms",
+    kind: "pressure",
+    band: "strong",
+    atMinutes: 10,
+  });
+
+  it("commits at the exact locus and fades on the story clock — identity before creation, gone in 30 minutes", () => {
+    expect(bodySurfaceMarkAt(marked, "evt_1", 5)).toMatchObject({ status: "known", magnitude: BODY_SURFACE_UNIT_ONE });
+    const half = bodySurfaceMarkAt(marked, "evt_1", 25); // 15 min at 20_000/hour = 5_000 faded
+    expect(half).toMatchObject({ status: "known", magnitude: 5_000 });
+    if (half.status === "known") expect(half.mark.locationId).toBe("forearms");
+    // Fully faded and absent are the SAME answer — no mark.
+    expect(bodySurfaceMarkAt(marked, "evt_1", 10 + 30)).toEqual({ status: "none" });
+    expect(bodySurfaceMarkAt(marked, "never_committed", 10)).toEqual({ status: "none" });
+  });
+
+  it("retry under the same idempotency identity commits nothing new", () => {
+    const retried = commitBodySurfaceMark(marked, {
+      markId: "evt_1",
+      locationId: "forearms",
+      kind: "pressure",
+      band: "subtle", // even a DIFFERENT band: the standing commit wins
+      atMinutes: 20,
+    });
+    expect(retried).toBe(marked);
+  });
+
+  it("quarantines a corrupt slot — a smuggled scratch kind included — and heals it only on a fresh commit", () => {
+    const parsed = bodySurfaceStateSchema.parse({
+      wetness: {},
+      marks: {
+        evt_ok: { locationId: "forearms", kind: "pressure", magnitude: 5_000, createdAtMinutes: 0 },
+        evt_scratch: { locationId: "forearms", kind: "scratch", magnitude: 5_000, createdAtMinutes: 0 },
+      },
+    });
+    expect(parsed.marks?.evt_scratch).toEqual(BODY_SURFACE_INVALID_ENTRY);
+    expect(bodySurfaceMarkAt(parsed, "evt_scratch", 0)).toEqual({ status: "invalid" });
+    expect(bodySurfaceMarkAt(parsed, "evt_ok", 0)).toMatchObject({ status: "known", magnitude: 5_000 });
+    // The marker round-trips; only an authoritative commit under the key clears it.
+    const reloaded = bodySurfaceStateSchema.parse(JSON.parse(JSON.stringify(parsed)));
+    expect(reloaded.marks?.evt_scratch).toEqual(BODY_SURFACE_INVALID_ENTRY);
+    const healed = commitBodySurfaceMark(parsed, {
+      markId: "evt_scratch",
+      locationId: "chest",
+      kind: "pressure",
+      band: "clear",
+      atMinutes: 5,
+    });
+    expect(bodySurfaceMarkAt(healed, "evt_scratch", 5)).toMatchObject({ status: "known", magnitude: 5_000 });
+  });
+
+  it("a wholly corrupt marks record degrades to absent, and a missing one parses clean", () => {
+    expect(bodySurfaceStateSchema.parse({ wetness: {} }).marks).toBeUndefined();
+    expect(bodySurfaceStateSchema.parse({ wetness: {}, marks: "garbage" }).marks).toBeUndefined();
+  });
+
+  it("pruning drops only the fully faded, never a quarantined slot, and removes the empty key", () => {
+    const quarantined = bodySurfaceStateSchema.parse({ wetness: {}, marks: { evt_bad: 42 } });
+    expect(pruneFadedBodySurfaceMarks(quarantined, 1_000)).toBe(quarantined);
+    expect(pruneFadedBodySurfaceMarks(marked, 15)).toBe(marked);
+    const pruned = pruneFadedBodySurfaceMarks(marked, 10 + 30);
+    // The LAST mark takes the key with it: the serialized row is byte-identical
+    // to one that never held a mark, which is what keeps the effects flag's
+    // off-state honest.
+    expect(pruned.marks).toBeUndefined();
+    expect(JSON.stringify(pruned)).toBe(JSON.stringify(emptyBodySurfaceState()));
+  });
+
+  it("wetness writes leave standing marks alone — the fold that dried the hair must not erase the mark", () => {
+    const wet = setBodySurfaceWetness(marked, { locationId: "hair", level: 6_000, atMinutes: 12 });
+    expect(bodySurfaceMarkAt(wet, "evt_1", 12)).toMatchObject({ status: "known" });
+    const pruned = pruneDryBodySurface(setBodySurfaceWetness(marked, { locationId: "hair", level: 100, atMinutes: 10 }), 10 + HOUR);
+    expect(bodySurfaceMarkAt(pruned, "evt_1", 12)).toMatchObject({ status: "known" });
+  });
+
+  it("refuses a commit past capacity rather than evicting a standing mark", () => {
+    let full = emptyBodySurfaceState();
+    for (let i = 0; i < BODY_SURFACE_MAX_MARKS; i++) {
+      full = commitBodySurfaceMark(full, { markId: `evt_${i}`, locationId: "chest", kind: "pressure", band: "strong", atMinutes: 0 });
+    }
+    expect(Object.keys(full.marks ?? {})).toHaveLength(BODY_SURFACE_MAX_MARKS);
+    expect(commitBodySurfaceMark(full, { markId: "evt_over", locationId: "chest", kind: "pressure", band: "strong", atMinutes: 0 })).toBe(full);
   });
 });

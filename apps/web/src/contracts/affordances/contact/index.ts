@@ -33,11 +33,15 @@
  * `@/app`, or `@/components` — the narrator seam consumes a resolution, it does
  * not participate in producing one.
  *
- * What is deliberately NOT here in slice 1: observations, phenomena, cue
- * ranking, effect commits, perception filtering, and any lane wiring or storage.
- * The audit records pose, reach, support, and material-between as unowned in
- * both lanes, so the resolver takes them as `AdapterRead`s and answers
- * `unresolved` when nobody can speak.
+ * What is deliberately NOT here: cue ranking, effect commits, perception
+ * filtering, and any lane wiring or storage. `phenomena.ts` carries only the
+ * channel-tagged observation SEAM and its visual-only routing (effects spec §3);
+ * no phenomenon producer is registered until its complete source → commitment →
+ * perception path exists. `effects.ts` carries effect PROPOSALS — requests the
+ * body-surface owner validates and commits in `turns/chat-contact-effects.ts`;
+ * contact itself persists no aftermath. The audit records pose, reach, support,
+ * and material-between as unowned in both lanes, so the resolver takes them as
+ * `AdapterRead`s and answers `unresolved` when nobody can speak.
  */
 export * from "./identity";
 export * from "./surfaces";
@@ -49,3 +53,5 @@ export * from "./resolve";
 export * from "./lifecycle";
 export * from "./outcome";
 export * from "./state";
+export * from "./phenomena";
+export * from "./effects";

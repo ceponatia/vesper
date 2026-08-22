@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { expectDiagnostic, expectDiagnostics, codes } from "@/test/diagnostics";
+import { contactEntityId } from "../affordances/contact";
 import { DiagnosticCollector } from "../diagnostics";
 import { bodyLanguageUnavailableFacts, projectBodyLanguageFeatures } from "./body-language";
 import { VISUAL_STATE_BODY_LANGUAGE_UNAVAILABLE } from "./diagnostics";
@@ -14,6 +15,7 @@ import {
   VISUAL_STATE_SCENE_PLAYER_SUBJECT,
 } from "./fixtures";
 import {
+  VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
@@ -184,6 +186,58 @@ describe("projectBodyLanguageFeatures", () => {
     expect(byKind(build.features, VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID)).toEqual([]);
     // The occupied hand is still a fact.
     expect(byKind(build.features, VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID)).toHaveLength(1);
+  });
+
+  it("projects the whole relation — both participants, both loci — and nothing the must-not list names", () => {
+    const contact = visualStateContactFixture({ sourceLocationId: "fingers", sourceSide: "left" });
+    const build = project({ contacts: visualStateContactState([contact]) });
+    const relations = byKind(build.features, VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID);
+    // Filed under BOTH mapped participants — the target's exposure is the one
+    // this lane can answer, so an actor-only filing would hide every touch from
+    // the only subject whose perception resolves.
+    expect(relations.map((feature) => feature.subjectId)).toEqual([
+      VISUAL_STATE_SCENE_PLAYER_SUBJECT,
+      VISUAL_STATE_SCENE_NPC_SUBJECT,
+    ]);
+    for (const relation of relations) {
+      // Exact equality is the disclosure gate: pressure, motion, permission
+      // state, and authority reads exist on the fixture contact, and NONE of
+      // them may surface here (effects spec §5's must-not list).
+      expect(relation.value).toEqual({
+        actionKind: "affectionate",
+        source: {
+          subjectId: VISUAL_STATE_SCENE_PLAYER_SUBJECT,
+          locus: { bodyLocationId: "fingers", side: "left" },
+        },
+        target: {
+          kind: "body",
+          subjectId: VISUAL_STATE_SCENE_NPC_SUBJECT,
+          locus: { bodyLocationId: "shoulders" },
+        },
+        materialBetween: { directSkinContact: true, layerIds: [] },
+      });
+      expect(relation.locus).toEqual({ kind: "relation", relationId: contact.contactId });
+      expect(relation.sourceRef).toEqual({ kind: "contact", contactId: contact.contactId });
+      expect(relation.semanticTags).toEqual(["affectionate", "direct"]);
+      expect(relation.changedAtMinutes).toBe(contact.lastUpdatedAt);
+      // Lifecycle provenance rides the evidence; the contact's own resolution
+      // evidence (the permission trail) deliberately does not.
+      expect(relation.evidence.filter((entry) => entry.kind === "event")).toHaveLength(2);
+    }
+    expect(new Set(relations.map((feature) => feature.key)).size).toBe(2);
+  });
+
+  it("projects an object-target relation with the owner's surface identity", () => {
+    const contact = visualStateContactFixture({
+      target: { kind: "object", entityId: contactEntityId("vs_wall"), surfaceId: "face" },
+    });
+    const build = project({ contacts: visualStateContactState([contact]) });
+    const relations = byKind(build.features, VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID);
+    // Only the actor: an object end is nobody's body, so nothing else to file under.
+    expect(relations.map((feature) => feature.subjectId)).toEqual([VISUAL_STATE_SCENE_PLAYER_SUBJECT]);
+    expect(relations[0]?.value).toMatchObject({
+      target: { kind: "object", entityId: "vs_wall", surfaceId: "face" },
+    });
   });
 
   it("suppresses gaze, fine joint pose and microexpression per subject, with an info diagnostic", () => {

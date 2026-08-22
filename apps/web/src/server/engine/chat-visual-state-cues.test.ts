@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   visualStateLocusKey,
+  VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_FACING_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_HAND_OCCUPATION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
@@ -134,6 +135,37 @@ describe("clauses come from the committed value", () => {
     expect(line(VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID, { band: "dripping" }, HAIR)).toBe("");
     expect(line(VISUAL_STATE_WARDROBE_GARMENT_KIND_ID, { locus: { kind: "worn" } }, COAT)).toBe("");
     expect(line(VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID, "not an object", SELF)).toBe("");
+  });
+
+  it("renders a contact relation as a verbless noun phrase, naming only resolvable participants", () => {
+    const named: ChatVisualStateSubject = { ...SUBJECT, subjectId: "npc", playerSubjectId: "player" };
+    const relation = (source: string, target: string) => ({
+      actionKind: "affectionate",
+      source: { subjectId: source, locus: { bodyLocationId: "hands", side: "left" as const } },
+      target: { kind: "body" as const, subjectId: target, locus: { bodyLocationId: "shoulders" } },
+      materialBetween: { directSkinContact: true, layerIds: [] },
+    });
+    const RELATION: VisualStateLocusRef = { kind: "relation", relationId: "c1" };
+    expect(
+      renderChatVisualStateConstraint(
+        constraint({ kindId: VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID, value: relation("npc", "player"), locus: RELATION }),
+        named,
+      ),
+    ).toBe("Mara's left hand on your shoulders");
+    // A roster member this digest cannot name, or a caller that supplied no
+    // ids at all: silence, never a subject id in prose.
+    expect(
+      renderChatVisualStateConstraint(
+        constraint({ kindId: VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID, value: relation("npc", "roster_member"), locus: RELATION }),
+        named,
+      ),
+    ).toBe("");
+    expect(
+      renderChatVisualStateConstraint(
+        constraint({ kindId: VISUAL_STATE_BODY_LANGUAGE_CONTACT_RELATION_KIND_ID, value: relation("npc", "player"), locus: RELATION }),
+        SUBJECT,
+      ),
+    ).toBe("");
   });
 
   it("renders nothing at all for a subject with no name", () => {

@@ -83,6 +83,23 @@ export const CONTACT_AUTHORIZATION_LAPSED = "contact.authorization_lapsed";
 export const CONTACT_STATE_RECOMPUTED = "contact.state_recomputed";
 
 /**
+ * Nonvisual contact phenomena were withheld at the routing boundary. `info`.
+ *
+ * The designed permanent state until the sibling sensory presentation owners
+ * exist (romantic-contact-affordances.spec.effects.md §3): a tactile, olfactory,
+ * or gustatory candidate is a pure/diagnostic result, never a presented cue.
+ * Reported so the withheld volume is measurable, not because anything degraded.
+ */
+export const CONTACT_CHANNEL_UNROUTED = "contact.channel_unrouted";
+
+/**
+ * A contact phenomenon carried a perception channel outside the vocabulary.
+ * `error` — a value nobody meant, and it fails closed: the candidate is
+ * withheld exactly like a nonvisual one rather than defaulting to visual.
+ */
+export const CONTACT_CHANNEL_INVALID = "contact.channel_invalid";
+
+/**
  * An action outcome was asked for a committable resolution with no durable
  * acknowledgment behind it. `error` when the caller supplied none at all (asking
  * before the write is a pipeline bug), `warn` when the store answered that the
