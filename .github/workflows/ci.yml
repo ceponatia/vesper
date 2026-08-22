@@ -122,28 +122,149 @@ jobs:
                 ;;
             esac
 
-            # Application paths are rooted at `apps/web/` since the Next app
-            # moved out of the repository root. A stale glob here fails OPEN —
-            # the job simply skips and aggregate `verify` stays green — so
-            # these patterns are verified by deliberately touching a file of
-            # each class, not by a green workflow run.
+            # ---- EC2 `engine integration` -------------------------------
+            # The one job that cannot run on Lambda: it needs Docker Compose
+            # for Postgres/pgvector, so it is the slowest gate and the only one
+            # billed on an EC2 host. It runs exactly `pnpm test:engine` — the
+            # successor-engine simulation stores, the successor chat/admin
+            # routes, and the DB-backed image/identity-pack lifecycle suites —
+            # plus the Gate 1 benchmark step.
             #
-            # `scripts/eval/engine-gate1/*` is listed here as well as under the
-            # engine patterns below so that `engine` is a strict subset of
-            # `integration` — the Gate 1 benchmark now runs as a step of the
-            # engine job, and a step cannot run in a job that was skipped.
+            # These patterns describe RISK OWNERSHIP, not the import closure.
+            # The closure is useless as a criterion: 327 of the 334 modules
+            # under apps/web/src/contracts are reachable from the suite's
+            # module graph, as is every module of the legacy chat lane. What
+            # earns an EC2 start is narrower — a defect that ONLY a real
+            # database can catch: persistence and transaction semantics,
+            # migration compatibility, concurrency and keyed locking,
+            # DB-stored idempotency, branch/fork/replay persistence, the
+            # projection stores, successor route→engine wiring, the DB-backed
+            # identity-pack lifecycle, and the Docker/Postgres setup itself.
             #
-            # The old `*.config.*` catch-all also set `engine`, so an
-            # eslint.config.mjs or next.config.ts edit spun up Postgres and the
-            # eval. Only the configs that actually shape those runs are listed.
+            # ORDER MATTERS. A bash `case` takes the first matching arm and
+            # `*` matches `/`, so each family below is followed by a wider
+            # "stop" arm that swallows the rest of its directory.
+            #
+            # A stale glob here fails OPEN — the job simply skips and
+            # aggregate `verify` stays green — so patterns are verified by
+            # deliberately touching a file of each class, never by a green
+            # run. `apps/web/src/contracts/simulation/*` sat in the engine
+            # list below for exactly that reason: PR #106 moved those
+            # contracts into @vesper/simulation-core and the dead glob went
+            # unnoticed. Where a boundary is uncertain, the broader pattern
+            # wins.
             case "$path" in
-              apps/web/src/server/*|apps/web/src/app/api/*|apps/web/src/contracts/*|apps/web/src/lib/simulation/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|Dockerfile|package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/tsconfig.json|vitest.config.*|drizzle.config.*)
+              # The legacy character-chat lane, with three exceptions.
+              # `runSimChatExchange` — the successor turn core that
+              # `chats/sim-routes.int.test.ts` drives end to end — persists
+              # through `persistAssistantReply`/`pushReplyTake`
+              # (chat-pipeline), `enqueueChatSummary`/`loadChatSummary`
+              # (chat-summary) and `readChatEngineAuthority` (chat-authority),
+              # so the EC2 suite owns those three modules' database writes.
+              apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
+                integration=true
+                ;;
+              # The rest of the lane. `pnpm test:engine` runs NONE of its 18
+              # integration suites — those are the manual `pnpm test:int`
+              # surface — so an EC2 start proves nothing about them. Their
+              # pure tests, typecheck and lint all run on Lambda.
+              apps/web/src/server/engine/chat-*|apps/web/src/server/engine/prompts/chat-*|apps/web/src/server/engine/prompts/character-chat*)
+                ;;
+              # The successor engine: the simulation stores under test plus
+              # the narrator, exchange, beat, time-job and surface modules the
+              # route suites execute. Deliberately the whole directory —
+              # this is the stateful persistence layer the job exists for.
+              apps/web/src/server/engine/*)
+                integration=true
+                ;;
+              # Server subsystems the suite runs against a real database:
+              # the schema itself, the integration harness, the DB-backed
+              # image/identity-pack implementation (all 61 of its modules are
+              # reachable from the covered suites, so there is no honest
+              # sub-boundary), the route plumbing the route suites assert on,
+              # the embedding lane that writes pgvector columns, and the
+              # persona/visual-state/log/event helpers the exchange calls.
+              apps/web/src/server/db/*|apps/web/src/server/test-support/*|apps/web/src/server/images/*|apps/web/src/server/api/*|apps/web/src/server/ai/*|apps/web/src/server/visual-state/*|apps/web/src/server/players/*|apps/web/src/server/events.ts|apps/web/src/server/log.ts)
+                integration=true
+                ;;
+              # Everything else under server/ — auth (every route suite
+              # replaces it with `routeAuthModule`), memory, authoring,
+              # reference-extraction. No `test:engine` suite executes them.
+              apps/web/src/server/*)
+                ;;
+              # The route families the suite imports and drives: successor
+              # chat + admin sim/authority, and the DB-backed identity-pack,
+              # portrait and gallery routes. 56 of the 157 route modules.
+              apps/web/src/app/api/chats/*|apps/web/src/app/api/admin/sim/*|apps/web/src/app/api/admin/engine-authority/*|apps/web/src/app/api/admin/self/identity-packs/*|apps/web/src/app/api/characters/*/identity-pack/*|apps/web/src/app/api/characters/*/portraits/*|apps/web/src/app/api/gallery/*)
+                integration=true
+                ;;
+              apps/web/src/app/api/*)
+                ;;
+              # Image/identity contracts are the one app-contract family whose
+              # payloads the covered stores write into jsonb columns, so a
+              # tightened schema here can break a store write at runtime in a
+              # way typecheck cannot see.
+              apps/web/src/contracts/images/*)
+                integration=true
+                ;;
+              # The rest of apps/web/src/contracts is ESLint-enforced pure (no
+              # @/server imports), carries 159 co-located pure test files, and
+              # owns no database behaviour: the simulation stores import zero
+              # app contracts, and every persisted payload shape comes from
+              # @vesper/simulation-core/contracts or @vesper/image-core, which
+              # still trigger below. Lint, typecheck and the pure suite own it.
+              apps/web/src/contracts/*)
+                ;;
+              # Story-time/beat helpers the beat and shadow modules persist
+              # through, and the Vitest setup file the integration run loads.
+              apps/web/src/lib/simulation/*|apps/web/src/test/*)
+                integration=true
+                ;;
+              # Workspace packages: simulation-core is the engine kernel under
+              # test, image-core types the image columns, contracts supplies
+              # the determinism primitives stored hashes depend on, and
+              # image-replicate supplies constants the trial/lab flows persist.
+              # Kept deliberately broad — narrowing would save about one run
+              # per hundred PRs and risks a silent gap.
+              packages/*)
+                integration=true
+                ;;
+              # Migrations, the migration runner, and the Compose/Postgres
+              # image the job boots. `Dockerfile` is NOT here: that is the
+              # application image, which this job never builds — Compose
+              # builds docker/postgres/Dockerfile, matched by `docker/*`.
+              # `drizzle.config.*` is NOT here either: it is drizzle-kit's
+              # config, and `scripts/db-migrate.ts` hardcodes its own
+              # migrations folder, so no CI job reads it.
+              drizzle/*|scripts/db-*.ts|docker/*|docker-compose*.yml)
+                integration=true
+                ;;
+              # Install and Vitest inputs. A dependency change can break the
+              # suite's ability to run even when no engine source moved, so
+              # these stay broad on purpose — correctness beats saving the
+              # occasional EC2 start on a manifest-only PR. tsconfig is NOT
+              # here: Vitest takes its `@/` alias from vitest.config.ts, and
+              # typecheck on Lambda owns tsconfig correctness.
+              package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|vitest.config.*)
+                integration=true
+                ;;
+              # Listed here as well as under the engine patterns below so that
+              # `engine` stays a strict subset of `integration` — the Gate 1
+              # benchmark runs as a step of this job, and a step cannot run in
+              # a job that was skipped.
+              scripts/eval/engine-gate1/*)
                 integration=true
                 ;;
             esac
 
+            # `engine` gates the Gate 1 benchmark STEP inside the integration
+            # job, so every pattern here must also set `integration` above.
+            # The chat-lane exclusion is repeated for exactly that reason: it
+            # is what keeps the benchmark from being stranded in a skipped job.
             case "$path" in
-              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
+              apps/web/src/server/engine/chat-*|apps/web/src/server/engine/prompts/chat-*|apps/web/src/server/engine/prompts/character-chat*)
+                ;;
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
                 engine=true
                 ;;
             esac

@@ -159,6 +159,16 @@ is the deliberate full pre-deploy run (engine and build included).
 | engine integration | `pnpm test:engine` (strict) + the Gate 1 benchmark            |
 | production build   | the Next production build, heap-pinned to 4096 MB             |
 
+The **engine job** is the only one that needs Docker, so it is also the only one
+billed on an EC2 runner rather than Lambda. On an ordinary PR into `main` it
+starts only when the change touches a surface its suite owns — the successor
+engine and its stores, the schema and migrations, the route families and
+DB-backed image/identity-pack modules `test:engine` imports, the workspace
+packages, or the install and Compose inputs the run depends on. A manual
+`gh workflow run CI` dispatch and every PR into `prod` start it regardless of
+what changed. The classifier in `.github/workflows/ci.yml` carries the reason
+for each trigger family.
+
 The **engine job** exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` and
 `REQUIRE_INTEGRATION_DB=true`, so an unreachable or unmigrated database fails
 the suites rather than letting them self-skip — a gate must never report green
