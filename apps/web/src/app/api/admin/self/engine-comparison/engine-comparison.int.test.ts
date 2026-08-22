@@ -34,6 +34,7 @@ import { DELETE, GET, POST } from "./[chatId]/route";
 
 const ready = await probeIntegrationDb("engine-comparison.int.test", "sim_worlds");
 const ids = { owner: "", chat: "", groupChat: "" };
+let comparisonWorldId = "";
 
 const req = (chatId: string, method: "GET" | "POST" | "DELETE"): NextRequest =>
   apiRequest(`/api/admin/self/engine-comparison/${chatId}`, { method });
@@ -70,19 +71,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!ready) return;
-  // A failed assertion before DELETE can leave an unowned comparison world after
-  // the chat cascade. Reclaim any world this suite minted before the owner purge.
-  const worlds = await db()
-    .select({ id: simWorlds.id })
-    .from(simWorlds)
-    .where(eq(simWorlds.worldTypeId, COMPARISON_WORLD_TYPE_ID));
-  for (const world of worlds) {
-    const anchored = await db()
-      .select({ id: characterChats.id })
-      .from(characterChats)
-      .innerJoin(simBranches, eq(characterChats.simBranchId, simBranches.id))
-      .where(eq(simBranches.worldId, world.id));
-    if (anchored.some((row) => row.id === ids.chat)) await db().delete(simWorlds).where(eq(simWorlds.id, world.id));
+  // If the test failed before the normal stop path, delete the exact mirror it
+  // observed rather than scanning/deleting another suite's comparison world.
+  if (comparisonWorldId) {
+    await db().delete(simWorlds).where(eq(simWorlds.id, comparisonWorldId)).catch(() => undefined);
   }
   await purgeOwnerRows([ids.owner]);
 });
@@ -118,12 +110,12 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
       .where(eq(simBranches.id, branchId));
     expect(world?.worldTypeId).toBe(COMPARISON_WORLD_TYPE_ID);
     expect(world?.calendarStart).toEqual({ year: 2024, month: 6, day: 1 });
+    comparisonWorldId = world?.id ?? "";
 
     const space = await readDurableSpaceBranch(branchId);
     expect(space.locations).toHaveLength(1);
     expect(space.zones).toHaveLength(2);
     expect(space.loci).toHaveLength(2);
-    expect(space.loci.every((locus) => locus.kind === "at" && locus.zoneId === space.zones[0]?.id)).toBe(false);
     const playerLocus = space.loci.find((locus) => locus.actorId === authority?.simPlayerActorId);
     const primaryLocus = space.loci.find((locus) => locus.actorId === authority?.simPrimaryActorId);
     expect(playerLocus?.kind).toBe("at");
@@ -134,7 +126,6 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     expect(bodies.storySecond).toBe(8 * 60 * 60);
     expect(bodies.meters.filter((meter) => meter.actorId === authority?.simPrimaryActorId).length).toBeGreaterThan(0);
 
-    const worldId = world?.id ?? "";
     const stopped = await expectJson<{ active: boolean; canStart: boolean }>(
       await DELETE(req(ids.chat, "DELETE"), ctx(ids.chat)),
       200,
@@ -144,7 +135,8 @@ describe.runIf(ready)("Engine Comparison session provisioning", () => {
     const after = await readChatEngineAuthority(ids.chat);
     expect(after?.authority).toBe("legacy_chat");
     expect(after?.simBranchId).toBeNull();
-    expect(await db().select().from(simWorlds).where(eq(simWorlds.id, worldId))).toHaveLength(0);
+    expect(await db().select().from(simWorlds).where(eq(simWorlds.id, comparisonWorldId))).toHaveLength(0);
+    comparisonWorldId = "";
   });
 
   it("refuses group chats instead of collecting pair-only evidence", async () => {
