@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiGet, apiPatch } from "@/lib/client/api";
 
-/** Client data layer for the owner-admin Shadow Parity screen. */
+/** Client data layer for the owner-admin Engine Comparison screen. */
 const textOr = (fallback: string) => z.string().catch(fallback);
 
 /** Array where invalid elements are dropped instead of failing the whole list. */
@@ -17,8 +17,20 @@ function arrayOf<T>(item: z.ZodType<T>) {
     );
 }
 
+/**
+ * Durable storage values are retained for compatibility with existing rows.
+ * The UI deliberately uses clearer labels: `open` means unreviewed/unresolved,
+ * `intentional` means reviewed with no fix needed, and `fixed` means the defect
+ * was corrected and the result was verified.
+ */
 export const shadowVerdicts = ["open", "intentional", "fixed"] as const;
 export type ShadowVerdict = (typeof shadowVerdicts)[number];
+
+export const shadowVerdictLabels: Record<ShadowVerdict, string> = {
+  open: "Unreviewed",
+  intentional: "Accepted / no fix needed",
+  fixed: "Fixed & verified",
+};
 
 export const shadowChatSummarySchema = z.object({
   chatId: z.string().min(1),
@@ -101,13 +113,13 @@ export type ShadowReport = z.infer<typeof shadowReportSchema>;
 const BASE = "/api/admin/self/sim/shadow";
 
 export const shadowApi = {
-  /** The current administrator's chats with recorded divergences, newest first. */
+  /** The current administrator's chats with recorded comparison rows, newest first. */
   chats: () => apiGet(z.object({ chats: arrayOf(shadowChatSummarySchema) }), BASE),
-  /** One owned chat's raw divergence rows, newest first. */
+  /** One owned chat's raw comparison rows, newest first. */
   rows: (chatId: string) => apiGet(z.object({ rows: arrayOf(shadowRowSchema) }), `${BASE}/${chatId}`),
-  /** The computed scale-aware parity report. */
+  /** The computed scale-aware comparison report. */
   report: (chatId: string) => apiGet(z.object({ report: shadowReportSchema }), `${BASE}/${chatId}/report`),
-  /** Rule one owned row's verdict. */
+  /** Set one owned row's durable review status. */
   verdict: (chatId: string, id: string, verdict: ShadowVerdict) =>
     apiPatch(z.object({ id: z.string(), verdict: z.string() }), `${BASE}/${chatId}`, { id, verdict }),
 };
