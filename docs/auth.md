@@ -395,6 +395,13 @@ transport names `RESEND_API_KEY` / `SMTP_URL` (**reserved and inert** — no sen
 reads them in v1, and setting one enables nothing), and `DEV_PASSWORD`.
 Every variable is listed in [getting-started.md](getting-started.md).
 
+`next build` sees none of them: the repository `.env` is dockerignored and Fly
+secrets are runtime-only. The auth instance therefore skips its production secret
+check during the build phase and substitutes an unresolvable `baseURL`
+placeholder, so an image build and CI's production-build job neither fail nor log
+a missing-base-URL warning. Both exemptions key off `NEXT_PHASE`, which `next
+start` leaves unset — a running server always enforces the real values.
+
 ## Later (not v1)
 
 Expansion is plugins, not rewrites: a public **browse/discovery** gallery (the
