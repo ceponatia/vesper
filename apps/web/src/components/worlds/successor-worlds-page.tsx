@@ -20,9 +20,10 @@ import { formatStoryClockShort, storyClockAt } from "@/lib/simulation/clock";
  * engine's front door. One form spins up a complete successor chat — a fresh
  * isolated world (home + town square, the player and the chosen character in
  * the cast, a neighbor, a keepsake), the actor mapping, and the authority
- * flip — with zero backend setup. Below it, every successor chat you already
- * have, with its world clock. The legacy world-model UI this page replaces
- * was deleted the same day (its engine code survives until R6's cleanup).
+ * flip — with zero backend setup. Below it, playable successor chats appear
+ * with their world clock. Engine Comparison (`successor_shadow`) stays under
+ * the admin comparison surface even though the historical listing API still
+ * returns that authority value.
  */
 export function SuccessorWorldsPage() {
   const router = useRouter();
@@ -84,6 +85,14 @@ export function SuccessorWorldsPage() {
     setDeleteTarget(null);
     chats.reload({ silent: true });
   };
+
+  // The legacy GET currently returns every non-legacy authority. Comparison
+  // sessions are intentionally legacy-playable experiments, not successor
+  // worlds, so keep them out of this product surface even before that API is
+  // narrowed by the deferred Worlds dashboard work.
+  const playableChats = (chats.data?.chats ?? []).filter(
+    (chat) => chat.authority === "successor_narrative_view" || chat.authority === "successor_authoritative",
+  );
 
   return (
     <PageContainer>
@@ -163,11 +172,11 @@ export function SuccessorWorldsPage() {
           </div>
         ) : chats.error ? (
           <ErrorState error={chats.error} onRetry={() => chats.reload()} />
-        ) : (chats.data?.chats.length ?? 0) === 0 ? (
+        ) : playableChats.length === 0 ? (
           <p className="text-sm text-paper-500">No worlds yet — create one above.</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {chats.data?.chats.map((chat) => (
+            {playableChats.map((chat) => (
               // The overlay Link navigates the whole row; the action cluster paints
               // above it so a slightly-off tap deletes nothing by accident (the
               // Chats hub's idiom — `.touch-target` gives a ≥44px coarse tap height).
