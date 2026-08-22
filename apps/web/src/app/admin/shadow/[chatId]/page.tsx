@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { ShadowParityChatPage } from "@/components/admin/shadow-parity-page";
+import { EngineComparisonChatPage } from "@/components/admin/shadow-parity-page";
 
-export const metadata: Metadata = { title: "Shadow parity" };
+export const metadata: Metadata = { title: "Engine Comparison" };
 
-/** One chat's shadow-parity report + rows + verdict controls (R4). */
-export default async function ShadowParityChatRoute({ params }: { params: Promise<{ chatId: string }> }) {
+/** One chat's Engine Comparison report, rows, and review controls (R4). */
+export default async function EngineComparisonChatRoute({ params }: { params: Promise<{ chatId: string }> }) {
   const { chatId } = await params;
-  return <ShadowParityChatPage chatId={chatId} />;
+  return <EngineComparisonChatPage chatId={chatId} />;
 }

@@ -96,6 +96,7 @@ simulation rule:
   bridge. Rendering a `storySecond` as "Day 3 · 10:04am" is presentation, and it
   shares its band thresholds and 12-hour formatting with the chat lane's
   calendar. No kernel in this package reads it; they all work in raw seconds.
-- **`apps/web/src/lib/simulation/world-beat.ts` and `shadow-parity.ts`** — a
-  transcript line and a two-lane divergence report. Both are surfaces the
-  application renders, and both stamp their output through that clock.
+- **`apps/web/src/lib/simulation/world-beat.ts` and the Engine Comparison analyzer
+  (`shadow-parity.ts`, historical internal filename)** — a transcript line and a
+  two-lane comparison report. Both are surfaces the application renders, and
+  both stamp their output through that clock.

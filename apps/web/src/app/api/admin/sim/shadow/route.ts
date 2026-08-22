@@ -3,9 +3,10 @@ import { jsonOk, withOwnerAdmin } from "@/server/api";
 import { characterChats, characters, chatParticipants, db, simShadowDivergences } from "@/server/db";
 
 /**
- * Self-scoped shadow-parity index. It enumerates only the administrator's own
- * chats and keeps the result bounded; cross-account or unrestricted search is
- * deliberately absent.
+ * Self-scoped Engine Comparison index. Historical storage/API names retain
+ * `shadow`; user-facing surfaces call the feature Engine Comparison. It
+ * enumerates only the administrator's own chats and keeps the result bounded;
+ * cross-account or unrestricted search is deliberately absent.
  */
 const PAGE_LIMIT = 50;
 
@@ -15,6 +16,7 @@ export const GET = withOwnerAdmin(async (user) => {
       chatId: simShadowDivergences.chatId,
       title: characterChats.title,
       total: sql<number>`count(*)::int`,
+      // Stored verdict `open` means unreviewed/unresolved, not "known bug".
       open: sql<number>`count(*) filter (where ${simShadowDivergences.verdict} = 'open')::int`,
       lastAt: sql<string>`max(${simShadowDivergences.createdAt})`,
     })
