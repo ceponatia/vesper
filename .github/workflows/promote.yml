@@ -2,13 +2,13 @@ name: Promote dev → prod
 
 # A one-click button (Actions tab → "Promote dev → prod" → Run workflow) that
 # opens a pull request from `main` (dev) into `prod`. It does NOT merge — you
-# merge it yourself, after `pnpm verify:full` has passed locally. If a promotion
-# PR is already open it just points you at it instead of creating a duplicate.
+# merge it yourself after the promotion PR's required CodeBuild `verify` check
+# is green. If a promotion PR is already open it just points you at it instead
+# of creating a duplicate.
 #
-# This is the repository's only remaining workflow: CI was removed when Actions
-# minutes ran out, and verification now runs locally through `scripts/verify.sh`
-# (enforced on every push by the `.husky/pre-push` hook). Keep it that way — a
-# new workflow here is a new bill.
+# CI lives in `.github/workflows/ci.yml`. A PR targeting `prod` deliberately
+# forces the complete release-candidate suite — lint, static checks, unit tests,
+# engine integration and the production build — regardless of changed paths.
 on:
   workflow_dispatch:
 
@@ -45,4 +45,4 @@ jobs:
 
           gh pr create --repo "$REPO" --base prod --head main \
             --title "Promote dev → prod ($(date -u +%Y-%m-%d))" \
-            --body $'Automated promotion of `main` (dev) into `prod`.\n\nRun `pnpm verify:full` on `main` before merging — there is no CI to check this for you.'
+            --body $'Automated promotion of `main` (dev) into `prod`.\n\nThis prod-bound PR runs the complete CodeBuild CI suite, including engine integration and the production build. Merge only after the required `verify` check is green.'
