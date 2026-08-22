@@ -461,8 +461,8 @@ breakup or no-contact transition onto scope-specific revocation, but improvement
 never auto-grants, recovery never restores a revoked grant, and a fresh grant
 from the character is always required. The
 [directional permission owner](romantic-contact-affordances.spec.permission.md)
-is the companion implementation contract and must be reconciled to these
-2026-08-22 rulings before future scope/revocation work begins.
+is the reconciled companion implementation contract for these 2026-08-22
+scope/revocation rulings.
 
 ### The narrow romantic action lane
 
@@ -498,10 +498,9 @@ because it is the smallest complete one — a single owner, one place on the bod
 one expiry rule — and conserved transfer is the second, because taking material
 from one surface and putting it on another atomically is a larger piece of
 architecture than a first proof should carry. Detail:
-[observations, effects, and presentation routing](romantic-contact-affordances.spec.effects.md).
-That companion spec is the implementation contract and must be reconciled to
-this 2026-08-22 mark-first/body-surface ruling before Track D implementation
-begins.
+[observations, effects, and sensory routing](romantic-contact-affordances.spec.effects.md).
+That companion spec is reconciled to the 2026-08-22 mark-first, body-surface,
+and modality-specific sensory rulings.
 
 ---
 
@@ -614,7 +613,7 @@ routing, and a shared routing envelope may carry the channel, but each sense
 keeps its own observation contract owned by its own subsystem, and they are
 never collapsed into one generic cross-sensory type. Any change to the shared
 contract is designed across domains, never from contact alone. Detail:
-[observations, effects, and presentation routing](romantic-contact-affordances.spec.effects.md).
+[observations, effects, and sensory routing](romantic-contact-affordances.spec.effects.md).
 
 Two further boundaries follow the same rule:
 
@@ -935,11 +934,11 @@ the sensory package boundary, whether the shared observation contract should
 carry a channel, who owns residue and marks, which effect to prove first, the
 shape of future permission scopes, and whether a relationship change should
 revoke permission — was resolved by owner rulings on 2026-08-22 and is recorded
-in this plan. The companion
+in this plan and in the reconciled companion
 [effects spec](romantic-contact-affordances.spec.effects.md) and
-[permission spec](romantic-contact-affordances.spec.permission.md) still need to
-be reconciled to those rulings before their respective future implementation
-slices begin; this plan must not claim that reconciliation has already happened.
+[permission spec](romantic-contact-affordances.spec.permission.md). Their future
+implementation slices must follow those recorded rulings rather than reopening
+the settled product questions implicitly.
 
 ---
 
@@ -975,10 +974,10 @@ when a spec completes, this plan records that in one line; when behavior ships
 to players, the matching reference doc under `docs/` is updated in the same
 change.
 
-Before Track D or future permission-scope/revocation implementation begins,
-reconcile the effects and permission companion specs to the 2026-08-22 owner
-rulings recorded here; until then this plan is the ruling record and the older
-spec language is not evidence that those questions remain open.
+The effects and permission companion specs were reconciled to the 2026-08-22
+owner rulings on 2026-08-22. Future implementation work must update the relevant
+companion spec and this plan together whenever a later owner ruling changes one
+of those boundaries.
 
 Companion documents for this topic:
 
@@ -987,7 +986,7 @@ Companion documents for this topic:
 - [scene and body relations](romantic-contact-affordances.spec.scene.md)
 - [character actor control](romantic-contact-affordances.spec.actor-control.md)
 - [directional permission owner](romantic-contact-affordances.spec.permission.md)
-- [observations, effects, and presentation routing](romantic-contact-affordances.spec.effects.md)
+- [observations, effects, and sensory routing](romantic-contact-affordances.spec.effects.md)
 - [foot domain](romantic-contact-affordances.spec.foot.md)
 - [intimate domain](romantic-contact-affordances.spec.intimate.md)
 - [truth-source audit](romantic-contact-affordances.audit.md)
