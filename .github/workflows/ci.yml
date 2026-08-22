@@ -5,16 +5,22 @@ name: CI
 # labels — GitHub-native checks UI, AWS per-minute billing, zero idle cost.
 # This suite is the shared record and the promotion gate.
 #
-# Compute is partitioned per job via environment overrides in the runs-on
-# label. Every job except `integration` runs on Lambda compute (linux-lambda,
-# nodejs22 image), which starts in seconds instead of EC2 instance
-# provisioning: classify and the `verify` aggregate get 4GB; lint, static,
-# unit, and the production build get 8GB (their 6144/4096 MB Node heaps fit).
-# Lambda jobs have a hard 15-minute runtime ceiling, and the project-level
-# timeout does not apply to them. `integration` keeps the bare label and the
-# project's EC2 default (LINUX_CONTAINER, privileged): it needs Docker for
-# the Postgres container, which Lambda compute cannot run. The EC2 project
-# timeout is reduced to 15 minutes AWS-side as a runaway-cost guard.
+# Compute is partitioned per job across two CodeBuild runner projects.
+# Every job except `integration` runs on Lambda compute (linux-lambda,
+# nodejs22 image) via the `vesper-ci-lambda` project, which starts in seconds
+# instead of EC2 instance provisioning: classify and the `verify` aggregate
+# get 4GB; lint, static, unit, and the production build get 8GB (their
+# 6144/4096 MB Node heaps fit). Lambda jobs have a hard 15-minute runtime
+# ceiling, and project-level timeouts do not apply to them. `integration`
+# keeps the bare `vesper-ci` label and that project's EC2 default
+# (LINUX_CONTAINER, privileged): it needs Docker for the Postgres container,
+# which Lambda compute cannot run. Two projects are unavoidable, not styling:
+# privilegedMode is a project-level setting the Docker job requires, and a
+# privileged project SILENTLY ignores Lambda label overrides (verified
+# 2026-08-22 — the jobs fall back to EC2 with green checks), so the Lambda
+# jobs live on an unprivileged twin. The EC2 project timeout is reduced to
+# 15 minutes AWS-side as a runaway-cost guard. Always include the image token
+# in Lambda labels — the docs' image-omitted form also silently falls back.
 #
 # Draft PRs bill nothing: every job is draft-guarded, so pushes to a draft run
 # zero jobs. Marking a PR ready for review (`gh pr ready`) runs the full
@@ -51,7 +57,7 @@ jobs:
     # Draft gate for the whole workflow: every other job `needs` this one, so
     # skipping it here skips the entire suite for draft PRs at zero cost.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       code: ${{ steps.classify.outputs.code }}
@@ -222,7 +228,7 @@ jobs:
     name: lint
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -240,7 +246,7 @@ jobs:
     name: static checks
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
     steps:
       - uses: actions/checkout@v4
         with:
@@ -273,7 +279,7 @@ jobs:
     name: unit tests
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -328,7 +334,7 @@ jobs:
     # workflow_dispatch and for prod-bound PRs, so the release-candidate run
     # and every promotion still build.
     if: needs.changes.outputs.build == 'true'
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-8GB
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -356,7 +362,7 @@ jobs:
       - unit
       - integration
       - production-build
-    runs-on: codebuild-vesper-ci-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
+    runs-on: codebuild-vesper-ci-lambda-${{ github.run_id }}-${{ github.run_attempt }}-linux-lambda-nodejs22-4GB
     steps:
       - name: Require every applicable gate
         env:
