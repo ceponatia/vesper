@@ -219,12 +219,18 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     // character-chat state row still exists as compatibility/storage for other
     // surfaces, but it is NOT a second wardrobe authority. Reject only an actual
     // wardrobe change (the state-tools form submits its unchanged wardrobe fields
-    // on every save) so unrelated state edits remain usable.
+    // on every save) so unrelated state edits remain usable. Heal the comparison
+    // state through the same compatibility seam GET uses, so an older raw id-marker
+    // cannot make an unchanged form look like a wardrobe edit.
     if (
       target.characterId === owned.participant.characterId &&
       isSimRoutedAuthority(await readChatEngineAuthority(chatId))
     ) {
-      const current = (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile);
+      const current = await resolveSeededOutfit(
+        (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile),
+        user.id,
+        profile,
+      );
       const wardrobeChanged =
         (body.value.garmentOperations?.length ?? 0) > 0 ||
         (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
