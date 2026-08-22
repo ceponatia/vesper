@@ -68,11 +68,12 @@ Use the same **Engine Comparison** launcher and choose **Stop comparison**.
 Stopping:
 
 - returns the conversation to ordinary `legacy_chat` authority;
-- removes the mirror branch/actor mappings from the chat;
-- deletes a mirror world that was created by the Engine Comparison service;
-- **keeps all recorded comparison rows and rulings** for later review.
+- removes the live mirror branch/actor mappings from the chat;
+- **keeps all recorded comparison rows and rulings** for later review;
+- deletes a service-created mirror only when that mirror produced no comparison rows;
+- retains an evidence-bearing mirror world/branch as inert provenance because recorded rows hold a required branch FK.
 
-A historical/manually mapped comparison world is unlinked but is not destructively deleted unless the service can prove it owns that world.
+A retained mirror is no longer attached to or consulted by the conversation. Starting comparison again creates a new mirror from the chat's then-current state. Historical/manually mapped comparison worlds are likewise never destructively deleted unless the service can prove they are managed and row-free.
 
 ## What runs during a comparison
 
