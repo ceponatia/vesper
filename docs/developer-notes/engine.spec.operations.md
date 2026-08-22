@@ -20,9 +20,9 @@ normative-keyword rules (MUST/SHOULD/MAY) are defined in the hub.
 
 The UI must distinguish these operations.
 
-### 29.2 Legacy chat lane
+### 29.2 Character-chat lane
 
-Legacy character chat is a separate live lane, not a transitional state. Its group
+Character chat is a separate live lane, not a transitional state. Its group
 regenerate MUST snapshot and restore every member's mutable pre-drift state — a
 primary-only snapshot violates rollback integrity — and a reach-back rerun that cannot
 restore all causal state MUST be rejected or implemented as a branch.
@@ -291,7 +291,7 @@ Initial acceptance:
 
 ### 37.1 Lane separation
 
-The two lanes stay separate: legacy character chat, and successor chats bound to their own
+The two lanes stay separate: character chat, and successor chats bound to their own
 simulated world and authoritative per the per-chat `engine_authority` flag. New interaction
 patterns still prove out in the chat lane first. A chat-lane domain moves behind an adapter
 only after the successor contract for it exists, and no fact may have two authorities.
@@ -317,13 +317,15 @@ authorized source rows. Neither operation changes domain history.
 
 Authority flags apply per world or branch:
 
-- legacy_chat;
+- `legacy_chat` (historical persisted identifier for the character-chat pipeline);
 - successor_shadow;
 - successor_authoritative;
 - successor_narrative_view;
 - successor_rag_eligibility.
 
-The application must display or log which authority served a turn.
+The application must display or log which authority served a turn. Documentation and
+product prose call the first lane **character chat**; the `legacy_chat` name is retained here
+only because it is the current wire/schema value.
 
 ## 38. Cheap architectural experiments
 
@@ -445,24 +447,24 @@ that needs it.
     clock is the one time surface for a sim-routed chat, and the player keeps control
     of time skips.** Everything a sim-routed chat presents about time — narrator prose
     color, the header clock chip, skip-landing labels — reads the branch's
-    `storySecond`, never the legacy chat clock (parity throughout the system; the
-    legacy clock keeps governing legacy chats until R5 migrates the time domain). The
-    player retains the ability to advance time by minutes / hours / days as an ordinary
-    admitted command, alongside time advancing naturally through play. Near-term
-    richness is what `storySecond` truthfully encodes (story day index + time of day +
-    daylight band); **full calendar integration** (a calendar anchor on the world
-    config mapping story time → weekday/date, with the optional-player-control surface)
-    is the R5 time/clock domain's product shape, expanded there — not invented early in
-    presentation.
+    `storySecond`, never the character-chat clock (parity throughout the system; the
+    character-chat clock keeps governing character-chat conversations until that domain
+    is deliberately adapted). The player retains the ability to advance time by minutes /
+    hours / days as an ordinary admitted command, alongside time advancing naturally
+    through play. Near-term richness is what `storySecond` truthfully encodes (story day
+    index + time of day + daylight band); **full calendar integration** (a calendar anchor
+    on the world config mapping story time → weekday/date, with the optional-player-control
+    surface) is the R5 time/clock domain's product shape, expanded there — not invented
+    early in presentation.
 18. **Sim-chat operation routing parity** — RESOLVED (2026-07-22, the presentation-
     charter planning pass): **no operation on a sim-routed chat ever falls back to the
-    legacy narrator — every operation has successor semantics or is refused.**
+    character-chat narrator — every operation has successor semantics or is refused.**
     Regenerate/rerun re-render the SAME committed cut (same events, fresh prose;
     §22.3/§23 rerender-creates-nothing, confirm-by-id supersedence governing effect
     arming on the retake) — this is a different *telling*, not a retake of *outcome*;
-    outcome-level retakes remain branch forks (§29). Attachments and legacy action
-    chips are refused with the affordance hidden until each earns designed successor
-    semantics. Detail: `presentation-charter.plan.md` §4.
+    outcome-level retakes remain branch forks (§29). Attachments and character-chat
+    action chips are refused with the affordance hidden until each earns designed
+    successor semantics. Detail: `presentation-charter.plan.md` §4.
 19. **Successor "Continue" advances time** — RESOLVED (2026-07-22): Continue (and the
     character-opens beat) runs a real successor turn with **no player utterance** —
     the engagement span advances per ruling 1, the world may act, and the narrator
