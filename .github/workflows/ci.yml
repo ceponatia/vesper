@@ -135,7 +135,7 @@ jobs:
             esac
 
             case "$path" in
-              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|scripts/eval/engine-gate1/*)
+              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|apps/web/src/contracts/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
                 engine=true
                 ;;
             esac
