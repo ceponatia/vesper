@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listSdRecipes, sdRecipeById, sdRecipes } from "./sd-recipe-registry";
+import { listSdRecipes, sdRecipeById, sdRecipeRevision, sdRecipes } from "./sd-recipe-registry";
 import { sdRecipeSchema } from "./sd-recipes";
 
 /**
@@ -18,16 +18,26 @@ import { sdRecipeSchema } from "./sd-recipes";
  */
 
 describe("seeded SD recipes", () => {
-  it.each(sdRecipes)("$id satisfies the recipe contract and resolves by id", (recipe) => {
+  it.each(sdRecipes)("$id@$revision satisfies the recipe contract and resolves", (recipe) => {
     expect(sdRecipeSchema.parse(recipe)).toEqual(recipe);
     expect(recipe.id.startsWith(`${recipe.family}/`)).toBe(true);
-    expect(sdRecipeById(recipe.id)).toBe(recipe);
-    expect(listSdRecipes(recipe.family)).toContain(recipe);
+    // The provenance lookup reaches every registered revision, live or retired…
+    expect(sdRecipeRevision(recipe.id, recipe.revision)).toBe(recipe);
+    // …while the live lookup and the operator list only ever surface the
+    // highest revision of an id. With single-revision entries the two coincide;
+    // the day a revision 2 lands, this same derivation proves revision 1 stays
+    // resolvable without being offered.
+    const live = sdRecipeById(recipe.id);
+    if (live === undefined) throw new Error(`no live recipe resolves for ${recipe.id}`);
+    expect(live.id).toBe(recipe.id);
+    expect(live.revision).toBeGreaterThanOrEqual(recipe.revision);
+    expect(listSdRecipes(recipe.family)).toContain(live);
   });
 
-  it("gives every recipe a unique id", () => {
-    // `sdRecipeById` returns the FIRST match, so a duplicated id makes one
-    // recipe permanently unreachable while both still appear in the lab's list.
-    expect(new Set(sdRecipes.map((recipe) => recipe.id)).size).toBe(sdRecipes.length);
+  it("never registers the same id + revision pair twice", () => {
+    // `sdRecipeRevision` returns the FIRST match, so a duplicated pair makes
+    // one entry permanently unreachable — and provenance that recorded the pair
+    // could resolve to either set of values.
+    expect(new Set(sdRecipes.map((recipe) => `${recipe.id}@${recipe.revision}`)).size).toBe(sdRecipes.length);
   });
 });

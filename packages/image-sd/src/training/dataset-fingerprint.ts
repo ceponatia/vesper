@@ -28,24 +28,34 @@ import type { SdTrainingDataset, SdTrainingImage } from "./training-manifest";
  * 2. **Content-sensitive.** A changed URI, caption, view or tag changes the
  *    fingerprint. Those are exactly the edits that change what the LoRA would
  *    learn, and a fingerprint over ids alone would miss all of them.
- * 3. **Unambiguous.** Fields are joined with ASCII separator characters rather
- *    than punctuation that can legitimately appear in a caption or a tag, so no
- *    caption can be written that makes one image serialize as two.
+ * 3. **Unambiguous.** Every field is length-prefixed, so no authored string can
+ *    move content across a field boundary: a URI that happens to contain the
+ *    separator character still serializes as exactly one URI, because the
+ *    prefix already said how far the URI runs. A separator-joined encoding
+ *    without the prefixes would let two different images collide whenever an
+ *    authored value contained a separator — and the schemas deliberately forbid
+ *    no character, because a caption is prose.
  *
  * FNV-1a is the repository's one string hash (`@vesper/contracts`), shared so
  * that a fingerprint means the same thing in every workspace. Non-cryptographic
  * and 32 bits: a staleness key, never a security or dedup boundary.
  */
 
-/** Field separator — U+001F, the ASCII unit separator. */
+/** Field separator — U+001F, the ASCII unit separator. Structural only: content never leaks past its length prefix. */
 const FIELD = "\u001f";
 /** Record separator — U+001E. Divides one image's line from the next. */
 const RECORD = "\u001e";
-/** Tag separator — U+001D. Tags keep their given order; it is authored, not incidental. */
-const TAG = "\u001d";
+
+/** `<length>:<value>` — the prefix, not the separator, is what bounds the field. */
+function lengthPrefixed(part: string): string {
+  return `${part.length}:${part}`;
+}
 
 /**
- * One image as a canonical line.
+ * One image as a canonical line: id, uri, view, caption, tag count, then each
+ * tag in its given order — the order is authored, not incidental. The tag count
+ * is itself a field so the line stays parseable, and therefore unambiguous,
+ * even though tags are variable-length.
  *
  * An absent optional field and an empty one serialize identically. That is a
  * deliberate reading: a caption of `""` says nothing about the image, exactly as
@@ -53,7 +63,9 @@ const TAG = "\u001d";
  * LoRA because a text box was cleared rather than left alone.
  */
 function canonicalImageLine(image: SdTrainingImage): string {
-  return [image.id, image.uri, image.view ?? "", image.caption ?? "", (image.tags ?? []).join(TAG)].join(FIELD);
+  const tags = image.tags ?? [];
+  const parts = [image.id, image.uri, image.view ?? "", image.caption ?? "", String(tags.length), ...tags];
+  return parts.map(lengthPrefixed).join(FIELD);
 }
 
 /** The dataset's staleness key: `fnv1aHex` over its canonical, id-sorted serialization. */

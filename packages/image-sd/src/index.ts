@@ -30,6 +30,7 @@ export {
   sdModelFamilySchema,
   sdRecipeById,
   sdRecipeIdSchema,
+  sdRecipeRevision,
   sdRecipeSchema,
   sdRecipes,
   sdSamplerSchema,

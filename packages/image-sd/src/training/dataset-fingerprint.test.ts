@@ -41,7 +41,7 @@ const PROFILE_IMAGE: SdTrainingImage = {
 const GOLDEN_DATASET: SdTrainingDataset = { images: [FRONT_IMAGE, PROFILE_IMAGE] };
 
 /** The pinned output of `GOLDEN_DATASET`. Changing this line is changing the contract. */
-const GOLDEN_FINGERPRINT = "13044efe";
+const GOLDEN_FINGERPRINT = "1b1e61a8";
 
 function withFrontImage(over: Partial<SdTrainingImage>): SdTrainingDataset {
   return { images: [{ ...FRONT_IMAGE, ...over }, PROFILE_IMAGE] };
@@ -63,5 +63,15 @@ describe("SD training dataset fingerprint", () => {
     { name: "a re-tagged image", dataset: withFrontImage({ tags: ["daylight", "outdoor"] }) },
   ])("treats $name as a different dataset", ({ dataset }) => {
     expect(fingerprintSdTrainingDataset(dataset)).not.toBe(GOLDEN_FINGERPRINT);
+  });
+
+  it("keeps images distinct when authored content contains the field separator", () => {
+    // The exact collision a separator-joined encoding admits: the same
+    // characters shifted across a field boundary. The length prefixes are the
+    // only thing keeping these two apart — the schemas forbid no character.
+    const separator = String.fromCharCode(31);
+    const left: SdTrainingDataset = { images: [{ id: "a", uri: `b${separator}c` }] };
+    const right: SdTrainingDataset = { images: [{ id: `a${separator}b`, uri: "c" }] };
+    expect(fingerprintSdTrainingDataset(left)).not.toBe(fingerprintSdTrainingDataset(right));
   });
 });

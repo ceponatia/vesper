@@ -22,6 +22,15 @@ import type { SdModelFamily, SdRecipe } from "./sd-recipes";
  * compiler proves the SHAPE, and `sd-recipe-registry.test.ts` proves every entry
  * still satisfies the schema's value rules and cross-field refinement. Parsing
  * here would make that test assert its own setup.
+ *
+ * **A revision bump ADDS an entry; it never edits one in place.** The registry
+ * may hold several revisions of the same id, and the highest revision is the
+ * live one. This is what makes the recipe contract's promise real: Vesper's
+ * render provenance persists `{recipe id, revision}`, so an image rendered
+ * under revision 1 must still resolve to the frozen values that produced it
+ * after revision 2 becomes the one operators are offered. A registry that
+ * replaced entries would leave every historical render pointing at settings
+ * that no longer exist anywhere but git archaeology.
  */
 export const sdRecipes: readonly SdRecipe[] = [
   {
@@ -68,19 +77,44 @@ export const sdRecipes: readonly SdRecipe[] = [
   },
 ];
 
-/** The recipe with this exact id, or nothing. Ids are unique across families. */
-export function sdRecipeById(id: string): SdRecipe | undefined {
-  return sdRecipes.find((recipe) => recipe.id === id);
+/** The highest revision per id among these entries — the ones an operator may still run. */
+function latestByIdOf(entries: readonly SdRecipe[]): Map<string, SdRecipe> {
+  const latest = new Map<string, SdRecipe>();
+  for (const recipe of entries) {
+    const current = latest.get(recipe.id);
+    if (current === undefined || recipe.revision > current.revision) latest.set(recipe.id, recipe);
+  }
+  return latest;
 }
 
 /**
- * Every recipe, or every recipe of one family.
+ * The LIVE recipe with this id — the highest registered revision — or nothing.
+ * Ids are unique across families, so this never has to disambiguate.
+ */
+export function sdRecipeById(id: string): SdRecipe | undefined {
+  return latestByIdOf(sdRecipes.filter((recipe) => recipe.id === id)).get(id);
+}
+
+/**
+ * One exact frozen revision, or nothing. This is the provenance lookup: an
+ * image row that recorded `{recipe id, revision}` resolves through here to the
+ * values that actually produced it, whether or not that revision is still the
+ * live one.
+ */
+export function sdRecipeRevision(id: string, revision: number): SdRecipe | undefined {
+  return sdRecipes.find((recipe) => recipe.id === id && recipe.revision === revision);
+}
+
+/**
+ * Every live recipe — the highest revision of each id — or every live recipe of
+ * one family. Retired revisions are deliberately absent: they exist to resolve
+ * history, not to be offered to an operator picking a recipe to run.
  *
  * The family filter exists because §6 keeps SDXL and SD3.5 on separate internal
  * workflows: a caller offering recipes for a registered SDXL deployment must not
  * be able to hand it an `sd35/*` name that the deployment has no nodes for.
  */
 export function listSdRecipes(family?: SdModelFamily): readonly SdRecipe[] {
-  if (family === undefined) return sdRecipes;
-  return sdRecipes.filter((recipe) => recipe.family === family);
+  const scoped = family === undefined ? sdRecipes : sdRecipes.filter((recipe) => recipe.family === family);
+  return [...latestByIdOf(scoped).values()];
 }
