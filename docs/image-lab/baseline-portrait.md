@@ -20,11 +20,11 @@ The admin's instruction becomes the base prompt. The experiment records the prof
 
 ## Important: the Model picker is not an override
 
-The New Experiment form currently shows the same registry-backed Model picker used by other experiment kinds. For a portrait baseline, that picker is misleading: selecting a model does not force the baseline to use it.
+The New Experiment form shows the same registry-backed Model picker used by other experiment kinds. For a portrait baseline, that picker is misleading: selecting a model does not force the baseline to use it.
 
-At run time the baseline resolves the production variant profile and then writes that profile's resolved model slug back onto the experiment. Whatever model slug was stored when the experiment was created is replaced. This is intentional in the runner: a baseline is supposed to reproduce production selection, not force a different model.
+At run time the baseline resolves the production variant profile and then writes that profile's resolved model slug back onto the experiment. Whatever model slug was stored when the experiment was created is replaced. This is intentional in the runner: a baseline reproduces production selection rather than forcing a different model.
 
-Accordingly, use a baseline portrait only when the production-profile result is the thing you want to compare against. To exercise a lab-only renderer or a specific registered model, the lab needs the general model-trial path described in [Known gaps](known-gaps-and-recommendations.md).
+A baseline portrait is therefore only appropriate when the production-profile result is the comparison target. The lab has no neutral selected-model smoke-test kind; see [Current limitations](limitations.md).
 
 ## Version behavior
 
