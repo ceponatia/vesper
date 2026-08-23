@@ -189,6 +189,12 @@ class Predictor(BasePredictor):
         COMFY_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         self._fetch_weights()
+        # Once the build-time cache has been resolved and hash-verified, neither
+        # PuLID nor another Hugging Face consumer in the ComfyUI subprocess may
+        # perform a freshness check against a moving upstream `main`. A missing
+        # cache had its one deliberate network fallback above; normal inference
+        # is self-contained from this point onward.
+        os.environ["HF_HUB_OFFLINE"] = "1"
         self._start_server()
 
     # -- weights ------------------------------------------------------------
@@ -226,29 +232,41 @@ class Predictor(BasePredictor):
                     )
 
     def _fetch_from_hub(self, artifact: dict[str, Any]) -> None:
-        """Warm one Hugging Face hub artifact into the cache its consumer reads,
-        and verify it against the manifest digest.
+        """Resolve one Hub artifact cache-first and verify its frozen digest.
 
-        Verified on EVERY boot, where the plain-download path above verifies only
-        the download that produced the file. The asymmetry is the point rather
-        than an inconsistency: a plain download never runs again once the file
-        exists, so its bytes cannot change under a warm container — but
-        `hf_hub_download` re-resolves the repo's `main` revision each time it is
-        called, so this is the one path where a warm boot can legitimately come
-        back holding different bytes than the freeze recorded. Re-hashing one
-        1.7 GB file is a couple of seconds against a boot that already spends
-        minutes loading torch; re-hashing the other ~15 GB would not be.
+        A normal boot must not ask the Hub whether `main` moved: the image already
+        contains the accepted snapshot, and a freshness check would make an
+        immutable Replicate version depend on future upstream state. Inspect the
+        baked cache with `try_to_load_from_cache`, whose contract performs no HTTP
+        request. Only a genuinely missing cache entry gets one defensive online
+        download, after which setup forces the ComfyUI subprocess into Hugging
+        Face offline mode.
+
+        This artifact is hash-verified on every boot. Re-hashing its 1.7 GB is
+        cheap relative to loading the renderer and protects the one cache tree
+        whose consumer resolves through symbolic Hub refs rather than a fixed
+        plain-file path.
         """
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, try_to_load_from_cache
 
-        _log(f"  {artifact['name']}: resolving through huggingface_hub")
-        resolved = FsPath(
-            hf_hub_download(
-                repo_id=artifact["hf_repo_id"],
-                filename=artifact["hf_filename"],
-                cache_dir=str(HF_HUB_CACHE_DIR),
-            )
+        cached = try_to_load_from_cache(
+            repo_id=artifact["hf_repo_id"],
+            filename=artifact["hf_filename"],
+            cache_dir=str(HF_HUB_CACHE_DIR),
         )
+        if isinstance(cached, str):
+            resolved = FsPath(cached)
+            _log(f"  {artifact['name']}: using baked Hugging Face cache")
+        else:
+            _log(f"  {artifact['name']}: baked cache missing; downloading defensive fallback")
+            resolved = FsPath(
+                hf_hub_download(
+                    repo_id=artifact["hf_repo_id"],
+                    filename=artifact["hf_filename"],
+                    cache_dir=str(HF_HUB_CACHE_DIR),
+                )
+            )
+
         expected = artifact.get("sha256")
         if expected is None:
             return
@@ -257,14 +275,14 @@ class Predictor(BasePredictor):
             return
         # Remove the symlink AND the blob it points at. Leaving either behind
         # would let the next boot resolve straight back to the rejected bytes
-        # without a network call, and report a cache hit while doing it.
+        # and report a cache hit while doing it.
         blob = resolved.resolve()
         resolved.unlink(missing_ok=True)
         blob.unlink(missing_ok=True)
         raise RuntimeError(
             f"{artifact['name']} resolved from {artifact['hf_repo_id']}/{artifact['hf_filename']} "
-            f"has sha256 {actual}, but weights_manifest.json pins {expected}. The upstream file "
-            f"moved behind its revision; the cached copy was deleted and nothing was kept."
+            f"has sha256 {actual}, but weights_manifest.json pins {expected}. The cached or "
+            f"fallback artifact is not the frozen file; it was deleted and nothing was kept."
         )
 
     def _artifact_path(self, artifact: dict[str, Any]) -> FsPath:

@@ -41,42 +41,66 @@ type WeightArtifact = {
   source_url?: string;
   filename?: string;
   sha256?: string;
+  target_root?: string;
+  target_dir?: string;
   hf_repo_id?: string;
   hf_filename?: string;
 };
 
 type WeightManifest = { artifacts?: WeightArtifact[] };
 
+function expectedBakeDestination(artifact: WeightArtifact): string | null {
+  if (!artifact.filename || artifact.target_dir === undefined) return null;
+  let root: string | null = null;
+  if (artifact.target_root === "comfyui") root = "/ComfyUI";
+  if (artifact.target_root === "facexlib") root = "$FACEXLIB_DIR";
+  if (!root) return null;
+  return [root, artifact.target_dir, artifact.filename].filter(Boolean).join("/");
+}
+
 /**
  * The static renderer weights intentionally appear twice: the manifest is the
  * runtime/provenance contract, while cog.yaml has to contain the build-time
  * download declarations because Cog's build.run commands cannot read source
  * files. If those declarations drift, a rebuild can bake different bytes than
- * the predictor says it pinned. Keep that duplication mechanically checked.
+ * the predictor says it pinned. Keep the identity AND destination mechanically
+ * checked; the Python deployment checker additionally verifies each ordinary
+ * URL + destination + digest as one tuple.
  */
 describe("the SD deployment's baked weights", () => {
-  it("contains every artifact pinned by weights_manifest.json", () => {
-    const deploymentDir = resolve(process.cwd(), "packages/image-sd/deployment");
-    const manifest = JSON.parse(
-      readFileSync(resolve(deploymentDir, "weights_manifest.json"), "utf8"),
-    ) as WeightManifest;
-    const cog = readFileSync(resolve(deploymentDir, "cog.yaml"), "utf8");
+  const deploymentDir = resolve(process.cwd(), "packages/image-sd/deployment");
+  const manifest = JSON.parse(
+    readFileSync(resolve(deploymentDir, "weights_manifest.json"), "utf8"),
+  ) as WeightManifest;
+  const cog = readFileSync(resolve(deploymentDir, "cog.yaml"), "utf8");
 
+  it("contains every artifact pinned by weights_manifest.json at its declared target", () => {
     expect(manifest.artifacts?.length).toBeGreaterThan(0);
     for (const artifact of manifest.artifacts ?? []) {
       const name = artifact.name ?? "<unnamed>";
       const required =
         artifact.kind === "hf_hub"
           ? [artifact.sha256, artifact.filename, artifact.hf_repo_id, artifact.hf_filename]
-          : [artifact.source_url, artifact.sha256, artifact.filename];
+          : [
+              artifact.source_url,
+              artifact.sha256,
+              artifact.filename,
+              expectedBakeDestination(artifact),
+            ];
 
       for (const value of required) {
         expect(value, `${name} has an incomplete manifest declaration`).toBeTruthy();
         expect(
           cog,
-          `${name} is pinned in weights_manifest.json but absent from cog.yaml`,
+          `${name} is pinned in weights_manifest.json but absent or mis-targeted in cog.yaml`,
         ).toContain(value);
       }
     }
+  });
+
+  it("keeps baked Hugging Face assets cache-first and ComfyUI offline", () => {
+    const predictor = readFileSync(resolve(deploymentDir, "predict.py"), "utf8");
+    expect(predictor).toContain("try_to_load_from_cache");
+    expect(predictor).toContain('os.environ["HF_HUB_OFFLINE"] = "1"');
   });
 });
