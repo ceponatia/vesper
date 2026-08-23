@@ -226,7 +226,7 @@ cog build
 cog exec python scripts/check_frozen_closure.py
 ```
 
-Then run representative predictions. `cog run` is the current CLI spelling.
+Then run representative predictions. Use `cog run`:
 
 ```bash
 # Base SDXL.
@@ -287,14 +287,14 @@ atomically. The registry/version process is documented in
 
 - The renderer returns exactly one saved image per prediction.
 - Input images are copied to unique per-prediction filenames and cleaned up after
-  the render; ComfyUI's saved intermediate output is also cleaned up after it is
-  copied to Cog's return path.
+  the render; the ComfyUI-side output is also cleaned up after it is copied to
+  Cog's return path.
 - Unknown recipes, unsupported recipe blocks, invalid dimensions, malformed LoRA
   URLs, and invalid identity/recipe combinations fail before or instead of
   returning a plausible-but-wrong image.
 - A LoRA URL must be HTTP(S) and end in `.safetensors`.
 - ComfyUI runs as a subprocess on localhost. `predict.py` owns startup, readiness
-  polling, submission, history polling, and shutdown/failure detection.
+  polling, submission, history polling, and server-exit/failure detection.
 - Prediction logs include the selected recipe/revision, seed, and resolved
   generation settings. Use those before debugging output by eye.
 
