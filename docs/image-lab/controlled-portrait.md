@@ -27,7 +27,7 @@ The shared render-intent planner decides ordering/capacity and records which ref
 
 ## Model/version behavior
 
-Unlike a baseline, this kind **does** use the experiment's selected model slug. The model must be registered and resolvable to an exact provider version before rendering.
+Unlike a baseline, this kind **does** use the experiment's selected model. The model must be registered and resolvable to an exact provider version before rendering.
 
 ## Raw provider inputs
 
@@ -35,7 +35,7 @@ A controlled portrait is intended to be production-shaped. A raw provider `contr
 
 ## Mode field
 
-The UI currently records `controlled_composition` or `controlled_identity` as the experiment's `mode`. The current runner/recipe path does not consume that value to alter the render request. Treat it as recorded metadata today, not as a proven active bias knob. See [Known gaps](known-gaps-and-recommendations.md).
+The UI offers `identity_priority`, `controlled_composition`, `balanced`, and `style_priority` and records the selected value as the experiment's `mode`. The current runner/recipe path does not consume `row.mode` to alter the render request. Treat it as recorded metadata today, not as a proven active bias knob. See [Known gaps](known-gaps-and-recommendations.md).
 
 ## Verdicts
 
