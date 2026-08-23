@@ -69,4 +69,4 @@ Deleting a fixture removes the hidden control asset. Historical experiments are 
 
 ## Current UI limitation
 
-The extraction service accepts any owned source image id, but the fixture panel's source picker is currently character/portrait-oriented. Scene images, arbitrary lab outputs, and other owned images are not generally selectable from this UI even though the backend extraction contract is broader. See [Known gaps](known-gaps-and-recommendations.md).
+The extraction service accepts any owned source image id, but the fixture panel's source picker is character/portrait-oriented. Scene images, arbitrary lab outputs, and other owned images are not generally selectable from this UI even though the backend extraction contract is broader. See [Current limitations](limitations.md).
