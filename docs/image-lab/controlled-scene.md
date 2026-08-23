@@ -30,7 +30,7 @@ The selected model is honored and must resolve to an exact provider version. Thi
 
 Raw provider-shaped settings are refused because this kind is explicitly meant to test the production request shape. Normalized controls can be carried by the experiment contract when supported by the model/profile.
 
-The UI offers `identity_priority`, `controlled_composition`, `balanced`, and `style_priority`, but the selected Mode value is currently stored only; `runControlled` and the recipe builder do not read `row.mode` to change the request. Treat it as metadata until that wiring exists.
+The UI offers `identity_priority`, `controlled_composition`, `balanced`, and `style_priority`, but the selected Mode value is stored metadata only; `runControlled` and the recipe builder do not read `row.mode` to change the request. See [Current limitations](limitations.md).
 
 ## Verdicts
 
