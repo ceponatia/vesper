@@ -25,6 +25,8 @@ A package is not the default shape for a boundary here. Most module boundaries a
 
 `@vesper/image-replicate` is there for a third reason: a package's **runtime target** is part of its contract, and this one is deliberately server-only. It performs network IO and carries the provider credential, so client-importable layers are barred from importing it. Being server-only is not permission to be ambient, though — it reads no environment. `apps/web/src/server/ai/replicate-runtime.ts` is the only code that reads `REPLICATE_*`; it builds one configured client per process and everything else asks that client.
 
+`@vesper/image-sd` is the Stable Diffusion implementation layer above `@vesper/image-core`: the generation recipes, training-manifest contracts and deployment contracts that are specifically about operating Stable Diffusion well, with no provider IO of its own. It sits at the **same layer rank** as `@vesper/image-replicate`, which is the same architectural statement again: the recipe layer may not call the provider, the transport may not decide what a render should be, and the application is where an SD recipe becomes a Replicate call.
+
 The two kinds of boundary are enforced differently, because they promise different things. A folder boundary is a spelling rule: the ESLint `no-restricted-imports` rules in `eslint.config.mjs` reject the import paths that would cross it. A **workspace** boundary is a containment rule, and spelling cannot decide it — `../../foundation/src/x` never mentions `packages/` and still leaves the package. So `pnpm lint:package-boundaries` (`scripts/check-workspace-imports.ts`) resolves every import and answers the questions ESLint cannot:
 
 - does this relative path stay inside the workspace that wrote it — in **either** direction, so the app cannot reach into package internals either;
@@ -46,6 +48,7 @@ vesper/                  # the workspace root: operational scripts + repo toolin
   packages/              # workspace packages — no app imports (see below)
     contracts/           #   @vesper/contracts: diagnostics, parseOr, determinism primitives
     image-replicate/     #   @vesper/image-replicate: server-only Replicate transport
+    image-sd/            #   @vesper/image-sd: Stable Diffusion recipes, training + deployment contracts
     simulation-core/     #   @vesper/simulation-core: the simulation domain
       src/
         contracts/       #     identities, command/event envelopes, projection contracts
@@ -121,7 +124,7 @@ pure half — its identities, envelopes, projection contracts and replay kernels
 the `@vesper/simulation-core` package; `server/engine/simulation/` keeps everything
 stateful, which is the durable stores that read and write those projections.
 
-- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/simulation-core/README.md](../packages/simulation-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md), [packages/image-replicate/README.md](../packages/image-replicate/README.md).)
+- **Workspace packages import nothing from the app.** Neither by alias (`@/…`) nor by a relative path that climbs out of the package — both spellings reach the same modules, so both are banned. The dependency runs one way: the app consumes the package. When a package looks like it needs something from the app, the value is passed in as an argument or the code belongs in the app; another package is imported by its name, never by path. (Lint-enforced. Rationale and the current packages: [packages/image-core/README.md](../packages/image-core/README.md), [packages/simulation-core/README.md](../packages/simulation-core/README.md), [packages/contracts/README.md](../packages/contracts/README.md), [packages/image-replicate/README.md](../packages/image-replicate/README.md), [packages/image-sd/README.md](../packages/image-sd/README.md).)
 - `apps/web/src/contracts` and `apps/web/src/lib` are **pure**: no database, no fetch, no env reads. They must be importable from both server and client code. (Lint-enforced — see the boundary rule in `eslint.config.mjs`.)
 - Server modules export through their `index.ts` barrel; other modules import the barrel, not deep paths. (Lint-enforced.)
 - React components get server data via route handlers / server components only.

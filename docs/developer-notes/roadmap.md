@@ -80,6 +80,12 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   provider (Featherless) for models no commercial host carries; the recorded
   comparison that would move a default is still the next step.
 
+- **Stable Diffusion rendering package** —
+  [plan](sd-rendering-package.plan.md) — `@vesper/image-sd` gives SDXL
+  character LoRAs, identity conditioning, and ControlNet recipes behind the
+  existing profile picker; Stage 1 (the package, its contracts, and the
+  workspace wiring) is in, and the Vesper-owned Replicate renderer is next.
+
 ## Next (queued, in dependency order)
 
 **Unblocked today — only scheduling gates these:** data lifecycle, resilience

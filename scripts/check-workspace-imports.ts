@@ -80,6 +80,12 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
     // joins them; it is the only workspace above both.
     "@vesper/image-core": 20,
     "@vesper/simulation-core": 20,
+    // 30 twice, deliberately: the SD recipe/training layer and the Replicate
+    // transport are PEERS above image-core. Equal rank means neither may
+    // import the other — the SD package defines what a render should be, the
+    // transport executes predictions; the application is where an SD recipe
+    // becomes a Replicate call.
+    "@vesper/image-sd": 30,
     "@vesper/image-replicate": 30,
   },
   applicationLayer: 100,
@@ -87,6 +93,7 @@ export const VESPER_WORKSPACE_POLICY: WorkspacePolicy = {
     "@vesper/contracts": "universal",
     "@vesper/image-core": "universal",
     "@vesper/simulation-core": "universal",
+    "@vesper/image-sd": "universal",
     "@vesper/image-replicate": "server",
   },
   serverOnlyModules: ["next", "sharp", "pg", "drizzle-orm", "better-auth", "replicate", "server-only"],

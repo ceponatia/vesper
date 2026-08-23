@@ -61,7 +61,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["sharp", "pg"],
   // Workspace packages ship TypeScript source (no build step), so Next has to
   // compile them the same way it compiles src/.
-  transpilePackages: ["@vesper/contracts", "@vesper/image-core", "@vesper/image-replicate", "@vesper/simulation-core"],
+  transpilePackages: ["@vesper/contracts", "@vesper/image-core", "@vesper/image-replicate", "@vesper/image-sd", "@vesper/simulation-core"],
   // Dev-only: let LAN devices (a phone on the same WiFi) use the dev server.
   // Next 16 measures "cross-origin" dev requests (HMR, RSC, /_next/* client
   // runtime) against localhost, not the current host — so a page opened at the

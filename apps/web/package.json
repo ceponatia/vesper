@@ -14,6 +14,7 @@
     "@vesper/contracts": "workspace:*",
     "@vesper/image-core": "workspace:*",
     "@vesper/image-replicate": "workspace:*",
+    "@vesper/image-sd": "workspace:*",
     "@vesper/simulation-core": "workspace:*",
     "ai": "^6.0.201",
     "better-auth": "^1.6.20",

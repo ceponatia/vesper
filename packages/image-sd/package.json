@@ -1,0 +1,24 @@
+{
+  "name": "@vesper/image-sd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stable Diffusion implementation layer: versioned SD recipes, the Vesper-owned renderer input contract, training manifests, and evaluation fixtures.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vesper/contracts": "workspace:*",
+    "@vesper/image-core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
+  }
+}
