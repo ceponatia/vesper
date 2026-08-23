@@ -228,19 +228,19 @@ Check three things before going further:
 
 ## 3. Freeze
 
-Do this once, on the first build that works, and commit the result.
+Done once, on the first build that worked (2026-08-23), and committed.
 
-1. **Record every digest.** For each artifact in `weights_manifest.json`, take
-   the sha256 of the downloaded file and write it into the `sha256` field. From a
-   running container: `sha256sum /ComfyUI/models/checkpoints/*.safetensors` and so
-   on for each `target_dir`. Every one is null today and marked
-   `FROZEN-AT-FIRST-BUILD`; once filled, a mismatch fails the boot loudly instead
-   of rendering with a file that quietly moved.
-2. **Record the transitive Python closure.** `requirements.txt` pins only direct
-   dependencies. Run `pip freeze` inside the built image and append the full
-   output, so a resolver cannot move a transitive package underneath a frozen
-   renderer. This is the second `FROZEN-AT-FIRST-BUILD` marker — `grep -rn
-   FROZEN-AT-FIRST-BUILD .` finds both.
+1. **Every digest is recorded.** Each artifact in `weights_manifest.json`
+   carries the sha256 of a verified download of its `source_url` (all 13
+   fetched and hashed at the freeze). A mismatch at setup fails the boot loudly
+   instead of rendering with a file that quietly moved. If an artifact is ever
+   deliberately replaced, record the new digest in the same change that
+   repoints it.
+2. **The transitive Python closure is recorded** in `frozen-requirements.txt` —
+   `pip freeze` from the first successful build. It is a comparison record, not
+   an install list (appending it to `requirements.txt` would double-pin the
+   direct dependencies, which pip rejects). When revising the image, diff a
+   fresh `pip freeze` against it before trusting the rebuild.
 3. **Consider mirroring the weights.** Every `source_url` points at a third party.
    Hugging Face repositories are renamed, made private and deleted; a renderer
    that cannot rebuild is a renderer that cannot be revised. Re-host the frozen

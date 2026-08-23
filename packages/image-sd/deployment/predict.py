@@ -309,35 +309,35 @@ class Predictor(BasePredictor):
             ),
             default="",
         ),
-        reference_image: Path = Input(
+        reference_image: Path | None = Input(
             description="Identity reference for PuLID conditioning. Absent means no identity conditioning runs.",
             default=None,
         ),
-        depth_image: Path = Input(
+        depth_image: Path | None = Input(
             description=(
                 "An ALREADY-PREPROCESSED depth map for the depth ControlNet. This model runs no "
                 "preprocessors — send a depth map, not a photograph."
             ),
             default=None,
         ),
-        pose_image: Path = Input(
+        pose_image: Path | None = Input(
             description=(
                 "An ALREADY-PREPROCESSED OpenPose skeleton render for the pose ControlNet. As with "
                 "depth, no preprocessing happens here."
             ),
             default=None,
         ),
-        lora_weights: str = Input(
+        lora_weights: str | None = Input(
             description="URL of one character LoRA (.safetensors). Absent means no LoRA is loaded.",
             default=None,
         ),
-        lora_scale: float = Input(
+        lora_scale: float | None = Input(
             description="Overrides the recipe's LoRA scale. Ignored when no LoRA is sent.",
             default=None,
             ge=MIN_LORA_SCALE,
             le=MAX_LORA_SCALE,
         ),
-        seed: int = Input(
+        seed: int | None = Input(
             description="Fixed seed for a reproducible render. Absent means one is generated and logged.",
             default=None,
             ge=0,

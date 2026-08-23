@@ -1,5 +1,5 @@
 {
-  "about": "Every model artifact the Vesper SDXL character renderer needs, with the address it came from. No weights live in git. Every `sha256` below is FROZEN-AT-FIRST-BUILD: null until the FREEZE step in README.md records the digest of the first verified download, after which a mismatch is a hard failure rather than a silently different render. `target_root` names which tree the file belongs in: `comfyui` is the ComfyUI checkout, `hf_cache` is the Hugging Face hub cache PuLID's EVA-CLIP loader resolves through, and `facexlib` is the installed facexlib package directory its own downloader writes to.",
+  "about": "Every model artifact the Vesper SDXL character renderer needs, with the address it came from. No weights live in git. Every `sha256` below was recorded at the freeze (2026-08-23) from a verified download of its `source_url`; a mismatch is a hard failure rather than a silently different render. `target_root` names which tree the file belongs in: `comfyui` is the ComfyUI checkout, `hf_cache` is the Hugging Face hub cache PuLID's EVA-CLIP loader resolves through, and `facexlib` is the installed facexlib package directory its own downloader writes to.",
   "artifacts": [
     {
       "name": "sdxl-base-checkpoint",
@@ -8,8 +8,8 @@
       "filename": "sd_xl_base_1.0.safetensors",
       "target_root": "comfyui",
       "target_dir": "models/checkpoints",
-      "sha256": null,
-      "notes": "The recipes' `checkpoint` field names stabilityai/stable-diffusion-xl-base-1.0. Plan §6 keeps vanilla SDXL as the control arm and refuses to lock Vesper to a community checkpoint before licensing and hosted-product use are reviewed."
+      "sha256": "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+      "notes": "The recipes' `checkpoint` field names stabilityai/stable-diffusion-xl-base-1.0. Plan \u00a76 keeps vanilla SDXL as the control arm and refuses to lock Vesper to a community checkpoint before licensing and hosted-product use are reviewed."
     },
     {
       "name": "pulid-sdxl",
@@ -18,7 +18,7 @@
       "filename": "ip-adapter_pulid_sdxl_fp16.safetensors",
       "target_root": "comfyui",
       "target_dir": "models/pulid",
-      "sha256": null,
+      "sha256": "b258a5cd2c0c7d35f4d3e59909d7648498686afae4d0c74917e9c47d7704fbf5",
       "notes": "The IPAdapter-format conversion of the PuLID v1.1 SDXL weights, which is the file cubiq/PuLID_ComfyUI's own README installs. PulidModelLoader reads `ComfyUI/models/pulid`."
     },
     {
@@ -30,8 +30,8 @@
       "filename": "EVA02_CLIP_L_336_psz14_s6B.pt",
       "target_root": "hf_cache",
       "target_dir": "",
-      "sha256": null,
-      "notes": "PuLID's vision encoder. PulidEvaClipLoader calls create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip'), whose pretrained table resolves to this repo/file through huggingface_hub — so it must be warmed into the hub cache rather than dropped in a plain directory, or the first prediction downloads 1.7 GB mid-render."
+      "sha256": "84c3a17a228c567a155259b2245b0b59072bf7da510260a0a02ec54de6d50b05",
+      "notes": "PuLID's vision encoder. PulidEvaClipLoader calls create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip'), whose pretrained table resolves to this repo/file through huggingface_hub \u2014 so it must be warmed into the hub cache rather than dropped in a plain directory, or the first prediction downloads 1.7 GB mid-render."
     },
     {
       "name": "insightface-antelopev2-1k3d68",
@@ -40,7 +40,7 @@
       "filename": "1k3d68.onnx",
       "target_root": "comfyui",
       "target_dir": "models/insightface/models/antelopev2",
-      "sha256": null,
+      "sha256": "df5c06b8a0c12e422b2ed8947b8869faa4105387f199c477af038aa01f9a45cc",
       "notes": "One of the five antelopev2 models PulidInsightFaceLoader expects. Fetched as loose files rather than the repo's antelopev2.zip on purpose: the zip is the well-known source of a doubly-nested antelopev2/antelopev2 directory that leaves FaceAnalysis reporting no models with no useful error."
     },
     {
@@ -50,7 +50,7 @@
       "filename": "2d106det.onnx",
       "target_root": "comfyui",
       "target_dir": "models/insightface/models/antelopev2",
-      "sha256": null,
+      "sha256": "f001b856447c413801ef5c42091ed0cd516fcd21f2d6b79635b1e733a7109dbf",
       "notes": "antelopev2 landmark model."
     },
     {
@@ -60,7 +60,7 @@
       "filename": "genderage.onnx",
       "target_root": "comfyui",
       "target_dir": "models/insightface/models/antelopev2",
-      "sha256": null,
+      "sha256": "4fde69b1c810857b88c64a335084f1c3fe8f01246c9a191b48c7bb756d6652fb",
       "notes": "antelopev2 attribute model. Unused by the identity path but loaded by FaceAnalysis when it scans the pack."
     },
     {
@@ -70,8 +70,8 @@
       "filename": "glintr100.onnx",
       "target_root": "comfyui",
       "target_dir": "models/insightface/models/antelopev2",
-      "sha256": null,
-      "notes": "antelopev2 recognition model — the face embedding PuLID concatenates with the EVA-CLIP features."
+      "sha256": "4ab1d6435d639628a6f3e5008dd4f929edf4c4124b1a7169e1048f9fef534cdf",
+      "notes": "antelopev2 recognition model \u2014 the face embedding PuLID concatenates with the EVA-CLIP features."
     },
     {
       "name": "insightface-antelopev2-scrfd-10g-bnkps",
@@ -80,7 +80,7 @@
       "filename": "scrfd_10g_bnkps.onnx",
       "target_root": "comfyui",
       "target_dir": "models/insightface/models/antelopev2",
-      "sha256": null,
+      "sha256": "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91",
       "notes": "antelopev2 detection model."
     },
     {
@@ -90,7 +90,7 @@
       "filename": "detection_Resnet50_Final.pth",
       "target_root": "facexlib",
       "target_dir": "weights",
-      "sha256": null,
+      "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d",
       "notes": "PuLID builds FaceRestoreHelper(det_model='retinaface_resnet50'), and facexlib downloads this on first use into <site-packages>/facexlib/weights. Pre-staged here so no prediction depends on GitHub being reachable."
     },
     {
@@ -100,7 +100,7 @@
       "filename": "parsing_parsenet.pth",
       "target_root": "facexlib",
       "target_dir": "weights",
-      "sha256": null,
+      "sha256": "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2",
       "notes": "FaceRestoreHelper's constructor always initialises the parsenet parser, even though PuLID immediately replaces it with bisenet. Staged because the download happens regardless."
     },
     {
@@ -110,7 +110,7 @@
       "filename": "parsing_bisenet.pth",
       "target_root": "facexlib",
       "target_dir": "weights",
-      "sha256": null,
+      "sha256": "468e13ca13a9b43cc0881a9f99083a430e9c0a38abd935431d1c28ee94b26567",
       "notes": "The face parser PuLID actually uses, to mask the background out of the reference face before the EVA-CLIP pass."
     },
     {
@@ -120,7 +120,7 @@
       "filename": "controlnet-depth-sdxl-1.0.safetensors",
       "target_root": "comfyui",
       "target_dir": "models/controlnet",
-      "sha256": null,
+      "sha256": "ea3770af4c33ea8ba8dccc0106ec5d5c5c6e504eb382119a3ccac3c9d973d344",
       "notes": "Renamed on download: the repo's file is called diffusion_pytorch_model.safetensors, which would collide with the pose ControlNet in a single flat models/controlnet directory."
     },
     {
@@ -130,8 +130,8 @@
       "filename": "controlnet-openpose-sdxl-1.0.safetensors",
       "target_root": "comfyui",
       "target_dir": "models/controlnet",
-      "sha256": null,
-      "notes": "Renamed for the same reason. This model consumes an OpenPose SKELETON RENDER, not a photograph — Vesper preprocesses control maps itself and this deployment ships no preprocessors."
+      "sha256": "b8524e557a7df60d081f5d4a0eb109967d107df217943bf88c2d99b9ebcc06c5",
+      "notes": "Renamed for the same reason. This model consumes an OpenPose SKELETON RENDER, not a photograph \u2014 Vesper preprocesses control maps itself and this deployment ships no preprocessors."
     }
   ]
 }

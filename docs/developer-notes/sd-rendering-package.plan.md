@@ -828,7 +828,7 @@ No image behavior changes.
 
 ## Stage 2 — Build the Vesper SDXL Replicate renderer
 
-Status: built 2026-08-23 — awaiting the owner's first GPU build, the Replicate deploy, and the admin registration; the runbook for all three is `packages/image-sd/deployment/README.md`.
+Status: complete — 2026-08-23. Deployed as `ceponatia/sdxl-character-render` (private, frozen per the runbook in `packages/image-sd/deployment/README.md`), registered in Vesper with no surfaces and no profiles, so only the Advanced Image Lab reaches it.
 
 Prototype the workflow in ComfyUI.
 
@@ -853,6 +853,8 @@ Offer it only to the Advanced Image Lab initially.
 ---
 
 ## Stage 3 — Tune identity before adding complexity
+
+Status: PuLID arms run and graded 2026-08-23 — provisional identity recipe is `sdxl/identity-portrait` (0.80); verdict in `sd-rendering-package.trial.md`. Remaining before this stage closes: the LoRA-only and LoRA + PuLID arms (blocked on Stage 4's trained LoRA) and a re-roll of the three weak fixture seeds.
 
 Run a controlled matrix for:
 
