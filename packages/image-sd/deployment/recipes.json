@@ -26,5 +26,35 @@
     "height": 1216,
     "identityWeight": 0.8,
     "loraScale": 0.8
+  },
+  {
+    "id": "sdxl/identity-portrait-w065",
+    "family": "sdxl",
+    "revision": 1,
+    "description": "Stage 3 identity-strength trial, weak arm: the identity portrait with PuLID at 0.65. Trial arm, not a tuned default.",
+    "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0",
+    "sampler": "dpmpp_2m",
+    "scheduler": "karras",
+    "steps": 35,
+    "cfg": 5,
+    "width": 832,
+    "height": 1216,
+    "identityWeight": 0.65,
+    "loraScale": 0.8
+  },
+  {
+    "id": "sdxl/identity-portrait-w095",
+    "family": "sdxl",
+    "revision": 1,
+    "description": "Stage 3 identity-strength trial, strong arm: the identity portrait with PuLID at 0.95. Trial arm, not a tuned default.",
+    "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0",
+    "sampler": "dpmpp_2m",
+    "scheduler": "karras",
+    "steps": 35,
+    "cfg": 5,
+    "width": 832,
+    "height": 1216,
+    "identityWeight": 0.95,
+    "loraScale": 0.8
   }
 ]

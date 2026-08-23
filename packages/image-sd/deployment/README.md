@@ -83,7 +83,7 @@ capability probe already reads.
 | --- | --- | --- | --- |
 | `prompt` | string | — | Authored by Vesper. |
 | `negative_prompt` | string | `""` | Authored by Vesper (§19); this model injects nothing. |
-| `reference_image` | uri | none | Identity anchor. Present ⇒ PuLID runs. |
+| `reference_image` | uri | none | Identity anchor. Present ⇒ PuLID runs, but only under an identity recipe. |
 | `depth_image` | uri | none | An already-preprocessed depth map. |
 | `pose_image` | uri | none | An already-preprocessed OpenPose skeleton render. |
 | `lora_weights` | string | none | URL of one `.safetensors` character LoRA. |
@@ -99,6 +99,25 @@ Image Lab reaches a registered model by typing its slug and cannot send a
 reference image and no LoRA arrive — its extra fields only configure branches
 those inputs create — so the default costs a base render nothing and saves an
 identity render from silently running with no identity.
+
+### Identity conditioning is recipe-gated
+
+The PuLID branch is built only when **both** halves are present: a
+`reference_image`, and a recipe that carries an `identityWeight`. There is no
+fallback weight. A reference image sent to a recipe with no identity weight —
+`sdxl/base-portrait`, the Stage 3 control arm — is **refused**, with an error
+naming the recipe and listing the recipes that would accept it.
+
+The two alternatives are both worse than an error. Ignoring the reference
+renders a stranger and reports success. Conditioning it at some default strength
+turns the control arm into a fourth identity cell, and the comparison the whole
+of Stage 3 is built on silently measures nothing.
+
+The depth and pose ControlNet strengths keep their documented defaults, and the
+asymmetry is deliberate: no recipe carries a ControlNet block yet, the plan gives
+explicit starting bands for both (§7), and every resolved value is logged with
+the render. A default there is a starting point nobody has overridden; a default
+identity weight would be a substitution for a decision the recipe already made.
 
 ### Control images are already preprocessed
 
@@ -197,8 +216,15 @@ Check three things before going further:
 2. **Degradation.** The default recipe with no reference and no LoRA produces the
    same image as `recipe=sdxl/base-portrait` at the same seed. If it does not,
    the identity recipe is not degrading cleanly and the lab's default is wrong.
-3. **Refusal.** An unknown recipe id fails with the list of known ids rather than
-   rendering something.
+3. **Refusal.** Two cases, both of which must fail rather than render:
+   - an unknown recipe id, which fails with the list of known ids;
+   - `-i recipe="sdxl/base-portrait" -i reference_image=@./reference.png`, which
+     fails naming the identity recipes that would accept the reference.
+4. **Identity strength.** The three Stage 3 arms —
+   `sdxl/identity-portrait-w065`, `sdxl/identity-portrait` (0.80) and
+   `sdxl/identity-portrait-w095` — produce visibly different faces from the same
+   reference and seed. If they do not, the PuLID branch is not doing what the
+   logged `identity_weight` says it is.
 
 ## 3. Freeze
 
@@ -299,6 +325,8 @@ scene option no earlier than Stage 9.
 | Node class names | `PulidModelLoader`, `PulidEvaClipLoader`, `PulidInsightFaceLoader`, `ApplyPulid` | The node's `NODE_CLASS_MAPPINGS`, and each class's `INPUT_TYPES`. |
 | Core node inputs | `CheckpointLoaderSimple`, `CLIPTextEncode`, `LoraLoader`, `ControlNetLoader`, `ControlNetApplyAdvanced`, `KSampler`, `EmptyLatentImage`, `VAEDecode`, `SaveImage`, `LoadImage` | ComfyUI `nodes.py` at v0.33.1. |
 | Sampler / scheduler names | The five samplers and four schedulers the recipe contract allows | `comfy/samplers.py` at v0.33.1 — all nine exist, so the mapping is identity. |
+| PuLID middle-block key | `("middle", 1, index)` at `pulid.py:459`, patched to `("middle", 0, index)` | The raw file at the pinned commit; ComfyUI `openaimodel.py:893` and `attention.py:1033`, `1077-1081`. |
+| torchaudio not matching torch | `torchaudio==2.11.0` beside `torch==2.13.0` | torchaudio's README ("works with `torch` 2.11 and with every future `torch` release"; "does not pin `torch`"), its PyPI `requires_dist: null`, and the absence of any 2.12/2.13 release. |
 | Weight URLs | Every `source_url` in `weights_manifest.json` | Each repository's file listing; the facexlib URLs come from facexlib's own source. |
 
 The PuLID node's author declared it "maintenance only" in April 2025. That is a
@@ -306,15 +334,37 @@ reason to pin it rather than a reason to avoid it: the node's behaviour is now
 stable, and moving off it becomes a deliberate decision rather than something
 that happens on a rebuild.
 
-It also means one upstream defect is pinned in with it, and it is invisible
-rather than fatal. `ApplyPulid` registers its attention patches under the keys
-`("input", id, i)`, `("output", id, i)` and `("middle", 1, i)`, but ComfyUI sets
-the middle block's key to `("middle", 0)` — so ten of the seventy patch sites
-never fire and identity conditioning is applied at the input and output
-cross-attention blocks only. Nothing logs this; the render succeeds and identity
-is simply weaker than the reference PuLID implementation would give. The same is
-true of every ComfyUI PuLID pipeline built on this node, including the
-third-party `nsfw-api/sdxl-pulid` model §21 compares against, so the comparison
-stays fair — but a Stage 3 identity score read as "PuLID's ceiling" would be
-wrong. Fixing it means carrying a patch against the vendored node, which is a
-deliberate decision and not one this deployment takes on its own.
+### The PuLID middle-block patch
+
+One upstream defect is pinned in with the node, and **this build patches it**
+(owner ruling, 2026-08-23).
+
+`ApplyPulid` registers its seventy attention patches under the keys
+`("input", id, i)`, `("output", id, i)` and `("middle", 1, i)` — `pulid.py:459`
+at the pinned commit. ComfyUI v0.33.1 sets the middle block's patch key to
+`("middle", 0)` (`openaimodel.py:893`) and looks patches up as `("middle", 0, i)`
+with a `("middle", 0)` fallback (`attention.py:1033`, `1077-1081`). The ten
+middle-block registrations therefore never fire: identity conditioning applies at
+the input and output cross-attention blocks only, nothing logs it, and the render
+succeeds with identity quietly weaker than the reference PuLID implementation
+gives.
+
+Three `run:` steps in `cog.yaml` fix it, in this order:
+
+1. `grep -qF` for the exact expected call site, **failing the build** with the
+   reason if it is absent;
+2. `sed -i` rewriting `("middle", 1, index)` to `("middle", 0, index)` — a
+   one-line change, verified against the pinned file;
+3. `grep -qF` for the patched call site, failing the build if the rewrite did
+   not land.
+
+The guards are the point. A future node-commit bump, or an upstream fix, makes
+the build stop and say so rather than silently skipping the patch and producing a
+renderer whose identity strength nobody can account for.
+
+**This makes Vesper's PuLID diverge from the public ComfyUI baseline.** Every
+other ComfyUI PuLID pipeline built on this node carries the defect, including the
+third-party `nsfw-api/sdxl-pulid` model the plan's §21 experiment compares
+against. Stage 3 must read its numbers with that in mind: a difference between
+this renderer and that one is no longer purely a difference of recipe, because
+this one conditions at input, middle and output blocks and that one does not.

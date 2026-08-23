@@ -40,6 +40,7 @@ __all__ = [
     "SdWorkflowError",
     "WorkflowInputs",
     "build_workflow",
+    "identity_recipe_ids",
     "manifest_filename",
     "resolved_settings",
     "select_recipe",
@@ -75,6 +76,18 @@ def select_recipe(recipes: Sequence[Mapping[str, Any]], recipe_id: str) -> Mappi
         known = sorted({str(recipe.get("id")) for recipe in recipes})
         raise SdWorkflowError(f"unknown recipe {recipe_id!r}. Known recipes: {', '.join(known)}")
     return max(matches, key=lambda recipe: int(recipe.get("revision", 0)))
+
+
+def identity_recipe_ids(recipes: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Ids of the recipes that carry an identity weight — the ones a reference
+    image may be sent to.
+
+    Used to make the refusal actionable: "this recipe cannot use a reference
+    image" is only half an answer, and the other half is which ones can.
+    """
+    return sorted(
+        {str(recipe["id"]) for recipe in recipes if recipe.get("identityWeight") is not None}
+    )
 
 
 def manifest_filename(manifest: Mapping[str, Any], name: str) -> str:
@@ -116,11 +129,23 @@ UNIMPLEMENTED_CONTROLNETS = ("edge",)
 # an explicit request input (``lora_scale``) wins over the recipe — the caller
 # knowingly overrode a frozen number, which is a different act from the recipe
 # not having one.
+#
+# **Identity has NO default, on purpose.** A missing ``identityWeight`` is not
+# silence, it is a statement: `sdxl/base-portrait` is Stage 3's control arm, and
+# the whole point of the arm is that no identity conditioning runs. A fallback
+# weight would let a reference image quietly turn the control into a fourth
+# identity cell, and the comparison it exists for would be measuring nothing.
+# So a reference image sent to a recipe with no identity weight is REFUSED —
+# see ``build_workflow``.
+#
+# The ControlNet strengths below keep their fallbacks, and that asymmetry is
+# deliberate rather than an oversight. Depth and pose are pre-Stage-5 lab
+# controls with no recipe carrying them yet, the plan gives explicit starting
+# bands for both, and every resolved value is logged with the render — so a
+# default there is a documented starting point rather than a silent substitution
+# for a decision the recipe already made.
 # ---------------------------------------------------------------------------
 
-#: PuLID weight when a reference image arrives under a recipe with no
-#: ``identityWeight`` — the mid-band value of §8's 0.65 / 0.80 / 0.95 tests.
-DEFAULT_IDENTITY_WEIGHT = 0.8
 #: LoRA scale when neither the request nor the recipe names one. 1.0 is the
 #: trained strength of the weights as published, so it is the honest "no opinion".
 DEFAULT_LORA_SCALE = 1.0
@@ -275,10 +300,9 @@ def resolved_settings(recipe: Mapping[str, Any], inputs: WorkflowInputs) -> dict
         "height": inputs.height,
         "seed": inputs.seed,
     }
-    if inputs.reference_image is not None:
-        settings["identity_weight"] = float(
-            recipe.get("identityWeight", DEFAULT_IDENTITY_WEIGHT)
-        )
+    identity_weight = recipe.get("identityWeight")
+    if inputs.reference_image is not None and identity_weight is not None:
+        settings["identity_weight"] = float(identity_weight)
         settings["identity_method"] = PULID_METHOD
     if inputs.lora_file is not None:
         settings["lora_scale"] = _lora_scale(recipe, inputs)
@@ -368,8 +392,19 @@ def build_workflow(recipe: Mapping[str, Any], inputs: WorkflowInputs) -> dict[st
     )
 
     # --- identity conditioning, patched onto the model ----------------------
+    # RECIPE-GATED, not input-gated: the branch needs a reference image AND a
+    # recipe that says how hard to condition on it. Neither half is optional and
+    # neither half has a fallback.
     if inputs.reference_image is not None:
-        weight = float(recipe.get("identityWeight", DEFAULT_IDENTITY_WEIGHT))
+        identity_weight = recipe.get("identityWeight")
+        if identity_weight is None:
+            raise SdWorkflowError(
+                f"recipe {recipe.get('id', '<unnamed>')} sets no identityWeight, so it cannot "
+                f"condition on a reference image — it is a no-identity recipe, and running it "
+                f"with one would make it a different recipe than the one recorded. Send the "
+                f"reference to an identity recipe, or drop it."
+            )
+        weight = float(identity_weight)
         graph[NODE_REFERENCE_IMAGE] = _node("LoadImage", {"image": inputs.reference_image})
         graph[NODE_PULID_MODEL] = _node("PulidModelLoader", {"pulid_file": inputs.pulid_file})
         graph[NODE_PULID_EVA_CLIP] = _node("PulidEvaClipLoader", {})

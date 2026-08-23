@@ -1111,16 +1111,9 @@ The package is ready for normal Vesper use when:
 
 That last requirement is important: **Stable Diffusion should enter Vesper as an optional model-family capability, not as an invasive rewrite of the image system.**
 
----
-
-# 24. Open questions
-
-- The PuLID ComfyUI node the Stage 2 renderer vendors registers a tenth of its
-  attention patches under a middle-block key that ComfyUI stopped using in
-  2024, so those patches never fire and identity conditioning applies at the
-  input/output blocks only. Every public ComfyUI PuLID pipeline behaves this
-  way — including the `nsfw-api/sdxl-pulid` wrapper Vesper already runs — so
-  §21 and Stage 3 comparisons stay apples-to-apples. Before reading a Stage 3
-  identity grade as PuLID's ceiling, decide whether to patch the node at build
-  time (likely stronger identity, but diverges from the public baseline) or
-  keep parity. Detail: `packages/image-sd/deployment/README.md`.
+Owner ruling (2026-08-23): the vendored PuLID node's dead middle-block
+attention patches are corrected at build time, so the Vesper renderer applies
+identity conditioning at all attention blocks. This diverges deliberately from
+the public ComfyUI PuLID baseline (including `nsfw-api/sdxl-pulid`), and Stage
+3 comparisons against that model must account for it. Detail:
+`packages/image-sd/deployment/README.md`.

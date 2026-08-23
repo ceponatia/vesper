@@ -42,7 +42,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path as FsPath
-from typing import Any
+from typing import Any, Mapping
 
 from cog import BasePredictor, Input, Path
 
@@ -51,6 +51,7 @@ from sd_workflow import (
     SdWorkflowError,
     WorkflowInputs,
     build_workflow,
+    identity_recipe_ids,
     manifest_filename,
     resolved_settings,
     select_recipe,
@@ -113,8 +114,12 @@ DOWNLOAD_TIMEOUT_S = 300
 #: loraScale) only configure branches that those inputs create — so defaulting
 #: to it costs a base render nothing and saves an identity render from silently
 #: running without identity.
+#:
+#: It also has to be an identity recipe for a second reason: a reference image
+#: sent to a recipe with no identity weight is refused, and a lab run that
+#: cannot name a recipe would otherwise be unable to use a reference at all.
 DEFAULT_RECIPE = "sdxl/identity-portrait"
-#: The native portrait size of both seeded recipes (plan §7).
+#: The native portrait size of every seeded recipe (plan §7).
 DEFAULT_WIDTH = 832
 DEFAULT_HEIGHT = 1216
 #: Wide enough to make a collision irrelevant, small enough to read in a log.
@@ -358,11 +363,18 @@ class Predictor(BasePredictor):
 
         _validate_size("width", width)
         _validate_size("height", height)
+        self._validate_identity(selected, reference_image)
         chosen_seed = random.randint(0, MAX_SEED) if seed is None else int(seed)
         _log(f"  seed {chosen_seed}")
 
         prediction_id = uuid.uuid4().hex
-        staged: list[FsPath] = []
+        # Staged inputs AND the ComfyUI-side output, all removed in `finally`.
+        # The output copy matters as much as the inputs: a warm worker serves
+        # many predictions from one container, and a PNG left in ComfyUI's output
+        # directory each time is a disk leak that ends the worker rather than the
+        # render. (The copy under PREDICTION_OUTPUT_DIR is the value being
+        # returned, so Cog still owns its lifetime — it cannot be removed here.)
+        scratch: list[FsPath] = []
         try:
             inputs = WorkflowInputs(
                 prompt=prompt,
@@ -371,9 +383,9 @@ class Predictor(BasePredictor):
                 height=height,
                 seed=chosen_seed,
                 filename_prefix=prediction_id,
-                reference_image=self._stage(reference_image, prediction_id, "reference", staged),
-                depth_image=self._stage(depth_image, prediction_id, "depth", staged),
-                pose_image=self._stage(pose_image, prediction_id, "pose", staged),
+                reference_image=self._stage(reference_image, prediction_id, "reference", scratch),
+                depth_image=self._stage(depth_image, prediction_id, "depth", scratch),
+                pose_image=self._stage(pose_image, prediction_id, "pose", scratch),
                 lora_file=self._stage_lora(lora_weights),
                 lora_scale=lora_scale,
                 **self._assets,
@@ -383,6 +395,7 @@ class Predictor(BasePredictor):
             graph = build_workflow(selected, inputs)
             prompt_id = self._submit(graph)
             image = self._await_image(prompt_id)
+            scratch.append(image)
             destination = PREDICTION_OUTPUT_DIR / f"{prediction_id}{image.suffix}"
             shutil.copyfile(image, destination)
             return Path(destination)
@@ -390,13 +403,31 @@ class Predictor(BasePredictor):
             # The builder's refusals are operator-facing sentences, not bugs.
             raise ValueError(str(error)) from error
         finally:
-            for path in staged:
+            for path in scratch:
                 path.unlink(missing_ok=True)
+
+    def _validate_identity(self, selected: Mapping[str, Any], reference_image: Path | None) -> None:
+        """Refuse a reference image sent to a recipe that runs no identity.
+
+        The alternative implementations are both worse. Ignoring the reference
+        renders a stranger and reports success. Conditioning anyway turns
+        `sdxl/base-portrait` — the control arm the whole Stage 3 matrix is
+        measured against — into a fourth identity cell, and the comparison it
+        exists for silently measures nothing.
+        """
+        if reference_image is None or selected.get("identityWeight") is not None:
+            return
+        accepts = identity_recipe_ids(self._recipes)
+        raise ValueError(
+            f"recipe {selected['id']} runs no identity conditioning, so it cannot accept "
+            f"reference_image. Send the reference with one of: {', '.join(accepts)} — or drop it "
+            f"to run {selected['id']} as the no-identity recipe it is."
+        )
 
     # -- staging ------------------------------------------------------------
 
     def _stage(
-        self, source: Path | None, prediction_id: str, role: str, staged: list[FsPath]
+        self, source: Path | None, prediction_id: str, role: str, scratch: list[FsPath]
     ) -> str | None:
         """Copy one input image into ComfyUI's input directory under a unique name.
 
@@ -410,7 +441,7 @@ class Predictor(BasePredictor):
         name = f"{prediction_id}-{role}{suffix}"
         destination = COMFY_INPUT_DIR / name
         shutil.copyfile(str(source), destination)
-        staged.append(destination)
+        scratch.append(destination)
         return name
 
     def _stage_lora(self, url: str | None) -> str | None:

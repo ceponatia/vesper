@@ -42,6 +42,28 @@ build:
     # the deployment owns the decision to move.
     - "git clone --filter=blob:none https://github.com/cubiq/PuLID_ComfyUI.git /ComfyUI/custom_nodes/PuLID_ComfyUI"
     - "git -C /ComfyUI/custom_nodes/PuLID_ComfyUI checkout 93e0c4c226b87b23c0009d671978bad0e77289ff"
+    # PATCH: the PuLID node's middle-block attention key.
+    #
+    # `ApplyPulid` registers its 70 attention patches under ("input", id, i),
+    # ("output", id, i) and ("middle", 1, i) — pulid.py:459 at the commit above.
+    # ComfyUI v0.33.1 sets the middle block's patch key to ("middle", 0)
+    # (openaimodel.py:893) and looks patches up as ("middle", 0, i) with a
+    # ("middle", 0) fallback (attention.py:1033, 1077-1081). The ten middle-block
+    # registrations therefore never fire, and identity conditioning silently
+    # applies at the input and output cross-attention blocks only.
+    #
+    # Owner ruling 2026-08-23: patch it at build time rather than ship the
+    # weakened behaviour. See deployment/README.md — this makes Vesper's PuLID
+    # diverge from every public ComfyUI PuLID pipeline, which Stage 3 comparisons
+    # have to account for.
+    #
+    # Guarded on both sides. If the expected call site is ever absent — a bumped
+    # node commit, an upstream fix — the build FAILS with the reason instead of
+    # quietly skipping the patch and producing a renderer whose identity strength
+    # nobody can explain.
+    - "grep -qF 'set_model_patch_replace(work_model, patch_kwargs, (\"middle\", 1, index))' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py || { echo 'FATAL: the PuLID middle-block patch no longer applies - pulid.py at this commit does not contain the expected (\"middle\", 1, index) call site. Re-verify the node against ComfyUI attention.py before bumping the pin, then update this step. See deployment/README.md.'; exit 1; }"
+    - "sed -i 's/(\"middle\", 1, index)/(\"middle\", 0, index)/' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py"
+    - "grep -qF 'set_model_patch_replace(work_model, patch_kwargs, (\"middle\", 0, index))' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py || { echo 'FATAL: the PuLID middle-block patch did not apply - pulid.py does not contain the patched (\"middle\", 0, index) call site.'; exit 1; }"
     # insightface hard-depends on the CPU `onnxruntime` distribution, which pip
     # installs from requirements.txt ALONGSIDE `onnxruntime-gpu`. Both ship the
     # same `onnxruntime/` package directory, including `capi/`, so whichever pip

@@ -16,6 +16,26 @@
 # build and appends it here.
 
 # --- Torch. Matched to `build.cuda` in cog.yaml; Cog resolves the wheel index.
+#
+#     The torchaudio version does NOT match the torch version, and that is
+#     correct rather than a copy-paste error. torchaudio entered a maintenance
+#     phase at 2.9 and stopped shipping in lockstep: 2.11.0 is the newest release
+#     that exists (there is no 2.12 or 2.13 on PyPI, and 2.11.0 is the highest on
+#     the cu126 wheel index), and its own README states "TorchAudio 2.11 works
+#     with `torch` 2.11 and with every future `torch` release (2.12, 2.13, etc.)"
+#     and "It does not pin `torch` to a specific version"
+#     (https://github.com/pytorch/audio/blob/main/README.md).
+#
+#     The metadata agrees, which is what decides whether pip accepts the set:
+#     torchaudio 2.11.0 publishes `requires_dist: null` — no dependency
+#     declarations at all — where torchaudio 2.5.0 published
+#     `requires_dist: ["torch==2.5.0"]`
+#     (https://pypi.org/pypi/torchaudio/2.11.0/json and .../2.5.0/json). The old
+#     hard pin is gone, so this set resolves.
+#
+#     It is here at all because ComfyUI v0.33.1's own requirements.txt lists
+#     `torchaudio` unpinned. Dropping it would not make the image leaner — it
+#     would install the same wheel from ComfyUI's line, unpinned.
 torch==2.13.0
 torchvision==0.28.0
 torchaudio==2.11.0
