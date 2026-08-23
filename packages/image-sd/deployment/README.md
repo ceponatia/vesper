@@ -6,12 +6,12 @@ container holding a pinned ComfyUI, a pinned PuLID custom node, and a predictor
 that turns one Vesper render request into one image. See §3, §5 and §20 Stage 2
 of [sd-rendering-package.plan.md](../../../docs/developer-notes/sd-rendering-package.plan.md).
 
-**Nothing here has run on a GPU yet.** The graph, the pins and the runbook have
-been reviewed and the pure builder has been exercised, but the first `cog build`
-and `cog predict` are the owner's, and they are what turn this from a reviewable
-deployment into a working one. Read the [Freeze](#3-freeze) section before the
-first push — several values are deliberately left to be recorded at that moment
-rather than guessed now.
+**This deployment is live.** The first build, deploy, and registration happened
+2026-08-23: the model runs privately as `ceponatia/sdxl-character-render` on
+L40S hardware, the frozen version is registered in Vesper as a lab-only
+`image_models` row, and base and identity renders are smoke-verified (~10 s
+warm). The [Freeze](#3-freeze) section records what was frozen at that first
+good build; every rebuild follows the closure check it describes.
 
 Do not confuse this folder with `../src/deployment/`. That holds the renderer's
 **input contract** — the TypeScript schema Vesper builds requests against, part
@@ -55,12 +55,14 @@ git.
 | --- | --- |
 | `cog.yaml` | The build: CUDA, Python, torch, ComfyUI and PuLID, each at an exact revision. |
 | `requirements.txt` | Direct Python dependencies, pinned. ComfyUI's own come from its pinned checkout. |
+| `frozen-requirements.txt` | The full `pip freeze` closure of the build the deployed model came from. A record, not an install list. |
 | `predict.py` | The Cog predictor: the public input contract, weight staging, the ComfyUI server, one image out. |
 | `sd_workflow.py` | The graph, as a pure function. Stdlib only — no torch, no ComfyUI, no IO. |
 | `recipes.json` | The recipe registry, generated from TypeScript. Never hand-edited. |
 | `weights_manifest.json` | Every model artifact, its source URL, where it lands, and its digest. |
 | `workflows/*.json` | Reviewable snapshots of the built graph for five canonical requests. |
 | `scripts/generate_workflow_snapshots.py` | Rebuilds those snapshots. Also the builder's smoke test. |
+| `scripts/check_frozen_closure.py` | Diffs the built image's `pip freeze` against `frozen-requirements.txt`. Run on every rebuild. |
 
 ### Generated files
 
@@ -176,9 +178,41 @@ a `BasePredictor` with `setup()`/`predict()`, which still works, and migrating i
 (`cog doctor --fix`) is a mechanical change that should land on its own rather
 than inside the build that first proves this renderer works.
 
+### Every rebuild: check the frozen closure
+
+```bash
+cog exec python scripts/check_frozen_closure.py
+```
+
+`requirements.txt` pins only the direct dependencies. Everything they and
+ComfyUI's own requirements pull in — 133 distributions — is free to move on a
+rebuild, and the first sign of it would be a render that behaves differently for
+no reason in any diff. This diffs the built image's `pip freeze` against
+`frozen-requirements.txt` and exits non-zero on any difference, naming each one.
+
+When it reports drift, resolve it — never ignore it. Either pin the drift back
+out, or update `frozen-requirements.txt` in the **same change** that causes it
+(`cog exec pip freeze > frozen-requirements.txt`), so the record keeps describing
+an image that exists.
+
+**Why this is not an automatic build step.** It should be one, and it cannot be:
+Cog documents that "Your source code is not available to `run` commands"
+([cog.run/yaml](https://cog.run/yaml/)), so nothing in `build.run` can read the
+checked-in record. The only way to make it automatic would be pasting all 133
+lines into `cog.yaml` — two spellings of one list, which is the drift this
+guards against. `cog exec` is the seam that does work: it builds from the same
+`cog.yaml` and mounts the project directory at `/src` with the working directory
+set there (cog 0.22.0, `pkg/cli/exec.go`), so the check measures a real build of
+this configuration against the checked-in record.
+
 ## 2. Local smoke test
 
 The first prediction downloads every artifact, so give it time and disk.
+
+The commands below say `cog predict`, which in cog 0.22.0 is a still-working
+alias that no longer appears in `cog --help`; the current spelling is `cog run`,
+with identical flags. Either works today. (`cog run` the CLI command and `run:`
+the cog.yaml key are unrelated things that happen to share a word.)
 
 ```bash
 # Base render — no identity, no controls.
@@ -228,19 +262,20 @@ Check three things before going further:
 
 ## 3. Freeze
 
-Do this once, on the first build that works, and commit the result.
+Done once, on the first build that worked (2026-08-23), and committed.
 
-1. **Record every digest.** For each artifact in `weights_manifest.json`, take
-   the sha256 of the downloaded file and write it into the `sha256` field. From a
-   running container: `sha256sum /ComfyUI/models/checkpoints/*.safetensors` and so
-   on for each `target_dir`. Every one is null today and marked
-   `FROZEN-AT-FIRST-BUILD`; once filled, a mismatch fails the boot loudly instead
-   of rendering with a file that quietly moved.
-2. **Record the transitive Python closure.** `requirements.txt` pins only direct
-   dependencies. Run `pip freeze` inside the built image and append the full
-   output, so a resolver cannot move a transitive package underneath a frozen
-   renderer. This is the second `FROZEN-AT-FIRST-BUILD` marker — `grep -rn
-   FROZEN-AT-FIRST-BUILD .` finds both.
+1. **Every digest is recorded.** Each artifact in `weights_manifest.json`
+   carries the sha256 of a verified download of its `source_url` (all 13
+   fetched and hashed at the freeze). A mismatch at setup fails the boot loudly
+   instead of rendering with a file that quietly moved. If an artifact is ever
+   deliberately replaced, record the new digest in the same change that
+   repoints it.
+2. **The transitive Python closure is recorded** in `frozen-requirements.txt` —
+   `pip freeze` from the first successful build. It is a comparison record, not
+   an install list (appending it to `requirements.txt` would double-pin the
+   direct dependencies, which pip rejects). `cog exec python
+   scripts/check_frozen_closure.py` is what turns the record into a check; run it
+   on every rebuild, and see [Build](#1-build) for why it cannot be a build step.
 3. **Consider mirroring the weights.** Every `source_url` points at a third party.
    Hugging Face repositories are renamed, made private and deleted; a renderer
    that cannot rebuild is a renderer that cannot be revised. Re-host the frozen

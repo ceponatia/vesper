@@ -61,5 +61,10 @@ export type {
   SdTrainingResult,
   SdTrainingView,
 } from "./training";
-export { sdEvaluationDimensionSchema, sdEvaluationDimensions, sdEvaluationFixtureSchema } from "./evaluation";
+export {
+  sdEvaluationDimensionSchema,
+  sdEvaluationDimensions,
+  sdEvaluationFixtureSchema,
+  sdEvaluationFixtures,
+} from "./evaluation";
 export type { SdEvaluationDimension, SdEvaluationFixture } from "./evaluation";

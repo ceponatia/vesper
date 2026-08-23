@@ -73,7 +73,7 @@ installed workspace. Both run in CI's static-checks job.
 | `src/recipes/`     | The SD recipe contract and the seeded, versioned recipes         |
 | `src/deployment/`  | The Vesper-owned renderer's public input contract                |
 | `src/training/`    | Training manifests, dataset fingerprinting, curation assessment  |
-| `src/evaluation/`  | Deterministic comparison fixture definitions                     |
+| `src/evaluation/`  | The comparison fixture contract and the seeded Stage 3 fixtures  |
 | `deployment/`      | The reproducible Cog/ComfyUI workflow that is frozen and deployed |
 
 Each `src/` folder has an internal `index.ts` for reading and navigation, and
@@ -88,8 +88,15 @@ Two things are worth knowing before reading the code:
 - **A recipe is deployed configuration, not a tuning range.** Fixed values, one
   revision at a time. The plan's starting bands ("steps 30–40", "CFG roughly
   4–6") describe the search, which runs in the Advanced Image Lab; the value that
-  wins becomes the next revision. Both seeded recipes are revision 1 trial
-  starting points and nothing has graded them yet.
+  wins becomes the next revision. Every seeded recipe is a revision 1 trial
+  starting point and nothing has graded them yet.
+- **A fixture is the fixed half of a comparison, and the package owns no
+  results.** `sdEvaluationFixtures` holds the eight Stage 3 scenes — prompt,
+  negative prompt and a required seed each — and deliberately describes nobody:
+  identity arrives at run time as a reference image, so a prompt naming an age or
+  a hair colour would turn those grades into prompt-following. The images, the
+  grades and the verdict belong to the run that produced them
+  (`scripts/eval/sd-identity-matrix.ts`, writing into `evidence/`).
 - **The renderer's input contract is deliberately small and snake_case.** One
   prediction may internally run identity conditioning, a ControlNet, sampling,
   targeted repair and a finishing pass — from Vesper's side that is one image

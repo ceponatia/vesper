@@ -10,10 +10,11 @@
 # version). Copying that list would give it two spellings and one of them would
 # go stale.
 #
-# FROZEN-AT-FIRST-BUILD: the TRANSITIVE closure. Only the direct dependencies
-# below are pinned today; a resolver is still free to move anything they pull in.
-# The FREEZE step in README.md records `pip freeze` from the first successful
-# build and appends it here.
+# The TRANSITIVE closure is frozen in `frozen-requirements.txt` — `pip freeze`
+# from the first successful build (2026-08-23). It is a comparison record, not
+# an install list: appending it here would double-pin the direct dependencies,
+# which pip rejects. When revising the image, diff a fresh `pip freeze` against
+# that record before trusting a rebuild.
 
 # --- Torch. Matched to `build.cuda` in cog.yaml; Cog resolves the wheel index.
 #

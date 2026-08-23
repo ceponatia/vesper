@@ -43,3 +43,6 @@ docs/**/*.tiff
 # Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
 __pycache__/
 *.pyc
+
+# Local cog build artifacts inside the SD deployment directory.
+packages/image-sd/deployment/.cog/
