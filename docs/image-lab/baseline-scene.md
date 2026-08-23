@@ -16,11 +16,11 @@ The runner resolves the production `scene` image profile. It uses the conversati
 
 The result therefore measures the current production profile/configuration, not a lab recipe.
 
-## Important: the Model field is not an override
+## Important: the Model picker is not an override
 
-As with [Baseline portrait](baseline-portrait.md), the New Experiment form currently displays a Model box that the baseline runner does not honor as model selection. The runner resolves the production scene profile and overwrites the experiment's stored model slug with the model that profile actually selects.
+As with [Baseline portrait](baseline-portrait.md), the New Experiment form currently displays the registry-backed Model picker even though the baseline runner does not honor it as model selection. The runner resolves the production scene profile and overwrites the experiment's stored model slug with the model that profile actually selects.
 
-Use another experiment kind when the selected model itself is the variable being tested.
+Use another experiment kind when the selected model itself is the variable being tested. The registry picker added in #170 makes model selection safer for the kinds that actually use it, but it does not alter baseline semantics.
 
 ## Known parity limitation
 
