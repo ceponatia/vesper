@@ -18,9 +18,9 @@ The result therefore measures the current production profile/configuration, not 
 
 ## Important: the Model picker is not an override
 
-As with [Baseline portrait](baseline-portrait.md), the New Experiment form currently displays the registry-backed Model picker even though the baseline runner does not honor it as model selection. The runner resolves the production scene profile and overwrites the experiment's stored model slug with the model that profile actually selects.
+As with [Baseline portrait](baseline-portrait.md), the New Experiment form displays the registry-backed Model picker even though the baseline runner does not honor it as model selection. The runner resolves the production scene profile and overwrites the experiment's stored model slug with the model that profile actually selects.
 
-Use another experiment kind when the selected model itself is the variable being tested. The registry picker added in #170 makes model selection safer for the kinds that actually use it, but it does not alter baseline semantics.
+The selected model therefore cannot be the experimental variable in this kind. The lab has no neutral selected-model smoke-test kind; see [Current limitations](limitations.md).
 
 ## Known parity limitation
 
