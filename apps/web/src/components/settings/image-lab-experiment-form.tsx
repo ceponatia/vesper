@@ -20,11 +20,13 @@ import {
   type ImageReferenceRole,
   isImageLabControlledKind,
   isImageLabFinishableKind,
+  pinnedImageModelVersion,
 } from "@vesper/image-core";
 import { INTIMATE_SCENE_LORA_WRAPPER_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { sceneStagings, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { DaylightBand } from "@/lib/clock";
 import {
+  adminImageModelsApi,
   chatsApi,
   imageLabApi,
   imageLorasApi,
@@ -161,6 +163,21 @@ const DEFAULT_MODEL_SLUG = "qwen/qwen-image-edit-2511";
  * quietly stop being evidence about production.
  */
 const STAGED_DEFAULT_MODEL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;
+
+/**
+ * The Model select's two options that are not a registered slug.
+ *
+ * Both are values a real slug can never take, so neither can collide with a row
+ * the registry returns: a slug is `owner/name`, so it is never blank, and it
+ * never contains a space.
+ *
+ * The default keeps its old spelling — the empty string — because blank ALREADY
+ * means "let the runner resolve the kind's model" everywhere below, and every
+ * submit path reads that. The select changed how the choice is made, not what an
+ * unmade choice means.
+ */
+const DEFAULT_MODEL_CHOICE = "";
+const OTHER_MODEL_CHOICE = "other model";
 
 /**
  * The send order a finishing pass compiles its numbered bindings over: the base
@@ -381,6 +398,10 @@ export function ImageLabExperimentForm({
   const characters = useLabCharacters();
   const chats = useAsyncData(() => chatsApi.list(), []);
   const loras = useAsyncData(() => imageLorasApi.list(), []);
+  // The registered models, so the Model box is a list of rows that exist rather
+  // than a slug an admin has to remember exactly. Same admin-only endpoint the
+  // registry page reads; the lab is already behind that gate.
+  const models = useAsyncData(() => adminImageModelsApi.list(), []);
 
   const [kind, setKind] = useState<ImageLabExperimentKind>(prefill?.kind ?? "control_probe");
   const [characterId, setCharacterId] = useState(prefill?.characterId ?? "");
@@ -397,7 +418,13 @@ export function ImageLabExperimentForm({
   const [mode, setMode] = useState<ImageLabMode>("controlled_composition");
   const [extraRole, setExtraRole] = useState<ExtraReferenceRole | "">("");
   const [extraImageId, setExtraImageId] = useState<string | null>(null);
-  const [modelSlug, setModelSlug] = useState("");
+  // Which model a run names, in two parts: the select holds the choice, and only
+  // the "Other" branch keeps free text. `modelSlug` stays a plain string with
+  // the same meaning it always had — blank is the kind's default — so no submit
+  // path had to learn about the control that now produces it.
+  const [modelChoice, setModelChoice] = useState<string>(DEFAULT_MODEL_CHOICE);
+  const [customModelSlug, setCustomModelSlug] = useState("");
+  const modelSlug = modelChoice === OTHER_MODEL_CHOICE ? customModelSlug : modelChoice;
   // A staged scene's own four fields: the act, and the three scene facts no chat
   // exists here to supply. Kept as their own state rather than folded into the
   // instruction, because they are structured values the request carries under
@@ -509,6 +536,34 @@ export function ImageLabExperimentForm({
   // LoRA wrapper, because its seeded weights have nowhere else to load.
   const blankModelDefault = isStaged ? STAGED_DEFAULT_MODEL_SLUG : DEFAULT_MODEL_SLUG;
   const effectiveModelSlug = modelSlug.trim() === "" ? blankModelDefault : modelSlug.trim();
+  // The registry's rows, in the order the registry sorts them. A fetch that is
+  // still in flight or has failed leaves the list empty rather than holding the
+  // form: Default and Other both still work, and Other never depended on the
+  // list — which is what keeps a registry outage from closing the bench.
+  const registeredModels = models.data?.models ?? [];
+  // The registry row a run would actually resolve, by the runner's own rule:
+  // exact slug first, then the pinned and unpinned spellings of one slug
+  // (`resolveLabModel`). Asking it here means what the form says about a model
+  // is what the runner will do with it — including for a pasted path, which is
+  // how an admin learns the path is unregistered BEFORE submitting.
+  const resolvedModel =
+    registeredModels.find((model) => model.slug === effectiveModelSlug) ??
+    registeredModels.find((model) => baseImageModelSlug(model.slug) === baseImageModelSlug(effectiveModelSlug)) ??
+    null;
+  const modelHint = ((): string => {
+    const base = isStaged
+      ? `Default runs the LoRA wrapper (${STAGED_DEFAULT_MODEL_SLUG}) — the only Qwen edit model that loads weights.`
+      : `Default runs the plan's model (${DEFAULT_MODEL_SLUG}).`;
+    if (models.error !== null) {
+      return `${base} The registered list could not be loaded — name a model with Other to run one.`;
+    }
+    // The unrunnable-row sentence appears only when there IS such a row. A
+    // standing explanation of a condition nobody can see reads as a warning
+    // about the model in the box.
+    return registeredModels.some((model) => pinnedImageModelVersion(model) === null)
+      ? `${base} A row with no pinned version cannot run here — the lab pins an exact version before it spends.`
+      : base;
+  })();
   // Whether the chosen weights can reach that model at all. The library compares
   // BASE slugs (a version suffix is not a different model), so this asks the same
   // question the same way, and a mismatch is the run's only possible outcome:
@@ -776,7 +831,7 @@ export function ImageLabExperimentForm({
   // A role picked with no image is an unfinished thought, not a request with a
   // hole in it — the submit waits for the pair or for none.
   const extraComplete = extraRole === "" || extraImageId !== null;
-  const ready = ((): boolean => {
+  const kindReady = ((): boolean => {
     switch (kind) {
       case "control_probe":
         return controlReady;
@@ -813,6 +868,13 @@ export function ImageLabExperimentForm({
         return characterId !== "" && sourceImageId !== null && stagingId !== "" && loraReady;
     }
   })();
+
+  // "Other" is a promise to name a model, so an empty box holds the run rather
+  // than falling through to the kind's default. Falling through is what BLANK
+  // means, and the admin who picked Other said they wanted something else — a
+  // run recorded against the default under a choice that reads otherwise is the
+  // one mistake this control exists to remove.
+  const ready = kindReady && (modelChoice !== OTHER_MODEL_CHOICE || customModelSlug.trim() !== "");
 
   const describeInput = (input: ImageLabInput): string => {
     if (control !== null && input.imageId === control.imageId) {
@@ -1129,31 +1191,72 @@ export function ImageLabExperimentForm({
               </Select>
             )}
           </Field>
-          <Field
-            label="Model"
-            hint={
-              isStaged
-                ? `Blank runs the LoRA wrapper (${STAGED_DEFAULT_MODEL_SLUG}) — the only Qwen edit model that loads weights. Name another to probe a fallback connector.`
-                : `Blank runs the plan's model (${DEFAULT_MODEL_SLUG}). Name another to probe a fallback connector.`
-            }
-          >
+          <Field label="Model" hint={modelHint}>
             {(id) => (
-              <Input
-                id={id}
-                value={modelSlug}
-                onChange={(e) => setModelSlug(e.target.value)}
-                placeholder={blankModelDefault}
-                // Italic on top of the shared muted placeholder colour: this
-                // placeholder is a model slug, and a slug sitting in the box
-                // reads exactly like one somebody typed. Blank means the plan's
-                // default, and that has to be legible at a glance — a run
-                // recorded against the wrong model is a wasted render.
-                className="placeholder:italic"
-                spellCheck={false}
-                maxLength={200}
-              />
+              <>
+                <Select id={id} value={modelChoice} onChange={(e) => setModelChoice(e.target.value)}>
+                  {/* Flat options, no optgroup: the shared Select styles direct-child
+                      options only (`[&>option]:bg-ink-850`), and a nested group would
+                      render its rows unstyled. */}
+                  <option value={DEFAULT_MODEL_CHOICE}>{`Default — ${blankModelDefault}`}</option>
+                  {registeredModels.map((model) => {
+                    // A row with no exact version to pin is refused by the runner
+                    // before it spends (`resolvePinnedLabModel`), so it is offered
+                    // as what it is — visible, named, and unselectable — rather
+                    // than silently absent or, worse, a click that buys a refusal.
+                    const runnable = pinnedImageModelVersion(model) !== null;
+                    return (
+                      <option key={model.id} value={model.slug} disabled={!runnable}>
+                        {`${model.label} — ${baseImageModelSlug(model.slug)}${runnable ? "" : " · no pinned version"}`}
+                      </option>
+                    );
+                  })}
+                  <option value={OTHER_MODEL_CHOICE}>Other — name a model by path</option>
+                </Select>
+                {/* What the runner knows about the model now standing in the box —
+                    inside the field, not beside it, because the row above is a
+                    two-column grid and a sibling here would take a cell of its own.
+                    The profile picker's idiom (image-profile-select), for the same
+                    reason: a caveat an operator wrote is worth reading BEFORE the
+                    render is paid for, not after it comes back wrong. Held until
+                    the list has loaded — an empty registry resolves nothing, and
+                    "no registered model matches" mid-fetch would be a lie. */}
+                {models.data !== null ? (
+                  resolvedModel === null ? (
+                    <p className="text-xs text-danger-300" role="alert">
+                      {`No registered model matches ${effectiveModelSlug} — the run is refused before it spends.`}
+                    </p>
+                  ) : resolvedModel.operatorWarning ? (
+                    <p className="text-xs text-paper-500" title={resolvedModel.operatorWarning}>
+                      {resolvedModel.operatorWarning}
+                    </p>
+                  ) : null
+                ) : null}
+              </>
             )}
           </Field>
+          {modelChoice === OTHER_MODEL_CHOICE ? (
+            <Field
+              label="Model path"
+              hint="A provider path — owner/name, or owner/name:version to pin one exactly. An unregistered model still has to resolve to a registered row to run."
+            >
+              {(id) => (
+                <Input
+                  id={id}
+                  value={customModelSlug}
+                  onChange={(e) => setCustomModelSlug(e.target.value)}
+                  placeholder="owner/name"
+                  // Italic on top of the shared muted placeholder colour: this
+                  // placeholder is shaped like a model path, and one sitting in
+                  // the box reads exactly like one somebody typed.
+                  className="placeholder:italic"
+                  spellCheck={false}
+                  maxLength={200}
+                  autoFocus
+                />
+              )}
+            </Field>
+          ) : null}
           {controlledKind !== null ? (
             <Field
               label="Mode"
