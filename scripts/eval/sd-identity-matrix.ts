@@ -37,12 +37,20 @@ import { z } from "zod";
  * cell, and the comparison would measure nothing — so this script sends the base
  * arm no reference at all and checks that it did not before spending anything.
  *
- * THE LoRA ARMS ARE MISSING ON PURPOSE. Stage 3's matrix as written also has
- * LoRA-only and LoRA+PuLID arms, and neither can run yet: no SDXL character LoRA
- * exists until Stage 4 trains one. {@link Arm} carries the optional `lora` field
- * those arms will use, so adding them later is two entries in {@link ARMS} and
- * nothing else — but inventing them now would produce a manifest full of cells
- * that rendered without the thing they are named after.
+ * THE LoRA ARMS ARRIVE WITH THEIR WEIGHTS. Stage 3's matrix also has LoRA-only
+ * and LoRA+PuLID arms, and neither exists until somebody hands this script a
+ * trained character LoRA — so they are built from `--lora <id>=<url>` rather than
+ * being listed in {@link BASE_ARMS}. Each supplied LoRA adds two arms: the
+ * LoRA alone (`sdxl/lora-portrait`, no runtime conditioning) and the LoRA
+ * together with PuLID at the recipe's own weight (`sdxl/identity-portrait`).
+ * Passing the rank 8 and rank 16 weights from Stage 4 therefore runs both halves
+ * of the remaining Stage 3 matrix AND the rank comparison Stage 4 asks for, in
+ * one graded run against the same fixtures and seeds.
+ *
+ * `sdxl/lora-portrait` is a recipe the DEPLOYED build must already carry. It was
+ * added to the registry with Stage 4, and the predictor refuses a recipe id that
+ * is not baked into its image, so the deployment has to have been pushed since
+ * then before a `lora-*` arm can run.
  *
  * The version id is an ARGUMENT, never a constant. `ceponatia/sdxl-character-render`
  * is private and non-official, so it runs only through `POST /v1/predictions`
@@ -123,7 +131,7 @@ interface Arm {
  * §7's "only one variable should move at a time". Whether that is still true is
  * checked below rather than trusted.
  */
-const ARMS: readonly Arm[] = [
+const BASE_ARMS: readonly Arm[] = [
   {
     id: "base",
     recipeId: "sdxl/base-portrait",
@@ -134,7 +142,42 @@ const ARMS: readonly Arm[] = [
   { id: "w095", recipeId: "sdxl/identity-portrait-w095", question: "PuLID at 0.95 — the strong arm" },
 ];
 
-/** The control is the arm whose recipe has no identity weight, so it must send no reference. */
+/**
+ * The two arms one trained character LoRA adds.
+ *
+ * Two rather than one because §8's identity architecture is two LAYERS with
+ * different jobs — the LoRA teaches the model the person, the adapter anchors an
+ * individual render to a reference — and Stage 3 grades them separately for
+ * exactly that reason. Running only the combined arm would leave "is the LoRA
+ * doing anything?" unanswerable.
+ *
+ * The scale is left to the recipe. Both recipes already carry §7's mid-band 0.8,
+ * and an override here would make two LoRAs comparable only if the operator
+ * remembered to pass the same number twice.
+ */
+function armsForLora(id: string, weights: string): Arm[] {
+  return [
+    {
+      id: `lora-${id}`,
+      recipeId: "sdxl/lora-portrait",
+      question: `character LoRA "${id}" alone, no runtime identity conditioning`,
+      lora: { weights },
+    },
+    {
+      id: `identity-lora-${id}`,
+      recipeId: "sdxl/identity-portrait",
+      question: `character LoRA "${id}" plus PuLID at 0.80 — both identity layers`,
+      lora: { weights },
+    },
+  ];
+}
+
+/** Every arm this run may select from: the fixed four, plus two per supplied LoRA. */
+function allArms(loras: readonly LoraArgument[]): Arm[] {
+  return [...BASE_ARMS, ...loras.flatMap((lora) => armsForLora(lora.id, lora.weights))];
+}
+
+/** An arm sends the identity reference when its recipe declares an identity weight. */
 function sendsReference(recipe: SdRecipe): boolean {
   return recipe.identityWeight !== undefined;
 }
@@ -147,6 +190,7 @@ const OPTIONS = {
   version: { type: "string" },
   reference: { type: "string" },
   out: { type: "string" },
+  lora: { type: "string", multiple: true },
   arm: { type: "string", multiple: true },
   fixture: { type: "string", multiple: true },
   timeout: { type: "string" },
@@ -154,10 +198,17 @@ const OPTIONS = {
   help: { type: "boolean" },
 } as const;
 
+/** One `--lora <id>=<url>` pair: the label its arms are named after, and the weights. */
+interface LoraArgument {
+  readonly id: string;
+  readonly weights: string;
+}
+
 interface Args {
   readonly version?: string;
   readonly reference?: string;
   readonly out: string;
+  readonly loras: readonly LoraArgument[];
   readonly arms: readonly string[];
   readonly fixtures: readonly string[];
   readonly timeoutSeconds: number;
@@ -168,6 +219,36 @@ interface Args {
 /** `--arm base --arm w095` and `--arm base,w095` both work; neither is worth arguing about. */
 function idList(values: readonly string[] | undefined): string[] {
   return (values ?? []).flatMap((value) => value.split(",")).map((value) => value.trim()).filter(Boolean);
+}
+
+/**
+ * `--lora r8=https://…/r8.safetensors`, parsed into the id its arms are named
+ * after and the URL they send.
+ *
+ * The id is required and is not derived from the URL, because it lands in arm
+ * names, in image paths and in every manifest row — "r8" and "r16" are what a
+ * grader reads, and a hash out of an S3 key is not. Repeats are refused for the
+ * reason {@link assertNoRepeats} gives about arms: two arms with one name would
+ * pay twice and overwrite one file.
+ */
+function readLoras(values: readonly string[] | undefined): LoraArgument[] {
+  const loras = (values ?? []).map((value) => {
+    const separator = value.indexOf("=");
+    const id = separator < 0 ? "" : value.slice(0, separator).trim();
+    const weights = separator < 0 ? "" : value.slice(separator + 1).trim();
+    if (id === "" || weights === "") throw new UsageError(`--lora must be <id>=<url>: ${value}`);
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+      throw new UsageError(`--lora id "${id}" must be lowercase letters, digits and hyphens — it names files and arms`);
+    }
+    // Checked here rather than by the renderer, which would refuse it after the
+    // prediction was created and billed.
+    if (!/^https?:\/\//.test(weights) || !weights.toLowerCase().endsWith(".safetensors")) {
+      throw new UsageError(`--lora ${id} must point at an http(s) .safetensors URL: ${weights}`);
+    }
+    return { id, weights };
+  });
+  assertNoRepeats("lora", loras.map((lora) => lora.id));
+  return loras;
 }
 
 function readArgs(argv: readonly string[]): Args {
@@ -188,6 +269,7 @@ function readArgs(argv: readonly string[]): Args {
     ...(values.version === undefined ? {} : { version: values.version }),
     ...(values.reference === undefined ? {} : { reference: values.reference }),
     out: values.out ?? DEFAULT_OUT,
+    loras: readLoras(values.lora),
     arms: idList(values.arm),
     fixtures: idList(values.fixture),
     timeoutSeconds,
@@ -212,8 +294,13 @@ Required:
 
 Optional:
   --out <dir>          Default ${DEFAULT_OUT}
+  --lora <id>=<url>    A trained character LoRA. Repeatable. Each one adds two arms:
+                       lora-<id> (the LoRA alone) and identity-lora-<id> (LoRA + PuLID).
+                       Pass Stage 4's rank 8 and rank 16 weights to run the remaining
+                       Stage 3 arms and the rank comparison in one graded matrix.
   --arm <id>           Restrict the arms. Repeatable, or comma-separated.
-                       Have: ${ARMS.map((arm) => arm.id).join(", ")}
+                       Always have: ${BASE_ARMS.map((arm) => arm.id).join(", ")}
+                       Plus lora-<id> and identity-lora-<id> for every --lora.
   --fixture <id>       Restrict the fixtures. Repeatable, or comma-separated.
   --timeout <seconds>  Per-cell wait before the prediction is cancelled. Default ${String(DEFAULT_TIMEOUT_SECONDS)}.
   --dry-run            Build and check every request, print the whole matrix, spend nothing.
@@ -296,12 +383,12 @@ function assertNoRepeats(flag: string, wanted: readonly string[]): void {
   }
 }
 
-function selectArms(wanted: readonly string[]): Arm[] {
-  if (wanted.length === 0) return [...ARMS];
+function selectArms(available: readonly Arm[], wanted: readonly string[]): Arm[] {
+  if (wanted.length === 0) return [...available];
   assertNoRepeats("arm", wanted);
   return wanted.map((id) => {
-    const arm = ARMS.find((candidate) => candidate.id === id);
-    if (!arm) throw new UsageError(`unknown --arm "${id}" — have: ${ARMS.map((a) => a.id).join(", ")}`);
+    const arm = available.find((candidate) => candidate.id === id);
+    if (!arm) throw new UsageError(`unknown --arm "${id}" — have: ${available.map((a) => a.id).join(", ")}`);
     return arm;
   });
 }
@@ -332,29 +419,34 @@ function resolveArms(arms: readonly Arm[]): ResolvedArm[] {
 }
 
 /**
- * Four ways this run would cost money and answer nothing.
+ * Five ways this run would cost money and answer nothing.
  *
- * 1. **The control conditioned identity.** If the base arm's request carried a
- *    `reference_image`, the renderer refuses it outright — and if it ever
- *    stopped refusing, the control would become a fourth identity cell and the
- *    whole comparison would be measuring one thing against itself.
+ * 1. **An arm with no identity weight sent a reference.** The renderer refuses it
+ *    outright — and if it ever stopped refusing, the control (or the LoRA-only
+ *    arm) would become another identity cell and the comparison would be
+ *    measuring one thing against itself.
  * 2. **An identity arm sent no reference.** It would degrade cleanly to the base
- *    recipe and render a stranger, three times, at three weights that never
- *    applied.
- * 3. **Two identity arms at the same weight.** Then the matrix has a duplicate
- *    cell where it thinks it has a comparison point.
- * 4. **The identity arms differ in something besides weight.** §7 allows exactly
+ *    recipe and render a stranger at a weight that never applied.
+ * 3. **An arm named after a LoRA sent no LoRA.** Same failure in the other layer:
+ *    a `lora-*` cell with no weights renders the plain base recipe under a name
+ *    that claims a character LoRA was applied.
+ * 4. **Two arms in the same identity CONFIGURATION.** A configuration is the
+ *    (identity weight, LoRA) pair, not the weight alone — `w080` and
+ *    `identity-lora-r8` share a weight and are a real comparison, while two arms
+ *    agreeing on both are a duplicated cell.
+ * 5. **The identity arms differ in something besides weight and LoRA.** §7 allows
  *    one variable to move; a recipe edit that also changed steps or CFG would
  *    make every difference in the grading unattributable.
  */
 function assertMatrixIsHonest(cells: readonly Cell[]): void {
   const identityArms = new Map<string, { recipe: SdRecipe; weight: number }>();
+  const configurations = new Map<string, string>();
 
   for (const cell of cells) {
     const hasReference = "reference_image" in cell.input;
     if (!sendsReference(cell.recipe) && hasReference) {
       throw new Error(
-        `${cell.arm.id}/${cell.fixture.id}: the control recipe "${cell.recipe.id}" carries no identity weight, so the renderer REFUSES a reference image — this cell would fail on the GPU`,
+        `${cell.arm.id}/${cell.fixture.id}: recipe "${cell.recipe.id}" carries no identity weight, so the renderer REFUSES a reference image — this cell would fail on the GPU`,
       );
     }
     if (sendsReference(cell.recipe) && !hasReference) {
@@ -362,15 +454,24 @@ function assertMatrixIsHonest(cells: readonly Cell[]): void {
         `${cell.arm.id}/${cell.fixture.id}: an identity arm with no reference image degrades to the base recipe and renders a stranger — pass --reference`,
       );
     }
+    if (cell.arm.lora !== undefined && !("lora_weights" in cell.input)) {
+      throw new Error(
+        `${cell.arm.id}/${cell.fixture.id}: the arm names a character LoRA but its request carries no lora_weights — the cell would render the base recipe under a LoRA arm's name`,
+      );
+    }
     const weight = cell.recipe.identityWeight;
     if (weight !== undefined) identityArms.set(cell.arm.id, { recipe: cell.recipe, weight });
-  }
-
-  const weights = [...identityArms.values()].map((entry) => entry.weight);
-  if (new Set(weights).size !== weights.length) {
-    throw new Error(
-      `two identity arms run the same identity weight (${weights.join(", ")}) — that is a duplicated cell, not a comparison point`,
-    );
+    // The LoRA is identified by its WEIGHTS URL rather than by the arm id: two
+    // arms given the same file under two names would be one configuration
+    // rendered twice, which is exactly what this check exists to catch.
+    const configuration = `${weight === undefined ? "none" : String(weight)}|${cell.arm.lora?.weights ?? "none"}`;
+    const claimedBy = configurations.get(configuration);
+    if (claimedBy !== undefined && claimedBy !== cell.arm.id) {
+      throw new Error(
+        `arms "${claimedBy}" and "${cell.arm.id}" run the same identity configuration (${configuration}) — that is a duplicated cell, not a comparison point`,
+      );
+    }
+    configurations.set(configuration, cell.arm.id);
   }
 
   const recipes = [...identityArms.values()].map((entry) => entry.recipe);
@@ -391,7 +492,7 @@ function assertMatrixIsHonest(cells: readonly Cell[]): void {
       ).filter(([, a, b]) => a !== b);
       if (drifted.length > 0) {
         throw new Error(
-          `identity arms "${first.id}" and "${recipe.id}" differ in more than identity weight (${drifted
+          `identity arms "${first.id}" and "${recipe.id}" differ in more than identity weight and LoRA (${drifted
             .map(([field]) => field)
             .join(", ")}) — §7 allows one variable to move at a time, so this run's differences would be unattributable`,
         );
@@ -602,7 +703,8 @@ function runNotes(
 Status: rendered ${today} — ungraded.
 
 The controlled matrix from sd-rendering-package.plan.md §20, Stage 3: base SDXL
-against PuLID at three identity strengths, over ${String(fixtures.length)} fixed scenes at fixed seeds.
+against the identity layers — PuLID at three strengths, and any character LoRA
+this run was given, alone and combined — over ${String(fixtures.length)} fixed scenes at fixed seeds.
 Rendered by \`scripts/eval/sd-identity-matrix.ts\`.
 
 - **Renderer version:** \`${version}\` (\`ceponatia/sdxl-character-render\`)
@@ -615,11 +717,15 @@ owner ruling that generated imagery stays out of git history. \`manifest.csv\` a
 
 ## The arms
 
-${arms.map(({ arm, recipe }) => `- \`${arm.id}\` — recipe \`${arm.recipeId}\` (identity weight ${recipe.identityWeight === undefined ? "none" : recipe.identityWeight.toFixed(2)}). ${arm.question}`).join("\n")}
+${arms.map(({ arm, recipe }) => `- \`${arm.id}\` — recipe \`${arm.recipeId}\` (identity weight ${recipe.identityWeight === undefined ? "none" : recipe.identityWeight.toFixed(2)}, LoRA ${arm.lora === undefined ? "none" : `\`${arm.lora.weights}\``}). ${arm.question}`).join("\n")}
 
-The \`base\` arm sends **no reference image**: the renderer refuses one under a
-recipe with no identity weight, and conditioning the control at some default
-strength would turn it into a fourth identity cell.
+Arms whose recipe carries **no identity weight** send no reference image: the
+renderer refuses one there, and conditioning the control at some default strength
+would turn it into another identity cell.
+
+The LoRA URLs above are the run's real provenance for the trained weights — the
+arm names say \`r8\` and \`r16\`, but only the address says which training produced
+them. TO BE FILLED: the identity-pack binding each one was registered under.
 
 ## The fixtures
 
@@ -627,7 +733,7 @@ ${fixtures.map((fixture) => `- \`${fixture.id}\` (seed ${String(fixture.seed)}) 
 
 ## How to grade
 
-Open the four arms of one fixture side by side, then move to the next fixture.
+Open every arm of one fixture side by side, then move to the next fixture.
 Score each cell in \`scores.csv\`, one row per arm per fixture, on these seven
 dimensions: ${sdEvaluationDimensions.join(", ")}.
 
@@ -664,7 +770,12 @@ function describeError(error: unknown): string {
 
 function printMatrix(cells: readonly Cell[], arms: readonly ResolvedArm[], fixtures: readonly SdEvaluationFixture[]): void {
   console.log("\n=== Arms ===");
-  for (const { arm } of arms) console.log(`  ${arm.id.padEnd(6)} ${arm.recipeId.padEnd(30)} ${arm.question}`);
+  // The id column is sized to the widest id present rather than to a constant:
+  // `--lora` builds arm names at run time, and a fixed width turns the matrix
+  // listing — the thing an operator reads before approving the spend — into
+  // ragged text at exactly the moment it has the most rows.
+  const armWidth = Math.max(...arms.map(({ arm }) => arm.id.length));
+  for (const { arm } of arms) console.log(`  ${arm.id.padEnd(armWidth)} ${arm.recipeId.padEnd(30)} ${arm.question}`);
 
   console.log("\n=== Fixtures ===");
   for (const fixture of fixtures) {
@@ -676,12 +787,13 @@ function printMatrix(cells: readonly Cell[], arms: readonly ResolvedArm[], fixtu
 
   console.log(`\n=== The matrix: ${String(cells.length)} cells ===`);
   for (const cell of cells) {
-    const reference = "reference_image" in cell.input ? "reference: yes" : "reference: none (control)";
+    const reference = "reference_image" in cell.input ? "reference: yes" : "reference: none";
     const weight = cell.recipe.identityWeight;
     console.log(
-      `  ${cell.arm.id.padEnd(6)} ${cell.fixture.id.padEnd(26)} ${cell.recipe.id.padEnd(30)} ` +
+      `  ${cell.arm.id.padEnd(armWidth)} ${cell.fixture.id.padEnd(26)} ${cell.recipe.id.padEnd(30)} ` +
         `seed ${String(cell.fixture.seed).padEnd(8)} ${String(cell.recipe.width)}x${String(cell.recipe.height)}  ` +
-        `identity ${(weight === undefined ? "—" : weight.toFixed(2)).padEnd(5)} ${reference}`,
+        `identity ${(weight === undefined ? "—" : weight.toFixed(2)).padEnd(5)} ` +
+        `lora ${(cell.arm.lora === undefined ? "—" : "yes").padEnd(4)} ${reference}`,
     );
   }
 
@@ -859,7 +971,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const arms = resolveArms(selectArms(args.arms));
+  const arms = resolveArms(selectArms(allArms(args.loras), args.arms));
   const fixtures = selectFixtures(args.fixtures);
   const identityArms = arms.filter(({ recipe }) => sendsReference(recipe));
 

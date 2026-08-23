@@ -38,6 +38,7 @@ import type {
 } from "@vesper/simulation-core/contracts/households";
 import type { RelationshipLedgerPayload } from "@vesper/simulation-core/contracts/social";
 import {
+  identityLoraBindingStates,
   identityReferenceStrategies,
   imageAspectModes,
   imageEditKinds,
@@ -1838,6 +1839,81 @@ export const imageIdentityPacks = pgTable(
       t.derivationVersion,
       t.revision,
     ),
+  ],
+);
+
+/**
+ * Which character LoRA was trained from which identity pack revision
+ * (sd-rendering-package.plan.md §9).
+ *
+ * The two sides already exist: `image_identity_packs` holds the canonical face,
+ * `image_loras` holds the weights and the rules for sending them. This row is
+ * the only thing that knows they belong together — and, more usefully, when they
+ * stop belonging together. A LoRA trained from revision 3 of a pack keeps
+ * rendering perfectly after revision 4 becomes current; it just gradually stops
+ * being a likeness of the character every other Vesper surface describes.
+ * Nothing errors, so the drift has to be detectable from a row rather than from
+ * somebody noticing.
+ *
+ * **It points at the pack REVISION, not the character.** Supersession is the
+ * whole staleness signal (`evaluateIdentityLoraBinding`), and a character-keyed
+ * row would have to re-derive it from a revision number it does not hold.
+ *
+ * **Several bindings per pack are normal.** Stage 4 trains rank 8 and rank 16
+ * from one dataset and compares them, so both exist at once as `experimental`.
+ * At most one may be `active`, held below by a partial unique index rather than
+ * by application discipline — the same device as
+ * `image_identity_packs_one_current_per_character`. A losing arm is `retired`,
+ * never deleted: an image rendered under it still has to be able to say what
+ * produced it.
+ *
+ * Both foreign keys cascade. A deleted character takes its packs and therefore
+ * its bindings, and a LoRA removed from the library takes the rows claiming it
+ * is a character's likeness — a binding whose weights are gone describes nothing.
+ */
+export const imageIdentityLoraBindings = pgTable(
+  "image_identity_lora_bindings",
+  {
+    id: id(),
+    identityPackId: text("identity_pack_id")
+      .notNull()
+      .references(() => imageIdentityPacks.id, { onDelete: "cascade" }),
+    loraId: text("lora_id")
+      .notNull()
+      .references(() => imageLoras.id, { onDelete: "cascade" }),
+    /** The base weights the LoRA was trained against — the only ones it is valid on. */
+    baseCheckpoint: text("base_checkpoint").notNull(),
+    /** `fingerprintSdTrainingDataset` over the training set. Recorded provenance, not yet compared. */
+    datasetFingerprint: text("dataset_fingerprint").notNull(),
+    datasetImageCount: integer("dataset_image_count").notNull(),
+    /** `<family>/<slug>` of the package training recipe, plus the exact revision that ran. */
+    trainingRecipeId: text("training_recipe_id").notNull(),
+    trainingRecipeRevision: integer("training_recipe_revision").notNull(),
+    rank: integer("rank").notNull(),
+    /** The word the LoRA answers to, or null when the recipe trained none. */
+    triggerToken: text("trigger_token"),
+    /** The trainer's own id for the run — the way back to its logs and cost line. */
+    trainingRunRef: text("training_run_ref"),
+    state: text("state", { enum: identityLoraBindingStates }).notNull().default("experimental"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // The per-pack lookup, and the state filter that read always carries.
+    index("image_identity_lora_bindings_pack_idx").on(t.identityPackId, t.state),
+    // One promoted LoRA per pack. Bare column name inside sql`` for the reason
+    // every partial index in this file gives: the predicate is written into the
+    // index definition, where a bound parameter cannot go.
+    uniqueIndex("image_identity_lora_bindings_one_active_per_pack")
+      .on(t.identityPackId)
+      .where(sql`state = 'active'`),
+    // The same weights bound twice to the same pack is not a second arm, it is a
+    // duplicate — two rows that would both claim to be the promotion candidate.
+    uniqueIndex("image_identity_lora_bindings_pack_lora_unique").on(t.identityPackId, t.loraId),
+    // A rank outside the contract's rail could never have trained, so it should
+    // never be storable; the dataset count matches §8's "a training set has images".
+    check("image_identity_lora_bindings_rank_bounds", sql`${t.rank} >= 1 AND ${t.rank} <= 128`),
+    check("image_identity_lora_bindings_dataset_size", sql`${t.datasetImageCount} >= 1`),
   ],
 );
 

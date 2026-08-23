@@ -8,15 +8,24 @@ import type { SdModelFamily, SdRecipe } from "./sd-recipes";
  * controlled matrix begins, and the plan is explicit that "only one variable
  * should move at a time" while it runs. Whichever cell wins becomes revision 2
  * of the recipe it belongs to. Reading a value here as an endorsement is the one
- * mistake this file can cause, which is why both entries are revision 1 and say
- * so in their own description.
+ * mistake this file can cause, which is why every entry is revision 1 and says so
+ * in its own description.
  *
- * The pair is deliberately minimal, and the gap between them is the only
- * variable Stage 3 opens first: identity. `sdxl/base-portrait` is the control —
- * vanilla SDXL, no identity conditioning, no LoRA — and `sdxl/identity-portrait`
- * is the same sampler configuration with the two identity layers switched on.
- * Any quality difference between them is therefore attributable, which a third
- * recipe differing in four ways at once would destroy.
+ * The set is deliberately minimal, and every entry shares one sampler
+ * configuration so that the only variable Stage 3 opens is identity.
+ * `sdxl/base-portrait` is the control — vanilla SDXL, no identity conditioning,
+ * no LoRA — and the rest switch on one identity layer at a time: a character
+ * LoRA (`sdxl/lora-portrait`), runtime conditioning at three strengths, or both
+ * (`sdxl/identity-portrait`). Any quality difference between two of them is
+ * therefore attributable, which recipes differing in four ways at once would
+ * destroy.
+ *
+ * **Adding an entry here changes the DEPLOYED renderer's vocabulary.**
+ * `deployment/recipes.json` is generated from this list and baked into the
+ * container image, and the predictor refuses a recipe id it does not carry. A
+ * new recipe is therefore not live until `pnpm tsx
+ * scripts/generate-sd-deployment-recipes.ts` has run and the deployment has been
+ * pushed again (`deployment/README.md`).
  *
  * Declared as typed literals rather than parsed at module load, on purpose: the
  * compiler proves the SHAPE, and `sd-recipe-registry.test.ts` proves every entry
@@ -74,6 +83,32 @@ export const sdRecipes: readonly SdRecipe[] = [
     // "do not add ControlNet until this stage has a clear winner", because a
     // depth or pose map introduced alongside identity makes neither result
     // attributable.
+  },
+  {
+    // Stage 3's LoRA-ONLY arm (plan §20: "base SDXL; PuLID only; LoRA only; LoRA
+    // + PuLID"). It could not be seeded with the other three because no SDXL
+    // character LoRA existed until Stage 4 trained one, and an arm named after a
+    // thing that does not exist renders the control twice.
+    //
+    // The absence of `identityWeight` is the arm, not an oversight. The deployed
+    // renderer gates identity conditioning on the recipe and REFUSES a reference
+    // image sent to a recipe without a weight, so this arm cannot accidentally
+    // receive the PuLID anchor and quietly become the fourth cell. Everything
+    // else is copied verbatim from `sdxl/identity-portrait` — §7's one-variable
+    // rule, which here means the LoRA is the only difference from the control.
+    id: "sdxl/lora-portrait",
+    family: "sdxl",
+    revision: 1,
+    description:
+      "Base portrait settings plus a character LoRA and no runtime identity conditioning — the LoRA-only arm of the Stage 3 identity matrix. Trial arm, not a tuned default.",
+    checkpoint: "stabilityai/stable-diffusion-xl-base-1.0",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    steps: 35,
+    cfg: 5,
+    width: 832,
+    height: 1216,
+    loraScale: 0.8,
   },
   // The other two arms of Stage 3's identity-strength trial. §7 names three
   // PuLID test points — 0.65 / 0.80 / 0.95 — and `sdxl/identity-portrait` above

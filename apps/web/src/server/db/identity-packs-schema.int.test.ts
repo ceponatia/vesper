@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { characters, db, imageIdentityPacks, images } from "@/server/db";
+import { characters, db, imageIdentityLoraBindings, imageIdentityPacks, imageLoras, images } from "@/server/db";
 import { isUniqueViolation } from "@/server/api";
 import {
   canonicalImageRow,
@@ -26,6 +26,14 @@ import {
  * 4. deleting an image NULLs the pointers instead of blocking or cascading — the
  *    safety net that turns a vanished source into an unusable pack rather than a
  *    pack that keeps serving a crop it can no longer justify.
+ *
+ * The second describe block covers `image_identity_lora_bindings`
+ * (sd-rendering-package.plan.md §9), which lives here rather than in a file of
+ * its own because it is the same data family: it exists only to point at a pack
+ * REVISION, its whole meaning is supersession, and it dies with the pack. Its two
+ * storage guarantees are the ones `identity-lora-bindings.ts` deliberately
+ * delegates to Postgres instead of pre-checking, so nothing short of a real
+ * database can prove them either.
  */
 
 const ready = await probeIntegrationDb("identity packs schema.int.test", "image_identity_packs");
@@ -86,13 +94,80 @@ async function packIds(characterId: string): Promise<string[]> {
   return rows.map((row) => row.id);
 }
 
+/**
+ * A LoRA library row to bind to. Fixed ids, deleted either side of the run, for
+ * the reason `image-lab.int.test.ts` gives: `image_loras` carries no owner, so
+ * `purgeOwnerRows` cannot reach it.
+ */
+const FIXTURE_LORA_IDS = ["itestsdloraaaaaaaaaaaaaa1", "itestsdloraaaaaaaaaaaaaa2"];
+
+async function seedLoras(): Promise<void> {
+  await db().delete(imageLoras).where(inArray(imageLoras.id, FIXTURE_LORA_IDS));
+  await db()
+    .insert(imageLoras)
+    .values(
+      FIXTURE_LORA_IDS.map((id, index) => ({
+        id,
+        label: `identity-lora-binding fixture ${String(index + 1)}`,
+        locatorType: "https_url" as const,
+        locator: `https://example.invalid/${id}.safetensors`,
+        defaultScale: 0.8,
+        minimumScale: 0.6,
+        maximumScale: 1,
+      })),
+    );
+}
+
+/** Everything a binding must carry, so each test states only what it varies. */
+function bindingRow(
+  identityPackId: string,
+  loraId: string,
+  over: Partial<typeof imageIdentityLoraBindings.$inferInsert> = {},
+): typeof imageIdentityLoraBindings.$inferInsert {
+  return {
+    identityPackId,
+    loraId,
+    baseCheckpoint: "stabilityai/stable-diffusion-xl-base-1.0",
+    datasetFingerprint: "deadbeef",
+    datasetImageCount: 14,
+    trainingRecipeId: "sdxl/character-lora-r8",
+    trainingRecipeRevision: 1,
+    rank: 8,
+    ...over,
+  };
+}
+
+/** A real async function so `expect(...).rejects` receives a Promise, not a thenable. */
+async function insertBinding(
+  identityPackId: string,
+  loraId: string,
+  over: Partial<typeof imageIdentityLoraBindings.$inferInsert> = {},
+): Promise<string> {
+  const [row] = await db()
+    .insert(imageIdentityLoraBindings)
+    .values(bindingRow(identityPackId, loraId, over))
+    .returning({ id: imageIdentityLoraBindings.id });
+  if (!row) throw new Error("[identity-packs-schema] inserting a binding returned no row");
+  return row.id;
+}
+
+async function bindingIds(identityPackId: string): Promise<string[]> {
+  const rows = await db()
+    .select({ id: imageIdentityLoraBindings.id })
+    .from(imageIdentityLoraBindings)
+    .where(eq(imageIdentityLoraBindings.identityPackId, identityPackId));
+  return rows.map((row) => row.id);
+}
+
 beforeAll(async () => {
   if (!ready) return;
   ownerId = (await seedTestUser("identity-packs-schema")).id;
+  await seedLoras();
 });
 
 afterAll(async () => {
   await purgeOwnerRows([ownerId]);
+  if (ready) await db().delete(imageLoras).where(inArray(imageLoras.id, FIXTURE_LORA_IDS));
   await endTestPool();
 });
 
@@ -176,5 +251,67 @@ describe.skipIf(!ready)("image_identity_packs constraints", () => {
       .from(imageIdentityPacks)
       .where(eq(imageIdentityPacks.id, packId));
     expect(afterCrop?.faceCropImageId).toBeNull();
+  });
+});
+
+describe.skipIf(!ready)("image_identity_lora_bindings constraints", () => {
+  it("promotes at most one binding per pack while any number stay experimental", async () => {
+    const characterId = await seedCharacter("lora-binding-active");
+    const packId = await insertPack(characterId, { current: true, status: "ready" });
+    const [firstLora, secondLora] = FIXTURE_LORA_IDS as [string, string];
+
+    // Stage 4 trains rank 8 and rank 16 from one dataset and compares them, so
+    // both have to be storable and renderable at once. A schema that allowed one
+    // binding per pack would make the comparison unrepresentable.
+    await insertBinding(packId, firstLora, { rank: 8 });
+    await insertBinding(packId, secondLora, { rank: 16, trainingRecipeId: "sdxl/character-lora-r16" });
+    expect(await bindingIds(packId)).toHaveLength(2);
+
+    await db()
+      .update(imageIdentityLoraBindings)
+      .set({ state: "active" })
+      .where(and(eq(imageIdentityLoraBindings.identityPackId, packId), eq(imageIdentityLoraBindings.loraId, firstLora)));
+
+    // The store promotes with a bare UPDATE and no read-then-write, on the
+    // strength of this index: promoting a second binding must FAIL rather than
+    // quietly leaving two rows that both claim to be the character's likeness.
+    await expect(
+      db()
+        .update(imageIdentityLoraBindings)
+        .set({ state: "active" })
+        .where(
+          and(eq(imageIdentityLoraBindings.identityPackId, packId), eq(imageIdentityLoraBindings.loraId, secondLora)),
+        ),
+    ).rejects.toSatisfy(isUniqueViolation, "a second active binding must fail with a unique violation");
+
+    // Scoped per pack, not global: another pack promoting its own is not a collision.
+    const otherPackId = await insertPack(characterId, { revision: 2, status: "superseded" });
+    await insertBinding(otherPackId, firstLora, { state: "active" });
+    expect(await bindingIds(otherPackId)).toHaveLength(1);
+  });
+
+  it("binds one LoRA to a pack once, and drops the binding with either side", async () => {
+    const characterId = await seedCharacter("lora-binding-lifecycle");
+    const packId = await insertPack(characterId, { current: true, status: "ready" });
+    const [firstLora, secondLora] = FIXTURE_LORA_IDS as [string, string];
+    await insertBinding(packId, firstLora);
+
+    // The same weights bound twice to one pack is not a second arm, it is two
+    // rows that would both be the promotion candidate.
+    await expect(insertBinding(packId, firstLora, { rank: 16 })).rejects.toSatisfy(
+      isUniqueViolation,
+      "a repeated (pack, LoRA) pair must fail with a unique violation",
+    );
+
+    // Removing the weights removes the claim that they are a likeness…
+    await insertBinding(packId, secondLora);
+    await db().delete(imageLoras).where(eq(imageLoras.id, secondLora));
+    expect(await bindingIds(packId)).toHaveLength(1);
+
+    // …and deleting the character takes the pack and its bindings with it.
+    await db().delete(characters).where(eq(characters.id, characterId));
+    expect(await bindingIds(packId)).toEqual([]);
+
+    await seedLoras();
   });
 });

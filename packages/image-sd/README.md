@@ -72,7 +72,7 @@ installed workspace. Both run in CI's static-checks job.
 | ------------------ | ---------------------------------------------------------------- |
 | `src/recipes/`     | The SD recipe contract and the seeded, versioned recipes         |
 | `src/deployment/`  | The Vesper-owned renderer's public input contract                |
-| `src/training/`    | Training manifests, dataset fingerprinting, curation assessment  |
+| `src/training/`    | Training recipes, manifests, dataset fingerprinting, curation    |
 | `src/evaluation/`  | The comparison fixture contract and the seeded Stage 3 fixtures  |
 | `deployment/`      | The reproducible Cog/ComfyUI workflow that is frozen and deployed |
 
@@ -90,6 +90,12 @@ Two things are worth knowing before reading the code:
   4–6") describe the search, which runs in the Advanced Image Lab; the value that
   wins becomes the next revision. Every seeded recipe is a revision 1 trial
   starting point and nothing has graded them yet.
+- **A training recipe pins what the LoRA learns, never who trains it.** Rank,
+  steps, learning rate, resolution, batch size and the base checkpoint are the
+  recipe; which trainer runs it is a provider fact, so the operator script pins
+  that and records the pin beside the weights. The two seeded recipes differ in
+  rank alone, because that is the comparison Stage 4 exists to make, and a
+  registry-derived test fails if they ever differ in anything else.
 - **A fixture is the fixed half of a comparison, and the package owns no
   results.** `sdEvaluationFixtures` holds the eight Stage 3 scenes — prompt,
   negative prompt and a required seed each — and deliberately describes nobody:
