@@ -26,7 +26,7 @@ Exactly one identity reference is required. The staged recipe also permits an op
 
 ## Model and LoRA behavior
 
-The model slug is honored and must be pinnable. The form uses the intimate LoRA-capable wrapper as its blank-model default because the normal Qwen edit default cannot load the seeded staging LoRA.
+The selected model is honored and must be pinnable. In the Model picker, `Default` resolves to the intimate LoRA-capable wrapper rather than the ordinary Qwen edit default, because the normal default cannot load the seeded staging LoRA.
 
 LoRA resolution is shared with production. The lab can override the selected LoRA's scale within its curated range, making this kind useful for scale sweeps.
 
