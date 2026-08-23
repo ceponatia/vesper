@@ -46,3 +46,6 @@ __pycache__/
 
 # Local cog build artifacts inside the SD deployment directory.
 packages/image-sd/deployment/.cog/
+
+# Engine Comparison Logs
+docs/engine-comparison
