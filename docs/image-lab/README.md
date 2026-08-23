@@ -1,0 +1,67 @@
+# Advanced Image Lab
+
+The Advanced Image Lab is Vesper's admin-only image experimentation bench at `/settings/image-lab`. It exists to answer narrow image-model questions with a durable record of what was requested, what was actually sent, which model/version ran, what image came back, and—where the experiment has a defined question—a human verdict.
+
+The lab is deliberately separate from player-facing image generation. Some experiment kinds reproduce a production-shaped request, while others bypass production policy to test a specific capability. Those are different kinds because evidence is only useful when the record says which question was being asked.
+
+> **Important current limitation:** the lab is not a general model playground. There is currently no experiment kind whose contract is simply “run this selected registered model with this prompt and these optional references.” See [Known gaps and implementation recommendations](known-gaps-and-recommendations.md).
+
+## Table of contents
+
+### Experiment types
+
+| Experiment | What it answers |
+| --- | --- |
+| [Control probe](control-probe.md) | Does a pinned model obey one reviewed pose, depth, or edge fixture at all? |
+| [Baseline portrait](baseline-portrait.md) | What does the production portrait/variant lane do with this instruction and character? |
+| [Baseline scene](baseline-scene.md) | What does the production scene lane do with this instruction and conversation? |
+| [Controlled portrait](controlled-portrait.md) | Does a structural control still hold in a production-shaped portrait recipe? |
+| [Controlled scene](controlled-scene.md) | Does a structural control still hold in a production-shaped scene recipe? |
+| [Two-character scene](two-character-scene.md) | Can the model keep two named identities distinct, optionally under a structural control? |
+| [Finishing pass](finishing-pass.md) | Can identity be improved without changing the rest of an existing lab render? |
+| [Staged scene](staged-scene.md) | Can a selected intimate staging be depicted under the same staging wording used by production? |
+
+### Control fixtures
+
+| Fixture | How it is produced | What it represents |
+| --- | --- | --- |
+| [Pose fixture](pose-fixture.md) | Pinned OpenPose preprocessor or hand-authored upload | Body/joint layout |
+| [Depth fixture](depth-fixture.md) | Pinned Depth Anything v2 preprocessor or hand-authored upload | Relative scene depth |
+| [Edge fixture](edge-fixture.md) | Local Sharp/Sobel pass or hand-authored upload | Strong image edges |
+
+See [Generating and reviewing control fixtures](generating-control-fixtures.md) for the complete fixture workflow.
+
+### Design notes
+
+- [Known gaps and implementation recommendations](known-gaps-and-recommendations.md)
+
+## How an experiment moves through the lab
+
+1. An admin creates an experiment. The request records its kind, subject pointers, prompt/instruction, ordered inputs, selected model slug where applicable, and settings.
+2. A background job starts the kind-specific runner.
+3. The runner re-validates the stored row. Lab evidence is refused before provider spend when required inputs, fixture provenance, subject bindings, capacity, or an exact model version cannot be established.
+4. The runner records the exact prompt and, for pinned kinds, the requested provider version before rendering.
+5. The result is saved as a hidden `lab_output` image and the experiment settles `succeeded` or `failed`.
+6. Experiment kinds with a defined visual question can receive a verdict and required note. Baselines intentionally have no verdict vocabulary.
+
+All experiment kinds dispatch through `apps/web/src/server/images/image-lab-run.ts`. Shared contracts live in `packages/image-core/src/lab/image-lab.ts`; controlled recipe profiles live in `packages/image-core/src/lab/image-lab-recipes.ts`.
+
+## Model/version behavior at a glance
+
+The model field does **not** mean the same thing for every experiment kind:
+
+- `control_probe`, controlled experiments, `two_character_scene`, `finishing_pass`, and `staged_scene` resolve the named/default registered model and require an exact provider version before spending.
+- `baseline_portrait` and `baseline_scene` resolve the production profile for their task. The baseline runner then records and executes that profile's model, replacing the model slug stored when the experiment was created. The model box is therefore not a model override for baselines.
+- Production baselines do not pin a provider version, because their purpose is to reproduce production model/profile selection rather than controlled evidence against one frozen version.
+
+This distinction is one of the reasons a separate general-purpose model-trial experiment is preferable to repurposing a baseline.
+
+## Control fixture rule
+
+A fixture-sending experiment may only rely on a fixture that is identifiable and reviewed. The lab checks that the declared fixture is a hidden `lab_control` asset of the declared kind, appears exactly once in the experiment's send list under a control role, and has a recorded human review. If the fixture was extracted from an image, that same source image may not also be sent in the experiment: doing so would let the output match the fixture by copying the source instead of proving control obedience.
+
+## Failure records
+
+Lab failures settle onto the experiment instead of throwing away the attempt. Stable lab reasons include missing input, unpinned version, invalid/unreviewed control, control-source contamination, capacity overflow, invalid source experiment, invalid subject binding, unavailable identity reference, unsupported settings, invalid preprocessor output, and provider render failure.
+
+That persistence is intentional: a failed experiment is still evidence about why a test could not be run.
