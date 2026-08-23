@@ -4,7 +4,7 @@ The Advanced Image Lab is Vesper's admin-only image experimentation bench at `/s
 
 The lab is deliberately separate from player-facing image generation. Some experiment kinds reproduce a production-shaped request, while others bypass production policy to test a specific capability. Those are different kinds because evidence is only useful when the record says which question was being asked.
 
-> **Important current limitation:** the lab is not a general model playground. There is currently no experiment kind whose contract is simply “run this selected registered model with this prompt and these optional references.” See [Known gaps and implementation recommendations](known-gaps-and-recommendations.md).
+> **Important current limitation:** the lab is not a general model playground. There is no experiment kind whose contract is simply “run this selected registered model with this prompt and these optional references.” See [Current limitations](limitations.md).
 
 ## Table of contents
 
@@ -31,9 +31,9 @@ The lab is deliberately separate from player-facing image generation. Some exper
 
 See [Generating and reviewing control fixtures](generating-control-fixtures.md) for the complete fixture workflow.
 
-### Design notes
+### Current constraints
 
-- [Known gaps and implementation recommendations](known-gaps-and-recommendations.md)
+- [Current limitations](limitations.md)
 
 ## How an experiment moves through the lab
 
@@ -48,15 +48,15 @@ All experiment kinds dispatch through `apps/web/src/server/images/image-lab-run.
 
 ## Model/version behavior at a glance
 
-The create form now uses a registry-backed Model picker. `Default` keeps the experiment kind's normal model choice, registered pinnable rows can be selected directly, and `Other` accepts an alternate provider-path spelling. Rows that cannot supply an exact version pin are visible but disabled.
+The create form uses a registry-backed Model picker. `Default` keeps the experiment kind's normal model choice, registered pinnable rows can be selected directly, and `Other` accepts an alternate provider-path spelling. Rows that cannot supply an exact version pin are visible but disabled.
 
-That improves model selection, but the model choice still does **not** mean the same thing for every experiment kind:
+The model choice does **not** mean the same thing for every experiment kind:
 
 - `control_probe`, controlled experiments, `two_character_scene`, `finishing_pass`, and `staged_scene` resolve the selected/default registered model and require an exact provider version before spending.
 - `baseline_portrait` and `baseline_scene` resolve the production profile for their task. The baseline runner then records and executes that profile's model, replacing the model slug stored when the experiment was created. The Model picker is therefore not a model override for baselines.
 - Production baselines do not pin a provider version, because their purpose is to reproduce production model/profile selection rather than controlled evidence against one frozen version.
 
-This distinction is one of the reasons a separate general-purpose model-trial experiment is preferable to repurposing a baseline.
+Baselines therefore do not serve as selected-model smoke tests.
 
 ## Control fixture rule
 
