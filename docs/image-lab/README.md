@@ -48,10 +48,12 @@ All experiment kinds dispatch through `apps/web/src/server/images/image-lab-run.
 
 ## Model/version behavior at a glance
 
-The model field does **not** mean the same thing for every experiment kind:
+The create form now uses a registry-backed Model picker. `Default` keeps the experiment kind's normal model choice, registered pinnable rows can be selected directly, and `Other` accepts an alternate provider-path spelling. Rows that cannot supply an exact version pin are visible but disabled.
 
-- `control_probe`, controlled experiments, `two_character_scene`, `finishing_pass`, and `staged_scene` resolve the named/default registered model and require an exact provider version before spending.
-- `baseline_portrait` and `baseline_scene` resolve the production profile for their task. The baseline runner then records and executes that profile's model, replacing the model slug stored when the experiment was created. The model box is therefore not a model override for baselines.
+That improves model selection, but the model choice still does **not** mean the same thing for every experiment kind:
+
+- `control_probe`, controlled experiments, `two_character_scene`, `finishing_pass`, and `staged_scene` resolve the selected/default registered model and require an exact provider version before spending.
+- `baseline_portrait` and `baseline_scene` resolve the production profile for their task. The baseline runner then records and executes that profile's model, replacing the model slug stored when the experiment was created. The Model picker is therefore not a model override for baselines.
 - Production baselines do not pin a provider version, because their purpose is to reproduce production model/profile selection rather than controlled evidence against one frozen version.
 
 This distinction is one of the reasons a separate general-purpose model-trial experiment is preferable to repurposing a baseline.
