@@ -83,8 +83,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Stable Diffusion rendering package** —
   [plan](sd-rendering-package.plan.md) — `@vesper/image-sd` gives SDXL
   character LoRAs, identity conditioning, and ControlNet recipes behind the
-  existing profile picker; Stage 1 (the package, its contracts, and the
-  workspace wiring) is in, and the Vesper-owned Replicate renderer is next.
+  existing profile picker; Stages 1–2 (the package and the Vesper-owned
+  renderer) are built, and the owner's Replicate deploy + registration are
+  next.
 
 ## Next (queued, in dependency order)
 

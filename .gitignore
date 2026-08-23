@@ -39,3 +39,7 @@ docs/**/*.bmp
 docs/**/*.tif
 docs/**/*.tiff
 
+
+# Python bytecode caches from the Cog/ComfyUI deployment under packages/image-sd/deployment.
+__pycache__/
+*.pyc

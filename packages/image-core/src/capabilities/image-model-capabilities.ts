@@ -35,6 +35,12 @@ import { z } from "zod";
  *   what it was told to change (`qwen/qwen-image-edit-2511`).
  * - `multi_reference_compose` — composes a new image out of several supplied
  *   references (Seedream, Wan 2.7).
+ * - `identity_conditioned` — an identity ADAPTER: the reference image conditions
+ *   the generation toward one person's face rather than being repainted or
+ *   composed (PuLID, InstantID). The prompt still authors the whole picture, so
+ *   this is not instruction editing, and the face is the point, so it is not a
+ *   remix. Identity is what the mechanism is FOR, which is why it passes the
+ *   identity-critical screen that `img2img` fails.
  * - `img2img` — strength-based repainting (`qwen/qwen-image-2512` with its
  *   optional `image` + `strength`, Stable Diffusion 3.5 Large). A deliberate
  *   remix tool: the subject is an input to the noise, not something preserved.
@@ -45,7 +51,14 @@ import { z } from "zod";
  * than being locked out of its own profiles by a rating nobody has written.
  * Only `none` and `img2img` actually gate anything (see `profileEligibility`).
  */
-export const imageEditKinds = ["none", "instruction_edit", "multi_reference_compose", "img2img", "unknown"] as const;
+export const imageEditKinds = [
+  "none",
+  "instruction_edit",
+  "multi_reference_compose",
+  "identity_conditioned",
+  "img2img",
+  "unknown",
+] as const;
 export const imageEditKindSchema = z.enum(imageEditKinds);
 export type ImageEditKind = (typeof imageEditKinds)[number];
 

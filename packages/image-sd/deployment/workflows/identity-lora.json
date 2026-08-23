@@ -1,0 +1,153 @@
+{
+  "checkpoint": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "sd_xl_base_1.0.safetensors"
+    }
+  },
+  "lora": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": [
+        "checkpoint",
+        0
+      ],
+      "clip": [
+        "checkpoint",
+        1
+      ],
+      "lora_name": "character.safetensors",
+      "strength_model": 0.8,
+      "strength_clip": 0.8
+    }
+  },
+  "positive_prompt": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "a photograph of a woman standing in a sunlit kitchen, natural light",
+      "clip": [
+        "lora",
+        1
+      ]
+    }
+  },
+  "negative_prompt": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality",
+      "clip": [
+        "lora",
+        1
+      ]
+    }
+  },
+  "reference_image": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "reference.png"
+    }
+  },
+  "pulid_model": {
+    "class_type": "PulidModelLoader",
+    "inputs": {
+      "pulid_file": "ip-adapter_pulid_sdxl_fp16.safetensors"
+    }
+  },
+  "pulid_eva_clip": {
+    "class_type": "PulidEvaClipLoader",
+    "inputs": {}
+  },
+  "pulid_insightface": {
+    "class_type": "PulidInsightFaceLoader",
+    "inputs": {
+      "provider": "CUDA"
+    }
+  },
+  "pulid_apply": {
+    "class_type": "ApplyPulid",
+    "inputs": {
+      "model": [
+        "lora",
+        0
+      ],
+      "pulid": [
+        "pulid_model",
+        0
+      ],
+      "eva_clip": [
+        "pulid_eva_clip",
+        0
+      ],
+      "face_analysis": [
+        "pulid_insightface",
+        0
+      ],
+      "image": [
+        "reference_image",
+        0
+      ],
+      "method": "fidelity",
+      "weight": 0.8,
+      "start_at": 0.0,
+      "end_at": 1.0
+    }
+  },
+  "empty_latent": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 832,
+      "height": 1216,
+      "batch_size": 1
+    }
+  },
+  "sampler": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "pulid_apply",
+        0
+      ],
+      "seed": 1,
+      "steps": 35,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "positive": [
+        "positive_prompt",
+        0
+      ],
+      "negative": [
+        "negative_prompt",
+        0
+      ],
+      "latent_image": [
+        "empty_latent",
+        0
+      ],
+      "denoise": 1.0
+    }
+  },
+  "vae_decode": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "sampler",
+        0
+      ],
+      "vae": [
+        "checkpoint",
+        2
+      ]
+    }
+  },
+  "save_image": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "vae_decode",
+        0
+      ],
+      "filename_prefix": "vesper"
+    }
+  }
+}

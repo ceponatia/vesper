@@ -68,7 +68,22 @@ export const sdxlCharacterRenderInputSchema = z.object({
    * recipe contract itself uses, so a name that could never resolve is refused
    * before a prediction is paid for rather than falling back to a renderer
    * default nobody chose.
+   *
+   * **Defaulted, because the one surface offered this model cannot name a
+   * recipe.** Stage 2 gives the renderer to the Advanced Image Lab alone, and a
+   * lab run sends none: lab recipes carry empty `providerOverrides`, and a
+   * controlled run refuses a raw provider bag. The deployed Cog schema declares
+   * the same default and this line mirrors it — the two drifting apart is what
+   * writing the contract down here is meant to prevent. `sdxl/identity-portrait`
+   * rather than the control arm because it degrades exactly to
+   * `sdxl/base-portrait` when no identity or LoRA input is sent, so it is the
+   * right choice on both kinds of render.
+   *
+   * The default id must always resolve in the recipe registry. The schema is a
+   * regex, so a rename that orphans this id stays well-formed and sends every
+   * defaulted render to a recipe nothing registers — `render-input.test.ts`
+   * holds that tie.
    */
-  recipe: sdRecipeIdSchema,
+  recipe: sdRecipeIdSchema.default("sdxl/identity-portrait"),
 });
 export type SdxlCharacterRenderInput = z.infer<typeof sdxlCharacterRenderInputSchema>;

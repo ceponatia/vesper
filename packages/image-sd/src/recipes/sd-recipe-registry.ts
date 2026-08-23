@@ -75,6 +75,52 @@ export const sdRecipes: readonly SdRecipe[] = [
     // depth or pose map introduced alongside identity makes neither result
     // attributable.
   },
+  // The other two arms of Stage 3's identity-strength trial. §7 names three
+  // PuLID test points — 0.65 / 0.80 / 0.95 — and `sdxl/identity-portrait` above
+  // is the middle one, so these two complete the set.
+  //
+  // Separate IDS rather than revisions of the identity recipe, deliberately. A
+  // revision REPLACES: it is the answer to "what produced this image" after a
+  // comparison has been won. These three are concurrent arms of a comparison
+  // that has not been run, and they all have to be runnable and distinguishable
+  // at the same time. Whichever arm wins becomes revision 2 of
+  // `sdxl/identity-portrait`, and these two are retired rather than promoted —
+  // an id that means "the 0.65 arm" has no meaning once the trial is over.
+  //
+  // Everything except `identityWeight` is copied verbatim from the middle arm,
+  // because §7 is explicit that only one variable moves at a time.
+  {
+    id: "sdxl/identity-portrait-w065",
+    family: "sdxl",
+    revision: 1,
+    description:
+      "Stage 3 identity-strength trial, weak arm: the identity portrait with PuLID at 0.65. Trial arm, not a tuned default.",
+    checkpoint: "stabilityai/stable-diffusion-xl-base-1.0",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    steps: 35,
+    cfg: 5,
+    width: 832,
+    height: 1216,
+    identityWeight: 0.65,
+    loraScale: 0.8,
+  },
+  {
+    id: "sdxl/identity-portrait-w095",
+    family: "sdxl",
+    revision: 1,
+    description:
+      "Stage 3 identity-strength trial, strong arm: the identity portrait with PuLID at 0.95. Trial arm, not a tuned default.",
+    checkpoint: "stabilityai/stable-diffusion-xl-base-1.0",
+    sampler: "dpmpp_2m",
+    scheduler: "karras",
+    steps: 35,
+    cfg: 5,
+    width: 832,
+    height: 1216,
+    identityWeight: 0.95,
+    loraScale: 0.8,
+  },
 ];
 
 /** The highest revision per id among these entries — the ones an operator may still run. */

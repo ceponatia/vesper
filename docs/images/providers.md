@@ -53,7 +53,7 @@ which lumps `qwen/qwen-image-edit-2511` (follows an instruction and keeps the
 face) in with `stability-ai/stable-diffusion-3.5-large` (strength repainting that
 hands back a plausible stranger). Three **reviewed** columns carry that human
 judgment — `editKind` (`none` · `instruction_edit` · `multi_reference_compose` ·
-`img2img` · `unknown`), `identityPreservation` (`strong` · `moderate` · `weak` ·
+`identity_conditioned` · `img2img` · `unknown`), `identityPreservation` (`strong` · `moderate` · `weak` ·
 `unknown`), and `operatorWarning` (free text the admin card edits and the profile
 pickers show as helper text before use; Wan 2.7's un-disableable moderation is
 its first value) — and **a re-probe
@@ -340,7 +340,12 @@ identity-critical tasks — `variant`, `scene`, `chat_look` — additionally ref
 was never evidence that a face survives. `portrait` is deliberately not
 identity-critical: it *creates* the reference every other task preserves. An
 img2img model stays usable through a deliberate remix profile on a non-identity
-task, and `unknown` passes every semantic check.
+task, and `unknown` passes every semantic check. `identity_conditioned` — an
+identity adapter that conditions generation on a supplied face (PuLID,
+InstantID) — passes both semantic screens on purpose: it re-generates like
+img2img but conditions **on** the subject instead of repainting it, so it is
+what the identity-critical tasks want, and only its `identityPreservation`
+rating can still disqualify it.
 
 **Shape is negotiated per render, not fixed per model.** A lane asks for a ratio
 (3:4 everywhere except items at 1:1 and locations at 3:2); `chooseDimensions`

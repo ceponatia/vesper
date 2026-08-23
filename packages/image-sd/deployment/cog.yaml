@@ -1,0 +1,76 @@
+# The Vesper-owned SDXL character renderer, as a Cog build.
+#
+# Everything that decides what an image looks like is pinned to an exact
+# revision: the Python version, the CUDA version, the torch trio, ComfyUI at a
+# commit, and the PuLID custom node at a commit. A renderer whose graph is
+# frozen but whose nodes float is not frozen — see deployment/README.md.
+#
+# `predict:` is Cog's deprecated compatibility field for `run:`/`BaseRunner`.
+# It is used deliberately: the predictor here is a `BasePredictor` with
+# `setup()`/`predict()`, which is still supported, and migrating is a mechanical
+# change (`cog doctor --fix`) that should happen on its own, not folded into the
+# build that first proves this renderer works.
+
+build:
+  gpu: true
+  # Pinned rather than inferred. Cog would pick a CUDA version from torch, and
+  # "whatever Cog picked that week" is not a freeze. 12.6 is a published wheel
+  # index for torch 2.13.0 and is what onnxruntime-gpu's default wheels target.
+  cuda: "12.6"
+  python_version: "3.12"
+  system_packages:
+    # ComfyUI and the PuLID node are cloned at exact commits below.
+    - "git"
+    # opencv (pulled in by facexlib and insightface) links against these; without
+    # them the first `import cv2` dies with a libGL error at setup, not at build.
+    - "libgl1"
+    - "libglib2.0-0"
+    # insightface builds native extensions when no wheel matches the interpreter.
+    - "build-essential"
+    - "cmake"
+  python_requirements: requirements.txt
+  run:
+    # ComfyUI v0.33.1 (2026-08-13). The tag is resolved to its commit so the
+    # build cannot move if the tag is ever repointed.
+    - "git clone --filter=blob:none https://github.com/comfyanonymous/ComfyUI.git /ComfyUI"
+    - "git -C /ComfyUI checkout 72865f4f27eaf5396f8f36370e0a2be3a9a090ee"
+    - "pip install --no-cache-dir -r /ComfyUI/requirements.txt"
+    # cubiq/PuLID_ComfyUI at the tip of `main` — commit "maintenance mode",
+    # 2025-04-14, still the latest as of 2026-08-23. The repository is in the
+    # author's declared "maintenance only" mode, which is a reason to pin it
+    # rather than a reason to avoid it: the node's behaviour is now stable, and
+    # the deployment owns the decision to move.
+    - "git clone --filter=blob:none https://github.com/cubiq/PuLID_ComfyUI.git /ComfyUI/custom_nodes/PuLID_ComfyUI"
+    - "git -C /ComfyUI/custom_nodes/PuLID_ComfyUI checkout 93e0c4c226b87b23c0009d671978bad0e77289ff"
+    # PATCH: the PuLID node's middle-block attention key.
+    #
+    # `ApplyPulid` registers its 70 attention patches under ("input", id, i),
+    # ("output", id, i) and ("middle", 1, i) — pulid.py:459 at the commit above.
+    # ComfyUI v0.33.1 sets the middle block's patch key to ("middle", 0)
+    # (openaimodel.py:893) and looks patches up as ("middle", 0, i) with a
+    # ("middle", 0) fallback (attention.py:1033, 1077-1081). The ten middle-block
+    # registrations therefore never fire, and identity conditioning silently
+    # applies at the input and output cross-attention blocks only.
+    #
+    # Owner ruling 2026-08-23: patch it at build time rather than ship the
+    # weakened behaviour. See deployment/README.md — this makes Vesper's PuLID
+    # diverge from every public ComfyUI PuLID pipeline, which Stage 3 comparisons
+    # have to account for.
+    #
+    # Guarded on both sides. If the expected call site is ever absent — a bumped
+    # node commit, an upstream fix — the build FAILS with the reason instead of
+    # quietly skipping the patch and producing a renderer whose identity strength
+    # nobody can explain.
+    - "grep -qF 'set_model_patch_replace(work_model, patch_kwargs, (\"middle\", 1, index))' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py || { echo 'FATAL: the PuLID middle-block patch no longer applies - pulid.py at this commit does not contain the expected (\"middle\", 1, index) call site. Re-verify the node against ComfyUI attention.py before bumping the pin, then update this step. See deployment/README.md.'; exit 1; }"
+    - "sed -i 's/(\"middle\", 1, index)/(\"middle\", 0, index)/' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py"
+    - "grep -qF 'set_model_patch_replace(work_model, patch_kwargs, (\"middle\", 0, index))' /ComfyUI/custom_nodes/PuLID_ComfyUI/pulid.py || { echo 'FATAL: the PuLID middle-block patch did not apply - pulid.py does not contain the patched (\"middle\", 0, index) call site.'; exit 1; }"
+    # insightface hard-depends on the CPU `onnxruntime` distribution, which pip
+    # installs from requirements.txt ALONGSIDE `onnxruntime-gpu`. Both ship the
+    # same `onnxruntime/` package directory, including `capi/`, so whichever pip
+    # unpacks second wins — and if that is the CPU build, `CUDAExecutionProvider`
+    # disappears and PulidInsightFaceLoader's "CUDA" provider degrades silently
+    # to a much slower CPU detector instead of failing. Give the GPU build the
+    # last word explicitly rather than trusting resolver order.
+    - "pip uninstall -y onnxruntime && pip install --no-cache-dir --force-reinstall --no-deps onnxruntime-gpu==1.29.0"
+
+predict: "predict.py:Predictor"

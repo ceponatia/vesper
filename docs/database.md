@@ -288,7 +288,7 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   - Owner-set and **never** overwritten by a re-probe: `max_references` (no model declares
     `maxItems`), `reference_transport` (`file`/`data_url` — only found by running the model),
     the `for_portrait`/`for_variant`/`for_scene` surface toggles, and the reviewed judgments
-    `edit_kind` (`none`/`instruction_edit`/`multi_reference_compose`/`img2img`/`unknown`),
+    `edit_kind` (`none`/`instruction_edit`/`multi_reference_compose`/`identity_conditioned`/`img2img`/`unknown`),
     `identity_preservation` (`strong`/`moderate`/`weak`/`unknown`) and `operator_warning?`.
   - `advanced_capabilities` JSONB is reserved for probed control bindings and is `{}` today.
     Which models the app can run is **data, not a code union** — managed at

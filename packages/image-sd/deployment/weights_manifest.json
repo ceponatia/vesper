@@ -1,0 +1,137 @@
+{
+  "about": "Every model artifact the Vesper SDXL character renderer needs, with the address it came from. No weights live in git. Every `sha256` below is FROZEN-AT-FIRST-BUILD: null until the FREEZE step in README.md records the digest of the first verified download, after which a mismatch is a hard failure rather than a silently different render. `target_root` names which tree the file belongs in: `comfyui` is the ComfyUI checkout, `hf_cache` is the Hugging Face hub cache PuLID's EVA-CLIP loader resolves through, and `facexlib` is the installed facexlib package directory its own downloader writes to.",
+  "artifacts": [
+    {
+      "name": "sdxl-base-checkpoint",
+      "kind": "http",
+      "source_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
+      "filename": "sd_xl_base_1.0.safetensors",
+      "target_root": "comfyui",
+      "target_dir": "models/checkpoints",
+      "sha256": null,
+      "notes": "The recipes' `checkpoint` field names stabilityai/stable-diffusion-xl-base-1.0. Plan §6 keeps vanilla SDXL as the control arm and refuses to lock Vesper to a community checkpoint before licensing and hosted-product use are reviewed."
+    },
+    {
+      "name": "pulid-sdxl",
+      "kind": "http",
+      "source_url": "https://huggingface.co/huchenlei/ipadapter_pulid/resolve/main/ip-adapter_pulid_sdxl_fp16.safetensors",
+      "filename": "ip-adapter_pulid_sdxl_fp16.safetensors",
+      "target_root": "comfyui",
+      "target_dir": "models/pulid",
+      "sha256": null,
+      "notes": "The IPAdapter-format conversion of the PuLID v1.1 SDXL weights, which is the file cubiq/PuLID_ComfyUI's own README installs. PulidModelLoader reads `ComfyUI/models/pulid`."
+    },
+    {
+      "name": "eva-clip-l-336",
+      "kind": "hf_hub",
+      "source_url": "https://huggingface.co/QuanSun/EVA-CLIP/resolve/main/EVA02_CLIP_L_336_psz14_s6B.pt",
+      "hf_repo_id": "QuanSun/EVA-CLIP",
+      "hf_filename": "EVA02_CLIP_L_336_psz14_s6B.pt",
+      "filename": "EVA02_CLIP_L_336_psz14_s6B.pt",
+      "target_root": "hf_cache",
+      "target_dir": "",
+      "sha256": null,
+      "notes": "PuLID's vision encoder. PulidEvaClipLoader calls create_model_and_transforms('EVA02-CLIP-L-14-336', 'eva_clip'), whose pretrained table resolves to this repo/file through huggingface_hub — so it must be warmed into the hub cache rather than dropped in a plain directory, or the first prediction downloads 1.7 GB mid-render."
+    },
+    {
+      "name": "insightface-antelopev2-1k3d68",
+      "kind": "http",
+      "source_url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/1k3d68.onnx",
+      "filename": "1k3d68.onnx",
+      "target_root": "comfyui",
+      "target_dir": "models/insightface/models/antelopev2",
+      "sha256": null,
+      "notes": "One of the five antelopev2 models PulidInsightFaceLoader expects. Fetched as loose files rather than the repo's antelopev2.zip on purpose: the zip is the well-known source of a doubly-nested antelopev2/antelopev2 directory that leaves FaceAnalysis reporting no models with no useful error."
+    },
+    {
+      "name": "insightface-antelopev2-2d106det",
+      "kind": "http",
+      "source_url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/2d106det.onnx",
+      "filename": "2d106det.onnx",
+      "target_root": "comfyui",
+      "target_dir": "models/insightface/models/antelopev2",
+      "sha256": null,
+      "notes": "antelopev2 landmark model."
+    },
+    {
+      "name": "insightface-antelopev2-genderage",
+      "kind": "http",
+      "source_url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/genderage.onnx",
+      "filename": "genderage.onnx",
+      "target_root": "comfyui",
+      "target_dir": "models/insightface/models/antelopev2",
+      "sha256": null,
+      "notes": "antelopev2 attribute model. Unused by the identity path but loaded by FaceAnalysis when it scans the pack."
+    },
+    {
+      "name": "insightface-antelopev2-glintr100",
+      "kind": "http",
+      "source_url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/glintr100.onnx",
+      "filename": "glintr100.onnx",
+      "target_root": "comfyui",
+      "target_dir": "models/insightface/models/antelopev2",
+      "sha256": null,
+      "notes": "antelopev2 recognition model — the face embedding PuLID concatenates with the EVA-CLIP features."
+    },
+    {
+      "name": "insightface-antelopev2-scrfd-10g-bnkps",
+      "kind": "http",
+      "source_url": "https://huggingface.co/MonsterMMORPG/tools/resolve/main/scrfd_10g_bnkps.onnx",
+      "filename": "scrfd_10g_bnkps.onnx",
+      "target_root": "comfyui",
+      "target_dir": "models/insightface/models/antelopev2",
+      "sha256": null,
+      "notes": "antelopev2 detection model."
+    },
+    {
+      "name": "facexlib-detection-retinaface-resnet50",
+      "kind": "http",
+      "source_url": "https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth",
+      "filename": "detection_Resnet50_Final.pth",
+      "target_root": "facexlib",
+      "target_dir": "weights",
+      "sha256": null,
+      "notes": "PuLID builds FaceRestoreHelper(det_model='retinaface_resnet50'), and facexlib downloads this on first use into <site-packages>/facexlib/weights. Pre-staged here so no prediction depends on GitHub being reachable."
+    },
+    {
+      "name": "facexlib-parsing-parsenet",
+      "kind": "http",
+      "source_url": "https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth",
+      "filename": "parsing_parsenet.pth",
+      "target_root": "facexlib",
+      "target_dir": "weights",
+      "sha256": null,
+      "notes": "FaceRestoreHelper's constructor always initialises the parsenet parser, even though PuLID immediately replaces it with bisenet. Staged because the download happens regardless."
+    },
+    {
+      "name": "facexlib-parsing-bisenet",
+      "kind": "http",
+      "source_url": "https://github.com/xinntao/facexlib/releases/download/v0.2.0/parsing_bisenet.pth",
+      "filename": "parsing_bisenet.pth",
+      "target_root": "facexlib",
+      "target_dir": "weights",
+      "sha256": null,
+      "notes": "The face parser PuLID actually uses, to mask the background out of the reference face before the EVA-CLIP pass."
+    },
+    {
+      "name": "controlnet-depth-sdxl",
+      "kind": "http",
+      "source_url": "https://huggingface.co/xinsir/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors",
+      "filename": "controlnet-depth-sdxl-1.0.safetensors",
+      "target_root": "comfyui",
+      "target_dir": "models/controlnet",
+      "sha256": null,
+      "notes": "Renamed on download: the repo's file is called diffusion_pytorch_model.safetensors, which would collide with the pose ControlNet in a single flat models/controlnet directory."
+    },
+    {
+      "name": "controlnet-openpose-sdxl",
+      "kind": "http",
+      "source_url": "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors",
+      "filename": "controlnet-openpose-sdxl-1.0.safetensors",
+      "target_root": "comfyui",
+      "target_dir": "models/controlnet",
+      "sha256": null,
+      "notes": "Renamed for the same reason. This model consumes an OpenPose SKELETON RENDER, not a photograph — Vesper preprocesses control maps itself and this deployment ships no preprocessors."
+    }
+  ]
+}

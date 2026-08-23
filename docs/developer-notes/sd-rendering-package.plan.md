@@ -724,6 +724,8 @@ One core change *is* justified early:
 
 ### Add an identity-conditioned edit kind
 
+Status: built 2026-08-23 (landed with Stage 2) — `identity_conditioned` is in the edit-kind vocabulary and passes the identity-critical eligibility screen; flipping existing model rows to it remains an owner review action.
+
 The current PuLID model has to use `editKind = unknown` because none of the current values describe an identity adapter.
 
 Add something conceptually equivalent to:
@@ -825,6 +827,8 @@ No image behavior changes.
 ---
 
 ## Stage 2 — Build the Vesper SDXL Replicate renderer
+
+Status: built 2026-08-23 — awaiting the owner's first GPU build, the Replicate deploy, and the admin registration; the runbook for all three is `packages/image-sd/deployment/README.md`.
 
 Prototype the workflow in ComfyUI.
 
@@ -1106,3 +1110,10 @@ The package is ready for normal Vesper use when:
 12. Disabling every SD profile restores current Vesper behavior without code changes.
 
 That last requirement is important: **Stable Diffusion should enter Vesper as an optional model-family capability, not as an invasive rewrite of the image system.**
+
+Owner ruling (2026-08-23): the vendored PuLID node's dead middle-block
+attention patches are corrected at build time, so the Vesper renderer applies
+identity conditioning at all attention blocks. This diverges deliberately from
+the public ComfyUI PuLID baseline (including `nsfw-api/sdxl-pulid`), and Stage
+3 comparisons against that model must account for it. Detail:
+`packages/image-sd/deployment/README.md`.
