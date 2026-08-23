@@ -21,6 +21,10 @@ build:
   system_packages:
     # ComfyUI and the PuLID node are cloned at exact commits below.
     - "git"
+    # Static model artifacts are fetched while the image is built, not during
+    # Predictor.setup(). Replicate recommends shipping weights with the model so
+    # a cold worker does not spend its first prediction downloading ~15 GB.
+    - "curl"
     # opencv (pulled in by facexlib and insightface) links against these; without
     # them the first `import cv2` dies with a libGL error at setup, not at build.
     - "libgl1"
@@ -72,5 +76,99 @@ build:
     # to a much slower CPU detector instead of failing. Give the GPU build the
     # last word explicitly rather than trusting resolver order.
     - "pip uninstall -y onnxruntime && pip install --no-cache-dir --force-reinstall --no-deps onnxruntime-gpu==1.29.0"
+
+    # Bake every immutable model artifact into the image. Predictor.setup() is
+    # intentionally still idempotent and still knows how to download a missing
+    # artifact, but a correctly built Replicate image reaches that code with all
+    # twelve plain files already present. This moves the ~15 GB transfer from a
+    # billed cold prediction into the image build/push and keeps warm behaviour
+    # unchanged. URLs and digests mirror weights_manifest.json; the sync checker
+    # in scripts/check_weight_bake_sync.py prevents the two declarations drifting.
+    - |
+      set -eu
+      fetch_weight() {
+        url="$1"
+        destination="$2"
+        expected="$3"
+        mkdir -p "$(dirname "$destination")"
+        partial="${destination}.partial"
+        rm -f "$partial"
+        echo "baking $(basename "$destination")"
+        curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+          --output "$partial" "$url"
+        actual="$(sha256sum "$partial" | cut -d ' ' -f 1)"
+        if [ "$actual" != "$expected" ]; then
+          rm -f "$partial"
+          echo "FATAL: $(basename "$destination") sha256 $actual != pinned $expected" >&2
+          exit 1
+        fi
+        mv "$partial" "$destination"
+      }
+
+      fetch_weight \
+        "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors" \
+        "/ComfyUI/models/checkpoints/sd_xl_base_1.0.safetensors" \
+        "31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b"
+      fetch_weight \
+        "https://huggingface.co/huchenlei/ipadapter_pulid/resolve/main/ip-adapter_pulid_sdxl_fp16.safetensors" \
+        "/ComfyUI/models/pulid/ip-adapter_pulid_sdxl_fp16.safetensors" \
+        "b258a5cd2c0c7d35f4d3e59909d7648498686afae4d0c74917e9c47d7704fbf5"
+      fetch_weight \
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/1k3d68.onnx" \
+        "/ComfyUI/models/insightface/models/antelopev2/1k3d68.onnx" \
+        "df5c06b8a0c12e422b2ed8947b8869faa4105387f199c477af038aa01f9a45cc"
+      fetch_weight \
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/2d106det.onnx" \
+        "/ComfyUI/models/insightface/models/antelopev2/2d106det.onnx" \
+        "f001b856447c413801ef5c42091ed0cd516fcd21f2d6b79635b1e733a7109dbf"
+      fetch_weight \
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/genderage.onnx" \
+        "/ComfyUI/models/insightface/models/antelopev2/genderage.onnx" \
+        "4fde69b1c810857b88c64a335084f1c3fe8f01246c9a191b48c7bb756d6652fb"
+      fetch_weight \
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/glintr100.onnx" \
+        "/ComfyUI/models/insightface/models/antelopev2/glintr100.onnx" \
+        "4ab1d6435d639628a6f3e5008dd4f929edf4c4124b1a7169e1048f9fef534cdf"
+      fetch_weight \
+        "https://huggingface.co/MonsterMMORPG/tools/resolve/main/scrfd_10g_bnkps.onnx" \
+        "/ComfyUI/models/insightface/models/antelopev2/scrfd_10g_bnkps.onnx" \
+        "5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91"
+
+      FACEXLIB_DIR="$(python -c 'import pathlib, facexlib; print(pathlib.Path(facexlib.__file__).resolve().parent)')"
+      fetch_weight \
+        "https://github.com/xinntao/facexlib/releases/download/v0.1.0/detection_Resnet50_Final.pth" \
+        "$FACEXLIB_DIR/weights/detection_Resnet50_Final.pth" \
+        "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"
+      fetch_weight \
+        "https://github.com/xinntao/facexlib/releases/download/v0.2.2/parsing_parsenet.pth" \
+        "$FACEXLIB_DIR/weights/parsing_parsenet.pth" \
+        "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"
+      fetch_weight \
+        "https://github.com/xinntao/facexlib/releases/download/v0.2.0/parsing_bisenet.pth" \
+        "$FACEXLIB_DIR/weights/parsing_bisenet.pth" \
+        "468e13ca13a9b43cc0881a9f99083a430e9c0a38abd935431d1c28ee94b26567"
+      fetch_weight \
+        "https://huggingface.co/xinsir/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors" \
+        "/ComfyUI/models/controlnet/controlnet-depth-sdxl-1.0.safetensors" \
+        "ea3770af4c33ea8ba8dccc0106ec5d5c5c6e504eb382119a3ccac3c9d973d344"
+      fetch_weight \
+        "https://huggingface.co/xinsir/controlnet-openpose-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors" \
+        "/ComfyUI/models/controlnet/controlnet-openpose-sdxl-1.0.safetensors" \
+        "b8524e557a7df60d081f5d4a0eb109967d107df217943bf88c2d99b9ebcc06c5"
+
+    # EVA-CLIP is the one exception to the plain-file paths above. PuLID asks
+    # huggingface_hub for this repo/file at runtime, so bake it into the exact
+    # cache tree huggingface_hub will read instead of merely placing the bytes
+    # somewhere nearby. Runtime setup will resolve this cached snapshot and only
+    # perform its existing integrity check; it will not transfer the 1.7 GB file.
+    - |
+      set -eu
+      mkdir -p /hf-cache/hub
+      EVA_PATH="$(HF_HOME=/hf-cache python -c 'from huggingface_hub import hf_hub_download; print(hf_hub_download(repo_id="QuanSun/EVA-CLIP", filename="EVA02_CLIP_L_336_psz14_s6B.pt", cache_dir="/hf-cache/hub"))')"
+      EVA_SHA="$(sha256sum "$EVA_PATH" | cut -d ' ' -f 1)"
+      if [ "$EVA_SHA" != "84c3a17a228c567a155259b2245b0b59072bf7da510260a0a02ec54de6d50b05" ]; then
+        echo "FATAL: EVA02_CLIP_L_336_psz14_s6B.pt sha256 $EVA_SHA != pinned 84c3a17a228c567a155259b2245b0b59072bf7da510260a0a02ec54de6d50b05" >&2
+        exit 1
+      fi
 
 predict: "predict.py:Predictor"
