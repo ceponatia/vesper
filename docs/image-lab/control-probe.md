@@ -19,7 +19,9 @@ The declared fixture must appear exactly once among the ordered inputs under `po
 
 ## Model and version behavior
 
-The probe uses the experiment's model slug. Blank in the UI currently means the default edit model. At run time the model must be present in the image-model registry and must resolve to an exact provider version. A floating version is refused as `image_lab.version_unpinned` before any provider spend.
+The Model picker lists registered image-model rows. `Default` keeps the experiment kind's normal default (`qwen/qwen-image-edit-2511` for a probe), and `Other` allows an alternate provider-path spelling. Rows with no exact version available to pin are shown but disabled.
+
+At run time the selected/default model must still resolve through the registry and must have an exact provider version. A floating version is refused as `image_lab.version_unpinned` before any provider spend.
 
 Reference capacity is also checked before rendering. Unlike production-shaped controlled recipes, a probe refuses an over-capacity request rather than trimming it, because a probe whose record says a fixture was sent when the transport dropped it would be invalid evidence.
 
@@ -40,6 +42,14 @@ Before rendering the runner verifies that:
 - if it was extracted from a source render, that source render is **not** also being sent.
 
 The last rule prevents false passes: a model could reproduce the source image's pose/depth by copying the source rather than obeying the extracted control map.
+
+## Important transport limitation
+
+The probe's direct runner hands its ordered images to the model as the primary reference list. That is correct for models such as Qwen Image Edit 2511, where a pose/depth fixture is an ordinary numbered reference.
+
+It is **not** sufficient for a renderer that exposes a dedicated control-image field such as `pose_image` or `depth_image`. The production render-intent path has machinery for dedicated structural inputs, but `runControlProbe` does not use it. A probe against such a renderer can therefore test the wrong provider input even though the fixture role is correct in the lab record.
+
+See [Known gaps and implementation recommendations](known-gaps-and-recommendations.md) before using probes to judge a dedicated-ControlNet-style renderer.
 
 ## Verdicts
 
