@@ -276,8 +276,29 @@ function buildCell(arm: Arm, recipe: SdRecipe, fixture: SdEvaluationFixture, ref
   return { arm, recipe, fixture, input };
 }
 
+/**
+ * A selector naming the same id twice is refused, not quietly collapsed.
+ *
+ * `--arm w080 --arm w080` would build the cell twice, and every consequence of
+ * that is silent: the same prediction is created and paid for twice, the second
+ * image overwrites the first at a path keyed by arm and fixture, and the
+ * manifest ends up with two rows pointing at one file. Deduplicating would fix
+ * the spend but not the ambiguity — a repeated id usually means the operator
+ * meant a DIFFERENT one, and this is cheap enough to say out loud.
+ */
+function assertNoRepeats(flag: string, wanted: readonly string[]): void {
+  const repeated = [...new Set(wanted.filter((id, index) => wanted.indexOf(id) !== index))];
+  if (repeated.length > 0) {
+    throw new UsageError(
+      `--${flag} names ${repeated.map((id) => `"${id}"`).join(", ")} more than once — that would pay for the same prediction twice, ` +
+        `overwrite the first image at the same path, and leave two manifest rows for one file`,
+    );
+  }
+}
+
 function selectArms(wanted: readonly string[]): Arm[] {
   if (wanted.length === 0) return [...ARMS];
+  assertNoRepeats("arm", wanted);
   return wanted.map((id) => {
     const arm = ARMS.find((candidate) => candidate.id === id);
     if (!arm) throw new UsageError(`unknown --arm "${id}" — have: ${ARMS.map((a) => a.id).join(", ")}`);
@@ -287,6 +308,7 @@ function selectArms(wanted: readonly string[]): Arm[] {
 
 function selectFixtures(wanted: readonly string[]): SdEvaluationFixture[] {
   if (wanted.length === 0) return [...sdEvaluationFixtures];
+  assertNoRepeats("fixture", wanted);
   return wanted.map((id) => {
     const fixture = sdEvaluationFixtures.find((candidate) => candidate.id === id);
     if (!fixture) {
@@ -746,34 +768,23 @@ async function renderCell(cell: Cell, run: RunTarget, token: string, outDir: str
   }
 }
 
-async function main(): Promise<void> {
-  const args = readArgs(process.argv.slice(2));
-  if (args.help) {
-    console.log(HELP);
-    return;
-  }
-
-  const arms = resolveArms(selectArms(args.arms));
-  const fixtures = selectFixtures(args.fixtures);
+/**
+ * Everything downstream of the reference upload.
+ *
+ * Split out of {@link main} for one reason: the caller wraps this whole call in
+ * the `finally` that deletes an uploaded anchor, so every step below is covered
+ * by that cleanup. It used to guard only the render loop, which left a window —
+ * an unwritable `--out`, a bad `--version`, a failed honesty check — where the
+ * upload had already succeeded and nothing ever took it back off Replicate.
+ */
+async function runMatrix(
+  args: Args,
+  arms: readonly ResolvedArm[],
+  fixtures: readonly SdEvaluationFixture[],
+  token: string,
+  reference: Reference | undefined,
+): Promise<void> {
   const identityArms = arms.filter(({ recipe }) => sendsReference(recipe));
-
-  if (!args.dryRun && args.version === undefined) {
-    throw new UsageError("--version is required: the renderer is private and non-official, so a prediction must name its version id");
-  }
-  if (!args.dryRun && identityArms.length > 0 && args.reference === undefined) {
-    throw new UsageError("--reference is required whenever an identity arm runs (use --arm base for a control-only run)");
-  }
-
-  // The reference is uploaded BEFORE the matrix is built, because its URL is
-  // part of every identity cell's request — and a dry run says so with a
-  // sentinel rather than uploading anything.
-  const token = args.dryRun ? "" : replicateToken();
-  let reference: Reference | undefined;
-  if (!args.dryRun && args.reference !== undefined) {
-    console.log(`Resolving the identity reference (${args.reference}) …`);
-    reference = await resolveReference(args.reference, token);
-    console.log(`  ${reference.fileId === undefined ? "used as given" : `uploaded once as ${reference.fileId}`}`);
-  }
   const referenceUrl = args.dryRun ? REFERENCE_PLACEHOLDER : reference?.url;
 
   const cells = arms.flatMap(({ arm, recipe }) => fixtures.map((fixture) => buildCell(arm, recipe, fixture, referenceUrl)));
@@ -825,18 +836,12 @@ async function main(): Promise<void> {
   await fs.writeFile(path.join(outDir, "README.md"), runNotes(version, cells, arms, fixtures, reference));
 
   let failures = 0;
-  try {
-    for (const cell of cells) {
-      const result = await renderCell(cell, run, token, outDir);
-      // Appended per cell rather than written at the end: an interrupted run
-      // still records every prediction it paid for.
-      await fs.appendFile(manifest, csvRow(result.row));
-      if (!result.ok) failures += 1;
-    }
-  } finally {
-    // In `finally` so a run that dies on a full disk still takes the uploaded
-    // anchor back off Replicate, rather than leaving it there unnoticed.
-    if (reference !== undefined) await deleteUploadedReference(reference, token);
+  for (const cell of cells) {
+    const result = await renderCell(cell, run, token, outDir);
+    // Appended per cell rather than written at the end: an interrupted run
+    // still records every prediction it paid for.
+    await fs.appendFile(manifest, csvRow(result.row));
+    if (!result.ok) failures += 1;
   }
 
   console.log(`\n${String(cells.length - failures)}/${String(cells.length)} cells rendered. Manifest: ${manifest}`);
@@ -844,6 +849,45 @@ async function main(): Promise<void> {
   if (failures > 0) {
     console.error(`${String(failures)} cell(s) failed; their rows carry the status and the prediction id.`);
     process.exitCode = 1;
+  }
+}
+
+async function main(): Promise<void> {
+  const args = readArgs(process.argv.slice(2));
+  if (args.help) {
+    console.log(HELP);
+    return;
+  }
+
+  const arms = resolveArms(selectArms(args.arms));
+  const fixtures = selectFixtures(args.fixtures);
+  const identityArms = arms.filter(({ recipe }) => sendsReference(recipe));
+
+  if (!args.dryRun && args.version === undefined) {
+    throw new UsageError("--version is required: the renderer is private and non-official, so a prediction must name its version id");
+  }
+  if (!args.dryRun && identityArms.length > 0 && args.reference === undefined) {
+    throw new UsageError("--reference is required whenever an identity arm runs (use --arm base for a control-only run)");
+  }
+
+  // The reference is uploaded BEFORE the matrix is built, because its URL is
+  // part of every identity cell's request — and a dry run says so with a
+  // sentinel rather than uploading anything.
+  const token = args.dryRun ? "" : replicateToken();
+  let reference: Reference | undefined;
+  if (!args.dryRun && args.reference !== undefined) {
+    console.log(`Resolving the identity reference (${args.reference}) …`);
+    reference = await resolveReference(args.reference, token);
+    console.log(`  ${reference.fileId === undefined ? "used as given" : `uploaded once as ${reference.fileId}`}`);
+  }
+
+  // The `try` opens IMMEDIATELY after the upload returns, so there is no step
+  // between "Replicate now holds a file" and "something guarantees it is
+  // deleted". Nothing between the upload and here can throw.
+  try {
+    await runMatrix(args, arms, fixtures, token, reference);
+  } finally {
+    if (reference !== undefined) await deleteUploadedReference(reference, token);
   }
 }
 
