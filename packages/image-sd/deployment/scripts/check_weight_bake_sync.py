@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Fail when cog.yaml's baked-weight declarations drift from the manifest.
 
-Cog's build.run commands cannot read source files, so the immutable weight URLs
-and digests have to appear both in weights_manifest.json (runtime/provenance) and
-in cog.yaml (image-build download). This cheap source check makes that necessary
-duplication loud instead of allowing a rebuild to bake one artifact while the
-predictor believes it pinned another.
+Cog's build.run commands cannot read source files, so immutable weight identity
+has to appear both in weights_manifest.json (runtime/provenance) and in cog.yaml
+(image-build download). This cheap source check makes that necessary duplication
+loud instead of allowing a rebuild to bake one artifact while the predictor
+believes it pinned another.
 """
 
 from __future__ import annotations
@@ -30,14 +30,22 @@ def main() -> int:
     else:
         for artifact in artifacts:
             name = str(artifact.get("name", "<unnamed>"))
-            required = {
-                "source_url": artifact.get("source_url"),
-                "sha256": artifact.get("sha256"),
-                "filename": artifact.get("filename"),
-            }
             if artifact.get("kind") == "hf_hub":
-                required["hf_repo_id"] = artifact.get("hf_repo_id")
-                required["hf_filename"] = artifact.get("hf_filename")
+                # The build intentionally uses huggingface_hub rather than the
+                # manifest's equivalent resolve URL so the on-disk cache has the
+                # exact repo/snapshot layout PuLID reads at runtime.
+                required = {
+                    "sha256": artifact.get("sha256"),
+                    "filename": artifact.get("filename"),
+                    "hf_repo_id": artifact.get("hf_repo_id"),
+                    "hf_filename": artifact.get("hf_filename"),
+                }
+            else:
+                required = {
+                    "source_url": artifact.get("source_url"),
+                    "sha256": artifact.get("sha256"),
+                    "filename": artifact.get("filename"),
+                }
 
             for field, value in required.items():
                 if not isinstance(value, str) or not value:
