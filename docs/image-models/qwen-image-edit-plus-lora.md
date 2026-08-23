@@ -9,7 +9,7 @@
 
 The one Qwen edit endpoint that accepts a user-supplied LoRA, and therefore the
 Advanced Image Lab's **LoRA finishing connector**
-([../images/advanced-image-lab.md](../images/advanced-image-lab.md)). Neither
+([../image-lab/](../image-lab/README.md)). Neither
 [Qwen Image Edit 2511](qwen-image-edit-2511.md) nor Qwen Image Edit Plus
 exposes any LoRA input — 2511's model-card phrase "integrated LoRAs" describes
 acceleration baked into its weights, not a loadable input — so LoRA work runs
