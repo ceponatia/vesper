@@ -403,6 +403,13 @@ function deriveAdvancedCapabilities(
  * that one belongs to the numbered-reference path, and double-booking it would
  * offer the same provider input under two transports. Sorted by field name so
  * a re-probe of the same schema is byte-identical.
+ *
+ * One binding per role: when a schema declares two aliases for the same role
+ * (`mask` beside `mask_image`), the planner and every form select only the
+ * FIRST binding for a role, so recording both would leave a later required
+ * alias permanently unfillable — every run refused with nothing to fill it
+ * with. A required alias outranks an optional one for exactly that reason;
+ * ties fall to field-name order, which the pre-sorted alias walk provides.
  */
 function deriveAdditionalImageInputs(
   properties: Record<string, unknown>,
@@ -410,7 +417,7 @@ function deriveAdditionalImageInputs(
   referenceField: string | null,
 ): ImageAdditionalImageInput[] {
   const aliases = Object.entries(DEDICATED_IMAGE_INPUT_ALIASES).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const inputs: ImageAdditionalImageInput[] = [];
+  const byRole = new Map<string, ImageAdditionalImageInput>();
   for (const [field, roleHint] of aliases) {
     if (field === referenceField || !(field in properties)) continue;
     const parsed = referenceArityOf(properties[field]);
@@ -421,9 +428,14 @@ function deriveAdditionalImageInputs(
       required: required.includes(field),
       ...(parsed.maxItems == null ? {} : { maxItems: parsed.maxItems }),
     };
-    inputs.push({ roleHint, binding });
+    const existing = byRole.get(roleHint);
+    if (existing === undefined || (binding.required && !existing.binding.required)) {
+      byRole.set(roleHint, { roleHint, binding });
+    }
   }
-  return inputs;
+  return [...byRole.values()].sort((a, b) =>
+    a.binding.field < b.binding.field ? -1 : a.binding.field > b.binding.field ? 1 : 0,
+  );
 }
 
 /**
@@ -458,6 +470,12 @@ function deriveProviderInputs(
     context.referenceField ?? "image",
     ...Object.values(context.controls).flatMap((binding) => (binding ? [binding.field] : [])),
     ...context.additionalImageInputs.map((input) => input.binding.field),
+    // Every URI-typed alias-table field stays reserved even when per-role
+    // dedup left it out of `additionalImageInputs` — it is still a structural
+    // image input, and the raw bag must never be the path that writes one.
+    ...Object.keys(DEDICATED_IMAGE_INPUT_ALIASES).filter(
+      (field) => field in properties && referenceArityOf(properties[field]) !== null,
+    ),
     ...Object.keys(deriveExtraInput(properties)),
   ]);
   return Object.keys(properties)

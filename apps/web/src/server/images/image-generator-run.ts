@@ -563,8 +563,9 @@ function rejectedProviderInput(
   model: ImageModel,
   providerInputs: Record<string, string | number | boolean>,
 ): string | null {
+  // No empty-bag early return: the required-descriptor sweep at the bottom
+  // must run even when the admin set nothing at all.
   const keys = Object.keys(providerInputs);
-  if (keys.length === 0) return null;
 
   const loraFields = new Set(
     [model.advancedCapabilities.controls.loraWeights?.field, model.advancedCapabilities.controls.loraScale?.field].filter(
@@ -598,6 +599,20 @@ function rejectedProviderInput(
     }
     const violation = providerInputTypeViolation(descriptor, value);
     if (violation) return violation;
+  }
+  // A required non-reserved field with no declared default can only come from
+  // the bag; omitting it would spend a prediction the provider is certain to
+  // reject. Reserved required fields are the render path's own job (prompt,
+  // reference, control bindings) and are not the bag's to fill.
+  for (const descriptor of descriptors.values()) {
+    if (
+      descriptor.required &&
+      !descriptor.reserved &&
+      descriptor.default === undefined &&
+      providerInputs[descriptor.field] === undefined
+    ) {
+      return `${descriptor.field} is required by this version and has no default — set it under Advanced Model Inputs`;
+    }
   }
   return null;
 }

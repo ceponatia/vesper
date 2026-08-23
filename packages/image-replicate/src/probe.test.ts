@@ -662,12 +662,13 @@ describe("probeReplicateModel", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.probe.referenceField).toBe("image");
-      // Sorted by field; edge and canny both resolve to the edge role, arity
-      // and maxItems carried verbatim, and required propagated from required[].
+      // Sorted by field; one binding PER ROLE — canny and edge both resolve to
+      // the edge role and the alphabetically-first optional alias wins, since
+      // the planner and forms only ever fill one binding per role; arity and
+      // maxItems carried verbatim, required propagated from required[].
       expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([
         { roleHint: "edge", binding: { field: "canny_image", arity: "single", required: false } },
         { roleHint: "control", binding: { field: "control_image", arity: "array", required: false, maxItems: 2 } },
-        { roleHint: "edge", binding: { field: "edge_image", arity: "single", required: false } },
         { roleHint: "mask", binding: { field: "mask", arity: "single", required: true } },
       ]);
       // `style_image` is URI-typed but unnamed by the alias table, so it stays
@@ -683,6 +684,38 @@ describe("probeReplicateModel", () => {
       });
       const mask = result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "mask");
       expect(mask).toMatchObject({ type: "uri", required: true, reserved: true });
+      // The deduped-away edge alias stays RESERVED in the descriptors: it is
+      // still a structural image field, and the raw provider bag must never be
+      // the path that writes one.
+      const edge = result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "edge_image");
+      expect(edge).toMatchObject({ type: "uri", reserved: true });
+    });
+
+    it("prefers a required alias over an optional one when a role is declared twice", async () => {
+      // `mask` and `mask_image` both name the mask role. Recording both would
+      // leave the required one permanently unfillable (the planner fills one
+      // binding per role), so the required alias must be the one recorded.
+      stubFetch(() => ({
+        name: "double-mask",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              image: uri,
+              mask: uri,
+              mask_image: uri,
+            },
+            required: ["prompt", "mask_image"],
+          }),
+        },
+      }));
+      const result = await probeReplicateModel("acme/double-mask");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([
+        { roleHint: "mask", binding: { field: "mask_image", arity: "single", required: true } },
+      ]);
     });
 
     it("derives an identical record however the provider orders its properties", async () => {
