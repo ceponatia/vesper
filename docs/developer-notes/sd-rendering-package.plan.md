@@ -422,6 +422,13 @@ At minimum:
 
 The association belongs to the application/database layer, not `@vesper/image-sd`.
 
+Built 2026-08-23 as `image_identity_lora_bindings`, with the pure usability rule
+in `@vesper/image-core` and the store in
+`apps/web/src/server/images/identity-lora-bindings.ts`. It binds a pack
+**revision**, so supersession is the staleness signal; several bindings may exist
+per pack (the rank comparison needs two at once) and at most one may be promoted.
+Detail: `sd-rendering-package.training.md`.
+
 ---
 
 # 10. Existing LoRA limitation
@@ -854,7 +861,7 @@ Offer it only to the Advanced Image Lab initially.
 
 ## Stage 3 — Tune identity before adding complexity
 
-Status: PuLID arms run and graded 2026-08-23 — provisional identity recipe is `sdxl/identity-portrait` (0.80); verdict in `sd-rendering-package.trial.md`. Remaining before this stage closes: the LoRA-only and LoRA + PuLID arms (blocked on Stage 4's trained LoRA) and a re-roll of the three weak fixture seeds.
+Status: PuLID arms run and graded 2026-08-23 — provisional identity recipe is `sdxl/identity-portrait` (0.80); verdict in `sd-rendering-package.trial.md`. The remaining LoRA-only and LoRA + PuLID arms are now buildable — Stage 4 added the `sdxl/lora-portrait` recipe and `--lora <id>=<url>` arms to the harness — and wait only on trained weights and a deployment push. A re-roll of the three weak fixture seeds is still outstanding.
 
 Run a controlled matrix for:
 
@@ -882,6 +889,8 @@ Do not add ControlNet until this stage has a clear winner.
 ---
 
 ## Stage 4 — Character LoRA training
+
+Status: built 2026-08-23 — awaiting the owner's paid rank 8 / rank 16 training runs and the graded comparison. Runbook: `sd-rendering-package.training.md`.
 
 Create a repeatable training pipeline from an identity pack.
 

@@ -319,6 +319,18 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   character: revisions are rows, exactly one may be `current` (partial unique index below).
   See [images/identity-packs.md](images/identity-packs.md) and image-identity-packs.spec.data.md. Added by
   migration 0101.
+- **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,
+  **FK-cascade**), `lora_id` (→ `image_loras`, **FK-cascade**), `base_checkpoint`,
+  `dataset_fingerprint`, `dataset_image_count`, `training_recipe_id`,
+  `training_recipe_revision`, `rank` (CHECK 1–128), `trigger_token?`, `training_run_ref?`,
+  `state` (`experimental`/`active`/`retired`). Which trained character LoRA came from which
+  identity pack **revision**, and under what training. It points at a revision because
+  supersession is the staleness signal: a LoRA trained from revision 3 keeps rendering after
+  revision 4 becomes current, it just stops being a likeness. Several bindings per pack are
+  normal (a rank comparison needs two at once) and at most one may be `active`, held by the
+  partial unique index below. Contract
+  `packages/image-core/src/loras/identity-lora-bindings.ts`; written by operator tooling, not
+  by a route. See [images/providers.md](images/providers.md). Added by migration 0116.
 - **`image_identity_pack_trial_runs`** — `owner_id` (→ `users`, cascade), `label`, `status`
   (`draft`/`running`/`review`/`complete`), `config_json` JSONB — the validated create-request
   snapshot, so a later registry or profile edit can never change what a finished run claims
@@ -372,6 +384,11 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `image_identity_packs(character_id, revision)` unique doubles as the per-character lookup;
   `image_identity_packs(character_id, source_content_hash, schema_version, derivation_version, revision)`
   is the derivation-key coalescing/diagnostic lookup.
+- `image_identity_lora_bindings(identity_pack_id) WHERE state = 'active'` — the same
+  partial-unique device, so promoting a second character LoRA for one pack fails loudly
+  instead of leaving two rows that both claim to be the character's likeness. The composite
+  `image_identity_lora_bindings(identity_pack_id, lora_id)` unique refuses a duplicate
+  binding; `(identity_pack_id, state)` is the per-pack lookup the store reads.
 - `image_identity_pack_trial_cells(run_id, status)` — the execute path's "which cells of this
   run are still planned" hot filter. The per-run composite uniques — cells `(run_id, cell_key)`,
   grades `(run_id, pair_id)`, verdicts `(run_id, profile_id, identity_strategy)` — double as

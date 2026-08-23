@@ -148,6 +148,7 @@ export {
 export { runImageLabExperiment } from "./image-lab-run";
 export * from "./image-lab-controls";
 export * from "./image-loras";
+export * from "./identity-lora-bindings";
 export * from "./models";
 export * from "./model-profiles";
 export * from "./model-versions";

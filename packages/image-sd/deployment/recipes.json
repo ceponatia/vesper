@@ -28,6 +28,20 @@
     "loraScale": 0.8
   },
   {
+    "id": "sdxl/lora-portrait",
+    "family": "sdxl",
+    "revision": 1,
+    "description": "Base portrait settings plus a character LoRA and no runtime identity conditioning — the LoRA-only arm of the Stage 3 identity matrix. Trial arm, not a tuned default.",
+    "checkpoint": "stabilityai/stable-diffusion-xl-base-1.0",
+    "sampler": "dpmpp_2m",
+    "scheduler": "karras",
+    "steps": 35,
+    "cfg": 5,
+    "width": 832,
+    "height": 1216,
+    "loraScale": 0.8
+  },
+  {
     "id": "sdxl/identity-portrait-w065",
     "family": "sdxl",
     "revision": 1,

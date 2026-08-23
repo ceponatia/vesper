@@ -55,17 +55,23 @@ running a different graph.
 `recipes.json` is generated from the `@vesper/image-sd` recipe registry. Do not
 edit it by hand.
 
-| Recipe | Purpose |
-| --- | --- |
-| `sdxl/base-portrait` | Vanilla SDXL control arm; no identity conditioning. |
-| `sdxl/identity-portrait` | Default identity recipe; PuLID weight 0.80 and LoRA scale 0.80. |
-| `sdxl/identity-portrait-w065` | Stage 3 weaker PuLID trial arm. |
-| `sdxl/identity-portrait-w095` | Stage 3 stronger PuLID trial arm. |
+| Recipe                        | Purpose                                                       |
+| ----------------------------- | ------------------------------------------------------------- |
+| `sdxl/base-portrait`          | Vanilla SDXL control arm; no identity conditioning            |
+| `sdxl/identity-portrait`      | Default identity recipe; PuLID weight 0.80, LoRA scale 0.80   |
+| `sdxl/lora-portrait`          | LoRA-only arm; LoRA scale 0.80, no identity conditioning      |
+| `sdxl/identity-portrait-w065` | Stage 3 weaker PuLID trial arm                                |
+| `sdxl/identity-portrait-w095` | Stage 3 stronger PuLID trial arm                              |
 
 The Stage 3 PuLID trial selected `sdxl/identity-portrait` at 0.80 as the
-**provisional** identity recipe. The LoRA-only and LoRA+PuLID comparisons wait on
-character LoRA training; the trial result, limitations, and evidence are in
+**provisional** identity recipe; the result, limitations, and evidence are in
 [`sd-rendering-package.trial.md`](../../../docs/developer-notes/sd-rendering-package.trial.md).
+
+**`sdxl/lora-portrait` was added after the deployed build was pushed.** The
+predictor refuses a recipe id that is not in the image's `recipes.json`, so the
+LoRA-only comparison arm needs a fresh `cog push` before it will render. Adding
+or changing any recipe carries the same requirement: regenerate with
+`pnpm tsx scripts/generate-sd-deployment-recipes.ts`, then push.
 
 ## Input contract
 

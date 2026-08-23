@@ -97,9 +97,11 @@ export type SdTrainingDataset = z.infer<typeof sdTrainingDatasetSchema>;
  * versioned for the same reason: §4's "record the training recipe" is only
  * useful if the recipe named is still the recipe that ran.
  *
- * `steps` and `learningRate` are optional because the first pass compares rank 8
- * against rank 16 (§8) with everything else left at the trainer's own defaults;
- * pinning them is what a later comparison does once rank is settled.
+ * Every field below the identifying four is optional, and that is the contract:
+ * an absent value means "whatever the pinned trainer does by default". The
+ * seeded recipes still fill them in, because §8's comparison moves ONE variable
+ * — rank — and a value the recipe leaves unnamed is a value two arms could
+ * silently disagree about the day the trainer is re-pinned.
  */
 export const sdTrainingRecipeSchema = z.object({
   id: z.string().min(1),
@@ -111,7 +113,26 @@ export const sdTrainingRecipeSchema = z.object({
   /** The word the LoRA is trained to answer to, when the recipe uses one. */
   triggerToken: z.string().min(1).optional(),
   steps: z.number().int().positive().optional(),
+  /**
+   * The learning rate applied to the LoRA weights themselves.
+   *
+   * Singular because a recipe pins ONE rate. Trainers that also expose a
+   * separate base-model or embedding rate keep their own defaults for those:
+   * the first pass does not move them, and a field per trainer knob would turn
+   * the recipe into a trainer schema — §17's rule, on the training side.
+   */
   learningRate: z.number().positive().optional(),
+  /**
+   * The square pixel resolution training images are resized to.
+   *
+   * Pinned by the recipe rather than chosen by the caller because it changes
+   * what the LoRA learns: a rank comparison run at two resolutions compares two
+   * things at once. Multiples of 8 for the reason `SdRecipe` gives — the SDXL
+   * VAE works in 8-pixel blocks.
+   */
+  resolution: z.number().int().positive().multipleOf(8).optional(),
+  /** Images per training step, pinned for the same attributability reason as `resolution`. */
+  batchSize: z.number().int().positive().optional(),
 });
 export type SdTrainingRecipe = z.infer<typeof sdTrainingRecipeSchema>;
 

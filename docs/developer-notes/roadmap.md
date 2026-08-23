@@ -81,11 +81,13 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   comparison that would move a default is still the next step.
 
 - **Stable Diffusion rendering package** —
-  [plan](sd-rendering-package.plan.md) — `@vesper/image-sd` gives SDXL
-  character LoRAs, identity conditioning, and ControlNet recipes behind the
-  existing profile picker; the renderer is deployed, registered lab-only, and
-  Stage 3's PuLID arms picked `sdxl/identity-portrait` (0.80) as the
-  provisional identity recipe — Stage 4 (character LoRA training) is next.
+  [plan](sd-rendering-package.plan.md) ·
+  [training runbook](sd-rendering-package.training.md) — `@vesper/image-sd`
+  gives SDXL character LoRAs, identity conditioning, and ControlNet recipes
+  behind the existing profile picker; the renderer is deployed and registered
+  lab-only, Stage 3's PuLID arms picked `sdxl/identity-portrait` (0.80), and the
+  Stage 4 training pipeline is built — the paid rank 8 / rank 16 runs and their
+  graded comparison are the next step.
 
 ## Next (queued, in dependency order)
 

@@ -153,6 +153,19 @@ is the sent prompt; the record keeps `{ id, scale }` while the locator goes to
 the provider payload and nowhere else, with URL query strings redacted from
 diagnostics. One LoRA per render — that is what the tested binding supports.
 
+**A character LoRA additionally records which identity pack it was trained from.**
+`image_identity_lora_bindings` (contract
+`packages/image-core/src/loras/identity-lora-bindings.ts`) points at an
+`image_identity_packs` **revision** plus the `image_loras` row, and carries the
+training provenance: base checkpoint, dataset fingerprint and image count,
+training recipe id and revision, LoRA rank, trigger token. Supersession is what it
+exists to detect — weights trained from revision 3 keep rendering after revision 4
+becomes current, they just stop being a likeness — so `evaluateIdentityLoraBinding`
+answers usable/`identity_pack_superseded`/`retired` against the character's current
+pack. A pack may carry several bindings at once (comparing two training
+configurations needs that) and at most one may be `active`. Bindings are written by
+operator tooling, not by a route, and no production render lane reads one yet.
+
 **Every render resolves a profile, and every picker lists profiles.** All seven
 lanes call `resolveImageProfileForTask` for their own task before they reserve
 an image row, then describe the render as an *intent* (below). Model-level
