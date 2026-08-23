@@ -233,6 +233,21 @@ describe("profileEligibility", () => {
     });
   });
 
+  it("lets an identity adapter serve identity-critical tasks", () => {
+    // Kills the tempting over-generalization of the img2img screen to "any kind
+    // that re-generates from a reference instead of editing it". PuLID/InstantID
+    // adapters do re-generate, but they condition ON the face rather than
+    // repainting it, so they are what `variant`/`scene`/`chat_look` want — not
+    // what those tasks screen out. Only the rating still disqualifies them.
+    const adapter = model({ editKind: "identity_conditioned", identityPreservation: "moderate" });
+    expect(profileEligibility(profile({ task: "scene" }), adapter)).toEqual({ ok: true });
+    expect(profileEligibility(profile({ task: "chat_look" }), adapter)).toEqual({ ok: true });
+    expect(profileEligibility(profile({ task: "variant" }), adapter)).toEqual({ ok: true });
+    expect(profileEligibility(profile({ task: "variant" }), model({ ...adapter, identityPreservation: "weak" }))).toEqual(
+      { ok: false, reason: "identity_too_weak" },
+    );
+  });
+
   it("stays permissive while a model is unreviewed", () => {
     // An operator-added row rates `unknown` on both axes and must keep working
     // exactly as it does today; ratings gate, missing ratings do not.

@@ -300,6 +300,13 @@ export type ImageProfileEligibility = { ok: true } | { ok: false; reason: ImageP
  * (`img2img_identity_task`). An img2img model remains usable through a deliberate
  * remix profile on a non-identity task.
  *
+ * `identity_conditioned` (PuLID/InstantID-style adapters) passes both semantic
+ * checks on purpose and is NOT screened alongside `img2img`. Both take a
+ * reference and re-generate rather than edit, but only img2img treats the subject
+ * as noise to repaint; an identity adapter conditions the generation ON that
+ * face, which is exactly what `variant`/`scene`/`chat_look` need. Its
+ * `identityPreservation` rating remains the axis that can still disqualify it.
+ *
  * `unknown` passes every semantic check on purpose: an unreviewed row keeps
  * working exactly as it does today rather than being disabled by the absence of a
  * rating. Ratings gate; missing ratings do not.

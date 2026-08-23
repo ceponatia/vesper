@@ -1,0 +1,42 @@
+# Python packages installed on top of the Cog base image.
+#
+# Exact pins, no ranges: this image is the thing a render's provenance points
+# at, and a package that moved underneath it would change every image with
+# nothing in any diff.
+#
+# ComfyUI's OWN dependencies are NOT listed here. They are installed from
+# `/ComfyUI/requirements.txt` at the commit cog.yaml checks out, which pins them
+# more precisely than a copy here could (it pins the frontend packages by exact
+# version). Copying that list would give it two spellings and one of them would
+# go stale.
+#
+# FROZEN-AT-FIRST-BUILD: the TRANSITIVE closure. Only the direct dependencies
+# below are pinned today; a resolver is still free to move anything they pull in.
+# The FREEZE step in README.md records `pip freeze` from the first successful
+# build and appends it here.
+
+# --- Torch. Matched to `build.cuda` in cog.yaml; Cog resolves the wheel index.
+torch==2.13.0
+torchvision==0.28.0
+torchaudio==2.11.0
+
+# --- What cubiq/PuLID_ComfyUI's own requirements.txt asks for, pinned.
+#     onnxruntime-gpu rather than onnxruntime: PulidInsightFaceLoader is built
+#     with provider "CUDA", and the CPU-only package makes that a silent
+#     fallback to a much slower detector rather than an error.
+#
+#     Naming onnxruntime-gpu here is NOT sufficient on its own. insightface
+#     declares `onnxruntime` as a hard dependency, so pip installs the CPU
+#     distribution too, into the same `onnxruntime/` directory; the last one
+#     unpacked wins. cog.yaml's final `run:` step reinstalls the GPU build after
+#     that resolution so the winner is not left to chance.
+facexlib==0.3.0
+insightface==1.0.1
+onnxruntime-gpu==1.29.0
+ftfy==6.3.1
+timm==1.0.28
+
+# --- The predictor's own needs.
+#     huggingface-hub is used directly to warm PuLID's EVA-CLIP into the hub
+#     cache during setup(); everything else the predictor does uses the stdlib.
+huggingface-hub==1.28.0

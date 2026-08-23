@@ -152,7 +152,8 @@ Wan out of service for a reason that has nothing to do with identity.
 
 Two facts on each row are **not** probed, because no schema states them:
 `edit_kind` (what "editing" actually does — `instruction_edit`,
-`multi_reference_compose`, `img2img`, `none`, or `unknown`) and
+`multi_reference_compose`, `identity_conditioned`, `img2img`, `none`, or
+`unknown`) and
 `identity_preservation` (`strong` / `moderate` / `weak` / `unknown`, how well a
 face survives). A third, `operator_warning`, is free text bound for the admin card
 and the pickers — no surface renders it yet. These are human ratings from looking at
