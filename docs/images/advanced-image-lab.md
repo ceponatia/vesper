@@ -23,6 +23,16 @@ contract: its spec.
   prediction id — enough to compare or retry. Outputs save as hidden
   `lab_output` assets, so lab activity never mints a player-visible variant or
   scene.
+- **The create form names the model from the registry.** The Model box lists the
+  registered rows, plus `Default` (the kind's own model — the ordinary default,
+  or the LoRA wrapper for a staged scene) and `Other`, which takes a provider
+  path for a row the registry may not carry under that spelling. A row with no
+  exact version to pin is listed but not selectable, because the run would be
+  refused before it spends; `Other` holds the submit until a path is actually
+  typed, so an explicit choice never falls through to the default. Whatever is
+  named, the form resolves it against the registry the way the runner does —
+  exact slug first, then the pinned and unpinned spellings of one slug — and
+  shows the resolved row's operator warning, or says that nothing matches.
 - **Controlled experiments** run a code-defined recipe through the shared
   render-intent path with the same required version pin. A recipe
   (`packages/image-core/src/lab/image-lab-recipes.ts`) is a full model profile — operation
