@@ -257,6 +257,9 @@ describe("probeReplicateModel", () => {
     if (!result.ok) return;
     expect(result.probe.referenceField).toBe("depth_image");
     expect(result.probe.canEdit).toBe(true);
+    // The numbered-reference path owns the field now, so it must NOT double as
+    // a dedicated input — one provider field, one transport.
+    expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
   });
 
   it("switches off a watermark the model would otherwise apply", async () => {
@@ -318,6 +321,9 @@ describe("probeReplicateModel", () => {
         "lora_weights",
         "prompt",
       ]);
+      // `image` is the primary reference and no alias-table field is declared,
+      // so the Qwen edit family stays on the numbered-primary path: a pose or
+      // depth map travels as an ordinary reference, never a dedicated input.
       expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([]);
     });
 
@@ -552,6 +558,157 @@ describe("probeReplicateModel", () => {
       expect(result.probe.advancedCapabilities.controls).toEqual({
         loraScale: { field: "lora_scale", type: "number" },
       });
+    });
+
+    it("derives dedicated inputs and reserved descriptors for the Vesper SDXL renderer's shape", async () => {
+      // The real input schema of packages/image-sd/deployment/predict.py — the
+      // shape the Image Generator's advanced form is built from. Everything the
+      // render path owns must come back reserved, so the only field an admin can
+      // set freely here is `recipe`.
+      stubFetch(() => ({
+        name: "sdxl-renderer",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string", description: "What to render." },
+              negative_prompt: { type: "string", description: "What to avoid." },
+              reference_image: { type: "string", format: "uri", description: "Identity reference for PuLID." },
+              depth_image: { type: "string", format: "uri", description: "An already-preprocessed depth map." },
+              pose_image: { type: "string", format: "uri", description: "An already-preprocessed pose skeleton." },
+              lora_weights: { type: "string", description: "URL of one character LoRA." },
+              lora_scale: { type: "number", minimum: 0, maximum: 2 },
+              seed: { type: "integer", minimum: 0 },
+              width: { type: "integer", default: 1024 },
+              height: { type: "integer", default: 1024 },
+              recipe: { type: "string", default: "identity_v1", description: "Which frozen recipe to run, by id." },
+            },
+            required: ["prompt"],
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("vesper/sdxl-renderer");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const caps = result.probe.advancedCapabilities;
+      // Both ControlNet inputs, sorted by field; `reference_image` is the
+      // primary reference and must never appear here.
+      expect(caps.additionalImageInputs).toEqual([
+        { roleHint: "depth", binding: { field: "depth_image", arity: "single", required: false } },
+        { roleHint: "pose", binding: { field: "pose_image", arity: "single", required: false } },
+      ]);
+      // One descriptor per declared field, sorted, with the render path's
+      // claims marked: prompt, primary reference, dedicated inputs, and every
+      // control-bound field (width/height are customWidth/customHeight).
+      expect(caps.providerInputs.map((input) => `${input.field}:${input.reserved ? "reserved" : "open"}`)).toEqual([
+        "depth_image:reserved",
+        "height:reserved",
+        "lora_scale:reserved",
+        "lora_weights:reserved",
+        "negative_prompt:reserved",
+        "pose_image:reserved",
+        "prompt:reserved",
+        "recipe:open",
+        "reference_image:reserved",
+        "seed:reserved",
+        "width:reserved",
+      ]);
+      expect(caps.providerInputs.find((input) => input.field === "recipe")).toEqual({
+        field: "recipe",
+        type: "string",
+        required: false,
+        default: "identity_v1",
+        description: "Which frozen recipe to run, by id.",
+        reserved: false,
+      });
+      // Declared range and default carried verbatim; requiredness from required[].
+      expect(caps.providerInputs.find((input) => input.field === "lora_scale")).toEqual({
+        field: "lora_scale",
+        type: "number",
+        required: false,
+        minimum: 0,
+        maximum: 2,
+        reserved: true,
+      });
+      expect(caps.providerInputs.find((input) => input.field === "prompt")).toMatchObject({
+        type: "string",
+        required: true,
+      });
+    });
+
+    it("classifies only alias-table URI fields as dedicated inputs, never unknown ones", async () => {
+      const longDescription = "x".repeat(600);
+      stubFetch(() => ({
+        name: "controlnet-stack",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              image: uri,
+              style_image: { type: "string", format: "uri", description: longDescription },
+              canny_image: uri,
+              edge_image: uri,
+              mask: uri,
+              control_image: { type: "array", items: uri, maxItems: 2 },
+            },
+            required: ["prompt", "mask"],
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("acme/controlnet-stack");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.referenceField).toBe("image");
+      // Sorted by field; edge and canny both resolve to the edge role, arity
+      // and maxItems carried verbatim, and required propagated from required[].
+      expect(result.probe.advancedCapabilities.additionalImageInputs).toEqual([
+        { roleHint: "edge", binding: { field: "canny_image", arity: "single", required: false } },
+        { roleHint: "control", binding: { field: "control_image", arity: "array", required: false, maxItems: 2 } },
+        { roleHint: "edge", binding: { field: "edge_image", arity: "single", required: false } },
+        { roleHint: "mask", binding: { field: "mask", arity: "single", required: true } },
+      ]);
+      // `style_image` is URI-typed but unnamed by the alias table, so it stays
+      // unbound — reported as an open uri descriptor (its runaway description
+      // capped at 500 so one verbose provider cannot fail the whole record),
+      // never guessed into a role.
+      expect(result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "style_image")).toEqual({
+        field: "style_image",
+        type: "uri",
+        required: false,
+        description: "x".repeat(500),
+        reserved: false,
+      });
+      const mask = result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "mask");
+      expect(mask).toMatchObject({ type: "uri", required: true, reserved: true });
+    });
+
+    it("derives an identical record however the provider orders its properties", async () => {
+      // Re-probing an unchanged schema must produce a byte-identical capability
+      // record — the version diff reads equality, and a derivation that leaked
+      // property declaration order would report phantom changes on every probe.
+      const properties: Record<string, unknown> = {
+        prompt: { type: "string" },
+        reference_image: uri,
+        depth_image: uri,
+        pose_image: uri,
+        recipe: { type: "string", default: "identity_v1" },
+      };
+      const probeWith = async (ordered: Record<string, unknown>) => {
+        stubFetch(() => ({
+          name: "sdxl-renderer",
+          latest_version: { id: "v1", openapi_schema: openapi({ properties: ordered, required: ["prompt"] }) },
+        }));
+        const result = await probeReplicateModel("vesper/sdxl-renderer");
+        expect(result.ok).toBe(true);
+        return result.ok ? result.probe.advancedCapabilities : undefined;
+      };
+
+      const forward = await probeWith(properties);
+      const reversed = await probeWith(Object.fromEntries(Object.entries(properties).reverse()));
+      expect(JSON.stringify(reversed)).toBe(JSON.stringify(forward));
     });
   });
 

@@ -22,6 +22,7 @@ It is a fork of reverie — itself a ground-up rewrite of the original companion
 | [auth.md](auth.md)                                 | Accounts (Better Auth), session resolution, and the entity-visibility / copy-on-use authorization seam                                        |
 | [images/](images/README.md)                        | Image suite: providers, asset registry, pipelines, identity packs, vision input                                                               |
 | [image-models/](image-models/README.md)            | Per-model Replicate API reference: reference-input field names, arity and caps, aspect handling, output shapes                                |
+| [image-generator/](image-generator/README.md)      | The Image Generator: admin raw prompt/model bench — one-off runs against any registered model, immutable run records, hidden outputs          |
 | [authoring.md](authoring.md)                       | AI-first character forge and manual-override editors                                                                                          |
 | [ui.md](ui.md)                                     | Pages, components, styling conventions                                                                                                        |
 | [testing.md](testing.md)                           | Test strategy and conventions                                                                                                                 |

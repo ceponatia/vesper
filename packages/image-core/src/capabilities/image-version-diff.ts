@@ -71,7 +71,8 @@ export type ImageCapabilityDiffKind = (typeof imageCapabilityDiffKinds)[number];
  * a scalar column (`canEdit`), a control slot (`controls.guidance`), one
  * `extraInput` key (`extraInput.go_fast`), one known input
  * (`knownInputFields.seed`), one dedicated image input
- * (`additionalImageInputs.pose_image`), `output`, or `prompt`.
+ * (`additionalImageInputs.pose_image`), one declared input's descriptor
+ * (`providerInputs.recipe`), `output`, or `prompt`.
  *
  * Unchanged fields are OMITTED — the diff is what differs between the two
  * schemas, not a second copy of the capability record. `active`/`candidate`
@@ -151,7 +152,7 @@ function recordEntries(
  * Entry order is deterministic: the scalar columns in declaration order, then
  * `supportedAspects`, then `extraInput.*`, then the advanced record —
  * `prompt`, `controls.*` in contract slot order, `additionalImageInputs.*`,
- * `output`, and `knownInputFields.*` sorted.
+ * `providerInputs.*`, `output`, and `knownInputFields.*` sorted.
  *
  * `supportedAspects` is compared as a SET: the list is the model's offered
  * menu, selection happens per render by ratio, and a pure reordering changes
@@ -210,6 +211,16 @@ export function diffImageModelCapabilities(
       "additionalImageInputs",
       Object.fromEntries(activeAdvanced.additionalImageInputs.map((input) => [input.binding.field, input])),
       Object.fromEntries(candidateAdvanced.additionalImageInputs.map((input) => [input.binding.field, input])),
+    ),
+  );
+  // Provider-input descriptors are likewise keyed by field: one field whose
+  // declared shape moved (a new default, a widened enum) is a change to that
+  // input, not a remove-plus-add.
+  entries.push(
+    ...recordEntries(
+      "providerInputs",
+      Object.fromEntries(activeAdvanced.providerInputs.map((input) => [input.field, input])),
+      Object.fromEntries(candidateAdvanced.providerInputs.map((input) => [input.field, input])),
     ),
   );
   entries.push(...changedEntry("output", activeAdvanced.output, candidateAdvanced.output));

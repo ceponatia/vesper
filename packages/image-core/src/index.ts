@@ -26,8 +26,10 @@ export {
   diffImageModelCapabilities,
   emptyImageModelAdvancedCapabilities,
   filterReservedInputFields,
+  imageAdditionalImageInputSchema,
   imageCapabilityDiffEntrySchema,
   imageCapabilityDiffKinds,
+  imageControlReferenceRoles,
   imageEditKindSchema,
   imageEditKinds,
   imageIdentityPreservationRatings,
@@ -37,15 +39,23 @@ export {
   imageProfileCandidateFindingCodes,
   imageProfileCandidateFindingLevels,
   imageProfileCandidateFindingSchema,
+  imageProviderInputDescriptorSchema,
+  imageProviderInputTypes,
+  imageReferenceRoleSchema,
+  imageUriBindingSchema,
+  isImageControlReferenceRole,
   mapImageRenderControls,
   reservedImageInputFields,
   validateImageProfileForCandidate,
   validateProviderOverrides,
 } from "./capabilities";
 export type {
+  ImageAdditionalImageInput,
+  ImageBindingArity,
   ImageCandidateCapabilities,
   ImageCapabilityDiffEntry,
   ImageCapabilityDiffKind,
+  ImageControlReferenceRole,
   ImageEditKind,
   ImageIdentityPreservation,
   ImageInputBinding,
@@ -57,7 +67,10 @@ export type {
   ImageProfileCandidateFindingCode,
   ImageProfileCandidateFindingLevel,
   ImageProfileCandidateInput,
+  ImageProviderInputDescriptor,
+  ImageProviderInputType,
   ImageReferenceRole,
+  ImageUriBinding,
 } from "./capabilities";
 export {
   IMAGE_TARGET_ASPECT,
@@ -85,6 +98,7 @@ export {
   imageReferencePolicySchema,
   imageReferenceTransportSchema,
   imageReferenceTransports,
+  imageRenderControlsSchema,
   imageResolutionTiers,
   imageSeedPolicies,
   isUndisclosedProviderVersion,
@@ -321,6 +335,7 @@ export type {
 } from "./prompt-program";
 export {
   compileImagePromptSegments,
+  controlReferenceTransport,
   fitImagePromptSegments,
   reportImagePromptFitting,
   identityCandidateReferenceSpecs,
@@ -336,6 +351,7 @@ export {
   planIntentReferences,
 } from "./render-intent";
 export type {
+  ControlReferenceTransport,
   DroppedImageReference,
   FittedImagePromptSegments,
   IdentityReferenceSpec,

@@ -1,11 +1,15 @@
 import { z } from "zod";
 import {
+  type ImageAdditionalImageInput,
   type ImageAspectMode,
   type ImageInputBinding,
   type ImageModelAdvancedCapabilities,
   imageModelAdvancedCapabilitiesSchema,
   type ImageModelControlBindings,
+  type ImageProviderInputDescriptor,
   type ImageReferenceArity,
+  type ImageReferenceRole,
+  type ImageUriBinding,
   parseAspectValue,
 } from "@vesper/image-core";
 import { PROBE_TIMEOUT_MS } from "./config";
@@ -38,7 +42,26 @@ import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images", "reference_image", "face_image"] as const;
 
 /**
- * Names checked LAST, after the ordinary fallback scan.
+ * The dedicated-input field names this probe recognizes, each mapped to the
+ * structural role Vesper feeds it (image-lab-general-model-trials.spec.md
+ * §"Probe: dedicated image inputs"). Alias discovery happens once, here — the
+ * render path and the Generator never pattern-match a provider field name, and
+ * an unknown URI field is NEVER classified heuristically: no alias, no entry.
+ */
+const DEDICATED_IMAGE_INPUT_ALIASES: Record<string, ImageReferenceRole> = {
+  depth_image: "depth",
+  pose_image: "pose",
+  mask: "mask",
+  mask_image: "mask",
+  control_image: "control",
+  edge_image: "edge",
+  canny_image: "edge",
+};
+
+/**
+ * Names checked LAST, after the ordinary fallback scan — derived from the alias
+ * table's keys so the "known control input" and "deprioritized reference
+ * candidate" lists cannot drift apart.
  *
  * These are CONTROL inputs — a depth map, a pose skeleton, a mask — and they are
  * URI-typed exactly like an identity reference, so the fallback cannot tell them
@@ -50,9 +73,11 @@ const PREFERRED_REFERENCE_FIELDS = ["image", "image_input", "images", "reference
  *
  * Deprioritized rather than excluded: a model whose ONLY image input is a
  * control image is still better described as editing from that input than as
- * unable to edit at all, and the admin page can correct the stored field.
+ * unable to edit at all, and the admin page can correct the stored field. When a
+ * control-alias field IS the resolved reference field, the numbered-reference
+ * path owns it and it never doubles as a dedicated input.
  */
-const DEPRIORITIZED_REFERENCE_FIELDS = ["depth_image", "pose_image", "mask", "mask_image", "control_image"] as const;
+const DEPRIORITIZED_REFERENCE_FIELDS: readonly string[] = Object.keys(DEDICATED_IMAGE_INPUT_ALIASES);
 
 // Every string here is `nullish` for the same reason as the model record below:
 // a null is Replicate saying "no value", and a rejected property parse would
@@ -245,6 +270,16 @@ export async function probeReplicateModel(http: ReplicateHttp, slug: string): Pr
 
   const reference = findReferenceField(properties);
   const aspect = deriveAspect(properties, schemas);
+  // Derived AFTER the reference field resolves: the dedicated-input and
+  // descriptor derivations must know which URI field the numbered-reference
+  // path owns, and which field the chosen aspect mode reserves.
+  const advancedCapabilities = deriveAdvancedCapabilities(
+    properties,
+    schemas,
+    required,
+    reference?.field ?? null,
+    aspect.mode === "size" ? "size" : "aspect_ratio",
+  );
 
   return {
     ok: true,
@@ -265,7 +300,7 @@ export async function probeReplicateModel(http: ReplicateHttp, slug: string): Pr
       supportedAspects: aspect.supported,
       outputFormat: deriveOutputFormat(properties, schemas),
       extraInput: deriveExtraInput(properties),
-      advancedCapabilities: deriveAdvancedCapabilities(properties, schemas),
+      advancedCapabilities,
     },
   };
 }
@@ -297,10 +332,21 @@ export async function probeReplicateModel(http: ReplicateHttp, slug: string): Pr
  * the allowlist `providerOverrides` validation reads, and an empty list fails
  * CLOSED — so populating it here is what makes overrides usable at all on a
  * probed row, while unprobed rows keep rejecting everything.
+ *
+ * `additionalImageInputs` and `providerInputs` are derived here too, both
+ * sorted by field name — a re-probe of an unchanged schema must produce an
+ * identical record however the provider orders its properties, so version
+ * diffs stay empty. `referenceField` is the resolved primary reference (null
+ * when the model has none) and `aspectField` the input the detected aspect
+ * mode owns; both arrive from the caller because the reservations they imply
+ * are decided by `findReferenceField`/`deriveAspect`, not re-guessed here.
  */
 function deriveAdvancedCapabilities(
   properties: Record<string, unknown>,
   schemas: Record<string, unknown>,
+  required: readonly string[],
+  referenceField: string | null,
+  aspectField: string,
 ): ImageModelAdvancedCapabilities {
   const controls: ImageModelControlBindings = {};
 
@@ -335,10 +381,151 @@ function deriveAdvancedCapabilities(
   assign("loraWeights", stringBinding(properties, "lora_weights"));
   assign("loraScale", numericBinding(properties, "lora_scale"));
 
+  const additionalImageInputs = deriveAdditionalImageInputs(properties, required, referenceField);
+
   return imageModelAdvancedCapabilitiesSchema.parse({
     controls,
+    additionalImageInputs,
     knownInputFields: Object.keys(properties).sort(),
+    providerInputs: deriveProviderInputs(properties, schemas, {
+      required,
+      referenceField,
+      aspectField,
+      controls,
+      additionalImageInputs,
+    }),
   });
+}
+
+/**
+ * The dedicated image inputs this version declares: only fields the alias
+ * table names, only when URI-typed, and never the primary reference field —
+ * that one belongs to the numbered-reference path, and double-booking it would
+ * offer the same provider input under two transports. Sorted by field name so
+ * a re-probe of the same schema is byte-identical.
+ */
+function deriveAdditionalImageInputs(
+  properties: Record<string, unknown>,
+  required: readonly string[],
+  referenceField: string | null,
+): ImageAdditionalImageInput[] {
+  const aliases = Object.entries(DEDICATED_IMAGE_INPUT_ALIASES).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const inputs: ImageAdditionalImageInput[] = [];
+  for (const [field, roleHint] of aliases) {
+    if (field === referenceField || !(field in properties)) continue;
+    const parsed = referenceArityOf(properties[field]);
+    if (!parsed) continue;
+    const binding: ImageUriBinding = {
+      field,
+      arity: parsed.arity,
+      required: required.includes(field),
+      ...(parsed.maxItems == null ? {} : { maxItems: parsed.maxItems }),
+    };
+    inputs.push({ roleHint, binding });
+  }
+  return inputs;
+}
+
+/**
+ * One descriptor per declared property, sorted by field name — metadata for
+ * the Image Generator's advanced-input form, not a second control system.
+ * `reserved` marks every field the render path already owns: the prompt, the
+ * primary reference, the aspect key the detected mode writes, the version pin,
+ * the safety toggle, every control-bound field, every dedicated image input,
+ * and every `extraInput` pin. The style stays conservative — a shape the
+ * property schema cannot read is recorded as `unknown` rather than guessed at.
+ */
+function deriveProviderInputs(
+  properties: Record<string, unknown>,
+  schemas: Record<string, unknown>,
+  context: {
+    required: readonly string[];
+    referenceField: string | null;
+    aspectField: string;
+    controls: ImageModelControlBindings;
+    additionalImageInputs: readonly ImageAdditionalImageInput[];
+  },
+): ImageProviderInputDescriptor[] {
+  const reserved = new Set<string>([
+    "prompt",
+    context.aspectField,
+    "version",
+    "disable_safety_checker",
+    // A generate-only model stores the fallback name "image" as its reference
+    // field, and the runtime reserved list reserves it unconditionally — a
+    // declared non-URI `image` property must not read as an editable input the
+    // render path would then refuse.
+    context.referenceField ?? "image",
+    ...Object.values(context.controls).flatMap((binding) => (binding ? [binding.field] : [])),
+    ...context.additionalImageInputs.map((input) => input.binding.field),
+    ...Object.keys(deriveExtraInput(properties)),
+  ]);
+  return Object.keys(properties)
+    .sort()
+    .map((field) =>
+      describeProviderInput(field, properties[field], schemas, {
+        required: context.required.includes(field),
+        reserved: reserved.has(field),
+      }),
+    );
+}
+
+/** The descriptor for one declared property, optional facts carried only when the schema states them. */
+function describeProviderInput(
+  field: string,
+  property: unknown,
+  schemas: Record<string, unknown>,
+  flags: { required: boolean; reserved: boolean },
+): ImageProviderInputDescriptor {
+  const parsed = propertySchema.safeParse(property);
+  if (!parsed.success) return { field, type: "unknown", required: flags.required, reserved: flags.reserved };
+  const p = parsed.data;
+  const enumValues = descriptiveEnumValues(property, schemas);
+  const description = p.description?.trim().slice(0, 500);
+  return {
+    field,
+    type: providerInputTypeOf(p, property, enumValues),
+    required: flags.required,
+    ...(p.default === undefined ? {} : { default: p.default }),
+    ...(enumValues.length === 0 ? {} : { enumValues }),
+    ...(p.minimum == null ? {} : { minimum: p.minimum }),
+    ...(p.maximum == null ? {} : { maximum: p.maximum }),
+    ...(description ? { description } : {}),
+    reserved: flags.reserved,
+  };
+}
+
+/**
+ * The descriptor vocabulary is broader than the binding one: `uri` for anything
+ * `referenceArityOf` recognizes (single URI or a list of them), `array` for a
+ * non-URI list, `enum` whenever members resolve, and `unknown` for a shape the
+ * probe cannot read — descriptors DESCRIBE the schema, so an odd field is
+ * reported rather than omitted.
+ */
+function providerInputTypeOf(
+  p: z.infer<typeof propertySchema>,
+  property: unknown,
+  enumValues: readonly string[],
+): ImageProviderInputDescriptor["type"] {
+  if (referenceArityOf(property) !== null) return "uri";
+  if (enumValues.length > 0) return "enum";
+  if (p.type === "array") return "array";
+  if (p.type === "string" || p.type === "integer" || p.type === "number" || p.type === "boolean") return p.type;
+  return "unknown";
+}
+
+/**
+ * The property's enum members, FILTERED to strings — inline `enum` first, the
+ * `allOf` `$ref` spelling otherwise. Descriptive on purpose, unlike
+ * {@link strictEnumValues}: a descriptor is form metadata, so showing the
+ * string-expressible subset of a mixed enum beats hiding the field, while a
+ * control binding must describe the whole accepted set or nothing.
+ */
+function descriptiveEnumValues(property: unknown, schemas: Record<string, unknown>): string[] {
+  const parsed = propertySchema.safeParse(property);
+  if (!parsed.success) return [];
+  const inline = (parsed.data.enum ?? []).filter((value): value is string => typeof value === "string");
+  return inline.length > 0 ? inline : enumValuesFor(property, schemas);
 }
 
 /** The declared integer/number binding for one field, range carried over verbatim. */

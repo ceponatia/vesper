@@ -1,0 +1,325 @@
+import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
+import {
+  emptyImageGeneratorControls,
+  emptyImageGeneratorProviderInputs,
+  emptyImageGeneratorRunInputs,
+  type ImageGeneratorCreateRunRequest,
+  imageGeneratorControlsSchema,
+  imageGeneratorProviderInputsSchema,
+  type ImageGeneratorRun,
+  imageGeneratorRunInputsSchema,
+  type ImageGeneratorRunInputs,
+} from "@/contracts/images/image-generator";
+import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { parseOr, parseOrNull } from "@/lib/parse";
+import type { ImageRenderControls } from "@vesper/image-core";
+import { db, imageGeneratorRuns } from "../db";
+import { deleteOwnedImage, imageMeta } from "./assets";
+import { loadImageModel } from "./models";
+
+/**
+ * The Image Generator's run service (image-lab-general-model-trials.spec.md
+ * §"Generator run contracts", §Persistence): row↔wire, create, list, detail,
+ * delete, and the failed-settle helper the runner shares.
+ *
+ * One run id identifies ONE immutable attempt — variants create new rows via
+ * `sourceRunId`, and nothing here mutates or reruns a settled row. The service
+ * writes `image_generator_runs` rows and `generator_output` images and nothing
+ * else; like every image lane, the job seam lives at the ROUTE, because
+ * `@/server/api` imports `@/server/images` and a `startJob` call from here
+ * would close that cycle. Which is also why each run reports its
+ * {@link ImageGeneratorProviderOutcome} in the payload instead of touching the
+ * breaker itself.
+ */
+
+export type ImageGeneratorRunRow = typeof imageGeneratorRuns.$inferSelect;
+
+/**
+ * What one run proved about the image provider lane, in the circuit breaker's
+ * vocabulary. `null` — say nothing — is the answer for every pre-spend
+ * refusal: the runner settles rows instead of throwing, so a resolved run
+ * read as "provider healthy" would close a tripped breaker on the strength of
+ * a refusal that never left this database.
+ */
+export type ImageGeneratorProviderOutcome = boolean | null;
+
+/** The record one run returns — the `jobs` payload, plus what it told the breaker. */
+export interface ImageGeneratorRunPayload extends Record<string, unknown> {
+  providerOutcome: ImageGeneratorProviderOutcome;
+}
+
+/**
+ * The one code this runner needs beyond the contract's vocabulary: a runner
+ * that died on something other than a provider call. Kept out of the wire enum
+ * for the reason the Lab keeps `image_lab.run_threw` out of its own — the
+ * column is a bounded string, and a UI can only display this verbatim anyway.
+ */
+export const IMAGE_GENERATOR_RUN_THREW = "image_generator.run_threw";
+
+const RUN_LIST_DEFAULT_LIMIT = 50;
+const RUN_LIST_MAX_LIMIT = 200;
+
+// ---------------------------------------------------------------------------
+// Reading
+// ---------------------------------------------------------------------------
+
+/** The loose attempt record, exactly as the Gallery reads `meta.render`. */
+const storedAttemptSchema = z.record(z.string(), z.unknown());
+
+/**
+ * One stored row as the routes report it. Every jsonb column crosses `parseOr`
+ * (docs/resilience.md §1): a bag that no longer parses costs the display its
+ * content with a diagnostic, never the page. `ownerId` deliberately does not
+ * travel — every Generator surface is owner-scoped by its route.
+ */
+export function toWireImageGeneratorRun(row: ImageGeneratorRunRow, sink?: DiagnosticSink): ImageGeneratorRun {
+  return {
+    id: row.id,
+    status: row.status,
+    modelSlug: row.modelSlug,
+    requestedVersionId: row.requestedVersionId,
+    executedVersionId: row.executedVersionId,
+    prompt: row.prompt,
+    finalPrompt: row.finalPrompt,
+    inputs: storedRunInputs(row, sink),
+    controls: storedRunControls(row, sink),
+    providerInputs: storedRunProviderInputs(row, sink),
+    sourceRunId: row.sourceRunId,
+    resultImageId: row.resultImageId,
+    failureCode: row.failureCode,
+    error: row.error,
+    predictionId: row.predictionId,
+    createdAt: row.createdAt.toISOString(),
+    startedAt: row.startedAt?.toISOString() ?? null,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
+    attempt: storedRunAttempt(row, sink),
+  };
+}
+
+export function storedRunInputs(row: ImageGeneratorRunRow, sink?: DiagnosticSink): ImageGeneratorRunInputs {
+  return parseOr(
+    imageGeneratorRunInputsSchema,
+    row.inputs,
+    emptyImageGeneratorRunInputs(),
+    sink,
+    "image_generator_runs.inputs",
+  );
+}
+
+export function storedRunControls(row: ImageGeneratorRunRow, sink?: DiagnosticSink): ImageRenderControls {
+  return parseOr(
+    imageGeneratorControlsSchema,
+    row.controls,
+    emptyImageGeneratorControls(),
+    sink,
+    "image_generator_runs.controls",
+  );
+}
+
+export function storedRunProviderInputs(
+  row: ImageGeneratorRunRow,
+  sink?: DiagnosticSink,
+): Record<string, string | number | boolean> {
+  return parseOr(
+    imageGeneratorProviderInputsSchema,
+    row.providerInputs,
+    emptyImageGeneratorProviderInputs(),
+    sink,
+    "image_generator_runs.provider_inputs",
+  );
+}
+
+/**
+ * The attempt provenance, read out of the meta bag where the runner writes it
+ * beside `outcome` and `renderFailure` — a per-run record, not a queryable
+ * fact. Absent stays a quiet null; unparseable costs the field, never the row.
+ */
+function storedRunAttempt(row: ImageGeneratorRunRow, sink?: DiagnosticSink): Record<string, unknown> | null {
+  const raw = imageMeta(row.meta)["attempt"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(storedAttemptSchema, raw, sink, "image_generator_runs.meta.attempt");
+}
+
+/**
+ * One meta write, over whatever the bag already held — merged, never assigned,
+ * so a settle cannot drop the pre-spend outcome record written moments before.
+ */
+export function generatorRunMeta(row: ImageGeneratorRunRow, written: Record<string, unknown>): Record<string, unknown> {
+  return { ...imageMeta(row.meta), ...written };
+}
+
+/** One run, matched on `(id, owner)` — the authorization root. */
+export async function ownedGeneratorRun(runId: string, ownerId: string): Promise<ImageGeneratorRunRow | null> {
+  const [row] = await db()
+    .select()
+    .from(imageGeneratorRuns)
+    .where(and(eq(imageGeneratorRuns.id, runId), eq(imageGeneratorRuns.ownerId, ownerId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** This admin's runs, newest first. */
+export async function listImageGeneratorRuns(
+  ownerId: string,
+  limit = RUN_LIST_DEFAULT_LIMIT,
+  sink?: DiagnosticSink,
+): Promise<ImageGeneratorRun[]> {
+  const bounded = Math.min(Math.max(1, limit), RUN_LIST_MAX_LIMIT);
+  const rows = await db()
+    .select()
+    .from(imageGeneratorRuns)
+    .where(eq(imageGeneratorRuns.ownerId, ownerId))
+    .orderBy(desc(imageGeneratorRuns.createdAt))
+    .limit(bounded);
+  return rows.map((row) => toWireImageGeneratorRun(row, sink));
+}
+
+/**
+ * One run. Null when it is not this owner's — indistinguishable from never
+ * having existed, so the route never confirms a foreign run.
+ */
+export async function getImageGeneratorRunDetail(
+  runId: string,
+  ownerId: string,
+  sink?: DiagnosticSink,
+): Promise<ImageGeneratorRun | null> {
+  const row = await ownedGeneratorRun(runId, ownerId);
+  return row ? toWireImageGeneratorRun(row, sink) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Creating
+// ---------------------------------------------------------------------------
+
+export interface CreateImageGeneratorRunInput {
+  ownerId: string;
+  request: ImageGeneratorCreateRunRequest;
+  sink?: DiagnosticSink;
+}
+
+export type CreateImageGeneratorRunResult =
+  | { ok: true; run: ImageGeneratorRunRow }
+  | { ok: false; refusal: { code: string; message: string } };
+
+/**
+ * Record one pending run. The MODEL is resolved here — by registry id, the
+ * only create-time fact the row cannot exist without, because `model_slug` is
+ * a snapshot and there is nothing to snapshot from a row that is not there.
+ * Every other fact (pin, capacity, bindings, readable inputs) is deliberately
+ * a runner check so the failed attempt lands on the run row.
+ *
+ * A `sourceRunId` that is not this owner's degrades to null with a diagnostic
+ * rather than refusing: lineage is provenance metadata, and a stale prefill
+ * must not cost the admin the run — but a foreign id must never be written
+ * where the FK would confirm it exists.
+ */
+export async function createImageGeneratorRun(
+  input: CreateImageGeneratorRunInput,
+): Promise<CreateImageGeneratorRunResult> {
+  const { ownerId, request, sink } = input;
+  const model = await loadImageModel(request.modelId);
+  if (!model) {
+    sink?.push(
+      diag("warn", "image_generator.model_missing", "no registered image model matches the requested id", {
+        context: { modelId: request.modelId },
+      }),
+    );
+    return { ok: false, refusal: { code: "model_missing", message: "no registered image model matches that id" } };
+  }
+
+  let sourceRunId: string | null = null;
+  if (request.sourceRunId !== undefined) {
+    const source = await ownedGeneratorRun(request.sourceRunId, ownerId);
+    if (source) {
+      sourceRunId = source.id;
+    } else {
+      sink?.push(
+        diag("info", "image_generator.source_run_missing", "the run this one duplicates no longer exists; lineage dropped", {
+          context: { sourceRunId: request.sourceRunId },
+        }),
+      );
+    }
+  }
+
+  const [row] = await db()
+    .insert(imageGeneratorRuns)
+    .values({
+      ownerId,
+      modelSlug: model.slug,
+      prompt: request.prompt,
+      inputs: request.inputs ?? emptyImageGeneratorRunInputs(),
+      controls: request.controls ?? emptyImageGeneratorControls(),
+      providerInputs: request.providerInputs ?? emptyImageGeneratorProviderInputs(),
+      sourceRunId,
+    })
+    .returning();
+  if (!row) throw new Error("image_generator_runs insert returned no row");
+  return { ok: true, run: row };
+}
+
+// ---------------------------------------------------------------------------
+// Settling and deleting
+// ---------------------------------------------------------------------------
+
+/** Extra columns, extra meta members, and the breaker report one settle contributes. */
+export interface GeneratorSettleExtras {
+  columns?: Partial<typeof imageGeneratorRuns.$inferInsert>;
+  meta?: Record<string, unknown>;
+  /** Absent means `null` — the right report for every refusal that stops before the call. */
+  providerOutcome?: ImageGeneratorProviderOutcome;
+}
+
+/**
+ * Settle one run `failed`: the dotted code on the row, the detail in `error`,
+ * and a diagnostic beside both. `meta` merges over the stored bag so the
+ * pre-spend outcome record survives the settle that follows it.
+ */
+export async function settleGeneratorRunFailed(
+  row: ImageGeneratorRunRow,
+  failureCode: string,
+  message: string,
+  sink?: DiagnosticSink,
+  extras: GeneratorSettleExtras = {},
+): Promise<ImageGeneratorRunPayload> {
+  sink?.push(diag("warn", failureCode, message.slice(0, 300), { context: { runId: row.id } }));
+  await db()
+    .update(imageGeneratorRuns)
+    .set({
+      ...extras.columns,
+      status: "failed",
+      failureCode,
+      error: message.slice(0, 2000),
+      finishedAt: new Date(),
+      ...(extras.meta ? { meta: generatorRunMeta(row, extras.meta) } : {}),
+    })
+    .where(and(eq(imageGeneratorRuns.id, row.id), eq(imageGeneratorRuns.ownerId, row.ownerId)));
+  return { runId: row.id, status: "failed", failureCode, providerOutcome: extras.providerOutcome ?? null };
+}
+
+export interface DeleteImageGeneratorRunResult {
+  deleted: boolean;
+  outputImagesRemoved: number;
+}
+
+/**
+ * Hard-delete one run and the render it produced — output FIRST, exactly as
+ * the Lab's delete orders it: the row is the only pointer to its hidden image,
+ * so a crash between the two leaves an FK-nulled pointer that a re-run cleans,
+ * never an orphaned `generator_output` nothing can find. A `pending`/`running`
+ * row stays deletable on purpose (a deploy can strand one); the in-flight
+ * settle matches nothing and discards its own output.
+ */
+export async function deleteImageGeneratorRun(runId: string, ownerId: string): Promise<DeleteImageGeneratorRunResult> {
+  const row = await ownedGeneratorRun(runId, ownerId);
+  if (!row) return { deleted: false, outputImagesRemoved: 0 };
+
+  const outputRemoved =
+    row.resultImageId === null
+      ? false
+      : await deleteOwnedImage(row.resultImageId, ownerId, { kind: "generator_output" });
+  await db()
+    .delete(imageGeneratorRuns)
+    .where(and(eq(imageGeneratorRuns.id, runId), eq(imageGeneratorRuns.ownerId, ownerId)));
+  return { deleted: true, outputImagesRemoved: outputRemoved ? 1 : 0 };
+}

@@ -352,6 +352,8 @@ export function imageLabRoleLabel(role: ImageReferenceRole): string {
       return "before image";
     case "after_example":
       return "after example";
+    case "reference":
+      return "reference image";
     case "mask":
       return "mask";
     case "pose":

@@ -37,8 +37,10 @@ A schema can declare several URI-typed inputs, and they are not
 interchangeable: a *control* image (a depth map, a pose skeleton, a mask) looks
 identical to an identity reference in the schema. So the probe checks the
 identity names first (`image`, `image_input`, `images`, `reference_image`,
-`face_image`), then anything else URI-typed, and the control names
-(`depth_image`, `pose_image`, `mask`, `mask_image`, `control_image`) **last**.
+`face_image`), then anything else URI-typed, and the control names **last** —
+the keys of the dedicated-input alias table below (`depth_image`, `pose_image`,
+`mask`, `mask_image`, `control_image`, `edge_image`, `canny_image`), one list
+so the two cannot drift.
 `nsfw-api/sdxl-pulid` is why: it declares `depth_image` before `reference_image`,
 and plain property order resolved its reference field to the depth input — which
 would have fed a character's portrait to a depth converter and rendered a
@@ -81,10 +83,25 @@ edit strength (`strength`/`prompt_strength`), output count
 `size` enum as `resolutionTier`, integer `width`/`height` as custom dimensions,
 and the two LoRA fields — types, ranges and enum values included, plus
 `knownInputFields` as the sorted list of every input property, all written
-atomically beside `probedVersionId` at create and re-probe. A row probed before
+atomically beside `probedVersionId` at create and re-probe. The same pass
+derives **`additionalImageInputs`** — dedicated structural image slots — from a
+conservative alias table (`depth_image`→depth, `pose_image`→pose,
+`mask`/`mask_image`→mask, `control_image`→control, `edge_image`/`canny_image`→edge):
+only an alias-named, URI-typed field that is not the primary reference field
+becomes a binding, and an unknown URI field is never classified heuristically —
+no alias, no entry. And it records one **`providerInputs`** descriptor per
+declared input field — type, required, default, enum values, numeric range,
+description capped at 500 characters, and a `reserved` flag marking every field
+the render path already owns (prompt, primary reference, the aspect key,
+`version`, the safety toggle, control-bound, dedicated-input, and `extraInput`
+fields). Descriptors are metadata — the [Image
+Generator](../image-generator/README.md)'s advanced-input form renders them —
+never a second control system. A row probed before
 any of this holds `{}`, and empty means "send no optional control" — so a
 profile's control defaults sit recorded-but-inert until its model's version is
-probed or pinned, which is the designed activation path.
+probed or pinned, which is the designed activation path; a model registered
+before a derivation existed gains that section the next time it is probed or a
+version is activated.
 `updated_at` is a **column with no contract field**: the record crosses to the
 client as JSON, so adding a timestamp forces a date-serialization decision no
 consumer needs until the admin version card shows "capabilities changed at".
@@ -92,7 +109,9 @@ consumer needs until the admin version card shows "capabilities changed at".
 **Versions are promoted through an explicit candidate flow, never by drift.**
 Three owner-admin actions on the model card (`/settings/image-models`):
 `probe-latest` probes the bare model path and returns the candidate version, a
-field-level capability diff (owner-curated fields labeled as review-only), and
+field-level capability diff (owner-curated fields labeled as review-only, with
+per-entry `controls.*`, `additionalImageInputs.*`, and `providerInputs.*`
+sections), and
 per-profile findings without mutating anything; `smoke-test` runs one transient
 render pinned to the candidate through a chosen profile — an edit profile gets
 a locally generated neutral reference, nothing is persisted, and the action is
@@ -249,7 +268,8 @@ row is skipped with `image_profile.row_invalid` rather than emptying the list.
 
 **A render is described as an intent, not as a model call.** A lane supplies its
 resolved profile, its prompt, a target ratio, and references that carry a
-**role** — `identity`, `location`, `style`, `object`, and the structural control
+**role** — `identity`, `location`, `style`, `object`, the neutral `reference`
+role the Image Generator's primaries carry, and the structural control
 roles — instead of an anonymous buffer list where a reference's meaning was its
 position. Planning is pure and happens before any bytes leave the process, and it
 decides which references survive, in what order, and on which provider field
@@ -264,6 +284,10 @@ today just whether the provider's safety checker is bypassed — reports the
 diagnostics below, and calls the transport. A lane still renders through
 `renderImageIntent` and never touches the planner directly; the Advanced Image
 Lab is the one exception, because it needs the compiled prompt before it renders.
+The [Image Generator](../image-generator/README.md) renders through
+`renderImageIntent` too, with a synthetic per-run profile and an explicit
+version pin — it is the consumer the `providerInputs` descriptors and the
+dedicated-input bindings exist to drive.
 
 **Which references survive is the profile's policy, not the caller's order.**
 Selection sorts required references ahead of optional ones, then by the profile's
@@ -291,9 +315,11 @@ compiles the final text. A strategy this path has no wording for refuses with
 
 **A structural control is routed by its binding, not by its position.** A control
 role (`mask` · `pose` · `depth` · `edge` · `control`) is checked against the
-active version's `additionalImageInputs`. A version that declares its own field
+active version's `additionalImageInputs` — probe-derived per the alias table
+above, so a row gains its dedicated bindings at probe or re-probe time. A
+version that declares its own field
 for the role gets the image on that field, where it does **not** spend a primary
-reference slot; a version that declares none — every model Vesper runs today —
+reference slot; a version that declares none
 takes the control as an ordinary numbered image in the primary array, which is
 how Qwen Image Edit 2511 accepts pose and depth maps. A binding naming the
 primary reference field is read as the numbered array rather than as a second
@@ -325,7 +351,8 @@ buying a provider rejection at full latency.
 Two things the intent deliberately does not send. It does **not** pin a provider
 version — an ordinary render follows whatever the model slug resolves to (a
 pinned slug pins production; a bare slug floats), while a controlled comparison
-pins explicitly, which is why only the trial does. And it does **not**
+pins explicitly — the identity trial, the Image Lab's pinning kinds, and every
+Image Generator run do. And it does **not**
 force a prediction budget: a profile's own `timeoutMs` is used when it declares
 one (no seeded profile does), and otherwise `REPLICATE_PREDICTION_TIMEOUT_MS`
 still decides.

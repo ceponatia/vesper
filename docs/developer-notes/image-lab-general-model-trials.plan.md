@@ -1,6 +1,6 @@
 # Image Generator and Image Lab model-testing boundaries
 
-Status: next — owner ruling 2026-08-23 replaces the proposed Image Lab `model_trial` with a separate Image Generator surface
+Status: active — Stages 1–6 built 2026-08-23; Stage 3's live validation runs need a deploy plus owner-approved provider spend
 
 Outcome: The owner can select any registered image model, write the exact prompt to send, attach supported reference or structural images, change the controls that model actually exposes, and reproduce or vary the run without forcing the request through an unrelated Image Lab experiment; the Advanced Image Lab remains a stricter evidence bench whose specialized experiments keep their existing subject, fixture, prompt-ownership, and verdict rules.
 
@@ -9,7 +9,7 @@ Outcome: The owner can select any registered image model, write the exact prompt
 **Primary integration:** existing image-model registry, capability probing/planning, image asset registry, API job system, and shared provider render path  
 **Provider/dependency:** existing Replicate transport through `@vesper/image-replicate`; no new provider in this work
 
-> **Ruling:** this plan supersedes the earlier direction in this file that proposed adding a neutral `model_trial` experiment to the Advanced Image Lab. `docs/developer-notes/image-lab-general-model-trials.spec.md` still describes that older direction and must not be treated as implementation authority until it is rewritten to match this plan.
+> **Ruling:** this plan supersedes the earlier direction that proposed adding a neutral `model_trial` experiment to the Advanced Image Lab. `docs/developer-notes/image-lab-general-model-trials.spec.md` has been rewritten to match this plan and is the implementation authority for the Image Generator.
 
 ## 1. Goal
 
@@ -715,7 +715,7 @@ Baseline constraints to preserve include:
 
 ### Stage 1 — Establish contracts/boundaries
 
-next
+complete — 2026-08-23
 
 Define the minimum Generator-owned contracts and application boundaries before building a rich UI.
 
@@ -740,7 +740,7 @@ Do not build a new package unless this boundary work demonstrates a reusable pac
 
 ### Stage 2 — Minimal functional implementation
 
-queued
+built 2026-08-23 — awaiting Stage 3's live validation on the deployed app
 
 Build the smallest complete Image Generator:
 
@@ -762,7 +762,7 @@ The purpose is to prove that a separate Generator can reach the existing render 
 
 ### Stage 3 — Validate the primary mechanism
 
-queued
+blocked on a production deploy plus owner-approved provider spend
 
 Use fixed prompts/assets and prove that the selected model is actually the model that runs.
 
@@ -781,7 +781,7 @@ If the Generator cannot express these through the existing registry/render seam,
 
 ### Stage 4 — Add the first multiplier
 
-queued
+built 2026-08-23 — the SDXL `recipe` validation rides Stage 3's paid runs
 
 Make model selection drive the scalar/control UI.
 
@@ -804,7 +804,7 @@ Validate the Vesper SDXL renderer's provider-specific `recipe` without promoting
 
 ### Stage 5 — Add secondary capability
 
-queued
+built 2026-08-23 — except direct source uploads (awaiting the retention/quota ruling) and the SDXL re-probe (post-deploy admin action)
 
 Add the general image-input surface and fix the dedicated structural-input probe gap.
 
@@ -830,7 +830,7 @@ Also correct fixture-upload copy from "skeleton" to "control fixture" with Pose 
 
 ### Stage 6 — Finishing / reliability
 
-queued
+built 2026-08-23 — except the side-by-side A/B view; reproducibility proof rides Stage 3's runs
 
 Make freeform exploration reproducible enough to replace ad hoc provider-console testing.
 

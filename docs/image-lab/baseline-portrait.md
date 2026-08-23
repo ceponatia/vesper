@@ -18,13 +18,11 @@ The runner resolves the production `variant` image profile, loads the character'
 
 The admin's instruction becomes the base prompt. The experiment records the profile selected by production and the reference-planning outcome.
 
-## Important: the Model picker is not an override
+## The model is not selectable
 
-The New Experiment form shows the same registry-backed Model picker used by other experiment kinds. For a portrait baseline, that picker is misleading: selecting a model does not force the baseline to use it.
+For a portrait baseline the New Experiment form shows no Model picker: the Model slot is read-only copy stating that the model resolves from the active production profile when the run starts, and the form sends no model slug. At run time the baseline resolves the production variant profile and records that profile's resolved model slug on the experiment — a baseline reproduces production selection rather than forcing a different model.
 
-At run time the baseline resolves the production variant profile and then writes that profile's resolved model slug back onto the experiment. Whatever model slug was stored when the experiment was created is replaced. This is intentional in the runner: a baseline reproduces production selection rather than forcing a different model.
-
-A baseline portrait is therefore only appropriate when the production-profile result is the comparison target. The lab has no neutral selected-model smoke-test kind; see [Current limitations](limitations.md).
+A baseline portrait is therefore only appropriate when the production-profile result is the comparison target. A selected-model smoke test is an [Image Generator](../image-generator/README.md) run; see [Current limitations](limitations.md).
 
 ## Version behavior
 

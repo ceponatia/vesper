@@ -37,6 +37,11 @@ function providerLaneFor(type: ApiJobType): ProviderLane | null {
     // that never left this process.
     case "lab_image":
     case "lab_control_extract":
+    // The Image Generator's run job: a raw registry-model render, so its
+    // failures are evidence about the same upstream. The runner settles its
+    // own failures too, so it reports through `reportProviderOutcome` —
+    // including "nothing happened here" for pre-spend refusals.
+    case "generator_image":
       return "image";
     case "embed_refresh":
       return "embedding";

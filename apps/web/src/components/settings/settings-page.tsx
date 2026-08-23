@@ -152,6 +152,12 @@ export function SettingsPage() {
             </Link>{" "}
             — control fixtures and one-off experiments, for questions a provider schema can&apos;t answer.
           </p>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/image-generator" className="underline underline-offset-4">
+              Image generator
+            </Link>{" "}
+            — raw prompt-and-model runs against any registered image model, outside the lab&apos;s evidence rules.
+          </p>
         </section>
       ) : null}
     </PageContainer>
