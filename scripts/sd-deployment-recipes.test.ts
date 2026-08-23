@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { sdRecipes } from "@vesper/image-sd";
 import { describe, expect, it } from "vitest";
-import { SD_DEPLOYMENT_RECIPES_COMMAND, SD_DEPLOYMENT_RECIPES_PATH } from "./generate-sd-deployment-recipes";
+import {
+  SD_DEPLOYMENT_RECIPES_COMMAND,
+  SD_DEPLOYMENT_RECIPES_PATH,
+} from "./generate-sd-deployment-recipes";
 
 /**
  * Tripwire: the deployment's `recipes.json` still matches the recipe registry.
@@ -69,7 +72,10 @@ describe("the SD deployment's baked weights", () => {
 
       for (const value of required) {
         expect(value, `${name} has an incomplete manifest declaration`).toBeTruthy();
-        expect(cog, `${name} is pinned in weights_manifest.json but absent from cog.yaml`).toContain(value);
+        expect(
+          cog,
+          `${name} is pinned in weights_manifest.json but absent from cog.yaml`,
+        ).toContain(value);
       }
     }
   });
