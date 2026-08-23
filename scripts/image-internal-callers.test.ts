@@ -50,10 +50,20 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * services, at their new paths. Each write path moved into the module that owns
  * the bytes it stores — the pack service's crop derivation, the trial's per-cell
  * render, the lab's render kernel — and nothing about who may call, or why, changed.
+ *
+ * Re-reviewed 2026-08-23 (Image Generator): the Generator runner joins the
+ * lab kernel's "minted the row it writes" class for the lab's own reason — a
+ * `generator_output`'s fate is decided AFTER storage. The run row is settled
+ * `succeeded` only once the bytes landed; a write that never reached `ready`
+ * deletes the pending row, and a run deleted mid-render discards the orphan
+ * through the owned deleter — a store-then-maybe-discard arm `runImagePipeline`
+ * has no shape for. It mints the hidden row with `createImageAsset`, writes
+ * that exact id, and every read/write is owner-scoped through the run row.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
     "apps/web/src/server/images/identity-pack-trial-render.ts",
+    "apps/web/src/server/images/image-generator-run.ts",
     "apps/web/src/server/images/image-lab-render.ts",
     "apps/web/src/server/images/identity-pack-derive.ts",
     "apps/web/src/server/images/internal.ts",
