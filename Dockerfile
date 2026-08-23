@@ -32,6 +32,7 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/image-core/package.json ./packages/image-core/
 COPY packages/image-replicate/package.json ./packages/image-replicate/
+COPY packages/image-sd/package.json ./packages/image-sd/
 COPY packages/simulation-core/package.json ./packages/simulation-core/
 RUN pnpm install --frozen-lockfile
 COPY . .

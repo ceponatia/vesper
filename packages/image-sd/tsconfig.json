@@ -1,0 +1,23 @@
+{
+  // The package's own TypeScript project. It extends only tsconfig.base.json —
+  // the language level and strictness contract — never the application project,
+  // so this package proves it typechecks on its own terms rather than because
+  // the Next application lends it aliases, ambient generated types, or its
+  // TypeScript plugin.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // ES2022 and nothing else. Unlike `@vesper/image-core`, nothing here needs
+    // `URL` or any other web-standard global, and nothing here names a Node
+    // type at a provider seam — this package holds pure data and pure
+    // functions, and the empty `types` list is what keeps it that way. A recipe
+    // that suddenly wanted `process` or `Buffer` would fail to compile here
+    // before `pnpm lint:package-boundaries` ever saw it.
+    "lib": ["ES2022"],
+    "types": []
+  },
+  // `vitest.config.ts` is listed so the package's own test config is covered by
+  // a project: type-aware ESLint parses only files a tsconfig claims, and an
+  // unclaimed config file fails the lint gate rather than going unchecked.
+  "include": ["src/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules"]
+}

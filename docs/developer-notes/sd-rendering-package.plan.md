@@ -1,7 +1,8 @@
 # Stable Diffusion Rendering Package Plan
 
-**Proposed package:** `@vesper/image-sd`  
-**Status:** Proposed  
+**Package:** `@vesper/image-sd`  
+**Status:** active  
+**Outcome:** The owner can offer Stable Diffusion as another set of image profiles in the existing pickers, so that characters keep a trained, consistent identity that the newer closed image models cannot reliably provide.  
 **Primary family:** SDXL  
 **Secondary family:** Stable Diffusion 3.5  
 **Provider:** Replicate  
@@ -784,6 +785,8 @@ Never blindly inject generic terms that contradict canonical visual state.
 
 ## Stage 0 — Freeze the baseline
 
+Status: queued — needs owner-priced baseline renders; Stage 1 landed without it (no behavior changes).
+
 Capture the current quality of:
 
 - SD3.5 Large;
@@ -800,6 +803,8 @@ No production behavior changes.
 ---
 
 ## Stage 1 — Create `@vesper/image-sd`
+
+Status: complete — 2026-08-22.
 
 Add:
 
