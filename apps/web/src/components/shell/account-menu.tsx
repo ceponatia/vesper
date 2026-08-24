@@ -7,12 +7,37 @@ import { cx } from "@/components/ui/cx";
 import { signOut, useSession } from "@/components/auth/auth-client";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 
+/** One row of the dropdown, so five identical link classNames stay one fact. */
+const MENU_ITEM_CLASS = "block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700";
+
+/**
+ * The owner-admin destinations, in menu order.
+ *
+ * These are standalone tools rather than account settings, so they sit beside
+ * Settings in this menu instead of nested inside the Settings page — the image
+ * benches are reached far more often than the one preference that page holds.
+ * Each page re-checks the role and every backing API is role-gated server-side,
+ * so hiding the links is tidiness rather than access control.
+ *
+ * The three image tools still answer at their `/settings/*` routes. Only the
+ * navigation moved; relocating the URLs is deliberate future work, so existing
+ * `?run=` / `?experiment=` links keep resolving.
+ */
+const ADMIN_LINKS = [
+  { href: "/settings/image-generator", label: "Image generator" },
+  { href: "/settings/image-lab", label: "Image lab" },
+  { href: "/settings/image-models", label: "Image models" },
+  // R4, engine.rollout.plan.md: the Engine Comparison review screen — reports
+  // and rulings without touching the API by hand.
+  { href: "/admin/shadow", label: "Engine Comparison" },
+] as const;
+
 /**
  * Header identity control (auth.plan.md): the signed-in user's name as a
  * dropdown trigger — opening a small menu to **Settings** (the profile / default
- * player character, player-character.plan.md) and **Sign out** — or a "Sign in"
- * link when there's no session. Reads Better Auth's reactive session, so it
- * tracks sign-in/out without a reload.
+ * player character, player-character.plan.md), the owner-admin tools, and
+ * **Sign out** — or a "Sign in" link when there's no session. Reads Better
+ * Auth's reactive session, so it tracks sign-in/out without a reload.
  */
 export function AccountMenu() {
   const { data, isPending } = useSession();
@@ -82,26 +107,22 @@ export function AccountMenu() {
           role="menu"
           className="absolute top-full right-0 z-50 mt-1 w-48 overflow-hidden rounded-card border border-ink-600 bg-ink-800 py-1 shadow-lift"
         >
-          <Link
-            href="/settings"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700"
-          >
+          <Link href="/settings" role="menuitem" onClick={() => setOpen(false)} className={MENU_ITEM_CLASS}>
             Settings
           </Link>
-          {isAdmin ? (
-            // Admin-only (R4, engine.rollout.plan.md): the Engine Comparison
-            // review screen — reports and rulings without touching the API by hand.
-            <Link
-              href="/admin/shadow"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700"
-            >
-              Engine Comparison
-            </Link>
-          ) : null}
+          {isAdmin
+            ? ADMIN_LINKS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className={MENU_ITEM_CLASS}
+                >
+                  {item.label}
+                </Link>
+              ))
+            : null}
           <div className="my-1 border-t border-ink-600" />
           <button
             type="button"

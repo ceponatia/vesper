@@ -1,7 +1,8 @@
 # Image Generator
 
 The Image Generator is Vesper's admin-only raw prompt-and-model bench at
-`/settings/image-generator`, a Settings sibling of the Advanced Image Lab. It
+`/settings/image-generator`, reached from the account dropdown in the global
+header rather than from the Settings page ([ui.md](../ui.md)). It
 runs any registered image model with an admin-authored whole prompt, optional
 reference images, dedicated structural inputs, normalized controls, and raw
 provider values — and keeps a durable per-attempt record: what was asked for,
