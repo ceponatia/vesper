@@ -827,6 +827,13 @@
       "when": 1787519097178,
       "tag": "0117_image-generator-runs",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1787599980000,
+      "tag": "0118_qwen-2511-lora-bindings",
+      "breakpoints": true
     }
   ]
 }
