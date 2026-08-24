@@ -1,7 +1,8 @@
 # Qwen Image Edit 2511
 
 **Slug:** `qwen/qwen-image-edit-2511`
-**Probed:** 2026-08-05, version `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`
+**Vesper probe snapshot:** 2026-08-05, version `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`
+**Provider latest checked:** 2026-08-24
 **Quality ruling:** 2026-08-05
 
 > An enhanced version over Qwen-Image-Edit-2509, featuring multiple improvements
@@ -11,14 +12,38 @@ Vesper's default for chat scene images and portrait variants. It is the current
 instruction editor used when the application must preserve a known character,
 but “identity-preserving” is a relative capability rating rather than a promise
 of exact likeness. The owner has observed faces that remain similar while losing
-recognisable facial structure, which is why this model is the first target of the
-render-quality plan.
+recognisable facial structure, which is why identity continuity must be judged
+from output rather than inferred from a successful edit request.
+
+## Read the two schema states separately
+
+The Vesper probe snapshot above and Replicate's current latest wrapper are **not
+the same API surface**.
+
+The version Vesper probed on 2026-08-05 declares the required `prompt` + `image`
+edit inputs and does **not** expose runtime LoRA controls. Replicate's latest
+2511 wrapper, checked 2026-08-24, additionally exposes:
+
+- `lora_weights` — a Hugging Face repo slug (`owner/model`) or direct
+  `.safetensors` URL; blank means no custom LoRA;
+- `lora_scale` — number 0–4, default 1.
+
+That provider change is useful but **does not make LoRA available to the active
+Vesper row by documentation alone**. Vesper sends optional controls only through
+the active version's probed `advancedCapabilities`. The newer candidate must be
+probe-latest'd, smoke-tested and activated before production can resolve a LoRA
+onto 2511. Check the row's active pin/bindings when diagnosing a render; do not
+infer them from Replicate's current playground.
+
+This distinction is load-bearing. A sentence such as “2511 supports LoRA” means
+“Replicate's current wrapper supports it,” not “every historical 2511 prediction
+or every Vesper deployment sent `lora_weights`.”
 
 ## The edit-only built-in
 
-This is the only seeded model whose reference input is required. Its schema
-declares `required: ["prompt", "image"]`, so it cannot generate from a prompt
-alone and is never offered in the new-portrait picker.
+This is a seeded edit-only model. Its reference input is required, so it cannot
+generate a portrait from a prompt alone and is never offered for a normal
+new-portrait task.
 
 ## Capabilities
 
@@ -29,6 +54,9 @@ alone and is never offered in the new-portrait picker.
   URI.
 - **Reference workflow:** 1–3 reference images. Vesper stores a cap of 3.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`.
+- **Runtime custom LoRA:** **version-dependent**. The 2026-08-05 Vesper probe did
+  not expose it; Replicate latest checked 2026-08-24 exposes
+  `lora_weights`/`lora_scale`.
 - **Output:** array of URIs; WebP available.
 
 ## Reviewed capability
@@ -40,8 +68,8 @@ Reviewed by hand and never overwritten by a schema probe:
 - **Operator warning:** none.
 
 The `strong` rating keeps Qwen eligible for identity-critical tasks. It does not
-mean every output is the exact same face. Trial results and future advisory
-identity checks should remain separate from the coarse eligibility rating.
+mean every output is the exact same face. The rating is an eligibility rail;
+trial results and future post-render identity checks are a separate concern.
 
 ## Quality policy at the render seam
 
@@ -56,10 +84,10 @@ transitional overlay at the shared render seam:
 }
 ```
 
-All current Qwen Edit jobs are identity-critical. Quality therefore wins over
-the provider's speed preset. This model carries no curated fast/quality profile
-variants; a non-identity task on it would need profile-level settings in place
-of this global override before fast and quality work could diverge.
+All current production Qwen Edit jobs are identity-critical. Quality therefore
+wins over the provider's speed preset. This model carries no curated fast/quality
+profile variants; a non-identity task on it would need profile-level settings in
+place of this global override before fast and quality work could diverge.
 
 The effective value differs from the raw `image_models.extra_input` row.
 Diagnostics and provenance report the final payload, not infer it from the row.
@@ -104,10 +132,12 @@ strategy, and each is its task's global default
 ([providers.md](../images/providers.md)):
 
 - `variant-standard` — task `variant`; identity required, style optional;
-- `scene-standard` — task `scene`; identity → location → style → object. It
-  requires no reference at profile-definition level because the existing scene
-  degradation ladder includes a bare-prompt rung, although the provider itself
-  still requires at least one image;
+- `scene-standard` — task `scene`; identity → location → style → object. Its
+  profile policy itself does not require an identity role because a scene may
+  contain no portrait-bearing character. **That does not create a bare-prompt
+  2511 fallback.** The attempt planner adds `generate` only when the selected
+  model has `canGenerate`; 2511 does not. With no usable reference, its attempt
+  chain is empty and the scene route refuses rather than inventing a stranger;
 - `chat-look-standard` — task `chat_look`; identity required, style optional.
 
 All three carry empty control defaults. This model has no curated profiles
@@ -122,25 +152,39 @@ gates, and provenance. A face crop that cannot clear the quality gate is never
 sent merely to fill a reference slot.
 
 Reference selection and ordering are the resolved profile's policy
-([providers.md](../images/providers.md)): required identity references outrank
-optional face-detail and location references, and a required reference that
-does not survive selection refuses the render rather than silently dropping one
-person's identity.
+([providers.md](../images/providers.md)). For portrait-bearing characters the
+identity-pack lane fails closed before spend when the required identity source is
+blocked; it does not silently read an arbitrary gallery image. In chat scenes a
+current generated `chat_look` may be the cast member's anchor; otherwise the
+canonical identity-pack references are used.
 
-## Inputs
+## Inputs — Vesper's 2026-08-05 probe snapshot
 
 - `prompt` — string, required. It is an edit instruction, not merely a scene
   description.
 - `image` — array of URI strings, required. JPEG, PNG, GIF, or WebP references.
 - `aspect_ratio` — enum, provider default `"match_input_image"`. Values:
   `match_input_image`, `1:1`, `16:9`, `9:16`, `4:3`, `3:4`.
-- `go_fast` — boolean, provider default `true`; Vesper's current effective value
+- `go_fast` — boolean, provider default `true`; Vesper's current reviewed value
   is `false`.
 - `output_format` — enum, provider default `"webp"`. Values: `webp`, `jpg`,
   `png`.
 - `output_quality` — integer, default `95`, range 0–100.
 - `seed` — integer.
 - `disable_safety_checker` — boolean, default `false`.
+
+That historical probe did not bind a custom LoRA input.
+
+## Additional inputs on Replicate latest checked 2026-08-24
+
+- `lora_weights` — string, default blank. Hugging Face repo slug or direct
+  `.safetensors` URL.
+- `lora_scale` — number, default 1, range 0–4.
+
+These belong to production only after Vesper activates a version whose probe
+actually derives those bindings. Prefer a Hugging Face repo slug for curated
+library LoRAs; it avoids expiring/query-token URLs and matches Replicate's
+advertised loader contract.
 
 There is no `strength` or `prompt_strength` control. Edit intensity and unchanged
 content are governed by the instruction and references.
@@ -151,6 +195,8 @@ content are governed by the instruction and references.
 takes the first result.
 
 ## Effective Vesper payload
+
+Ordinary production edit, on the current reviewed policy:
 
 ```json
 {
@@ -164,15 +210,32 @@ takes the first result.
 }
 ```
 
+If and only if the active 2511 version exposes LoRA bindings **and** the render
+resolves a curated library LoRA, the payload can additionally contain:
+
+```json
+{
+  "lora_weights": "owner/hugging-face-repo",
+  "lora_scale": 1.0
+}
+```
+
 `aspect_ratio` is sent explicitly rather than left at `match_input_image`, so a
 non-conforming reference cannot dictate the output shape.
 
 ## Known limitations
 
-- exact face likeness is not reliable enough to treat the canonical portrait as
-  a sufficient identity system by itself;
-- several references compete for a cap of three;
+- exact face likeness is not reliable enough to treat a successful reference
+  edit as proof of identity continuity;
+- a generated chat-look anchor can become the next scene's reference, so output
+  identity drift can compound unless a post-render continuity gate rejects a bad
+  intermediate;
+- several references compete for a cap of three; the single-edit degradation
+  rung sends only one reference, so additional characters can become prompt-only
+  on that rung;
 - no negative prompt or numeric edit-strength control exists;
 - a second full-frame repair pass may change pose, body, clothing, or setting;
 - multi-character face repair is deferred until target localization and
-  role-aware reference capacity are proven.
+  role-aware reference capacity are proven;
+- provider capability drift is real: diagnose the active Vesper pin and stored
+  probe before assuming the current Replicate schema was used.

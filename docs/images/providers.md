@@ -16,8 +16,12 @@ models disagree with each other in ways no shared mapping can paper over:
 and both Qwen models call it `image` with *different* arities), `maxReferences`,
 `aspectMode` +
 `supportedAspects`, `outputFormat`, and free-form `extraInput` constants. Two
-capability booleans drive every picker: `canGenerate` (can run from a bare
-prompt) and `canEdit` (has a reference input at all).
+mechanical capability booleans feed the rest of the system: `canGenerate` (can
+run from a bare prompt) and `canEdit` (has a reference input at all). They are
+**not sufficient picker gates by themselves**: player-facing choices are task
+profiles filtered through reviewed eligibility and legacy surface switches, while
+the admin Image Generator is capability-driven directly from the selected row's
+active probe.
 
 **Capabilities are probed, not typed by hand.** `probeReplicateModel`
 (`packages/image-replicate/src/probe.ts`, reached through the configured client)
@@ -126,6 +130,15 @@ re-probe of a pinned row probes only its pin and never moves it to latest.
 Ordinary renders follow whatever the slug resolves to, so pinning the slug is
 what pins production.
 
+**Replicate latest and Vesper active are different facts.** An official wrapper
+may gain a field after Vesper last probed it. Qwen Image Edit 2511 is the current
+example: the 2026-08-05 schema snapshot documented in this repo had no runtime
+LoRA fields, while Replicate latest checked 2026-08-24 exposes
+`lora_weights`/`lora_scale`. Production does not gain those controls until a
+candidate carrying them is explicitly activated and the row's stored bindings
+say they exist. Never debug a historical render from the provider's current
+playground schema alone.
+
 **Beneath a model sit task profiles — "how to use this model for one job."**
 `image_model_profiles` (contract `packages/image-core/src/models/image-model-profiles.ts`) is
 the extension point one permanent `extraInput` bag could never be: the same
@@ -171,6 +184,8 @@ already present are woven into the compiled prompt so the recorded final prompt
 is the sent prompt; the record keeps `{ id, scale }` while the locator goes to
 the provider payload and nowhere else, with URL query strings redacted from
 diagnostics. One LoRA per render — that is what the tested binding supports.
+For Qwen's current wrappers, prefer a Hugging Face repo slug (or a documented
+direct `.safetensors` URL) over credential-bearing/expiring download URLs.
 
 **A character LoRA additionally records which identity pack it was trained from.**
 `image_identity_lora_bindings` (contract
@@ -226,10 +241,15 @@ editor) are seeded **only on the model that lane renders with**, so no model
 becomes newly eligible. The seeded policies likewise reproduce current behavior:
 generate tasks allow no references at all; `variant` and `chat_look` require
 `identity` and allow `style`; `scene` orders identity → location → style → object
-and **requires nothing**, because the scene ladder's bare-prompt rung legitimately
-runs with zero references. `scene` profiles carry the `instruction_edit` strategy
-even on the multi-reference models — the lane decides multi-vs-single at
-render time, and changing that here would change a payload.
+and does not require a role at the **profile-definition** level, because scenes
+may contain no portrait-bearing character. That does **not** mean every scene
+model has a bare-prompt fallback. `routeSceneAttempts` adds `generate` only when
+no usable reference exists **and** the selected model has `canGenerate`. An
+edit-only model such as Qwen Image Edit 2511 with no usable reference yields an
+empty chain and a visible refusal rather than a text-only stranger. `scene`
+profiles carry the `instruction_edit` strategy even on the multi-reference
+models — the lane decides multi-vs-single at render time, and changing that here
+would change a payload.
 
 The seven curated profiles ride the same machinery as alternatives, never
 defaults: Qwen 2512 `portrait-fast` (steps 28) and `portrait-quality` (steps
@@ -415,12 +435,13 @@ returned image's own pixel size — so a caller recording provenance does not
 have to re-derive any of it.
 
 **Selection stays fail-visible.** `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's
-degradation ladder — multi-reference edit → single-reference edit → bare prompt —
-and the bare-prompt rung is reachable **only** when no reference image exists at
-all. A render never hops to a *different* model, so a failure stays visible and
-retryable rather than silently painting a different-looking person (owner ruling 2026-07-29). An edit-only model
-with no reference yields an empty chain and a visible refusal. The
-`replicate/<slug>` actually used is recorded on `images.meta.model`.
+degradation ladder — multi-reference edit → single-reference edit, with a
+bare-prompt generate rung only when no usable reference exists **and** the model
+can generate. A render never hops to a *different* model, so a failure stays
+visible and retryable rather than silently painting a different-looking person
+(owner ruling 2026-07-29). An edit-only model with no reference yields an empty
+chain and a visible refusal. The `replicate/<slug>` actually used is recorded on
+`images.meta.model`.
 
 **Transport** (`@vesper/image-replicate`): the model prediction endpoint (`POST
 /models/{owner}/{name}/predictions`) with `Prefer: wait=60`, then poll — or
@@ -428,6 +449,11 @@ with no reference yields an empty chain and a visible refusal. The
 `owner/name:version`. `REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default
 5m) drives both deadlines — Replicate's `Cancel-After` header and the client's own
 poll cutoff — so raising it can't leave the provider cancelling at a stale bound.
+**`Cancel-After` starts when the prediction is created, so provider queue time
+consumes the same budget as execution time.** A five-minute budget can therefore
+abort a prediction that spent nearly all five minutes queued even when the model
+itself normally runs in seconds. Diagnose queue time separately from model run
+time before treating such an abort as a model failure.
 Reference and control bytes cross a **preparation pass** at the
 `renderWithModel` choke point (`reference-preparation.ts`: EXIF orientation
 applied, metadata stripped, alpha flattened only for non-alpha targets, encoded
