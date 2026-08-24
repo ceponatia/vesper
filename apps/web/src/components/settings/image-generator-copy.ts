@@ -87,7 +87,11 @@ function generatorFailureCopy(code: ImageGeneratorFailureCode): string {
     case "input_missing":
       return "A selected image is no longer readable or its bytes are gone. Refused before any spend, and nothing was substituted — a run that quietly swapped an input would be a run about a different request.";
     case "capacity_exceeded":
-      return "The run orders more primary references than the model (or the app's own cap) accepts. Refused rather than trimmed: silently dropping an input you chose would make any comparison built on this run dishonest. Remove references and run it again.";
+      return "The run selected more reference images than this model can actually carry — either more than its declared capacity (or the app's own cap), or more bytes than its inline payload budget holds. Refused rather than trimmed: silently dropping an input you chose would make any comparison built on this run dishonest. Remove references, or use smaller ones, and run it again.";
+    case "prompt_required":
+      return "This run left the prompt empty, and the active model version declares its prompt input required with no default of its own. Refused before any spend — write a prompt, or pick a model whose schema allows a promptless run.";
+    case "version_replay_unsafe":
+      return "This run asked to replay the exact provider version an earlier run used, and that cannot be done honestly: the source run is gone, belongs to another model, never recorded its version, or recorded no capability record describing it. Refused before any spend rather than quietly running today's field bindings against yesterday's weights. Duplicate again against the current version instead.";
     case "dedicated_input_unbound":
       return "A structural input names a role the active model version declares no dedicated field for. Refused before any spend rather than guessed into a numbered reference slot — re-probe the model, or remove that input.";
     case "control_refused":

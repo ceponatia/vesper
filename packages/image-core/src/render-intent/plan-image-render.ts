@@ -8,10 +8,12 @@ import { compileImagePromptSegments, imagePromptBudgetFromBinding } from "./prom
 import {
   type DroppedImageReference,
   type ImageRenderIntentCore,
+  type ImageRenderPolicy,
   type ImageRenderReferenceSpec,
   missingRequiredControlInputs,
   missingRequiredReferenceRoles,
   planIntentReferences,
+  resolveImageRenderPolicy,
 } from "./render-intent";
 
 /**
@@ -138,7 +140,12 @@ export interface PlannedImageRender {
   appliedControls: Record<string, unknown>;
   /** Every control that did not reach the payload, each with its reason. */
   droppedControls: { control: string; reason: string }[];
-  targetRatio: number;
+  /**
+   * The shape this render asked for, or `null` for the model's own default
+   * (`ImageRenderTarget`). Null travels all the way to the transport
+   * wrapper, where it means "write no aspect/size key and do not crop".
+   */
+  targetRatio: number | null;
   /**
    * The compile step's dimension-resolver inputs (operation, merged
    * resolution/width/height, the mapped custom pair). `renderWithModel` hands
@@ -146,6 +153,8 @@ export interface PlannedImageRender {
    * without them gets the pure `chooseAspect` shape, unchanged.
    */
   dimensionFacts: ImageRenderDimensionFacts;
+  /** The caller's send-strictness policy, resolved against the production defaults. */
+  policy: Required<ImageRenderPolicy>;
   /** The profile's own budget, or null to leave it to the environment. */
   timeoutMs: number | null;
   /** References that will not be sent, in caller order, each with its reason. */
@@ -331,6 +340,7 @@ export function planImageRender(
       droppedControls: compiled.plan.resolvedControls.droppedControls,
       targetRatio: intent.target.aspectRatio,
       dimensionFacts: compiled.plan.dimensionFacts,
+      policy: resolveImageRenderPolicy(intent.policy),
       timeoutMs: profile.timeoutMs,
       dropped,
       sentReferences: primary,

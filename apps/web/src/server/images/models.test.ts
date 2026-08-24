@@ -67,6 +67,38 @@ describe("renderWithModel dimension negotiation", () => {
     await renderWithModel({ model: wan(), prompt: "a portrait" });
     expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("3072*4096");
   });
+
+  it("sends no shape at all and crops nothing when the caller asks for the model's own", async () => {
+    // The raw-bench arm. `undefined` still means Vesper's 3:4 (the case above);
+    // only an explicit `null` means "the model decides". Falsified against the
+    // pre-policy wrapper, where every Generator run picked the 3:4 bucket the
+    // admin never chose and centre-cropped the answer to reach it.
+    const result = await renderWithModel({ model: wan(), prompt: "a portrait", targetRatio: null });
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBeNull();
+    expect(result.shape).toMatchObject({ mode: "provider_default", field: null, value: null, cropTarget: null });
+    // The undecodable stub bytes would have failed a crop loudly; the point is
+    // that no crop is attempted at all.
+    expect(result.image).toEqual(Buffer.from("img"));
+  });
+
+  it("still maps an explicitly chosen shape through the version's own enum", async () => {
+    // An explicit pick is not the native mode: it resolves to the member the
+    // operator named, through the same one shape mapper — 1:1 here, not the
+    // 3:4 that an unset target would have chosen.
+    const ratioModel = imageModelSchema.parse({
+      id: "sdxl-1",
+      slug: "vesper-test/sdxl",
+      label: "SDXL Fixture",
+      canGenerate: true,
+      canEdit: false,
+      aspectMode: "aspect_ratio",
+      supportedAspects: ["1:1", "3:4", "16:9"],
+    });
+    await renderWithModel({ model: ratioModel, prompt: "an item", targetRatio: 1 });
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("1:1");
+    await renderWithModel({ model: ratioModel, prompt: "an item" });
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("3:4");
+  });
 });
 
 describe("renderWithModel reference roles and sent count", () => {

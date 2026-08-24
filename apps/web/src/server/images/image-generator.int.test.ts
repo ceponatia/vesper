@@ -50,6 +50,10 @@ const DEDICATED_MODEL_ID = "imgmdlgendedicatedaaaaaa";
 const DISPOSABLE_MODEL_ID = "imgmdlgendisposableaaaaa";
 const EDIT_ONLY_MODEL_ID = "imgmdlgeneditonlyaaaaaaa";
 const ADVANCED_MODEL_ID = "imgmdlgenadvancedaaaaaaa";
+const STRUCTURAL_MODEL_ID = "imgmdlgenstructuralaaaaa";
+const REQUIRED_CONTROL_MODEL_ID = "imgmdlgenreqcontrolaaaaa";
+const REPROBED_MODEL_ID = "imgmdlgenreprobedaaaaaaa";
+const SIZE_MODEL_ID = "imgmdlgensizemodeaaaaaaa";
 const FIXTURE_MODEL_IDS = [
   PINNED_MODEL_ID,
   UNPINNED_MODEL_ID,
@@ -59,6 +63,10 @@ const FIXTURE_MODEL_IDS = [
   DISPOSABLE_MODEL_ID,
   EDIT_ONLY_MODEL_ID,
   ADVANCED_MODEL_ID,
+  STRUCTURAL_MODEL_ID,
+  REQUIRED_CONTROL_MODEL_ID,
+  REPROBED_MODEL_ID,
+  SIZE_MODEL_ID,
 ];
 
 const PINNED_SLUG = "vesper-test/generator-pinned";
@@ -69,7 +77,12 @@ const DEDICATED_SLUG = "vesper-test/generator-dedicated";
 const DISPOSABLE_SLUG = "vesper-test/generator-disposable";
 const EDIT_ONLY_SLUG = "vesper-test/generator-edit-only";
 const ADVANCED_SLUG = "vesper-test/generator-advanced";
+const STRUCTURAL_SLUG = "vesper-test/generator-structural";
+const REQUIRED_CONTROL_SLUG = "vesper-test/generator-required-control";
+const REPROBED_SLUG = "vesper-test/generator-reprobed";
+const SIZE_SLUG = "vesper-test/generator-size-mode";
 const PINNED_VERSION = "generatorversionaaaaaaaa";
+const REPROBED_VERSION = "generatorversionbbbbbbbb";
 const EXECUTED_VERSION = PINNED_VERSION;
 
 let temp: TempDataRoot | undefined;
@@ -95,6 +108,10 @@ beforeAll(async () => {
         canGenerate: true,
         canEdit: true,
         maxReferences: 4,
+        // Declared shapes, so the native-versus-explicit shape cases have a
+        // real enum to pick from — and something to prove is NOT sent by
+        // default.
+        supportedAspects: ["1:1", "3:4"],
         probedVersionId: PINNED_VERSION,
       },
       {
@@ -175,8 +192,84 @@ beforeAll(async () => {
           },
           providerInputs: [
             { field: "num_inference_steps", type: "integer", required: false, minimum: 1, maximum: 50, reserved: false },
+            // Shapes the raw bag has no honest scalar spelling for. They are
+            // declared and NOT reserved on purpose: the refusal must come from
+            // the shape, not from someone else already owning the field.
+            { field: "extra_image", type: "uri", required: false, reserved: false },
+            { field: "tags", type: "array", required: false, reserved: false },
+            { field: "aspect_ratio", type: "enum", required: false, enumValues: ["1:1"], reserved: true },
           ],
         },
+      },
+      {
+        // A GENERATOR with a required structural input and no primary
+        // reference binding: prompt-driven, `canEdit: false`, one required
+        // `pose_image`. Before the operation rule was capability-driven this
+        // model was unrunnable — without the pose the required-input gate
+        // refused, and with it the operation flipped to `edit`.
+        id: STRUCTURAL_MODEL_ID,
+        slug: STRUCTURAL_SLUG,
+        label: "Generator Structural-Input Fixture",
+        canGenerate: true,
+        canEdit: false,
+        maxReferences: 0,
+        probedVersionId: PINNED_VERSION,
+        advancedCapabilities: {
+          additionalImageInputs: [
+            { roleHint: "pose", binding: { field: "pose_image", arity: "single", required: true } },
+          ],
+          providerInputs: [
+            { field: "prompt", type: "string", required: true, reserved: true },
+            { field: "pose_image", type: "uri", required: true, reserved: true },
+          ],
+        },
+      },
+      {
+        // A version that REQUIRES a field Vesper binds as a normalized control
+        // and declares no default for it. The raw bag may not fill a reserved
+        // field, so only the final pass over the assembled payload can catch
+        // the omission before the provider does.
+        id: REQUIRED_CONTROL_MODEL_ID,
+        slug: REQUIRED_CONTROL_SLUG,
+        label: "Generator Required-Control Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 4,
+        probedVersionId: PINNED_VERSION,
+        advancedCapabilities: {
+          controls: { guidance: { field: "cfg", type: "number" } },
+          providerInputs: [
+            { field: "prompt", type: "string", required: true, reserved: true },
+            { field: "cfg", type: "number", required: true, reserved: true },
+          ],
+        },
+      },
+      {
+        // Re-probed mid-test so a settled run's captured version stops matching
+        // the registry's current pin — the whole duplicate-replay question.
+        id: REPROBED_MODEL_ID,
+        slug: REPROBED_SLUG,
+        label: "Generator Re-probed Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 4,
+        probedVersionId: PINNED_VERSION,
+        // A seed binding, so a replay case can prove the explicit seed
+        // survives rather than being refused for want of a field.
+        advancedCapabilities: { controls: { seed: { field: "seed", type: "integer" } } },
+      },
+      {
+        // A size-mode model whose declared members share one ratio — the shape
+        // the largest-area tie-break would silently substitute.
+        id: SIZE_MODEL_ID,
+        slug: SIZE_SLUG,
+        label: "Generator Size-Mode Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 4,
+        aspectMode: "size",
+        supportedAspects: ["768*1024", "1536*2048"],
+        probedVersionId: PINNED_VERSION,
       },
       {
         // Registered only to be deleted mid-test: the `model_missing` case is
@@ -549,6 +642,27 @@ describe.skipIf(!ready)("image generator pre-spend refusals", () => {
       providerInputs: { num_inference_steps: 200 },
       detail: "must be at most 50",
     },
+    {
+      // A direct admin API caller typing an address into a URI field: the
+      // owner-scoped picker is the only path to an image, and the server —
+      // not the form's editor filter — is what enforces that.
+      rejects: "an arbitrary address in a URI field",
+      modelId: ADVANCED_MODEL_ID,
+      providerInputs: { extra_image: "https://elsewhere.invalid/face.png" },
+      detail: "takes an image address",
+    },
+    {
+      rejects: "a scalar in a list field",
+      modelId: ADVANCED_MODEL_ID,
+      providerInputs: { tags: "portrait" },
+      detail: "takes a list",
+    },
+    {
+      rejects: "a render-owned reserved field",
+      modelId: ADVANCED_MODEL_ID,
+      providerInputs: { aspect_ratio: "1:1" },
+      detail: "owned by the render path",
+    },
   ];
   it.each(ownedBagCases)("refuses a provider value the pre-spend gate owns: $rejects", async ({ modelId, providerInputs, detail }) => {
     stubSuccessfulRenderer();
@@ -614,6 +728,280 @@ describe.skipIf(!ready)("image generator render settlement", () => {
     // The pending asset row was reclaimed — no hidden straggler survives.
     const strays = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId));
     expect(strays).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Structural inputs, shape, and the pre-spend payload gate
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!ready)("image generator structural-input models", () => {
+  it("refuses a required structural input before spend when none was selected", async () => {
+    // The planner owns this refusal, so its code travels verbatim — the
+    // Generator never restates another layer's vocabulary.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: STRUCTURAL_MODEL_ID });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    expect((await storedRow(id))?.failureCode).toBe("image_profile.required_control_input_missing");
+    expect(payload.providerOutcome).toBeNull();
+    expect(captured).toHaveLength(0);
+  });
+
+  it("runs a dedicated-only model as GENERATION and routes the image to its probed field", async () => {
+    // The bug this kills: "any selected image means edit", which made a
+    // prompt-driven model with a required `pose_image` and `canEdit: false`
+    // impossible to execute at all. The provider field is never spelled in
+    // application code — it comes from the fixture's own capability record.
+    stubSuccessfulRenderer();
+    const poseId = await seedReadyImage("lab_output");
+    const { id, sink } = await createRun({
+      modelId: STRUCTURAL_MODEL_ID,
+      inputs: { primary: [], dedicated: [{ role: "pose", imageId: poseId }] },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    const request = captured.at(0);
+    expect(request?.intent.profile.profile.operation).toBe("generate");
+    expect(request?.intent.references.map((reference) => reference.role)).toEqual(["pose"]);
+    const meta = imageMeta((await storedRow(id))?.meta);
+    expect(meta["outcome"]).toMatchObject({ sentRoles: [], dedicatedFields: ["pose_image"] });
+    expect(meta["effectiveRequest"]).toMatchObject({
+      dedicatedInputs: [{ imageId: poseId, role: "pose", providerField: "pose_image" }],
+    });
+  });
+});
+
+describe.skipIf(!ready)("image generator output shape", () => {
+  it("asks for the model's own shape by default and records that nothing was cropped", async () => {
+    // Falsified against the pre-policy runner, which named Vesper's 3:4
+    // production target on every raw run — choosing a provider bucket the
+    // admin never picked and cropping the answer to reach it.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(captured.at(0)?.intent.target.aspectRatio).toBeNull();
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      shape: { mode: "provider_default", field: null, value: null },
+      postprocess: { cropTarget: null },
+    });
+  });
+
+  it("maps an explicitly chosen shape through the version's own enum", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ controls: { aspect: "1:1" } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(captured.at(0)?.intent.target.aspectRatio).toBe(1);
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      shape: { mode: "explicit", requestedAspect: "1:1", field: "aspect_ratio", value: "1:1" },
+    });
+  });
+
+  it("refuses when the chosen shape resolves to a different declared member", async () => {
+    // Several members can share one ratio (Wan's three 3:4 sizes), and the
+    // largest-area tie-break would answer a request for one with another.
+    // Production wants that resolution; a bench must not have its explicit
+    // pick replaced.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: SIZE_MODEL_ID, controls: { aspect: "768*1024" } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(row?.error).toContain("1536*2048");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("refuses a shape the active version no longer offers rather than picking the nearest", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ controls: { aspect: "21:9" } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    expect((await storedRow(id))?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(captured).toHaveLength(0);
+  });
+});
+
+describe.skipIf(!ready)("image generator pre-spend payload gate", () => {
+  it("refuses a required provider field bound to a normalized control the run left unset", async () => {
+    // The raw bag may not fill a reserved field, so this omission is invisible
+    // to every earlier check — without the final pass the provider is the
+    // first to notice, after the money.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: REQUIRED_CONTROL_MODEL_ID });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(row?.error).toContain("cfg");
+    expect(payload.providerOutcome).toBeNull();
+    expect(captured).toHaveLength(0);
+  });
+
+  it("runs once the normalized control fills that field, and records the field it filled", async () => {
+    // The same fixture from the other side — and the provenance answer the
+    // whole snapshot exists for: a row saying "guidance 4" cannot say whether
+    // the provider received `guidance: 4` or `cfg: 4`.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: REQUIRED_CONTROL_MODEL_ID, controls: { guidance: 4 } });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerControls: { cfg: 4 },
+    });
+  });
+
+  it("refuses a strict-policy transport refusal as an unspent capacity failure", async () => {
+    // The transport says "these selected references cannot travel" and creates
+    // no prediction; the run must settle as an unspent refusal that names them,
+    // never as a provider failure that charges the lane.
+    const referenceId = await seedReadyImage();
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: false,
+        error: "cannot carry every selected reference",
+        unsentReferences: [{ index: 1, role: "reference", reason: "inline_byte_budget" }],
+      };
+    });
+    const { id, sink } = await createRun({
+      inputs: { primary: [{ imageId: referenceId }, { imageId: referenceId }], dedicated: [] },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    expect(payload.providerOutcome).toBeNull();
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("capacity_exceeded"));
+    expect(row?.resultImageId).toBeNull();
+    expect(row?.predictionId).toBeNull();
+    expect(imageMeta(row?.meta)["result"]).toMatchObject({
+      spent: false,
+      unsentReferences: [{ index: 1, role: "reference", reason: "inline_byte_budget" }],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate, version replay, and the claim
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!ready)("image generator version replay", () => {
+  /** Move the re-probed fixture's pin, so a settled run's capture stops matching. */
+  async function reprobeTo(versionId: string): Promise<void> {
+    await db().update(imageModels).set({ probedVersionId: versionId }).where(eq(imageModels.id, REPROBED_MODEL_ID));
+  }
+
+  /** A settled run on the re-probed fixture, then a pin that has moved past it. */
+  async function settledSourceThenDrift(): Promise<string> {
+    await reprobeTo(PINNED_VERSION);
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: REPROBED_MODEL_ID, controls: { seed: 4242 } });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    await reprobeTo(REPROBED_VERSION);
+    return id;
+  }
+
+  it("runs the current registered version when the duplicate does not ask to replay", async () => {
+    const sourceId = await settledSourceThenDrift();
+    captured = [];
+    const { id, sink } = await createRun({
+      modelId: REPROBED_MODEL_ID,
+      sourceRunId: sourceId,
+      controls: { seed: 4242 },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("succeeded");
+    expect(row?.requestedVersionId).toBe(REPROBED_VERSION);
+    expect(row?.sourceRunId).toBe(sourceId);
+  });
+
+  it("replays the exact captured version against the capability record that run stored", async () => {
+    const sourceId = await settledSourceThenDrift();
+    captured = [];
+    const { id, sink } = await createRun({
+      modelId: REPROBED_MODEL_ID,
+      sourceRunId: sourceId,
+      versionPolicy: "captured",
+      controls: { seed: 4242 },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("succeeded");
+    expect(row?.requestedVersionId).toBe(PINNED_VERSION);
+    expect(captured.at(0)?.intent.versionId).toBe(PINNED_VERSION);
+    // The explicit seed survives the replay — a variant that lost it would be
+    // a different composition wearing the same request.
+    expect(captured.at(0)?.intent.controls?.seed).toBe(4242);
+  });
+
+  it("refuses a replay whose source recorded no capability record for that version", async () => {
+    // The honest half: without the stored snapshot, Vesper would be pointing
+    // today's field bindings at yesterday's weights.
+    await reprobeTo(PINNED_VERSION);
+    stubSuccessfulRenderer();
+    const { id: sourceId, sink: sourceSink } = await createRun({ modelId: REPROBED_MODEL_ID });
+    await runImageGeneratorRun(sourceId, ownerId, sourceSink);
+    await db()
+      .update(imageGeneratorRuns)
+      .set({ meta: {} })
+      .where(eq(imageGeneratorRuns.id, sourceId));
+    await reprobeTo(REPROBED_VERSION);
+    captured = [];
+
+    const { id, sink } = await createRun({
+      modelId: REPROBED_MODEL_ID,
+      sourceRunId: sourceId,
+      versionPolicy: "captured",
+    });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("version_replay_unsafe"));
+    // The current version is NOT substituted — that is the whole point.
+    expect(row?.requestedVersionId).toBeNull();
+    expect(captured).toHaveLength(0);
+  });
+});
+
+describe.skipIf(!ready)("image generator run claim", () => {
+  it("spends once when the same run is delivered to two workers at once", async () => {
+    // A read-then-write claim let both deliveries see `pending` and both buy a
+    // prediction; one immutable run must never be charged twice.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+
+    const [first, second] = await Promise.all([
+      runImageGeneratorRun(id, ownerId, sink),
+      runImageGeneratorRun(id, ownerId, sink),
+    ]);
+
+    expect(captured).toHaveLength(1);
+    const outcomes = [first.status ?? first.skipped, second.status ?? second.skipped];
+    expect(outcomes).toContain("succeeded");
+    expect(outcomes.filter((outcome) => outcome === "succeeded")).toHaveLength(1);
   });
 });
 

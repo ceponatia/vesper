@@ -1,7 +1,13 @@
 import { z } from "zod";
 import {
+  imageAspectModes,
   imageControlReferenceRoles,
+  imageEditKinds,
+  imageIdentityPreservationSchema,
+  imageModelAdvancedCapabilitiesSchema,
+  imageReferenceArities,
   imageReferenceRoleSchema,
+  imageReferenceTransports,
   imageRenderControlsSchema,
   type ImageRenderControls,
 } from "@vesper/image-core";
@@ -82,12 +88,88 @@ export function emptyImageGeneratorRunInputs(): ImageGeneratorRunInputs {
   return { primary: [], dedicated: [] };
 }
 
-/** The normalized per-run control overlay — the package's own schema, verbatim. */
-export const imageGeneratorControlsSchema: z.ZodType<ImageRenderControls> = imageRenderControlsSchema;
+/**
+ * The normalized per-run control overlay: the package's own schema plus ONE
+ * Generator-owned field.
+ *
+ * `aspect` is the operator's explicit shape choice, spelled as a member of the
+ * selected version's own `supportedAspects` (`"3:4"`, `"1536*2048"`). It is not
+ * promoted into `ImageRenderControls` because it is not a normalized control —
+ * it is a pointer INTO the model's declared shape enum, which the render path
+ * already negotiates. The runner converts it to a target ratio and lets
+ * `chooseAspect` pick the same member back, so the one mapper stays the one
+ * mapper.
+ *
+ * ABSENT is the Generator's default and it means the model's own shape: no
+ * aspect/size key in the payload, no bucket picked for being nearest a Vesper
+ * target, and no crop afterwards. A raw bench that quietly reshaped a model's
+ * answer would be reporting Vesper's opinion as the model's.
+ */
+export const imageGeneratorControlsSchema = imageRenderControlsSchema.extend({
+  aspect: z.string().min(1).max(32).optional(),
+});
+export type ImageGeneratorControls = z.infer<typeof imageGeneratorControlsSchema>;
 
-export function emptyImageGeneratorControls(): ImageRenderControls {
+export function emptyImageGeneratorControls(): ImageGeneratorControls {
   return {};
 }
+
+/** The render-path half of a run's controls — `aspect` is the Generator's own. */
+export function imageGeneratorRenderControls(controls: ImageGeneratorControls): ImageRenderControls {
+  const renderControls: ImageRenderControls = { ...controls };
+  delete (renderControls as ImageGeneratorControls).aspect;
+  return renderControls;
+}
+
+/**
+ * Which provider version a run executes.
+ *
+ * `current` re-resolves the registry's pin at run time — the ordinary case, and
+ * the only honest answer for a first run. `captured` replays the exact version a
+ * source run recorded, and is accepted ONLY beside a `sourceRunId` whose stored
+ * capability snapshot can still describe that version; otherwise the run refuses
+ * rather than pointing today's field bindings at yesterday's weights.
+ */
+export const imageGeneratorVersionPolicies = ["current", "captured"] as const;
+export const imageGeneratorVersionPolicySchema = z.enum(imageGeneratorVersionPolicies);
+export type ImageGeneratorVersionPolicy = (typeof imageGeneratorVersionPolicies)[number];
+
+/**
+ * The mechanical half of a registered model, frozen onto a run before it spends.
+ *
+ * This is the smallest thing that makes an exact-version replay honest. Vesper
+ * keeps ONE capability record per registered model, replaced wholesale when the
+ * row is re-probed, so once a model moves to a new version nothing anywhere can
+ * still say how the old one bound its fields. A replay that used today's
+ * bindings against yesterday's weights would send a request neither version
+ * ever described.
+ *
+ * So every run writes down the capability facts it actually ran under, and a
+ * captured-version replay plans against THOSE. Nothing here is optional and
+ * nothing defaults: a snapshot missing a field is a snapshot that cannot be
+ * trusted to describe the version, and the replay refuses instead.
+ *
+ * `probedVersionId` is the load-bearing member — it is what proves the record
+ * described the version the run pinned, rather than some later one the row had
+ * already moved to.
+ */
+export const imageGeneratorCapabilitySnapshotSchema = z.object({
+  canGenerate: z.boolean(),
+  canEdit: z.boolean(),
+  referenceField: z.string().min(1),
+  referenceArity: z.enum(imageReferenceArities),
+  referenceTransport: z.enum(imageReferenceTransports),
+  maxReferences: z.number().int().min(0),
+  aspectMode: z.enum(imageAspectModes),
+  supportedAspects: z.array(z.string()),
+  outputFormat: z.string().nullable(),
+  extraInput: z.record(z.string(), z.unknown()),
+  editKind: z.enum(imageEditKinds),
+  identityPreservation: imageIdentityPreservationSchema,
+  probedVersionId: z.string().min(1),
+  advancedCapabilities: imageModelAdvancedCapabilitiesSchema,
+});
+export type ImageGeneratorCapabilitySnapshot = z.infer<typeof imageGeneratorCapabilitySnapshotSchema>;
 
 export const imageGeneratorProviderInputValueSchema = z.union([
   z.string().max(2000),
@@ -119,7 +201,15 @@ export function emptyImageGeneratorProviderInputs(): ImageGeneratorProviderInput
  */
 export const imageGeneratorCreateRunRequestSchema = z.object({
   modelId: z.string().min(1),
-  prompt: z.string().trim().min(1).max(IMAGE_GENERATOR_PROMPT_MAX),
+  /**
+   * Possibly EMPTY. Whether this model can run without prompt text is a
+   * capability fact — the version's probed `prompt` descriptor either sits in
+   * its schema's `required` list or does not — and a contract cannot read it,
+   * because a contract does not know which model was picked. An empty prompt on
+   * a model that needs one refuses on the run row with `prompt_required`, where
+   * the admin can see which model said so.
+   */
+  prompt: z.string().trim().max(IMAGE_GENERATOR_PROMPT_MAX),
   inputs: imageGeneratorRunInputsSchema.optional(),
   controls: imageGeneratorControlsSchema.optional(),
   providerInputs: imageGeneratorProviderInputsSchema
@@ -129,6 +219,8 @@ export const imageGeneratorCreateRunRequestSchema = z.object({
     .optional(),
   /** Duplicate/variant lineage — the settled run this one was prefilled from. */
   sourceRunId: z.string().min(1).optional(),
+  /** Which version runs; `captured` needs the `sourceRunId` it is replaying. */
+  versionPolicy: imageGeneratorVersionPolicySchema.optional(),
 }).superRefine((request, ctx) => {
   const roles = (request.inputs?.dedicated ?? []).map((input) => input.role);
   if (new Set(roles).size !== roles.length) {
@@ -136,6 +228,16 @@ export const imageGeneratorCreateRunRequestSchema = z.object({
       code: "custom",
       path: ["inputs", "dedicated"],
       message: "a run sends at most one dedicated input per role",
+    });
+  }
+  // A client bug, not a runtime fact: there is no version to replay without a
+  // run to replay it from, and accepting the pair silently would let a
+  // "captured" request quietly become a "current" one.
+  if (request.versionPolicy === "captured" && request.sourceRunId === undefined) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["versionPolicy"],
+      message: "replaying a captured version needs the run it was captured from",
     });
   }
 });
@@ -163,6 +265,10 @@ export const imageGeneratorFailureCodes = [
   "capacity_exceeded",
   /** A structural role with no active dedicated capability binding. */
   "dedicated_input_unbound",
+  /** The prompt is empty and this version declares its prompt input required. */
+  "prompt_required",
+  /** A captured version cannot be replayed against trustworthy capability facts. */
+  "version_replay_unsafe",
   /** An explicitly selected normalized control cannot be represented. */
   "control_refused",
   /** An unknown/reserved/invalid advanced provider value. */
@@ -198,6 +304,8 @@ export const imageGeneratorRunSchema = z.object({
   finalPrompt: z.string().nullable().default(null),
   inputs: imageGeneratorRunInputsSchema.catch(emptyImageGeneratorRunInputs).default(emptyImageGeneratorRunInputs),
   controls: imageGeneratorControlsSchema.catch(emptyImageGeneratorControls).default(emptyImageGeneratorControls),
+  /** Which version this run asked for — `captured` means it replayed a source run's. */
+  versionPolicy: imageGeneratorVersionPolicySchema.catch("current").default("current"),
   providerInputs: imageGeneratorProviderInputsSchema
     .catch(emptyImageGeneratorProviderInputs)
     .default(emptyImageGeneratorProviderInputs),
@@ -218,5 +326,15 @@ export const imageGeneratorRunSchema = z.object({
    * written by a newer deploy.
    */
   attempt: z.record(z.string(), z.unknown()).nullable().catch(null).default(null),
+  /**
+   * The sanitized effective request, written BEFORE spend: the provider-shaped
+   * control fields, the shape mode and the aspect field/value actually sent, and
+   * the image-id → provider-slot mapping. Kept LOOSE for the same reason
+   * `attempt` is: the inspector only displays it, and a strict shape here would
+   * strip a record written by a newer deploy.
+   */
+  effectiveRequest: z.record(z.string(), z.unknown()).nullable().catch(null).default(null),
+  /** What came back: returned dimensions, whether Vesper cropped, unsent inputs. */
+  result: z.record(z.string(), z.unknown()).nullable().catch(null).default(null),
 });
 export type ImageGeneratorRun = z.infer<typeof imageGeneratorRunSchema>;

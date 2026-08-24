@@ -2,6 +2,7 @@ import { z } from "zod";
 import { POLL_INTERVAL_MS, predictionTimeoutMs, REQUEST_TIMEOUT_MS, type ReplicateConfig } from "./config";
 import { errorText, type ReplicateHttp, responseError, sleep } from "./http";
 import { downloadReplicateOutput, outputUrl } from "./outputs";
+import type { ProviderInputViolation, UnsentReferenceReport } from "./strict-request";
 
 /**
  * The prediction shell: create, poll, cancel, and read the answer. Every render
@@ -44,6 +45,19 @@ export interface ReplicateImageResult {
    * run never reached the transport (or predates the field), never "zero".
    */
   sentReferenceCount?: number;
+  /**
+   * Under the strict reference policy: the explicitly selected references this
+   * request could not carry, and why. Present ONLY on that refusal, and its
+   * presence is the signal that no prediction was created — a caller settling
+   * the run reads it as "nothing was spent", not as a provider failure.
+   */
+  unsentReferences?: UnsentReferenceReport[];
+  /**
+   * Under the strict provider-input policy: the ways the finished payload
+   * contradicted the version's probed schema. Same rule — present only on that
+   * pre-spend refusal.
+   */
+  providerInputViolations?: ProviderInputViolation[];
 }
 
 const predictionSchema = z.object({

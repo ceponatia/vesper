@@ -526,6 +526,133 @@ describe("runRegistryImageModel", () => {
     expect(trimmed?.context).toMatchObject({ sentRoles: ["identity"], droppedRoles: ["location"] });
   });
 
+  it("refuses before creating a prediction when require_all cannot carry every reference", async () => {
+    // The bench arm. Falsified against the pre-policy transport, which trimmed
+    // the tail and POSTed anyway: a run that sent one of two explicitly
+    // selected images is a different experiment under the same run id.
+    const sink = new DiagnosticCollector();
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }),
+    );
+    const refused = await client().runRegistryImageModel(
+      model({ referenceField: "images", referenceArity: "array", referenceTransport: "data_url", maxReferences: 4 }),
+      {
+        prompt: "a scene",
+        references: [
+          prepared(Buffer.alloc(1_000), { role: "identity" }),
+          prepared(Buffer.alloc(7 * 1024 * 1024), { role: "location" }),
+        ],
+        policy: { references: "require_all" },
+      },
+      sink,
+    );
+    expect(refused.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(refused.unsentReferences).toEqual([{ index: 1, role: "location", reason: "inline_byte_budget" }]);
+    expect(sink.items.map((entry) => entry.code)).toContain("image_model.references_untransmittable");
+  });
+
+  it("refuses before creating a prediction when the payload contradicts the probed schema", async () => {
+    // A required field bound to a normalized control the caller never set: the
+    // raw-bag gate cannot see it (the bag may not fill a reserved field), so
+    // without this pass the provider is the first to notice — after the money.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }),
+    );
+    const strict = model({
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        controls: { guidance: { field: "cfg", type: "number" } },
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "cfg", type: "number", required: true, reserved: true },
+        ],
+      },
+    });
+    const refused = await client().runRegistryImageModel(
+      strict,
+      { prompt: "p", policy: { providerInputs: "strict" } },
+      new DiagnosticCollector(),
+    );
+    expect(refused.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(refused.providerInputViolations).toEqual([
+      { field: "cfg", reason: "required_missing", detail: "cfg is required by this version and declares no default" },
+    ]);
+  });
+
+  it("refuses a URI-shaped field the raw overlay wrote rather than a typed transport", async () => {
+    // The smuggling case: an admin API caller putting an arbitrary address into
+    // a `uri` input. Only the owner-scoped picker may supply an image, so a URI
+    // field nothing typed owns fails closed rather than reaching the provider.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+      }),
+    );
+    const withUriInput = model({
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        knownInputFields: ["prompt", "extra_image"],
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "extra_image", type: "uri", required: false, reserved: false },
+        ],
+      },
+    });
+    const refused = await client().runRegistryImageModel(withUriInput, {
+      prompt: "p",
+      controlInput: { extra_image: "https://elsewhere.invalid/face.png" },
+      policy: { providerInputs: "strict" },
+    });
+    expect(refused.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+    expect(refused.providerInputViolations?.[0]).toMatchObject({ field: "extra_image", reason: "unsupported_shape" });
+  });
+
+  it("leaves a required field with a declared provider default unset", async () => {
+    // Provider defaults are not Vesper defaults: demanding the caller restate
+    // one would turn "leave it alone" into "copy whatever another lane used".
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/predictions")) {
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    const defaulted = model({
+      advancedCapabilities: {
+        ...emptyImageModelAdvancedCapabilities(),
+        controls: { guidance: { field: "cfg", type: "number" } },
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "cfg", type: "number", required: true, default: 3.5, reserved: true },
+        ],
+      },
+    });
+    const result = await client().runRegistryImageModel(defaulted, {
+      prompt: "p",
+      policy: { providerInputs: "strict" },
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("carries no sent count on a refusal that never reached the transport", async () => {
     // Absent means "nothing was posted", which is a different fact from zero.
     const editOnly = model({ slug: "qwen/qwen-image-edit-2511", canGenerate: false });

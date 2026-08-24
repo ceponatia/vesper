@@ -4,16 +4,18 @@ import {
   emptyImageGeneratorControls,
   emptyImageGeneratorProviderInputs,
   emptyImageGeneratorRunInputs,
+  type ImageGeneratorControls,
   type ImageGeneratorCreateRunRequest,
   imageGeneratorControlsSchema,
   imageGeneratorProviderInputsSchema,
   type ImageGeneratorRun,
   imageGeneratorRunInputsSchema,
   type ImageGeneratorRunInputs,
+  type ImageGeneratorVersionPolicy,
+  imageGeneratorVersionPolicySchema,
 } from "@/contracts/images/image-generator";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import type { ImageRenderControls } from "@vesper/image-core";
 import { db, imageGeneratorRuns } from "../db";
 import { deleteOwnedImage, imageMeta } from "./assets";
 import { loadImageModel } from "./models";
@@ -86,6 +88,9 @@ export function toWireImageGeneratorRun(row: ImageGeneratorRunRow, sink?: Diagno
     controls: storedRunControls(row, sink),
     providerInputs: storedRunProviderInputs(row, sink),
     sourceRunId: row.sourceRunId,
+    versionPolicy: storedVersionRequest(row).mode,
+    effectiveRequest: storedMetaRecord(row, "effectiveRequest", sink),
+    result: storedMetaRecord(row, "result", sink),
     resultImageId: row.resultImageId,
     failureCode: row.failureCode,
     error: row.error,
@@ -107,7 +112,7 @@ export function storedRunInputs(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   );
 }
 
-export function storedRunControls(row: ImageGeneratorRunRow, sink?: DiagnosticSink): ImageRenderControls {
+export function storedRunControls(row: ImageGeneratorRunRow, sink?: DiagnosticSink): ImageGeneratorControls {
   return parseOr(
     imageGeneratorControlsSchema,
     row.controls,
@@ -136,10 +141,42 @@ export function storedRunProviderInputs(
  * fact. Absent stays a quiet null; unparseable costs the field, never the row.
  */
 function storedRunAttempt(row: ImageGeneratorRunRow, sink?: DiagnosticSink): Record<string, unknown> | null {
-  const raw = imageMeta(row.meta)["attempt"];
-  if (raw === undefined || raw === null) return null;
-  return parseOrNull(storedAttemptSchema, raw, sink, "image_generator_runs.meta.attempt");
+  return storedMetaRecord(row, "attempt", sink);
 }
+
+/** One loose per-run record out of the meta bag, on the same forgiving terms. */
+function storedMetaRecord(
+  row: ImageGeneratorRunRow,
+  key: string,
+  sink?: DiagnosticSink,
+): Record<string, unknown> | null {
+  const raw = imageMeta(row.meta)[key];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(storedAttemptSchema, raw, sink, `image_generator_runs.meta.${key}`);
+}
+
+/**
+ * The version request recorded at create.
+ *
+ * Absent means `current` — every run written before the choice existed followed
+ * the registry's pin, which is exactly what `current` names. A bag that cannot
+ * be read degrades the same way rather than inventing a replay.
+ */
+export function storedVersionRequest(row: ImageGeneratorRunRow): ImageGeneratorVersionRequest {
+  const parsed = versionRequestSchema.safeParse(imageMeta(row.meta)["versionRequest"]);
+  return parsed.success ? parsed.data : { mode: "current", sourceRunId: null };
+}
+
+export interface ImageGeneratorVersionRequest {
+  mode: ImageGeneratorVersionPolicy;
+  /** The run whose captured version is being replayed, as the client named it. */
+  sourceRunId: string | null;
+}
+
+const versionRequestSchema = z.object({
+  mode: imageGeneratorVersionPolicySchema,
+  sourceRunId: z.string().min(1).nullable().default(null),
+});
 
 /**
  * One meta write, over whatever the bag already held — merged, never assigned,
@@ -242,6 +279,16 @@ export async function createImageGeneratorRun(
     }
   }
 
+  // The version choice is recorded as REQUESTED, not as resolved: whether the
+  // captured version can still be replayed safely depends on the source run's
+  // stored capability snapshot, and that is a runtime fact the runner settles
+  // onto the row. Writing the requested id even when the lineage FK dropped it
+  // keeps the refusal able to name what was asked for.
+  const versionRequest = {
+    mode: request.versionPolicy ?? "current",
+    sourceRunId: request.sourceRunId ?? null,
+  } satisfies ImageGeneratorVersionRequest;
+
   const [row] = await db()
     .insert(imageGeneratorRuns)
     .values({
@@ -252,6 +299,7 @@ export async function createImageGeneratorRun(
       controls: request.controls ?? emptyImageGeneratorControls(),
       providerInputs: request.providerInputs ?? emptyImageGeneratorProviderInputs(),
       sourceRunId,
+      meta: { versionRequest },
     })
     .returning();
   if (!row) throw new Error("image_generator_runs insert returned no row");
@@ -261,6 +309,34 @@ export async function createImageGeneratorRun(
 // ---------------------------------------------------------------------------
 // Settling and deleting
 // ---------------------------------------------------------------------------
+
+/**
+ * Claim one pending run for THIS worker, atomically.
+ *
+ * A conditional `UPDATE … WHERE status = 'pending'` with a returning row, not a
+ * read-then-write: two deliveries of the same job would both read `pending`
+ * under READ COMMITTED and both go on to buy a prediction, and one immutable
+ * run must never be charged twice. Postgres serializes the two updates on the
+ * row, so exactly one of them sees a `pending` row to change and the loser gets
+ * nothing back.
+ *
+ * Returns the row AS CLAIMED, so the caller works from the same values the
+ * claim wrote rather than from a pre-claim read.
+ */
+export async function claimGeneratorRun(runId: string, ownerId: string): Promise<ImageGeneratorRunRow | null> {
+  const [claimed] = await db()
+    .update(imageGeneratorRuns)
+    .set({ status: "running", startedAt: new Date() })
+    .where(
+      and(
+        eq(imageGeneratorRuns.id, runId),
+        eq(imageGeneratorRuns.ownerId, ownerId),
+        eq(imageGeneratorRuns.status, "pending"),
+      ),
+    )
+    .returning();
+  return claimed ?? null;
+}
 
 /** Extra columns, extra meta members, and the breaker report one settle contributes. */
 export interface GeneratorSettleExtras {
@@ -283,6 +359,11 @@ export async function settleGeneratorRunFailed(
   extras: GeneratorSettleExtras = {},
 ): Promise<ImageGeneratorRunPayload> {
   sink?.push(diag("warn", failureCode, message.slice(0, 300), { context: { runId: row.id } }));
+  // Guarded on `running`, like the success settle's own returning check: only
+  // the worker holding the claim may settle, and a row already settled (or
+  // deleted mid-flight) is left exactly as it is. A settled run is immutable
+  // evidence, and the guard is what makes that true in the database rather than
+  // only in the absence of a route that would rewrite it.
   await db()
     .update(imageGeneratorRuns)
     .set({
@@ -293,7 +374,13 @@ export async function settleGeneratorRunFailed(
       finishedAt: new Date(),
       ...(extras.meta ? { meta: generatorRunMeta(row, extras.meta) } : {}),
     })
-    .where(and(eq(imageGeneratorRuns.id, row.id), eq(imageGeneratorRuns.ownerId, row.ownerId)));
+    .where(
+      and(
+        eq(imageGeneratorRuns.id, row.id),
+        eq(imageGeneratorRuns.ownerId, row.ownerId),
+        eq(imageGeneratorRuns.status, "running"),
+      ),
+    );
   return { runId: row.id, status: "failed", failureCode, providerOutcome: extras.providerOutcome ?? null };
 }
 

@@ -95,16 +95,68 @@ export interface ImageRenderReferenceSpec {
 }
 
 /**
- * The shape a lane wants back, as a width/height ratio.
+ * The shape a lane wants back, as a width/height ratio — or `null` for "the
+ * model's own default shape".
  *
  * An object rather than a bare number because this is where the quality tier and
  * explicit resolution join it in slice 4. They are deliberately absent now: a
  * `quality: "fast" | "balanced" | "quality"` field would be a claim about the
  * render that nothing in the payload honors until quality profiles and the
  * control transports exist.
+ *
+ * `null` is the RAW-EXPLORATION shape, and it means three things together: no
+ * aspect/size key is written into the payload, no provider shape bucket is
+ * chosen for being closest to a Vesper target, and the returned image is not
+ * cropped. Every player-facing lane still names `IMAGE_TARGET_ASPECT` (or
+ * its own ratio) because a portrait strip whose images are whatever shape the
+ * model felt like is a broken product surface; the Image Generator asks for
+ * `null` because a bench that silently reshapes a model's output is not
+ * evidence about that model.
  */
 export interface ImageRenderTarget {
-  aspectRatio: number;
+  aspectRatio: number | null;
+}
+
+/**
+ * How strictly a render treats what it was asked to send.
+ *
+ * Two callers of the same transport legitimately want different answers to
+ * "the payload cannot carry everything — now what?", so the answer is an
+ * explicit policy on the request rather than a rule baked into the transport.
+ *
+ * - `references`: `allow_trim` keeps today's production behavior — the byte
+ *   budget or the model's capacity may drop tail references and the render
+ *   proceeds, because a scene missing its third image still beats no scene.
+ *   `require_all` refuses BEFORE the prediction is created, because a bench
+ *   run that sent four of five explicitly selected images is a different
+ *   experiment wearing the same run id.
+ * - `providerInputs`: `declared_only` keeps today's behavior — the reserved
+ *   set and the known-field allowlist decide what may be written, and the
+ *   provider is the one that judges the values. `strict` additionally holds the
+ *   fully assembled payload against the version's probed descriptors (required
+ *   presence, primitive type, integer-ness, enum membership, range) and refuses
+ *   pre-spend, because an admin bench must not buy a prediction Vesper could
+ *   already prove the provider will reject.
+ */
+export const imageReferenceTransmissionPolicies = ["allow_trim", "require_all"] as const;
+export type ImageReferenceTransmissionPolicy = (typeof imageReferenceTransmissionPolicies)[number];
+
+export const imageProviderInputPolicies = ["declared_only", "strict"] as const;
+export type ImageProviderInputPolicy = (typeof imageProviderInputPolicies)[number];
+
+export interface ImageRenderPolicy {
+  references?: ImageReferenceTransmissionPolicy;
+  providerInputs?: ImageProviderInputPolicy;
+}
+
+/** The policy an absent one means: exactly what every lane did before policies existed. */
+export function defaultImageRenderPolicy(): Required<ImageRenderPolicy> {
+  return { references: "allow_trim", providerInputs: "declared_only" };
+}
+
+/** The caller's policy filled in with the defaults above. */
+export function resolveImageRenderPolicy(policy: ImageRenderPolicy | undefined): Required<ImageRenderPolicy> {
+  return { ...defaultImageRenderPolicy(), ...policy };
 }
 
 /**
@@ -143,6 +195,13 @@ export interface ImageRenderIntentCore {
    */
   promptSegments?: readonly ImagePromptSegment[];
   target: ImageRenderTarget;
+  /**
+   * How strictly this render treats what it was asked to send
+   * ({@link ImageRenderPolicy}). Absent is the production answer — trim on
+   * capacity, let the provider judge the values — so every existing lane is
+   * unchanged by the field's arrival.
+   */
+  policy?: ImageRenderPolicy;
   /**
    * Per-render control overrides, merged over the profile's stored defaults. No
    * lane sends any today, which is what keeps the migration payload-neutral.

@@ -3,25 +3,28 @@
 import { useState } from "react";
 import {
   baseImageModelSlug,
+  chooseAspect,
   imageResolutionTiers,
   isImageControlReferenceRole,
+  parseAspectValue,
   pinnedImageModelVersion,
   referenceCapacity,
   type ImageInputBinding,
   type ImageModel,
   type ImageProviderInputDescriptor,
   type ImageReferenceRole,
-  type ImageRenderControls,
   type ImageResolutionTier,
   type ImageUriBinding,
 } from "@vesper/image-core";
 import {
   IMAGE_GENERATOR_MAX_PRIMARY,
   IMAGE_GENERATOR_PROMPT_MAX,
+  type ImageGeneratorControls,
   type ImageGeneratorCreateRunRequest,
   type ImageGeneratorDedicatedRole,
   type ImageGeneratorProviderInputs,
   type ImageGeneratorRunInputs,
+  type ImageGeneratorVersionPolicy,
 } from "@/contracts/images/image-generator";
 import { adminImageModelsApi, imageGeneratorApi, imageLorasApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -73,7 +76,7 @@ export interface ImageGeneratorPrefill {
   requestedVersionId: string | null;
   prompt: string;
   inputs: ImageGeneratorRunInputs;
-  controls: ImageRenderControls;
+  controls: ImageGeneratorControls;
   providerInputs: ImageGeneratorProviderInputs;
   /** Lineage — sent as `sourceRunId` so the new row cites what it varies. */
   sourceRunId: string;
@@ -296,6 +299,13 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     prefill?.controls.editStrength !== undefined ? String(prefill.controls.editStrength) : "",
   );
   const [resolution, setResolution] = useState<ImageResolutionTier | "">(prefill?.controls.resolution ?? "");
+  // Blank is the MODEL's own shape, not a Vesper default — the Generator sends
+  // no aspect/size key unless this names one of the version's own members.
+  const [aspect, setAspect] = useState(prefill?.controls.aspect ?? "");
+  // A duplicate whose model has been re-probed can either replay the exact
+  // version the source ran, or run today's. Neither is a safe default to pick
+  // silently, so the choice is only offered when the two actually differ.
+  const [versionPolicy, setVersionPolicy] = useState<ImageGeneratorVersionPolicy>("current");
   const [loraId, setLoraId] = useState(prefill?.controls.lora?.id ?? "");
   const [loraScale, setLoraScale] = useState(
     prefill?.controls.lora?.scale !== undefined ? String(prefill.controls.lora.scale) : "",
@@ -347,8 +357,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setSteps("");
     setEditStrength("");
     setResolution("");
+    setAspect("");
     setLoraId("");
     setLoraScale("");
+    setVersionPolicy("current");
   }
 
   // The edit gate mirrors `profileEligibility`: `canEdit` AND a reviewed
@@ -370,6 +382,21 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   const reservedFields = (capabilities?.providerInputs ?? [])
     .filter((descriptor) => descriptor.reserved)
     .map((descriptor) => descriptor.field);
+
+  // The version's OWN declared shapes, narrowed to the ones actually
+  // reachable. Blank stays the model's default: the Generator writes no
+  // aspect/size key unless one of these is picked, so a raw run is never
+  // bucketed toward a Vesper target or cropped to reach one.
+  //
+  // The filter matters on size-mode models, where several members share one
+  // ratio (Wan's three 3:4 sizes) and the shared mapper resolves a ratio to the
+  // largest of them. The server refuses a pick it would have to substitute, so
+  // offering the unreachable members here would only sell a guaranteed refusal.
+  const shapeOptions = (selectedModel?.supportedAspects ?? []).filter((option) => {
+    if (selectedModel === null) return false;
+    const ratio = parseAspectValue(option);
+    return ratio !== null && chooseAspect(selectedModel, ratio).value === option;
+  });
 
   const pinnedVersion = selectedModel === null ? null : pinnedImageModelVersion(selectedModel);
   const modelCapacity = selectedModel === null ? null : referenceCapacity(selectedModel).max;
@@ -424,7 +451,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // never include "custom" — so any set dimension was a guaranteed pre-spend
   // `control_refused`. Withheld until the shared custom-resolution path works
   // end to end; the contract keeps `width`/`height` for API callers.
-  const assembledControls: ImageRenderControls = {};
+  const assembledControls: ImageGeneratorControls = {};
   const controlLines: string[] = [];
   const parsedSeed = parseStrictNumber(seed, "integer");
   const seedError =
@@ -472,6 +499,12 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     assembledControls.resolution = resolution;
     controlLines.push(`resolution ${resolution}`);
   }
+  // Only a member the CURRENT version still declares travels; a stale pick from
+  // a duplicate is listed under the drift warning instead of silently sent.
+  if (aspect !== "" && (selectedModel?.supportedAspects.includes(aspect) ?? false)) {
+    assembledControls.aspect = aspect;
+    controlLines.push(`shape ${aspect}`);
+  }
   if (loraBound && selectedLora !== null) {
     assembledControls.lora = {
       id: selectedLora.id,
@@ -512,11 +545,29 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   const missingRequiredDedicated = dedicatedSlots.filter(
     (slot) => slot.binding.required && dedicated[slot.role] === undefined,
   );
-  // The runner's own rule (spec §Generator runner, step 4): any selected image
-  // makes this an edit; none makes it prompt-only.
-  const operation: "edit" | "generate" = primaryCount + filledDedicated.length > 0 ? "edit" : "generate";
+  // The runner's own rule (spec §Generator runner, step 4): a PRIMARY reference
+  // makes this an edit. A dedicated structural input does not — it is its own
+  // provider field, and a model that generates from a prompt while taking a
+  // required pose map is still generating. Only a model that cannot generate at
+  // all reads its structural image as the thing being edited.
+  const operation: "edit" | "generate" =
+    primaryCount > 0
+      ? "edit"
+      : filledDedicated.length > 0 && selectedModel !== null && !selectedModel.canGenerate && modelCanEdit
+        ? "edit"
+        : "generate";
   const operationSupported =
     selectedModel === null || (operation === "edit" ? modelCanEdit : selectedModel.canGenerate);
+
+  // Whether this version needs prompt text at all, from its own probed
+  // descriptor. A record with no descriptor for the prompt field says nothing,
+  // and silence means "required" — the server refuses on the same rule, so an
+  // enabled button here would only buy a refusal.
+  const promptDescriptor = (capabilities?.providerInputs ?? []).find(
+    (descriptor) => descriptor.field === (capabilities?.prompt?.field ?? "prompt"),
+  );
+  const promptRequired =
+    selectedModel === null || promptDescriptor === undefined || (promptDescriptor.required && promptDescriptor.default === undefined);
 
   // A duplicate whose model has drifted — comparison honesty (plan §12): the
   // fact is surfaced BEFORE submit, never silently run on different weights.
@@ -559,6 +610,9 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     // the current version binds.
     if (prefill.controls.width !== undefined) prefillDrift.push("width");
     if (prefill.controls.height !== undefined) prefillDrift.push("height");
+    if (prefill.controls.aspect !== undefined && !selectedModel.supportedAspects.includes(prefill.controls.aspect)) {
+      prefillDrift.push("output shape");
+    }
     if (prefill.controls.lora !== undefined && !loraBound) prefillDrift.push("LoRA");
     for (const field of Object.keys(prefill.providerInputs)) {
       if (!advancedInputs.some((descriptor) => descriptor.field === field)) prefillDrift.push(field);
@@ -573,7 +627,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   const ready =
     selectedModel !== null &&
     pinnedVersion !== null &&
-    prompt.trim() !== "" &&
+    (!promptRequired || prompt.trim() !== "") &&
     primaryComplete &&
     !overCapacity &&
     missingRequiredDedicated.length === 0 &&
@@ -639,6 +693,9 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
       ...(Object.keys(assembledControls).length > 0 ? { controls: assembledControls } : {}),
       ...(Object.keys(assembledProviderInputs).length > 0 ? { providerInputs: assembledProviderInputs } : {}),
       ...(prefill === null ? {} : { sourceRunId: prefill.sourceRunId }),
+      // Only sent when the operator actually chose the replay, and only while
+      // the drift that offered the choice is real.
+      ...(versionDrift && versionPolicy === "captured" ? { versionPolicy: "captured" as const } : {}),
     };
     setSubmitting(true);
     const result = await imageGeneratorApi.runs.create(body);
@@ -714,10 +771,24 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
         </p>
       ) : null}
       {versionDrift ? (
-        <p className="mb-4 text-xs text-danger-300" role="alert">
-          {`The original pinned version ${prefill?.requestedVersionId ?? ""}, but this model now pins `}
-          {`${pinnedVersion ?? ""} — the duplicate will run different weights, so it is not a same-model comparison.`}
-        </p>
+        <div className="mb-4 flex flex-col gap-2 rounded-card border border-danger-500/40 bg-ink-950/40 px-3 py-2">
+          <p className="text-xs text-danger-300" role="alert">
+            {`The original pinned version ${prefill?.requestedVersionId ?? ""}, but this model now pins `}
+            {`${pinnedVersion ?? ""} — running the current one is a different arm, not a same-model comparison.`}
+          </p>
+          <Field label="Provider version" hint="Replay needs the original run's recorded capability record; without it the run refuses rather than guessing.">
+            {(id) => (
+              <Select
+                id={id}
+                value={versionPolicy}
+                onChange={(e) => setVersionPolicy(e.target.value as ImageGeneratorVersionPolicy)}
+              >
+                <option value="current">Use the current registered version</option>
+                <option value="captured">Replay the captured version</option>
+              </Select>
+            )}
+          </Field>
+        </div>
       ) : null}
       {prefillDrift.length > 0 ? (
         <p className="mb-4 text-xs text-danger-300" role="alert">
@@ -770,7 +841,11 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
 
         <Field
           label="Prompt"
-          hint={`The whole positive prompt, sent as written (up to ${String(IMAGE_GENERATOR_PROMPT_MAX)} characters) — nothing is prepended or compiled around it.`}
+          hint={
+            promptRequired
+              ? `The whole positive prompt, sent as written (up to ${String(IMAGE_GENERATOR_PROMPT_MAX)} characters) — nothing is prepended or compiled around it. This model’s schema requires it.`
+              : `The whole positive prompt, sent as written (up to ${String(IMAGE_GENERATOR_PROMPT_MAX)} characters) — nothing is prepended or compiled around it. This model does not require one; left blank, no prompt field is sent at all.`
+          }
         >
           {(id) => (
             <Textarea
@@ -928,6 +1003,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           bindings.steps !== undefined ||
           bindings.editStrength !== undefined ||
           bindings.resolutionTier !== undefined ||
+          shapeOptions.length > 0 ||
           loraBound) ? (
           <div className="flex flex-col gap-3">
             <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Controls</h3>
@@ -1011,6 +1087,23 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                     </p>
                   ) : null}
                 </div>
+              ) : null}
+              {shapeOptions.length > 0 ? (
+                <Field
+                  label="Output shape"
+                  hint="Blank sends no shape at all — the model answers at its own default, and nothing is cropped afterwards."
+                >
+                  {(id) => (
+                    <Select id={id} value={aspect} onChange={(e) => setAspect(e.target.value)}>
+                      <option value="">— Model default —</option>
+                      {shapeOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
               ) : null}
               {bindings.resolutionTier !== undefined ? (
                 <Field label="Resolution" hint="Blank is the provider default tier.">
@@ -1167,8 +1260,8 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                 {!operationSupported ? (
                   <span className="text-danger-300">
                     {operation === "generate"
-                      ? " — this model cannot generate from text alone; add a reference"
-                      : " — this model takes no image input"}
+                      ? " — this model cannot generate from text alone; add a primary reference"
+                      : " — this model takes no primary reference image"}
                   </span>
                 ) : null}
               </li>
@@ -1178,6 +1271,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   {filledDedicated.map((slot) => imageGeneratorRoleLabel(slot.role)).join(", ")}
                 </li>
               ) : null}
+              <li>
+                <span className="text-paper-500">Shape —</span>{" "}
+                {aspect === "" ? "the model’s own default; nothing is cropped afterwards" : aspect}
+              </li>
               <li>
                 <span className="text-paper-500">Controls —</span>{" "}
                 {controlLines.length > 0 ? controlLines.join(" · ") : "none set; the model’s own defaults"}

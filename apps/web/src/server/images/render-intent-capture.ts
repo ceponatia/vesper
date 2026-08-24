@@ -68,7 +68,8 @@ export interface RenderIntentCapture {
   readonly negativeHash: string | null;
   /** Primary reference roles in SEND order — the plan's selection, not the caller's list. */
   readonly referenceRoles: readonly ImageReferenceRole[];
-  readonly targetAspect: number;
+  /** The requested shape as a ratio, or null when the render asked for the model's own. */
+  readonly targetAspect: number | null;
   /** The subjects this render depicts, in the lane's own order. */
   readonly subjectIds: readonly string[];
   /**

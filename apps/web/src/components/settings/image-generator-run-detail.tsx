@@ -77,6 +77,65 @@ const attemptViewSchema = z.object({
     .default(() => []),
 });
 
+/**
+ * The sanitized effective request's display shape — the provider-facing half of
+ * a run, read on the same lenient terms as the attempt record.
+ */
+const effectiveRequestViewSchema = z.object({
+  providerControls: z
+    .record(z.string(), z.unknown())
+    .catch(() => ({}))
+    .default(() => ({})),
+  shape: z
+    .object({
+      mode: z.string().catch("provider_default"),
+      requestedAspect: z.string().nullable().catch(null).default(null),
+      field: z.string().nullable().catch(null).default(null),
+      value: z.string().nullable().catch(null).default(null),
+    })
+    .catch(() => ({ mode: "provider_default", requestedAspect: null, field: null, value: null }))
+    .default(() => ({ mode: "provider_default", requestedAspect: null, field: null, value: null })),
+  primaryInputs: z
+    .array(
+      z.object({
+        imageId: z.string().catch(""),
+        requestedPosition: z.number().catch(0),
+        providerPosition: z.number().nullable().catch(null).default(null),
+        providerField: z.string().catch(""),
+      }),
+    )
+    .catch(() => [])
+    .default(() => []),
+  dedicatedInputs: z
+    .array(
+      z.object({
+        imageId: z.string().catch(""),
+        role: z.string().catch(""),
+        providerField: z.string().nullable().catch(null).default(null),
+      }),
+    )
+    .catch(() => [])
+    .default(() => []),
+  postprocess: z
+    .object({ cropTarget: z.number().nullable().catch(null).default(null) })
+    .catch(() => ({ cropTarget: null }))
+    .default(() => ({ cropTarget: null })),
+});
+
+/** What actually came back, on the same terms. */
+const runResultViewSchema = z.object({
+  spent: z.boolean().catch(true).default(true),
+  outputDimensions: z
+    .object({ width: z.number().catch(0), height: z.number().catch(0) })
+    .nullable()
+    .catch(null)
+    .default(null),
+  postprocess: z
+    .object({ cropTarget: z.number().nullable().catch(null).default(null) })
+    .catch(() => ({ cropTarget: null }))
+    .default(() => ({ cropTarget: null })),
+});
+
 /** One labelled fact in the recorded-request grid. */
 function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -208,6 +267,9 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
   const controls = controlEntries(run.controls);
   const advanced = Object.entries(run.providerInputs);
   const attemptView = run.attempt === null ? null : attemptViewSchema.safeParse(run.attempt);
+  const effectiveView =
+    run.effectiveRequest === null ? null : effectiveRequestViewSchema.safeParse(run.effectiveRequest);
+  const resultView = run.result === null ? null : runResultViewSchema.safeParse(run.result);
   const promptTransformed = run.finalPrompt !== null && run.finalPrompt !== run.prompt;
 
   const duplicate = () => {
@@ -330,7 +392,15 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
         <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Recorded request</h2>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Fact label="Model" value={<code className="break-all">{run.modelSlug}</code>} />
-          <Fact label="Requested version" value={<code className="break-all">{run.requestedVersionId ?? "—"}</code>} />
+          <Fact
+            label="Requested version"
+            value={
+              <>
+                <code className="break-all">{run.requestedVersionId ?? "—"}</code>
+                {run.versionPolicy === "captured" ? " — replayed from the source run" : ""}
+              </>
+            }
+          />
           <Fact label="Executed version" value={<code className="break-all">{run.executedVersionId ?? "—"}</code>} />
           <Fact label="Prediction" value={<code className="break-all">{run.predictionId ?? "—"}</code>} />
           <Fact
@@ -428,6 +498,99 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
           <p className="text-[11px] text-paper-500">Sent verbatim — the shared boundary changed nothing.</p>
         ) : null}
       </section>
+
+      {effectiveView !== null && effectiveView.success ? (
+        <details className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">
+          <summary className="cursor-pointer text-xs font-medium tracking-wide text-paper-400 uppercase">
+            Effective request (as sent)
+          </summary>
+          <p className="mt-2 text-xs text-paper-500">
+            {"The provider-facing request, written down before the spend: the real field names and values, the shape "}
+            {"that was asked for, and which image occupied which provider slot. Recorded here so this run still "}
+            {"describes itself after the model is re-probed. No bytes, addresses, or credentials are kept."}
+          </p>
+          <div className="mt-3 flex flex-col gap-3">
+            <div>
+              <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">Shape</h3>
+              <p className="mt-1 text-xs text-paper-300">
+                {effectiveView.data.shape.field === null || effectiveView.data.shape.value === null
+                  ? "No shape field was sent — the model answered at its own default."
+                  : `${effectiveView.data.shape.field} = ${effectiveView.data.shape.value}`}
+                {effectiveView.data.postprocess.cropTarget === null
+                  ? " Vesper cropped nothing."
+                  : ` Vesper cropped the result to ${String(effectiveView.data.postprocess.cropTarget)}.`}
+              </p>
+            </div>
+            <div>
+              <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">
+                Provider fields ({Object.keys(effectiveView.data.providerControls).length})
+              </h3>
+              {Object.keys(effectiveView.data.providerControls).length === 0 ? (
+                <p className="mt-1 text-xs text-paper-500">
+                  None — every control was left at the model’s own default.
+                </p>
+              ) : (
+                <ul className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
+                  {Object.entries(effectiveView.data.providerControls).map(([field, value]) => (
+                    <li key={field}>
+                      <span className="text-paper-500">{field}</span> — <code>{JSON.stringify(value)}</code>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {effectiveView.data.primaryInputs.length > 0 ? (
+              <div>
+                <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">Primary images</h3>
+                <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
+                  {effectiveView.data.primaryInputs.map((input) => (
+                    <li key={`${input.imageId}-${String(input.requestedPosition)}`}>
+                      <span className="text-paper-500">{`#${String(input.requestedPosition)} →`}</span>{" "}
+                      {input.providerPosition === null
+                        ? "not sent"
+                        : `${input.providerField}[${String(input.providerPosition)}]`}{" "}
+                      <code className="break-all">{input.imageId}</code>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+            {effectiveView.data.dedicatedInputs.length > 0 ? (
+              <div>
+                <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">Structural images</h3>
+                <ul className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
+                  {effectiveView.data.dedicatedInputs.map((input) => (
+                    <li key={`${input.role}-${input.imageId}`}>
+                      <span className="text-paper-500">{input.role} →</span> {input.providerField ?? "unbound"}{" "}
+                      <code className="break-all">{input.imageId}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {resultView !== null && resultView.success ? (
+              <div>
+                <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">Result</h3>
+                <p className="mt-1 text-xs text-paper-300">
+                  {!resultView.data.spent
+                    ? "Refused before the provider was called — nothing was spent."
+                    : resultView.data.outputDimensions === null
+                      ? "The returned image’s size could not be read."
+                      : `Returned ${String(resultView.data.outputDimensions.width)}×${String(resultView.data.outputDimensions.height)}.`}
+                  {resultView.data.spent
+                    ? resultView.data.postprocess.cropTarget === null
+                      ? " Vesper did not crop it."
+                      : ` Vesper cropped it to ${String(resultView.data.postprocess.cropTarget)}.`
+                    : ""}
+                </p>
+              </div>
+            ) : null}
+          </div>
+          <pre className="mt-3 overflow-x-auto rounded-card border border-ink-700 bg-ink-950/60 p-2 text-[11px] text-paper-300">
+            {JSON.stringify({ effectiveRequest: run.effectiveRequest, result: run.result }, null, 2)}
+          </pre>
+        </details>
+      ) : null}
 
       {run.attempt !== null ? (
         <details className="mb-6 rounded-card border border-ink-600 bg-ink-850 p-4">

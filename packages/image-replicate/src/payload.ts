@@ -1,4 +1,4 @@
-import { type ImageModel, reservedImageInputFields } from "@vesper/image-core";
+import { type ImageModel, type ImageRenderPolicy, reservedImageInputFields } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { PreparedReferenceBytes } from "./files";
 
@@ -72,6 +72,17 @@ export interface RegistryModelRequest {
    * `/predictions` carrying it even for a bare `owner/name` slug.
    */
   versionId?: string;
+  /**
+   * How strictly this request is to be treated when the payload cannot carry
+   * everything it was handed (`ImageRenderPolicy` in `@vesper/image-core`).
+   *
+   * Absent is the production answer — trim references that do not fit and let
+   * the provider judge the values — so every existing lane behaves exactly as
+   * it did before the field existed. The Image Generator asks for the strict
+   * arm on both halves, because an operator-authored bench request that was
+   * quietly reduced is a different experiment under the same run id.
+   */
+  policy?: ImageRenderPolicy;
 }
 
 /**
@@ -145,7 +156,12 @@ export function buildRegistryModelInput(
   aspect: string | null | undefined,
   safetyCheckerDisabled: boolean,
 ): Record<string, unknown> {
-  const input: Record<string, unknown> = { prompt };
+  // An EMPTY prompt writes no prompt key, so a version whose schema declares a
+  // prompt default gets its own default rather than an empty string standing in
+  // for one. No production lane produces an empty prompt (every one compiles
+  // text), so this only reaches the admin bench, where "leave it unset" has to
+  // mean the provider's answer rather than Vesper's.
+  const input: Record<string, unknown> = prompt.length > 0 ? { prompt } : {};
 
   if (referenceUrls.length > 0) {
     input[model.referenceField] = model.referenceArity === "single" ? referenceUrls[0] : [...referenceUrls];
@@ -201,6 +217,45 @@ export function buildPayload(
     );
   }
   return overlayControlInput(built, request.controlInput, model, sink);
+}
+
+/**
+ * The payload this request WILL produce, assembled without any IO.
+ *
+ * Same builder, same reserved filter, same overlay order as the real send — the
+ * only difference is that reference and control URIs are placeholders, because
+ * the addresses do not exist until the bytes are transported and the strict
+ * gate asks about FIELDS, not addresses.
+ *
+ * It exists so a caller can hold its request against the version's declared
+ * schema before committing to the transport at all, without rebuilding the
+ * payload rules in application code — which is the one thing this package
+ * exists to prevent.
+ */
+export function previewRegistryModelInput(input: {
+  model: ImageModel;
+  prompt: string;
+  referenceCount: number;
+  controlReferences?: readonly { field: string; arity: "single" | "array"; count: number }[];
+  aspect: string | null;
+  controlInput?: Record<string, unknown>;
+  safetyCheckerDisabled: boolean;
+}): Record<string, unknown> {
+  const placeholder = (index: number): string => `https://placeholder.invalid/reference-${String(index + 1)}`;
+  const references = Array.from({ length: input.referenceCount }, (_unused, index) => placeholder(index));
+  const controls = (input.controlReferences ?? []).flatMap((control) => {
+    if (control.count === 0) return [];
+    const uris = Array.from({ length: control.count }, (_unused, index) => placeholder(index));
+    const value: string | string[] = control.arity === "array" ? uris : (uris[0] ?? "");
+    return [{ field: control.field, value }];
+  });
+  return buildPayload(
+    input.model,
+    { prompt: input.prompt, aspect: input.aspect, ...(input.controlInput ? { controlInput: input.controlInput } : {}) },
+    references,
+    controls,
+    input.safetyCheckerDisabled,
+  );
 }
 
 /**
