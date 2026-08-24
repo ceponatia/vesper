@@ -13,28 +13,30 @@ The package does **not** replace the probed image-model registry. The database/p
 
 Source: [`packages/image-models`](../../packages/image-models/README.md).
 
-## Documentation map
+## Reading order
 
-- **[Features](features/README.md)** — every semantic feature currently exported by the package, grouped the same way as `src/features/`.
-- **[Provider model reference](models/README.md)** — the per-model Replicate/API documentation. These pages describe provider endpoints and reviewed model facts; they are not the package's adapter registry.
-- **[Image system overview](../images/README.md)** — how the application resolves profiles, models, providers, and render plans around this package.
-- **[Provider probing and registry](../images/providers.md)** — the source of truth for provider fields and active model versions.
+| Doc                                                     | What it covers                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Features](features/README.md)                          | Semantic feature contract, current feature modules, binding rules, and Qwen capability matrix     |
+| [Provider model reference](models/README.md)            | Per-model Replicate/API snapshots, provider drift, reviewed capability, inputs, and payload notes |
+| [Image system overview](../images/README.md)            | Profiles, providers, asset registry, pipelines, identity packs, and the surrounding image system  |
+| [Provider probing and registry](../images/providers.md) | Provider fields, active versions, probing, profile resolution, and registry truth                 |
 
 ## Current package state
 
 The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-Only the **Qwen Image family** is implemented in the adapter registry. Flux, Wan, SDXL, Seedream, and other registered models remain on the generic path until Vesper has family-specific behavior to encode. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+Only the **Qwen Image family** is implemented in the adapter registry. Models without an adapter, including Flux, Wan, SDXL, and Seedream families, use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
 ### Registered Qwen adapters
 
-| Model | Role | Composed features | Family behavior |
-| --- | --- | --- | --- |
-| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md) | Instruction editor; default for scene images and portrait variants | `prompt`, `multiReference`, `aspectRatio`, `seed`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor with loadable LoRA support | all 2511 edit features plus `lora` | numbered-reference dialect; eight-minute startup hint; one startup retry |
-| [`qwen/qwen-image-2512`](models/qwen-image-2512.md) | Text-to-image generator arm; default for a brand-new portrait | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | no edit dialect; no execution hint |
+| Model                                                                   | Role                                                               | Composed features                                                                                  | Family behavior                                                          |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants | `prompt`, `multiReference`, `aspectRatio`, `seed`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor with loadable LoRA support      | all 2511 edit features plus `lora`                                                                 | numbered-reference dialect; eight-minute startup hint; one startup retry |
+| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait      | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle`       | no edit dialect; no execution hint                                       |
 
 Two absences are deliberate:
 
@@ -47,18 +49,18 @@ A feature answers a semantic question such as "can this render carry several ref
 
 The package exports ten feature constructors:
 
-| Feature id | Meaning | Documentation |
-| --- | --- | --- |
-| `prompt` | authored text prompt | [Prompt](features/prompt.md) |
-| `multiReference` | several role-bearing reference images | [References](features/references.md) |
-| `aspectRatio` | caller-selected output shape | [Aspect ratio](features/aspect-ratio.md) |
-| `seed` | reproducible seeded generation | [Controls](features/controls.md) |
-| `guidance` | prompt-guidance strength | [Controls](features/controls.md) |
-| `negativePrompt` | a negative prompt that actually affects output | [Controls](features/controls.md) |
-| `lora` | one external LoRA with a chosen strength | [LoRA](features/lora.md) |
-| `outputFormat` | caller-selected output encoding | [Output](features/output.md) |
-| `outputQuality` | caller-selected encoding quality | [Output](features/output.md) |
-| `safetyToggle` | caller can disable the endpoint's own safety checker | [Safety](features/safety.md) |
+| Feature id       | Meaning                                              | Documentation                            |
+| ---------------- | ---------------------------------------------------- | ---------------------------------------- |
+| `prompt`         | authored text prompt                                 | [Prompt](features/prompt.md)             |
+| `multiReference` | several role-bearing reference images                | [References](features/references.md)     |
+| `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/aspect-ratio.md) |
+| `seed`           | reproducible seeded generation                       | [Controls](features/controls.md)         |
+| `guidance`       | prompt-guidance strength                             | [Controls](features/controls.md)         |
+| `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/controls.md)         |
+| `lora`           | one external LoRA with a chosen strength             | [LoRA](features/lora.md)                 |
+| `outputFormat`   | caller-selected output encoding                      | [Output](features/output.md)             |
+| `outputQuality`  | caller-selected encoding quality                     | [Output](features/output.md)             |
+| `safetyToggle`   | caller can disable the endpoint's own safety checker | [Safety](features/safety.md)             |
 
 See [features/README.md](features/README.md) for the `ImageFeature` contract, binding rules, and request validation behavior.
 
@@ -140,14 +142,14 @@ Keeping the join in one application module prevents planning and sending from re
 
 ## Adding another family
 
-When another model family genuinely needs behavior that the generic path cannot express:
+To add family-specific behavior:
 
 1. reuse the existing semantic features where they describe the family honestly;
 2. add a new feature only when the current vocabulary cannot state a real capability;
 3. keep provider field names in the probe/model record rather than the feature;
-4. add family quirks only for behavior such as prompt dialects, validations, or measured execution differences;
+4. use family quirks only for behavior such as prompt dialects, validations, or measured execution differences;
 5. compose endpoint adapters with `defineImageModel`;
 6. register base slugs in `src/registry.ts`; and
 7. update this documentation and the relevant page under [models/](models/README.md).
 
-A model does not need an adapter merely because it exists. The generic path is the correct path until Vesper has a concrete family-specific behavior to encode.
+A model does not need an adapter merely because it exists. The generic path is correct whenever Vesper has no family-specific behavior to encode.
