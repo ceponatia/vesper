@@ -53,7 +53,7 @@ import {
   storedVersionRequest,
 } from "./image-generator-store";
 import { resolveImageLoraForRender } from "./image-loras";
-import { benchExecutionPolicy, imageRenderRuntimeFacts } from "./model-adapters";
+import { adapterRequestRefusals, benchExecutionPolicy, imageRenderRuntimeFacts } from "./model-adapters";
 import { loadImageModels } from "./models";
 import { readOwnedImageBytes } from "./owned-image-reads";
 import type { RenderImageIntentResult } from "./render-intent";
@@ -338,6 +338,25 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // settles pre-spend under the layer's own verbatim `image_lora.*` code.
   const renderControls = imageGeneratorRenderControls(controls);
   const selection = effectiveImageLoraSelection(profile.controlDefaults, renderControls);
+
+  // 8c. The family adapter's own objections, pre-spend. Wired HERE because the
+  // bench's facts are final before planning — `require_all` never trims, so the
+  // reference count and the LoRA choice judged are exactly what would be sent.
+  // A model with no adapter objects to nothing, like every other adapter hook.
+  const adapterRefusals = adapterRequestRefusals(model, {
+    referenceCount: inputs.primary.length,
+    usesLora: selection !== null && selection !== undefined,
+  });
+  if (adapterRefusals.length > 0) {
+    return await settleGeneratorRunFailed(
+      row,
+      generatorFailure("operation_unsupported"),
+      `${model.slug} cannot run this request: ${adapterRefusals.join("; ")}`,
+      sink,
+      { columns },
+    );
+  }
+
   let intent: ImageRenderIntent = {
     profile: { profile, model },
     prompt: row.prompt,
@@ -502,11 +521,13 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // wrong. It catches what the raw-bag gate structurally cannot: a REQUIRED
   // field that is reserved to a normalized control and has no provider default,
   // which the bag may not fill and the render path did not.
-  const violations = providerInputViolations(
-    sentModel,
-    sentRequest,
-    plan.controlReferences.map((control) => control.field),
-  );
+  const violations = providerInputViolations(sentModel, sentRequest, [
+    ...plan.controlReferences.map((control) => control.field),
+    // Typed semantic-control fields share the dedicated fields' trust: a
+    // curated LoRA's probed weights field may carry its URI here, while the
+    // same shape arriving through the raw advanced bag stays refused.
+    ...plan.typedControlFields,
+  ]);
   if (violations.length > 0) {
     return await settleGeneratorRunFailed(
       rowWithOutcome,

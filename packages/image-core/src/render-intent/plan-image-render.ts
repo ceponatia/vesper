@@ -165,6 +165,13 @@ export interface PlannedImageRender {
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   /**
+   * The `controlInput` fields a typed semantic control produced
+   * ({@link ProfileRenderPlan.typedControlFields}) — the set the strict
+   * provider-input validator extends its typed-owner trust to, so a curated
+   * LoRA's probed weights field passes where a raw advanced URL never does.
+   */
+  typedControlFields: readonly string[];
+  /**
    * The controls that actually reached `controlInput`, keyed by NORMALIZED name
    * — the compile step's provenance record ({@link ProfileRenderPlan.appliedControls}),
    * surfaced so the caller can store what this render was configured as without
@@ -393,6 +400,7 @@ export function planImageRender(
         buffers: input.references.map((reference) => reference.buffer),
       })),
       controlInput: compiled.plan.controlInput,
+      typedControlFields: compiled.plan.typedControlFields,
       appliedControls: compiled.plan.appliedControls,
       droppedControls: compiled.plan.resolvedControls.droppedControls,
       targetRatio: intent.target.aspectRatio,

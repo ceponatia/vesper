@@ -121,7 +121,13 @@ export async function runRegistryImageModel(
     // moment anything can be checked against the version's own schema, and the
     // last moment before the POST costs money.
     if (policy.providerInputs === "strict") {
-      const violations = providerInputViolations(model, payload, controls.map((control) => control.field));
+      // Dedicated control-image fields plus the typed semantic-control fields:
+      // both sets were written by a typed transport, so both may carry the
+      // URI/array shapes the validator refuses from the raw bag.
+      const violations = providerInputViolations(model, payload, [
+        ...controls.map((control) => control.field),
+        ...(request.typedControlFields ?? []),
+      ]);
       if (violations.length > 0) {
         sink?.push(
           diag("warn", "image_model.provider_input_invalid", "the assembled request contradicts the version's schema", {

@@ -5,7 +5,7 @@ import {
   MAX_TRIAL_PREDICTION_MS,
   type ProviderExecutionPolicy,
 } from "@vesper/image-core";
-import { adapterForImageModel } from "@vesper/image-models";
+import { adapterForImageModel, type ImageModelRequestFacts } from "@vesper/image-models";
 import { disableSafetyChecker } from "../ai";
 
 /**
@@ -51,6 +51,27 @@ export function preparePromptFor(model: ImageModel): { preparePrompt?: ImageProm
 export function prepareModelPrompt(model: ImageModel, prompt: string, referenceCount: number): string {
   const preparePrompt = adapterForImageModel(model.slug)?.preparePrompt;
   return preparePrompt ? preparePrompt(model, prompt, referenceCount) : prompt;
+}
+
+/**
+ * The family adapter's own objections to a request, or none.
+ *
+ * The one seam where an adapter's composed `validateRequest` actually runs
+ * (owner ruling 2026-08-24: wired, not descriptive scaffolding — a feature
+ * author who writes a validator must be writing an enforcement). Consumed by
+ * the Generator runner pre-spend, where the facts are FINAL before planning:
+ * the bench refuses rather than trims, so its reference count and LoRA choice
+ * are exactly what will be sent. Production lanes are deliberately not wired
+ * yet — their `allow_trim` policy means the pre-plan count is not the sent
+ * count, and a validator judging the un-trimmed number would refuse renders
+ * the planner would have legally trimmed (recorded as a deferred follow-up in
+ * image-model-adapters.spec.md).
+ *
+ * An unmigrated family answers nothing, exactly like every other hook here.
+ */
+export function adapterRequestRefusals(model: ImageModel, facts: ImageModelRequestFacts): readonly string[] {
+  const validate = adapterForImageModel(model.slug)?.validateRequest;
+  return validate ? validate(model, facts) : [];
 }
 
 /**

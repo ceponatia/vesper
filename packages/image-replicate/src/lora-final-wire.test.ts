@@ -12,7 +12,9 @@ import {
   type PlannedImageRender,
   withReviewedImageQuality,
 } from "@vesper/image-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createReplicateClient } from "./client";
+import { DEFAULT_PREDICTION_TIMEOUT_MS } from "./config";
 import { buildPayload, previewRegistryModelInput } from "./payload";
 
 /**
@@ -30,10 +32,12 @@ import { buildPayload, previewRegistryModelInput } from "./payload";
  * transport package rather than beside the evaluator: this is the end of the
  * chain, and the end is where the claim was false.
  *
- * No network, no database, no environment. The two functions at the end are the
- * REAL ones — `buildPayload` is what `runRegistryImageModel` calls to build the
+ * No real network, no database, no environment. Three cases end at the REAL
+ * builders — `buildPayload` is what `runRegistryImageModel` calls to build the
  * body it posts, and `previewRegistryModelInput` (which delegates to it) is what
- * the Image Generator stores as its pre-spend record. Nothing here re-implements
+ * the Image Generator stores as its pre-spend record — and one case goes the
+ * whole way: `runRegistryImageModel` itself against a stubbed `fetch`, asserted
+ * on the JSON body of the prediction-create request. Nothing here re-implements
  * a payload rule.
  *
  * What each case kills:
@@ -54,6 +58,10 @@ import { buildPayload, previewRegistryModelInput } from "./payload";
 
 /** The deployment posture every case plans and builds under; not what is under test. */
 const SAFETY_CHECKER_DISABLED = true;
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 /**
  * The registered LoRA-capable Qwen wrapper, with the bindings the probe records
@@ -211,6 +219,53 @@ describe("a curated LoRA row reaching the Replicate payload", () => {
     const payload = sentPayload(planned());
     expect("lora_weights" in payload).toBe(false);
     expect("lora_scale" in payload).toBe(false);
+  });
+
+  it("posts the row's locator and scale in the real prediction request body", async () => {
+    // The previous cases end at the builder; this one ends at the POST. The
+    // full transport runs — upload, payload assembly, strict validation, the
+    // prediction create — against a stubbed `fetch`, and the assertion reads
+    // the JSON body of the create request itself. This is the literal claim
+    // the incident falsified: not "a builder would include the fields", but
+    // "the bytes that left the process carried them".
+    const plan = planned(resolveBinding(LIBRARY_ROW));
+    const posted: { input?: Record<string, unknown> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          return Response.json({ id: "file-1", urls: { get: "https://replicate.delivery/f/bench-reference.webp" } });
+        }
+        if (init?.method === "POST" && url.includes("/predictions")) {
+          posted.push(JSON.parse(String(init.body)) as { input?: Record<string, unknown> });
+          return Response.json({
+            id: "pred-wire",
+            status: "succeeded",
+            output: ["https://replicate.delivery/o/out.webp"],
+          });
+        }
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+
+    const result = await createReplicateClient({
+      apiToken: "test-token",
+      safetyCheckerDisabled: SAFETY_CHECKER_DISABLED,
+      predictionTimeoutMs: DEFAULT_PREDICTION_TIMEOUT_MS,
+    }).runRegistryImageModel(withReviewedImageQuality(plan.model), {
+      prompt: plan.prompt,
+      references: plan.references.map((buffer) => ({ bytes: buffer, mediaType: "image/webp", extension: "webp" })),
+      aspect: null,
+      controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
+      policy: plan.policy,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.input?.lora_weights).toBe(LIBRARY_ROW.locator);
+    expect(posted[0]?.input?.lora_scale).toBe(LIBRARY_ROW.defaultScale);
   });
 
   it("sends a civitai_model_version row as its resolved download URL", () => {

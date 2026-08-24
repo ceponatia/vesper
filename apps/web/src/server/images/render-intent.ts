@@ -292,6 +292,7 @@ export async function renderImageIntent(
       targetRatio: plan.targetRatio,
       dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
+      typedControlFields: plan.typedControlFields,
       // The caller's send-strictness, resolved by the planner and passed
       // through: production keeps trimming what does not fit, and a bench that
       // asked for all-or-nothing gets its refusal before the prediction.

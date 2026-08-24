@@ -607,18 +607,23 @@ function hasStartedExecuting(prediction: ReplicatePrediction): boolean {
 }
 
 /**
- * A terminal prediction that never executed and never said why — the provider
- * abandoning something it had queued, which is the one thing worth recreating.
+ * A provider-terminal `aborted` that never executed and never said why — the
+ * provider abandoning something it had queued, which is the one thing worth
+ * recreating. This is exactly the observed incident shape, and the class stays
+ * that narrow on purpose (owner ruling 2026-08-24): a silent `failed` is NOT
+ * assumed unstarted, because nothing from the provider documents that reading,
+ * and recreating an ambiguous failure risks rebilling a render that ran.
  *
- * Two exclusions carry the weight. A prediction carrying an `error` is the
+ * Two further exclusions carry weight. A prediction carrying an `error` is the
  * model or the payload ANSWERING, and re-sending the same input would buy the
  * same answer a second time. A `canceled` prediction is somebody's decision —
- * an operator's, or this client's own startup cutoff — and quietly recreating
- * it would overrule whoever cancelled.
+ * an operator's, or this client's own startup cutoff (which re-reads the
+ * record and retries through its own confirmed path) — and quietly recreating
+ * it here would overrule whoever cancelled.
  */
 function isUnstartedAbort(prediction: ReplicatePrediction, observedStartMs: number | null): boolean {
   if (observedStartMs !== null || hasStartedExecuting(prediction)) return false;
-  if (prediction.status !== "aborted" && prediction.status !== "failed") return false;
+  if (prediction.status !== "aborted") return false;
   return !hasErrorDetail(prediction.error);
 }
 

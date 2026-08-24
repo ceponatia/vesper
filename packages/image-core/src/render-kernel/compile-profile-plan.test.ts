@@ -737,27 +737,28 @@ describe("a resolved LoRA", () => {
    * `lora_weights` while every record said one had been applied.
    */
   describe("the final-wire invariant", () => {
-    it("refuses pre-spend when the payload would not carry a field the record claims", () => {
-      // A profile override blanking the mapped weights field — overrides merge
-      // last by design, so this is the one route by which the payload and the
-      // record can genuinely part company. The provider would fetch nothing and
-      // the run would be recorded as a LoRA render.
-      const result = compileProfileRenderPlan({
-        model: model({ advancedCapabilities: LORA_CAPABILITIES }),
-        profile: profile({ providerOverrides: { lora_weights: null } }),
-        basePrompt: "change the outfit",
-        baseNegativePrompt: null,
-        safetyCheckerDisabled: true,
-        references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    it("drops an override colliding with a resolved LoRA's own fields, and sends the binding verbatim", () => {
+      // Overrides merge last by design, which used to make them the one route by
+      // which the payload and the record could part company — a bag writing
+      // `lora_weights` under a record naming the library row ships LoRA B
+      // labeled as LoRA A. A resolved LoRA now OWNS its bound fields (owner
+      // ruling 2026-08-24): the colliding overrides are dropped with the
+      // ordinary recorded reason, the payload carries the binding's own locator
+      // and scale, and the wire-invariant gate behind this is a pure backstop
+      // with no reachable public route.
+      const compiled = loraPlan({
+        profile: profile({ providerOverrides: { lora_weights: "owner/other-lora", lora_scale: 4 } }),
         resolvedLora: binding,
       });
-      expect(result.ok).toBe(false);
-      if (result.ok || result.reason !== "lora_binding_not_sent") throw new Error("expected a wire-invariant refusal");
-      expect(result.missingField).toBe("lora_weights");
-      // The message names the field an operator has to go looking for, and the row
-      // that claimed it.
-      expect(result.message).toContain("lora_weights");
-      expect(result.message).toContain("lora-1");
+      expect(compiled.controlInput.lora_weights).toBe(binding.locator);
+      expect(compiled.controlInput.lora_scale).toBe(binding.scale);
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_weights", reason: "reserved" });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_scale", reason: "reserved" });
+      // The fields stay ordinary advanced inputs when no LoRA is resolved — the
+      // escape hatch only closes when there is a record it could falsify.
+      const unresolved = loraPlan({ profile: profile({ providerOverrides: { lora_weights: "owner/other-lora" } }) });
+      expect(unresolved.controlInput.lora_weights).toBe("owner/other-lora");
     });
 
     it("does not record a LoRA the version has nowhere to put", () => {

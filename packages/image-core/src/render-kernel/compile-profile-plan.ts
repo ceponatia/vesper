@@ -308,6 +308,15 @@ export interface ProfileRenderPlan {
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   /**
+   * The `controlInput` fields a TYPED semantic control produced — written by
+   * the normalized mapper and not replaced by the raw override bag. The strict
+   * provider-input validator trusts a URI/array-shaped value only under a
+   * field a typed transport owns; passing this set is how a curated LoRA's
+   * probed weights field earns that trust while a raw advanced value never
+   * does. Sorted, so two identical plans state the set identically.
+   */
+  typedControlFields: readonly string[];
+  /**
    * The controls this render actually honors, keyed by NORMALIZED name — the
    * record a caller stores as provenance. Reserved-field collisions are already
    * removed (an entry here was really sent), each payload-mapped value is read
@@ -602,17 +611,41 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // one; a control the fingerprint claims was sent and the provider never saw is
   // the exact drift this compile step exists to make impossible.
   const sendableMapped = filterReservedInputFields(mapped.input, reservedFields);
+  // A RESOLVED LoRA owns its bound provider fields for this render (owner
+  // ruling 2026-08-24): the whole point of the wire invariant below is that the
+  // recorded LoRA identity IS the sent LoRA identity, and an override replacing
+  // `lora_weights` under a record naming the library row would ship LoRA B
+  // labeled as LoRA A. The fields join the override validator's reserved set —
+  // never the mapper's filter, which is what legitimately WRITES them — so a
+  // colliding override is dropped with the ordinary recorded reason. Without a
+  // resolved LoRA the fields stay ordinary advanced inputs: the escape hatch
+  // only closes when there is a record it could falsify.
+  const loraOwnedFields = input.resolvedLora
+    ? [
+        effectiveModel.advancedCapabilities.controls.loraWeights?.field,
+        effectiveModel.advancedCapabilities.controls.loraScale?.field,
+      ].filter((field): field is string => field !== undefined)
+    : [];
   const overrides = validateProviderOverrides(
     profile.providerOverrides,
     effectiveModel.advancedCapabilities.knownInputFields,
-    reservedFields,
+    [...reservedFields, ...loraOwnedFields],
   );
   // Overrides merge LAST, per the spec's "a later layer wins". They therefore
-  // may also replace a mapped control's value, which is why the reported
-  // negative below is read back out of the FINAL payload rather than from the
-  // mapping step: a fingerprint that described the pre-override text would be a
-  // fingerprint of something the provider never saw.
+  // may also replace a mapped control's value — except a resolved LoRA's own
+  // fields, reserved above — which is why the reported negative below is read
+  // back out of the FINAL payload rather than from the mapping step: a
+  // fingerprint that described the pre-override text would be a fingerprint of
+  // something the provider never saw.
   const controlInput = { ...sendableMapped.input, ...overrides.input };
+  // The provider fields a TYPED semantic control produced — mapper-written and
+  // not replaced by the raw bag. The strict validator trusts a URI/array-shaped
+  // value only under a field a typed transport owns, and this set is how a
+  // curated LoRA's weights field earns that trust while a raw advanced value
+  // never does (owner ruling 2026-08-24; image-model-adapters.spec.md).
+  const typedControlFields = Object.keys(sendableMapped.input)
+    .filter((field) => !(field in overrides.input))
+    .sort();
 
   // The normalized provenance record, kept consistent with the two adjustments
   // above by the same two rules: an entry whose provider field the reserved
@@ -638,7 +671,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
 
   // The one point where the payload and the record of it both exist, and
   // therefore the only place their agreement about the LoRA can be enforced.
-  const loraWireBreach = loraWireInvariantBreach(effectiveModel, controlInput, appliedControls);
+  const loraWireBreach = loraWireInvariantBreach(effectiveModel, controlInput, appliedControls, input.resolvedLora);
   if (loraWireBreach) return loraWireBreach;
 
   // Typed as the contract's own list rather than the mapper's narrower union:
@@ -708,6 +741,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       aspectValue: chooseAspect(effectiveModel).value,
       dimensionFacts,
       controlInput,
+      typedControlFields,
       appliedControls,
       resolvedControls: {
         operation: profile.operation,
@@ -757,27 +791,56 @@ type LoraWireRefusal = Extract<CompileProfileRenderPlanResult, { reason: "lora_b
  * find out why the payload lost a field it had, or stop expecting a LoRA from a
  * version that has nowhere to put one.
  *
+ * Presence is not the invariant — IDENTITY is (owner ruling 2026-08-24): the
+ * payload's values must EQUAL the resolved binding's own locator and scale,
+ * because "some value existed in a field called `lora_weights`" is exactly the
+ * kind of locally-true claim that let the original drift live. The override
+ * reserve above makes a mismatch unreachable through any legitimate path; this
+ * gate is what turns "unreachable" into "refused", so a future path that
+ * reopens it costs a pre-spend refusal rather than a mislabeled render.
+ *
  * Deliberately silent when nothing recorded a LoRA: a payload field written by a
- * profile's provider overrides is that escape hatch working as designed, and
- * refusing it here would break advanced inputs to defend a record nobody made.
+ * profile's provider overrides is that escape hatch working as designed — the
+ * hatch only closes when there is a resolved LoRA whose record it could falsify.
  */
 function loraWireInvariantBreach(
   model: ImageModel,
   controlInput: Record<string, unknown>,
   appliedControls: Record<string, unknown>,
+  resolvedLora: CompileProfileRenderPlanInput["resolvedLora"],
 ): LoraWireRefusal | null {
   const applied = appliedControls.lora;
   if (applied === undefined) return null;
 
   const bindings = model.advancedCapabilities.controls;
   const missingField = missingLoraWireField(bindings.loraWeights?.field, bindings.loraScale?.field, controlInput);
-  if (missingField === null) return null;
-  return {
-    ok: false,
-    reason: "lora_binding_not_sent",
-    missingField,
-    message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries no ${missingField}`,
-  };
+  if (missingField !== null) {
+    return {
+      ok: false,
+      reason: "lora_binding_not_sent",
+      missingField,
+      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries no ${missingField}`,
+    };
+  }
+  if (resolvedLora !== undefined) {
+    const weightsField = bindings.loraWeights?.field;
+    const scaleField = bindings.loraScale?.field;
+    const mismatched =
+      weightsField !== undefined && controlInput[weightsField] !== resolvedLora.locator
+        ? weightsField
+        : scaleField !== undefined && controlInput[scaleField] !== resolvedLora.scale
+          ? scaleField
+          : null;
+    if (mismatched !== null) {
+      return {
+        ok: false,
+        reason: "lora_binding_not_sent",
+        missingField: mismatched,
+        message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries a different ${mismatched} than the resolved binding's own value`,
+      };
+    }
+  }
+  return null;
 }
 
 /**

@@ -153,6 +153,13 @@ export interface RenderWithModelInput {
    * stays the single place a normalized control becomes a provider field.
    */
   controlInput?: Record<string, unknown>;
+  /**
+   * The `controlInput` fields a typed semantic control produced, passed through
+   * to the transport's strict validator so it can extend typed-owner trust to
+   * them (a curated LoRA's probed weights field) without trusting the raw
+   * override bag's fields.
+   */
+  typedControlFields?: readonly string[];
   /** This run's prediction budget (a profile's `timeoutMs`); null uses env/default. */
   timeoutMs?: number | null;
   /** Execute exactly this provider version; null takes the slug's own resolution. */
@@ -344,6 +351,7 @@ export async function renderWithModel(
       ...(controlReferences.length ? { controlReferences } : {}),
       aspect: typeof aspectValue === "string" ? aspectValue : null,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+      ...(input.typedControlFields?.length ? { typedControlFields: input.typedControlFields } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.versionId ? { versionId: input.versionId } : {}),
       ...(input.policy ? { policy: input.policy } : {}),

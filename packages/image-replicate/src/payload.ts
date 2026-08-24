@@ -65,6 +65,14 @@ export interface RegistryModelRequest {
    */
   controlInput?: Record<string, unknown>;
   /**
+   * The `controlInput` fields a typed semantic control produced — mapper-written,
+   * never the raw override bag. The strict arm's provider-input validation
+   * extends its typed-owner trust to exactly these, which is how a curated
+   * LoRA's probed weights field may carry a URI while a raw advanced value may
+   * not (image-model-adapters.spec.md).
+   */
+  typedControlFields?: readonly string[];
+  /**
    * This run's prediction budget, overriding the configured default for BOTH the
    * poll deadline and Replicate's `Cancel-After`. A profile's `timeoutMs` arrives
    * here; anything out of the sane 30s–30m band is clamped rather than honored,

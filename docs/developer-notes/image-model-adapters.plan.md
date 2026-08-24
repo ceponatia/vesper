@@ -401,7 +401,6 @@ the abstraction is wrong before any UI or transport work lands on top of it.
 | Why has production never sent `lora_weights` (dormant vs bug)?  | A defect would hide behind the bench fix  | Wire invariant test + Stage 7 run   |
 | Do the stored extensionless locator URLs satisfy the wrapper?   | First real LoRA send could still fail     | Stage 7 bench run answers it live   |
 | Are 8 min startup / 3 min render the right bench budgets?       | Too tight re-creates the abort; too loose wastes bench time | Tune from Stage 7 observations |
-| Should the LoRA weights binding join the strict arm's typed-owner fields? | A future probe declaring `lora_weights` as a URI/array would refuse curated-LoRA bench renders with a misleading message | Owner ruling; latent today (spec, deferred follow-ups) |
 
 ## 24. Definition of done
 

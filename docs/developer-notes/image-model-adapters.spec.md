@@ -84,11 +84,25 @@ type ProviderExecutionPolicy = {
 
 ### Compile-step wire invariant
 
-In `compile-profile-plan.ts`: a plan that records `appliedControls.lora` MUST
-carry both bound provider fields in `controlInput`, or the compile refuses
-pre-spend (kernel refusal vocabulary, message naming the missing field); a plan
-whose `controlInput` lacks the binding MUST NOT record the LoRA as applied.
-Owned and unit-tested at this one layer.
+In `compile-profile-plan.ts`, and the invariant is IDENTITY, not presence
+(owner ruling 2026-08-24): a plan that records `appliedControls.lora` must
+carry both bound provider fields in `controlInput` with values EQUAL to the
+resolved binding's own locator and scale, or the compile refuses pre-spend; a
+plan whose `controlInput` lacks the binding must not record the LoRA as
+applied. A resolved LoRA additionally OWNS its bound fields: they join the
+override validator's reserved set, so a profile/raw override colliding with
+them is dropped with the ordinary recorded reason — which closes the one
+public route to a mismatch and makes the equality gate a pure backstop.
+Without a resolved LoRA the fields stay ordinary advanced inputs. Owned and
+unit-tested at this one layer.
+
+The compile also emits `typedControlFields` — the `controlInput` fields the
+normalized mapper wrote that the raw override bag did not replace. The strict
+provider-input validator (`typedOwnerFields`) extends its URI/array trust to
+exactly that set, threaded plan → `renderWithModel` → the transport request
+and the Generator's pre-spend gate: a curated LoRA's probed weights field may
+carry its URI, a raw advanced value never may (owner ruling 2026-08-24,
+closing the latent strict-arm gap in this PR).
 
 ### Prompt-preparation hook
 
@@ -113,10 +127,13 @@ Rulings the build settled:
 - Execution evidence is `processing`/`succeeded` status, a numeric
   `metrics.predict_time`, or non-empty logs — `started_at` is explicitly not
   proof (the observed abort stamps it at abort time).
-- The retryable class is a terminal `aborted`, or a terminal `failed` with no
-  execution evidence AND no error text, plus the client's own startup cutoff;
-  `canceled` never retries (a cancel is somebody's decision) and a failure
-  carrying error text never retries (an input error would be re-billed).
+- The retryable class is a terminal `aborted` with no execution evidence and
+  no error text — the observed incident shape and nothing wider (owner ruling
+  2026-08-24: a silent `failed` is NOT assumed unstarted; recreating an
+  ambiguous failure risks rebilling a render that ran) — plus the client's own
+  startup cutoff once its cancellation is confirmed. `canceled` never retries
+  (a cancel is somebody's decision) and a failure carrying error text never
+  retries (an input error would be re-billed).
 - Recreations have no backoff — acceptable at one retry; a ruling is needed
   before retries ever exceed one or reach production.
 - The startup cutoff CONFIRMS the cancellation before its caller may retry:
@@ -203,7 +220,14 @@ Rulings the build settled:
 
 - The adapter→render join is written once, in
   `apps/web/src/server/images/model-adapters.ts` (prompt dialect, runtime
-  facts, bench budget resolver).
+  facts, bench budget resolver, adapter request validation).
+- Adapter `validateRequest` is WIRED, not descriptive (owner ruling
+  2026-08-24): the Generator runner asks the family adapter's composed
+  validators pre-spend, where `require_all` makes the judged facts final, and
+  settles a refusal under `operation_unsupported`. Production lanes are not
+  wired yet — their `allow_trim` policy means the pre-plan reference count is
+  not the sent count, and a validator judging the un-trimmed number would
+  refuse renders the planner would legally trim (deferred follow-up).
 - Attempts are stored as `meta.providerAttempts` (oldest first), a sibling of
   the existing `attempt`/`result` records, written only when the transport
   reports attempts; the `prediction_id`/`executed_version_id` columns keep the
@@ -219,8 +243,11 @@ Rulings the build settled:
 - `JOB_STALE_MS` (15 min) is deliberately unchanged: the atomic run claim
   makes double-spend impossible, the job's own settle overwrites the sweep's
   orphan marking, and raising it would cost every player five extra minutes of
-  a wedged chat when a real job dies. The only effect on a slow bench run is a
-  cosmetic, self-correcting "orphaned" reading between minute 15 and settle.
+  a wedged chat when a real job dies. The real effect on a >15-minute bench
+  run (owner assessment 2026-08-24): the job drops out of the per-user
+  concurrency count while still running, so additional work can be admitted
+  beside it — an accepted edge at one retry, not merely cosmetic; revisit
+  before retries or budgets grow.
 - Lab runs record attempts the same way: `meta.providerAttempts`, written on
   success and failure by `storeLabRender`, surfaced through the experiment wire
   record's own loose `providerAttempts` field.
@@ -272,10 +299,12 @@ Status: built 2026-08-24 — awaiting CI.
 
 The final-wire test lives at
 `packages/image-replicate/src/lora-final-wire.test.ts`, beside the payload
-builder, and asserts against `buildPayload` (the body actually POSTed) with
-`previewRegistryModelInput` agreement checked alongside. Its bench case pins
-the fixture's task mismatch so the case cannot go vacuous if `allowedTasks`
-is ever widened.
+builder: three cases assert against `buildPayload` with
+`previewRegistryModelInput` agreement checked alongside, and one case runs the
+real `runRegistryImageModel` against a stubbed `fetch` and asserts the exact
+locator and scale in the JSON body of the prediction-create request — the
+literal POST, not one seam short of it. The bench case pins the fixture's task
+mismatch so the case cannot go vacuous if `allowedTasks` is ever widened.
 
 - Cross-stack, no-network: seeded library row → `generator_bench` resolution →
   intent → `planImageRender` → `previewRegistryModelInput`, asserting
@@ -286,11 +315,8 @@ is ever widened.
 
 ## Deferred follow-ups
 
-- The strict arm's `typedOwnerFields` does not list the LoRA weights binding:
-  a future probe declaring `lora_weights` as `format: uri` or an array would
-  refuse a curated-LoRA bench render pre-spend with a misleading message.
-  Latent today (the wrapper probes it as a plain string); needs an owner
-  ruling on whether the resolved-LoRA binding joins `typedOwnerFields`.
+- Adapter `validateRequest` on production lanes: needs trim-aware facts (the
+  post-plan sent count), or validators restricted to trim-independent claims.
 - Other model families (Flux, Wan, SDXL, Seedream) migrate into adapters when
   their behavior is next touched.
 - Managed LoRA storage / weight caching / sha256 provenance columns.
