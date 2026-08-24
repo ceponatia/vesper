@@ -8,7 +8,7 @@ Source: [`packages/image-models/src/features/prompt.ts`](../../../packages/image
 
 The model accepts an authored text prompt describing or instructing the image.
 
-The feature is explicit even though nearly every current image model takes text, because an adapter's capability list is intended to describe the endpoint completely. A pure upscaler or other image-only endpoint is a legitimate future shape and should not silently inherit a prompt capability it does not have.
+The feature is explicit even though nearly every current image model takes text, because an adapter's capability list is intended to describe the endpoint completely. A pure upscaler or other image-only endpoint can legitimately omit the prompt capability rather than inheriting one implicitly.
 
 ## Binding
 
