@@ -34,6 +34,12 @@ import {
  * merges over the result minus the reserved fields. That order is the
  * capabilities spec's — a later layer wins — while keeping the render path's own
  * fields unreachable from a stored profile row.
+ *
+ * `request.executionPolicy` passes straight through to the prediction shell: it
+ * shapes how the prediction is WATCHED (one budget, or a startup budget plus a
+ * render budget with startup retries) and never what is sent, so nothing in the
+ * assembly above reads it. A request without one keeps the legacy single-budget
+ * behavior byte for byte, which is what the production lanes pass.
  */
 export async function runRegistryImageModel(
   http: ReplicateHttp,

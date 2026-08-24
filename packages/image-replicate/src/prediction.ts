@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ProviderExecutionPolicy } from "@vesper/image-core";
 import { POLL_INTERVAL_MS, predictionTimeoutMs, REQUEST_TIMEOUT_MS, type ReplicateConfig } from "./config";
 import { errorText, type ReplicateHttp, responseError, sleep } from "./http";
 import { downloadReplicateOutput, outputUrl } from "./outputs";
@@ -8,6 +9,17 @@ import type { ProviderInputViolation, UnsentReferenceReport } from "./strict-req
  * The prediction shell: create, poll, cancel, and read the answer. Every render
  * and every preprocessor run in Vesper goes through this one function, which is
  * why there is exactly one place that talks to `api.replicate.com/v1/predictions`.
+ *
+ * A prediction spends its life in two completely different phases, and for most
+ * of this shell's history it had one budget covering both. That is the defect
+ * this module now answers: a render that waited out a cold-boot queue and was
+ * abandoned before it ever executed came back looking exactly like a model that
+ * ran and failed. A caller may hand in a `ProviderExecutionPolicy`
+ * (`@vesper/image-core`) to split the budget in two — queue time and render
+ * time — and to allow a prediction that died IN the queue to be created again.
+ * Hand in nothing and this is byte-for-byte the shell it always was, which is
+ * deliberately what production lanes keep doing (plan §8, owner ruling
+ * 2026-08-24).
  */
 
 export interface ReplicateImageResult {
@@ -58,6 +70,56 @@ export interface ReplicateImageResult {
    * pre-spend refusal.
    */
   providerInputViolations?: ProviderInputViolation[];
+  /**
+   * Every prediction this run created, oldest first — present ONLY when the
+   * caller supplied an `executionPolicy`, because only then can one run create
+   * more than one prediction. The provenance fields above keep describing the
+   * FINAL attempt, so a caller that never reads this reads exactly what it
+   * always did (plan §8, owner ruling 2026-08-24).
+   */
+  attempts?: ReplicatePredictionAttempt[];
+}
+
+/**
+ * How ONE created prediction ended.
+ *
+ * The vocabulary exists to separate the two things a single failure code used
+ * to conflate: a model that RAN and failed, and a prediction that never got to
+ * run at all. `aborted_before_start` and `startup_timeout` are the second kind
+ * — nothing was rendered and nothing was learned about the model — while
+ * `failed` and `render_timeout` are the first.
+ *
+ * - `succeeded` — the provider produced an output. A download failure after
+ *   that is this process's errand, not the attempt's.
+ * - `failed` — the provider settled it as failed, or the poll could not be
+ *   completed and the run gave up on it.
+ * - `canceled` — cancelled by somebody: the dashboard, or an operator.
+ * - `aborted_before_start` — terminal with no evidence it ever executed and no
+ *   error explaining why: the provider abandoning a queued prediction.
+ * - `startup_timeout` — this client's own startup budget expired while the
+ *   prediction was still queued, so it was cancelled here.
+ * - `render_timeout` — it began executing and outran the render budget.
+ */
+export type ReplicatePredictionOutcome =
+  | "succeeded"
+  | "failed"
+  | "canceled"
+  | "aborted_before_start"
+  | "startup_timeout"
+  | "render_timeout";
+
+/** One created prediction, as a run record keeps it. */
+export interface ReplicatePredictionAttempt {
+  predictionId: string;
+  outcome: ReplicatePredictionOutcome;
+  /**
+   * Creation → execution start. For an attempt that never started this is how
+   * long it waited before it was abandoned, which is the number that says
+   * whether a startup budget was too tight.
+   */
+  queuedMs?: number;
+  /** Execution start → settle. Absent when the prediction never executed at all. */
+  renderMs?: number;
 }
 
 const predictionSchema = z.object({
@@ -72,6 +134,21 @@ const predictionSchema = z.object({
   version: z.string().optional(),
   output: z.unknown().optional().nullable(),
   error: z.unknown().optional().nullable(),
+  /**
+   * The lifecycle timestamps and the evidence of WORK, every one of them
+   * optional and nullable: each is absent for part of a prediction's life, and
+   * the parse of an otherwise perfectly good record must never fail over a
+   * field this shell reads only to judge which phase the prediction is in.
+   *
+   * `metrics` is read as an open map rather than a typed object on purpose —
+   * the provider adds keys to it, and only `predict_time` means anything here,
+   * so a new sibling key must not be able to break a render.
+   */
+  created_at: z.string().nullish(),
+  started_at: z.string().nullish(),
+  completed_at: z.string().nullish(),
+  logs: z.string().nullish(),
+  metrics: z.record(z.string(), z.unknown()).nullish(),
 });
 
 type ReplicatePrediction = z.infer<typeof predictionSchema>;
@@ -93,6 +170,22 @@ export interface PredictionRunOptions {
   versionId?: string;
   /** Read the image URL off THIS field when the output is an object. */
   outputField?: string;
+  /**
+   * Two-phase budgets and startup retries for THIS run
+   * (`ProviderExecutionPolicy`, `@vesper/image-core`).
+   *
+   * Absent is the production answer and leaves the legacy shell untouched: one
+   * prediction, one `timeoutMs`-derived deadline, no retry. Present, it
+   * REPLACES `timeoutMs` for this run — the provider is told the sum of the two
+   * budgets, and the queue and the render are watched separately here — and
+   * makes the result report its `attempts`.
+   *
+   * Keeping the totals sane is the application's job, not the transport's: the
+   * bench lanes resolve the numbers and an adapter's execution hints may narrow
+   * them, so clamping here would silently overrule a caller that had already
+   * decided.
+   */
+  executionPolicy?: ProviderExecutionPolicy;
 }
 
 /**
@@ -126,6 +219,14 @@ export function replicatePredictionTarget(model: string, versionId?: string): { 
  * Run one prediction to completion. `input` is already built and merged by the
  * caller, so nothing here can change WHAT is sent — only where, for how long,
  * and which part of the answer is the image.
+ *
+ * Without an `executionPolicy` this creates exactly one prediction and watches
+ * it against one deadline, as it always has. With one it becomes a small loop:
+ * each pass creates a prediction and watches it against the two-phase deadline,
+ * and the loop only goes round again when the prediction died in the QUEUE —
+ * the single failure class where re-sending the same input is not paying twice
+ * for the same answer. However it settles, the provenance fields describe the
+ * FINAL attempt and `attempts` records all of them.
  */
 export async function runPrediction(
   http: ReplicateHttp,
@@ -139,10 +240,46 @@ export async function runPrediction(
   // counts as "an image arrived", or a settled prediction whose map sits under
   // a named field reads as an empty output.
   const pickOutput = (output: unknown): string | null => outputUrl(output, request.outputField);
-  // One resolution for both deadlines: the provider-side `Cancel-After` and this
-  // client's poll cutoff must agree, or raising the budget only lengthens the
-  // polling while Replicate still kills the prediction at the old bound.
-  const timeoutMs = predictionTimeoutMs(config, request.timeoutMs);
+  const budget = resolvePredictionBudget(config, request);
+  const maxAttempts = budget.kind === "phased" ? budget.maxStartupRetries + 1 : 1;
+  const attempts: ReplicatePredictionAttempt[] = [];
+  // Attempts are reported only under a policy. A lane that passed none gets one
+  // prediction by construction, and handing it a one-element list would put a
+  // new field into results the application already stores.
+  const settle = (result: ReplicateImageResult): ReplicateImageResult =>
+    budget.kind === "phased" && attempts.length > 0 ? { ...result, attempts: [...attempts] } : result;
+
+  for (let attemptNumber = 1; ; attemptNumber += 1) {
+    const attempt = await attemptPrediction(http, model, input, request, budget, pickOutput);
+    if (attempt.record) attempts.push(attempt.record);
+    if (!attempt.startupFailure) return settle(attempt.result);
+    if (attemptNumber < maxAttempts) continue;
+    // Out of retries, and every one of them died queued: say so in the message
+    // the caller stores, because "the queue never let it start" and "the model
+    // failed" are different facts about different things.
+    return settle({ ...attempt.result, error: neverStartedMessage(attempt.startupFailure, attempts.length) });
+  }
+}
+
+/**
+ * One created prediction, watched to its end.
+ *
+ * Split out of {@link runPrediction} because a startup retry has to do this
+ * twice: the loop above decides whether there is another attempt, and this
+ * decides what THIS attempt was.
+ */
+async function attemptPrediction(
+  http: ReplicateHttp,
+  model: string,
+  input: Record<string, unknown>,
+  request: PredictionRunOptions,
+  budget: PredictionBudget,
+  pickOutput: (output: unknown) => string | null,
+): Promise<PredictionAttemptEnd> {
+  // The provider's queue clock starts when the create request is SENT, and so
+  // does `Cancel-After` — so the startup phase is measured from here rather
+  // than from whenever a `Prefer: wait=60` create finally returns.
+  const createdAtMs = Date.now();
   let prediction: ReplicatePrediction;
   try {
     // An explicit `versionId` pins the run outright. Otherwise a pinned
@@ -155,22 +292,43 @@ export async function runPrediction(
       headers: {
         "Content-Type": "application/json",
         Prefer: "wait=60",
-        "Cancel-After": cancelAfterHeader(timeoutMs),
+        // One resolution for every deadline: the provider-side `Cancel-After`
+        // and this client's own cutoffs must agree, or raising a budget only
+        // lengthens the polling while Replicate still kills the prediction at
+        // the old bound. Under a policy the provider is told the WHOLE budget —
+        // it has no notion of Vesper's two phases — and the split is enforced
+        // here, where the prediction record can say which phase it is in.
+        "Cancel-After": cancelAfterHeader(budgetTotalMs(budget)),
       },
       body: JSON.stringify(target.version ? { version: target.version, input } : { input }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) return { ok: false, error: await responseError(response) };
+    if (!response.ok) return { result: { ok: false, error: await responseError(response) } };
     prediction = predictionSchema.parse(await response.json());
   } catch (err) {
-    return { ok: false, error: errorText(err) };
+    // No prediction exists, so there is no attempt to record and no id to
+    // report — inventing either would be worse than admitting none.
+    return { result: { ok: false, error: errorText(err) } };
   }
 
-  const deadline = Date.now() + timeoutMs;
+  // When execution was first OBSERVED, on this process's clock. Null means the
+  // prediction is, as far as anything seen so far goes, still queued — and it is
+  // what switches the deadline from the startup phase to the render phase.
+  let observedStartMs: number | null = hasStartedExecuting(prediction) ? Date.now() : null;
+  // The legacy deadline has always started when the create RETURNED, and a
+  // `Prefer: wait=60` create can hold that for a minute. Left exactly as it was
+  // rather than re-based on `createdAtMs`, because shortening a production
+  // lane's effective budget is not a refactor.
+  const pollFrom = Date.now();
+  const deadlineMs = (): number => {
+    if (budget.kind === "single") return pollFrom + budget.totalMs;
+    return observedStartMs === null ? createdAtMs + budget.startupBudgetMs : observedStartMs + budget.renderBudgetMs;
+  };
+
   while (!isTerminal(prediction.status) && pickOutput(prediction.output) === null) {
-    if (Date.now() >= deadline) {
+    if (Date.now() >= deadlineMs()) {
       await cancelPrediction(http, prediction.id);
-      return { ok: false, predictionId: prediction.id, error: `replicate prediction ${prediction.id} timed out` };
+      return timedOutAttempt(prediction, budget, createdAtMs, observedStartMs);
     }
     await sleep(POLL_INTERVAL_MS);
     try {
@@ -178,10 +336,21 @@ export async function runPrediction(
         method: "GET",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      if (!response.ok) return { ok: false, predictionId: prediction.id, error: await responseError(response) };
+      if (!response.ok) {
+        return {
+          result: { ok: false, predictionId: prediction.id, error: await responseError(response) },
+          record: attemptRecord(prediction, "failed", createdAtMs, observedStartMs),
+        };
+      }
       prediction = predictionSchema.parse(await response.json());
+      // Stamped once and never revised: the render phase is measured from the
+      // first sighting of execution, not from the latest poll that confirms it.
+      if (observedStartMs === null && hasStartedExecuting(prediction)) observedStartMs = Date.now();
     } catch (err) {
-      return { ok: false, predictionId: prediction.id, error: errorText(err) };
+      return {
+        result: { ok: false, predictionId: prediction.id, error: errorText(err) },
+        record: attemptRecord(prediction, "failed", createdAtMs, observedStartMs),
+      };
     }
   }
 
@@ -195,16 +364,257 @@ export async function runPrediction(
   };
 
   if (prediction.status !== "succeeded" && pickOutput(prediction.output) === null) {
-    return { ok: false, ...provenance, error: `replicate ${prediction.status}: ${predictionError(prediction.error)}` };
+    const unstarted = isUnstartedAbort(prediction, observedStartMs);
+    const outcome: ReplicatePredictionOutcome = unstarted
+      ? "aborted_before_start"
+      : prediction.status === "canceled"
+        ? "canceled"
+        : "failed";
+    return {
+      result: { ok: false, ...provenance, error: `replicate ${prediction.status}: ${predictionError(prediction.error)}` },
+      record: attemptRecord(prediction, outcome, createdAtMs, observedStartMs),
+      // Retryable only under a policy: with no policy this shell has never
+      // recreated anything, and production lanes are keeping it that way.
+      ...(unstarted && budget.kind === "phased"
+        ? {
+            startupFailure: {
+              predictionId: prediction.id,
+              detail: "the provider aborted it before it began executing",
+            },
+          }
+        : {}),
+    };
   }
 
+  // Recorded BEFORE the download: the render budget is about the model working,
+  // and fetching the produced bytes afterwards is this process's own errand.
+  const record = attemptRecord(prediction, "succeeded", createdAtMs, observedStartMs);
   const url = pickOutput(prediction.output);
-  if (!url) return { ok: false, ...provenance, error: "replicate returned no image" };
+  if (!url) return { result: { ok: false, ...provenance, error: "replicate returned no image" }, record };
   try {
-    return { ok: true, ...provenance, image: await downloadReplicateOutput(http, url) };
+    return { result: { ok: true, ...provenance, image: await downloadReplicateOutput(http, url) }, record };
   } catch (err) {
-    return { ok: false, ...provenance, error: errorText(err) };
+    return { result: { ok: false, ...provenance, error: errorText(err) }, record };
   }
+}
+
+/**
+ * What one attempt ended as, and what the loop that owns it may do about it.
+ */
+interface PredictionAttemptEnd {
+  /** The result the whole run settles as if this attempt is the last one. */
+  result: ReplicateImageResult;
+  /** This attempt's record — absent only when the create never produced a prediction. */
+  record?: ReplicatePredictionAttempt;
+  /**
+   * Set only when the prediction never began executing AND a policy allows
+   * recreations. `detail` is the plain-English half of the message the caller
+   * finally reads, so the same wording explains one attempt or five.
+   */
+  startupFailure?: { predictionId: string; detail: string };
+}
+
+/**
+ * The budget one attempt is watched against: a single number, or two phases.
+ *
+ * A discriminated union rather than an optional policy field because every
+ * decision below — which deadline applies, whether a queue death may be
+ * retried, whether attempts are reported — turns on the same question, and one
+ * `kind` keeps them from drifting apart.
+ */
+type PredictionBudget =
+  | { kind: "single"; totalMs: number }
+  | { kind: "phased"; startupBudgetMs: number; renderBudgetMs: number; maxStartupRetries: number };
+
+/**
+ * Which budget this run gets.
+ *
+ * A policy whose numbers are unusable degrades to the legacy single budget
+ * instead of failing the render (docs/resilience.md): the phases are a
+ * refinement of how a render is watched, never a precondition for running one,
+ * and a caller that passed nonsense still deserves its picture.
+ */
+function resolvePredictionBudget(config: ReplicateConfig, request: PredictionRunOptions): PredictionBudget {
+  const policy = request.executionPolicy;
+  const startupBudgetMs = usableBudgetMs(policy?.startupBudgetMs);
+  const renderBudgetMs = usableBudgetMs(policy?.renderBudgetMs);
+  if (startupBudgetMs === null || renderBudgetMs === null) {
+    return { kind: "single", totalMs: predictionTimeoutMs(config, request.timeoutMs) };
+  }
+  const retries = policy?.maxStartupRetries;
+  return {
+    kind: "phased",
+    startupBudgetMs,
+    renderBudgetMs,
+    maxStartupRetries: typeof retries === "number" && Number.isFinite(retries) ? Math.max(0, Math.trunc(retries)) : 0,
+  };
+}
+
+function usableBudgetMs(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
+
+/** What the PROVIDER is told: one deadline covering both phases. */
+function budgetTotalMs(budget: PredictionBudget): number {
+  return budget.kind === "single" ? budget.totalMs : budget.startupBudgetMs + budget.renderBudgetMs;
+}
+
+/**
+ * A deadline this client enforced itself — called after the cancel is sent.
+ */
+function timedOutAttempt(
+  prediction: ReplicatePrediction,
+  budget: PredictionBudget,
+  createdAtMs: number,
+  observedStartMs: number | null,
+): PredictionAttemptEnd {
+  const unstarted = observedStartMs === null;
+  const record = attemptRecord(
+    prediction,
+    unstarted ? "startup_timeout" : "render_timeout",
+    createdAtMs,
+    observedStartMs,
+  );
+  // The legacy single budget keeps its exact message: one deadline covering a
+  // queue and a render cannot honestly name either of them.
+  if (budget.kind === "single") {
+    return {
+      result: { ok: false, predictionId: prediction.id, error: `replicate prediction ${prediction.id} timed out` },
+      record,
+    };
+  }
+  if (unstarted) {
+    const failure = {
+      predictionId: prediction.id,
+      detail: `it sat in the provider queue for the whole ${seconds(budget.startupBudgetMs)}s startup budget without beginning execution`,
+    };
+    return {
+      result: { ok: false, predictionId: prediction.id, error: neverStartedMessage(failure, 1) },
+      record,
+      startupFailure: failure,
+    };
+  }
+  return {
+    result: {
+      ok: false,
+      predictionId: prediction.id,
+      error: `replicate prediction ${prediction.id} timed out while rendering: it began executing and then exceeded the ${seconds(budget.renderBudgetMs)}s render budget`,
+    },
+    record,
+  };
+}
+
+/**
+ * The message a run gets when every attempt died in the QUEUE.
+ *
+ * It has to read as two different things at once. A person reads "never
+ * started" and knows the model was never asked to do anything, so the run says
+ * nothing about the model. The failure classifier
+ * (`classifyImageFailureMessage`, `@vesper/image-core`) reads "timed out" and
+ * keeps calling it transient — which is the whole point: a cold-boot queue must
+ * not be recorded as evidence against a model, and must stay retryable.
+ */
+function neverStartedMessage(failure: { predictionId: string; detail: string }, attemptCount: number): string {
+  const tries = attemptCount === 1 ? "1 attempt" : `${attemptCount} attempts`;
+  return `replicate prediction ${failure.predictionId} never started: ${failure.detail} — startup timed out after ${tries}, and no render was attempted`;
+}
+
+/**
+ * One attempt, as the caller will store it.
+ *
+ * Durations come from the PROVIDER's own timestamps when it published them and
+ * from this process's clock when it did not: a poll-resolution reading of a
+ * queue measured in minutes is worth far more than an absent field, and both
+ * readings are honest about the phase they describe.
+ */
+function attemptRecord(
+  prediction: ReplicatePrediction,
+  outcome: ReplicatePredictionOutcome,
+  createdAtMs: number,
+  observedStartMs: number | null,
+): ReplicatePredictionAttempt {
+  const started = observedStartMs !== null || hasStartedExecuting(prediction);
+  const queuedMs =
+    (started
+      ? spanMs(prediction.created_at, prediction.started_at)
+      : spanMs(prediction.created_at, prediction.completed_at)) ??
+    Math.max(0, (started ? (observedStartMs ?? Date.now()) : Date.now()) - createdAtMs);
+  // No execution, no render duration. An abort stamps `started_at` equal to
+  // `completed_at`, and reporting that zero-length window would claim a render
+  // happened when the container never ran.
+  const renderMs = started
+    ? (predictTimeMs(prediction.metrics) ??
+      spanMs(prediction.started_at, prediction.completed_at) ??
+      (observedStartMs === null ? undefined : Math.max(0, Date.now() - observedStartMs)))
+    : undefined;
+  return {
+    predictionId: prediction.id,
+    outcome,
+    queuedMs,
+    ...(renderMs === undefined ? {} : { renderMs }),
+  };
+}
+
+/**
+ * Did this prediction's container actually RUN?
+ *
+ * `started_at` deliberately does NOT count as proof. Replicate stamps it at the
+ * moment it gives up, too: prediction `psme0ern9nrnt0d06h8b3zx01c` came back
+ * `status: "aborted"`, `error: null`, `logs: ""`, `metrics: null`, with
+ * `started_at` equal to `completed_at` — a prediction that never executed,
+ * wearing a start time. What a queued prediction cannot have is EVIDENCE of
+ * work: `metrics.predict_time`, which the provider fills in only once the model
+ * predicted; log output; or a status that means "executing right now".
+ */
+function hasStartedExecuting(prediction: ReplicatePrediction): boolean {
+  if (prediction.status === "processing" || prediction.status === "succeeded") return true;
+  if (predictTimeMs(prediction.metrics) !== undefined) return true;
+  return (prediction.logs ?? "").trim().length > 0;
+}
+
+/**
+ * A terminal prediction that never executed and never said why — the provider
+ * abandoning something it had queued, which is the one thing worth recreating.
+ *
+ * Two exclusions carry the weight. A prediction carrying an `error` is the
+ * model or the payload ANSWERING, and re-sending the same input would buy the
+ * same answer a second time. A `canceled` prediction is somebody's decision —
+ * an operator's, or this client's own startup cutoff — and quietly recreating
+ * it would overrule whoever cancelled.
+ */
+function isUnstartedAbort(prediction: ReplicatePrediction, observedStartMs: number | null): boolean {
+  if (observedStartMs !== null || hasStartedExecuting(prediction)) return false;
+  if (prediction.status !== "aborted" && prediction.status !== "failed") return false;
+  return !hasErrorDetail(prediction.error);
+}
+
+function hasErrorDetail(error: unknown): boolean {
+  if (typeof error === "string") return error.trim().length > 0;
+  return error !== null && error !== undefined;
+}
+
+/** `metrics.predict_time` in milliseconds — seconds on the wire, when it is a number at all. */
+function predictTimeMs(metrics: Record<string, unknown> | null | undefined): number | undefined {
+  const value = metrics?.predict_time;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value * 1_000) : undefined;
+}
+
+/** The gap between two of the provider's ISO timestamps, when both are readable. */
+function spanMs(from: string | null | undefined, to: string | null | undefined): number | undefined {
+  const start = timestampMs(from);
+  const end = timestampMs(to);
+  if (start === undefined || end === undefined || end < start) return undefined;
+  return end - start;
+}
+
+function timestampMs(value: string | null | undefined): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function seconds(ms: number): number {
+  return Math.round(ms / 1_000);
 }
 
 async function cancelPrediction(http: ReplicateHttp, predictionId: string): Promise<void> {
@@ -234,7 +644,9 @@ function predictionError(error: unknown): string {
 /**
  * Replicate's prediction deadline header: an integer of seconds (or a
  * unit-suffixed duration), valid from 5s to 24h. `predictionTimeoutMs()` is
- * already clamped to 30s–30m, so the derived value is always in range.
+ * already clamped to 30s–30m, so the single-budget value is always in range;
+ * a policy's summed budgets are the application's to keep sane, and the bench
+ * numbers it passes (minutes, not hours) sit well inside the same window.
  */
 function cancelAfterHeader(timeoutMs: number): string {
   return `${Math.round(timeoutMs / 1_000)}s`;

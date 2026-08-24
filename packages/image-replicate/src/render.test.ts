@@ -1,8 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { emptyImageModelAdvancedCapabilities, type ImageModel } from "@vesper/image-core";
+import {
+  classifyImageFailureMessage,
+  emptyImageModelAdvancedCapabilities,
+  type ImageModel,
+  type ProviderExecutionPolicy,
+} from "@vesper/image-core";
 import { DiagnosticCollector } from "@vesper/contracts";
 import { createReplicateClient, type ReplicateClient } from "./client";
-import { DEFAULT_PREDICTION_TIMEOUT_MS, OUTPUT_TIMEOUT_MS, type ReplicateConfig, REQUEST_TIMEOUT_MS } from "./config";
+import {
+  DEFAULT_PREDICTION_TIMEOUT_MS,
+  OUTPUT_TIMEOUT_MS,
+  POLL_INTERVAL_MS,
+  type ReplicateConfig,
+  REQUEST_TIMEOUT_MS,
+} from "./config";
 import { DATA_URL_BUDGET_BYTES, type PreparedReferenceBytes, referenceDataUrl, withinDataUrlBudget } from "./files";
 import { buildRegistryModelInput, overlayControlInput, type RegistryModelRequest } from "./payload";
 import { replicatePredictionTarget, type ReplicateImageResult } from "./prediction";
@@ -962,5 +973,194 @@ describe("bound control images", () => {
     // blown budget and the provider is left to accept or refuse it.
     const small = prepared(Buffer.alloc(16));
     expect(withinDataUrlBudget([small, small], DATA_URL_BUDGET_BYTES)).toEqual([small]);
+  });
+});
+
+/**
+ * The two-phase budget arm: what a run does when the caller says how long a
+ * QUEUE may take separately from how long a RENDER may take.
+ *
+ * The case these exist for is a real one — prediction
+ * `psme0ern9nrnt0d06h8b3zx01c` came back `aborted` with `error: null`,
+ * `logs: ""`, `metrics: null` and `started_at` stamped equal to `completed_at`,
+ * having never executed, and Vesper recorded it as a render failure of the
+ * model. Every fixture below wears that exact shape.
+ */
+describe("two-phase prediction budgets", () => {
+  const benchPolicy: ProviderExecutionPolicy = {
+    startupBudgetMs: 8 * 60_000,
+    renderBudgetMs: 3 * 60_000,
+    maxStartupRetries: 1,
+  };
+
+  /** The observed provider-side startup abort: terminal, unexplained, and never executed. */
+  const abortedBeforeStart = (id: string): Record<string, unknown> => ({
+    id,
+    status: "aborted",
+    error: null,
+    logs: "",
+    metrics: null,
+    created_at: "2026-08-24T10:00:00.000Z",
+    started_at: "2026-08-24T10:05:00.000Z",
+    completed_at: "2026-08-24T10:05:00.000Z",
+  });
+
+  const succeeded = (id: string): Record<string, unknown> => ({
+    id,
+    status: "succeeded",
+    output: ["https://replicate.delivery/o.webp"],
+    created_at: "2026-08-24T10:05:10.000Z",
+    started_at: "2026-08-24T10:05:20.000Z",
+    completed_at: "2026-08-24T10:05:40.000Z",
+    logs: "100%|██████████| 20/20",
+    metrics: { predict_time: 18.5 },
+  });
+
+  /** Queued and staying that way: the prediction a local startup deadline is for. */
+  const stillQueued = (id: string): Record<string, unknown> => ({
+    id,
+    status: "starting",
+    error: null,
+    logs: "",
+    metrics: null,
+    created_at: "2026-08-24T10:00:00.000Z",
+  });
+
+  /**
+   * Script one CREATE body per attempt (the last repeats), plus the body every
+   * poll answers with. Returns the calls a case needs to reason about: a retry
+   * is only a retry if a SECOND prediction was posted, and a local cutoff is
+   * only honest if the abandoned prediction was cancelled.
+   */
+  function scriptPredictions(
+    creates: Array<Record<string, unknown>>,
+    poll?: Record<string, unknown>,
+  ): { posts: RequestInit[]; cancels: string[] } {
+    const posts: RequestInit[] = [];
+    const cancels: string[] = [];
+    let created = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (init?.method === "POST" && url.endsWith("/cancel")) {
+          cancels.push(url);
+          return Response.json({});
+        }
+        if (init?.method === "POST") {
+          posts.push(init);
+          const body = creates[Math.min(created, creates.length - 1)];
+          created += 1;
+          return Response.json(body);
+        }
+        if (url.includes("/v1/predictions/")) return Response.json(poll ?? creates[creates.length - 1]);
+        return new Response(Buffer.from("image-bytes"), { status: 200 });
+      }),
+    );
+    return { posts, cancels };
+  }
+
+  /**
+   * Drive a run that has to POLL, without spending real time on it.
+   *
+   * The shell sleeps `POLL_INTERVAL_MS` between reads, so a case about a
+   * minutes-long budget would otherwise sit there for minutes. Advancing faked
+   * timers one poll interval at a time also advances the `Date.now()` the
+   * deadlines are measured against, which is the whole point.
+   */
+  async function onFakeClock<T>(run: () => Promise<T>, advanceMs: number): Promise<T> {
+    vi.useFakeTimers();
+    try {
+      const pending = run();
+      for (let elapsed = 0; elapsed <= advanceMs; elapsed += POLL_INTERVAL_MS) {
+        await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+      }
+      return await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("records nothing extra when the caller passed no execution policy", async () => {
+    // Production lanes pass no policy and must read back exactly the result they
+    // always did (owner ruling 2026-08-24) — no attempts, one prediction.
+    const script = scriptPredictions([succeeded("pred-solo")]);
+    const result = await client().runRegistryImageModel(model(), { prompt: "portrait" });
+
+    expect(result).toMatchObject({ ok: true, predictionId: "pred-solo" });
+    expect("attempts" in result).toBe(false);
+    expect(script.posts).toHaveLength(1);
+  });
+
+  it("recreates a prediction the provider aborted before it started, and records both attempts", async () => {
+    const script = scriptPredictions([abortedBeforeStart("pred-1"), succeeded("pred-2")]);
+    const result = await client().runRegistryImageModel(model(), {
+      prompt: "portrait",
+      executionPolicy: benchPolicy,
+    });
+
+    expect(result.ok).toBe(true);
+    // The provenance keeps naming the FINAL attempt, which is what every
+    // existing consumer of this result reads.
+    expect(result.predictionId).toBe("pred-2");
+    expect(result.attempts).toEqual([
+      // Never executed, so it has a queue duration and no render duration at
+      // all — the abort's zero-length started/completed window is not a render.
+      { predictionId: "pred-1", outcome: "aborted_before_start", queuedMs: 300_000 },
+      { predictionId: "pred-2", outcome: "succeeded", queuedMs: 10_000, renderMs: 18_500 },
+    ]);
+    expect(script.posts).toHaveLength(2);
+    // The provider is told ONE deadline covering both phases; the split is
+    // enforced locally, because Replicate has no notion of Vesper's phases.
+    expect(script.posts[0]?.headers).toMatchObject({ "Cancel-After": "660s" });
+    // Nothing to cancel: the aborted prediction was already terminal.
+    expect(script.cancels).toEqual([]);
+  });
+
+  it("gives up after the policy's startup retries and says the queue never started it", async () => {
+    const script = scriptPredictions([abortedBeforeStart("pred-1"), abortedBeforeStart("pred-2")]);
+    const result = await client().runRegistryImageModel(model(), {
+      prompt: "portrait",
+      executionPolicy: benchPolicy,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(script.posts).toHaveLength(2);
+    expect(result.error).toContain("never started");
+    expect(result.error).toContain("2 attempts");
+    // A queue that never ran the model says nothing about the model, so the
+    // shared classifier has to keep reading this as transient rather than as a
+    // render failure worth holding against it.
+    expect(classifyImageFailureMessage(result.error ?? "")).toBe("transient");
+    expect(result.attempts?.map((attempt) => attempt.outcome)).toEqual([
+      "aborted_before_start",
+      "aborted_before_start",
+    ]);
+  });
+
+  it("cancels a prediction that is still queued when the startup budget runs out", async () => {
+    const script = scriptPredictions([stillQueued("pred-q")], stillQueued("pred-q"));
+    const result = await onFakeClock(
+      () =>
+        client().runRegistryImageModel(model(), {
+          prompt: "portrait",
+          // Far shorter than the bench values, and long enough to take several
+          // polls: what is under test is the local cutoff, not the number.
+          executionPolicy: { startupBudgetMs: 6_000, renderBudgetMs: 60_000, maxStartupRetries: 0 },
+        }),
+      12_000,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(script.cancels).toEqual(["https://api.replicate.com/v1/predictions/pred-q/cancel"]);
+    // No retries allowed, so the run settles on the first cutoff.
+    expect(script.posts).toHaveLength(1);
+    expect(result.error).toContain("never started");
+    expect(result.error).toContain("6s startup budget");
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts?.[0]).toMatchObject({ predictionId: "pred-q", outcome: "startup_timeout" });
+    // The render never began, so there is no render duration to report.
+    expect(result.attempts?.[0]?.renderMs).toBeUndefined();
+    expect(result.attempts?.[0]?.queuedMs ?? 0).toBeGreaterThanOrEqual(6_000);
   });
 });

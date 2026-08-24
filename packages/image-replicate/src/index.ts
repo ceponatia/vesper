@@ -34,7 +34,7 @@ export type { PreparedReferenceBytes, TransportReferencesResult } from "./files"
 export { buildRegistryModelInput, overlayControlInput, previewRegistryModelInput } from "./payload";
 export type { RegistryModelRequest, RenderControlReference } from "./payload";
 export { replicatePredictionTarget } from "./prediction";
-export type { ReplicateImageResult } from "./prediction";
+export type { ReplicateImageResult, ReplicatePredictionAttempt, ReplicatePredictionOutcome } from "./prediction";
 export type { ReplicatePreprocessorRequest } from "./preprocessor";
 export type { ProbeResult, ReplicateModelProbe } from "./probe";
 export { providerInputViolations, unsentReferenceReports } from "./strict-request";
