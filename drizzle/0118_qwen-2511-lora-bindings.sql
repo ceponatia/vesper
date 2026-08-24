@@ -12,9 +12,12 @@
 -- Verified 2026-08-24 against Replicate's published 2511 schema:
 --   lora_weights: string, blank = no custom LoRA
 --   lora_scale: number, minimum 0, maximum 4, default 1
--- The existing probe path derives the same two normalized bindings on a future
--- re-probe; this patch only brings already-deployed built-in rows up to that
--- state without forcing an unrelated provider-version promotion.
+-- The repository's prior pinned-version probe notes the same fields on the
+-- built-in a0670a7f… version. The existing probe path derives the normalized
+-- bindings on a future re-probe; this patch only brings the historical built-in
+-- snapshot (or a fresh seed with no probe pin yet) up to that state. A row that
+-- has since moved to some other pinned provider version is deliberately left to
+-- that version's own probe rather than having today's schema projected onto it.
 --
 -- Preserve every other probed fact and every existing normalized control. The
 -- known-input allowlist is widened too, so captured/replayed capability records
@@ -49,6 +52,10 @@ SET
     ),
   "updated_at" = now()
 WHERE "slug" = 'qwen/qwen-image-edit-2511'
+  AND (
+    "probed_version_id" IS NULL
+    OR "probed_version_id" = 'a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729'
+  )
   AND (
     "advanced_capabilities"->'controls'->'loraWeights' IS NULL
     OR "advanced_capabilities"->'controls'->'loraScale' IS NULL
