@@ -1,6 +1,6 @@
 # Provider model reference
 
-This subfolder preserves the per-model reference catalog that previously lived at the root of `docs/image-models/`. The parent [image-models documentation](../README.md) now documents the `@vesper/image-models` package itself.
+This subfolder owns Vesper's per-model provider/API reference. The parent [image-models documentation](../README.md) owns package behavior, feature semantics, and registered family adapters.
 
 Per-model reference for every Replicate image model Vesper can run. One file per
 model, recording the API attributes the render path depends on: what the model's
