@@ -16,15 +16,15 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 ## Documentation map
 
 - **[Features](features/README.md)** — every semantic feature currently exported by the package, grouped the same way as `src/features/`.
-- **[Provider model reference](models/README.md)** — the existing per-model Replicate/API documentation moved out of the package-doc root. These pages describe provider endpoints and reviewed model facts; they are not the package's adapter registry.
+- **[Provider model reference](models/README.md)** — the per-model Replicate/API documentation. These pages describe provider endpoints and reviewed model facts; they are not the package's adapter registry.
 - **[Image system overview](../images/README.md)** — how the application resolves profiles, models, providers, and render plans around this package.
 - **[Provider probing and registry](../images/providers.md)** — the source of truth for provider fields and active model versions.
 
 ## Current package state
 
-The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers should import from `@vesper/image-models`, not deep-import `src/*`.
+The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-Only the **Qwen Image family** is implemented in the adapter registry today. Flux, Wan, SDXL, Seedream, and other registered models intentionally remain on the generic legacy path until family behavior is migrated. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+Only the **Qwen Image family** is implemented in the adapter registry. Flux, Wan, SDXL, Seedream, and other registered models remain on the generic path until Vesper has family-specific behavior to encode. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
@@ -32,20 +32,20 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 
 | Model | Role | Composed features | Family behavior |
 | --- | --- | --- | --- |
-| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md) | Current instruction editor; default for scene images and portrait variants | `prompt`, `multiReference`, `aspectRatio`, `seed`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | Older 2509-generation instruction editor with loadable LoRA support | all 2511 edit features plus `lora` | numbered-reference dialect; 8-minute startup hint; one startup retry |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md) | Instruction editor; default for scene images and portrait variants | `prompt`, `multiReference`, `aspectRatio`, `seed`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor with loadable LoRA support | all 2511 edit features plus `lora` | numbered-reference dialect; eight-minute startup hint; one startup retry |
 | [`qwen/qwen-image-2512`](models/qwen-image-2512.md) | Text-to-image generator arm; default for a brand-new portrait | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle` | no edit dialect; no execution hint |
 
 Two absences are deliberate:
 
-- **Qwen Image Edit 2511 does not compose `lora` in the current package.** The Vesper probe snapshot the adapter was built against does not expose LoRA bindings, so the adapter cannot honestly claim the feature. Replicate's latest 2511 wrapper checked on 2026-08-24 does advertise `lora_weights`/`lora_scale`, but provider drift does not become active Vesper capability by documentation alone: that candidate version must be probed, smoke-tested, and activated before the package/row pairing can be reconsidered. See the [2511 provider reference](models/qwen-image-edit-2511.md).
-- **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's paired testing found that the model does not act on it. The package therefore refuses to advertise the field as a behavioral capability merely because the schema contains it.
+- **Qwen Image Edit 2511 does not compose `lora` in the current package.** Its active Vesper model record does not expose the normalized LoRA bindings the feature requires, so the adapter cannot honestly claim it. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
+- **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's measured behavior shows that it does not steer output. The package therefore does not advertise the field as a behavioral capability merely because the schema contains it.
 
 ## Features
 
-A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It must not answer "which provider field carries that value?" The latter belongs to the probed model record.
+A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It does not answer "which provider field carries that value?" The latter belongs to the probed model record.
 
-The package currently exports ten feature constructors:
+The package exports ten feature constructors:
 
 | Feature id | Meaning | Documentation |
 | --- | --- | --- |
@@ -78,23 +78,23 @@ Quirks own behavioral hooks. A prompt preparer, quirk validator, or execution-hi
 
 ### Prompt preparation must be idempotent
 
-An `ImagePromptPreparer` must satisfy `prepare(prepare(prompt)) === prepare(prompt)`. This is load-bearing in Vesper: planning hashes the prepared prompt, while the send path prepares again. A non-idempotent dialect could make a render disagree with its own compiled fingerprint.
+An `ImagePromptPreparer` must satisfy `prepare(prepare(prompt)) === prepare(prompt)`. Planning hashes the prepared prompt, while the send path prepares again. A non-idempotent dialect could make a render disagree with its own compiled fingerprint.
 
-The current Qwen edit dialect rewrites Vesper's generic identity-lock sentence into Qwen's numbered-reference wording only when one or more references are present. One reference gets the single-reference lock; multiple references get the multi-reference lock. Prompts without the legacy identity sentence are left unchanged.
+The Qwen edit dialect rewrites Vesper's generic identity-lock sentence into Qwen's numbered-reference wording only when one or more references are present. One reference gets the single-reference lock; multiple references get the multi-reference lock. Prompts without the legacy identity sentence are left unchanged.
 
 ## Request validation
 
-`ImageModelRequestFacts` is intentionally small today:
+`ImageModelRequestFacts` is intentionally small:
 
 - `referenceCount`
 - `usesLora`
 
-The existing validating features are:
+The validating features are:
 
 - `multiReference`, which refuses a request whose intended reference count exceeds the probed model capacity rather than silently dropping references;
 - `lora`, which refuses a LoRA request unless both LoRA weights and LoRA scale are bound on the active probed model version.
 
-The application currently runs adapter request validation in the **Image Generator bench pre-spend path**, where the request facts are final. Production lanes are not yet wired to this validator because their `allow_trim` reference policy can legally reduce the pre-plan reference count; validating the untrimmed count would reject renders the planner would otherwise make valid.
+The application runs adapter request validation in the **Image Generator bench pre-spend path**, where the request facts are final. Production lanes do not run this validator because their `allow_trim` reference policy can legally reduce the pre-plan reference count; validating the untrimmed count would reject renders the planner can make valid.
 
 ## Execution hints
 
@@ -106,9 +106,9 @@ Adapters may state provider-neutral timing knowledge:
 
 An absent hint means the caller's lane default governs. Hints are claims about observed endpoint behavior, not default values that every adapter must fill.
 
-Today only `qwen/qwen-image-edit-plus-lora` supplies hints: an eight-minute startup budget and one startup retry. Its render budget is intentionally unset because no model-specific render-time measurement has justified overriding the bench default.
+Only `qwen/qwen-image-edit-plus-lora` supplies hints: an eight-minute startup budget and one startup retry. Its render budget is intentionally unset because the adapter has no model-specific render-time measurement that justifies overriding the bench default.
 
-The web application's Image Generator and Image Lab combine adapter hints with their bench budgets. Production keeps its existing execution policy rather than inheriting bench timing.
+The web application's Image Generator and Image Lab combine adapter hints with their bench budgets. Production keeps its own execution policy rather than inheriting bench timing.
 
 ## Package boundary
 
@@ -129,7 +129,7 @@ The package is universal runtime code: pure data and pure functions, with no per
 
 ## Where the application joins it to rendering
 
-`apps/web/src/server/images/model-adapters.ts` is the application-owned join between this package and the render system. It currently supplies four integration helpers:
+`apps/web/src/server/images/model-adapters.ts` is the application-owned join between this package and the render system. It supplies four integration helpers:
 
 - model-specific prompt preparation to planning and send paths;
 - adapter request refusals for the Generator bench;
