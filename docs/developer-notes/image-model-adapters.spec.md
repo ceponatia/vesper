@@ -25,9 +25,8 @@ Rulings the build settled:
   and the binding name when it declares none. A profile override that
   *replaces* `lora_weights` with a different value does not breach the
   invariant — overrides win is the documented escape hatch.
-- The kernel's prompt preparer rides `ImageRenderRuntimeFacts.preparePrompt`,
-  defaulting to the legacy `preparePromptForImageModel` until Stage 4 rewires
-  callers.
+- The kernel's prompt preparer rides `ImageRenderRuntimeFacts.preparePrompt`;
+  the default is identity — no dialect without an injected preparer.
 
 ### Execution context
 
@@ -93,10 +92,9 @@ Owned and unit-tested at this one layer.
 
 ### Prompt-preparation hook
 
-- The kernel's dialect call site (`compile-profile-plan.ts` →
-  `preparePromptForImageModel`) accepts an injected preparer; the default
-  remains the legacy function until Stage 4 rewires callers, after which the
-  Qwen branch and both `QWEN_*_IDENTITY_LOCK` constants are deleted from
+- The kernel's dialect call site in `compile-profile-plan.ts` takes an
+  injected preparer whose default is identity; `preparePromptForImageModel`,
+  the Qwen branch, and both `QWEN_*_IDENTITY_LOCK` constants are deleted from
   `quality-presets.ts` and live only in the Qwen adapter.
 - `withReviewedImageQuality` and the reviewed-controls table stay in
   `image-core` untouched.
@@ -191,7 +189,33 @@ Rulings the build settled:
 
 ## Application wiring (Stage 4)
 
-Status: queued.
+Status: built 2026-08-24 — awaiting CI.
+
+Rulings the build settled:
+
+- The adapter→render join is written once, in
+  `apps/web/src/server/images/model-adapters.ts` (prompt dialect, runtime
+  facts, bench budget resolver).
+- Attempts are stored as `meta.providerAttempts` (oldest first), a sibling of
+  the existing `attempt`/`result` records, written only when the transport
+  reports attempts; the `prediction_id`/`executed_version_id` columns keep the
+  final attempt. The run contract carries `providerAttempts` as a deliberately
+  loose array field so newer deploys' records reach the inspector.
+- The bench-policy ceiling is owned app-side: startup+render is capped at
+  `MAX_TRIAL_PREDICTION_MS`, taken off the startup phase.
+- Lab baselines DO carry the bench policy — a baseline reproduces a production
+  lane's configuration, not its impatience; a cold-start abort would cost a
+  comparison its control arm for a reason unrelated to what is being tested.
+- The identity-pack trial keeps its own pinned budget and no policy; its
+  stale-claim window is sized against that budget.
+- `JOB_STALE_MS` (15 min) is deliberately unchanged: the atomic run claim
+  makes double-spend impossible, the job's own settle overwrites the sweep's
+  orphan marking, and raising it would cost every player five extra minutes of
+  a wedged chat when a real job dies. The only effect on a slow bench run is a
+  cosmetic, self-correcting "orphaned" reading between minute 15 and settle.
+- Lab runs do not record attempts yet: their wire record lives in an
+  `image-core` contract, so the member lands with the next Lab contract change
+  (deferred follow-up).
 
 - Context at every `resolveImageLoraForRender` call site:
   `render-intent.ts` and `nsfw-lora.ts` → `production(task)`;
@@ -212,7 +236,19 @@ Status: queued.
 
 ## UI (Stage 5)
 
-Status: queued.
+Status: built 2026-08-24 — awaiting CI.
+
+Rulings the build settled:
+
+- The LoRA library form validates locators client-side with
+  `isValidImageLoraLocator` itself (re-exported through the client API seam),
+  per-type hints included — the UI never spells a second, looser rule.
+- The Generator form warns (never blocks) on a version-list mismatch beside
+  the existing slug mismatch, replay-aware via the effective version id.
+- Generator copy for `image_lora.incompatible` no longer names the task as a
+  cause — task curation cannot refuse a bench render.
+- Run detail renders provider attempts inside the recorded-request section,
+  parsed leniently; a run without attempts renders byte-identically.
 
 - Generator form: LoRA picker filtered by mechanical compatibility (slug match
   is already there; drop nothing merely for task policy), so no offered pick
@@ -224,7 +260,14 @@ Status: queued.
 
 ## Invariant coverage (Stage 6)
 
-Status: queued.
+Status: built 2026-08-24 — awaiting CI.
+
+The final-wire test lives at
+`packages/image-replicate/src/lora-final-wire.test.ts`, beside the payload
+builder, and asserts against `buildPayload` (the body actually POSTed) with
+`previewRegistryModelInput` agreement checked alongside. Its bench case pins
+the fixture's task mismatch so the case cannot go vacuous if `allowedTasks`
+is ever widened.
 
 - Cross-stack, no-network: seeded library row → `generator_bench` resolution →
   intent → `planImageRender` → `previewRegistryModelInput`, asserting
@@ -235,6 +278,11 @@ Status: queued.
 
 ## Deferred follow-ups
 
+- The strict arm's `typedOwnerFields` does not list the LoRA weights binding:
+  a future probe declaring `lora_weights` as `format: uri` or an array would
+  refuse a curated-LoRA bench render pre-spend with a misleading message.
+  Latent today (the wrapper probes it as a plain string); needs an owner
+  ruling on whether the resolved-LoRA binding joins `typedOwnerFields`.
 - Other model families (Flux, Wan, SDXL, Seedream) migrate into adapters when
   their behavior is next touched.
 - Managed LoRA storage / weight caching / sha256 provenance columns.

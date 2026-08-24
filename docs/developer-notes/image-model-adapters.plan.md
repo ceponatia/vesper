@@ -1,6 +1,6 @@
 # Image model adapters and the feature composer
 
-Status: active (started 2026-08-24)
+Status: awaiting acceptance — CI on the draft PR, then the owner's Stage 7 bench validation
 
 Outcome: The owner can run any registered image model — LoRA weights included —
 from the Image Generator and trust that what the record claims was sent is what
@@ -326,7 +326,7 @@ Qwen family adapters and dialect quirk, the adapter registry.
 
 ### Stage 4 — Application wiring
 
-Status: in progress.
+Status: built 2026-08-24 — awaiting CI.
 
 Contexts at every LoRA call site; adapter hooks into kernel and
 `renderWithModel`; Qwen dialect deleted from quality presets; bench execution
@@ -336,20 +336,20 @@ credential seam. **Production behavior changes:** none intended — the
 
 ### Stage 5 — UI
 
-Status: queued.
+Status: built 2026-08-24 — awaiting CI.
 
 Generator form filter, run-detail attempts, LoRA library Civitai source option.
 
 ### Stage 6 — Invariant coverage
 
-Status: queued.
+Status: built 2026-08-24 — awaiting CI.
 
 The cross-stack final-wire test plus the compile-invariant unit tests, per the
 testing skill's one-owning-layer rule.
 
 ### Stage 7 — First production integration
 
-Status: queued.
+Status: next — owner-triggered bench validation on the deployed app.
 
 The owner's bench validation: the NSFW LoRA on the Qwen wrapper from the
 Generator, rendered end to end on the deployed app — the run this plan exists
@@ -401,6 +401,7 @@ the abstraction is wrong before any UI or transport work lands on top of it.
 | Why has production never sent `lora_weights` (dormant vs bug)?  | A defect would hide behind the bench fix  | Wire invariant test + Stage 7 run   |
 | Do the stored extensionless locator URLs satisfy the wrapper?   | First real LoRA send could still fail     | Stage 7 bench run answers it live   |
 | Are 8 min startup / 3 min render the right bench budgets?       | Too tight re-creates the abort; too loose wastes bench time | Tune from Stage 7 observations |
+| Should the LoRA weights binding join the strict arm's typed-owner fields? | A future probe declaring `lora_weights` as a URI/array would refuse curated-LoRA bench renders with a misleading message | Owner ruling; latent today (spec, deferred follow-ups) |
 
 ## 24. Definition of done
 
