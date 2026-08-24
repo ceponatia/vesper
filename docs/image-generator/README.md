@@ -40,7 +40,10 @@ One run is one row in `image_generator_runs` and one paid attempt:
 create; the runner re-resolves it against the registry at run time and writes
 the exact pinned provider version and the post-preparation `final_prompt`
 **before** any provider spend. A settled row is never mutated or re-run — a
-rerun is a new row citing the original through `sourceRunId`. Rows CASCADE
+rerun is a new row citing the original through `sourceRunId`. The
+`pending → running` claim is a conditional update, and every settle is
+guarded on `running`, so two deliveries of one job cannot both reach the
+provider and a settled row cannot be rewritten. Rows CASCADE
 with their owner; the result and lineage pointers are SET NULL, so deleting
 an output or a source run never erases the record of what happened.
 
@@ -69,17 +72,79 @@ probed capability record, never from its slug:
 - **Normalized controls** (seed, negative prompt, guidance, steps, edit
   strength, resolution tier, custom dimensions, LoRA) are editable only where
   the active version binds a field for them.
+- **Output shape** offers the version's own declared shapes, filtered to the
+  members the shared shape mapper actually resolves back to. Blank — the
+  default — is the model's own shape; see below.
 - **Advanced model inputs** render from the probed `providerInputs`
-  descriptors: non-reserved, described fields become typed inputs, while
-  reserved fields — owned by the prompt/reference/aspect/control/dedicated
-  plumbing — are listed but not editable.
+  descriptors: non-reserved fields of a type the bag can express become typed
+  inputs, while reserved fields — owned by the prompt/reference/aspect/
+  control/dedicated plumbing — are listed but not editable.
+- **The prompt** is required only where the version's probed prompt
+  descriptor says so. On a model whose schema does not require it, an empty
+  prompt sends no prompt field at all rather than an empty string.
 
 Everything starts unset: the provider's own defaults rule until the admin
-explicitly sets a value. An **effective-request summary** above the Run
-button states the resolved operation, version pin, references, controls, and
-advanced values; the summary and the POST assemble from the same state, so
-they cannot disagree. Registering a new model changes this form through its
-capability record alone, with no code edit.
+explicitly sets a value.
+
+A dedicated structural input does **not** by itself make a request an edit. A
+model that generates from a prompt while taking a required `pose_image` is
+still generating, and only a model that cannot generate at all reads its
+structural image as the thing being edited — which is why such a model can be
+run here without a primary reference binding at all.
+
+An **effective-request summary** above the Run button states the resolved
+operation, version pin, references, shape, controls, and advanced values; the
+summary and the POST assemble from the same state, so they cannot disagree.
+Registering a new model changes this form through its capability record
+alone, with no code edit.
+
+## The model's own shape
+
+Every player-facing image lane asks the render path for Vesper's 3:4 portrait
+target, picks the nearest shape the model offers, and centre-crops whatever
+comes back to reach it. The Generator does not. A bench that reshaped a
+model's answer would be reporting Vesper's opinion as the model's, so a
+Generator run asks for **no shape at all** by default: no `aspect_ratio` or
+`size` key is written into the payload, no provider bucket is chosen for being
+nearest a target the admin never named, and the returned image is stored
+uncropped at whatever size the model produced.
+
+Choosing an **Output shape** switches the run to that member of the version's
+own declared list. It travels as a ratio through the same shape mapper every
+lane uses, so the value that reaches the provider is the member that was
+picked — and when a version declares several members at one ratio and the
+mapper would resolve to a different one, the run refuses rather than
+substituting it.
+
+The distinction is an explicit policy on the shared render request
+(`ImageRenderTarget.aspectRatio`, where `null` means the model's own), not a
+Generator fork of the payload builder. Production lanes are unchanged.
+
+## All-or-nothing inputs
+
+Vesper's production lanes may drop a reference that will not fit — a scene
+missing its third image still beats no scene. A Generator run may not: a
+render that sent four of five explicitly selected images is a different
+experiment wearing the same run id.
+
+So a Generator run travels under the strict arm of the shared render policy:
+
+- **`references: "require_all"`** — if the model's reference capacity or the
+  inline byte budget would leave any selected reference behind, the transport
+  refuses **before creating a prediction**. The run settles
+  `capacity_exceeded` naming each unsent reference and its reason, reports
+  nothing to provider health, and produces no output.
+- **`providerInputs: "strict"`** — the finished payload is held against the
+  version's probed descriptors immediately before the provider call: required
+  fields must be present (unless the schema declares a default of its own),
+  and declared type, integer-ness, enum membership and range must hold. Fields
+  whose declared shape is an address, a list, or something the probe could not
+  read are refused unless a typed transport owns them, so an admin API caller
+  cannot reach a URI input by typing a string — the owner-scoped picker is the
+  only path to an image.
+
+Both checks live in `@vesper/image-replicate` beside the payload rules they
+enforce; the Generator asks for the policy and never restates the rules.
 
 ## Fail closed before spend
 
@@ -96,10 +161,12 @@ the last two codes below is checked before the provider is paid:
 | `version_unpinned`        | no exact provider version resolvable before spend               |
 | `operation_unsupported`   | prompt-only on a no-generate model; references on a no-edit one |
 | `input_missing`           | a selected image id is unreadable or its bytes are gone         |
-| `capacity_exceeded`       | explicit primary references exceed model/app capacity           |
+| `capacity_exceeded`       | selected references exceed capacity or the inline byte budget   |
 | `dedicated_input_unbound` | a structural role with no dedicated capability binding          |
-| `control_refused`         | an explicitly set normalized control cannot be represented      |
-| `provider_input_rejected` | an unknown, reserved, or invalid advanced provider value        |
+| `prompt_required`         | the prompt is empty and this version requires one               |
+| `control_refused`         | an explicitly set normalized control or shape cannot be sent    |
+| `provider_input_rejected` | an unknown, reserved, unsupported, or invalid provider value    |
+| `version_replay_unsafe`   | a captured version cannot be replayed against trusted facts     |
 | `render_failed`           | provider execution failed                                       |
 | `output_store_failed`     | the provider succeeded; local persistence did not               |
 
@@ -117,17 +184,57 @@ route's public widening, and the per-owner storage-quota sum. The
 `provider_image_day` budget and render backpressure still apply — hidden
 outputs are free of storage accounting, not of provider cost control.
 
+## What a run records about itself
+
+Beside the request the admin authored, every run writes down — **before the
+provider is paid** — a sanitized **effective request**: the provider-shaped
+control fields and their values, the shape mode with the aspect field and
+value actually sent, each selected image with the provider slot it occupies,
+each structural image with the provider field it was bound to, and whether
+any post-render crop was going to happen. Once the provider answers, the run
+settles the returned pixel dimensions, whether Vesper cropped, and the
+prediction and executed-version echoes.
+
+The reason is drift. Vesper keeps one capability record per registered model
+and replaces it wholesale on re-probe, so a row saying `guidance = 4` cannot
+by itself say whether the provider received `guidance: 4` or `cfg: 4`, and a
+row saying "3:4" cannot say whether that reached `aspect_ratio`, reached
+`size` as `1536*2048`, or was applied by cropping afterwards. Recording the
+bound names makes a run's account of itself independent of a capability
+record that will move. Each run also freezes the mechanical capability facts
+it executed under, which is what makes exact replay possible below.
+
+Nothing sensitive is kept: no bytes, no data URLs, no signed download URLs,
+no credentials. A LoRA reaches the payload as a download address, so that
+field is recorded as redacted and the curated library id stands as the real
+reference.
+
+The run detail's **Effective request** panel shows all of it, with the raw
+sanitized record underneath.
+
 ## Duplicate / variant
 
 A settled run's detail offers **Duplicate**: the create form remounts seeded
 with the original's model (when still registered), prompt, ordered primary
 references and purposes, dedicated inputs, controls including any explicit
 seed, and advanced provider values, plus `sourceRunId` lineage. Nothing runs
-until submitted, and the original row and output stay untouched. When the
-original's requested version no longer matches the model's current pin, the
-form warns before submit that the duplicate would run different weights — a
-version-drift warning, not a block. The run detail likewise surfaces a
-requested-vs-executed version disagreement on any single run.
+until submitted, and the original row and output stay untouched.
+
+When the original's pinned version no longer matches the model's current pin,
+the form says so and asks which version to run:
+
+- **Use the current registered version** — the ordinary duplicate, recorded as
+  a different arm.
+- **Replay the captured version** — the exact historical version, planned
+  against the capability record that run stored. The server verifies the
+  version belongs to the same registered model and that the stored record
+  genuinely describes it; when it cannot, the run refuses with
+  `version_replay_unsafe` rather than pointing today's field bindings at
+  yesterday's weights. The current version is never substituted for a replay
+  the admin asked for.
+
+The run detail likewise surfaces a requested-vs-executed version disagreement
+on any single run.
 
 ## Sources: the general owned-image picker
 

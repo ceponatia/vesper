@@ -288,9 +288,12 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   / `provider_inputs` JSONB, `source_run_id?` (self-FK, SET NULL — duplicate/variant
   lineage), `result_image_id?` (→ `images`, SET NULL — the hidden `generator_output`
   render), `failure_code?` (`image_generator.*` plus verbatim shared-layer codes), `error?`,
-  `prediction_id?`, `meta` JSONB, `started_at?`/`finished_at?`; indexed
+  `prediction_id?`, `meta` JSONB (the version request, the sanitized effective
+  request and the capability snapshot frozen before spend, then the attempt and
+  result records), `started_at?`/`finished_at?`; indexed
   `(owner_id, created_at)` for the run listing. A settled run is never re-run; the
-  `generator_image` job renders it.
+  `generator_image` job renders it, claiming the row with a conditional
+  `pending → running` update so one delivery cannot be paid for twice.
 - **`image_models`** — `slug` **unique** (the Replicate model path, optionally
   `owner/name:version`), `label`, `sort`, `builtin` (display provenance only — it does
   **not** gate deletion).

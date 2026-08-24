@@ -404,6 +404,16 @@ portraits, Stable Diffusion 3.5 Large (whose enum has **no** 3:4 — it renders
 4:5 and gets cropped), Wan 2.7 (no aspect input; `1536*2048` pixel pairs, its
 2K/4K tiers picking among them), and the entity lanes.
 
+A render may also ask for **no shape at all**: `ImageRenderTarget.aspectRatio`
+takes `null`, which writes no `aspect_ratio`/`size` key, picks no bucket, and
+crops nothing, so the model answers at its own default. Every player-facing
+lane names a ratio; the admin Image Generator is the caller that does not,
+because a bench that reshaped a model's output would report Vesper's opinion
+as the model's. `renderWithModel` also reports back what it did — the aspect
+field and value it wrote, the ratio it expected, whether it cropped, and the
+returned image's own pixel size — so a caller recording provenance does not
+have to re-derive any of it.
+
 **Selection stays fail-visible.** `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's
 degradation ladder — multi-reference edit → single-reference edit → bare prompt —
 and the bare-prompt rung is reachable **only** when no reference image exists at
@@ -435,7 +445,21 @@ before the failure returns), and deleted best-effort as soon as the
 prediction settles; outputs are downloaded only from `replicate.delivery` /
 `api.replicate.com` and land in the same immutable pipeline as every other asset.
 Nothing throws — a failure degrades to an error string the caller turns into a
-failed row. `disable_safety_checker` is only ever sent to models whose schema
+failed row.
+
+**Send strictness is the caller's policy** (`ImageRenderPolicy`). By default a
+render trims what will not fit and lets the provider judge the values, which is
+what every production lane wants. A caller may instead ask for
+`references: "require_all"`, which refuses **before a prediction is created**
+when capacity or the inline byte budget would leave a selected reference
+behind, and `providerInputs: "strict"`, which holds the finished payload
+against the version's probed descriptors — required presence (unless the schema
+declares its own default), primitive type, integer-ness, enum membership,
+range — and fails closed on `uri`, `array` and `unknown` shapes no typed
+transport owns. Both refusals name what was wrong and create nothing, so the
+caller settles them as unspent rather than as provider failures. The rules live
+in `packages/image-replicate/src/strict-request.ts`, beside the payload builder
+they judge; the admin Image Generator is the only caller asking for them today. `disable_safety_checker` is only ever sent to models whose schema
 declares it (Replicate rejects unknown inputs); its value comes from
 `REPLICATE_SAFE_MODE`.
 

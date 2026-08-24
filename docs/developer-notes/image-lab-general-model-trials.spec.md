@@ -34,11 +34,65 @@ asset kind.
 | 4. General owned-image picker + sources endpoint              | built 2026-08-23 |
 | 5. Image Lab affordance cleanup (model/mode/fixture copy)     | built 2026-08-23 |
 | 6. General picker reuse in Lab (object/location/extraction)   | built 2026-08-23 |
-| 7. Stage 3 validation runs (SDXL, Qwen, prompt-only)          | not started — needs a deploy plus owner-approved provider spend, and the SDXL re-probe below |
+| 7. Correctness pass (operation, shape, strictness, replay)     | built 2026-08-23 |
+| 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)          | not started — needs a deploy plus owner-approved provider spend, and the SDXL re-probe below |
 
 Not built by design: direct source uploads (awaiting the plan's retention/quota
 ruling), a side-by-side A/B view (the detail inspector plus duplicate lineage
 covers the first implementation), and multi-output runs.
+
+### Rulings the correctness pass settled (2026-08-23)
+
+- **A dedicated structural input does not imply `edit`.** Operation is
+  `edit` when a primary reference is selected, and also when a dedicated input
+  is selected on a model that cannot generate at all; otherwise `generate`. The
+  earlier "any selected image means edit" rule made a whole class of registered
+  model unrunnable: prompt-driven generation, no primary reference binding, one
+  required dedicated field. Without the dedicated image the planner's
+  `missingRequiredControlInputs` refused; with it the operation flipped to
+  `edit` and `canEdit: false` refused that instead.
+- **The Generator asks for no shape.** `ImageRenderTarget.aspectRatio` gains a
+  `null` arm meaning provider default — no aspect/size key, no bucket chosen
+  toward a Vesper target, no crop. Production lanes keep naming their ratio.
+  An operator may instead pick a member of the version's own
+  `supportedAspects`, carried as the Generator-owned `controls.aspect` and
+  converted to a ratio so `chooseAspect` resolves it back; when the mapper
+  would resolve to a DIFFERENT member at the same ratio (Wan's three 3:4
+  sizes), the run refuses rather than substituting, and the form withholds the
+  unreachable members.
+- **Strictness is a policy on the shared request, not a Generator fork.**
+  `ImageRenderPolicy` carries `references: "allow_trim" | "require_all"` and
+  `providerInputs: "declared_only" | "strict"`. Absent is production's answer,
+  so no existing lane moves.
+- **The final provider-input gate runs over the assembled payload**, built by
+  the provider package's own builder (`previewRegistryModelInput`) so the
+  application never predicts what the payload looks like. It is what catches a
+  required field RESERVED to a normalized control with no provider default —
+  invisible to the raw-bag sweep, which may not fill a reserved field.
+- **The raw bag fails closed on `uri`, `array` and `unknown` descriptor
+  types.** The form already withheld editors for them; the server is what makes
+  it a rule, and a URI field in particular must never be reachable by typing a
+  string.
+- **Every run freezes its capability facts** (`meta.capabilitySnapshot`) and a
+  sanitized effective request (`meta.effectiveRequest`) before spend. There is
+  no per-version capability history in the database — one record per model,
+  replaced on re-probe — so the run row is the only place an exact replay can
+  find the bindings that version used.
+- **A captured-version replay is opt-in and verified**: same registered model,
+  a recorded pinned version, and a stored snapshot whose `probedVersionId`
+  equals it. Any gap refuses with `version_replay_unsafe`; the current version
+  is never substituted.
+- **An empty prompt is capability-gated**, not contract-forbidden. The probed
+  prompt descriptor's `required`/`default` decide, an absent descriptor refuses
+  (silence is not permission), and `buildRegistryModelInput` omits the prompt
+  key entirely for an empty string so a declared default applies.
+- **The pending → running claim is a conditional update** returning the claimed
+  row, and both settles are guarded on `running`. The read-then-write claim let
+  two deliveries of one job both see `pending` and both spend.
+- `sequentialMode` remains a probed normalized binding with no Generator
+  control and no `ImageRenderControls` member. It stays reserved from the raw
+  bag and deliberately unsupported: exposing a provider switch Vesper has no
+  semantic use for would widen the contract for completeness alone.
 
 ### Rulings the build settled (2026-08-23)
 
@@ -65,10 +119,15 @@ covers the first implementation), and multi-output runs.
   so its pinned capability record gains the `depth_image`/`pose_image`
   dedicated bindings and the `recipe` descriptor (admin re-probe action; the
   write is atomic beside `probedVersionId`).
-- The transport's inline byte budget can trim tail primaries after the plan
-  settled (shared transport behavior, unrefusable pre-spend); a succeeded run
-  that sent fewer primaries than planned records `meta.trimmedPrimaries` with
-  a warn diagnostic so a later comparison cannot mistake it for a full send.
+- **Reversed 2026-08-23.** The earlier ruling accepted that the transport's
+  inline byte budget could trim tail primaries after the plan settled, and
+  recorded the trim afterwards. That contradicts the plan's own §11 rule
+  ("no silent capacity trimming of explicitly selected inputs") and made a
+  successful run mean two different things. The trim is now a caller POLICY on
+  the shared render request (`ImageRenderPolicy.references`), the Generator
+  asks for `require_all`, and the transport refuses before creating a
+  prediction. `meta.trimmedPrimaries` remains as the net for any caller that
+  does not ask for the strict arm.
 - The form withholds Width/Height until the shared custom-resolution path
   (`resolution: "custom"` + dimension bindings) works end to end — the compile
   honors explicit dimensions only under that mode, so offering the fields
@@ -118,6 +177,33 @@ New barrel exports from `packages/image-core/src/index.ts`:
 `imageProviderInputTypes`, `imageProviderInputDescriptorSchema`,
 `ImageProviderInputDescriptor`.
 
+### Shared render policy and shape (`@vesper/image-core`)
+
+`ImageRenderTarget.aspectRatio` widens to `number | null`. `null` is the
+provider-default shape: `renderWithModel` resolves it to
+`providerDefaultDimensions()` (empty `input`, `expectedAspect: null`,
+`needsCrop: false`) and skips the crop outright, rather than falling into the
+`expectedAspect === null` branch that crops precisely because nothing could say
+what was coming. `PlannedImageRender.targetRatio` and
+`RenderWithModelInput.targetRatio` widen with it; ABSENT still means
+`IMAGE_TARGET_ASPECT`, so every existing lane is byte-identical.
+
+`packages/image-core/src/render-intent/render-intent.ts` also gains:
+
+```ts
+export interface ImageRenderPolicy {
+  references?: "allow_trim" | "require_all";        // default allow_trim
+  providerInputs?: "declared_only" | "strict";      // default declared_only
+}
+```
+
+carried on `ImageRenderIntentCore.policy`, resolved by `planImageRender` onto
+`PlannedImageRender.policy`, and threaded to `RegistryModelRequest.policy`.
+
+`RenderWithModelResult` gains `shape: RenderShapeOutcome` (mode, the provider
+field and value written or their absence, expected ratio, crop target),
+`outputDimensions`, and pass-throughs for the two strict refusals below.
+
 ### Neutral primary-reference role
 
 `imageReferenceRoles` gains one member: `"reference"` — an ordinary content
@@ -154,13 +240,35 @@ export const imageGeneratorRunInputsSchema = z.object({
 export const imageGeneratorProviderInputValueSchema =
   z.union([z.string().max(2000), z.number().finite(), z.boolean()]);
 
+// The package's controls plus ONE Generator-owned field: the operator's
+// explicit shape, spelled as a member of the version's own `supportedAspects`.
+// Absent means the model's own shape. `imageGeneratorRenderControls()` strips
+// it before the intent, so the planner still sees `ImageRenderControls`.
+export const imageGeneratorControlsSchema = imageRenderControlsSchema.extend({
+  aspect: z.string().min(1).max(32).optional(),
+});
+
+export const imageGeneratorVersionPolicies = ["current", "captured"] as const;
+
 export const imageGeneratorCreateRunRequestSchema = z.object({
   modelId: z.string().min(1),
-  prompt: z.string().trim().min(1).max(IMAGE_GENERATOR_PROMPT_MAX),
+  // Possibly empty — prompt requiredness is a capability fact the contract
+  // cannot read, so an empty prompt refuses on the row with `prompt_required`.
+  prompt: z.string().trim().max(IMAGE_GENERATOR_PROMPT_MAX),
   inputs: imageGeneratorRunInputsSchema.optional(),
-  controls: imageRenderControlsSchema.optional(),
+  controls: imageGeneratorControlsSchema.optional(),
   providerInputs: z.record(z.string().min(1), imageGeneratorProviderInputValueSchema).optional(),
   sourceRunId: z.string().min(1).optional(),      // duplicate/variant lineage
+  versionPolicy: z.enum(imageGeneratorVersionPolicies).optional(),  // `captured` needs `sourceRunId`
+});
+
+// The mechanical half of a registered model, frozen onto every run before it
+// spends. Nothing optional, nothing defaulted: a snapshot missing a field
+// cannot be trusted to describe the version, and a replay refuses instead.
+export const imageGeneratorCapabilitySnapshotSchema = z.object({
+  canGenerate, canEdit, referenceField, referenceArity, referenceTransport,
+  maxReferences, aspectMode, supportedAspects, outputFormat, extraInput,
+  editKind, identityPreservation, probedVersionId, advancedCapabilities,
 });
 ```
 
@@ -179,6 +287,8 @@ export const imageGeneratorFailureCodes = [
   "input_missing",          // a selected image id is unreadable or its bytes are gone
   "capacity_exceeded",      // explicit primary references exceed model/app capacity
   "dedicated_input_unbound",// structural role with no active capability binding
+  "prompt_required",        // an empty prompt on a version whose schema requires one
+  "version_replay_unsafe",  // a captured version cannot be replayed against trusted facts
   "control_refused",        // an explicitly selected normalized control cannot be represented
   "provider_input_rejected",// unknown/reserved/invalid advanced provider value
   "render_failed",          // provider execution failed
@@ -193,9 +303,12 @@ for the same reason the Lab's does.
 
 Wire shape (`imageGeneratorRunSchema`): id, status, modelSlug,
 requestedVersionId, executedVersionId, prompt, finalPrompt, inputs, controls,
-providerInputs, sourceRunId, resultImageId, failureCode, error?, predictionId,
-createdAt/startedAt/finishedAt, plus a parsed `meta.attempt`
-(`ResolvedImageAttempt`) when present.
+providerInputs, sourceRunId, versionPolicy, resultImageId, failureCode, error?,
+predictionId, createdAt/startedAt/finishedAt, plus the loose `meta.attempt`
+(`ResolvedImageAttempt`), `meta.effectiveRequest` and `meta.result` records
+when present. The three loose records are read exactly as the Gallery reads
+`meta.render`: the inspector only displays them, and a strict shape would strip
+a record written by a newer deploy.
 
 ### Client API
 
@@ -280,17 +393,53 @@ when a version declares a **required** dedicated input; SDXL's are all
 optional. Qwen Image Edit 2511 declares no second URI field, so it stays on the
 numbered-primary path with zero `additionalImageInputs` — pinned by test.
 
+### Strict send policy (`packages/image-replicate/src/strict-request.ts`)
+
+Two pre-spend questions, both Replicate-schema questions and therefore this
+package's. The application asks for the policy and never restates the rules.
+
+1. `unsentReferenceReports(selected, fitted, sending)` — the tail difference
+   between the caller's list and what survived `fitReferences` (reason
+   `model_capacity`) and `withinDataUrlBudget` (reason `inline_byte_budget`).
+   Both are prefix selections, so the tail difference IS the loss. Under
+   `require_all`, `runRegistryImageModel` returns
+   `{ ok: false, unsentReferences }` **before the upload**, so no short-lived
+   files are created either.
+2. `providerInputViolations(model, input, controlFields)` — the finished
+   payload against `advancedCapabilities.providerInputs`: required presence
+   (skipped when the descriptor declares a `default`), primitive type,
+   `Number.isInteger`, enum membership (only when the value is a string —
+   `descriptiveEnumValues` filters mixed enums, so a non-string member is
+   unprovable rather than wrong), and range. `uri`/`array`/`unknown` are
+   allowed only under a field a typed transport owns: the prompt, the primary
+   reference binding, the aspect key, a bound control field, or an `extraInput`
+   pin. Records with no descriptors report nothing — the strict arm strengthens
+   a probed record, it does not invent facts about an unprobed one.
+
+`previewRegistryModelInput` assembles the same payload from a plan with
+placeholder URIs, so a caller can run check 2 before committing to the
+transport without rebuilding the payload rules in application code.
+
 ### Generator runner (`apps/web/src/server/images/image-generator-run.ts`)
 
 1. Load the run row owner-scoped; parse `inputs`/`controls`/`providerInputs`
    with `parseOr` against the contracts.
 2. Resolve the stored slug through `loadImageModels` (exact slug match);
    missing → `model_missing`.
-3. Pin: `pinnedImageModelVersion(model)`; null → `version_unpinned`. Persist
-   `requested_version_id` before spend.
-4. Operation: references present → `edit`; none → `generate`. `generate` on a
-   model with `canGenerate === false` → `operation_unsupported`; `edit` with
+3. Version. `meta.versionRequest.mode` decides. `current` →
+   `pinnedImageModelVersion(model)`; null → `version_unpinned`. `captured` →
+   the source run's `requested_version_id`, allowed only when the source is
+   this owner's, names the same slug, recorded a version, and carries a
+   `meta.capabilitySnapshot` whose `probedVersionId` equals it; every gap →
+   `version_replay_unsafe`, never a substitution. A replay then plans against
+   `{ ...registered, ...snapshot }`. Persist `requested_version_id` before
+   spend.
+4. Operation: a primary reference → `edit`; a dedicated input on a model that
+   cannot generate → `edit`; otherwise `generate`. `generate` on
+   `canGenerate === false` → `operation_unsupported`; `edit` on
    `canEdit === false` → `operation_unsupported`.
+4b. An empty prompt: the probed descriptor for the prompt field decides.
+   Required with no default, or no descriptor at all → `prompt_required`.
 5. Read every referenced image owner-scoped; any unreadable → `input_missing`
    (never substitute).
 6. Capacity: primary count must fit
@@ -308,10 +457,14 @@ numbered-primary path with zero `additionalImageInputs` — pinned by test.
    provable type/enum/range violation also refuses. Records probed before
    descriptors existed skip the descriptor layers; unknown fields remain
    `validateProviderOverrides`' refusal.
+8b. Shape: `controls.aspect` absent → `target: { aspectRatio: null }`. Present
+   → it must be a member of this version's `supportedAspects` and parse as a
+   ratio, else `control_refused`.
 8. Build the synthetic Generator profile (below) and the `ImageRenderIntent`:
    whole prompt; primary references with role `reference` in caller order;
-   dedicated inputs with their structural roles; explicit `controls`;
-   `versionId` = the pin. `providerInputs` travel as the synthetic profile's
+   dedicated inputs with their structural roles; explicit `controls` minus
+   `aspect`; the shape target above; `policy: { references: "require_all",
+   providerInputs: "strict" }`; `versionId` = the pin. `providerInputs` travel as the synthetic profile's
    `providerOverrides` so `validateProviderOverrides` (known/reserved,
    fail-closed on empty `knownInputFields`) applies unchanged.
 9. Resolve LoRA first when `controls.lora` is set (pre-spend refusal on
@@ -320,11 +473,23 @@ numbered-primary path with zero `additionalImageInputs` — pinned by test.
    dropped reference, or planner refusal is a pre-spend refusal —
    `control_refused` / `provider_input_rejected` / `capacity_exceeded` /
    verbatim `image_profile.*` — never a silent trim.
+9b. Pre-spend record, written together: `final_prompt`, `meta.outcome`,
+    `meta.effectiveRequest` (below), and `meta.capabilitySnapshot`.
+9c. An explicit shape must be the shape that goes: `plannedShapeInput` runs the
+    same pure resolver the transport wrapper will, and a value that differs
+    from the requested member → `control_refused` (Wan's three 3:4 sizes).
+9d. THE final gate: `providerInputViolations` over
+    `previewRegistryModelInput(…)` → `provider_input_rejected`.
 10. Render through the injectable seam (default `renderImageIntent` with the
-    intent carrying the pin). Store the output via `createImageAsset` with
+    intent carrying the pin). A returned `unsentReferences` settles
+    `capacity_exceeded` and a returned `providerInputViolations` settles
+    `provider_input_rejected`, both with `providerOutcome: null` and
+    `meta.result.spent: false` — nothing was created, so nothing is charged to
+    provider health. Otherwise store the output via `createImageAsset` with
     `kind: "generator_output"`, `meta: { hidden: true, imageGeneratorRunId }`,
     `prompt: finalPrompt`. Settle `succeeded` with `result_image_id`,
-    `prediction_id`, `executed_version_id`, and `meta.attempt`.
+    `prediction_id`, `executed_version_id`, `meta.attempt`, and `meta.result`
+    (returned dimensions, crop target, the shape field/value sent).
 11. Failures settle on the row: provider failure → `render_failed` plus the
     render classifier's code in `error`, provider health via
     `imageFailureHealthOutcome`; storage failure after a successful provider
@@ -350,11 +515,43 @@ list, with zero production-profile resolution.
 
 Client-side prefill from a settled run's detail: model (when still registered),
 prompt, ordered primary inputs with purposes, dedicated inputs, controls
-(including explicit seed), provider inputs, and `sourceRunId` = the original.
-The POST creates a new run; the original row and output stay immutable. When
-the original's `requested_version_id` no longer matches the current pin, the
-form surfaces that fact before submit rather than silently running different
-weights.
+(including explicit seed and shape), provider inputs, and `sourceRunId` = the
+original. The POST creates a new run; the original row and output stay
+immutable.
+
+When the original's `requested_version_id` no longer matches the current pin,
+the form states the drift and offers an explicit choice: run the current
+registered version, or replay the captured one. `captured` sends
+`versionPolicy: "captured"` beside the `sourceRunId`; the server verifies the
+replay per runner step 3 and refuses rather than substituting. Neither is a
+silent default — a duplicate with no drift never sees the control, and a
+duplicate with drift cannot submit without the operator choosing.
+
+### The effective-request record
+
+Written before spend into `meta.effectiveRequest`; the run detail's
+**Effective request** panel renders it and shows the raw record beneath.
+
+| Member                            | Holds                                                       |
+| --------------------------------- | ----------------------------------------------------------- |
+| `model`                           | id, slug, pinned version, version policy, capability version |
+| `prompt` / `negativePrompt`       | the compiled text as it will be sent                         |
+| `providerControls`                | `plan.controlInput`, sanitized — real field names            |
+| `appliedControls`                 | the plan's normalized-name record, unchanged                 |
+| `shape`                           | mode, requested member, field, value, expected ratio, tier   |
+| `primaryInputs`                   | image id → requested slot, provider slot, provider field     |
+| `dedicatedInputs`                 | image id → role, provider field                              |
+| `policy` / `postprocess`          | the send strictness, and the crop target or null             |
+
+Sanitization: the LoRA weights field is recorded as `"[locator redacted]"`, any
+`data:` value as `"[inline image redacted]"`, any `http(s)` value as
+`"[url redacted]"`, non-scalars as `"[omitted]"`, and strings are capped at 300
+characters. No bytes, addresses, credentials, or signed URLs are ever stored.
+
+`meta.capabilitySnapshot` sits beside it, and `meta.result` is settled after
+the provider answers: `spent`, prediction/executed-version echoes, returned
+`outputDimensions`, `postprocess.cropTarget`, and the strict refusals'
+`unsentReferences` / `providerInputViolations` when they fired.
 
 ### Owned-image sources endpoint
 
@@ -393,8 +590,17 @@ stop and hand it to the owner):
 | `error`                | text (truncated provider/classifier detail)                |
 | `prediction_id`        | text                                                       |
 | `source_run_id`        | text FK self SET NULL                                      |
-| `meta`                 | jsonb default `{}` (`{ attempt?, providerOutcome? … }`)    |
+| `meta`                 | jsonb default `{}` — see the meta keys below               |
 | `created_at` / `started_at` / `finished_at` | tz timestamps                         |
+
+`meta` keys, all per-run records rather than queryable facts:
+`versionRequest` (written at create), `outcome`, `effectiveRequest`,
+`capabilitySnapshot`, `attempt`, `result`, `renderFailure`, `trimmedPrimaries`.
+Every write merges over the stored bag so a settle cannot drop the pre-spend
+record written moments before.
+
+The correctness pass added no column: the run row's shape is unchanged, so
+migration `0117` stands as generated.
 
 Index: `image_generator_runs_owner_created_idx (owner_id, created_at)`.
 FK policy follows the evidence-table ruling: owner CASCADEs, pointers SET NULL,
@@ -493,7 +699,20 @@ existing image packages.
   prompt-only and prompt+reference (hidden output, provenance columns, version
   pin), each pre-spend refusal with its exact code, provider-failure vs
   store-failure distinction, delete cleaning the output, capacity refusal,
-  owner scoping.
+  owner scoping. The correctness pass adds: a `canGenerate: true /
+  canEdit: false` fixture with a required `pose_image` (refused without it,
+  run as GENERATION with it, routed to its probed field); native versus
+  explicit shape and the same-ratio substitution refusal; the required
+  normalized-control gate from both sides; the strict transport refusal
+  settling as unspent; the three version-replay arms; and one concurrent-claim
+  case proving a single spend.
+- **Strict send policy (package suite):** `render.test.ts` owns the
+  `require_all` and `strict` refusals — each asserting no `fetch` reached a
+  prediction — plus the required-with-default arm and the URI-smuggling arm.
+  The existing trim cases stay as the proof that production is unchanged.
+- **Native shape (pure app suite):** `models.test.ts` owns `targetRatio: null`
+  writing no aspect key and cropping nothing, beside the existing cases that
+  pin the 3:4 default.
 - **Hidden-kind policy:** `limits.test.ts` (`it.each(HIDDEN_IMAGE_KINDS)`) and
   the quota int test cover `generator_output` automatically once it joins the
   list; no duplicate tests.
