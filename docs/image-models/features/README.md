@@ -15,9 +15,9 @@ Every feature is an `ImageFeature` with:
 
 A feature must not name provider fields such as `cfg`, `guidance`, `image_input`, or `lora_weights`. It asks the normalized/probed `ImageModel` record instead. This prevents the feature layer from becoming a second, stale copy of provider schema discovery.
 
-`ImageModelRequestFacts` currently contains only `referenceCount` and `usesLora`. It should grow only when a semantic feature cannot judge a request without another normalized fact.
+`ImageModelRequestFacts` contains only `referenceCount` and `usesLora`. It grows only when a semantic feature cannot judge a request without another normalized fact.
 
-## Current feature modules
+## Feature modules
 
 The documentation mirrors the package's `src/features/` modules:
 
@@ -29,42 +29,42 @@ The documentation mirrors the package's `src/features/` modules:
 - [Output](output.md) — `outputFormat`, `outputQuality`
 - [Safety](safety.md) — `safetyToggle`
 
-Together these are the ten feature constructors currently exported from the package root.
+Together these are the ten feature constructors exported from the package root.
 
 ## Binding is different from composition
 
-An adapter's `capabilities` list says which semantic features the family/endpoint **claims**. `isBound(model)`, where present, asks whether the currently active probed row actually exposes the required normalized binding.
+An adapter's `capabilities` list says which semantic features the family/endpoint **claims**. `isBound(model)`, where present, asks whether the active probed row exposes the required normalized binding.
 
 That distinction matters when provider versions drift. For example, the LoRA-capable Qwen wrapper composes `lora`, but a particular row can still fail `isBound` if its active probe does not expose both LoRA weights and LoRA scale.
 
-Some features intentionally have no `isBound` hook because the normalized model record cannot answer the question honestly without matching raw provider field names. That is not treated as "always bound"; it means binding truth stays elsewhere. The current no-`isBound` features are `prompt`, `outputQuality`, and `safetyToggle`.
+Some features intentionally have no `isBound` hook because the normalized model record cannot answer the question honestly without matching raw provider field names. That is not treated as "always bound"; it means binding truth stays elsewhere. The no-`isBound` features are `prompt`, `outputQuality`, and `safetyToggle`.
 
 ## Validation behavior
 
 Feature validators accumulate when `defineImageModel` composes an adapter. A request can therefore receive more than one refusal reason instead of stopping at the first failed feature.
 
-Today only two feature modules validate requests:
+Only two feature modules validate requests:
 
 - `multiReference` rejects an intended reference count above `referenceCapacity(model).max`;
 - `lora` rejects a LoRA-bearing request when the active model record lacks either the LoRA weights or LoRA scale binding.
 
 These are model/request compatibility checks. They do not replace `@vesper/image-core`'s final-wire invariants, which verify the payload that is actually going to the provider.
 
-## Current Qwen use
+## Qwen composition
 
-| Feature | Edit 2511 | Edit Plus LoRA | Image 2512 |
-| --- | :---: | :---: | :---: |
-| `prompt` | yes | yes | yes |
-| `multiReference` | yes | yes | no |
-| `aspectRatio` | yes | yes | yes |
-| `seed` | yes | yes | yes |
-| `guidance` | no | no | yes |
-| `negativePrompt` | no | no | no |
-| `lora` | no | yes | no |
-| `outputFormat` | yes | yes | yes |
-| `outputQuality` | yes | yes | yes |
-| `safetyToggle` | yes | yes | yes |
+| Feature          | Edit 2511 | Edit Plus LoRA | Image 2512 |
+| ---------------- | :-------: | :------------: | :--------: |
+| `prompt`         | yes       | yes            | yes        |
+| `multiReference` | yes       | yes            | no         |
+| `aspectRatio`    | yes       | yes            | yes        |
+| `seed`           | yes       | yes            | yes        |
+| `guidance`       | no        | no             | yes        |
+| `negativePrompt` | no        | no             | no         |
+| `lora`           | no        | yes            | no         |
+| `outputFormat`   | yes       | yes            | yes        |
+| `outputQuality`  | yes       | yes            | yes        |
+| `safetyToggle`   | yes       | yes            | yes        |
 
-The feature being exported does not imply a current Qwen adapter composes it. `negativePrompt` is the clearest example: the package has the vocabulary for future families that genuinely act on negative conditioning, while Qwen Image 2512 deliberately omits it because the endpoint's declared field does not steer output.
+An exported feature is vocabulary, not proof that a Qwen adapter composes it. `negativePrompt` is the clearest example: the package can represent families that genuinely act on negative conditioning, while Qwen Image 2512 omits the feature because its declared negative field does not steer output.
 
 [Back to `@vesper/image-models`](../README.md).
