@@ -4,7 +4,8 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
 
 /**
  * `qwen/qwen-image-edit-2511` — the current Qwen instruction editor and Vesper's
- * default for identity-critical edits.
+ * default for identity-critical edits
+ * (`docs/image-models/models/qwen-image-edit-2511.md`).
  *
  * The endpoint accepts 1–3 reference images, addresses them by number, and is
  * the family member with the strongest reviewed identity preservation. Its

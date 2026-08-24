@@ -1,222 +1,156 @@
-# Image models
+# `@vesper/image-models`
 
-Per-model reference for every Replicate image model Vesper can run. One file per
-model, recording the API attributes the render path depends on: what the model's
-reference-image input is called, whether it takes one image or a list, how many,
-how to get a 3:4 output out of it, and what it returns.
+`@vesper/image-models` is Vesper's model-family behavior package: the place where image models are allowed to differ without leaking model-slug checks into the provider-neutral render kernel.
 
-These files describe **the provider's API**, not Vesper's configuration. Which
-models are actually offered, and on which surfaces, is data in the `image_models`
-table and is managed from the admin page at `/settings/image-models` — see
-`image-model-registry.plan.md`.
-Adding a model to the app does not require adding a file here, but doing so is
-the difference between a model we understand and one we merely call.
+It owns four things:
 
-> **Version note:** [providers.md](../images/providers.md) owns how Vesper probes,
-> pins, and activates provider versions. Each per-model page owns that model's
-> external API snapshot and any known provider drift. Do not infer an active
-> row's controls from Replicate's current playground alone.
+1. a semantic **feature vocabulary** for what a model family can express;
+2. the `defineImageModel` **composer** that turns features and quirks into an adapter;
+3. per-family **adapters** for prompt dialects, request validation, and execution hints; and
+4. the **adapter registry** that resolves a registered model slug to the behavior Vesper knows about.
 
-## Why these files exist
+The package does **not** replace the probed image-model registry. The database/probe remains authoritative for provider wire truth: input field bindings, reference arity and capacity, supported aspects, output controls, active provider version, and other schema-derived facts. `@vesper/image-models` owns behavior; the probed model record owns fields.
 
-Replicate's schemas disagree with each other in ways that cannot be papered
-over with one shared mapping:
+Source: [`packages/image-models`](../../packages/image-models/README.md).
 
-- The reference input is called `image` on most models, `image_input` on two,
-  `images` on another, and `reference_image` on two more.
-- On some models that field is a single URI; on others it is an array.
-- **A URI-typed input is not necessarily a reference.** One model declares a
-  ControlNet `depth_image` *before* its `reference_image`, so "the first image
-  input" is the wrong answer — the probe searches identity names first and
-  control names (`depth_image`, `pose_image`, `mask`, …) last
-  ([../images/providers.md](../images/providers.md)).
-- Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
-  without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
-  have no aspect input whatsoever and are sized by `width`/`height` integers;
-  the three of those six that are in the reviewed set carry reviewed dimensions
-  from the reviewed policy
-  (`packages/image-core/src/models/reviewed-profile-controls.ts`), and every render is cropped to shape
-  after download regardless.
-- Output is an array of URIs on twelve of fourteen models, and a bare URI string
-  on the other two.
-- One model watermarks by default (`apply_watermark`), which the probe pins off.
-- **Community models can only be run by version id.** The bare-slug endpoint is
-  official-models-only, so a community model's registry row is auto-pinned to
-  `owner/name:version` when it is added — and a seeded community row is written
-  pinned for the same reason. That is why the community models below carry a
-  version in their stored slug and the official ones do not.
-- **No model declares `maxItems` on its array reference input.** Reference caps
-  are stated in prose in the field description, so they are recorded here and
-  stored per row — they cannot be read from the schema.
-- **One model rejects Replicate's own uploaded-file URLs.** Wan 2.7 reads the
-  file extension off what it is handed, and an upload arrives without one, so
-  its references must be inlined as `data:` URIs (`reference_transport` on the
-  row). Nothing in a schema reveals this; it is learned by running the model.
+## Reading order
 
-## The models
+| Doc                                                     | What it covers                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Features](features/README.md)                          | Semantic feature contract, current feature modules, binding rules, and Qwen capability matrix     |
+| [Provider model reference](models/README.md)            | Per-model Replicate/API snapshots, provider drift, reviewed capability, inputs, and payload notes |
+| [Image system overview](../images/README.md)            | Profiles, providers, asset registry, pipelines, identity packs, and the surrounding image system  |
+| [Provider probing and registry](../images/providers.md) | Provider fields, active versions, probing, profile resolution, and registry truth                 |
 
-Each entry gives the slug, the mechanical capability, the reference cap, and then
-the two reviewed ratings (edit kind · identity preservation). "Generate" means the
-model can run with no reference image; "edit" means it has a reference input at
-all. Neither promises identity preservation — that is the rating beside it
-(§Reviewed capability).
+## Current package state
 
-Only the ten seeded models carry reviewed ratings. The four below them are
-reference docs for models Vesper *can* run but does not ship a row for: an admin
-adds them from `/settings/image-models`, and they stay unrated until someone has
-looked at their output.
+The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-- [Qwen Image 2512](qwen-image-2512.md) — `qwen/qwen-image-2512`. Generate yes,
-  edit yes, 1 reference. `img2img` · `weak`. Vesper's new-portrait default.
-- [Qwen Image Edit 2511](qwen-image-edit-2511.md) — `qwen/qwen-image-edit-2511`.
-  Generate **no**, edit yes, 3 references. `instruction_edit` · `strong`. Vesper's
-  variant and scene default. Its page owns version-specific optional controls.
-- [Seedream 4.5](seedream-4-5.md) — `bytedance/seedream-4.5`. Generate yes, edit
-  yes, 14 references. `multi_reference_compose` · `moderate`.
-- [Seedream 5 Lite](seedream-5-lite.md) — `bytedance/seedream-5-lite`. Generate
-  yes, edit yes, 14 references. `multi_reference_compose` · `strong`.
-- [Stable Diffusion 3.5 Large](stable-diffusion-3-5-large.md) —
-  `stability-ai/stable-diffusion-3.5-large`. Generate yes, edit yes, 1 reference.
-  `img2img` · `weak`. Portrait studio only.
-- [Wan 2.7 Image Pro](wan-2-7-image-pro.md) — `wan-video/wan-2.7-image-pro`.
-  Generate yes, edit yes, 9 references. `multi_reference_compose` · `unknown`,
-  plus an operator warning — its upstream moderation cannot be disabled.
-- [NSFW FLUX Dev](nsfw-flux-dev.md) — `aisha-ai-official/nsfw-flux-dev`. Generate
-  yes, edit **no**, no references. `none` · `unknown`. Portrait studio only.
-- [LikeReality Pony v1](likereality-pony-v1.md) —
-  `aisha-ai-official/likereality-pony-v1`. Generate yes, edit **no**, no
-  references. `none` · `unknown`. Portrait studio only.
-- [SDXL PuLID](sdxl-pulid.md) — `nsfw-api/sdxl-pulid`. Generate yes, edit yes,
-  1 reference. `unknown` · `unknown`, plus an operator warning — an untried
-  identity adapter with 283 lifetime runs. Variant and scene only.
-- [Pruna P-Image](p-image.md) — `prunaai/p-image`. Generate yes, edit **no**, no
-  references. `none` · `unknown`. Portrait studio only; the speed baseline.
+Only the **Qwen Image family** is implemented in the adapter registry. Models without an adapter, including Flux, Wan, SDXL, and Seedream families, use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
-Of those last four, only SDXL PuLID takes a reference image, which is why it is
-the only one on the variant and scene surfaces — the other three cannot hold a
-character's face across a render at all.
+The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
-Registered by admin, rated, and deliberately on **no ordinary player picker**:
+### Registered Qwen adapters
 
-- [Qwen Image Edit Plus LoRA](qwen-image-edit-plus-lora.md) —
-  `qwen/qwen-image-edit-plus-lora`. Generate **no**, edit yes, 3 references,
-  plus runtime `lora_weights`/`lora_scale`. `instruction_edit` · `moderate`.
-  This older 2509-generation wrapper is used by the intimate-scene LoRA
-  model-swap route and by LoRA-focused lab work. Any registered/enabled model row
-  is selectable in the admin Image Generator; LoRA bindings only determine
-  whether the Generator exposes LoRA controls for that row. The wrapper is
-  **not** offered by an ordinary portrait/variant/scene picker. See the
-  [2511 page](qwen-image-edit-2511.md) for that endpoint's version-specific API.
+| Model                                                                   | Role                                                                    | Composed features                                                                                          | Family behavior                                                          |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                              | numbered-reference dialect; eight-minute startup hint; one startup retry |
+| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
-Documented but not seeded — no row, and therefore no reviewed rating:
+One absence is deliberate:
 
-- [FLUX.1 dev](flux-dev.md) — `black-forest-labs/flux-dev`. Generate yes, edit yes
-  (img2img), 1 reference.
-- [Juggernaut XL v9](juggernaut-xl-v9.md) — `lucataco/juggernaut-xl-v9`. Generate
-  yes, edit **no**, no references.
-- [Pony Realism v2.3](pony-realism-v2-3.md) — `nsfw-api/pony-realism-v2.3`.
-  Generate **no**, edit yes, 1 reference.
-- [RealVis Hyper LoRA](realvis-hyper-lora.md) — `nsfw-api/realvis-hyper-lora`.
-  Generate **no**, edit yes, 1 reference.
+- **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's measured behavior shows that it does not steer output. The package therefore does not advertise the field as a behavioral capability merely because the schema contains it.
 
-The last three are community models, so a row for them is stored under a pinned
-`owner/name:version` slug — the bare-slug endpoint is official-models-only.
+Both edit adapters compose `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
 
-**These four are outside the reviewed set**, and that is a stronger statement
-than "unrated". An admin can add any of them, and what runs is then the
-wrapper's own configuration: no reviewed dimensions, no cleared negative
-default, no sampler correction, and no seeded task-profile controls. The
-per-model pages below record what each wrapper defaults to and what its creator
-recommends, so an admin adding one knows what they are getting — but nothing in
-Vesper corrects it on their behalf. The reviewed set is the Qwen family plus the
-seeded adult/identity additions.
+## Features
 
-## Moderation, by hosting model
+A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It does not answer "which provider field carries that value?" The latter belongs to the probed model record.
 
-Which models will refuse a render is not a property of the prompt — it follows
-from how Replicate runs them:
+The package exports ten feature constructors:
 
-- **Open weights on Replicate's GPUs** — the NSFW classifier is a component in
-  the cog wrapper and `disable_safety_checker` removes it. Both Qwen models,
-  FLUX dev, Juggernaut XL v9 and Pruna P-Image work this way; the `nsfw-api`
-  pipelines and the two `aisha-ai-official` fine-tunes ship with no checker at
-  all, which is why their rows carry no safety key — the probe only pins inputs
-  a schema actually declares.
-- **Vendor-API proxies** — moderation runs on the vendor's servers before
-  Replicate sees a result, so no input can reach it. Wan 2.7 and Seedream 5 Lite
-  refuse this way (`ContentModerationError`, and Wan's `Async prediction failed`
-  prefix is the giveaway of a proxied call). Seedream 4.5 is the exception that
-  proves the rule: BytePlus exposes a relaxation, so it takes the flag.
+| Feature id       | Meaning                                              | Documentation                            |
+| ---------------- | ---------------------------------------------------- | ---------------------------------------- |
+| `prompt`         | authored text prompt                                 | [Prompt](features/prompt.md)             |
+| `multiReference` | several role-bearing reference images                | [References](features/references.md)     |
+| `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/aspect-ratio.md) |
+| `seed`           | reproducible seeded generation                       | [Controls](features/controls.md)         |
+| `guidance`       | prompt-guidance strength                             | [Controls](features/controls.md)         |
+| `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/controls.md)         |
+| `lora`           | one external LoRA with a chosen strength             | [LoRA](features/lora.md)                 |
+| `outputFormat`   | caller-selected output encoding                      | [Output](features/output.md)             |
+| `outputQuality`  | caller-selected encoding quality                     | [Output](features/output.md)             |
+| `safetyToggle`   | caller can disable the endpoint's own safety checker | [Safety](features/safety.md)             |
 
-The flag only removes the classifier. What a model was *trained* to draw is a
-separate ceiling, and the reason the SDXL-lineage fine-tunes here behave
-differently from FLUX and Qwen at identical settings.
+See [features/README.md](features/README.md) for the `ImageFeature` contract, binding rules, and request validation behavior.
 
-Wan 2.7's `operator_warning` names this for the one model where it bites hardest.
-The rating vocabulary is deliberately silent about moderation: a model that
-refuses is not a model that renders a stranger, and conflating the two would take
-Wan out of service for a reason that has nothing to do with identity.
+## Composer and adapter contract
 
-## Reviewed capability
+`defineImageModel({ family, features, quirks })` produces an `ImageModelAdapter` with:
 
-Two facts on each row are **not** probed, because no schema states them:
-`edit_kind` (what "editing" actually does — `instruction_edit`,
-`multi_reference_compose`, `identity_conditioned`, `img2img`, `none`, or
-`unknown`) and
-`identity_preservation` (`strong` / `moderate` / `weak` / `unknown`, how well a
-face survives). A third, `operator_warning`, is free text bound for the admin card
-and the pickers. These are human ratings from looking at output; **a re-probe must
-never overwrite them**, and `unknown` is permissive so an unreviewed row keeps
-working as it does today. Each file records its model's ratings and the reasoning.
+- `family` — the checkpoint/model family name;
+- `capabilities` — feature ids in declaration order;
+- optional `preparePrompt`;
+- optional `validateRequest`; and
+- optional `executionHints`.
 
-The identity-critical tasks (`variant`, `scene`, `chat_look`) **actively enforce
-these ratings during profile offering/resolution**. A model rated `weak` or with
-`edit_kind: img2img` is ineligible for those tasks, so a stale stored selection
-falls through the profile-resolution chain instead of rendering a stranger.
-`imageProfileOffered` composes this structural eligibility with the profile's
-enabled flag and the remaining legacy surface toggle. The database profile rows,
-not the prose here, are the runtime source of truth
-([../images/providers.md](../images/providers.md)).
+Features may contribute request validation. Those validations accumulate in declaration order so a caller can see every incompatibility at once.
 
-`probed_version_id` — the version the stored bindings came from, and the
-`Probed:` header in each file — is written on rows added through the admin page
-and on the four seeded rows whose slugs name it. The six original seeded rows
-carry none: they predate the column. `advanced_capabilities` is probe-owned and
-holds optional control bindings plus provider-input descriptors; a row created
-before a capability derivation existed gains those fields on re-probe or version
-activation. Do not infer the active row's capability from the current Replicate
-playground alone.
+Quirks own behavioral hooks. A prompt preparer, quirk validator, or execution-hint hook may be claimed by only one quirk in a definition; conflicting claims throw when the definition is evaluated instead of silently overriding one another. Duplicate feature ids likewise throw.
 
-## Seeded profiles
+### Prompt preparation must be idempotent
 
-Beneath each model sit `image_model_profiles` rows — "how to use this model for
-one job" (task, operation, prompt strategy, reference policy, control defaults,
-timeout). There are built-in profiles reproducing the production lanes plus
-curated alternatives, and **every production render resolves one**
-([../images/providers.md](../images/providers.md) §Every render resolves a
-profile). A model offered on a surface with no eligible profile for that task is
-passed over for the task default. Profiles are ordinary deletable rows; the
-database, not these files, is the runtime source of truth.
+An `ImagePromptPreparer` must satisfy `prepare(prepare(prompt)) === prepare(prompt)`. Planning hashes the prepared prompt, while the send path prepares again. A non-idempotent dialect could make a render disagree with its own compiled fingerprint.
 
-The admin-only **Image Generator is intentionally different**: it is a freeform
-registered-model bench rather than a player task-profile picker. It derives its
-controls from the selected row's currently probed capability record and pins the
-chosen provider version for the run. A model being absent from ordinary player
-pickers therefore does **not** mean the Image Generator cannot run it.
+The Qwen edit dialect rewrites Vesper's generic identity-lock sentence into Qwen's numbered-reference wording only when one or more references are present. One reference gets the single-reference lock; multiple references get the multi-reference lock. Prompts without the legacy identity sentence are left unchanged.
 
-## Keeping these current
+## Request validation
 
-Replicate does not version this metadata: a model's `latest_version` can change
-its input schema underneath a fixed slug. Each file records the version id it was
-read from and the date. When a render starts failing on a payload that used to
-work — or Replicate documents a new capability — re-probe before debugging or
-redesigning Vesper:
+`ImageModelRequestFacts` is intentionally small:
 
-```bash
-curl -s -H "Authorization: Bearer $REPLICATE_API_TOKEN" https://api.replicate.com/v1/models/qwen/qwen-image-edit-2511 | jq '.latest_version.id, .latest_version.openapi_schema.components.schemas.Input'
+- `referenceCount`
+- `usesLora`
+
+The validating features are:
+
+- `multiReference`, which refuses a request whose intended reference count exceeds the probed model capacity rather than silently dropping references;
+- `lora`, which refuses a LoRA request unless both LoRA weights and LoRA scale are bound on the active probed model version.
+
+The application runs adapter request validation in the **Image Generator bench pre-spend path**, where the request facts are final. Production lanes do not run this validator because their `allow_trim` reference policy can legally reduce the pre-plan reference count; validating the untrimmed count would reject renders the planner can make valid.
+
+## Execution hints
+
+Adapters may state provider-neutral timing knowledge:
+
+- `startupBudgetMs`
+- `renderBudgetMs`
+- `maxStartupRetries`
+
+An absent hint means the caller's lane default governs. Hints are claims about observed endpoint behavior, not default values that every adapter must fill.
+
+Only `qwen/qwen-image-edit-plus-lora` supplies hints: an eight-minute startup budget and one startup retry. Its render budget is intentionally unset because the adapter has no model-specific render-time measurement that justifies overriding the bench default.
+
+The web application's Image Generator and Image Lab combine adapter hints with their bench budgets. Production keeps its own execution policy rather than inheriting bench timing.
+
+## Package boundary
+
+`@vesper/image-models` may depend on lower-ranked provider-neutral packages such as `@vesper/image-core` and `@vesper/contracts`. It must not import the web application, Next.js, database code, environment state, character/chat contracts, or its peer provider packages `@vesper/image-replicate` and `@vesper/image-sd`.
+
+```text
+                    @vesper/contracts
+                           ▲
+                   @vesper/image-core
+              ▲            ▲            ▲
+ @vesper/image-models  @vesper/image-sd  @vesper/image-replicate
+              ▲            ▲            ▲
+              └────────────┼────────────┘
+                     @vesper/web
 ```
 
-The admin page's probe-latest flow does the same discovery without mutating the
-active row. Smoke-test the candidate, then activate it explicitly. A per-model
-page should record both the active/probed snapshot and any known newer provider
-schema when those differ.
+The package is universal runtime code: pure data and pure functions, with no persistence, network access, clock, randomness, Node globals, or browser globals.
+
+## Where the application joins it to rendering
+
+`apps/web/src/server/images/model-adapters.ts` is the application-owned join between this package and the render system. It supplies four integration helpers:
+
+- model-specific prompt preparation to planning and send paths;
+- adapter request refusals for the Generator bench;
+- render runtime facts including the selected prompt dialect; and
+- bench execution policy with model-specific hint overrides.
+
+Keeping the join in one application module prevents planning and sending from resolving different dialects for the same model.
+
+## Adding another family
+
+To add family-specific behavior:
+
+1. reuse the existing semantic features where they describe the family honestly;
+2. add a new feature only when the current vocabulary cannot state a real capability;
+3. keep provider field names in the probe/model record rather than the feature;
+4. use family quirks only for behavior such as prompt dialects, validations, or measured execution differences;
+5. compose endpoint adapters with `defineImageModel`;
+6. register base slugs in `src/registry.ts`; and
+7. update this documentation and the relevant page under [models/](models/README.md).
+
+A model does not need an adapter merely because it exists. The generic path is correct whenever Vesper has no family-specific behavior to encode.

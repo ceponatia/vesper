@@ -45,7 +45,7 @@ and `depth_image` on the deprioritized one, so the probe resolves this
 model's reference field to `reference_image` despite its later position in
 the schema. The general policy — and why control names are deprioritized
 rather than excluded — is recorded once in
-[../images/providers.md](../images/providers.md).
+[providers.md](../../images/providers.md).
 
 SDXL PuLID is why that ordering matters in practice. A resolver that simply
 took the first URI-typed property in schema order would land on `depth_image`

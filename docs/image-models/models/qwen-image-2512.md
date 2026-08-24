@@ -37,7 +37,7 @@ future use of its `strength` control.
 ## Seeded profiles
 
 Four `generate` profiles use the `text_to_image_description` strategy, and each
-is its task's global default ([providers.md](../images/providers.md)):
+is its task's global default ([providers.md](../../images/providers.md)):
 
 - `portrait-standard`;
 - `item-standard`;
@@ -90,7 +90,7 @@ a dialect fact, not a missing control binding.
 
 The positive channel is the only one that steers here. Exclusions that matter for
 a render must be expressed as affirmative claims describing what the picture
-should contain ([prompt-programs.md](../images/prompt-programs.md)).
+should contain ([prompt-programs.md](../../images/prompt-programs.md)).
 
 This row still serves portraits, items, locations and chat-place images, so the
 collision linter continues to matter for the positive side: a sign that must read
