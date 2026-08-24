@@ -34,7 +34,7 @@ instead of a cold search.
    [../image-models/README.md](../image-models/README.md) §"Moderation, by
    hosting model" already records, and Wan's video relays share the upstream
    that refuses ordinary Vesper character references on the image side
-   ([../image-models/wan-2-7-image-pro.md](../image-models/wan-2-7-image-pro.md)).
+   ([../image-models/models/wan-2-7-image-pro.md](../image-models/models/wan-2-7-image-pro.md)).
    An adults-only product's backbone is therefore the **open-weights lane**;
    hosted flagships are the **SFW quality tier**.
 3. **"H3" is MiniMax H3 (Hailuo 3.0)** — launched 2026-07-31, base weights

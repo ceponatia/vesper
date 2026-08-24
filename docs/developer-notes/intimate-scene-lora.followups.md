@@ -5,9 +5,9 @@ Status: post-ship follow-up to [intimate-scene-lora.plan.md](finished/intimate-s
 This document owns only the post-ship question of whether the intimate scene
 route should keep changing Qwen generations to obtain runtime LoRA support.
 Current runtime behavior remains documented on
-[Qwen Image Edit Plus LoRA](../image-models/qwen-image-edit-plus-lora.md), and the
-version-specific provider API for 2511 remains owned by
-[Qwen Image Edit 2511](../image-models/qwen-image-edit-2511.md).
+[Qwen Image Edit Plus LoRA](../image-models/models/qwen-image-edit-plus-lora.md),
+and the version-specific provider API for 2511 remains owned by
+[Qwen Image Edit 2511](../image-models/models/qwen-image-edit-2511.md).
 
 ## Candidate — remove the model-generation swap
 
