@@ -36,6 +36,9 @@ importers:
       '@vesper/contracts':
         specifier: workspace:*
         version: link:packages/contracts
+      '@vesper/image-models':
+        specifier: workspace:*
+        version: link:packages/image-models
       '@vesper/image-sd':
         specifier: workspace:*
         version: link:packages/image-sd

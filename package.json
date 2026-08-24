@@ -84,6 +84,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vesper/contracts": "workspace:*",
+    "@vesper/image-models": "workspace:*",
     "@vesper/image-sd": "workspace:*",
     "@vesper/simulation-core": "workspace:*",
     "@types/pg": "^8.20.0",
