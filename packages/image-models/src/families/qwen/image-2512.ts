@@ -12,7 +12,7 @@ import { QWEN_IMAGE_FAMILY } from "./shared";
 
 /**
  * `qwen/qwen-image-2512` — the family's GENERATOR arm
- * (`docs/image-models/qwen-image-2512.md`).
+ * (`docs/image-models/models/qwen-image-2512.md`).
  *
  * Text-to-image, and Vesper's default for a brand-new portrait. Its optional
  * reference input is strength-based image-to-image — a deliberate remix, where
@@ -28,7 +28,7 @@ import { QWEN_IMAGE_FAMILY } from "./shared";
  * apple in 16 of 16 paired renders across both sampling paths; upstream
  * reporting gives the mechanism, which is that the model was never trained on
  * negative conditioning and the parameter exists for pipeline compatibility
- * (`docs/image-models/qwen-image-2512.md` §"Negative-prompt ruling"; the
+ * (`docs/image-models/models/qwen-image-2512.md` §"Negative-prompt ruling"; the
  * measurement itself is `model-aware-image-prompts.trial.qwen-2512-negative.md`).
  * Composing the feature
  * would make this endpoint claim a capability whose only effect is that

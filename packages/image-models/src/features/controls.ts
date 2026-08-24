@@ -42,7 +42,7 @@ export function guidanceFeature(): ImageFeature {
  * are dropped where nobody can see it, and the render is judged as if they had
  * been honoured. `qwen/qwen-image-2512` is exactly that case and therefore does
  * NOT compose this feature, even though its schema declares the input
- * (`docs/image-models/qwen-image-2512.md` §"Negative-prompt ruling").
+ * (`docs/image-models/models/qwen-image-2512.md` §"Negative-prompt ruling").
  */
 export function negativePromptFeature(): ImageFeature {
   return {

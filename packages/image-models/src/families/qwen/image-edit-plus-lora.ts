@@ -43,13 +43,13 @@ function qwenEditPlusLoraColdStart(): ImageModelQuirk {
 
 /**
  * `qwen/qwen-image-edit-plus-lora` — the LoRA-capable Qwen edit wrapper
- * (`docs/image-models/qwen-image-edit-plus-lora.md`).
+ * (`docs/image-models/models/qwen-image-edit-plus-lora.md`).
  *
  * It is the OLDER 2509-generation edit endpoint, and that is the trade this
  * adapter exists to make legible: it is the only Qwen edit endpoint that
- * accepts user-supplied LoRA weights, and it is a generation behind
- * `qwen-image-edit-2511` at holding a face. A finishing pass here buys LoRA
- * access with identity strength.
+ * accepts user-supplied LoRA weights in the current adapter registry, and it is
+ * a generation behind `qwen-image-edit-2511` at holding a face. A finishing
+ * pass here buys LoRA access with identity strength.
  *
  * Endpoint facts:
  *
