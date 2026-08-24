@@ -9,6 +9,7 @@ import {
   imageLoraUpdateRequestSchema,
   isValidImageLoraLocator,
   redactImageLoraLocator,
+  resolveImageLoraArtifactLocator,
   type EvaluateImageLoraForRenderInput,
   type ImageLora,
 } from "./image-loras";
@@ -53,7 +54,7 @@ function evaluate(over: Partial<EvaluateImageLoraForRenderInput> = {}) {
     lora: lora(),
     modelSlug: MODEL_SLUG,
     versionId: VERSION,
-    task: "variant",
+    context: { kind: "production", task: "variant" },
     bindings: bindings(),
     ...over,
   });
@@ -175,6 +176,21 @@ describe("isValidImageLoraLocator", () => {
     expect(isValidImageLoraLocator("huggingface_repo", "owner/repo?token=abc")).toBe(false);
   });
 
+  it("accepts a bare Civitai model-version id and nothing else", () => {
+    // An operator copying from Civitai has a URL on the clipboard, and half of those
+    // carry `?token=…`. Accepting one would put an API token in the database and on
+    // the admin screen; accepting a model id where a model-VERSION id belongs would
+    // download weights the row was never reviewed for.
+    expect(isValidImageLoraLocator("civitai_model_version", "1908576")).toBe(true);
+    expect(isValidImageLoraLocator("civitai_model_version", "https://civitai.com/api/download/models/1908576")).toBe(
+      false,
+    );
+    expect(isValidImageLoraLocator("civitai_model_version", "1908576?token=secret")).toBe(false);
+    expect(isValidImageLoraLocator("civitai_model_version", "1908576/file.safetensors")).toBe(false);
+    expect(isValidImageLoraLocator("civitai_model_version", "")).toBe(false);
+    expect(isValidImageLoraLocator("civitai_model_version", HF_LOCATOR)).toBe(false);
+  });
+
   it("is the same rule the row parser enforces", () => {
     const refused = imageLoraSchema.safeParse({
       id: "x",
@@ -202,9 +218,28 @@ describe("redactImageLoraLocator", () => {
     );
   });
 
-  it("passes a repo slug through unchanged, and never throws on an unparseable locator", () => {
+  it("passes a repo slug or a bare Civitai id through unchanged, and never throws on an unparseable locator", () => {
+    // A model-version id is a public catalogue number with nothing to hide; the
+    // token that completes its download is added at send time and never stored.
     expect(redactImageLoraLocator(HF_LOCATOR)).toBe(HF_LOCATOR);
+    expect(redactImageLoraLocator("1908576")).toBe("1908576");
     expect(redactImageLoraLocator("")).toBe("");
+  });
+});
+
+describe("resolveImageLoraArtifactLocator", () => {
+  it("sends a URL and a repo slug verbatim", () => {
+    // Every render that works today sends exactly what it sent before: the two
+    // existing sources ARE the provider-consumable address.
+    const url = "https://cdn.example.invalid/l.safetensors?sig=abc";
+    expect(resolveImageLoraArtifactLocator({ locatorType: "https_url", locator: url })).toBe(url);
+    expect(resolveImageLoraArtifactLocator({ locatorType: "huggingface_repo", locator: HF_LOCATOR })).toBe(HF_LOCATOR);
+  });
+
+  it("builds the Civitai download URL from the stored model-version id", () => {
+    expect(resolveImageLoraArtifactLocator({ locatorType: "civitai_model_version", locator: "1908576" })).toBe(
+      "https://civitai.com/api/download/models/1908576",
+    );
   });
 });
 
@@ -264,6 +299,14 @@ describe("evaluateImageLoraForRender", () => {
     });
   });
 
+  it("binds a Civitai row's resolved download URL, never the bare id", () => {
+    // The binding is "the locator to SEND", so the resolution belongs here: a bare
+    // catalogue number in the payload is a provider error the plan would have
+    // recorded as an applied LoRA.
+    const result = evaluate({ lora: lora({ locatorType: "civitai_model_version", locator: "1908576" }) });
+    expect(result.ok && result.binding.locator).toBe("https://civitai.com/api/download/models/1908576");
+  });
+
   it("honours a requested scale inside the curated range", () => {
     const result = evaluate({ requestedScale: 1.75 });
     expect(result.ok && result.binding.scale).toBe(1.75);
@@ -315,10 +358,42 @@ describe("evaluateImageLoraForRender", () => {
   });
 
   it("refuses a task the row does not allow", () => {
-    const result = evaluate({ task: "portrait" });
+    const result = evaluate({ context: { kind: "production", task: "portrait" } });
     expect(result).toMatchObject({ ok: false, code: "image_lora.incompatible" });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).toContain("portrait");
+  });
+
+  it("applies the same task curation to an image-lab render, which reproduces production", () => {
+    expect(evaluate({ context: { kind: "image_lab", task: "portrait" } })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+    expect(evaluate({ context: { kind: "image_lab", task: "variant" } }).ok).toBe(true);
+  });
+
+  it("skips task curation on the generator bench while still applying every mechanical check", () => {
+    // The bench renders into no player-facing lane, so `allowedTasks` — a product
+    // policy about those lanes — has nothing to say about it. This is the defect
+    // the execution context exists to fix: the Generator had to borrow a task, and
+    // a mechanically perfect LoRA was refused for a rule about a lane it was not in.
+    const bench = { kind: "generator_bench" } as const;
+    expect(evaluate({ context: bench, lora: lora({ allowedTasks: [] }) }).ok).toBe(true);
+
+    // Mechanical compatibility is unchanged by the context: the same row still
+    // refuses on the model, the scale and the version's own bindings.
+    expect(evaluate({ context: bench, modelSlug: "qwen/qwen-image-edit-2511" })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+    expect(evaluate({ context: bench, requestedScale: 3 })).toMatchObject({
+      ok: false,
+      code: "image_lora.incompatible",
+    });
+    expect(evaluate({ context: bench, bindings: {} })).toMatchObject({
+      ok: false,
+      code: "image_lora.unreachable_configuration",
+    });
   });
 
   it("refuses a requested scale outside the curated range instead of clamping it", () => {

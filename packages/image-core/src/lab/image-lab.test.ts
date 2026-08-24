@@ -218,6 +218,9 @@ describe("imageLabExperimentSchema", () => {
       verdict: "honours_control",
       verdictNote: "limb-for-limb match, face preserved",
       predictionId: "pred_1",
+      // One prediction, no two-phase budget: the ordinary single-attempt run
+      // records no history, and absent parses to null like its neighbours.
+      providerAttempts: null,
       createdAt: "2026-08-10T12:00:00.000Z",
       startedAt: "2026-08-10T12:00:01.000Z",
       finishedAt: "2026-08-10T12:00:40.000Z",

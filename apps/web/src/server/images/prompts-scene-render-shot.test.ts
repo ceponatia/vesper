@@ -307,9 +307,9 @@ describe("the identity lock adapted to a face the shot cannot show", () => {
     }
   });
 
-  // The lock is rewritten per model by an EXACT-string match at the provider boundary
-  // (`preparePromptForImageModel`), so the adaptation is an appended sentence and the lock
-  // itself must survive byte for byte.
+  // The lock is rewritten per model family by an EXACT-string match at the provider boundary
+  // (the Qwen edit adapter's dialect quirk), so the adaptation is an appended sentence and the
+  // lock itself must survive byte for byte.
   it("appends after the lock without touching a character of it", () => {
     const prompt = buildSceneRenderPrompt(planWith({ camera: camera({ orientation: "away" }) }), {
       referenceName: "Mira",

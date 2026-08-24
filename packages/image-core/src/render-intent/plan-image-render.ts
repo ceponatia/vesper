@@ -2,7 +2,12 @@ import type { DiagnosticSink } from "@vesper/contracts";
 import type { ImageModel } from "../models/image-models";
 import type { ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import type { ResolvedImageProfile } from "../models/image-model-profiles";
-import { compileProfileRenderPlan, type ImageRenderDimensionFacts } from "../render-kernel/compile-profile-plan";
+import type { ProviderExecutionPolicy } from "../provider-interface/execution-policy";
+import {
+  compileProfileRenderPlan,
+  type ImagePromptPreparer,
+  type ImageRenderDimensionFacts,
+} from "../render-kernel/compile-profile-plan";
 import type { CompileReferenceBinding } from "../references/reference-role-prompt";
 import { compileImagePromptSegments, imagePromptBudgetFromBinding } from "./prompt-segments";
 import {
@@ -84,6 +89,21 @@ export interface ImageRenderIntent extends ImageRenderIntentCore {
    * reference planning ignores it.
    */
   versionId?: string;
+  /**
+   * How this render's prediction budget is split between waiting for a start and
+   * waiting for an image ({@link ProviderExecutionPolicy}).
+   *
+   * ABSENT is the production answer and the default: the transport keeps its
+   * legacy single-budget behavior byte for byte, so no lane changes by this
+   * field existing. Set only by the admin bench lanes, which can afford to wait
+   * out a cold-boot queue and must not read a never-started prediction as a
+   * failed render.
+   *
+   * Carried on the intent rather than resolved in the transport because it is a
+   * property of what this CALLER is willing to wait for, not of the provider;
+   * planning ignores it and threads it through untouched.
+   */
+  executionPolicy?: ProviderExecutionPolicy;
 }
 
 /**
@@ -98,6 +118,19 @@ export interface ImageRenderIntent extends ImageRenderIntentCore {
 export interface ImageRenderRuntimeFacts {
   /** Whether this deployment bypasses the provider's safety checker. */
   safetyCheckerDisabled: boolean;
+  /**
+   * The model-boundary prompt step for the family this render runs on
+   * ({@link ImagePromptPreparer}).
+   *
+   * It sits with the deployment facts rather than on the intent for the same
+   * reason the safety setting does: a lane says what it wants rendered, and
+   * which dialect the chosen model speaks is something the process resolves
+   * around it. Absent means no dialect at all — the prompt crosses the model
+   * boundary untouched, because model dialects live in the adapter package and
+   * a kernel that guessed one would re-create the slug checks the adapters
+   * replaced.
+   */
+  preparePrompt?: ImagePromptPreparer;
 }
 
 /** Exactly what the provider will be handed, and what capacity left behind. */
@@ -131,6 +164,13 @@ export interface PlannedImageRender {
   controlReferences: PlannedControlReference[];
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
+  /**
+   * The `controlInput` fields a typed semantic control produced
+   * ({@link ProfileRenderPlan.typedControlFields}) — the set the strict
+   * provider-input validator extends its typed-owner trust to, so a curated
+   * LoRA's probed weights field passes where a raw advanced URL never does.
+   */
+  typedControlFields: readonly string[];
   /**
    * The controls that actually reached `controlInput`, keyed by NORMALIZED name
    * — the compile step's provenance record ({@link ProfileRenderPlan.appliedControls}),
@@ -183,7 +223,14 @@ export interface ImageRenderRefusal {
     | "image_profile.required_reference_missing"
     | "image_profile.required_reference_dropped"
     | "image_profile.required_control_input_missing"
-    | "image_profile.prompt_strategy_unsupported";
+    | "image_profile.prompt_strategy_unsupported"
+    /**
+     * The compile step's final-wire LoRA invariant: the plan would have claimed
+     * a LoRA its own payload does not carry. Pre-spend, and never expected —
+     * unlike its neighbours here, this one reports a defect rather than a
+     * configuration an operator can fix.
+     */
+    | "image_profile.lora_binding_not_sent";
   message: string;
   context: Record<string, unknown>;
 }
@@ -301,6 +348,9 @@ export function planImageRender(
     basePrompt: resolveIntentPrompt(intent, model, sink),
     baseNegativePrompt: null,
     safetyCheckerDisabled: runtime.safetyCheckerDisabled,
+    // Absent leaves the compile step on its legacy dialect step, which is what
+    // every lane runs until the application resolves an adapter for the model.
+    ...(runtime.preparePrompt ? { preparePrompt: runtime.preparePrompt } : {}),
     ...(intent.controls ? { controlOverrides: intent.controls } : {}),
     // Threaded, never resolved here: planning is pure, and resolving a LoRA means
     // reading the library. The application does that first, so a plan either
@@ -313,6 +363,20 @@ export function planImageRender(
     references: { vocabulary: "render_intent", references: compileBindings(primary) },
   });
   if (!compiled.ok) {
+    // Each compile refusal keeps its own code and context: one names a strategy
+    // an operator can change, the other names a payload field that went missing.
+    // Collapsing them would send both to the same screen, and only one of them
+    // has anything an operator could do there.
+    if (compiled.reason === "lora_binding_not_sent") {
+      return {
+        ok: false,
+        refusal: {
+          code: "image_profile.lora_binding_not_sent",
+          message: `profile ${profile.key} compiled a plan claiming a LoRA the payload does not carry: ${compiled.message}`,
+          context: { profile: profile.id, task: profile.task, missingField: compiled.missingField },
+        },
+      };
+    }
     return {
       ok: false,
       refusal: {
@@ -336,6 +400,7 @@ export function planImageRender(
         buffers: input.references.map((reference) => reference.buffer),
       })),
       controlInput: compiled.plan.controlInput,
+      typedControlFields: compiled.plan.typedControlFields,
       appliedControls: compiled.plan.appliedControls,
       droppedControls: compiled.plan.resolvedControls.droppedControls,
       targetRatio: intent.target.aspectRatio,

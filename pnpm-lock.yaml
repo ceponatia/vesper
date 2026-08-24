@@ -36,6 +36,9 @@ importers:
       '@vesper/contracts':
         specifier: workspace:*
         version: link:packages/contracts
+      '@vesper/image-models':
+        specifier: workspace:*
+        version: link:packages/image-models
       '@vesper/image-sd':
         specifier: workspace:*
         version: link:packages/image-sd
@@ -90,6 +93,9 @@ importers:
       '@vesper/image-core':
         specifier: workspace:*
         version: link:../../packages/image-core
+      '@vesper/image-models':
+        specifier: workspace:*
+        version: link:../../packages/image-models
       '@vesper/image-replicate':
         specifier: workspace:*
         version: link:../../packages/image-replicate
@@ -170,6 +176,25 @@ importers:
       '@vesper/contracts':
         specifier: workspace:*
         version: link:../contracts
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(vite@8.0.16(@types/node@24.13.2)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/image-models:
+    dependencies:
+      '@vesper/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@vesper/image-core':
+        specifier: workspace:*
+        version: link:../image-core
       zod:
         specifier: ^4.4.3
         version: 4.4.3

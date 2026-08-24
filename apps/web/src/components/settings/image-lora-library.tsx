@@ -8,6 +8,7 @@ import {
   IMAGE_LORA_MIN_SCALE,
   imageLoraLocatorTypes,
   imageLorasApi,
+  isValidImageLoraLocator,
   redactImageLoraLocator,
   type ImageLora,
   type ImageLoraCreateRequest,
@@ -60,16 +61,44 @@ function locatorTypeLabel(locatorType: ImageLoraLocatorType): string {
       return "Hugging Face repository";
     case "https_url":
       return "Direct HTTPS URL";
+    case "civitai_model_version":
+      return "Civitai model version";
   }
 }
 
-/** A locator of this type, shaped — the difference between the two, shown. */
+/** A locator of this type, shaped — the difference between the three, shown. */
 function locatorPlaceholder(locatorType: ImageLoraLocatorType): string {
   switch (locatorType) {
     case "huggingface_repo":
       return "owner/repo";
     case "https_url":
       return "https://huggingface.co/owner/repo/resolve/main/weights.safetensors";
+    case "civitai_model_version":
+      return "3160956";
+  }
+}
+
+/**
+ * What a locator of this type must look like — the rule, in one sentence.
+ *
+ * Read twice: as the field's own hint, so the shape is known before it is
+ * typed, and as the message when the save is refused. One spelling, because a
+ * hint that describes one rule and an error that describes another is how an
+ * operator ends up retyping something that was already right.
+ *
+ * The Civitai case is the one that needs saying out loud: an operator copying
+ * from Civitai has a full URL on the clipboard, and half of those carry
+ * `?token=…`, so the field takes the bare id and the download address is built
+ * from it at render time (`resolveImageLoraArtifactLocator`).
+ */
+function locatorRequirement(locatorType: ImageLoraLocatorType): string {
+  switch (locatorType) {
+    case "huggingface_repo":
+      return "A repository slug — owner/repo, no scheme and no third segment.";
+    case "https_url":
+      return "A public HTTPS address with no embedded credentials.";
+    case "civitai_model_version":
+      return "The bare model-version id, digits only — Vesper builds the download address from it, so a pasted URL is refused.";
   }
 }
 
@@ -234,9 +263,13 @@ function ImageLoraRow({
     lora.compatibleVersionIds.length === 0
       ? "any version"
       : `${String(lora.compatibleVersionIds.length)} pinned version(s)`;
+  // Task curation is a PRODUCTION policy: it decides which player-facing jobs
+  // may blend this row in, and the Image Generator's bench — which renders into
+  // no lane — is not subject to it. So an empty list is "no production lane",
+  // not "this row cannot render at all".
   const tasks =
     lora.allowedTasks.length === 0
-      ? "no tasks — this row cannot render"
+      ? "none — no production lane may use this row"
       : lora.allowedTasks.map((task) => TASK_LABELS[task]).join(", ");
 
   return (
@@ -363,6 +396,18 @@ function ImageLoraForm({
   };
 
   const save = async () => {
+    // The contract's own rule, asked here rather than left to the 400: the
+    // locator is checked one way per type, and a mistyped one is only useful as
+    // a sentence beside the field that holds it. Same function the routes save
+    // under and the evaluator re-checks at render time, so the three cannot
+    // drift into "saves cleanly, refuses every render".
+    const trimmedLocator = locator.trim();
+    if (!isValidImageLoraLocator(locatorType, trimmedLocator)) {
+      setError(
+        `That is not a usable ${locatorTypeLabel(locatorType).toLowerCase()} locator. ${locatorRequirement(locatorType)}`,
+      );
+      return;
+    }
     const minimum = Number.parseFloat(minimumScale);
     const preferred = Number.parseFloat(defaultScale);
     const maximum = Number.parseFloat(maximumScale);
@@ -394,7 +439,7 @@ function ImageLoraForm({
     const body = {
       label: label.trim(),
       locatorType,
-      locator: locator.trim(),
+      locator: trimmedLocator,
       compatibleModelSlugs: slugs,
       compatibleVersionIds: splitList(versionText),
       defaultScale: preferred,
@@ -455,7 +500,7 @@ function ImageLoraForm({
 
         <TextField
           label="Locator"
-          hint="A public retrieval address — never a token, never a private repository. Query strings are stripped everywhere this is reported."
+          hint={`${locatorRequirement(locatorType)} Never a token and never a private repository; anything reported from here is redacted.`}
           value={locator}
           placeholder={locatorPlaceholder(locatorType)}
           maxLength={1000}
@@ -566,7 +611,7 @@ function ImageLoraForm({
 
         <Field
           label="Allowed tasks"
-          hint="Empty means none. A lab finishing pass runs under the variant task, whatever the picture behind it was."
+          hint="Which player-facing jobs may use this row; empty means none of them. A lab finishing pass runs under the variant task, whatever the picture behind it was. The Image Generator’s bench renders into no lane, so it is not judged against this list."
         >
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             {imageProfileTasks.map((task) => (

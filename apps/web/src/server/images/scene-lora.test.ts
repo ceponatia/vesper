@@ -188,7 +188,8 @@ describe("resolveIntimateSceneLoraRoute", () => {
       {
         model: expect.objectContaining({ id: "imgmdlqwenlorawrapperaaa" }),
         versionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
-        task: "scene",
+        // A player-facing render, so the row's `allowedTasks` curation applies.
+        execution: { kind: "production", task: "scene" },
       },
       sink,
     );
@@ -331,7 +332,7 @@ describe("the seeded library row", () => {
       lora: SEEDED_ROW,
       modelSlug: wrapperModel().slug,
       versionId: "b37d69a6b94414c96cc4ecb16660b472bb62284f2293d4b65537c09b8500e200",
-      task: "scene",
+      context: { kind: "production", task: "scene" },
       bindings: wrapperModel().advancedCapabilities.controls,
     });
     expect(evaluated.ok).toBe(true);
@@ -346,7 +347,7 @@ describe("the seeded library row", () => {
       lora: SEEDED_ROW,
       modelSlug: "qwen/qwen-image-edit-2511",
       versionId: null,
-      task: "scene",
+      context: { kind: "production", task: "scene" },
       bindings: {},
     });
     expect(evaluated.ok).toBe(false);

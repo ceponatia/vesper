@@ -7,7 +7,6 @@ import {
   type ImageModelProfile,
   type ImagePromptStrategy,
 } from "../models/image-model-profiles";
-import { preparePromptForImageModel } from "../models/quality-presets";
 import {
   compileProfileRenderPlan,
   MAX_TRIAL_PREDICTION_MS,
@@ -76,7 +75,10 @@ function profile(over: Record<string, unknown> = {}): ImageModelProfile {
  */
 function compiledPlan(input: CompileProfileRenderPlanInput): ProfileRenderPlan {
   const result = compileProfileRenderPlan(input);
-  if (!result.ok) throw new Error(`[render-kernel] unexpected refusal: ${result.reason} (${result.promptStrategy})`);
+  if (!result.ok) {
+    const detail = result.reason === "lora_binding_not_sent" ? result.message : result.promptStrategy;
+    throw new Error(`[render-kernel] unexpected refusal: ${result.reason} (${detail})`);
+  }
   return result.plan;
 }
 
@@ -728,19 +730,106 @@ describe("a resolved LoRA", () => {
     expect(compiled.controlInput).toEqual({});
     expect(compiled.finalPrompt).toBe("change the outfit");
   });
+
+  /**
+   * The final-wire invariant, from both ends. It exists because the opposite held
+   * unnoticed for the library's whole life: no prediction ever carried
+   * `lora_weights` while every record said one had been applied.
+   */
+  describe("the final-wire invariant", () => {
+    it("drops an override colliding with a resolved LoRA's own fields, and sends the binding verbatim", () => {
+      // Overrides merge last by design, which used to make them the one route by
+      // which the payload and the record could part company — a bag writing
+      // `lora_weights` under a record naming the library row ships LoRA B
+      // labeled as LoRA A. A resolved LoRA now OWNS its bound fields (owner
+      // ruling 2026-08-24): the colliding overrides are dropped with the
+      // ordinary recorded reason, the payload carries the binding's own locator
+      // and scale, and the wire-invariant gate behind this is a pure backstop
+      // with no reachable public route.
+      const compiled = loraPlan({
+        profile: profile({ providerOverrides: { lora_weights: "owner/other-lora", lora_scale: 4 } }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput.lora_weights).toBe(binding.locator);
+      expect(compiled.controlInput.lora_scale).toBe(binding.scale);
+      expect(compiled.appliedControls.lora).toEqual({ id: "lora-1", scale: 0.8 });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_weights", reason: "reserved" });
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora_scale", reason: "reserved" });
+      // The fields stay ordinary advanced inputs when no LoRA is resolved — the
+      // escape hatch only closes when there is a record it could falsify.
+      const unresolved = loraPlan({ profile: profile({ providerOverrides: { lora_weights: "owner/other-lora" } }) });
+      expect(unresolved.controlInput.lora_weights).toBe("owner/other-lora");
+    });
+
+    it("does not record a LoRA the version has nowhere to put", () => {
+      // The other direction: a version exposing one half of the binding sends
+      // neither field, so the plan must not claim the LoRA — and this is a DROP,
+      // not a refusal, because a model without LoRA inputs is an ordinary model.
+      const compiled = loraPlan({
+        model: model({
+          advancedCapabilities: {
+            controls: { loraWeights: { field: "lora_weights", type: "string" } },
+            knownInputFields: ["lora_weights"],
+          },
+        }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({});
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({ control: "lora", reason: "no_binding" });
+    });
+
+    it("does not record a LoRA whose mapped field the reserved filter removed", () => {
+      // A probed binding can land on a field the render path owns — the same
+      // collision `resolutionTier` hits when a size-mode model probes it as
+      // `size`. The field never ships, so the record must not claim it did.
+      const compiled = loraPlan({
+        model: model({ referenceField: "lora_weights", advancedCapabilities: LORA_CAPABILITIES }),
+        resolvedLora: binding,
+      });
+      expect(compiled.controlInput).toEqual({ lora_scale: 0.8 });
+      expect(compiled.appliedControls.lora).toBeUndefined();
+      expect(compiled.resolvedControls.droppedControls).toContainEqual({
+        control: "lora_weights",
+        reason: "reserved",
+      });
+    });
+  });
 });
 
-describe("preparePromptForImageModel idempotency", () => {
-  it("leaves an already-prepared prompt byte-identical", () => {
-    // `compileProfileRenderPlan` fingerprints the prepared prompt and the
-    // transport prepares again on the way out. If this ever stops holding, every
-    // trial cell starts refusing cell_conflict against its own compiled prompt.
+describe("the injected prompt preparer", () => {
+  it("uses the caller's preparer instead of the legacy dialect step", () => {
+    // The seam a model-family adapter arrives through: the kernel knows there is
+    // a dialect step and never which slug needs which sentence.
+    const compiled = compiledPlan({
+      model: model(),
+      profile: profile(),
+      basePrompt: "change the outfit",
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+      preparePrompt: (target, prompt, referenceCount) => `${target.slug}|${String(referenceCount)}|${prompt}`,
+    });
+    // The preparer sees the EFFECTIVE model, the strategy's compiled text, and how
+    // many references this render sends — the three facts a dialect needs.
+    expect(compiled.finalPrompt).toBe("vesper-test/compile|1|change the outfit");
+  });
+
+  it("applies no dialect at all when none is injected", () => {
+    // There is no dialect without an injected preparer: model families live in
+    // `@vesper/image-models`, one layer up, and this package deliberately keeps
+    // no slug check of its own. Even the slug whose dialect used to be hardcoded
+    // here compiles its text through untouched now.
     const legacy =
       "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
-    const target = { slug: "qwen/qwen-image-edit-2511" };
-    for (const count of [1, 2]) {
-      const once = preparePromptForImageModel(target, `${legacy} Then change the outfit.`, count);
-      expect(preparePromptForImageModel(target, once, count)).toBe(once);
-    }
+    const compiled = compiledPlan({
+      model: model({ slug: "qwen/qwen-image-edit-2511" }),
+      profile: profile(),
+      basePrompt: legacy,
+      baseNegativePrompt: null,
+      safetyCheckerDisabled: true,
+      references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
+    });
+    expect(compiled.finalPrompt).toBe(legacy);
   });
 });

@@ -432,6 +432,14 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // select whose every use refuses. Same rails as the lab: enabled rows only,
   // the row's own band, a vanished pick cleared (guarded on the fetch having
   // answered), and a change of row returning the scale to that row's default.
+  //
+  // What this picker deliberately does NOT narrow by is `allowedTasks`. That
+  // list is production curation — which player-facing jobs may blend a row in —
+  // and the Generator runs under `generator_bench`, which serves no lane and is
+  // not judged against it. Filtering or warning on it here would hide rows this
+  // bench can genuinely render, which is the opposite of the honesty every
+  // other rail on this screen keeps: offer only what can run, and warn about
+  // exactly what would refuse.
   const loraBound = bindings.loraWeights !== undefined && bindings.loraScale !== undefined;
   const enabledLoras = (loras.data ?? []).filter((lora) => lora.enabled);
   const selectedLora = loraId === "" ? null : (enabledLoras.find((lora) => lora.id === loraId) ?? null);
@@ -613,6 +621,26 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     selectedModel.slug === prefill.modelSlug &&
     pinnedVersion !== null &&
     pinnedVersion !== prefill.requestedVersionId;
+
+  // The version this run will actually be judged against: the model's own pin,
+  // unless a drifted duplicate chose to replay the one its source ran — the
+  // only case where that choice is offered, and the same condition the submit
+  // below uses to send it.
+  const effectiveVersionId =
+    versionDrift && versionPolicy === "captured" ? (prefill?.requestedVersionId ?? null) : pinnedVersion;
+
+  // A LoRA row that names exact versions is a reviewer saying these weights do
+  // NOT survive a version change, so a pinned version outside that list is a
+  // pre-spend refusal exactly like the model mismatch above — surfaced here for
+  // the same reason, and worded the same way. Declared beside the version facts
+  // rather than beside the other LoRA rails because it needs the replay choice,
+  // which is settled here. A row naming no versions runs on any of them, and a
+  // model with no pin is already refused by its own warning.
+  const loraVersionMismatch =
+    selectedLora !== null &&
+    selectedLora.compatibleVersionIds.length > 0 &&
+    effectiveVersionId !== null &&
+    !selectedLora.compatibleVersionIds.includes(effectiveVersionId);
 
   // Capability drift on a duplicate — the same honesty rule one level down: a
   // prefill seeded from an older capability record can carry values the
@@ -1248,6 +1276,13 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   <p className="text-xs text-danger-300">
                     {`These weights are not curated for ${baseImageModelSlug(selectedModel.slug)} — as it stands the `}
                     {"run is refused before any spend. Pick a listed model, or widen the row in the LoRA library."}
+                  </p>
+                ) : null}
+                {loraVersionMismatch ? (
+                  <p className="text-xs text-danger-300">
+                    {`These weights name the exact versions they were reviewed against, and ${effectiveVersionId ?? ""} `}
+                    {"is not one of them — as it stands the run is refused before any spend. Pick a different LoRA, or "}
+                    {"add this version to the row in the LoRA library."}
                   </p>
                 ) : null}
               </>

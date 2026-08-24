@@ -444,14 +444,23 @@ chain and a visible refusal. The `replicate/<slug>` actually used is recorded on
 **Transport** (`@vesper/image-replicate`): the model prediction endpoint (`POST
 /models/{owner}/{name}/predictions`) with `Prefer: wait=60`, then poll — or
 `POST /predictions` carrying a version id when the slug is pinned
-`owner/name:version`. `REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default
-5m) drives both deadlines — Replicate's `Cancel-After` header and the client's own
-poll cutoff — so raising it can't leave the provider cancelling at a stale bound.
-**`Cancel-After` starts when the prediction is created, so provider queue time
-consumes the same budget as execution time.** A five-minute budget can therefore
-abort a prediction that spent nearly all five minutes queued even when the model
-itself normally runs in seconds. Diagnose queue time separately from model run
-time before treating such an abort as a model failure.
+`owner/name:version`. Production renders run under one budget:
+`REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default 5m) drives both
+deadlines — Replicate's `Cancel-After` header and the client's own poll cutoff —
+so raising it can't leave the provider cancelling at a stale bound.
+**`Cancel-After` starts when the prediction is created, so under a single budget
+provider queue time consumes the same budget as execution time** — a five-minute
+budget can abort a prediction that spent nearly all five minutes queued even
+when the model itself runs in seconds, so diagnose queue time separately from
+model run time before treating such an abort as a model failure. Bench lanes
+(Image Generator, Image Lab) instead pass a `ProviderExecutionPolicy` splitting
+that budget into a startup phase (creation → first execution) and a render phase
+(execution start → output); `Cancel-After` carries the sum, the phases are
+enforced client-side, and a prediction that dies in the queue without ever
+executing — confirmed by re-reading its record after the cancel — is recreated
+up to the policy's retry count, with every attempt reported to the caller. A
+started prediction is never recreated, and an unconfirmable cancellation refuses
+the retry rather than risk paying for two renders.
 Reference and control bytes cross a **preparation pass** at the
 `renderWithModel` choke point (`reference-preparation.ts`: EXIF orientation
 applied, metadata stripped, alpha flattened only for non-alpha targets, encoded

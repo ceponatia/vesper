@@ -22,6 +22,7 @@ import { db, imageIdentityPackTrialCells, images } from "../db";
 import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, saveImageBuffer } from "./assets";
 import { ensureIdentityPack } from "./identity-pack-ensure";
 import { getIdentityPackRevisionForTrial } from "./identity-pack-read";
+import { preparePromptFor } from "./model-adapters";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 import {
   type ExecutedTrialCell,
@@ -551,6 +552,10 @@ async function executeOneTrialCell(
     basePrompt: fixture.prompt,
     baseNegativePrompt: fixture.negativePrompt,
     safetyCheckerDisabled: disableSafetyChecker(),
+    // Same dialect the planner compiled under — resolved through the same shared
+    // join, so the recompile below is comparing configurations rather than
+    // discovering that two call sites answered "which family is this" apart.
+    ...preparePromptFor(model),
     references: { vocabulary: "identity_pack", roles: spec.orderedReferenceRoles },
   });
   if (!recompiled.ok) {
@@ -558,12 +563,17 @@ async function executeOneTrialCell(
     // reaches execution and meets one did not come from a planner that allowed
     // it — the PROFILE ROW moved under the cell (its strategy was edited after
     // the grid was planned). That is a conflict, not an ineligibility: the cell
-    // pinned a comparison whose configuration no longer exists.
+    // pinned a comparison whose configuration no longer exists. The other arm of
+    // the refusal union — the wire invariant — is likewise something that
+    // changed since planning, and it carries its own message rather than a
+    // `promptStrategy` the arm does not have.
     return refuseTrialCell(
       cell,
       context,
       "cell_conflict",
-      `the profile's prompt strategy changed to ${recompiled.promptStrategy}, which the identity trial cannot execute`,
+      recompiled.reason === "unsupported_prompt_strategy"
+        ? `the profile's prompt strategy changed to ${recompiled.promptStrategy}, which the identity trial cannot execute`
+        : recompiled.message,
     );
   }
   const plan = recompiled.plan;

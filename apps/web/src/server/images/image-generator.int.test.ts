@@ -14,7 +14,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { db, imageGeneratorRuns, imageModels, images } from "../db";
+import { db, imageGeneratorRuns, imageLoras, imageModels, images } from "../db";
 import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./assets";
 import { setImageGeneratorRendererForTesting, type GeneratorRenderRequest } from "./image-generator-render";
 import { runImageGeneratorRun } from "./image-generator-run";
@@ -81,6 +81,12 @@ const STRUCTURAL_SLUG = "vesper-test/generator-structural";
 const REQUIRED_CONTROL_SLUG = "vesper-test/generator-required-control";
 const REPROBED_SLUG = "vesper-test/generator-reprobed";
 const SIZE_SLUG = "vesper-test/generator-size-mode";
+/**
+ * A LoRA the library curates for SCENE renders only — deliberately not for the
+ * synthetic profile's nominal `item` task. It is the exact row shape the bench
+ * used to refuse (plan §1).
+ */
+const BENCH_LORA_ID = "imglorabenchonlyaaaaaaaa";
 const PINNED_VERSION = "generatorversionaaaaaaaa";
 const REPROBED_VERSION = "generatorversionbbbbbbbb";
 const EXECUTED_VERSION = PINNED_VERSION;
@@ -290,10 +296,33 @@ beforeAll(async () => {
         probedVersionId: PINNED_VERSION,
       },
     ]);
+
+  // Mechanically perfect for the advanced fixture — right model, a scale inside
+  // both bands, and a version list short enough not to pin anything — and
+  // curated for `scene` alone. Planted delete-first like the model rows,
+  // because the library is global too.
+  await db().delete(imageLoras).where(eq(imageLoras.id, BENCH_LORA_ID));
+  await db()
+    .insert(imageLoras)
+    .values({
+      id: BENCH_LORA_ID,
+      label: "Bench-only Fixture LoRA",
+      locatorType: "civitai_model_version",
+      locator: "1234567",
+      compatibleModelSlugs: [ADVANCED_SLUG],
+      compatibleVersionIds: [],
+      defaultScale: 1,
+      minimumScale: 0.5,
+      maximumScale: 1.5,
+      allowedTasks: ["scene"],
+    });
 });
 
 afterAll(async () => {
-  if (ready) await db().delete(imageModels).where(inArray(imageModels.id, FIXTURE_MODEL_IDS));
+  if (ready) {
+    await db().delete(imageLoras).where(eq(imageLoras.id, BENCH_LORA_ID));
+    await db().delete(imageModels).where(inArray(imageModels.id, FIXTURE_MODEL_IDS));
+  }
   await temp?.cleanup();
   await purgeOwnerRows([ownerId, otherOwnerId]);
   await endTestPool();
@@ -457,6 +486,78 @@ describe.skipIf(!ready)("image generator runs", () => {
       outcome: { sentRoles: ["reference"], dedicatedFields: ["pose_image"], renumbered: false },
       attempt: { predictionId: "pred_generator_1" },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bench execution: the context and the budgets that are the Generator's alone
+// ---------------------------------------------------------------------------
+
+/**
+ * The two facts that make the Generator a BENCH rather than a production lane
+ * borrowing production's rules, both of them app wiring that no package test
+ * can reach: which execution context this runner resolves a LoRA under, and
+ * that the intent it builds carries an execution policy at all.
+ */
+describe.skipIf(!ready)("image generator bench execution", () => {
+  it("runs a LoRA the library curates for another task, because the bench serves no task", async () => {
+    // Falsified against the pre-adapter runner, which passed the synthetic
+    // profile's nominal `item` task and settled `image_lora.incompatible` — a
+    // mechanically perfect LoRA refused for breaking a curation rule about a
+    // lane the bench is not in. The row below is still curated for `scene`
+    // only; what changed is that `generator_bench` asks no task question.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({
+      modelId: ADVANCED_MODEL_ID,
+      controls: { lora: { id: BENCH_LORA_ID } },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.failureCode).toBeNull();
+    // Resolved, not merely un-refused: the weights the payload will carry are
+    // the row's, at the row's curated default strength.
+    expect(captured[0]?.intent.resolvedLora).toMatchObject({ id: BENCH_LORA_ID, scale: 1 });
+  });
+
+  it("records every provider attempt beside the run's own record, final attempt in the column", async () => {
+    // A cold-start abort followed by a successful retry. Without this the row
+    // would show one prediction and no sign that the queue killed the first —
+    // the exact confusion the two-phase budget exists to end, and a passthrough
+    // that is silently droppable at four separate hops.
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_generator_retry",
+        executedVersionId: EXECUTED_VERSION,
+        attempts: [
+          { predictionId: "pred_generator_queued", outcome: "startup_timeout", queuedMs: 480_000 },
+          { predictionId: "pred_generator_retry", outcome: "succeeded", queuedMs: 12_000, renderMs: 41_000 },
+        ],
+      };
+    });
+    const { id, sink } = await createRun();
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    // The bench asked to be watched in two phases; without a policy on the
+    // intent the transport reports no attempts at all and a queued render is
+    // aborted at the single budget, which is the defect Stage 2 fixed.
+    expect(captured[0]?.intent.executionPolicy).toBeDefined();
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.providerAttempts).toEqual([
+      { predictionId: "pred_generator_queued", outcome: "startup_timeout", queuedMs: 480_000 },
+      { predictionId: "pred_generator_retry", outcome: "succeeded", queuedMs: 12_000, renderMs: 41_000 },
+    ]);
+    // The provenance column keeps describing the FINAL attempt, so every reader
+    // that predates the history reads exactly what it always did.
+    expect(run?.predictionId).toBe("pred_generator_retry");
   });
 });
 

@@ -36,6 +36,32 @@ plan is fingerprinted with `client.safetyCheckerDisabled` and the payload builde
 writes the same value, so a process cannot hash one posture and send another.
 Probing shares the client too — it used to read the token independently.
 
+## Prediction budgets: one, or two phases
+
+By default a prediction gets one budget (`predictionTimeoutMs`) covering both
+the time it waits in Replicate's queue and the time the model spends rendering.
+That is what every production lane uses, and it is unchanged.
+
+A caller may instead pass a `ProviderExecutionPolicy` (from
+`@vesper/image-core`) on the render request, which splits the budget in two:
+
+- the provider is sent one `Cancel-After` covering `startupBudgetMs +
+  renderBudgetMs`, because Replicate has no notion of the split;
+- locally, a prediction that has not begun executing is held to the startup
+  budget, and one that has begun gets the render budget from the moment
+  execution was first observed;
+- a prediction that dies before it ever executes — this client's startup cutoff,
+  or the provider abandoning a queued prediction — is recreated up to
+  `maxStartupRetries` times. A prediction that ran and failed is never retried;
+- the result then carries `attempts`, one record per created prediction
+  (`predictionId`, outcome, queue and render durations). `predictionId` and
+  `executedVersionId` keep describing the final attempt.
+
+"Never started" is judged from the prediction record, not from wall-clock
+guesses, and **not** from `started_at`: Replicate stamps that field even on a
+prediction it abandons. Evidence of execution means `metrics.predict_time`, log
+output, or a status that means "executing right now".
+
 ## Layout
 
 Read in this order — the flow runs top to bottom.
@@ -46,7 +72,7 @@ Read in this order — the flow runs top to bottom.
 | `http.ts`         | The credentialed fetch surface; error text                  |
 | `payload.ts`      | The render request, provider input, control overlay         |
 | `files.ts`        | Reference upload/delete, data URLs, the inline byte budget  |
-| `prediction.ts`   | Prediction targets, create, poll, cancel, provenance        |
+| `prediction.ts`   | Prediction targets, create, poll, cancel, budgets, attempts |
 | `outputs.ts`      | Which member is the image; the output-host allow-list       |
 | `render.ts`       | `runRegistryImageModel` — the registry render entry point   |
 | `preprocessor.ts` | One image-in, image-out lab tool run                        |

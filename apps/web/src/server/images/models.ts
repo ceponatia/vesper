@@ -10,18 +10,20 @@ import {
   type ImageRenderDimensionFacts,
   type ImageRenderPolicy,
   type PlannedControlReference,
-  preparePromptForImageModel,
   providerDefaultDimensions,
+  type ProviderExecutionPolicy,
   withReviewedImageQuality,
 } from "@vesper/image-core";
 import type {
   ProviderInputViolation,
   RenderControlReference,
+  ReplicatePredictionAttempt,
   UnsentReferenceReport,
 } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { replicateClient } from "../ai";
+import { prepareModelPrompt } from "./model-adapters";
 import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 
 /**
@@ -151,6 +153,13 @@ export interface RenderWithModelInput {
    * stays the single place a normalized control becomes a provider field.
    */
   controlInput?: Record<string, unknown>;
+  /**
+   * The `controlInput` fields a typed semantic control produced, passed through
+   * to the transport's strict validator so it can extend typed-owner trust to
+   * them (a curated LoRA's probed weights field) without trusting the raw
+   * override bag's fields.
+   */
+  typedControlFields?: readonly string[];
   /** This run's prediction budget (a profile's `timeoutMs`); null uses env/default. */
   timeoutMs?: number | null;
   /** Execute exactly this provider version; null takes the slug's own resolution. */
@@ -161,6 +170,17 @@ export interface RenderWithModelInput {
    * fit, let the provider judge the values — so no existing lane moves.
    */
   policy?: ImageRenderPolicy;
+  /**
+   * How this run's prediction is WATCHED: one budget, or a startup budget and a
+   * render budget with startup retries (`ProviderExecutionPolicy`).
+   *
+   * Threaded through untouched, like `controlInput` and `policy`, and for the
+   * same reason — the lane that decided how patient to be is not this wrapper.
+   * Absent is the production answer and leaves the transport's legacy
+   * single-budget shell exactly as it was; the bench lanes resolve one
+   * (`benchExecutionPolicy`) and read the attempts it makes the result carry.
+   */
+  executionPolicy?: ProviderExecutionPolicy;
 }
 
 export interface RenderWithModelResult {
@@ -210,6 +230,18 @@ export interface RenderWithModelResult {
   shape?: RenderShapeOutcome;
   /** The returned image's own pixel dimensions, when they could be read. */
   outputDimensions?: { width: number; height: number };
+  /**
+   * Every prediction this render created, oldest first — passed through
+   * untouched from `ReplicateImageResult`, where the rule is recorded: present
+   * ONLY when the caller supplied an `executionPolicy`, because only then can
+   * one render create more than one prediction.
+   *
+   * `predictionId`/`executedVersionId` above keep describing the FINAL attempt,
+   * so every existing consumer reads exactly what it always did. A bench that
+   * records this list is what makes "the queue never let it start" and "the
+   * model ran and failed" tellable apart after the fact.
+   */
+  attempts?: ReplicatePredictionAttempt[];
 }
 
 /** What one render asked the provider for, shape-wise, and what it did afterwards. */
@@ -229,12 +261,11 @@ export interface RenderShapeOutcome {
 /**
  * Run one model and hand back a buffer in the shape the lane asked for.
  *
- * The model first crosses the reviewed-quality seam. That seam corrects known
- * harmful provider defaults and rewrites the provider-neutral identity lock into
- * Qwen Edit's numbered-reference dialect without teaching every lane about model
- * slugs. It is intentionally small and dissolves into profile controls as those
- * controls gain transports — the profiles now reach this path, but the controls
- * they would carry (guidance, steps, negatives) still have no probed bindings.
+ * The model first crosses the reviewed-quality seam, which corrects known
+ * harmful provider defaults. It is intentionally small and dissolves into
+ * profile controls as those controls gain transports — the profiles now reach
+ * this path, but the controls they would carry (guidance, steps, negatives)
+ * still have no probed bindings.
  *
  * This wrapper also owns shape negotiation. A lane says what ratio it wants —
  * and, when it compiled a profile plan, what dimensions the profile asked for —
@@ -254,11 +285,14 @@ export interface RenderShapeOutcome {
  * get for the last two, because `renderImageIntent` deliberately passes neither
  * a version pin nor a forced budget. Only the identity trial pins.
  *
- * The prompt crosses `preparePromptForImageModel` here even when the caller
- * already compiled it. That is safe because the rewrite is IDEMPOTENT — it
- * replaces the legacy identity lock with a Qwen-dialect one, and a prompt that
- * no longer contains the legacy sentence passes through untouched — so a
- * pre-compiled prompt arrives at the provider exactly as it was hashed.
+ * The prompt crosses the model family's own dialect step here
+ * (`prepareModelPrompt` → the `@vesper/image-models` adapter) even when the
+ * caller already compiled it. That is safe because a preparer is contractually
+ * IDEMPOTENT — the Qwen editors replace the legacy identity lock with their
+ * numbered-reference one, and a prompt that no longer contains the legacy
+ * sentence passes through untouched — so a pre-compiled prompt arrives at the
+ * provider exactly as it was hashed. A model with no adapter is the ordinary
+ * case and its prompt is returned unchanged.
  *
  * Reference and control bytes cross `prepareRenderReferences` here, and here
  * only — this is the one choke point every render path shares, so preparing at
@@ -274,7 +308,7 @@ export async function renderWithModel(
   // model's own default shape, which is a different request from "unset".
   const targetRatio = input.targetRatio === undefined ? IMAGE_TARGET_ASPECT : input.targetRatio;
   const model = withReviewedImageQuality(input.model);
-  const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
+  const prompt = prepareModelPrompt(model, input.prompt, input.references?.length ?? 0);
   // Absent facts spread to nothing, and a factless request resolves to the pure
   // `chooseAspect` answer — the direct callers keep exactly their old shapes. A
   // native request skips the negotiation outright: nothing is bucketed toward a
@@ -317,9 +351,11 @@ export async function renderWithModel(
       ...(controlReferences.length ? { controlReferences } : {}),
       aspect: typeof aspectValue === "string" ? aspectValue : null,
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+      ...(input.typedControlFields?.length ? { typedControlFields: input.typedControlFields } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.versionId ? { versionId: input.versionId } : {}),
       ...(input.policy ? { policy: input.policy } : {}),
+      ...(input.executionPolicy ? { executionPolicy: input.executionPolicy } : {}),
     },
     sink,
   );
@@ -341,6 +377,10 @@ export async function renderWithModel(
     ...(result.sentReferenceCount !== undefined ? { sentReferenceCount: result.sentReferenceCount } : {}),
     ...(result.unsentReferences ? { unsentReferences: result.unsentReferences } : {}),
     ...(result.providerInputViolations ? { providerInputViolations: result.providerInputViolations } : {}),
+    // Spread on the same terms as everything above it: absent under no
+    // execution policy, which is every production render, so a stored result
+    // gains no new key it did not have.
+    ...(result.attempts ? { attempts: result.attempts } : {}),
   };
   if (!result.ok || !result.image) {
     return { ok: false, ...provenance, shape: shape(null), error: result.error ?? `${model.slug} returned no image` };

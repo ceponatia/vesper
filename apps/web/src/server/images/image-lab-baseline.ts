@@ -13,12 +13,12 @@ import { resolveImageProfileForTask } from "./model-profiles";
 import {
   labFailure,
   labRenderer,
-  labRuntimeFacts,
   planOutcome,
   readOwnedImageBytes,
   settleFailed,
   storeLabRender,
 } from "./image-lab-render";
+import { benchExecutionPolicy, imageRenderRuntimeFacts } from "./model-adapters";
 import {
   type ImageLabExperimentRow,
   type ImageLabRunPayload,
@@ -72,6 +72,12 @@ export async function runBaseline(
     prompt: row.instruction,
     references: subject.references,
     target: { aspectRatio: IMAGE_TARGET_ASPECT },
+    // A baseline reproduces the lane's CONFIGURATION — its profile, model,
+    // prompt strategy and controls — not the lane's patience. This is still an
+    // admin-triggered bench render nobody is waiting on a chat for, and a
+    // cold-start abort would cost the comparison its control arm for a reason
+    // that says nothing about the configuration under test.
+    executionPolicy: benchExecutionPolicy(resolved.model),
   };
   // Planned first purely to CAPTURE the compiled prompt: `renderImageIntent`
   // does not report it, and a baseline whose recorded text is the admin's raw
@@ -80,7 +86,7 @@ export async function runBaseline(
   // into the plan it executes (a `random` seed policy). Everything this
   // baseline STORES from the plan — `finalPrompt`, the `planOutcome` reference
   // record — is seed-independent, which is what keeps the capture honest.
-  const planned = planImageRender(intent, labRuntimeFacts());
+  const planned = planImageRender(intent, imageRenderRuntimeFacts(resolved.model));
   if (!planned.ok) return await settleFailed(row, LAB_PROFILE_UNAVAILABLE, planned.refusal.message, sink);
 
   const finalPrompt = planned.plan.prompt;

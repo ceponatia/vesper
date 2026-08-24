@@ -2,6 +2,7 @@ import {
   type ImageEmptyPromptPolicy,
   type ImageModel,
   type ImageRenderPolicy,
+  type ProviderExecutionPolicy,
   reservedImageInputFields,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
@@ -64,6 +65,14 @@ export interface RegistryModelRequest {
    */
   controlInput?: Record<string, unknown>;
   /**
+   * The `controlInput` fields a typed semantic control produced — mapper-written,
+   * never the raw override bag. The strict arm's provider-input validation
+   * extends its typed-owner trust to exactly these, which is how a curated
+   * LoRA's probed weights field may carry a URI while a raw advanced value may
+   * not (image-model-adapters.spec.md).
+   */
+  typedControlFields?: readonly string[];
+  /**
    * This run's prediction budget, overriding the configured default for BOTH the
    * poll deadline and Replicate's `Cancel-After`. A profile's `timeoutMs` arrives
    * here; anything out of the sane 30s–30m band is clamped rather than honored,
@@ -88,6 +97,18 @@ export interface RegistryModelRequest {
    * quietly reduced is a different experiment under the same run id.
    */
   policy?: ImageRenderPolicy;
+  /**
+   * How this run's prediction is WATCHED: one budget, or a startup budget and a
+   * render budget with startup retries (`ProviderExecutionPolicy` in
+   * `@vesper/image-core`, enforced in `runPrediction`).
+   *
+   * A pure passthrough here — nothing about the payload changes — but it lives
+   * on the request because the lane that decided to be patient with a cold-boot
+   * queue is the same lane that assembled the render. Absent is the production
+   * answer and keeps the legacy single-budget shell exactly as it was; the
+   * bench lanes supply one and read the `attempts` the result comes back with.
+   */
+  executionPolicy?: ProviderExecutionPolicy;
 }
 
 /**

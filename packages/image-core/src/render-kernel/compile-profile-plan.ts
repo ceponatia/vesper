@@ -15,7 +15,7 @@ import type {
   ImageRenderControls,
   ImageResolutionTier,
 } from "../models/image-model-profiles";
-import { preparePromptForImageModel, withReviewedImageQuality } from "../models/quality-presets";
+import { withReviewedImageQuality } from "../models/quality-presets";
 import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
 import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
 
@@ -127,8 +127,8 @@ function nonBlank(value: string | null | undefined): string | null {
  * `render_intent` is the production lanes' general role vocabulary (identity,
  * location, style, object…), where the lane's own prompt builder ALREADY names
  * its references — the scene builder writes the multi-reference bindings for a
- * scene, and Qwen Edit's multi-reference lock is applied by
- * {@link preparePromptForImageModel} on the way out.
+ * scene, and a family that addresses references by number (Qwen Edit) applies
+ * its own lock through the injected {@link ImagePromptPreparer} on the way out.
  *
  * So the vocabulary decides whether the strategy prefixes anything at all. It is
  * a discriminated union rather than a widened role array because those two
@@ -150,9 +150,10 @@ export type PromptReferenceBinding =
 /**
  * How many references this binding names, whichever arm it is.
  *
- * Read by {@link preparePromptForImageModel}, which applies Qwen Edit's
- * multi-reference lock from the COUNT alone — so the two arms have to answer it
- * the same way even though they store their references differently.
+ * Handed to the {@link ImagePromptPreparer}, whose dialects choose between "the
+ * reference image" and numbered bindings from the COUNT alone — so the two arms
+ * have to answer it the same way even though they store their references
+ * differently.
  */
 function referenceBindingCount(references: PromptReferenceBinding): number {
   switch (references.vocabulary) {
@@ -190,6 +191,26 @@ export interface ImageRenderDimensionFacts {
    */
   mappedCustomSize: { width: number; height: number } | null;
 }
+
+/**
+ * The model-boundary prompt step: the last chance to say the same thing in a
+ * particular model family's dialect, applied to the finished text.
+ *
+ * A function type rather than a direct call so the knowledge of HOW a family
+ * wants to be spoken to can live with that family instead of here. The kernel
+ * knows there is a dialect step; it must never know which slug needs which
+ * sentence, because that is exactly the slug-checking-in-shared-code the adapter
+ * work exists to end.
+ *
+ * The contract a preparer must keep is IDEMPOTENCE. This step runs here, where
+ * the result is fingerprinted, and again in the transport on the way out; a
+ * preparer whose second pass changes the text makes every pinned comparison
+ * refuse `cell_conflict` against its own compiled prompt.
+ *
+ * `referenceCount` is how many references this render actually sends — the fact
+ * a dialect needs to choose between "the reference image" and numbered bindings.
+ */
+export type ImagePromptPreparer = (model: ImageModel, prompt: string, referenceCount: number) => string;
 
 export interface CompileProfileRenderPlanInput {
   model: ImageModel;
@@ -237,6 +258,18 @@ export interface CompileProfileRenderPlanInput {
    * would render at a strength nobody could explain from the recorded text.
    */
   resolvedLora?: ImageLoraRenderBinding;
+  /**
+   * The model-dialect prompt step ({@link ImagePromptPreparer}).
+   *
+   * Absent means NO DIALECT — the compiled text reaches the provider exactly as
+   * the strategy wrote it. That is the honest default because this package
+   * cannot know which family a model belongs to: dialects live in
+   * `@vesper/image-models`, which sits ABOVE this one, and an upward import is
+   * the one thing the layering forbids. So the application resolves the adapter
+   * and injects its preparer here; a model whose family has no adapter yet is
+   * the ordinary case and compiles unchanged.
+   */
+  preparePrompt?: ImagePromptPreparer;
 }
 
 /**
@@ -275,6 +308,15 @@ export interface ProfileRenderPlan {
   /** Mapped controls plus validated overrides, keyed by provider field name. */
   controlInput: Record<string, unknown>;
   /**
+   * The `controlInput` fields a TYPED semantic control produced — written by
+   * the normalized mapper and not replaced by the raw override bag. The strict
+   * provider-input validator trusts a URI/array-shaped value only under a
+   * field a typed transport owns; passing this set is how a curated LoRA's
+   * probed weights field earns that trust while a raw advanced value never
+   * does. Sorted, so two identical plans state the set identically.
+   */
+  typedControlFields: readonly string[];
+  /**
    * The controls this render actually honors, keyed by NORMALIZED name — the
    * record a caller stores as provenance. Reserved-field collisions are already
    * removed (an entry here was really sent), each payload-mapped value is read
@@ -303,18 +345,31 @@ export interface ProfileRenderPlan {
 }
 
 /**
- * A compiled plan, or the typed refusal that says this profile's declared prompt
- * strategy cannot be executed on the identity-reference path at all.
+ * A compiled plan, or the typed refusal that says this compile cannot honestly
+ * produce one.
  *
- * A refusal rather than a throw because both callers have somewhere honest to
- * put it: the trial planner records the cell `profile_ineligible` and spends
- * nothing, and the execute-time recompile records `cell_conflict`. An exception
- * would have made "this profile is configured for a job this path cannot do" —
- * an ordinary, expected configuration state — indistinguishable from a bug.
+ * A refusal rather than a throw because every caller has somewhere honest to put
+ * it: the trial planner records the cell `profile_ineligible` and spends
+ * nothing, the execute-time recompile records `cell_conflict`, and
+ * `planImageRender` turns it into an `ImageRenderRefusal`. An exception would
+ * have made an ordinary, expected configuration state indistinguishable from a
+ * bug.
+ *
+ * Two reasons exist, and they are not the same kind of fact:
+ *
+ * - `unsupported_prompt_strategy` — the profile declares a strategy this path
+ *   has no vocabulary for. A CONFIGURATION problem an operator fixes.
+ * - `lora_binding_not_sent` — the plan would have claimed a LoRA that its own
+ *   payload does not carry. An INVARIANT breach: it means the compile and the
+ *   record disagree, and the only safe outcome is to spend nothing.
+ *
+ * Discriminated on `reason`, so a caller reads the arm it is handling rather
+ * than reaching for a field the other arm does not have.
  */
 export type CompileProfileRenderPlanResult =
   | { ok: true; plan: ProfileRenderPlan }
-  | { ok: false; reason: "unsupported_prompt_strategy"; promptStrategy: ImagePromptStrategy };
+  | { ok: false; reason: "unsupported_prompt_strategy"; promptStrategy: ImagePromptStrategy }
+  | { ok: false; reason: "lora_binding_not_sent"; message: string; missingField: string };
 
 /** A strategy's compiled prompt text, or its refusal to compile one at all. */
 type StrategyPromptCompile = { ok: true; prompt: string } | { ok: false };
@@ -440,12 +495,16 @@ function compileRenderIntentPrompt(
  * compile before anything downstream produces controls, fingerprints, or a plan
  * that a caller could mistake for a runnable one.
  *
- * `preparePromptForImageModel` runs HERE and again inside the transport's
- * render call. That is deliberate and safe: the rewrite is idempotent (it
- * replaces the legacy identity lock, and a prompt with no legacy lock left in it
- * passes through untouched), so the text fingerprinted here is byte-for-byte the
- * text the provider receives. Relying on that property beats adding an "already
- * prepared" flag whose two code paths would need keeping honest forever.
+ * The dialect step runs HERE and again inside the transport's render call. That
+ * is deliberate and safe because {@link ImagePromptPreparer} makes idempotence a
+ * CONTRACT: a family's rewrite leaves an already-rewritten prompt byte-identical,
+ * so the text fingerprinted here is byte-for-byte the text the provider
+ * receives. Relying on that property beats adding an "already prepared" flag
+ * whose two code paths would need keeping honest forever.
+ *
+ * The LAST step is the final-wire LoRA invariant
+ * ({@link loraWireInvariantBreach}), which is the second of the two ways this
+ * function can refuse.
  */
 export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): CompileProfileRenderPlanResult {
   const { model, profile, basePrompt, baseNegativePrompt, references } = input;
@@ -461,7 +520,13 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // record that nobody sent, and doing it before the strategy would let a
   // numbered-reference preamble be pushed below the LoRA's own prefix.
   const loraPrompt = applyImageLoraPromptAdditions(strategyPrompt.prompt, input.resolvedLora);
-  const finalPrompt = preparePromptForImageModel(effectiveModel, loraPrompt, referenceBindingCount(references));
+  // The dialect step, or none. There is no dialect without an injected preparer
+  // — model dialects live in the adapter package, one layer up — so the default
+  // is the identity function rather than a slug check this package would have to
+  // keep in step with a registry it cannot see.
+  const finalPrompt = input.preparePrompt
+    ? input.preparePrompt(effectiveModel, loraPrompt, referenceBindingCount(references))
+    : loraPrompt;
 
   const defaults = profile.controlDefaults;
   const requested = input.controlOverrides;
@@ -546,17 +611,41 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // one; a control the fingerprint claims was sent and the provider never saw is
   // the exact drift this compile step exists to make impossible.
   const sendableMapped = filterReservedInputFields(mapped.input, reservedFields);
+  // A RESOLVED LoRA owns its bound provider fields for this render (owner
+  // ruling 2026-08-24): the whole point of the wire invariant below is that the
+  // recorded LoRA identity IS the sent LoRA identity, and an override replacing
+  // `lora_weights` under a record naming the library row would ship LoRA B
+  // labeled as LoRA A. The fields join the override validator's reserved set —
+  // never the mapper's filter, which is what legitimately WRITES them — so a
+  // colliding override is dropped with the ordinary recorded reason. Without a
+  // resolved LoRA the fields stay ordinary advanced inputs: the escape hatch
+  // only closes when there is a record it could falsify.
+  const loraOwnedFields = input.resolvedLora
+    ? [
+        effectiveModel.advancedCapabilities.controls.loraWeights?.field,
+        effectiveModel.advancedCapabilities.controls.loraScale?.field,
+      ].filter((field): field is string => field !== undefined)
+    : [];
   const overrides = validateProviderOverrides(
     profile.providerOverrides,
     effectiveModel.advancedCapabilities.knownInputFields,
-    reservedFields,
+    [...reservedFields, ...loraOwnedFields],
   );
   // Overrides merge LAST, per the spec's "a later layer wins". They therefore
-  // may also replace a mapped control's value, which is why the reported
-  // negative below is read back out of the FINAL payload rather than from the
-  // mapping step: a fingerprint that described the pre-override text would be a
-  // fingerprint of something the provider never saw.
+  // may also replace a mapped control's value — except a resolved LoRA's own
+  // fields, reserved above — which is why the reported negative below is read
+  // back out of the FINAL payload rather than from the mapping step: a
+  // fingerprint that described the pre-override text would be a fingerprint of
+  // something the provider never saw.
   const controlInput = { ...sendableMapped.input, ...overrides.input };
+  // The provider fields a TYPED semantic control produced — mapper-written and
+  // not replaced by the raw bag. The strict validator trusts a URI/array-shaped
+  // value only under a field a typed transport owns, and this set is how a
+  // curated LoRA's weights field earns that trust while a raw advanced value
+  // never does (owner ruling 2026-08-24; image-model-adapters.spec.md).
+  const typedControlFields = Object.keys(sendableMapped.input)
+    .filter((field) => !(field in overrides.input))
+    .sort();
 
   // The normalized provenance record, kept consistent with the two adjustments
   // above by the same two rules: an entry whose provider field the reserved
@@ -579,6 +668,11 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // keeps the provenance record equal to what the render honors; recording a
   // drop for it would claim the request was refused while the size it chose ships.
   if (sizeModeTier) appliedControls.resolution = controls.resolution;
+
+  // The one point where the payload and the record of it both exist, and
+  // therefore the only place their agreement about the LoRA can be enforced.
+  const loraWireBreach = loraWireInvariantBreach(effectiveModel, controlInput, appliedControls, input.resolvedLora);
+  if (loraWireBreach) return loraWireBreach;
 
   // Typed as the contract's own list rather than the mapper's narrower union:
   // the notes below are this layer's facts, not ones the mapper can produce.
@@ -647,6 +741,7 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       aspectValue: chooseAspect(effectiveModel).value,
       dimensionFacts,
       controlInput,
+      typedControlFields,
       appliedControls,
       resolvedControls: {
         operation: profile.operation,
@@ -661,6 +756,137 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
       versionId: pinnedImageModelVersion(model),
     },
   };
+}
+
+/** The wire-invariant arm of {@link CompileProfileRenderPlanResult}. */
+type LoraWireRefusal = Extract<CompileProfileRenderPlanResult, { reason: "lora_binding_not_sent" }>;
+
+/**
+ * THE final-wire LoRA invariant: a plan may claim an applied LoRA only if its
+ * own payload carries both bound provider fields
+ * (image-model-adapters.spec.md §"The final-wire LoRA invariant").
+ *
+ * It exists because the opposite was true for the whole life of the LoRA
+ * library and nothing noticed: across the entire retained provider history, not
+ * one prediction ever carried `lora_weights`, while unit tests, records and
+ * fingerprints all agreed a LoRA had been applied. Every layer was checked
+ * against its neighbour; nothing checked the payload against the record.
+ *
+ * So the check lives HERE, at the single point where both artifacts exist and
+ * are final — `controlInput` after mapping, reserved filtering and overrides,
+ * and `appliedControls` after the same three. Scattering it (the mapper asserts
+ * it wrote the fields, the caller asserts the record) is how the drift got in:
+ * each half was locally right.
+ *
+ * One comparison enforces BOTH directions of the invariant, because they are the
+ * same statement read from either end — "recorded implies sent" and "not sent
+ * implies not recorded" are contrapositives. A recorded LoRA whose fields are
+ * missing REFUSES pre-spend; a LoRA whose fields never reached the payload has
+ * already had its record removed upstream (the mapper drops it with a reason,
+ * and the reserved filter takes its `appliedControls` entry with it), and this
+ * gate is what makes that removal load-bearing rather than incidental.
+ *
+ * `missingField` names the PROVIDER field when the version declares one and the
+ * binding name when it declares none at all — those are the two different fixes:
+ * find out why the payload lost a field it had, or stop expecting a LoRA from a
+ * version that has nowhere to put one.
+ *
+ * Presence is not the invariant — IDENTITY is (owner ruling 2026-08-24): the
+ * payload's values must EQUAL the resolved binding's own locator and scale,
+ * because "some value existed in a field called `lora_weights`" is exactly the
+ * kind of locally-true claim that let the original drift live. The override
+ * reserve above makes a mismatch unreachable through any legitimate path; this
+ * gate is what turns "unreachable" into "refused", so a future path that
+ * reopens it costs a pre-spend refusal rather than a mislabeled render.
+ *
+ * Deliberately silent when nothing recorded a LoRA: a payload field written by a
+ * profile's provider overrides is that escape hatch working as designed — the
+ * hatch only closes when there is a resolved LoRA whose record it could falsify.
+ */
+function loraWireInvariantBreach(
+  model: ImageModel,
+  controlInput: Record<string, unknown>,
+  appliedControls: Record<string, unknown>,
+  resolvedLora: CompileProfileRenderPlanInput["resolvedLora"],
+): LoraWireRefusal | null {
+  const applied = appliedControls.lora;
+  if (applied === undefined) return null;
+
+  const bindings = model.advancedCapabilities.controls;
+  const missingField = missingLoraWireField(bindings.loraWeights?.field, bindings.loraScale?.field, controlInput);
+  if (missingField !== null) {
+    return {
+      ok: false,
+      reason: "lora_binding_not_sent",
+      missingField,
+      message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries no ${missingField}`,
+    };
+  }
+  if (resolvedLora !== undefined) {
+    const weightsField = bindings.loraWeights?.field;
+    const scaleField = bindings.loraScale?.field;
+    const mismatched =
+      weightsField !== undefined && controlInput[weightsField] !== resolvedLora.locator
+        ? weightsField
+        : scaleField !== undefined && controlInput[scaleField] !== resolvedLora.scale
+          ? scaleField
+          : null;
+    if (mismatched !== null) {
+      return {
+        ok: false,
+        reason: "lora_binding_not_sent",
+        missingField: mismatched,
+        message: `plan records LoRA ${appliedLoraId(applied)} as applied, but the compiled payload carries a different ${mismatched} than the resolved binding's own value`,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Which half of the binding is missing from the payload, or null when both are
+ * really there. `undefined` for a field name means the version declares no such
+ * binding, which is reported under the binding's own name.
+ */
+function missingLoraWireField(
+  weightsField: string | undefined,
+  scaleField: string | undefined,
+  controlInput: Record<string, unknown>,
+): string | null {
+  if (weightsField === undefined) return "loraWeights";
+  if (scaleField === undefined) return "loraScale";
+  if (!carriesLoraWireValue(controlInput, weightsField)) return weightsField;
+  if (!carriesLoraWireValue(controlInput, scaleField)) return scaleField;
+  return null;
+}
+
+/**
+ * Whether the payload really carries this field — present AND holding a value.
+ *
+ * A key set to null or undefined is not a weaker version of "sent", it is the
+ * same as absent: the provider is handed nothing to fetch and no strength to
+ * blend, and the render comes back as if no LoRA existed. The route that
+ * produces it is a profile's `providerOverrides` writing over a mapped value
+ * (overrides merge last, by design), which is exactly the case where the record
+ * and the payload part company without anything else noticing.
+ */
+function carriesLoraWireValue(controlInput: Record<string, unknown>, field: string): boolean {
+  const value = controlInput[field];
+  return value !== undefined && value !== null;
+}
+
+/**
+ * The library id inside the mapper's `{ id, scale }` record, for the refusal
+ * message. Defensive rather than cast: this runs on the path that just proved
+ * something is wrong, and a diagnostic that throws while reporting a breach
+ * reports nothing.
+ */
+function appliedLoraId(applied: unknown): string {
+  if (typeof applied === "object" && applied !== null && "id" in applied) {
+    const { id } = applied;
+    if (typeof id === "string" && id.length > 0) return id;
+  }
+  return "(unnamed)";
 }
 
 /**

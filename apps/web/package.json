@@ -13,6 +13,7 @@
     "@paralleldrive/cuid2": "^2.2.2",
     "@vesper/contracts": "workspace:*",
     "@vesper/image-core": "workspace:*",
+    "@vesper/image-models": "workspace:*",
     "@vesper/image-replicate": "workspace:*",
     "@vesper/image-sd": "workspace:*",
     "@vesper/simulation-core": "workspace:*",

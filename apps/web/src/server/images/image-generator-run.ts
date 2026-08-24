@@ -26,7 +26,6 @@ import {
   IMAGE_GENERATOR_MAX_PRIMARY,
   type ImageGeneratorCapabilitySnapshot,
   imageGeneratorCapabilitySnapshotSchema,
-  type ImageGeneratorControls,
   type ImageGeneratorFailureCode,
   imageGeneratorControlsSchema,
   imageGeneratorDiagnosticCode,
@@ -54,6 +53,7 @@ import {
   storedVersionRequest,
 } from "./image-generator-store";
 import { resolveImageLoraForRender } from "./image-loras";
+import { adapterRequestRefusals, benchExecutionPolicy, imageRenderRuntimeFacts } from "./model-adapters";
 import { loadImageModels } from "./models";
 import { readOwnedImageBytes } from "./owned-image-reads";
 import type { RenderImageIntentResult } from "./render-intent";
@@ -338,6 +338,25 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // settles pre-spend under the layer's own verbatim `image_lora.*` code.
   const renderControls = imageGeneratorRenderControls(controls);
   const selection = effectiveImageLoraSelection(profile.controlDefaults, renderControls);
+
+  // 8c. The family adapter's own objections, pre-spend. Wired HERE because the
+  // bench's facts are final before planning — `require_all` never trims, so the
+  // reference count and the LoRA choice judged are exactly what would be sent.
+  // A model with no adapter objects to nothing, like every other adapter hook.
+  const adapterRefusals = adapterRequestRefusals(model, {
+    referenceCount: inputs.primary.length,
+    usesLora: selection !== null && selection !== undefined,
+  });
+  if (adapterRefusals.length > 0) {
+    return await settleGeneratorRunFailed(
+      row,
+      generatorFailure("operation_unsupported"),
+      `${model.slug} cannot run this request: ${adapterRefusals.join("; ")}`,
+      sink,
+      { columns },
+    );
+  }
+
   let intent: ImageRenderIntent = {
     profile: { profile, model },
     prompt: row.prompt,
@@ -346,9 +365,26 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
     policy: IMAGE_GENERATOR_RENDER_POLICY,
     controls: renderControls,
     versionId,
+    // Two-phase budgets and one startup retry, narrowed by whatever this
+    // model's adapter has observed. A bench can afford to wait out a cold-boot
+    // queue and a player-facing lane cannot, which is why the policy is put on
+    // the intent HERE rather than defaulted anywhere shared: production lanes
+    // pass none and keep today's single budget (plan §8).
+    executionPolicy: benchExecutionPolicy(model),
   };
   if (selection) {
-    const resolved = await resolveImageLoraForRender(selection, { model, versionId, task: profile.task }, sink);
+    // `generator_bench`, and this is the change that makes a LoRA runnable here
+    // at all. The bench serves no player-facing job, so the row's `allowedTasks`
+    // curation does not apply — before contexts existed this call had to borrow
+    // the synthetic profile's nominal `item` task, and a mechanically perfect
+    // LoRA was refused `image_lora.incompatible` for failing a curation rule
+    // about a lane the bench is not in (plan §1). The mechanical checks — model,
+    // version, scale, bindings, locator — still all run.
+    const resolved = await resolveImageLoraForRender(
+      selection,
+      { model, versionId, execution: { kind: "generator_bench" } },
+      sink,
+    );
     if (!resolved.ok) {
       return await settleGeneratorRunFailed(row, resolved.code, resolved.message, sink, { columns });
     }
@@ -357,7 +393,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
 
   // 10. Plan, and refuse ANY planner refusal verbatim — the `image_profile.*`
   // vocabulary belongs to the layer that refused.
-  const planned = planImageRender(intent, { safetyCheckerDisabled: disableSafetyChecker() }, sink);
+  const planned = planImageRender(intent, imageRenderRuntimeFacts(model), sink);
   if (!planned.ok) {
     return await settleGeneratorRunFailed(row, planned.refusal.code, planned.refusal.message, sink, { columns });
   }
@@ -485,11 +521,13 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // wrong. It catches what the raw-bag gate structurally cannot: a REQUIRED
   // field that is reserved to a normalized control and has no provider default,
   // which the bag may not fill and the render path did not.
-  const violations = providerInputViolations(
-    sentModel,
-    sentRequest,
-    plan.controlReferences.map((control) => control.field),
-  );
+  const violations = providerInputViolations(sentModel, sentRequest, [
+    ...plan.controlReferences.map((control) => control.field),
+    // Typed semantic-control fields share the dedicated fields' trust: a
+    // curated LoRA's probed weights field may carry its URI here, while the
+    // same shape arriving through the raw advanced bag stays refused.
+    ...plan.typedControlFields,
+  ]);
   if (violations.length > 0) {
     return await settleGeneratorRunFailed(
       rowWithOutcome,
@@ -585,7 +623,21 @@ async function settleGeneratorRender(
     postprocess: { cropTarget: rendered.shape?.cropTarget ?? null },
     ...(rendered.shape ? { shapeSent: { field: rendered.shape.field, value: rendered.shape.value } } : {}),
   };
-  const attemptMeta = { ...(rendered.attempt ? { attempt: rendered.attempt } : {}), ...trimmed, result };
+  // Every prediction this run created, oldest first — present only under an
+  // execution policy, which on this lane is always. It sits BESIDE `attempt`
+  // and `result` rather than inside either: `attempt` is what Vesper decided to
+  // send and `result` is what finally came back, while this is the run's
+  // provider history, and a retried run has two predictions to account for
+  // where both of those have exactly one. The `predictionId` column and
+  // `result.predictionId` keep naming the FINAL attempt, so nothing that reads
+  // the row today reads it differently.
+  const providerAttempts = rendered.attempts && rendered.attempts.length > 0 ? { providerAttempts: rendered.attempts } : {};
+  const attemptMeta = {
+    ...(rendered.attempt ? { attempt: rendered.attempt } : {}),
+    ...providerAttempts,
+    ...trimmed,
+    result,
+  };
 
   if (!rendered.ok || !rendered.image) {
     const message = rendered.error ?? `${row.modelSlug} returned no image`;
@@ -1008,8 +1060,10 @@ function sanitizedControlValue(value: unknown): unknown {
  *   profile never resolves from production, so the constraint on the choice is
  *   only that it must not be identity-critical (`variant`/`scene`/`chat_look`
  *   would let identity screening refuse the raw testing this bench exists
- *   for). `item` is the neutral pick. One real consequence: a curated LoRA
- *   must list this task in its `allowedTasks` to run here.
+ *   for). `item` is the neutral pick. It is deliberately NOT the answer the
+ *   LoRA library is asked — that call passes `generator_bench`, so the row's
+ *   `allowedTasks` curation is skipped rather than judged against a task this
+ *   bench invented for itself.
  */
 function imageGeneratorProfile(
   model: ImageModel,

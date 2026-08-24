@@ -31,6 +31,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/image-core/package.json ./packages/image-core/
+COPY packages/image-models/package.json ./packages/image-models/
 COPY packages/image-replicate/package.json ./packages/image-replicate/
 COPY packages/image-sd/package.json ./packages/image-sd/
 COPY packages/simulation-core/package.json ./packages/simulation-core/
