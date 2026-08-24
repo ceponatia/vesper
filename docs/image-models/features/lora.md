@@ -29,12 +29,12 @@ This is the cheap model/request compatibility check. It does not replace `@vespe
 
 ## Current Qwen composition
 
-Only `qwen/qwen-image-edit-plus-lora` composes `lora` in the current package.
+Both Qwen edit adapters compose `lora`: `qwen/qwen-image-edit-2511` and `qwen/qwen-image-edit-plus-lora`.
 
-`qwen/qwen-image-edit-2511` does not compose it because its active Vesper model record has no normalized LoRA bindings. The [2511 provider reference](../models/qwen-image-edit-2511.md) owns provider-version capability details.
+Composition and active-version capability remain separate facts. The adapter states that the endpoint family can load a custom LoRA; the probed model record decides whether the concrete version Vesper runs carries the bindings. The [2511 provider reference](../models/qwen-image-edit-2511.md) owns provider-version capability details.
 
-`qwen/qwen-image-2512` also does not compose this feature.
+`qwen/qwen-image-2512` does not compose this feature.
 
-The Plus LoRA adapter represents **one LoRA per prediction**. The endpoint has one weights/scale pair, not a repeated or multi-LoRA input.
+Each edit adapter represents **one LoRA per prediction**. Both endpoints expose a single weights/scale pair, not a repeated or multi-LoRA input.
 
 [Back to features](README.md).

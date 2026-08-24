@@ -28,6 +28,16 @@ describe("adapterForImageModel", () => {
     ).toBe(qwenImageEditPlusLora);
   });
 
+  it("declares runtime LoRA capability on both Qwen edit endpoints", () => {
+    // Replicate's current 2511 schema exposes lora_weights + lora_scale just as
+    // the older 2509 wrapper does. The adapter is the family-level semantic
+    // claim; the probed registry row still decides whether a concrete version
+    // has the two provider bindings at render time.
+    expect(qwenImageEdit2511.capabilities).toContain("lora");
+    expect(qwenImageEditPlusLora.capabilities).toContain("lora");
+    expect(qwenImage2512.capabilities).not.toContain("lora");
+  });
+
   it.each(["bytedance/seedream-4.5", "qwen/qwen-image-edit-2511-turbo", ""])(
     "answers null for %s, which is the ordinary no-special-behavior case",
     (slug) => {

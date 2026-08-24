@@ -74,24 +74,31 @@ stay on the legacy path and migrate when their behavior is next touched.
 The reference implementation, and a worked example of why per-endpoint detail
 needs a home:
 
-| Adapter                            | What it is                                                        |
-| ---------------------------------- | ----------------------------------------------------------------- |
-| `qwen/qwen-image-edit-2511`        | Current instruction editor. Numbered references, **no loadable LoRA**. |
-| `qwen/qwen-image-edit-plus-lora`   | Older 2509-generation wrapper. The only Qwen edit endpoint that loads a LoRA. |
-| `qwen/qwen-image-2512`             | Text-to-image generator arm. Takes guidance; **ignores its negative field**. |
+| Adapter | What it is |
+| --- | --- |
+| `qwen/qwen-image-edit-2511` | Current instruction editor. Numbered references and one runtime custom LoRA when the active probed version exposes `lora_weights`/`lora_scale`. |
+| `qwen/qwen-image-edit-plus-lora` | Older 2509-generation LoRA wrapper. Still useful as a separate comparison/legacy endpoint, not the only Qwen editor that can load a LoRA. |
+| `qwen/qwen-image-2512` | Text-to-image generator arm. Takes guidance; **ignores its negative field**. |
 
-All three share the family's numbered-reference conventions; the two editors
-share its prompt dialect, which rewrites Vesper's provider-neutral identity
-sentence into Qwen's numbered form. The rewrite is **idempotent**, and that is
-load-bearing: the render plan hashes the prepared prompt and the transport
-prepares again on the way out, so a second pass that changed the text would make
-a render refuse against its own compiled prompt.
+All three share the family's reference conventions; the two editors share its
+prompt dialect, which rewrites Vesper's provider-neutral identity sentence into
+Qwen's numbered form. The rewrite is **idempotent**, and that is load-bearing:
+the render plan hashes the prepared prompt and the transport prepares again on
+the way out, so a second pass that changed the text would make a render refuse
+against its own compiled prompt.
 
-The LoRA wrapper is also the family's one carrier of execution hints — an eight
-minute startup budget and a single startup retry, because a bench run sat in a
-cold start past its whole five-minute budget and was aborted before it began.
-Its render budget is deliberately unset: nobody has measured one, and the lane's
-default beats an invented number.
+Both edit adapters compose the semantic LoRA feature. The probed registry row is
+still the authority on the actual provider fields: if a future version drops or
+renames the bindings, the feature's `isBound`/validation fails rather than the
+adapter inventing a field name. Migration 0118 repairs the long-lived built-in
+2511 row whose capability snapshot predates LoRA-binding derivation, which is
+what makes the Image Generator's capability-driven LoRA picker appear for 2511.
+
+The older plus-LoRA wrapper is also the family's one carrier of execution hints
+— an eight minute startup budget and a single startup retry, because a bench run
+sat in a cold start past its whole five-minute budget and was aborted before it
+began. Its render budget is deliberately unset: nobody has measured one, and the
+lane's default beats an invented number.
 
 ## Boundary
 

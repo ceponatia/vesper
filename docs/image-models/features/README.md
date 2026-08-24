@@ -60,7 +60,7 @@ These are model/request compatibility checks. They do not replace `@vesper/image
 | `seed`           | yes       | yes            | yes        |
 | `guidance`       | no        | no             | yes        |
 | `negativePrompt` | no        | no             | no         |
-| `lora`           | no        | yes            | no         |
+| `lora`           | yes       | yes            | no         |
 | `outputFormat`   | yes       | yes            | yes        |
 | `outputQuality`  | yes       | yes            | yes        |
 | `safetyToggle`   | yes       | yes            | yes        |

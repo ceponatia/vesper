@@ -32,16 +32,17 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 
 ### Registered Qwen adapters
 
-| Model                                                                   | Role                                                               | Composed features                                                                                  | Family behavior                                                          |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants | `prompt`, `multiReference`, `aspectRatio`, `seed`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor with loadable LoRA support      | all 2511 edit features plus `lora`                                                                 | numbered-reference dialect; eight-minute startup hint; one startup retry |
-| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait      | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle`       | no edit dialect; no execution hint                                       |
+| Model                                                                   | Role                                                                    | Composed features                                                                                          | Family behavior                                                          |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                              | numbered-reference dialect; eight-minute startup hint; one startup retry |
+| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
-Two absences are deliberate:
+One absence is deliberate:
 
-- **Qwen Image Edit 2511 does not compose `lora` in the current package.** Its active Vesper model record does not expose the normalized LoRA bindings the feature requires, so the adapter cannot honestly claim it. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
 - **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's measured behavior shows that it does not steer output. The package therefore does not advertise the field as a behavioral capability merely because the schema contains it.
+
+Both edit adapters compose `lora`. Composing it states that the endpoint family can load a custom LoRA; the probed model record remains authoritative for whether the version Vesper actually runs exposes the provider bindings. The [2511 provider reference](models/qwen-image-edit-2511.md) owns provider-version capability details.
 
 ## Features
 
