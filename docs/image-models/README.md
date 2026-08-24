@@ -38,7 +38,7 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 
 Two absences are deliberate:
 
-- **Qwen Image Edit 2511 does not compose `lora`.** Its published endpoint exposes no loadable LoRA weights/scale inputs. The phrase "integrated LoRAs" on the model side refers to acceleration baked into the weights, not a runtime LoRA input.
+- **Qwen Image Edit 2511 does not compose `lora` in the current package.** The Vesper probe snapshot the adapter was built against does not expose LoRA bindings, so the adapter cannot honestly claim the feature. Replicate's latest 2511 wrapper checked on 2026-08-24 does advertise `lora_weights`/`lora_scale`, but provider drift does not become active Vesper capability by documentation alone: that candidate version must be probed, smoke-tested, and activated before the package/row pairing can be reconsidered. See the [2511 provider reference](models/qwen-image-edit-2511.md).
 - **Qwen Image 2512 does not compose `negativePrompt`.** The endpoint declares a negative-prompt field, but Vesper's paired testing found that the model does not act on it. The package therefore refuses to advertise the field as a behavioral capability merely because the schema contains it.
 
 ## Features
