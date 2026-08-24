@@ -14,8 +14,6 @@ import {
   imageLabExperimentKinds,
   imageLabFinishingInstruction,
   type ImageLabInput,
-  type ImageLabMode,
-  imageLabModes,
   imageLabProbeInstruction,
   type ImageReferenceRole,
   isImageLabControlledKind,
@@ -44,7 +42,6 @@ import {
   imageLabControlKindLabel,
   imageLabExperimentKindDescription,
   imageLabExperimentKindLabel,
-  imageLabModeLabel,
   imageLabRoleLabel,
   imageLabStagingBareSummary,
   imageLabStagingCameraSummary,
@@ -60,6 +57,7 @@ import {
   useLabChatScenes,
   useLabPortraits,
 } from "./image-lab-pickers";
+import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
  * The create-experiment form (qwen-advanced-image-subsystem.spec.md §Stage 0
@@ -99,10 +97,15 @@ import {
  * controlled kinds, the instruction is the base prompt only — the runner compiles
  * the numbered bindings from the send order below.
  *
- * `mode` is sent by the controlled kinds alone (default
- * `controlled_composition` — the bias their recipes exist to exercise). A probe
- * or baseline still never sends one: declaring a bias claims a recipe exists to
- * be biased, and neither runs one (contracts §`imageLabModes`).
+ * `mode` is not sent at all. The stored modes are recorded metadata no runner
+ * reads, so offering the knob here sold a choice with no render effect; the form
+ * stopped offering it until one exists. Historic stored values remain readable
+ * on the detail view.
+ *
+ * The BASELINE kinds name no model either. `runBaseline` resolves the active
+ * production profile for the kind and overwrites any requested slug — a picker
+ * here was a control whose value was discarded — so those kinds show read-only
+ * copy in the Model slot and send no `modelSlug`.
  *
  * No raw provider-JSON settings surface exists on this form at all — which for
  * the controlled kinds is load-bearing, not an omission: the server REFUSES a
@@ -194,17 +197,16 @@ const FINISHING_PREVIEW_ROLES: readonly ImageReferenceRole[] = ["before", "ident
 const FINISHING_LORA_ONLY_PREVIEW_ROLES: readonly ImageReferenceRole[] = ["before"];
 
 /**
- * The optional third reference each controlled recipe is offered, and the one
- * omission. The recipes allow [outfit, style, object] on a portrait and
- * [location, outfit, style] on a scene (`imageLabRecipeContentRoles`); `object`
- * is left out of the portrait select because no client-reachable list holds
- * item images — the lab's pickers surface character portraits and a chat's
- * scene renders, and filing a picture of a person as "an object reference"
- * would poison the record this bench exists to keep honest. When an
- * object-image source exists, adding the role here is a one-line change.
+ * The optional third reference each controlled recipe is offered — exactly the
+ * roles the recipes allow: [outfit, style, object] on a portrait and
+ * [location, outfit, style] on a scene (`imageLabRecipeContentRoles`).
+ * `object` joined when the general owned-image picker existed to feed it: the
+ * character/scene pickers hold no item imagery, and filing a picture of a
+ * person as "an object reference" would have poisoned the record — so the role
+ * waited for a source that can honestly supply one.
  */
 const EXTRA_REFERENCE_ROLES = {
-  controlled_portrait: ["outfit", "style"],
+  controlled_portrait: ["outfit", "style", "object"],
   controlled_scene: ["location", "outfit", "style"],
 } as const satisfies Record<ImageLabControlledKind, readonly ImageReferenceRole[]>;
 type ExtraReferenceRole = (typeof EXTRA_REFERENCE_ROLES)[ImageLabControlledKind][number];
@@ -214,9 +216,15 @@ type ExtraReferenceRole = (typeof EXTRA_REFERENCE_ROLES)[ImageLabControlledKind]
  * the conversation's own scene renders (a previous scene IS a picture of the
  * place, and of the scene lane's look); wardrobe comes from the character's
  * portrait renders in both kinds, because a variant render wearing the outfit
- * is the only wardrobe imagery the lab can reach.
+ * is the only wardrobe imagery the lab can reach. An object is the one role no
+ * scoped list can supply — an item is not a portrait and not a scene — so it
+ * draws from the general owned-image picker.
  */
-function extraReferenceSource(kind: ImageLabControlledKind, role: ExtraReferenceRole): "portraits" | "scenes" {
+function extraReferenceSource(
+  kind: ImageLabControlledKind,
+  role: ExtraReferenceRole,
+): "portraits" | "scenes" | "general" {
+  if (role === "object") return "general";
   return kind === "controlled_scene" && role !== "outfit" ? "scenes" : "portraits";
 }
 
@@ -229,6 +237,8 @@ function extraRoleHint(role: ExtraReferenceRole): string {
       return "Take this render's palette and finish; no subject from it.";
     case "location":
       return "The place the scene is set — one of this conversation's scene renders.";
+    case "object":
+      return "An item the render should include beside the subject — any of your stored images can supply it.";
   }
 }
 
@@ -415,7 +425,6 @@ export function ImageLabExperimentForm({
   const [chatId, setChatId] = useState(prefill?.chatId ?? "");
   const [controlImageId, setControlImageId] = useState<string | null>(null);
   const [sourceExperimentId, setSourceExperimentId] = useState("");
-  const [mode, setMode] = useState<ImageLabMode>("controlled_composition");
   const [extraRole, setExtraRole] = useState<ExtraReferenceRole | "">("");
   const [extraImageId, setExtraImageId] = useState<string | null>(null);
   // Which model a run names, in two parts: the select holds the choice, and only
@@ -433,6 +442,9 @@ export function ImageLabExperimentForm({
   const [stagingSetting, setStagingSetting] = useState("");
   const [stagingLighting, setStagingLighting] = useState("");
   const [stagingTimeOfDay, setStagingTimeOfDay] = useState("");
+  // The staged kind's optional place imagery, from the general picker — this
+  // kind refuses a chat outright, so no scene-scoped list could ever feed it.
+  const [stagedLocationImageId, setStagedLocationImageId] = useState<string | null>(null);
   const [loraId, setLoraId] = useState("");
   const [loraScale, setLoraScale] = useState("");
   const [loraOnly, setLoraOnly] = useState(false);
@@ -442,6 +454,10 @@ export function ImageLabExperimentForm({
 
   const controlledKind: ImageLabControlledKind | null = isImageLabControlledKind(kind) ? kind : null;
   const isProbe = kind === "control_probe";
+  // The two kinds whose model is not this form's to pick: `runBaseline` resolves
+  // the active production profile and overwrites any requested slug, so the
+  // Model slot shows what happens instead of a select, and no slug is sent.
+  const isBaseline = kind === "baseline_portrait" || kind === "baseline_scene";
   const isFinishing = kind === "finishing_pass";
   const isTwoCharacter = kind === "two_character_scene";
   const isStaged = kind === "staged_scene";
@@ -753,18 +769,21 @@ export function ImageLabExperimentForm({
       inputs.push({ position: inputs.length + 1, role: extraRole, imageId: extraImageId });
     }
   } else if (isStaged) {
-    // One identity and nothing else. The staged recipe's only other role is an
-    // optional `location`, and no picker offers one here on purpose: the lab's
-    // location imagery is a conversation's own scene renders, and this kind
-    // refuses a chat outright — so a location select would have no list to draw
-    // from, and where the act happens is already said in words below. When a
-    // chat-free source of place imagery exists, it is one more picker.
+    // One identity, then — only when picked — one location. The staged policy
+    // has always allowed the optional `location` role; what was missing was a
+    // source, because this kind refuses a chat outright and the lab's place
+    // imagery used to be a conversation's own scene renders. The general
+    // owned-image picker is that chat-free source, so the role is offered now,
+    // identity first to match the recipe's own order.
     //
-    // The input is UNBOUND — no `characterId` on it — because only a
+    // Both inputs are UNBOUND — no `characterId` on them — because only a
     // two-character scene binds a subject to a slot; this kind names its
     // character at the top level, and the contract refuses the other spelling.
     if (sourceImageId !== null) {
       inputs.push({ position: inputs.length + 1, role: "identity", imageId: sourceImageId });
+    }
+    if (stagedLocationImageId !== null) {
+      inputs.push({ position: inputs.length + 1, role: "location", imageId: stagedLocationImageId });
     }
   }
 
@@ -873,8 +892,10 @@ export function ImageLabExperimentForm({
   // than falling through to the kind's default. Falling through is what BLANK
   // means, and the admin who picked Other said they wanted something else — a
   // run recorded against the default under a choice that reads otherwise is the
-  // one mistake this control exists to remove.
-  const ready = kindReady && (modelChoice !== OTHER_MODEL_CHOICE || customModelSlug.trim() !== "");
+  // one mistake this control exists to remove. A baseline is exempt: its model
+  // controls are not on screen, so a choice left over from another kind must
+  // not hold the run on a box the admin cannot see.
+  const ready = kindReady && (isBaseline || modelChoice !== OTHER_MODEL_CHOICE || customModelSlug.trim() !== "");
 
   const describeInput = (input: ImageLabInput): string => {
     if (control !== null && input.imageId === control.imageId) {
@@ -898,9 +919,12 @@ export function ImageLabExperimentForm({
     // Blank normally means "let the runner resolve the plan's model". The staged
     // kind is the exception and fills its own blank (STAGED_DEFAULT_MODEL_SLUG):
     // its seeded LoRA cannot load on the ordinary default, so a blank box there
-    // would queue a run whose only outcome is `image_lora.incompatible`.
+    // would queue a run whose only outcome is `image_lora.incompatible`. A
+    // baseline sends NO slug at all, whatever the (hidden) model state holds:
+    // the runner resolves the production profile and overwrites a requested
+    // slug anyway, and a stored value the run discarded would read as a choice.
     const namedModel =
-      modelSlug.trim() === "" ? (isStaged ? STAGED_DEFAULT_MODEL_SLUG : undefined) : modelSlug.trim();
+      isBaseline || modelSlug.trim() === "" ? (isStaged ? STAGED_DEFAULT_MODEL_SLUG : undefined) : modelSlug.trim();
     // A finishing pass sends its source and nothing else: the subject is
     // inherited from that run and the references are resolved by the runner, so
     // every other field here would be a value the server refuses.
@@ -981,10 +1005,9 @@ export function ImageLabExperimentForm({
             // cannot ride into a request from a kind that does not.
             controlImageId: offersFixture && control !== null ? control.imageId : undefined,
             controlKind: offersFixture && control !== null ? control.meta.controlKind : undefined,
-            // The bias knob belongs to the controlled recipes alone: a probe or
-            // baseline declaring one would claim a recipe existed to be biased, and
-            // neither runs one (contracts §`imageLabModes`) — Stage 0 behavior kept.
-            mode: controlledKind !== null ? mode : undefined,
+            // No `mode`: the contract still accepts one, but the stored modes are
+            // recorded metadata no runner reads, and a request stating a bias with
+            // no render effect would file a choice nobody made anything of.
           };
     setSubmitting(true);
     const result = await imageLabApi.experiments.create(body);
@@ -1015,7 +1038,7 @@ export function ImageLabExperimentForm({
         }
       : undefined;
 
-  const extraSource: "portraits" | "scenes" =
+  const extraSource: "portraits" | "scenes" | "general" =
     controlledKind !== null && extraRole !== "" ? extraReferenceSource(controlledKind, extraRole) : "portraits";
 
   // The staged sentence as the render will state it: the registry's own template
@@ -1191,51 +1214,66 @@ export function ImageLabExperimentForm({
               </Select>
             )}
           </Field>
-          <Field label="Model" hint={modelHint}>
-            {(id) => (
-              <>
-                <Select id={id} value={modelChoice} onChange={(e) => setModelChoice(e.target.value)}>
-                  {/* Flat options, no optgroup: the shared Select styles direct-child
-                      options only (`[&>option]:bg-ink-850`), and a nested group would
-                      render its rows unstyled. */}
-                  <option value={DEFAULT_MODEL_CHOICE}>{`Default — ${blankModelDefault}`}</option>
-                  {registeredModels.map((model) => {
-                    // A row with no exact version to pin is refused by the runner
-                    // before it spends (`resolvePinnedLabModel`), so it is offered
-                    // as what it is — visible, named, and unselectable — rather
-                    // than silently absent or, worse, a click that buys a refusal.
-                    const runnable = pinnedImageModelVersion(model) !== null;
-                    return (
-                      <option key={model.id} value={model.slug} disabled={!runnable}>
-                        {`${model.label} — ${baseImageModelSlug(model.slug)}${runnable ? "" : " · no pinned version"}`}
-                      </option>
-                    );
-                  })}
-                  <option value={OTHER_MODEL_CHOICE}>Other — name a model by path</option>
-                </Select>
-                {/* What the runner knows about the model now standing in the box —
-                    inside the field, not beside it, because the row above is a
-                    two-column grid and a sibling here would take a cell of its own.
-                    The profile picker's idiom (image-profile-select), for the same
-                    reason: a caveat an operator wrote is worth reading BEFORE the
-                    render is paid for, not after it comes back wrong. Held until
-                    the list has loaded — an empty registry resolves nothing, and
-                    "no registered model matches" mid-fetch would be a lie. */}
-                {models.data !== null ? (
-                  resolvedModel === null ? (
-                    <p className="text-xs text-danger-300" role="alert">
-                      {`No registered model matches ${effectiveModelSlug} — the run is refused before it spends.`}
-                    </p>
-                  ) : resolvedModel.operatorWarning ? (
-                    <p className="text-xs text-paper-500" title={resolvedModel.operatorWarning}>
-                      {resolvedModel.operatorWarning}
-                    </p>
-                  ) : null
-                ) : null}
-              </>
-            )}
-          </Field>
-          {modelChoice === OTHER_MODEL_CHOICE ? (
+          {isBaseline ? (
+            /* No select: `runBaseline` resolves the production profile for the
+               kind when the run starts and overwrites any requested slug, so a
+               picker here was a control whose value was discarded. The slot
+               states what actually decides the model instead. */
+            <Field
+              label="Model"
+              hint="A baseline re-runs the production lane as it stands, so there is no model to choose here."
+            >
+              <p className="text-sm text-paper-300">
+                Resolved from the active production profile when the run starts.
+              </p>
+            </Field>
+          ) : (
+            <Field label="Model" hint={modelHint}>
+              {(id) => (
+                <>
+                  <Select id={id} value={modelChoice} onChange={(e) => setModelChoice(e.target.value)}>
+                    {/* Flat options, no optgroup: the shared Select styles direct-child
+                        options only (`[&>option]:bg-ink-850`), and a nested group would
+                        render its rows unstyled. */}
+                    <option value={DEFAULT_MODEL_CHOICE}>{`Default — ${blankModelDefault}`}</option>
+                    {registeredModels.map((model) => {
+                      // A row with no exact version to pin is refused by the runner
+                      // before it spends (`resolvePinnedLabModel`), so it is offered
+                      // as what it is — visible, named, and unselectable — rather
+                      // than silently absent or, worse, a click that buys a refusal.
+                      const runnable = pinnedImageModelVersion(model) !== null;
+                      return (
+                        <option key={model.id} value={model.slug} disabled={!runnable}>
+                          {`${model.label} — ${baseImageModelSlug(model.slug)}${runnable ? "" : " · no pinned version"}`}
+                        </option>
+                      );
+                    })}
+                    <option value={OTHER_MODEL_CHOICE}>Other — name a model by path</option>
+                  </Select>
+                  {/* What the runner knows about the model now standing in the box —
+                      inside the field, not beside it, because the row above is a
+                      two-column grid and a sibling here would take a cell of its own.
+                      The profile picker's idiom (image-profile-select), for the same
+                      reason: a caveat an operator wrote is worth reading BEFORE the
+                      render is paid for, not after it comes back wrong. Held until
+                      the list has loaded — an empty registry resolves nothing, and
+                      "no registered model matches" mid-fetch would be a lie. */}
+                  {models.data !== null ? (
+                    resolvedModel === null ? (
+                      <p className="text-xs text-danger-300" role="alert">
+                        {`No registered model matches ${effectiveModelSlug} — the run is refused before it spends.`}
+                      </p>
+                    ) : resolvedModel.operatorWarning ? (
+                      <p className="text-xs text-paper-500" title={resolvedModel.operatorWarning}>
+                        {resolvedModel.operatorWarning}
+                      </p>
+                    ) : null
+                  ) : null}
+                </>
+              )}
+            </Field>
+          )}
+          {!isBaseline && modelChoice === OTHER_MODEL_CHOICE ? (
             <Field
               label="Model path"
               hint="A provider path — owner/name, or owner/name:version to pin one exactly. An unregistered model still has to resolve to a registered row to run."
@@ -1254,22 +1292,6 @@ export function ImageLabExperimentForm({
                   maxLength={200}
                   autoFocus
                 />
-              )}
-            </Field>
-          ) : null}
-          {controlledKind !== null ? (
-            <Field
-              label="Mode"
-              hint="Recorded bias between identity and composition — the knob Stages 1–2 tune."
-            >
-              {(id) => (
-                <Select id={id} value={mode} onChange={(e) => setMode(e.target.value as ImageLabMode)}>
-                  {imageLabModes.map((entry) => (
-                    <option key={entry} value={entry}>
-                      {imageLabModeLabel(entry)}
-                    </option>
-                  ))}
-                </Select>
               )}
             </Field>
           ) : null}
@@ -1480,6 +1502,13 @@ export function ImageLabExperimentForm({
               </Field>
             </div>
 
+            <OwnedImagePicker
+              label="Location reference (optional)"
+              hint="A picture of the place the act happens — any of your stored images. Sent after the identity reference; the words above still say the setting, so none is a fine arm."
+              value={stagedLocationImageId}
+              onChange={setStagedLocationImageId}
+            />
+
             <div className="flex flex-col gap-2">{loraFields}</div>
           </>
         ) : null}
@@ -1551,18 +1580,33 @@ export function ImageLabExperimentForm({
                 )}
               </Field>
               {extraRole !== "" ? (
-                <LabRenderPicker
-                  label={imageLabRoleLabel(extraRole)}
-                  hint={extraRoleHint(extraRole)}
-                  scopeId={extraSource === "scenes" ? chatId : identityCharacterId}
-                  images={extraSource === "scenes" ? scenes : portraits}
-                  value={extraImageId}
-                  onChange={setExtraImageId}
-                  excluded={
-                    fixtureSourceId === null ? null : { imageId: fixtureSourceId, reason: FIXTURE_SOURCE_REASON }
-                  }
-                  emptyHints={extraSource === "scenes" ? SCENE_EMPTY_HINTS : chatPortraitEmptyHints}
-                />
+                extraSource === "general" ? (
+                  // The object role's source is the GENERAL picker: no scoped
+                  // list holds item imagery, and the recipe already accepts the
+                  // role — same fixture-source bar as every other slot.
+                  <OwnedImagePicker
+                    label={imageLabRoleLabel(extraRole)}
+                    hint={extraRoleHint(extraRole)}
+                    value={extraImageId}
+                    onChange={setExtraImageId}
+                    excluded={
+                      fixtureSourceId === null ? null : { imageId: fixtureSourceId, reason: FIXTURE_SOURCE_REASON }
+                    }
+                  />
+                ) : (
+                  <LabRenderPicker
+                    label={imageLabRoleLabel(extraRole)}
+                    hint={extraRoleHint(extraRole)}
+                    scopeId={extraSource === "scenes" ? chatId : identityCharacterId}
+                    images={extraSource === "scenes" ? scenes : portraits}
+                    value={extraImageId}
+                    onChange={setExtraImageId}
+                    excluded={
+                      fixtureSourceId === null ? null : { imageId: fixtureSourceId, reason: FIXTURE_SOURCE_REASON }
+                    }
+                    emptyHints={extraSource === "scenes" ? SCENE_EMPTY_HINTS : chatPortraitEmptyHints}
+                  />
+                )
               ) : null}
             </div>
             <p className="text-xs text-paper-500">
@@ -1590,7 +1634,7 @@ export function ImageLabExperimentForm({
                         ? "Resolved at run time — the source run's result, and nothing else. The LoRA-only arm sends no identity reference at all."
                         : "Resolved at run time — the source run's result, then the identity pack's reference. The finished record lists both."
                       : isStaged
-                        ? "Nothing ordered yet — a staged scene sends one identity reference and no fixture, because its structure arrives as the staging's own words rather than as an image."
+                        ? "Nothing ordered yet — a staged scene sends one identity reference, a location reference only if you pick one, and no fixture: its structure arrives as the staging's own words rather than as an image."
                         : "None — a baseline resolves the lane's own references itself."}
             </p>
           ) : (

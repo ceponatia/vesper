@@ -413,6 +413,22 @@ export interface DimensionChoice {
  * `chooseAspect` answer, whatever the mode: both branches delegate their
  * default path to it, which is what keeps every existing render byte-identical.
  */
+/**
+ * The shape answer for a render that asked for NO shape — the Image Generator's
+ * native/provider-default mode.
+ *
+ * An empty `input` means the payload carries no `aspect_ratio`/`size` key at
+ * all, so the version's own declared default applies; `expectedAspect: null`
+ * with `needsCrop: false` says nothing is expected and nothing is trimmed. It
+ * is a named function rather than an inline literal so the transport wrapper's
+ * crop rule and this answer stay one decision: "no target" must never fall into
+ * the `expectedAspect === null` branch that crops precisely because nothing
+ * could say what was coming.
+ */
+export function providerDefaultDimensions(): DimensionChoice {
+  return { input: {}, expectedAspect: null, needsCrop: false };
+}
+
 export function chooseDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
   const choice =
     model.aspectMode === "size" ? chooseSizeDimensions(model, request) : chooseRatioDimensions(model, request);

@@ -8,11 +8,17 @@ import {
   type ImageModel,
   imageModelSchema,
   type ImageRenderDimensionFacts,
+  type ImageRenderPolicy,
   type PlannedControlReference,
   preparePromptForImageModel,
+  providerDefaultDimensions,
   withReviewedImageQuality,
 } from "@vesper/image-core";
-import type { RenderControlReference } from "@vesper/image-replicate";
+import type {
+  ProviderInputViolation,
+  RenderControlReference,
+  UnsentReferenceReport,
+} from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageModels } from "../db";
 import { replicateClient } from "../ai";
@@ -123,8 +129,13 @@ export interface RenderWithModelInput {
   /**
    * The shape this lane wants, as a width/height ratio. Defaults to Vesper's
    * 3:4; the entity lanes ask for 1 (items) and 1.5 (locations).
+   *
+   * `null` is the explicit NATIVE shape — write no aspect/size key, pick no
+   * provider bucket for being nearest a Vesper target, and do not crop what
+   * comes back. Absent still means 3:4, so every existing caller is unchanged;
+   * only a caller that says `null` gets the model's own default shape.
    */
-  targetRatio?: number;
+  targetRatio?: number | null;
   /**
    * The compile step's dimension-resolver inputs (`compileProfileRenderPlan`):
    * operation, the merged resolution/width/height controls, and whether a
@@ -144,6 +155,12 @@ export interface RenderWithModelInput {
   timeoutMs?: number | null;
   /** Execute exactly this provider version; null takes the slug's own resolution. */
   versionId?: string | null;
+  /**
+   * How strictly the transport treats what it was handed
+   * (`ImageRenderPolicy`). Absent is production's answer — trim what does not
+   * fit, let the provider judge the values — so no existing lane moves.
+   */
+  policy?: ImageRenderPolicy;
 }
 
 export interface RenderWithModelResult {
@@ -169,6 +186,44 @@ export interface RenderWithModelResult {
    * so a stored attempt never claims a budget-trimmed reference was sent.
    */
   sentReferenceCount?: number;
+  /**
+   * Under a `require_all` reference policy: the selected references the
+   * transport refused to leave behind, passed through untouched. Present only
+   * on that pre-spend refusal, which is how a caller tells it apart from a
+   * provider failure — nothing was created, so nothing was spent.
+   */
+  unsentReferences?: UnsentReferenceReport[];
+  /**
+   * Under a `strict` provider-input policy: the ways the finished payload
+   * contradicted the version's probed schema. Same pre-spend rule.
+   */
+  providerInputViolations?: ProviderInputViolation[];
+  /**
+   * The shape decision this render actually made — the provider field and value
+   * written (or their absence, under a native-shape request), what ratio the
+   * result was expected at, and whether the returned image was cropped.
+   *
+   * Recorded because a stored run that says "3:4" cannot otherwise prove
+   * whether the provider was told `aspect_ratio: "3:4"`, told `size:
+   * "1536*2048"`, or told nothing and had its answer trimmed afterwards.
+   */
+  shape?: RenderShapeOutcome;
+  /** The returned image's own pixel dimensions, when they could be read. */
+  outputDimensions?: { width: number; height: number };
+}
+
+/** What one render asked the provider for, shape-wise, and what it did afterwards. */
+export interface RenderShapeOutcome {
+  /** `provider_default` when the caller asked for no shape at all. */
+  mode: "provider_default" | "target_ratio";
+  /** The provider input the shape was written to, or null when none was written. */
+  field: string | null;
+  /** The value written to that field, or null when the payload carried no shape. */
+  value: string | null;
+  /** The ratio the request expected back, or null when nothing could say. */
+  expectedAspect: number | null;
+  /** The ratio the result was cropped to, or null when no crop was performed. */
+  cropTarget: number | null;
 }
 
 /**
@@ -215,13 +270,21 @@ export async function renderWithModel(
   input: RenderWithModelInput,
   sink?: DiagnosticSink,
 ): Promise<RenderWithModelResult> {
-  const targetRatio = input.targetRatio ?? IMAGE_TARGET_ASPECT;
+  // Absent means 3:4 (every production lane); an explicit `null` means the
+  // model's own default shape, which is a different request from "unset".
+  const targetRatio = input.targetRatio === undefined ? IMAGE_TARGET_ASPECT : input.targetRatio;
   const model = withReviewedImageQuality(input.model);
   const prompt = preparePromptForImageModel(model, input.prompt, input.references?.length ?? 0);
   // Absent facts spread to nothing, and a factless request resolves to the pure
-  // `chooseAspect` answer — the direct callers keep exactly their old shapes.
-  const dimensions = chooseDimensions(model, { targetRatio, ...input.dimensionFacts });
-  const aspectValue = dimensions.input[imageAspectInputField(model)];
+  // `chooseAspect` answer — the direct callers keep exactly their old shapes. A
+  // native request skips the negotiation outright: nothing is bucketed toward a
+  // target it never named.
+  const dimensions =
+    targetRatio === null
+      ? providerDefaultDimensions()
+      : chooseDimensions(model, { targetRatio, ...input.dimensionFacts });
+  const aspectField = imageAspectInputField(model);
+  const aspectValue = dimensions.input[aspectField];
   const preparationTarget = referencePreparationTarget(model);
   const references = input.references
     ? await prepareRenderReferences(
@@ -256,6 +319,7 @@ export async function renderWithModel(
       ...(input.controlInput ? { controlInput: input.controlInput } : {}),
       ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.versionId ? { versionId: input.versionId } : {}),
+      ...(input.policy ? { policy: input.policy } : {}),
     },
     sink,
   );
@@ -264,22 +328,40 @@ export async function renderWithModel(
   // reports no field at all instead of an explicit undefined. The count is
   // compared against undefined, not truthiness: zero references sent is a real
   // count, absence means the transport never said.
+  const shape = (cropTarget: number | null): RenderShapeOutcome => ({
+    mode: targetRatio === null ? "provider_default" : "target_ratio",
+    field: typeof aspectValue === "string" ? aspectField : null,
+    value: typeof aspectValue === "string" ? aspectValue : null,
+    expectedAspect: dimensions.expectedAspect,
+    cropTarget,
+  });
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
     ...(result.executedVersionId ? { executedVersionId: result.executedVersionId } : {}),
     ...(result.sentReferenceCount !== undefined ? { sentReferenceCount: result.sentReferenceCount } : {}),
+    ...(result.unsentReferences ? { unsentReferences: result.unsentReferences } : {}),
+    ...(result.providerInputViolations ? { providerInputViolations: result.providerInputViolations } : {}),
   };
   if (!result.ok || !result.image) {
-    return { ok: false, ...provenance, error: result.error ?? `${model.slug} returned no image` };
+    return { ok: false, ...provenance, shape: shape(null), error: result.error ?? `${model.slug} returned no image` };
   }
   // Crop when the expected shape misses the target, and also when nothing can
   // say what shape is coming — a model with no usable shape used its own
-  // default, which is unlikely to match.
-  if (!dimensions.needsCrop && dimensions.expectedAspect !== null) {
-    return { ok: true, ...provenance, image: result.image };
+  // default, which is unlikely to match. A NATIVE request is exempt from both:
+  // it named no target, so there is nothing for the result to miss.
+  const skipCrop = targetRatio === null || (!dimensions.needsCrop && dimensions.expectedAspect !== null);
+  if (skipCrop) {
+    return { ok: true, ...provenance, shape: shape(null), ...(await outputDimensionsOf(result.image)), image: result.image };
   }
   try {
-    return { ok: true, ...provenance, image: await cropToTargetAspect(result.image, targetRatio) };
+    const cropped = await cropToTargetAspect(result.image, targetRatio);
+    return {
+      ok: true,
+      ...provenance,
+      shape: shape(targetRatio),
+      ...(await outputDimensionsOf(cropped)),
+      image: cropped,
+    };
   } catch (error) {
     sink?.push(
       diag("warn", "image_model.crop_failed", "could not crop the render to the requested shape", {
@@ -287,7 +369,24 @@ export async function renderWithModel(
         context: { slug: model.slug, targetRatio, error: error instanceof Error ? error.message : String(error) },
       }),
     );
-    return { ok: true, ...provenance, image: result.image };
+    return { ok: true, ...provenance, shape: shape(null), ...(await outputDimensionsOf(result.image)), image: result.image };
+  }
+}
+
+/**
+ * The returned image's own pixel size, for the provenance record — spread into
+ * the result, so an unreadable buffer contributes no field rather than a lie.
+ *
+ * Read here rather than inferred from the requested shape because those are
+ * different facts: a model handed no shape at all answers at whatever size it
+ * likes, and "what came back" is the only way a bench run can show it.
+ */
+async function outputDimensionsOf(buffer: Buffer): Promise<{ outputDimensions?: { width: number; height: number } }> {
+  try {
+    const { width, height } = await sharp(buffer, { limitInputPixels: 40_000_000, failOn: "error" }).metadata();
+    return width && height ? { outputDimensions: { width, height } } : {};
+  } catch {
+    return {};
   }
 }
 

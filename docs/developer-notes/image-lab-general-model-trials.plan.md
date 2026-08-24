@@ -1,6 +1,6 @@
 # Image Generator and Image Lab model-testing boundaries
 
-Status: next — owner ruling 2026-08-23 replaces the proposed Image Lab `model_trial` with a separate Image Generator surface
+Status: active — Stages 1–6 built 2026-08-23 and corrected the same day; Stage 3's live validation runs need a deploy plus owner-approved provider spend
 
 Outcome: The owner can select any registered image model, write the exact prompt to send, attach supported reference or structural images, change the controls that model actually exposes, and reproduce or vary the run without forcing the request through an unrelated Image Lab experiment; the Advanced Image Lab remains a stricter evidence bench whose specialized experiments keep their existing subject, fixture, prompt-ownership, and verdict rules.
 
@@ -9,7 +9,7 @@ Outcome: The owner can select any registered image model, write the exact prompt
 **Primary integration:** existing image-model registry, capability probing/planning, image asset registry, API job system, and shared provider render path  
 **Provider/dependency:** existing Replicate transport through `@vesper/image-replicate`; no new provider in this work
 
-> **Ruling:** this plan supersedes the earlier direction in this file that proposed adding a neutral `model_trial` experiment to the Advanced Image Lab. `docs/developer-notes/image-lab-general-model-trials.spec.md` still describes that older direction and must not be treated as implementation authority until it is rewritten to match this plan.
+> **Ruling:** this plan supersedes the earlier direction that proposed adding a neutral `model_trial` experiment to the Advanced Image Lab. `docs/developer-notes/image-lab-general-model-trials.spec.md` has been rewritten to match this plan and is the implementation authority for the Image Generator.
 
 ## 1. Goal
 
@@ -329,6 +329,7 @@ These are starting behaviors for the Generator, not model-quality defaults:
 | Dedicated structural inputs | None initially; show only capability-declared inputs |
 | Seed | Unset; expose only when the active capability record binds a seed field |
 | Guidance / steps / edit strength | Unset; provider/model default unless explicitly changed |
+| Output shape | The model's own shape unless the owner picks one the version declares; nothing is cropped |
 | Dimensions / resolution | No Generator-specific hardcoded value; expose the normalized choice the model supports |
 | Provider-specific inputs | Omitted unless explicitly set; known/probed fields only in the first implementation |
 | Output count | One image even when the model can return several; multi-output is a later complex case |
@@ -715,7 +716,7 @@ Baseline constraints to preserve include:
 
 ### Stage 1 — Establish contracts/boundaries
 
-next
+complete — 2026-08-23
 
 Define the minimum Generator-owned contracts and application boundaries before building a rich UI.
 
@@ -740,7 +741,7 @@ Do not build a new package unless this boundary work demonstrates a reusable pac
 
 ### Stage 2 — Minimal functional implementation
 
-queued
+built 2026-08-23 — awaiting Stage 3's live validation on the deployed app
 
 Build the smallest complete Image Generator:
 
@@ -762,18 +763,24 @@ The purpose is to prove that a separate Generator can reach the existing render 
 
 ### Stage 3 — Validate the primary mechanism
 
-queued
+blocked on a production deploy plus owner-approved provider spend
 
-Use fixed prompts/assets and prove that the selected model is actually the model that runs.
+Use fixed prompts/assets and prove that the selected model is actually the model that runs. Automated validation is complete — the whole build is covered by pure and integration suites with the provider seam stubbed — so what remains is exactly the part that needs real money.
 
-At minimum exercise:
+The manual checklist, in order, one run each:
 
-1. the registered Vesper SDXL renderer as prompt-only text-to-image where its active version supports it;
-2. the same renderer with one ordinary reference when supported;
-3. Qwen Image Edit 2511 with one primary reference;
-4. one prompt-only registered model with no image requirement.
+1. the registered Vesper SDXL renderer as prompt-only text-to-image;
+2. the same renderer with one ordinary reference;
+3. the same renderer with a dedicated pose or depth image, **after** the re-probe below;
+4. the same renderer with its provider-specific `recipe` set under Advanced Model Inputs;
+5. Qwen Image Edit 2511 with ordered primary references;
+6. one prompt-only registered model with no image requirement;
+7. one run with the shape left blank, confirming the stored image is the model's own size and was not cropped to 3:4;
+8. one exact captured-version replay, if a safe pair of versions exists on a registered model.
 
-Verify exact requested/executed version provenance, owner-scoped input reads, hidden output storage, provider health reporting, and absence of production-profile substitution.
+Each run should be checked for: the requested and executed version on the record, the effective request naming real provider field names, owner-scoped input reads, hidden output storage, provider health reporting, and no production-profile substitution.
+
+Runs 3 and 4 depend on re-probing the Vesper SDXL renderer so its pinned capability record gains the dedicated structural bindings and the `recipe` descriptor. That is an admin action on the deployed app, not code.
 
 If the Generator cannot express these through the existing registry/render seam, stop and repair the shared seam before adding model-specific controls.
 
@@ -781,7 +788,7 @@ If the Generator cannot express these through the existing registry/render seam,
 
 ### Stage 4 — Add the first multiplier
 
-queued
+built 2026-08-23 — the SDXL `recipe` validation rides Stage 3's paid runs
 
 Make model selection drive the scalar/control UI.
 
@@ -804,7 +811,7 @@ Validate the Vesper SDXL renderer's provider-specific `recipe` without promoting
 
 ### Stage 5 — Add secondary capability
 
-queued
+built 2026-08-23 — except direct source uploads (awaiting the retention/quota ruling) and the SDXL re-probe (post-deploy admin action)
 
 Add the general image-input surface and fix the dedicated structural-input probe gap.
 
@@ -830,7 +837,7 @@ Also correct fixture-upload copy from "skeleton" to "control fixture" with Pose 
 
 ### Stage 6 — Finishing / reliability
 
-queued
+built 2026-08-23 — except the side-by-side A/B view; reproducibility proof rides Stage 3's runs
 
 Make freeform exploration reproducible enough to replace ad hoc provider-console testing.
 
@@ -855,6 +862,29 @@ Perform the remaining Image Lab affordance cleanup:
 - update baseline-scene copy/docs to say production-profile/configuration baseline rather than exact replay.
 
 ---
+
+### Stage 6b — Correctness pass
+
+complete — 2026-08-23
+
+An independent review of the built Generator found six places where an operator-authored request could still be quietly changed, or where a legitimate model could not be run at all. All six are corrected and covered by automated tests; the spec records the rulings.
+
+- A model that generates from a prompt and takes a required structural image (a pose or depth map) is now runnable. Selecting a structural image no longer turns the request into an edit, which had made that whole class of model impossible to use.
+- The Generator asks for the model's own output shape. It no longer inherits the 3:4 portrait shape every player-facing image uses, and no longer crops a result toward it. An owner who wants a specific shape picks one the model actually offers.
+- A reference image the owner explicitly selected is either sent or the run refuses. The provider is never paid for a render that quietly left one behind.
+- One authoritative check runs over the finished request just before the provider is called, so a request the model's own schema would reject costs a refusal rather than a render.
+- Every run writes down what was actually sent in the provider's own vocabulary, and the capability facts it ran under, before the money is spent — so re-testing a model later cannot make an old run's record misleading.
+- Duplicating a run whose model has moved to a new version asks which version to run, and an exact replay is executed against the facts recorded at the time or refused honestly.
+
+Also corrected while in the runner: two deliveries of the same queued run can no longer both pay for a render, and a settled run cannot be rewritten.
+
+A second, adversarial review of the corrected code found five more, all fixed in the same stage:
+
+- The pre-spend record described the wrong request on the handful of models Vesper applies reviewed quality corrections to. Those corrections are added on the way out, so the record — and the check that runs just before the provider call — now look at the request as the provider will receive it, and the record lists the whole request rather than only the controls the owner set.
+- On a model whose declared shapes are its sizes, asking for a resolution tier always failed, naming a provider field the owner could neither see nor set. The form no longer offers the tier there — the shape picker is the same choice — and a request that still carries one is refused in plain words.
+- A model registered before Vesper started recording per-field descriptions accepted raw provider values it could not check. Those are now refused until the model is re-probed.
+- A duplicated run could carry an output shape the model declares but never actually uses, which the form showed as blank and the run then refused. The form now treats "declared" and "actually sent" as the same question everywhere.
+- Deleting a run at the exact moment its render finished could leave the produced image behind with nothing pointing at it.
 
 ### Stage 7 — First production integration
 
@@ -974,7 +1004,7 @@ If that proof requires a model-specific application branch or bypasses the share
 | --- | --- | --- |
 | What exact persisted provider-input descriptor is sufficient for a safe generic advanced-input form? | Too little metadata recreates model-specific UI; too much makes core contracts mirror Replicate wholesale. | Stage 1 contract review against several registered model schemas, then implement the minimum fields listed in §6. |
 | Should direct Generator uploads be ordinary quota-counted private assets or a separate admin-source kind with its own retention rule? | Existing hidden derived kinds are excluded from ordinary surfaces and quota; user-supplied sources have different storage economics. | Explicit owner ruling before Stage 5 upload support; existing owned images are sufficient before then. |
-| How should a run preserve an exact version when an official registered slug tracks latest? | A duplicated comparison is invalid if the same displayed model silently changes weights. | Resolve and persist the concrete provider version for every run; determine in Stage 1 whether variants default to the captured version or require an explicit "use current" choice. |
+| How should a run preserve an exact version when an official registered slug tracks latest? | A duplicated comparison is invalid if the same displayed model silently changes weights. | Resolved 2026-08-23: every run pins and records a concrete version. A duplicate with no drift runs the current pin; a duplicate whose source pinned a different version makes the owner choose, and an exact replay is executed against the capability facts that run recorded or refused outright. |
 | Are current `images.meta.render` records complete enough for exact production replay? | Determines whether "Open in Image Generator" can copy a captured request or whether production rendering must first capture more facts. | Stage 8 fixed audit over representative production image kinds; never reconstruct missing fields from current state. |
 | Which URI-like provider fields should the Replicate probe bind into `additionalImageInputs` automatically? | Over-broad heuristics can route identity pixels into a depth/control field; under-broad rules leave legitimate structural inputs inaccessible. | Conservative explicit alias table with tests for pose/depth/mask/control/edge and no catch-all semantic guessing. |
 | Should the Generator ever allow an explicit unsafe/unverified raw provider key? | Useful for undocumented experiments, but it bypasses the exact schema contract that keeps admin tests reproducible and fail-closed. | Exclude initially. Revisit only after the known-input editor is used in practice and a concrete blocked case exists. |

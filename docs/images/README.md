@@ -12,15 +12,16 @@ The rule for new code: a provider-neutral image decision belongs in `@vesper/ima
 
 ## Reading order
 
-| Doc                                      | What it covers                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| [providers.md](providers.md)             | Replicate: model rows, probing, task profiles, render intents, transport |
-| [asset-registry.md](asset-registry.md)   | `images` rows + files: row-before-file, serving gate, deletes, sweep     |
-| [pipelines.md](pipelines.md)             | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
-| [prompt-programs.md](prompt-programs.md) | World digests, positive claims, guarded negatives, endpoint dialects     |
-| [identity-packs.md](identity-packs.md)   | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
-| [Image Lab](../image-lab/README.md)      | Admin experiment bench: experiments, control fixtures, current limits    |
-| [vision.md](vision.md)                   | Models reading stored images: portrait→attributes, chat photo reads      |
+| Doc                                             | What it covers                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------------ |
+| [providers.md](providers.md)                    | Replicate: model rows, probing, task profiles, render intents, transport |
+| [asset-registry.md](asset-registry.md)          | `images` rows + files: row-before-file, serving gate, deletes, sweep     |
+| [pipelines.md](pipelines.md)                    | The lanes: avatars, variants, chat scenes, selfies, anchors, entity art  |
+| [prompt-programs.md](prompt-programs.md)        | World digests, positive claims, guarded negatives, endpoint dialects     |
+| [identity-packs.md](identity-packs.md)          | Derived face crops: derivation, lifecycle, surfaces, trial harness       |
+| [Image Lab](../image-lab/README.md)             | Admin experiment bench: experiments, control fixtures, current limits    |
+| [Image Generator](../image-generator/README.md) | Admin raw prompt/model bench: one-off runs against any registered model  |
+| [vision.md](vision.md)                          | Models reading stored images: portrait→attributes, chat photo reads      |
 
 ## Demo mode
 

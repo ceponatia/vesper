@@ -439,9 +439,10 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
 /**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
  * identity face crop (image-identity-packs.spec.data.md §Hidden image asset),
- * the identity-trial render output (image-identity-packs.spec.trial.md), and the
+ * the identity-trial render output (image-identity-packs.spec.trial.md), the
  * Advanced Image Lab's control fixtures and experiment renders
- * (qwen-advanced-image-subsystem.spec.md §Persistence).
+ * (qwen-advanced-image-subsystem.spec.md §Persistence), and the Image
+ * Generator's run outputs (image-lab-general-model-trials.spec.md §Persistence).
  * Their owner may read one — the crop editor, the trial review UI and the lab's
  * fixtures panel have to display them — but they must be absent from every
  * listing, copy, cross-owner read and quota sum:
@@ -467,6 +468,7 @@ export const HIDDEN_IMAGE_KINDS = [
   "identity_trial_output",
   "lab_control",
   "lab_output",
+  "generator_output",
 ] as const satisfies readonly ImageKind[];
 
 /**

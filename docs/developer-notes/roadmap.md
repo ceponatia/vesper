@@ -80,6 +80,13 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   provider (Featherless) for models no commercial host carries; the recorded
   comparison that would move a default is still the next step.
 
+- **Image Generator — freeform registered-model testing, separate from the
+  Image Lab** — [plan](image-lab-general-model-trials.plan.md) ·
+  [spec](image-lab-general-model-trials.spec.md) — a distinct admin surface
+  that runs any registered model with an authored prompt, supported inputs,
+  and capability-driven controls, while the Advanced Image Lab keeps its
+  stricter evidence contracts and sheds its misleading affordances.
+
 - **Stable Diffusion rendering package** —
   [plan](sd-rendering-package.plan.md) ·
   [training runbook](sd-rendering-package.training.md) — `@vesper/image-sd`

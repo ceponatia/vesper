@@ -31,9 +31,11 @@ export {
 export type { ReplicateConfig } from "./config";
 export { DATA_URL_BUDGET_BYTES, referenceDataUrl, transportReplicateReferences, withinDataUrlBudget } from "./files";
 export type { PreparedReferenceBytes, TransportReferencesResult } from "./files";
-export { buildRegistryModelInput, overlayControlInput } from "./payload";
+export { buildRegistryModelInput, overlayControlInput, previewRegistryModelInput } from "./payload";
 export type { RegistryModelRequest, RenderControlReference } from "./payload";
 export { replicatePredictionTarget } from "./prediction";
 export type { ReplicateImageResult } from "./prediction";
 export type { ReplicatePreprocessorRequest } from "./preprocessor";
 export type { ProbeResult, ReplicateModelProbe } from "./probe";
+export { providerInputViolations, unsentReferenceReports } from "./strict-request";
+export type { ProviderInputViolation, UnsentReferenceReport } from "./strict-request";

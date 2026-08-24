@@ -22,7 +22,7 @@ The form can vary staging setting, lighting, and time of day where those fields 
 
 ## References
 
-Exactly one identity reference is required. The staged recipe also permits an optional `location` role, but the current form exposes no location picker for this kind. Its existing location-image source is chat-scoped while the staged experiment intentionally has no chat. The runner can support the role once a chat-independent place-image source is available to the UI.
+Exactly one identity reference is required. The staged recipe also permits an optional `location` role, supplied through the general owned-image picker — the chat-independent place-image source this kind needs, since a staged experiment intentionally has no chat.
 
 ## Model and LoRA behavior
 

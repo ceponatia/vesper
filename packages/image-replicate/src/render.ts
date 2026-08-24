@@ -1,10 +1,16 @@
-import { fitReferences, type ImageModel } from "@vesper/image-core";
+import { fitReferences, type ImageModel, resolveImageRenderPolicy } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { ReplicateConfig } from "./config";
 import { deleteReplicateFile, transportReplicateReferences, withinDataUrlBudget } from "./files";
 import { NOT_CONFIGURED_ERROR, type ReplicateHttp } from "./http";
 import { buildPayload, controlUris, type RegistryModelRequest } from "./payload";
 import { type ReplicateImageResult, runPrediction } from "./prediction";
+import {
+  providerInputViolationMessage,
+  providerInputViolations,
+  unsentReferenceMessage,
+  unsentReferenceReports,
+} from "./strict-request";
 
 /**
  * Run one registry model.
@@ -37,7 +43,9 @@ export async function runRegistryImageModel(
   sink?: DiagnosticSink,
 ): Promise<ReplicateImageResult> {
   if (!http.configured) return { ok: false, error: NOT_CONFIGURED_ERROR };
-  const references = fitReferences(model, request.references ?? []);
+  const policy = resolveImageRenderPolicy(request.policy);
+  const selected = request.references ?? [];
+  const references = fitReferences(model, selected);
   const controls = request.controlReferences ?? [];
   // A bound control image is an input image: an edit-only model handed nothing
   // but a pose map has something to work from, and refusing it here would make
@@ -73,6 +81,20 @@ export async function runRegistryImageModel(
     }
   }
 
+  // The strict arm's first refusal, and it lands BEFORE the upload: a caller
+  // that said "all of these or none" must not pay for a prediction carrying a
+  // prefix of its request, and must not leave short-lived files behind either.
+  if (policy.references === "require_all" && send.length < selected.length) {
+    const unsentReferences = unsentReferenceReports(selected, references.length, send.length);
+    sink?.push(
+      diag("warn", "image_model.references_untransmittable", "the request selected references this model cannot carry", {
+        path: "image_models",
+        context: { slug: model.slug, selected: selected.length, sending: send.length, unsentReferences },
+      }),
+    );
+    return { ok: false, error: unsentReferenceMessage(model.slug, unsentReferences), unsentReferences };
+  }
+
   // One numbering across both lists so a Replicate file name is unique within
   // the run; the control images travel last so a reference's name stays what it
   // was before controls existed.
@@ -81,20 +103,30 @@ export async function runRegistryImageModel(
   try {
     // Split back POSITIONALLY, on the same order they traveled in. Keying a
     // lookup by buffer would collapse two identical control images onto one URL.
-    const result = await runPrediction(
-      http,
-      config,
-      model.slug,
-      buildPayload(
-        model,
-        request,
-        transported.uris.slice(0, send.length),
-        controlUris(controls, transported.uris.slice(send.length)),
-        config.safetyCheckerDisabled,
-        sink,
-      ),
+    const payload = buildPayload(
+      model,
       request,
+      transported.uris.slice(0, send.length),
+      controlUris(controls, transported.uris.slice(send.length)),
+      config.safetyCheckerDisabled,
+      sink,
     );
+    // The strict arm's second refusal, over the FINISHED payload — the last
+    // moment anything can be checked against the version's own schema, and the
+    // last moment before the POST costs money.
+    if (policy.providerInputs === "strict") {
+      const violations = providerInputViolations(model, payload, controls.map((control) => control.field));
+      if (violations.length > 0) {
+        sink?.push(
+          diag("warn", "image_model.provider_input_invalid", "the assembled request contradicts the version's schema", {
+            path: "image_models",
+            context: { slug: model.slug, violations },
+          }),
+        );
+        return { ok: false, error: providerInputViolationMessage(model.slug, violations), providerInputViolations: violations };
+      }
+    }
+    const result = await runPrediction(http, config, model.slug, payload, request);
     // Stamped on every prediction outcome, success and failure alike: the count
     // is a fact about what was POSTED, and a failed prediction still received
     // exactly these references. The pre-transport refusals above carry no count

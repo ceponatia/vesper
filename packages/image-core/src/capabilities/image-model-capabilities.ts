@@ -100,6 +100,13 @@ export type ImageIdentityPreservation = (typeof imageIdentityPreservationRatings
  * the subject, while a wardrobe reference is clothing the subject WEARS. A
  * CONTENT role, not a structural one — the model draws the garment from it
  * rather than obeying it as layout.
+ *
+ * `reference` is the NEUTRAL content role: an ordinary primary reference that
+ * makes no semantic claim at all. The Image Generator's freeform runs use it
+ * because forcing an arbitrary admin-chosen image into `identity` or `style`
+ * would record a claim nobody made; ordering, not role, is what routes it.
+ * It is deliberately not a structural role and carries no planner semantics
+ * beyond occupying a numbered primary slot.
  */
 export const imageReferenceRoles = [
   "identity",
@@ -110,6 +117,7 @@ export const imageReferenceRoles = [
   "product",
   "before",
   "after_example",
+  "reference",
   "mask",
   "pose",
   "depth",
@@ -259,6 +267,49 @@ export const imageAdditionalImageInputSchema = z.object({
 export type ImageAdditionalImageInput = z.infer<typeof imageAdditionalImageInputSchema>;
 
 /**
+ * The primitive shape of one declared provider input, as a DESCRIPTOR rather
+ * than a binding. A SEPARATE vocabulary from {@link imageInputBindingTypes} on
+ * purpose: widening the binding enum would change what `bindingAccepts` must
+ * exhaustively handle, and descriptors describe fields the binding layer never
+ * sends — URI inputs, plain arrays, and shapes the probe could not parse.
+ */
+export const imageProviderInputTypes = [
+  "string",
+  "integer",
+  "number",
+  "boolean",
+  "enum",
+  "uri",
+  "array",
+  "unknown",
+] as const;
+export type ImageProviderInputType = (typeof imageProviderInputTypes)[number];
+
+/**
+ * One declared input of a probed version, recorded as metadata about what the
+ * provider offers — never a second normalized-control system. Nothing maps a
+ * descriptor into `ImageRenderControls`; the Image Generator reads the list to
+ * build its advanced-input form, and `reserved` marks the fields the render
+ * path already owns (prompt, primary reference, aspect key, control bindings,
+ * dedicated image inputs, pinned extras) so an advanced value can never
+ * collide with what the payload builder writes.
+ */
+export const imageProviderInputDescriptorSchema = z.object({
+  field: z.string().min(1),
+  type: z.enum(imageProviderInputTypes),
+  required: z.boolean(),
+  /** JSON-safe provider default, when the schema declares one. */
+  default: z.unknown().optional(),
+  enumValues: z.array(z.string()).optional(),
+  minimum: z.number().optional(),
+  maximum: z.number().optional(),
+  description: z.string().max(500).optional(),
+  /** Claimed by prompt/reference/aspect/control/dedicated/extraInput/render plumbing. */
+  reserved: z.boolean(),
+});
+export type ImageProviderInputDescriptor = z.infer<typeof imageProviderInputDescriptorSchema>;
+
+/**
  * What comes back. `supportsMultiple` is separate from `arity` because several
  * models return a one-element array and only produce more when an output-count
  * or image-set control is set — the single-image wrapper has to know that
@@ -313,6 +364,13 @@ export const imageModelAdvancedCapabilitiesSchema = z.object({
    * seeded profiles carry `providerOverrides = {}`.
    */
   knownInputFields: z.array(z.string()).default((): string[] => []),
+  /**
+   * One descriptor per declared input, sorted by field name by the probe.
+   * Metadata for the Image Generator's advanced-input form; empty on every row
+   * probed before the derivation existed, which is inert — the form simply
+   * offers no advanced fields until somebody re-probes the row.
+   */
+  providerInputs: z.array(imageProviderInputDescriptorSchema).default((): ImageProviderInputDescriptor[] => []),
 });
 export type ImageModelAdvancedCapabilities = z.infer<typeof imageModelAdvancedCapabilitiesSchema>;
 
@@ -330,5 +388,6 @@ export function emptyImageModelAdvancedCapabilities(): ImageModelAdvancedCapabil
     additionalImageInputs: [],
     output: { arity: "single", supportsMultiple: false },
     knownInputFields: [],
+    providerInputs: [],
   };
 }

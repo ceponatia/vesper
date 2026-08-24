@@ -164,6 +164,32 @@ describe("diffImageModelCapabilities", () => {
     ).toEqual([{ field: "additionalImageInputs.pose_image", kind: "added", candidate: pose }]);
   });
 
+  it("reports provider input descriptors keyed by field, between dedicated inputs and output", () => {
+    const recipe = { field: "recipe", type: "string" as const, required: false, default: "identity_v1", reserved: false };
+    const retuned = { ...recipe, default: "base_v1" };
+    const seed = { field: "seed", type: "integer" as const, required: false, minimum: 0, reserved: true };
+    const pose = {
+      roleHint: "pose" as const,
+      binding: { field: "pose_image", arity: "single" as const, required: false },
+    };
+    const multi = { arity: "array" as const, supportsMultiple: true };
+    const diff = diffImageModelCapabilities(
+      snapshot({ advancedCapabilities: advanced({ providerInputs: [recipe] }) }),
+      snapshot({
+        advancedCapabilities: advanced({ additionalImageInputs: [pose], providerInputs: [retuned, seed], output: multi }),
+      }),
+    );
+    // A field whose declared shape moved is a change to that input, never a
+    // remove-plus-add — and the section sits in the documented deterministic
+    // order, after additionalImageInputs.* and before output.
+    expect(diff).toEqual([
+      { field: "additionalImageInputs.pose_image", kind: "added", candidate: pose },
+      { field: "providerInputs.recipe", kind: "changed", active: recipe, candidate: retuned },
+      { field: "providerInputs.seed", kind: "added", candidate: seed },
+      { field: "output", kind: "changed", active: { arity: "single", supportsMultiple: false }, candidate: multi },
+    ]);
+  });
+
   it("reports output arity and prompt binding movement", () => {
     const multi = { arity: "array" as const, supportsMultiple: true };
     const prompt = { field: "prompt", maxChars: 2000 };

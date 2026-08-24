@@ -84,6 +84,8 @@ function referenceRoleBinding(binding: CompileReferenceBinding, position: number
       return `Image ${position}: the "before" image — the starting state this render transforms.`;
     case "after_example":
       return `Image ${position}: an example of the finished result. Match the KIND of change it demonstrates, not its subject.`;
+    case "reference":
+      return `Image ${position}: a reference image.`;
     case "mask":
       return `Image ${position}: a mask. Edit only the white region; leave the black region untouched. Do not draw the mask itself.`;
     case "pose":

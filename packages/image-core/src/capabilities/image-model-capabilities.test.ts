@@ -3,6 +3,7 @@ import {
   emptyImageModelAdvancedCapabilities,
   imageInputBindingSchema,
   imageModelAdvancedCapabilitiesSchema,
+  imageProviderInputDescriptorSchema,
   imageUriBindingSchema,
 } from "./image-model-capabilities";
 
@@ -31,8 +32,22 @@ describe("imageModelAdvancedCapabilitiesSchema", () => {
       roleHint: "mask",
       binding: { field: "mask", arity: "single", required: false },
     });
+    first.providerInputs.push({ field: "recipe", type: "string", required: false, reserved: false });
     expect(imageModelAdvancedCapabilitiesSchema.parse({}).knownInputFields).toEqual([]);
     expect(imageModelAdvancedCapabilitiesSchema.parse({}).additionalImageInputs).toEqual([]);
+    expect(imageModelAdvancedCapabilitiesSchema.parse({}).providerInputs).toEqual([]);
+  });
+
+  it("reads a record probed before descriptors existed as offering no advanced fields", () => {
+    // Every row probed before this slice stores controls/knownInputFields with
+    // no providerInputs key; those rows must keep parsing, with an empty
+    // descriptor list meaning "nothing to offer" rather than a failed parse.
+    const parsed = imageModelAdvancedCapabilitiesSchema.parse({
+      controls: { seed: { field: "seed", type: "integer" } },
+      knownInputFields: ["prompt", "seed"],
+    });
+    expect(parsed.providerInputs).toEqual([]);
+    expect(parsed.controls.seed?.field).toBe("seed");
   });
 
   it("keeps a probed control's own field name so the mapper never guesses one", () => {
@@ -88,6 +103,22 @@ describe("imageInputBindingSchema", () => {
 
   it("refuses an unnamed field", () => {
     expect(imageInputBindingSchema.safeParse({ field: "", type: "number" }).success).toBe(false);
+  });
+});
+
+describe("imageProviderInputDescriptorSchema", () => {
+  it("insists required and reserved are stated, never defaulted", () => {
+    // Whether the provider demands the field, and whether the render path owns
+    // it, are the two facts the Generator's advanced form is built on — a probe
+    // that cannot determine them must say so rather than default.
+    expect(imageProviderInputDescriptorSchema.safeParse({ field: "recipe", type: "string" }).success).toBe(false);
+    expect(
+      imageProviderInputDescriptorSchema.safeParse({ field: "recipe", type: "string", required: false }).success,
+    ).toBe(false);
+    expect(
+      imageProviderInputDescriptorSchema.safeParse({ field: "recipe", type: "string", required: false, reserved: false })
+        .success,
+    ).toBe(true);
   });
 });
 

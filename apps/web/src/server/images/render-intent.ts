@@ -296,6 +296,10 @@ export async function renderImageIntent(
       targetRatio: plan.targetRatio,
       dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
+      // The caller's send-strictness, resolved by the planner and passed
+      // through: production keeps trimming what does not fit, and a bench that
+      // asked for all-or-nothing gets its refusal before the prediction.
+      policy: plan.policy,
       timeoutMs: plan.timeoutMs,
       ...(intent.versionId ? { versionId: intent.versionId } : {}),
     },

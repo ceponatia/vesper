@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { imageLabControlGeneratorLabel, imageLabControlKindLabel } from "./image-lab-copy";
-import { LabCharacterSelect, LabRenderPicker, useLabCharacters, useLabPortraits } from "./image-lab-pickers";
+import { OwnedImagePicker } from "./owned-image-picker";
 
 /**
  * The control-fixture panel (qwen-advanced-image-subsystem.spec.md §Stage 0
@@ -90,11 +90,8 @@ export function ImageLabFixturesPanel({
   onControlsChanged,
 }: ImageLabFixturesPanelProps) {
   const toast = useToast();
-  const characters = useLabCharacters();
 
-  const [characterId, setCharacterId] = useState("");
   const [sourceImageId, setSourceImageId] = useState<string | null>(null);
-  const portraits = useLabPortraits(characterId);
 
   const [kinds, setKinds] = useState<ImageLabControlKind[]>(["pose"]);
   const [note, setNote] = useState("");
@@ -109,14 +106,6 @@ export function ImageLabFixturesPanel({
   const [uploading, setUploading] = useState(false);
 
   const [enlarged, setEnlarged] = useState<string | null>(null);
-
-  // A character change invalidates the picked render (render-adjust, so no
-  // effect ever writes state synchronously).
-  const [prevCharacterId, setPrevCharacterId] = useState(characterId);
-  if (characterId !== prevCharacterId) {
-    setPrevCharacterId(characterId);
-    setSourceImageId(null);
-  }
 
   const readFile = (file: File | undefined) => {
     setFileError(null);
@@ -193,7 +182,7 @@ export function ImageLabFixturesPanel({
       toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
       return;
     }
-    toast.push({ title: "Fixture uploaded", description: "Filed as hand-drawn.", tone: "success" });
+    toast.push({ title: "Fixture uploaded", description: "Filed as a hand-drawn control fixture.", tone: "success" });
     setDataUrl(null);
     setFileName("");
     setUploadNote("");
@@ -239,34 +228,24 @@ export function ImageLabFixturesPanel({
           ))}
           {controls.length === 0 && !extracting ? (
             <p className="col-span-full text-sm text-paper-500">
-              No fixtures yet. Extract one from a render below, or upload a skeleton you drew.
+              No fixtures yet. Extract one from a render below, or upload a control fixture you drew.
             </p>
           ) : null}
         </div>
       )}
 
       <div className="mt-6 flex flex-col gap-4 border-t border-ink-700 pt-5">
-        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Source render</h3>
-        <div className="grid gap-4 sm:grid-cols-[16rem_1fr]">
-          <Field label="Character" hint="Whose renders to work from.">
-            {(id) => (
-              <LabCharacterSelect
-                id={id}
-                characters={characters.data ?? []}
-                value={characterId}
-                onChange={setCharacterId}
-              />
-            )}
-          </Field>
-          <LabRenderPicker
-            label="Render"
-            hint="The image a control map is extracted from — pick a pose clearly unlike the target."
-            scopeId={characterId}
-            images={portraits}
-            value={sourceImageId}
-            onChange={setSourceImageId}
-          />
-        </div>
+        <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Source image</h3>
+        {/* The general picker rather than a character's portraits: the
+            extraction service has always accepted any owner-scoped ready
+            image, and the old character scoping was a picker limitation this
+            shared component removed. */}
+        <OwnedImagePicker
+          label="Source image"
+          hint="The image a control map is extracted from — any of your ready images; pick a pose clearly unlike the target."
+          value={sourceImageId}
+          onChange={setSourceImageId}
+        />
       </div>
 
       <div className="mt-6 grid gap-6 border-t border-ink-700 pt-5 lg:grid-cols-2">
@@ -306,10 +285,10 @@ export function ImageLabFixturesPanel({
         </div>
 
         <div className="flex flex-col gap-3">
-          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Upload a skeleton</h3>
+          <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Upload a control fixture</h3>
           <Field
             label="File"
-            hint={`A skeleton, depth map, or edge map you drew, up to ${MAX_UPLOAD_LABEL}. Filed as hand-drawn — the route never takes your word for provenance.`}
+            hint={`A control fixture you drew — a pose skeleton, depth map, or edge map — up to ${MAX_UPLOAD_LABEL}. Filed as hand-drawn — the route never takes your word for provenance.`}
           >
             {(id) => (
               <input
@@ -353,7 +332,7 @@ export function ImageLabFixturesPanel({
               onChange={() => setLinkSource((on) => !on)}
               className="accent-accent-500"
             />
-            {sourceImageId === null ? "Drawn over nothing (no render picked)" : "Drawn over the render picked above"}
+            {sourceImageId === null ? "Drawn over nothing (no source picked)" : "Drawn over the image picked above"}
           </label>
           <Field label="Note" hint="Optional — how it was drawn. Kept apart from the review note.">
             {(id) => (
@@ -362,7 +341,7 @@ export function ImageLabFixturesPanel({
           </Field>
           <div>
             <Button variant="primary" busy={uploading} disabled={dataUrl === null} onClick={() => void upload()}>
-              Upload skeleton
+              Upload fixture
             </Button>
           </div>
         </div>

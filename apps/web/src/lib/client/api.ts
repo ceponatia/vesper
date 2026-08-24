@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  type ImageGeneratorCreateRunRequest,
+  imageGeneratorRunSchema,
+} from "@/contracts/images/image-generator";
 import type { CharacterSheetScope } from "@/lib/character-scopes";
 import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
@@ -1362,6 +1366,64 @@ export const imageLabApi = {
      */
     remove: (controlId: string) => apiDelete(`${IMAGE_LAB_API_ROOT}/controls/${controlId}`),
   },
+};
+
+// ---------------------------------------------------------------------------
+// Image Generator (image-lab-general-model-trials.spec.md) — the raw
+// prompt/model bench beside the lab, admin-only like it
+// ---------------------------------------------------------------------------
+
+const IMAGE_GENERATOR_API_ROOT = "/api/admin/self/image-generator";
+
+export const imageGeneratorApi = {
+  runs: {
+    /** Latest first; `limit` defaults server-side to 50. */
+    list: (limit?: number) =>
+      apiGet(listOf(imageGeneratorRunSchema, "runs"), withQuery(`${IMAGE_GENERATOR_API_ROOT}/runs`, { limit })),
+    /** Records the run and starts its render; the row comes back `pending`/`running`. */
+    create: (body: ImageGeneratorCreateRunRequest) =>
+      apiPost(z.object({ run: imageGeneratorRunSchema }), `${IMAGE_GENERATOR_API_ROOT}/runs`, body),
+    detail: (runId: string) =>
+      apiGet(z.object({ run: imageGeneratorRunSchema }), `${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`),
+    /** Hard-deletes the run and its hidden output. */
+    remove: (runId: string) => apiDelete(`${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`),
+  },
+};
+
+/**
+ * One owner-scoped picker row from `GET /api/admin/self/owned-images`: the id
+ * plus what a display label needs. Label metadata degrades to null/"" —
+ * a bare image id is still a usable source (spec §Resilience).
+ */
+export const ownedImageSourceSchema = z.object({
+  id: idSchema,
+  kind: z.string().min(1),
+  createdAt: textOr(""),
+  /** Leading slice of the stored prompt — a label, not the record. */
+  prompt: textOr(""),
+  entityKind: z.string().nullable().catch(null),
+  entityId: z.string().nullable().catch(null),
+  chatId: z.string().nullable().catch(null),
+});
+export type OwnedImageSourceRecord = z.infer<typeof ownedImageSourceSchema>;
+
+export const ownedImagesApi = {
+  /**
+   * Ready owned images, newest first; `kinds` filters within the allowlist.
+   * Paging is a compound (createdAt, id) cursor: `before` is the last row's
+   * createdAt and `beforeId` its id, so same-instant rows at a page boundary
+   * are neither skipped nor repeated. `beforeId` is only valid beside `before`.
+   */
+  list: (opts: { kinds?: readonly string[]; limit?: number; before?: string; beforeId?: string } = {}) =>
+    apiGet(
+      listOf(ownedImageSourceSchema, "images"),
+      withQuery("/api/admin/self/owned-images", {
+        kinds: opts.kinds && opts.kinds.length > 0 ? opts.kinds.join(",") : undefined,
+        limit: opts.limit,
+        before: opts.before,
+        beforeId: opts.beforeId,
+      }),
+    ),
 };
 
 // ---------------------------------------------------------------------------

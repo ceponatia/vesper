@@ -78,6 +78,7 @@ import {
 import { inferenceLods } from "@vesper/simulation-core/contracts/deliberation";
 import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
+import { imageGeneratorRunStatuses } from "@/contracts/images/image-generator";
 import {
   visualExtractionProposalStatuses,
   visualExtractionRunStatuses,
@@ -1405,7 +1406,10 @@ export const images = pgTable(
     // the Advanced Image Lab's control fixtures (pose skeleton, depth map, edge map) and
     // its experiment renders. Admin-only operational evidence, never Gallery items —
     // hidden exactly like `identity_trial_output`, and owned solely by the lab module.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output"] }).notNull(),
+    // `generator_output` (image-lab-general-model-trials.spec.md §Persistence): an Image
+    // Generator run's render — admin bench evidence with no entity/chat association,
+    // hidden exactly like `lab_output` and deleted with its run.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -1562,12 +1566,13 @@ export const imageModels = pgTable(
     operatorWarning: text("operator_warning"),
     /**
      * `ImageModelAdvancedCapabilities` (contracts/images/image-model-capabilities.ts):
-     * probed optional control bindings, extra image inputs, output arity, and the
-     * known-input-field allowlist for a profile's `providerOverrides`.
+     * probed optional control bindings, dedicated structural image inputs,
+     * provider-input descriptors, output arity, and the known-input-field
+     * allowlist for a profile's `providerOverrides`.
      *
-     * `{}` on every row today — the probe does not derive control aliases yet — and
-     * the contract parses `{}` into an inert set where no optional control is sent,
-     * which is exactly what every lane does now.
+     * Written atomically beside `probedVersionId` at probe time; rows probed
+     * before a given derivation existed simply lack that section, and the
+     * contract parses `{}` into an inert set where no optional control is sent.
      */
     advancedCapabilities: jsonb("advanced_capabilities").notNull().default({}),
     forPortrait: boolean("for_portrait").notNull().default(false),
@@ -2229,6 +2234,79 @@ export const imageLabExperiments = pgTable(
 );
 
 /**
+ * One Image Generator run — a single immutable raw prompt/model attempt on the
+ * admin bench (image-lab-general-model-trials.spec.md §Persistence). The
+ * Generator is a separate surface from the Advanced Image Lab: no experiment
+ * kind, no verdict, no fixture rules — one row is one paid attempt whose
+ * prompt, ordered inputs, controls, advanced provider values, and outcome are
+ * stored verbatim. Variants create NEW rows via `source_run_id`; nothing
+ * mutates or reruns a settled row.
+ *
+ * FK policy follows the evidence-table ruling: the owner CASCADES (an
+ * account's bench evidence goes with the account); the self pointer and the
+ * output pointer are SET NULL (a deleted original makes a variant's lineage
+ * incomplete, not invalid); the slug and both version columns are SNAPSHOTS
+ * with no FK, so deleting a registry row cannot erase what a finished run says
+ * it executed.
+ *
+ * `failure_code` is deliberately NOT enum-typed: it carries the dotted
+ * `image_generator.*` codes plus verbatim shared-layer codes (`image_profile.*`,
+ * `image_lora.*`), and freezing that union in the column would make a
+ * shared-layer code a migration.
+ */
+export const imageGeneratorRuns = pgTable(
+  "image_generator_runs",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", { enum: imageGeneratorRunStatuses }).notNull().default("pending"),
+    /** Registry snapshot at create; re-resolved by exact slug at run time. */
+    modelSlug: text("model_slug").notNull(),
+    /** The pinned version the run ASKED for; written by the runner before spend. */
+    requestedVersionId: text("requested_version_id"),
+    /** The version the provider echoed back — how an unannounced bump becomes visible. */
+    executedVersionId: text("executed_version_id"),
+    /** The admin's whole positive prompt, verbatim. */
+    prompt: text("prompt").notNull(),
+    /** What was actually sent, recorded by the runner before the provider call. */
+    finalPrompt: text("final_prompt"),
+    /** `imageGeneratorRunInputsSchema` (contracts/images/image-generator.ts). */
+    inputs: jsonb("inputs").notNull().default({}),
+    /** `imageGeneratorControlsSchema` — the normalized per-run control overlay. */
+    controls: jsonb("controls").notNull().default({}),
+    /** `imageGeneratorProviderInputsSchema` — raw advanced provider values. */
+    providerInputs: jsonb("provider_inputs").notNull().default({}),
+    resultImageId: text("result_image_id").references(() => images.id, { onDelete: "set null" }),
+    failureCode: text("failure_code"),
+    /** Truncated provider/classifier detail beside the code. */
+    error: text("error"),
+    predictionId: text("prediction_id"),
+    /** Duplicate/variant lineage — self FK, declared in the table config below. */
+    sourceRunId: text("source_run_id"),
+    /** `{ attempt?, outcome?, renderFailure? … }` — per-run records, not queryable facts. */
+    meta: jsonb("meta").notNull().default({}),
+    createdAt: createdAt(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    // The self FK lives here because a column cannot reference its own table
+    // inline; named short like the trial tables' explicit FKs.
+    foreignKey({
+      name: "image_generator_runs_source_run_fk",
+      columns: [t.sourceRunId],
+      foreignColumns: [t.id],
+    }).onDelete("set null"),
+    // The page's only listing query: this owner's runs, newest first. Its
+    // LEADING column doubles as the per-owner lookup index (the house ruling
+    // recorded on `personas`).
+    index("image_generator_runs_owner_created_idx").on(t.ownerId, t.createdAt),
+  ],
+);
+
+/**
  * One offline reference-image extraction run (visual-state.plan.md slice 9;
  * visual-state.spec.md §Reference-image extraction): an admin registered an
  * extractor's structured proposals about one character's canonical image.
@@ -2343,7 +2421,9 @@ export const jobs = pgTable(
       // `lab_image` / `lab_control_extract`: the Advanced Image Lab's experiment render
       // and its control-fixture extraction. Both reach an image provider, so both map to
       // the image lane in `providerLaneFor` (qwen-advanced-image-subsystem.spec.md).
-      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract"],
+      // `generator_image`: one Image Generator run (image-lab-general-model-trials.spec.md)
+      // — an image-provider render, so it maps to the image lane as well.
+      enum: ["post_turn", "reconcile", "inner_note", "chat_summary", "chat_scene_sketch", "chat_meanwhile", "chat_look_image", "chat_place_image", "scene_image", "chat_scene_image", "avatar", "portrait_variant", "entity_image", "embed_refresh", "image_sweep", "item_classify", "identity_pack", "lab_image", "lab_control_extract", "generator_image"],
     }).notNull(),
     /**
      * Who the work is being done for (rate-limits.plan.md slice 5) — the key the

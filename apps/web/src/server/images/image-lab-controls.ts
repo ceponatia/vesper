@@ -15,7 +15,8 @@ import { parseOrNull } from "@/lib/parse";
 import type { ReplicateImageResult, ReplicatePreprocessorRequest } from "@vesper/image-replicate";
 import { classifyImageFailure, replicateClient } from "../ai";
 import { db, images } from "../db";
-import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS, type ImageRow } from "./assets";
+import { createImageAsset, deleteOwnedImage, imageMeta, readImageBytes, SHARP_DECODE_LIMITS } from "./assets";
+import { ownedImageRow } from "./owned-image-reads";
 import type { ImageLabProviderOutcome, ImageLabRefusal, ImageLabRunPayload } from "./image-lab-store";
 import { saveOwnedImageBuffer } from "./route-safe";
 
@@ -224,16 +225,6 @@ export async function computeImageLabEdgeMap(source: Buffer): Promise<Buffer> {
     .png()
     .toBuffer();
   return await sharp(summed, SHARP_DECODE_LIMITS).greyscale().threshold(EDGE_THRESHOLD).png().toBuffer();
-}
-
-/** One owned image row, or null. The owner predicate is never optional here. */
-async function ownedImageRow(imageId: string, ownerId: string): Promise<ImageRow | null> {
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId)))
-    .limit(1);
-  return row ?? null;
 }
 
 export interface RunImageLabControlExtractionInput {

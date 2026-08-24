@@ -249,11 +249,12 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
 ### Infrastructure
 
 - **`images`** — `owner_id`, `kind`
-  (`avatar`/`portrait_variant`/`scene`/`entity`/`chat_upload`/`chat_look`/`chat_place`/`identity_face_crop`/`identity_trial_output`/`lab_control`/`lab_output`
-  — the chat kinds are chat-private and hard-deleted with the chat; the last four are hidden
+  (`avatar`/`portrait_variant`/`scene`/`entity`/`chat_upload`/`chat_look`/`chat_place`/`identity_face_crop`/`identity_trial_output`/`lab_control`/`lab_output`/`generator_output`
+  — the chat kinds are chat-private and hard-deleted with the chat; the last five are hidden
   derived assets excluded from every user surface via `HIDDEN_IMAGE_KINDS`: identity-pack
-  crops, identity-trial outputs, and the Advanced Image Lab's control fixtures and results,
-  see images/asset-registry.md and images/advanced-image-lab.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
+  crops, identity-trial outputs, the Advanced Image Lab's control fixtures and results, and
+  the Image Generator's run outputs,
+  see images/asset-registry.md and image-generator/README.md), `entity_kind?` (`character`/`location`/`item` — set for `entity` images;
   always `character` for `avatar`/`portrait_variant`; app convention, not a constraint),
   `entity_id?`, `chat_id?` (→ `character_chats`, SET NULL on chat delete — chat-scene keying,
   see images/pipelines.md), `anchor_message_id?` (the assistant line a chat scene illustrates; plain
@@ -279,6 +280,20 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
   `settings` JSONB, `status` (`pending`/`running`/`succeeded`/`failed`), `failure_code?`,
   `verdict?` + `verdict_note?` (probe kinds), `prediction_id?`, `started_at?`/`finished_at?`,
   `meta` JSONB; indexed `(owner_id, created_at)` for the lab listing.
+- **`image_generator_runs`** — the Image Generator's immutable one-attempt run record
+  (image-generator/README.md): `owner_id` (→ `users`, **FK-cascade**), `status`
+  (`pending`/`running`/`succeeded`/`failed`), `model_slug` (registry snapshot),
+  `requested_version_id?` (the pin, written by the runner before spend) /
+  `executed_version_id?` (provider echo), `prompt` + `final_prompt?`, `inputs` / `controls`
+  / `provider_inputs` JSONB, `source_run_id?` (self-FK, SET NULL — duplicate/variant
+  lineage), `result_image_id?` (→ `images`, SET NULL — the hidden `generator_output`
+  render), `failure_code?` (`image_generator.*` plus verbatim shared-layer codes), `error?`,
+  `prediction_id?`, `meta` JSONB (the version request, the sanitized effective
+  request and the capability snapshot frozen before spend, then the attempt and
+  result records), `started_at?`/`finished_at?`; indexed
+  `(owner_id, created_at)` for the run listing. A settled run is never re-run; the
+  `generator_image` job renders it, claiming the row with a conditional
+  `pending → running` update so one delivery cannot be paid for twice.
 - **`image_models`** — `slug` **unique** (the Replicate model path, optionally
   `owner/name:version`), `label`, `sort`, `builtin` (display provenance only — it does
   **not** gate deletion).
@@ -290,8 +305,11 @@ Every embedding-bearing table carries `embedder` (`"<model-id>"` or `"pseudo"`).
     the `for_portrait`/`for_variant`/`for_scene` surface toggles, and the reviewed judgments
     `edit_kind` (`none`/`instruction_edit`/`multi_reference_compose`/`identity_conditioned`/`img2img`/`unknown`),
     `identity_preservation` (`strong`/`moderate`/`weak`/`unknown`) and `operator_warning?`.
-  - `advanced_capabilities` JSONB is reserved for probed control bindings and is `{}` today.
-    Which models the app can run is **data, not a code union** — managed at
+  - `advanced_capabilities` JSONB holds the probed control bindings, dedicated image inputs
+    (`additionalImageInputs`), provider-input descriptors (`providerInputs`), and the
+    `knownInputFields` allowlist, written atomically beside `probed_version_id` at create
+    and re-probe; a row probed before a derivation existed keeps empty defaults until it is
+    re-probed. Which models the app can run is **data, not a code union** — managed at
     `/settings/image-models`, seeded by migrations 0098 and 0104 (see
     [images/providers.md](images/providers.md)).
 - **`image_model_profiles`** — `image_model_id` (→ `image_models`, **FK-cascade**), `key`

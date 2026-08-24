@@ -4,17 +4,16 @@ Control fixtures are hidden `lab_control` assets used by experiments that ask wh
 
 A fixture is not considered experimental evidence merely because it exists. It must have durable provenance and a recorded human review before a control experiment may use it.
 
-## Generate from an existing render
+## Generate from an existing image
 
 In the **Control fixtures** panel:
 
-1. Pick a character.
-2. Pick one of that character's available portrait renders as the source.
-3. Select one or more fixture kinds: pose, depth, and/or edge.
-4. Optionally add an origin note describing what the fixtures are for.
-5. Choose **Extract from image**.
+1. Pick the source image through the general owned-image picker — any of your owned, ready images qualifies (portraits, scene renders, lab outputs, uploads), with a kind filter to narrow the grid.
+2. Select one or more fixture kinds: pose, depth, and/or edge.
+3. Optionally add an origin note describing what the fixtures are for.
+4. Choose **Extract from image**.
 
-The API can accept up to four distinct source image ids and all three distinct fixture kinds in one request. The current UI submits one source render at a time.
+The API can accept up to four distinct source image ids and all three distinct fixture kinds in one request. The current UI submits one source image at a time.
 
 ### What happens by kind
 
@@ -28,13 +27,13 @@ The source image must be an owned, ready image whose bytes can be read. Successf
 
 ## Upload a hand-authored fixture
 
-The panel also accepts an image file for any of the three fixture kinds. Although the current UI heading/button says “Upload a skeleton,” the kind selector and server support pose, depth, and edge uploads.
+The panel's **Upload a control fixture** section accepts an image file for any of the three fixture kinds — a pose skeleton, a depth map, or an edge map.
 
 For an upload:
 
 1. Choose the image file.
 2. Choose its fixture kind.
-3. If the fixture was drawn/derived from the currently selected render, leave the source link enabled. Otherwise unlink it.
+3. If the fixture was drawn/derived from the source image picked above, leave the source link enabled. Otherwise unlink it.
 4. Add an optional origin note describing how or why it was made.
 5. Upload.
 
@@ -66,7 +65,3 @@ Use a different identity image whose pose differs from the fixture's target when
 ## Deleting fixtures
 
 Deleting a fixture removes the hidden control asset. Historical experiments are not erased. Their stored ordered inputs, prompt, model/version provenance, outcome, and verdict remain the record of what happened, while the direct control pointer may be nulled by the database relationship.
-
-## Current UI limitation
-
-The extraction service accepts any owned source image id, but the fixture panel's source picker is character/portrait-oriented. Scene images, arbitrary lab outputs, and other owned images are not generally selectable from this UI even though the backend extraction contract is broader. See [Current limitations](limitations.md).

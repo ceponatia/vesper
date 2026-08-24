@@ -1,4 +1,9 @@
-import { type ImageModel, reservedImageInputFields } from "@vesper/image-core";
+import {
+  type ImageEmptyPromptPolicy,
+  type ImageModel,
+  type ImageRenderPolicy,
+  reservedImageInputFields,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { PreparedReferenceBytes } from "./files";
 
@@ -72,6 +77,17 @@ export interface RegistryModelRequest {
    * `/predictions` carrying it even for a bare `owner/name` slug.
    */
   versionId?: string;
+  /**
+   * How strictly this request is to be treated when the payload cannot carry
+   * everything it was handed (`ImageRenderPolicy` in `@vesper/image-core`).
+   *
+   * Absent is the production answer — trim references that do not fit and let
+   * the provider judge the values — so every existing lane behaves exactly as
+   * it did before the field existed. The Image Generator asks for the strict
+   * arm on both halves, because an operator-authored bench request that was
+   * quietly reduced is a different experiment under the same run id.
+   */
+  policy?: ImageRenderPolicy;
 }
 
 /**
@@ -144,8 +160,15 @@ export function buildRegistryModelInput(
   referenceUrls: readonly string[],
   aspect: string | null | undefined,
   safetyCheckerDisabled: boolean,
+  emptyPrompt: ImageEmptyPromptPolicy = "send",
 ): Record<string, unknown> {
-  const input: Record<string, unknown> = { prompt };
+  // An empty prompt writes the empty string unless the CALLER asked for it to
+  // be omitted (`ImageRenderPolicy.emptyPrompt`). The distinction matters: the
+  // Image Lab's control probe may legitimately send a blank instruction and
+  // must keep posting `prompt: ""`, while a caller that has checked the version
+  // does not require a prompt wants the version's own default to apply, which
+  // only an absent key produces.
+  const input: Record<string, unknown> = prompt.length > 0 || emptyPrompt === "send" ? { prompt } : {};
 
   if (referenceUrls.length > 0) {
     input[model.referenceField] = model.referenceArity === "single" ? referenceUrls[0] : [...referenceUrls];
@@ -178,7 +201,14 @@ export function buildPayload(
   safetyCheckerDisabled: boolean,
   sink?: DiagnosticSink,
 ): Record<string, unknown> {
-  const built = buildRegistryModelInput(model, request.prompt, referenceUris, request.aspect, safetyCheckerDisabled);
+  const built = buildRegistryModelInput(
+    model,
+    request.prompt,
+    referenceUris,
+    request.aspect,
+    safetyCheckerDisabled,
+    request.policy?.emptyPrompt,
+  );
   const reserved = new Set(reservedImageInputFields(model));
   const refused: string[] = [];
   for (const control of controls) {
@@ -201,6 +231,51 @@ export function buildPayload(
     );
   }
   return overlayControlInput(built, request.controlInput, model, sink);
+}
+
+/**
+ * The payload this request WILL produce, assembled without any IO.
+ *
+ * Same builder, same reserved filter, same overlay order as the real send — the
+ * only difference is that reference and control URIs are placeholders, because
+ * the addresses do not exist until the bytes are transported and the strict
+ * gate asks about FIELDS, not addresses.
+ *
+ * It exists so a caller can hold its request against the version's declared
+ * schema before committing to the transport at all, without rebuilding the
+ * payload rules in application code — which is the one thing this package
+ * exists to prevent.
+ */
+export function previewRegistryModelInput(input: {
+  model: ImageModel;
+  prompt: string;
+  referenceCount: number;
+  controlReferences?: readonly { field: string; arity: "single" | "array"; count: number }[];
+  aspect: string | null;
+  controlInput?: Record<string, unknown>;
+  policy?: ImageRenderPolicy;
+  safetyCheckerDisabled: boolean;
+}): Record<string, unknown> {
+  const placeholder = (index: number): string => `https://placeholder.invalid/reference-${String(index + 1)}`;
+  const references = Array.from({ length: input.referenceCount }, (_unused, index) => placeholder(index));
+  const controls = (input.controlReferences ?? []).flatMap((control) => {
+    if (control.count === 0) return [];
+    const uris = Array.from({ length: control.count }, (_unused, index) => placeholder(index));
+    const value: string | string[] = control.arity === "array" ? uris : (uris[0] ?? "");
+    return [{ field: control.field, value }];
+  });
+  return buildPayload(
+    input.model,
+    {
+      prompt: input.prompt,
+      aspect: input.aspect,
+      ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+      ...(input.policy ? { policy: input.policy } : {}),
+    },
+    references,
+    controls,
+    input.safetyCheckerDisabled,
+  );
 }
 
 /**

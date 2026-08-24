@@ -141,6 +141,37 @@ export {
 } from "./image-lab-store";
 export { type ImageLabRenderer, type ImageLabRenderRequest, setImageLabRendererForTesting } from "./image-lab-render";
 export {
+  isOwnedImageSourceKind,
+  type ListOwnedImageSourcesOptions,
+  listOwnedImageSources,
+  OWNED_IMAGE_SOURCE_DEFAULT_LIMIT,
+  OWNED_IMAGE_SOURCE_KINDS,
+  OWNED_IMAGE_SOURCE_MAX_LIMIT,
+  type OwnedImageSource,
+  ownedImageRow,
+  readOrderedInputBytes,
+  readOwnedImageBytes,
+} from "./owned-image-reads";
+export {
+  createImageGeneratorRun,
+  type CreateImageGeneratorRunInput,
+  type CreateImageGeneratorRunResult,
+  deleteImageGeneratorRun,
+  type DeleteImageGeneratorRunResult,
+  getImageGeneratorRunDetail,
+  type ImageGeneratorProviderOutcome,
+  type ImageGeneratorRunPayload,
+  type ImageGeneratorRunRow,
+  listImageGeneratorRuns,
+  toWireImageGeneratorRun,
+} from "./image-generator-store";
+export { runImageGeneratorRun } from "./image-generator-run";
+export {
+  type GeneratorRenderer,
+  type GeneratorRenderRequest,
+  setImageGeneratorRendererForTesting,
+} from "./image-generator-render";
+export {
   createImageLabExperiment,
   type CreateImageLabExperimentInput,
   type CreateImageLabExperimentResult,

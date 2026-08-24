@@ -7,7 +7,6 @@ import {
   imageLabControlMetaSchema,
   imageLabDiagnosticCode,
   type ImageLabFailureCode,
-  type ImageLabInput,
   type ImageLabInputList,
   type ImageLabOutcome,
   type ImageLabSettings,
@@ -28,8 +27,9 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
 import { classifyImageFailure, disableSafetyChecker, replicateClient } from "../ai";
-import { db, imageLabExperiments, images } from "../db";
-import { createImageAsset, deleteOwnedImage, type ImageRow, readImageBytes, saveImageBuffer } from "./assets";
+import { db, imageLabExperiments } from "../db";
+import { createImageAsset, deleteOwnedImage, saveImageBuffer } from "./assets";
+import { ownedImageRow } from "./owned-image-reads";
 import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
@@ -635,45 +635,8 @@ export async function resolvePinnedLabModel(slug: string, subject: string, sink?
   return { ok: true, model, versionId };
 }
 
-/** One ordered input beside its bytes, so a caller never re-pairs parallel arrays. */
-interface OrderedLabInput {
-  input: ImageLabInput;
-  buffer: Buffer;
-}
-
-type ReadOrderedInputsResult = { ok: true; ordered: OrderedLabInput[] } | { ok: false; message: string };
-
-/**
- * Every ordered input's bytes, in recorded order, or the message naming the
- * first one that could not be read. Shared by the probe and the controlled
- * runner: both refuse `input_missing` on the same message shape, and both must
- * read owner-scoped — a foreign or unready image is indistinguishable from a
- * missing one on purpose.
- */
-export async function readOrderedInputBytes(inputs: ImageLabInputList, ownerId: string): Promise<ReadOrderedInputsResult> {
-  const ordered: OrderedLabInput[] = [];
-  for (const input of inputs) {
-    const bytes = await readOwnedImageBytes(input.imageId, ownerId);
-    if (!bytes) {
-      return { ok: false, message: `image ${input.imageId} at position ${String(input.position)} could not be read` };
-    }
-    ordered.push({ input, buffer: bytes });
-  }
-  return { ok: true, ordered };
-}
-
-async function ownedImageRow(imageId: string, ownerId: string): Promise<ImageRow | null> {
-  const [row] = await db()
-    .select()
-    .from(images)
-    .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId)))
-    .limit(1);
-  return row ?? null;
-}
-
-/** Bytes for one owned, ready image; null for missing, foreign, unready or file-less. */
-export async function readOwnedImageBytes(imageId: string, ownerId: string): Promise<Buffer | null> {
-  const row = await ownedImageRow(imageId, ownerId);
-  if (!row || row.status !== "ready") return null;
-  return await readImageBytes(row);
-}
+// The shared owner-scoped byte readers moved to `./owned-image-reads` — they
+// are generic reads with coherent meaning outside this bench, and the Image
+// Generator consumes them without importing the lab. Re-exported so the lab's
+// own lanes keep their import site.
+export { readOrderedInputBytes, readOwnedImageBytes } from "./owned-image-reads";
