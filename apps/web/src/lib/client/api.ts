@@ -1389,6 +1389,17 @@ export const imageGeneratorApi = {
       apiGet(z.object({ run: imageGeneratorRunSchema }), `${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`),
     /** Hard-deletes the run and its hidden output. */
     remove: (runId: string) => apiDelete(`${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`),
+    /**
+     * Hard-deletes several runs and their hidden outputs — the run list's
+     * multi-select delete. Ids that are not this admin's are silently absent
+     * from `deleted`, so the count is what actually went away.
+     */
+    removeMany: (ids: string[]) =>
+      apiPost(
+        z.object({ deleted: z.number().catch(0), outputImagesRemoved: z.number().catch(0) }),
+        `${IMAGE_GENERATOR_API_ROOT}/runs/delete`,
+        { ids },
+      ),
   },
 };
 

@@ -36,10 +36,19 @@ asset kind.
 | 6. General picker reuse in Lab (object/location/extraction)  | built 2026-08-23                       |
 | 7. Correctness pass (operation, shape, strictness, replay)   | built 2026-08-23                       |
 | 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)         | not started — see below                |
+| 9. Run-list delete (per row and multi-select)                | built 2026-08-24                       |
 
 Slice 8 needs three things it cannot supply itself: a production deploy, the
 owner's approval to spend on real predictions, and the Vesper SDXL re-probe
 recorded below. The plan's Stage 3 carries the run-by-run checklist.
+
+Slice 9 came out of using the bench: a run's detail was the only door to
+deleting it, so clearing a session's worth of failed rows meant opening each
+one. The list now carries a per-row **Delete** and tick boxes with a
+**Delete selected** action, both ending in the same confirmation, which names
+the number of records and the number of rendered images about to go. The
+confirmation is not optional at either door — a Generator run is provenance and
+its deletion is a hard one.
 
 Not built by design: direct source uploads (awaiting the plan's retention/quota
 ruling), a side-by-side A/B view (the detail inspector plus duplicate lineage
@@ -365,7 +374,7 @@ a record written by a newer deploy.
 ### Client API
 
 `apps/web/src/lib/client/api.ts` gains `imageGeneratorApi.runs.{list, create,
-detail, remove}` rooted at `/api/admin/self/image-generator` and
+detail, remove, removeMany}` rooted at `/api/admin/self/image-generator` and
 `ownedImagesApi.list` for the picker endpoint below.
 
 ## Ownership rules
@@ -664,16 +673,34 @@ no migration) with `providerLaneFor` → `"image"`.
 
 Asset kind: `generator_output` appended to `images.kind` and to
 `HIDDEN_IMAGE_KINDS`; routes pass `outputKind: "generator_output"` to
-`imageRenderRejection`. Deleting a run deletes its output via
-`deleteOwnedImage(resultImageId, ownerId, { kind: "generator_output" })`.
-Never persisted: credentials, signed upload URLs, resolved LoRA locators
-(curated library id is authoritative).
+`imageRenderRejection`. Never persisted: credentials, signed upload URLs,
+resolved LoRA locators (curated library id is authoritative).
+
+### Deleting runs
+
+`deleteImageGeneratorRuns(runIds, ownerId)` is the only delete path;
+`deleteImageGeneratorRun` is the one-id call over it, so the single-row and
+multi-row doors cannot diverge. Ids are de-duplicated, then:
+
+1. select the caller's own rows for those ids (`inArray` + `owner_id`);
+2. delete their outputs — `deleteOwnedImages(outputIds, ownerId, { kind:
+   "generator_output" })` — **before** the rows, so a crash leaves an FK-nulled
+   pointer rather than an unreachable hidden image;
+3. delete the rows by the **owned subset**, `RETURNING result_image_id`;
+4. sweep any returned output the first read could not see (a render that
+   settled between the two statements).
+
+Both statements carry the owner predicate, so a foreign id in the list is
+absent from the result rather than an error — and never a deletion. The
+integration suite's mixed-owner batch case is what holds step 3 to the owned
+subset instead of the requested ids.
 
 ### API routes
 
 | Route                                             | Wrapper                  | Methods |
 | ------------------------------------------------- | ------------------------ | ------- |
 | `/api/admin/self/image-generator/runs`            | `withOwnerAdmin`         | GET list, POST create+queue (201) |
+| `/api/admin/self/image-generator/runs/delete`     | `withOwnerAdmin`         | POST bulk delete (≤200 ids) |
 | `/api/admin/self/image-generator/runs/[runId]`    | `withOwnerAdminResource` | GET detail, DELETE |
 | `/api/admin/self/owned-images`                    | `withOwnerAdmin`         | GET |
 
@@ -682,6 +709,12 @@ POST order: `readBody` → `imageRenderRejection(user, req, { outputKind:
 "generator_image", … })` from the route → on cap refusal delete the row and
 return `jobCapRejection`. CSRF/origin comes from the wrapper; no per-route
 code.
+
+The bulk delete takes its ids in a body rather than a URL (the Gallery's
+`POST /api/gallery/delete` precedent) and sits at a literal `delete` segment,
+which Next resolves ahead of the sibling `[runId]`. Its cap matches the list
+route's own maximum, so the client can never hold more selected than one page
+shows.
 
 ## Resilience
 
@@ -704,7 +737,7 @@ code.
 | Module | Owns |
 | --- | --- |
 | `apps/web/src/contracts/images/image-generator.ts` | statuses, input/request/wire schemas, failure codes, caps |
-| `apps/web/src/server/images/image-generator-store.ts` | row↔wire, create/list/detail/delete/settle |
+| `apps/web/src/server/images/image-generator-store.ts` | row↔wire, create/list/detail/delete (one and many)/settle |
 | `apps/web/src/server/images/image-generator-run.ts` | runner algorithm, synthetic profile, refusals |
 | `apps/web/src/server/images/image-generator-render.ts` | injectable render seam (default `renderImageIntent`), test override |
 | `apps/web/src/server/images/owned-image-reads.ts` | shared owner-scoped byte readers (moved from the Lab kernel) |
@@ -758,7 +791,10 @@ existing image packages.
   explicit shape and the same-ratio substitution refusal; the required
   normalized-control gate from both sides; the strict transport refusal
   settling as unspent; the three version-replay arms; and one concurrent-claim
-  case proving a single spend.
+  case proving a single spend. Bulk delete adds one case: a batch naming two of
+  this admin's runs, a repeated id, and another owner's run removes exactly the
+  two, counts the repeat once, and leaves the foreign run and its output
+  untouched.
 - **Strict send policy (package suite):** `render.test.ts` owns the
   `require_all` and `strict` refusals — each asserting no `fetch` reached a
   prediction — plus the required-with-default arm and the URI-smuggling arm.

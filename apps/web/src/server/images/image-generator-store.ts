@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   emptyImageGeneratorControls,
@@ -17,7 +17,7 @@ import {
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { db, imageGeneratorRuns } from "../db";
-import { deleteOwnedImage, imageMeta } from "./assets";
+import { deleteOwnedImages, imageMeta } from "./assets";
 import { loadImageModel } from "./models";
 
 /**
@@ -410,37 +410,63 @@ export interface DeleteImageGeneratorRunResult {
   outputImagesRemoved: number;
 }
 
-/**
- * Hard-delete one run and the render it produced — output FIRST, exactly as
- * the Lab's delete orders it: the row is the only pointer to its hidden image,
- * so a crash between the two leaves an FK-nulled pointer that a re-run cleans,
- * never an orphaned `generator_output` nothing can find. A `pending`/`running`
- * row stays deletable on purpose (a deploy can strand one); the in-flight
- * settle matches nothing and discards its own output.
- */
-export async function deleteImageGeneratorRun(runId: string, ownerId: string): Promise<DeleteImageGeneratorRunResult> {
-  const row = await ownedGeneratorRun(runId, ownerId);
-  if (!row) return { deleted: false, outputImagesRemoved: 0 };
+export interface DeleteImageGeneratorRunsResult {
+  /** Rows actually removed — ids that were never this admin's are simply absent. */
+  deleted: number;
+  outputImagesRemoved: number;
+}
 
-  const outputRemoved =
-    row.resultImageId === null
-      ? false
-      : await deleteOwnedImage(row.resultImageId, ownerId, { kind: "generator_output" });
-  const [removed] = await db()
+/**
+ * Hard-delete a set of runs and the renders they produced — outputs FIRST,
+ * exactly as the Lab's delete orders it: a row is the only pointer to its
+ * hidden image, so a crash between the two steps leaves an FK-nulled pointer
+ * that a re-run cleans, never an orphaned `generator_output` nothing can find.
+ * `pending`/`running` rows stay deletable on purpose (a deploy can strand one);
+ * an in-flight settle matches nothing and discards its own output.
+ *
+ * Owner-scoped in both statements, so a crafted list of ids reaches only the
+ * caller's own rows — a foreign id is not an error, it is simply not there.
+ * Ids are de-duplicated, because a repeated id would otherwise be counted twice
+ * against the number of rows the caller is told went away.
+ */
+export async function deleteImageGeneratorRuns(
+  runIds: readonly string[],
+  ownerId: string,
+): Promise<DeleteImageGeneratorRunsResult> {
+  const ids = [...new Set(runIds)];
+  if (ids.length === 0) return { deleted: 0, outputImagesRemoved: 0 };
+
+  const owned = await db()
+    .select({ id: imageGeneratorRuns.id, resultImageId: imageGeneratorRuns.resultImageId })
+    .from(imageGeneratorRuns)
+    .where(and(inArray(imageGeneratorRuns.id, ids), eq(imageGeneratorRuns.ownerId, ownerId)));
+  if (owned.length === 0) return { deleted: 0, outputImagesRemoved: 0 };
+
+  const ownedIds = owned.map((row) => row.id);
+  const seenOutputs = owned.map((row) => row.resultImageId).filter((id): id is string => id !== null);
+  const outputsRemoved = await deleteOwnedImages(seenOutputs, ownerId, { kind: "generator_output" });
+
+  const removed = await db()
     .delete(imageGeneratorRuns)
-    .where(and(eq(imageGeneratorRuns.id, runId), eq(imageGeneratorRuns.ownerId, ownerId)))
+    .where(and(inArray(imageGeneratorRuns.id, ownedIds), eq(imageGeneratorRuns.ownerId, ownerId)))
     .returning({ resultImageId: imageGeneratorRuns.resultImageId });
 
   // A render that settled BETWEEN the read above and this delete attached an
   // output the read could not see, and its own settle succeeded (the row was
   // still `running`), so it kept the image. The delete's own RETURNING is the
-  // only view of the row as it finally stood; without this the image would
+  // only view of the rows as they finally stood; without this the image would
   // survive with nothing pointing at it, invisible to every listing and to the
   // sweep, which only reconciles rows whose file vanished.
-  const late = removed?.resultImageId ?? null;
-  const lateRemoved =
-    late !== null && late !== row.resultImageId
-      ? await deleteOwnedImage(late, ownerId, { kind: "generator_output" })
-      : false;
-  return { deleted: true, outputImagesRemoved: (outputRemoved ? 1 : 0) + (lateRemoved ? 1 : 0) };
+  const known = new Set(seenOutputs);
+  const late = removed
+    .map((row) => row.resultImageId)
+    .filter((id): id is string => id !== null && !known.has(id));
+  const lateRemoved = await deleteOwnedImages(late, ownerId, { kind: "generator_output" });
+  return { deleted: removed.length, outputImagesRemoved: outputsRemoved + lateRemoved };
+}
+
+/** One run and the render it produced — {@link deleteImageGeneratorRuns} of one. */
+export async function deleteImageGeneratorRun(runId: string, ownerId: string): Promise<DeleteImageGeneratorRunResult> {
+  const { deleted, outputImagesRemoved } = await deleteImageGeneratorRuns([runId], ownerId);
+  return { deleted: deleted > 0, outputImagesRemoved };
 }
