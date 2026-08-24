@@ -364,9 +364,16 @@ function ImageLoraForm({
   const [slugs, setSlugs] = useState<string[]>([...(lora?.compatibleModelSlugs ?? [])]);
   const [slugDraft, setSlugDraft] = useState("");
   const [versionText, setVersionText] = useState((lora?.compatibleVersionIds ?? []).join(", "));
-  const [minimumScale, setMinimumScale] = useState(String(lora?.minimumScale ?? 0.5));
+  // A NEW row opens on 0–2 around 1, not on a narrower guess. Scale is refused
+  // rather than clamped, so whatever these boxes hold at save time is the band
+  // every later render is judged against — and a curator who has not measured
+  // this LoRA yet has no basis for fencing it below the strengths its provider
+  // documents as the strong ones. 0–2 sits inside the contract's own 0–4 and
+  // still leaves the version's declared range as the independent second gate;
+  // narrowing is the deliberate edit, made once there is a render to point at.
+  const [minimumScale, setMinimumScale] = useState(String(lora?.minimumScale ?? 0));
   const [defaultScale, setDefaultScale] = useState(String(lora?.defaultScale ?? 1));
-  const [maximumScale, setMaximumScale] = useState(String(lora?.maximumScale ?? 1.5));
+  const [maximumScale, setMaximumScale] = useState(String(lora?.maximumScale ?? 2));
   const [triggerText, setTriggerText] = useState((lora?.triggerWords ?? []).join(", "));
   const [promptPrefix, setPromptPrefix] = useState(lora?.promptPrefix ?? "");
   const [promptSuffix, setPromptSuffix] = useState(lora?.promptSuffix ?? "");

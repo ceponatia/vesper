@@ -21,9 +21,12 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
  * 2509 plus-LoRA wrapper as the only Qwen edit endpoint with runtime LoRA support
  * made the Image Generator hide a control the selected model can genuinely use.
  *
- * `go_fast: false` remains a reviewed QUALITY decision in `@vesper/image-core`,
- * not a family quirk here. The adapter says what the endpoint can express; the
- * profile/quality layers decide which values Vesper should ask it to use.
+ * The accelerated sampling path remains a reviewed QUALITY decision in
+ * `@vesper/image-core`, not a family quirk here: production keeps it off,
+ * because every production use of this endpoint is identity-critical. The
+ * adapter says what the endpoint can EXPRESS, which is both answers — that is
+ * what lets the admin bench ask for the accelerated path on a model whose
+ * production ruling refuses it, without either layer contradicting the other.
  */
 export const qwenImageEdit2511: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,

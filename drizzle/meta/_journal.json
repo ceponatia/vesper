@@ -834,6 +834,20 @@
       "when": 1787599980000,
       "tag": "0118_qwen-2511-lora-bindings",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1787603580000,
+      "tag": "0119_qwen-capability-backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1787607180000,
+      "tag": "0120_intimate-lora-scale-band",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@ function capabilities(over: Partial<ImageModelAdvancedCapabilities> = {}): Image
       guidance: { field: "guidance_scale", type: "number", minimum: 0, maximum: 20 },
       steps: { field: "num_inference_steps", type: "integer", minimum: 1, maximum: 50 },
       thinkingMode: { field: "thinking_mode", type: "boolean" },
+      fastMode: { field: "go_fast", type: "boolean" },
       resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K", "4K"] },
     },
     knownInputFields: ["negative_prompt", "guidance_scale", "num_inference_steps", "scheduler"],
@@ -42,7 +43,18 @@ function loraCapabilities(over: Partial<ImageModelControlBindings> = {}): ImageM
 describe("mapImageRenderControls", () => {
   it("writes each control to the field the ACTIVE version declared for it", () => {
     const mapped = mapImageRenderControls({
-      controls: { negativePrompt: "blurry", guidance: 5.5, steps: 30, thinkingMode: true, resolution: "2K" },
+      // `fastMode: false` rather than true on purpose: the wrappers that expose
+      // an accelerated path default it ON, so refusing it is the request that
+      // has to survive. A mapper that skipped falsy values would drop it here
+      // and the render would quietly run fast anyway.
+      controls: {
+        negativePrompt: "blurry",
+        guidance: 5.5,
+        steps: 30,
+        thinkingMode: true,
+        fastMode: false,
+        resolution: "2K",
+      },
       capabilities: capabilities(),
     });
     expect(mapped.input).toEqual({
@@ -50,6 +62,7 @@ describe("mapImageRenderControls", () => {
       guidance_scale: 5.5,
       num_inference_steps: 30,
       thinking_mode: true,
+      go_fast: false,
       size: "2K",
     });
     // The normalized view is what a caller records; the provider view is what it sends.
@@ -58,6 +71,7 @@ describe("mapImageRenderControls", () => {
       guidance: 5.5,
       steps: 30,
       thinkingMode: true,
+      fastMode: false,
       resolution: "2K",
     });
     expect(mapped.dropped).toEqual([]);

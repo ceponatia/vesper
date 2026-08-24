@@ -36,6 +36,12 @@ export const IMAGE_GENERATOR_MAX_PRIMARY = 6;
 export const IMAGE_GENERATOR_PROMPT_MAX = 10_000;
 /** Advanced provider values are an escape hatch, not a payload builder. */
 export const IMAGE_GENERATOR_MAX_PROVIDER_INPUTS = 32;
+/**
+ * How many images one run may ask for. Every registered model renders one image
+ * per prediction, so a count above 1 is N predictions and N times the spend —
+ * which is why the ceiling is small and the operator is shown the arithmetic.
+ */
+export const IMAGE_GENERATOR_MAX_IMAGE_COUNT = 4;
 
 /**
  * A recorded purpose is any member of the package's own reference-role
@@ -89,8 +95,8 @@ export function emptyImageGeneratorRunInputs(): ImageGeneratorRunInputs {
 }
 
 /**
- * The normalized per-run control overlay: the package's own schema plus ONE
- * Generator-owned field.
+ * The normalized per-run control overlay: the package's own schema plus the
+ * two Generator-owned fields.
  *
  * `aspect` is the operator's explicit shape choice, spelled as a member of the
  * selected version's own `supportedAspects` (`"3:4"`, `"1536*2048"`). It is not
@@ -104,20 +110,43 @@ export function emptyImageGeneratorRunInputs(): ImageGeneratorRunInputs {
  * aspect/size key in the payload, no bucket picked for being nearest a Vesper
  * target, and no crop afterwards. A raw bench that quietly reshaped a model's
  * answer would be reporting Vesper's opinion as the model's.
+ *
+ * `imageCount` is how many images the run asks for, and it is deliberately NOT
+ * the package's `outputCount` control. `outputCount` is a provider input — one
+ * prediction told to return several images — and the shared compile step
+ * refuses it on the single-image path for every lane, the Generator included.
+ * No model Vesper registers in the Qwen family exposes such an input anyway.
+ * `imageCount` is the bench's own loop count: N sequential predictions from one
+ * compiled plan. Keeping the two apart is what stops a request for a native
+ * image set from being silently answered with a fan-out, which is exactly the
+ * substitution this bench exists to make visible.
  */
 export const imageGeneratorControlsSchema = imageRenderControlsSchema.extend({
   aspect: z.string().min(1).max(32).optional(),
+  imageCount: z.number().int().min(1).max(IMAGE_GENERATOR_MAX_IMAGE_COUNT).optional(),
 });
 export type ImageGeneratorControls = z.infer<typeof imageGeneratorControlsSchema>;
+
+/**
+ * How many predictions a run's controls ask for. Absent means one — the
+ * ordinary case, and the value every run recorded before the control existed.
+ */
+export function imageGeneratorImageCount(controls: ImageGeneratorControls): number {
+  return controls.imageCount ?? 1;
+}
 
 export function emptyImageGeneratorControls(): ImageGeneratorControls {
   return {};
 }
 
-/** The render-path half of a run's controls — `aspect` is the Generator's own. */
+/**
+ * The render-path half of a run's controls — `aspect` and `imageCount` are the
+ * Generator's own and never reach the planner.
+ */
 export function imageGeneratorRenderControls(controls: ImageGeneratorControls): ImageRenderControls {
   const renderControls: ImageRenderControls = { ...controls };
   delete (renderControls as ImageGeneratorControls).aspect;
+  delete (renderControls as ImageGeneratorControls).imageCount;
   return renderControls;
 }
 

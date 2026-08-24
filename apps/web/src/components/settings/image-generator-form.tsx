@@ -17,6 +17,7 @@ import {
   type ImageUriBinding,
 } from "@vesper/image-core";
 import {
+  IMAGE_GENERATOR_MAX_IMAGE_COUNT,
   IMAGE_GENERATOR_MAX_PRIMARY,
   IMAGE_GENERATOR_PROMPT_MAX,
   type ImageGeneratorControls,
@@ -26,6 +27,7 @@ import {
   type ImageGeneratorRunInputs,
   type ImageGeneratorVersionPolicy,
 } from "@/contracts/images/image-generator";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_PREFILL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { adminImageModelsApi, imageGeneratorApi, imageLorasApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
@@ -318,7 +320,18 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // Blank is the MODEL's own shape, not a Vesper default — the Generator sends
   // no aspect/size key unless this names one of the version's own members.
   const [aspect, setAspect] = useState(prefill?.controls.aspect ?? "");
+  // How many images this run asks for. A bench-level loop count, not a provider
+  // input, so unlike every capability-bound control it does NOT reset when the
+  // model changes — "the same request four times on a different model" is the
+  // comparison this bench exists to make.
+  const [imageCount, setImageCount] = useState(String(prefill?.controls.imageCount ?? 1));
   const [thinkingMode, setThinkingMode] = useState(prefill?.controls.thinkingMode ?? false);
+  // Three-valued, not a checkbox: this control's provider default is ON, so
+  // "unticked means unsent" could never express a deliberate refusal of the
+  // accelerated path. Blank sends nothing, and both other answers are requests.
+  const [fastMode, setFastMode] = useState<"" | "on" | "off">(
+    prefill?.controls.fastMode === undefined ? "" : prefill.controls.fastMode ? "on" : "off",
+  );
   // A duplicate whose model has been re-probed can either replay the exact
   // version the source ran, or run today's. Neither is a safe default to pick
   // silently, so the choice is only offered when the two actually differ.
@@ -343,6 +356,12 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // so the adoption can advance it in the same pass and keep its seeded values.
   const [prevModelId, setPrevModelId] = useState(modelId);
 
+  // Which model the curated-LoRA prefill has already answered for (see the
+  // prefill latch beside the LoRA picker). Declared here for the same reason as
+  // `prevModelId`: the adoption below stamps it, so a duplicated run keeps the
+  // LoRA choice its source recorded — including the deliberate choice of none.
+  const [loraPrefilledForModelId, setLoraPrefilledForModelId] = useState("");
+
   // A duplicate names its model by slug; adopt the matching registry row once
   // the registry answers (render-adjust with a latch, never a setState inside
   // an effect). No match leaves the select unchosen, with the warning below.
@@ -353,6 +372,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     if (match !== undefined) {
       setModelId(match.id);
       setPrevModelId(match.id);
+      setLoraPrefilledForModelId(match.id);
     }
   }
 
@@ -376,6 +396,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setResolution("");
     setAspect("");
     setThinkingMode(false);
+    setFastMode("");
     setLoraId("");
     setLoraScale("");
     setVersionPolicy("current");
@@ -454,15 +475,67 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setPrevLoraId(loraId);
     setLoraScale(selectedLora === null ? "" : String(selectedLora.defaultScale));
   }
+
+  // Picking the LoRA wrapper endpoint pre-fills the curated anatomy row, once.
+  //
+  // The wrapper is a legacy endpoint kept for one reason — it loads those
+  // weights — so a run on it that carries no LoRA is the rare case, and making
+  // the operator re-pick the same row every time is a step that only ever has
+  // one right answer. It is a DEFAULT: the select stays free, and the stamp
+  // below is what makes a manual change or clear stick rather than being
+  // re-filled on the next render.
+  //
+  // Stamped unconditionally, so a missing row (a database that never seeded it,
+  // or an admin who switched it off) sets nothing and simply leaves the select
+  // empty — a quiet degradation, not a blocked form. Switching models clears
+  // `loraId` through the model reset above and re-arms this, because the
+  // stamped id no longer matches. A duplicated run arrives already stamped, so
+  // the run record — not this default — decides what a replay carries.
+  if (loras.data !== null && selectedModel !== null && modelId !== loraPrefilledForModelId) {
+    // Advanced for EVERY model, not only the wrapper: the stamp records which
+    // model this default has already answered for, so leaving the wrapper and
+    // coming back re-arms it, while a manual clear on the model still in the
+    // box does not.
+    setLoraPrefilledForModelId(modelId);
+    if (
+      loraBound &&
+      loraId === "" &&
+      baseImageModelSlug(selectedModel.slug) === INTIMATE_SCENE_LORA_PREFILL_SLUG &&
+      enabledLoras.some((lora) => lora.id === INTIMATE_SCENE_LORA_ID)
+    ) {
+      setLoraId(INTIMATE_SCENE_LORA_ID);
+    }
+  }
   const parsedLoraScale = parseStrictNumber(loraScale, "number");
   const requestedScale = parsedLoraScale.kind === "value" ? parsedLoraScale.value : Number.NaN;
   const effectiveLoraScale =
     selectedLora === null ? null : Number.isFinite(requestedScale) ? requestedScale : selectedLora.defaultScale;
-  const loraReady =
-    selectedLora === null ||
-    (effectiveLoraScale !== null &&
-      effectiveLoraScale >= selectedLora.minimumScale &&
-      effectiveLoraScale <= selectedLora.maximumScale);
+  // The scale names its own refusal, like every other numeric box on this
+  // screen. Without a message an out-of-band value only greys the Run button,
+  // which reads as a form that has quietly stopped working.
+  //
+  // Text this box cannot parse is an error too, NOT a fall back to the row's
+  // default. Blank means "use the row's default" and says so; `1.2x` meaning
+  // the same thing would be the silent rewrite this file's header rules out,
+  // and the operator would read the recorded scale as the one they typed.
+  const loraScaleError =
+    selectedLora === null
+      ? null
+      : parsedLoraScale.kind === "invalid"
+        ? "A LoRA scale is a number — fix or clear it to run. Blank uses the row’s default."
+        : effectiveLoraScale === null ||
+            effectiveLoraScale < selectedLora.minimumScale ||
+            effectiveLoraScale > selectedLora.maximumScale
+          ? `Scale must be between ${String(selectedLora.minimumScale)} and ${String(selectedLora.maximumScale)} for ${selectedLora.label} — fix or clear it to run.`
+          : null;
+  const loraReady = loraScaleError === null;
+  // Whether the pick standing in the select is the one this endpoint pre-fills,
+  // so the hint can say so rather than leaving a filled field unexplained.
+  const loraPrefilled =
+    selectedLora !== null &&
+    selectedLora.id === INTIMATE_SCENE_LORA_ID &&
+    selectedModel !== null &&
+    baseImageModelSlug(selectedModel.slug) === INTIMATE_SCENE_LORA_PREFILL_SLUG;
   const loraModelMismatch =
     selectedLora !== null &&
     selectedModel !== null &&
@@ -493,6 +566,31 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   if (bindings.seed !== undefined && parsedSeed.kind === "value" && parsedSeed.value >= 0) {
     assembledControls.seed = parsedSeed.value;
     controlLines.push(`seed ${String(parsedSeed.value)}`);
+  }
+  // Images per run. One is the ordinary case and is left out of the request
+  // entirely, so a single-image run records exactly what it recorded before the
+  // fan-out existed.
+  //
+  // A set seed and a count above one contradict each other: the seed is what
+  // makes a render reproducible, so every prediction in the run would return
+  // the same image at N times the price. Refused here and again pre-spend by
+  // the runner, because a bench that quietly dropped one of the two would be
+  // reporting a request nobody made.
+  const requestedImageCount = Number.parseInt(imageCount, 10);
+  const effectiveImageCount =
+    Number.isInteger(requestedImageCount) && requestedImageCount >= 1 && requestedImageCount <= IMAGE_GENERATOR_MAX_IMAGE_COUNT
+      ? requestedImageCount
+      : 1;
+  const imageCountError =
+    effectiveImageCount > 1 && assembledControls.seed !== undefined
+      ? "A set seed makes every image in the run identical — clear the seed, or ask for one image."
+      : null;
+  if (effectiveImageCount > 1) {
+    // Not pushed to `controlLines`: those are the values the provider receives,
+    // and a loop count reading alongside them as "3 images" is exactly the
+    // native-image-set confusion this bench must not create. It has its own
+    // summary line instead.
+    assembledControls.imageCount = effectiveImageCount;
   }
   if (bindings.negativePrompt !== undefined && negativePrompt.trim() !== "") {
     assembledControls.negativePrompt = negativePrompt.trim();
@@ -541,6 +639,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   if (bindings.thinkingMode !== undefined && thinkingMode) {
     assembledControls.thinkingMode = true;
     controlLines.push("thinking mode");
+  }
+  if (bindings.fastMode !== undefined && fastMode !== "") {
+    assembledControls.fastMode = fastMode === "on";
+    controlLines.push(fastMode === "on" ? "fast mode on" : "fast mode off");
   }
   if (loraBound && selectedLora !== null) {
     assembledControls.lora = {
@@ -670,6 +772,9 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     if (prefill.controls.aspect !== undefined && !shapeIsReachable(selectedModel, prefill.controls.aspect)) {
       prefillDrift.push("output shape");
     }
+    if (prefill.controls.fastMode !== undefined && bindings.fastMode === undefined) {
+      prefillDrift.push("fast mode");
+    }
     if (prefill.controls.thinkingMode !== undefined && bindings.thinkingMode === undefined) {
       prefillDrift.push("thinking mode");
     }
@@ -698,6 +803,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     operationSupported &&
     loraReady &&
     seedError === null &&
+    imageCountError === null &&
     guidanceError === null &&
     stepsError === null &&
     editStrengthError === null &&
@@ -770,7 +876,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     }
     toast.push({
       title: "Run queued",
-      description: "One render, charged against the daily image budget.",
+      description:
+        effectiveImageCount === 1
+          ? "One render, charged against the daily image budget."
+          : `${String(effectiveImageCount)} renders, charged ${String(effectiveImageCount)} against the daily image budget.`,
       tone: "success",
     });
     onCreated(result.data.run.id);
@@ -1068,6 +1177,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           bindings.editStrength !== undefined ||
           resolutionTierOffered ||
           bindings.thinkingMode !== undefined ||
+          bindings.fastMode !== undefined ||
           shapeOptions.length > 0 ||
           loraBound) ? (
           <div className="flex flex-col gap-3">
@@ -1168,6 +1278,28 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   )}
                 </Field>
               ) : null}
+              {bindings.fastMode !== undefined ? (
+                <Field
+                  label="Fast mode"
+                  hint={
+                    "Blank sends nothing, so whatever this model already runs with stands — the provider’s default, " +
+                    "or Vesper’s reviewed correction where one exists. On asks for the accelerated sampling path; " +
+                    "Off refuses it."
+                  }
+                >
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={fastMode}
+                      onChange={(e) => setFastMode(e.target.value as "" | "on" | "off")}
+                    >
+                      <option value="">— Provider default —</option>
+                      <option value="on">On</option>
+                      <option value="off">Off</option>
+                    </Select>
+                  )}
+                </Field>
+              ) : null}
               {shapeOptions.length > 0 ? (
                 <Field
                   label="Output shape"
@@ -1214,8 +1346,21 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   end to end (spec §"Rulings the build settled"; rationale on
                   the controls assembly above). */}
             </div>
+              {/* Stated unconditionally, and deliberately not narrowed to the
+                  endpoints known to ignore the field. A slug test here is the
+                  thing @vesper/image-models exists to keep out of shared code,
+                  and the honest general warning is the same warning: a declared
+                  input is a schema fact, and acting on it is a behavior fact the
+                  schema cannot promise. Qwen Image 2512 is the measured case —
+                  16 of 16 paired renders kept what the negative field excluded. */}
             {bindings.negativePrompt !== undefined ? (
-              <Field label="Negative prompt" hint="What the render should avoid. Blank sends nothing.">
+              <Field
+                label="Negative prompt"
+                hint={
+                  "What the render should avoid. Blank sends nothing. A model declaring this field is not a promise " +
+                  "it acts on one — check the model’s page under docs/image-models before trusting an exclusion."
+                }
+              >
                 {(id) => (
                   <Textarea
                     id={id}
@@ -1235,8 +1380,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                     label="LoRA"
                     hint={
                       enabledLoras.length === 0
-                        ? "None in the library yet. Curate one under Settings → Image models — only enabled rows are offered here."
-                        : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at."
+                        ? "None in the library yet. Curate one in the LoRA library on the Image models page — only enabled rows are offered here."
+                        : loraPrefilled
+                          ? "Pre-filled because this endpoint exists to load these weights. Change or clear it like any other pick."
+                          : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at."
                     }
                   >
                     {(id) => (
@@ -1269,7 +1416,13 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                 {selectedLora !== null ? (
                   <p className="text-xs text-paper-500">
                     {`Curated range ${String(selectedLora.minimumScale)}–${String(selectedLora.maximumScale)}, default ${String(selectedLora.defaultScale)}. `}
-                    {"A scale outside the band is refused before any spend rather than clamped."}
+                    {"A scale outside the band is refused before any spend rather than clamped — widen the row in the "}
+                    {"LoRA library if the band is the thing that is wrong."}
+                  </p>
+                ) : null}
+                {loraScaleError !== null ? (
+                  <p className="text-xs text-danger-300" role="alert">
+                    {loraScaleError}
                   </p>
                 ) : null}
                 {loraModelMismatch ? (
@@ -1286,6 +1439,36 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   </p>
                 ) : null}
               </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {selectedModel !== null ? (
+          <div className="flex flex-col gap-3">
+            <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Images per run</h3>
+            <div className="grid gap-4 sm:grid-cols-[9rem_1fr]">
+              <Field label="Images">
+                {(id) => (
+                  <Select id={id} value={imageCount} onChange={(e) => setImageCount(e.target.value)}>
+                    {Array.from({ length: IMAGE_GENERATOR_MAX_IMAGE_COUNT }, (_, index) => index + 1).map((count) => (
+                      <option key={count} value={String(count)}>
+                        {count}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <p className="self-center text-xs text-paper-500">
+                {"No registered model returns more than one image per prediction, so this is a loop, not a provider "}
+                {"setting: one plan is compiled and one pre-spend gate runs, then that request is sent this many "}
+                {"times. Each image is billed separately. Predictions run in order, and a run that stores at least "}
+                {"one image succeeds — a failure part-way through is recorded against its own image, not the run."}
+              </p>
+            </div>
+            {imageCountError !== null ? (
+              <p className="text-xs text-danger-300" role="alert">
+                {imageCountError}
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -1361,6 +1544,12 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
               <li>
                 <span className="text-paper-500">Shape —</span>{" "}
                 {aspect === "" ? "the model’s own default; nothing is cropped afterwards" : aspect}
+              </li>
+              <li>
+                <span className="text-paper-500">Images —</span>{" "}
+                {effectiveImageCount === 1
+                  ? "1 · one unit of today’s image budget"
+                  : `${String(effectiveImageCount)}, sent one at a time · ${String(effectiveImageCount)} units of today’s image budget`}
               </li>
               <li>
                 <span className="text-paper-500">Controls —</span>{" "}

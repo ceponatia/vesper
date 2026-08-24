@@ -2,9 +2,9 @@
 
 Source: [`packages/image-models/src/features/controls.ts`](../../../packages/image-models/src/features/controls.ts).
 
-This module defines three normalized single-binding controls: `seed`, `guidance`, and `negativePrompt`.
+This module defines four normalized single-binding controls: `seed`, `guidance`, `fastMode`, and `negativePrompt`.
 
-Each binding check reads `model.advancedCapabilities.controls`, which is populated by provider probing. The feature layer never needs to know whether a provider spells guidance `guidance`, `cfg`, or something else.
+Each binding check reads `model.advancedCapabilities.controls`, which is populated by provider probing. The feature layer never needs to know whether a provider spells guidance `guidance`, `guidance_scale`, `cfg`, or something else.
 
 ## `seed`
 
@@ -25,6 +25,22 @@ Each binding check reads `model.advancedCapabilities.controls`, which is populat
 **Binding:** `isBound(model)` is true when the active model record has a normalized `guidance` control binding.
 
 **Current Qwen use:** only `qwen/qwen-image-2512` composes `guidance`. The two instruction-edit endpoints do not expose a guidance control; their behavior is governed by the instruction and reference images instead.
+
+The probe resolves `guidance`, `guidance_scale`, and `cfg` to this one control, in that order. It deliberately does **not** resolve `true_cfg_scale`: on a CFG-distilled checkpoint that is a different quantity from the embedded guidance, so binding both to one name would leave a run record unable to say which value moved.
+
+## `fastMode`
+
+`fastModeFeature()` contributes capability id `fastMode`.
+
+**Semantic:** the endpoint offers an accelerated sampling path, and the caller may choose it or refuse it.
+
+**Binding:** `isBound(model)` is true when the active model record has a normalized `fastMode` control binding.
+
+This is a quality choice wearing a speed name. The wrappers that expose it turn it on by default, so composing the feature says a family's renders can be asked to slow **down**, not merely to hurry. Both answers are real requests; absence of the control is the only way to say nothing.
+
+Composition is a statement about what the endpoint can express, never about what Vesper should ask for. Vesper's reviewed quality policy refuses the accelerated path on `qwen/qwen-image-edit-2511`, whose every production use is identity-critical, and that ruling lives in `@vesper/image-core` rather than here.
+
+**Current Qwen use:** all three registered Qwen adapters compose `fastMode`.
 
 ## `negativePrompt`
 

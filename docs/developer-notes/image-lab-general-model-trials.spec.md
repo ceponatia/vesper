@@ -26,17 +26,18 @@ asset kind.
 
 ## Implementation status
 
-| Slice                                                       | State                                  |
-| ----------------------------------------------------------- | -------------------------------------- |
-| 1. Capability contracts + Replicate probe derivation         | built 2026-08-23                       |
-| 2. Generator run record, API, job, runner (server)           | built 2026-08-23                       |
-| 3. Generator UI (page, form, history, inspector, duplicate)  | built 2026-08-23                       |
-| 4. General owned-image picker + sources endpoint             | built 2026-08-23                       |
-| 5. Image Lab affordance cleanup (model/mode/fixture copy)    | built 2026-08-23                       |
-| 6. General picker reuse in Lab (object/location/extraction)  | built 2026-08-23                       |
-| 7. Correctness pass (operation, shape, strictness, replay)   | built 2026-08-23                       |
-| 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)         | not started — see below                |
-| 9. Run-list delete (per row and multi-select)                | built 2026-08-24                       |
+| Slice                                                       | State                   |
+| ----------------------------------------------------------- | ----------------------- |
+| 1. Capability contracts + Replicate probe derivation        | built 2026-08-23        |
+| 2. Generator run record, API, job, runner (server)          | built 2026-08-23        |
+| 3. Generator UI (page, form, history, inspector, duplicate) | built 2026-08-23        |
+| 4. General owned-image picker + sources endpoint            | built 2026-08-23        |
+| 5. Image Lab affordance cleanup (model/mode/fixture copy)   | built 2026-08-23        |
+| 6. General picker reuse in Lab (object/location/extraction) | built 2026-08-23        |
+| 7. Correctness pass (operation, shape, strictness, replay)  | built 2026-08-23        |
+| 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)        | not started — see below |
+| 9. Run-list delete (per row and multi-select)               | built 2026-08-24        |
+| 10. More than one image per run (form, runner, records, UI) | built 2026-08-24        |
 
 Slice 8 needs three things it cannot supply itself: a production deploy, the
 owner's approval to spend on real predictions, and the Vesper SDXL re-probe
@@ -50,9 +51,19 @@ the number of records and the number of rendered images about to go. The
 confirmation is not optional at either door — a Generator run is provenance and
 its deletion is a hard one.
 
+Slice 10 makes a run ask for up to four images. Everything through the strict
+pre-spend gate stays singular — one compiled plan, one pre-spend record, one
+gate — and only the render repeats, because every registered model returns
+exactly one image per prediction. Built end to end: the create form's **Images**
+select, the runner's sequential fan-out, the per-prediction `meta.outputs`
+record, the delete's sweep of the sibling images, the run detail's output grid,
+and the history list's "×N".
+
 Not built by design: direct source uploads (awaiting the plan's retention/quota
 ruling), a side-by-side A/B view (the detail inspector plus duplicate lineage
-covers the first implementation), and multi-output runs.
+covers the first implementation), and NATIVE image sets — one prediction told to
+return several images, which no registered version declares and which stays
+refused rather than emulated by the fan-out.
 
 ### Rulings the correctness pass settled (2026-08-23)
 
@@ -147,10 +158,13 @@ covers the first implementation), and multi-output runs.
 - Probed-but-unreachable normalized controls got a ruling each. `thinkingMode`
   is now a Generator control wherever the version binds it. `sequentialMode`
   has a probed binding but no `ImageRenderControls` member, and `coherentSet`
-  and `outputCount` are image-SET controls the one-output policy makes
-  meaningless here — all three stay reserved from the raw bag and deliberately
-  unsupported, and a duplicate that carried one lists it under the drift
-  warning rather than dropping it silently.
+  and `outputCount` are image-SET controls asking ONE prediction to answer with
+  several images, which no registered version declares — all three stay reserved
+  from the raw bag and deliberately unsupported, and a duplicate that carried one
+  lists it under the drift warning rather than dropping it silently. Slice 10's
+  per-run image count does not change this: it is the bench's own loop over
+  repeated single-image predictions, and answering a native set request with it
+  would be the substitution the refusal exists to expose.
 
 ### Rulings the build settled (2026-08-23)
 
@@ -193,6 +207,55 @@ covers the first implementation), and multi-output runs.
   honors explicit dimensions only under that mode, so offering the fields
   today would sell a guaranteed pre-spend refusal. The resolution tier select
   remains where bound; the contract keeps `width`/`height` for API callers.
+
+### Rulings the multi-image slice settled (2026-08-24)
+
+- **The count is a bench loop, never a provider input.** Every version Vesper
+  registers in the Qwen family renders one image per prediction and declares no
+  `num_outputs`/`max_images`, so `controls.imageCount` (1–4) means N sequential
+  predictions from ONE compiled plan. Everything up to and including the strict
+  pre-spend gate runs once. `outputCount` stays refused with
+  `single_image_path`, and nothing reinterprets it as a count.
+- **Sequential, never parallel.** The bench's two-phase budget is built to wait
+  out a cold queue; N simultaneous predictions would multiply startup-timeout
+  noise into what reads as an upstream failure.
+- **An explicit seed beside a count above one refuses pre-spend**
+  (`control_refused`), because `seedPolicy: "caller"` sends the seed verbatim to
+  every prediction and the provider would answer identically N times. Judged
+  before the version resolves — nothing about the model can change it. Dropping
+  the seed or trimming the count would both spend on a request nobody made. The
+  unseeded case sends no seed key at all and the provider varies each prediction.
+- **Stored ≥ 1 means `succeeded`; stored 0 means `failed`.** The status
+  vocabulary keeps its four values. A zero-stored run settles
+  `output_store_failed` when any prediction rendered (the disk failed, not the
+  provider) and `render_failed` otherwise. Provider health reports `false` only
+  when EVERY prediction failed.
+- **The row's single-output columns all describe the same output**:
+  `result_image_id`, `prediction_id` and `executed_version_id` name the FIRST
+  stored image — or the first prediction when nothing stored — as do
+  `meta.attempt` and `meta.result`. A row whose result showed image one while
+  its prediction id named the fourth would tell two stories about one render.
+  On a one-image run these are the same pass, so nothing that reads the row
+  today reads it differently, and no column or migration was added.
+- **`meta.outputs` is the per-prediction record**: `{ index (1-based), imageId,
+  failureCode, predictionId }`, one per pass, beside `attempt`/`providerAttempts`
+  rather than inside either. It is the ONLY pointer to a fan-out's sibling
+  images, so `deleteImageGeneratorRuns` reads it — from the same SELECT, and
+  again from the delete's own RETURNING — and sweeps those ids with the
+  `result_image_id` it already swept. `meta.providerAttempts` now spans every
+  pass, oldest first.
+- **It reaches the client inside `result`** rather than as its own wire member,
+  which would be a contract change; `imageGeneratorRunOutputsOf` is the single
+  place that knows the transport. The shape and its lenient reader live in
+  `contracts/images/image-generator-outputs.ts` so the runner, the delete sweep,
+  the run detail and the run list share one definition.
+- **Admission charges one `provider_image_day` unit per image**
+  (`imageRenderRejection`'s existing `count`), because a run asking for four buys
+  four predictions.
+- **The form mirrors the seed refusal rather than replacing it.** The Images
+  select holds the Run button with its own message when a seed is set, and the
+  runner refuses the same pair pre-spend — an API caller reaches the runner
+  without passing through React, so the server is where the rule actually lives.
 
 ## Contracts
 
@@ -284,6 +347,7 @@ export const imageGeneratorRunStatuses = ["pending", "running", "succeeded", "fa
 
 export const IMAGE_GENERATOR_MAX_PRIMARY = 6;   // conservative app cap; the UI states it
 export const IMAGE_GENERATOR_PROMPT_MAX = 10_000;
+export const IMAGE_GENERATOR_MAX_IMAGE_COUNT = 4; // each image is another prediction and another budget unit
 
 export const imageGeneratorPrimaryInputSchema = z.object({
   imageId: z.string().min(1),
@@ -301,12 +365,17 @@ export const imageGeneratorRunInputsSchema = z.object({
 export const imageGeneratorProviderInputValueSchema =
   z.union([z.string().max(2000), z.number().finite(), z.boolean()]);
 
-// The package's controls plus ONE Generator-owned field: the operator's
-// explicit shape, spelled as a member of the version's own `supportedAspects`.
-// Absent means the model's own shape. `imageGeneratorRenderControls()` strips
-// it before the intent, so the planner still sees `ImageRenderControls`.
+// The package's controls plus TWO Generator-owned fields, neither of which
+// reaches the planner (`imageGeneratorRenderControls()` strips both, so the
+// planner still sees `ImageRenderControls`):
+//   `aspect` — the operator's explicit shape, spelled as a member of the
+//     version's own `supportedAspects`; absent means the model's own shape.
+//   `imageCount` — how many images to render; absent means one. Deliberately
+//     NOT the package's `outputCount`, which is a provider input asking one
+//     prediction for a set and stays refused on this path.
 export const imageGeneratorControlsSchema = imageRenderControlsSchema.extend({
   aspect: z.string().min(1).max(32).optional(),
+  imageCount: z.number().int().min(1).max(IMAGE_GENERATOR_MAX_IMAGE_COUNT).optional(),
 });
 
 export const imageGeneratorVersionPolicies = ["current", "captured"] as const;
@@ -485,6 +554,9 @@ transport without rebuilding the payload rules in application code.
 
 1. Load the run row owner-scoped; parse `inputs`/`controls`/`providerInputs`
    with `parseOr` against the contracts.
+1b. Read `imageGeneratorImageCount(controls)`. An explicit `controls.seed`
+   beside a count above one → `control_refused`, judged here because nothing
+   about the model can change it and it costs no read to answer.
 2. Resolve the stored slug through `loadImageModels` (exact slug match);
    missing → `model_missing`.
 3. Version. `meta.versionRequest.mode` decides. `current` →
@@ -543,22 +615,28 @@ transport without rebuilding the payload rules in application code.
 9d. THE final gate: `providerInputViolations` over
     `previewRegistryModelInput(…)` → `provider_input_rejected`.
 10. Render through the injectable seam (default `renderImageIntent` with the
-    intent carrying the pin). A returned `unsentReferences` settles
-    `capacity_exceeded` and a returned `providerInputViolations` settles
-    `provider_input_rejected`, both with `providerOutcome: null` and
-    `meta.result.spent: false` — nothing was created, so nothing is charged to
-    provider health. Otherwise store the output via `createImageAsset` with
-    `kind: "generator_output"`, `meta: { hidden: true, imageGeneratorRunId }`,
-    `prompt: finalPrompt`. Settle `succeeded` with `result_image_id`,
-    `prediction_id`, `executed_version_id`, `meta.attempt`, and `meta.result`
-    (returned dimensions, crop target, the shape field/value sent).
-11. Failures settle on the row: provider failure → `render_failed` plus the
-    render classifier's code in `error`, provider health via
-    `imageFailureHealthOutcome`; storage failure after a successful provider
-    response → `output_store_failed` with `providerOutcome: true`. Pre-spend
-    refusals report `providerOutcome: null`. The route passes
-    `providerOutcome` to `startJob`'s `reportProviderOutcome`, mirroring the
-    Lab.
+    intent carrying the pin), once per image, **sequentially, on the same
+    intent object**. Each pass that returns bytes stores its output via
+    `createImageAsset` with `kind: "generator_output"`,
+    `meta: { hidden: true, imageGeneratorRunId }`, `prompt: finalPrompt`, and
+    records `{ index, imageId, failureCode, predictionId }` in `meta.outputs`.
+    A returned `unsentReferences` settles `capacity_exceeded` and a returned
+    `providerInputViolations` settles `provider_input_rejected`, both with
+    `providerOutcome: null` and `meta.result.spent: false` — nothing was
+    created, so nothing is charged to provider health, and the run stops
+    without asking again because the refusal is about the request.
+11. Settle. At least one stored image → `succeeded` with `result_image_id`,
+    `prediction_id`, `executed_version_id`, `meta.attempt` and `meta.result`
+    (returned dimensions, crop target, the shape field/value sent) all
+    describing the FIRST stored output, `providerOutcome: true`, and
+    `failure_code` null however many passes missed. Nothing stored → `failed`:
+    `output_store_failed` with `providerOutcome: true` when any pass rendered
+    (the disk failed, not the provider), otherwise `render_failed` plus the
+    render classifier's code in `error` and provider health via
+    `imageFailureHealthOutcome` — so `false` reaches the breaker only when every
+    pass failed. Pre-spend refusals report `providerOutcome: null`. The route
+    passes `providerOutcome` to `startJob`'s `reportProviderOutcome`, mirroring
+    the Lab.
 
 ### Synthetic Generator profile
 
@@ -657,12 +735,17 @@ stop and hand it to the owner):
 
 `meta` keys, all per-run records rather than queryable facts:
 `versionRequest` (written at create), `outcome`, `effectiveRequest`,
-`capabilitySnapshot`, `attempt`, `result`, `renderFailure`, `trimmedPrimaries`.
-Every write merges over the stored bag so a settle cannot drop the pre-spend
-record written moments before.
+`capabilitySnapshot`, `attempt`, `providerAttempts`, `outputs`, `result`,
+`renderFailure`, `trimmedPrimaries`. Every write merges over the stored bag so a
+settle cannot drop the pre-spend record written moments before.
 
-The correctness pass added no column: the run row's shape is unchanged, so
-migration `0117` stands as generated.
+`result_image_id` names the FIRST image a run stored; a fan-out's siblings are
+ordinary `generator_output` rows whose only pointer is `meta.outputs`. That is
+deliberate — the column is the history thumbnail, the lineage pointer and the
+FK-SET-NULL target, and none of those wanted a set.
+
+Neither the correctness pass nor the multi-image slice added a column: the run
+row's shape is unchanged, so migration `0117` stands as generated.
 
 Index: `image_generator_runs_owner_created_idx (owner_id, created_at)`.
 FK policy follows the evidence-table ruling: owner CASCADEs, pointers SET NULL,
@@ -682,13 +765,16 @@ resolved LoRA locators (curated library id is authoritative).
 `deleteImageGeneratorRun` is the one-id call over it, so the single-row and
 multi-row doors cannot diverge. Ids are de-duplicated, then:
 
-1. select the caller's own rows for those ids (`inArray` + `owner_id`);
-2. delete their outputs — `deleteOwnedImages(outputIds, ownerId, { kind:
-   "generator_output" })` — **before** the rows, so a crash leaves an FK-nulled
-   pointer rather than an unreachable hidden image;
-3. delete the rows by the **owned subset**, `RETURNING result_image_id`;
+1. select the caller's own rows for those ids (`inArray` + `owner_id`),
+   **including `meta`** — a fan-out's sibling images are named nowhere else, and
+   a second read could find the row already gone;
+2. delete their outputs — `result_image_id` plus every `meta.outputs` image id,
+   through `deleteOwnedImages(outputIds, ownerId, { kind: "generator_output" })`
+   — **before** the rows, so a crash leaves an FK-nulled pointer rather than an
+   unreachable hidden image;
+3. delete the rows by the **owned subset**, `RETURNING result_image_id, meta`;
 4. sweep any returned output the first read could not see (a render that
-   settled between the two statements).
+   settled between the two statements), siblings included.
 
 Both statements carry the owner predicate, so a foreign id in the list is
 absent from the result rather than an error — and never a deletion. The
@@ -705,10 +791,10 @@ subset instead of the requested ids.
 | `/api/admin/self/owned-images`                    | `withOwnerAdmin`         | GET |
 
 POST order: `readBody` → `imageRenderRejection(user, req, { outputKind:
-"generator_output" })` → create pending row (service) → `startJob({ type:
-"generator_image", … })` from the route → on cap refusal delete the row and
-return `jobCapRejection`. CSRF/origin comes from the wrapper; no per-route
-code.
+"generator_output", count: imageGeneratorImageCount(controls) })` → create
+pending row (service) → `startJob({ type: "generator_image", … })` from the route
+→ on cap refusal delete the row and return `jobCapRejection`. CSRF/origin comes
+from the wrapper; no per-route code.
 
 The bulk delete takes its ids in a body rather than a URL (the Gallery's
 `POST /api/gallery/delete` precedent) and sits at a literal `delete` segment,
@@ -734,18 +820,19 @@ shows.
 
 ## Code organization
 
-| Module | Owns |
-| --- | --- |
-| `apps/web/src/contracts/images/image-generator.ts` | statuses, input/request/wire schemas, failure codes, caps |
-| `apps/web/src/server/images/image-generator-store.ts` | row↔wire, create/list/detail/delete (one and many)/settle |
-| `apps/web/src/server/images/image-generator-run.ts` | runner algorithm, synthetic profile, refusals |
-| `apps/web/src/server/images/image-generator-render.ts` | injectable render seam (default `renderImageIntent`), test override |
-| `apps/web/src/server/images/owned-image-reads.ts` | shared owner-scoped byte readers (moved from the Lab kernel) |
-| `apps/web/src/app/api/admin/self/image-generator/…` | routes above |
-| `apps/web/src/app/api/admin/self/owned-images/route.ts` | sources endpoint |
-| `apps/web/src/app/settings/image-generator/page.tsx` | server page (`?run=` param idiom) |
-| `apps/web/src/components/settings/image-generator-page.tsx` + `-form` + `-run-list` + `-run-detail` + `-copy.ts` | client UI |
-| `apps/web/src/components/settings/owned-image-picker.tsx` | general picker |
+| Module                                                                                                           | Owns                                                                                |
+| ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `apps/web/src/contracts/images/image-generator.ts`                                                               | statuses, input/request/wire schemas, failure codes, caps                           |
+| `apps/web/src/contracts/images/image-generator-outputs.ts`                                                       | the per-prediction `meta.outputs` record, its lenient reader, and the wire accessor |
+| `apps/web/src/server/images/image-generator-store.ts`                                                            | row↔wire, create/list/detail/delete (one and many)/settle                           |
+| `apps/web/src/server/images/image-generator-run.ts`                                                              | runner algorithm, synthetic profile, refusals                                       |
+| `apps/web/src/server/images/image-generator-render.ts`                                                           | injectable render seam (default `renderImageIntent`), test override                 |
+| `apps/web/src/server/images/owned-image-reads.ts`                                                                | shared owner-scoped byte readers (moved from the Lab kernel)                        |
+| `apps/web/src/app/api/admin/self/image-generator/…`                                                              | routes above                                                                        |
+| `apps/web/src/app/api/admin/self/owned-images/route.ts`                                                          | sources endpoint                                                                    |
+| `apps/web/src/app/settings/image-generator/page.tsx`                                                             | server page (`?run=` param idiom)                                                   |
+| `apps/web/src/components/settings/image-generator-page.tsx` + `-form` + `-run-list` + `-run-detail` + `-copy.ts` | client UI                                                                           |
+| `apps/web/src/components/settings/owned-image-picker.tsx`                                                        | general picker                                                                      |
 
 Server modules export through the `@/server/images` barrel. The settings
 navigation gains an **Image Generator** link beside the Image Lab entry.
@@ -794,7 +881,11 @@ existing image packages.
   case proving a single spend. Bulk delete adds one case: a batch naming two of
   this admin's runs, a repeated id, and another owner's run removes exactly the
   two, counts the repeat once, and leaves the foreign run and its output
-  untouched.
+  untouched. Multi-image adds three: a three-image run proving one compiled
+  intent reached the seam three times and that deleting the run removes all
+  three stored images; a partly failed fan-out settling `succeeded` with the
+  failed pass recorded and `providerOutcome: true`; and the seed-beside-count
+  refusal settling `control_refused` with the seam never reached.
 - **Strict send policy (package suite):** `render.test.ts` owns the
   `require_all` and `strict` refusals — each asserting no `fetch` reached a
   prediction — plus the required-with-default arm and the URI-smuggling arm.

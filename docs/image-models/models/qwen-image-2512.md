@@ -19,6 +19,9 @@ identity-preserving instruction edit performed by
 - **Reference field:** `image`, a single URI string.
 - **Reference cap:** 1.
 - **Aspect handling:** `aspect_ratio` includes `3:4`.
+- **Accelerated sampling:** yes — `go_fast`, provider default `true`, reachable
+  as the normalized `fastMode` control. This row carries no reviewed correction
+  turning it off, so both asking for it and refusing it are the caller's choice.
 - **Output:** array of URIs; WebP available.
 
 ## Reviewed capability
@@ -60,14 +63,18 @@ each runs only when picked:
   everyday render. `go_fast` is already `true` in the row's `extra_input`, so no
   override is needed.
 - `portrait-quality` — `steps: 50`, the ceiling, plus a `go_fast: false`
-  provider override — the raw boolean has no normalized control, so the override
-  is the only reach.
+  provider override. The override predates the normalized `fastMode` control
+  and is deliberately left alone: it already writes the right field, and
+  rewriting a stored profile row to say the same thing a second way would change
+  a payload for nothing.
 
-The `steps` defaults map through the version's probed control bindings: while
-the model row's `advancedCapabilities` is empty they drop as recorded
-`no_binding`, and they take effect once the version is probed or pinned. The
-`go_fast` override is refused fail-closed until the probe writes
-`knownInputFields`.
+The `steps` default maps through the version's probed control binding, and the
+`go_fast` override is validated against the probed `knownInputFields`. Both were
+inert for as long as the model row's `advancedCapabilities` stayed empty — the
+control dropped as `no_binding`, the override fail-closed as `unknown_field`.
+The capability backfill (`0119_qwen-capability-backfill.sql`) fills that record,
+so both are live; re-probing the row from the Image Models page reaches the same
+state.
 
 ## Negative-prompt ruling
 
@@ -91,6 +98,14 @@ a dialect fact, not a missing control binding.
 The positive channel is the only one that steers here. Exclusions that matter for
 a render must be expressed as affirmative claims describing what the picture
 should contain ([prompt-programs.md](../../images/prompt-programs.md)).
+
+The registry row still **binds** the field, and that is deliberate. A binding is
+a mechanical fact about what an input is called; whether it steers is a reviewed
+judgment, and hiding that judgment inside a probe record would only mean the
+next re-probe undid it. The admin
+[Image Generator](../../image-generator/README.md) therefore offers the
+negative-prompt box on this model with a hint saying the endpoint ignores it,
+rather than withholding a control the schema declares.
 
 This row still serves portraits, items, locations and chat-place images, so the
 collision linter continues to matter for the positive side: a sign that must read

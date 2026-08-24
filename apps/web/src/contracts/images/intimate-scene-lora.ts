@@ -41,3 +41,23 @@ export const INTIMATE_SCENE_LORA_ID = "imglorqwennsfwallinclv20";
  * before rendering.
  */
 export const INTIMATE_SCENE_LORA_WRAPPER_SLUG = "qwen/qwen-image-edit-plus-lora";
+/**
+ * The one model whose selection PRE-FILLS the seeded row in the Image
+ * Generator, as a base slug.
+ *
+ * This is a UI preference, not a compatibility claim, and the two must not be
+ * conflated. `image_loras.compatible_model_slugs` answers "can these weights
+ * run here?", and migration 0118 widened this row's answer to BOTH Qwen edit
+ * endpoints once 2511 was confirmed to bind `lora_weights`/`lora_scale`. So
+ * "the only compatible row" can no longer identify the pairing: deriving the
+ * prefill from compatibility would arm it on the ordinary scene model too.
+ *
+ * What this constant records instead is why an operator reaches for the
+ * wrapper at all. 2511 is the everyday editor and is picked for many reasons;
+ * the plus-lora wrapper is a separate legacy endpoint kept precisely because it
+ * loads these weights, so a run on it that carries no LoRA is the rare case.
+ *
+ * It is a default, never a lock — the select stays free to change or clear, and
+ * a duplicated run's own recorded choice always wins over it.
+ */
+export const INTIMATE_SCENE_LORA_PREFILL_SLUG = INTIMATE_SCENE_LORA_WRAPPER_SLUG;

@@ -1,6 +1,7 @@
 import type { ImageModelQuirk } from "../../composer";
 import {
   aspectRatioFeature,
+  fastModeFeature,
   multiReferenceFeature,
   outputFormatFeature,
   outputQualityFeature,
@@ -79,13 +80,13 @@ export function qwenEditPromptDialect(): ImageModelQuirk {
 /**
  * What every Qwen INSTRUCTION-EDIT endpoint expresses, whichever generation it
  * belongs to: an edit instruction, several numbered references, a requested
- * shape, a seed, an output encoding and quality, and a disableable safety
- * checker.
+ * shape, a seed, an accelerated sampling path it can be told to skip, an output
+ * encoding and quality, and a disableable safety checker.
  *
- * Notably absent from every edit endpoint in this family: a negative prompt and
- * a guidance strength. Neither exists on these schemas at all — edit intensity
- * is governed by the instruction and the references, which is exactly what an
- * instruction editor means.
+ * Notably absent from every edit endpoint in this family: a negative prompt, a
+ * guidance strength, and any numeric edit strength. None of the three exists on
+ * these schemas at all — edit intensity is governed by the instruction and the
+ * references, which is exactly what an instruction editor means.
  *
  * A function rather than a shared array so each adapter composes its own
  * feature objects. Handing both editors the same array would make a later
@@ -98,6 +99,7 @@ export function qwenEditFeatures(): ImageFeature[] {
     multiReferenceFeature(),
     aspectRatioFeature(),
     seedFeature(),
+    fastModeFeature(),
     outputFormatFeature(),
     outputQualityFeature(),
     safetyToggleFeature(),

@@ -321,19 +321,19 @@ Do not add another provider or an arbitrary Replicate slug text box as part of t
 
 These are starting behaviors for the Generator, not model-quality defaults:
 
-| Setting | Initial behavior |
-| --- | --- |
-| Model | Required explicit registered-model selection; no silent production/default choice |
-| Prompt | Whole admin-authored prompt; required when the selected model requires a prompt |
-| Primary references | None initially; add only when the model supports them |
-| Dedicated structural inputs | None initially; show only capability-declared inputs |
-| Seed | Unset; expose only when the active capability record binds a seed field |
-| Guidance / steps / edit strength | Unset; provider/model default unless explicitly changed |
-| Output shape | The model's own shape unless the owner picks one the version declares; nothing is cropped |
-| Dimensions / resolution | No Generator-specific hardcoded value; expose the normalized choice the model supports |
-| Provider-specific inputs | Omitted unless explicitly set; known/probed fields only in the first implementation |
-| Output count | One image even when the model can return several; multi-output is a later complex case |
-| Safety/provider switches | Existing registered/provider behavior; the Generator does not invent a bypass |
+| Setting                          | Initial behavior                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| Model                            | Required explicit registered-model selection; no silent production/default choice          |
+| Prompt                           | Whole admin-authored prompt; required when the selected model requires a prompt            |
+| Primary references               | None initially; add only when the model supports them                                      |
+| Dedicated structural inputs      | None initially; show only capability-declared inputs                                       |
+| Seed                             | Unset; expose only when the active capability record binds a seed field                    |
+| Guidance / steps / edit strength | Unset; provider/model default unless explicitly changed                                    |
+| Output shape                     | The model's own shape unless the owner picks one the version declares; nothing is cropped  |
+| Dimensions / resolution          | No Generator-specific hardcoded value; expose the normalized choice the model supports     |
+| Provider-specific inputs         | Omitted unless explicitly set; known/probed fields only in the first implementation        |
+| Image count                      | One by default, up to four; each extra image is another prediction and another budget unit |
+| Safety/provider switches         | Existing registered/provider behavior; the Generator does not invent a bypass              |
 
 The comparison rule is: **duplicate a settled run, preserve every resolved value, and change one meaningful variable at a time.** A model's provider default is not converted into a Vesper default merely because one test happened to work well.
 
@@ -411,7 +411,7 @@ The first implementation deliberately works within several limits rather than tu
 - **Registered models only.** The Generator is not an arbitrary provider endpoint console.
 - **Replicate only.** Provider-neutral contracts should remain honest, but a second provider is a separate integration.
 - **Exact-version provenance required.** If a selected row cannot be resolved reproducibly, refuse before spend rather than generating untraceable evidence.
-- **One output image per run initially.** Existing output capability may say a model supports more, but multi-output storage/comparison is a separate complex case.
+- **A run may ask for several images, but only as repeated single-image predictions.** No registered model returns more than one image per prediction, so the count is a bench-level loop over one compiled plan, capped low, and charged one budget unit per image. Native provider image sets — one prediction answering with a set — remain unsupported and refused, so a request for one is never quietly answered with the other.
 - **No automatic character/chat state compilation.** That remains production-lane behavior.
 - **No Image Lab verdict semantics.** A Generator result is inspected or compared; it is not automatically evidence for `honours_control`, identity fidelity, staged-scene success, or another Lab verdict.
 - **No undocumented provider-key free-for-all in the first implementation.** Advanced inputs come from probed/known schema fields. An explicit unsafe/unverified raw-key mode, if ever wanted, requires a later owner ruling.
@@ -655,9 +655,11 @@ Then validate:
 
 ### Later complex cases
 
+Several images per run is no longer one of these. A run asks for up to four and the runner renders them as that many sequential predictions from one compiled plan; the provider-side image-set controls stay refused, so the two remain visibly different requests.
+
 Keep separately gated until proven:
 
-- provider-supported multi-output/image sets;
+- provider-supported native image sets — one prediction answering with several images;
 - very large reference counts;
 - direct uploads and their retention/quota behavior;
 - replaying captured production renders;
@@ -988,7 +990,7 @@ If that proof requires a model-specific application branch or bypasses the share
 - Creating a new provider client when `@vesper/image-replicate` already owns the transport.
 - Promoting SDXL's `recipe` or another one-model field into shared `ImageRenderControls` without a cross-implementation semantic reason.
 - Allowing arbitrary undocumented provider JSON in the first implementation.
-- Solving every provider's multi-output/image-set behavior in the first implementation.
+- Solving every provider's native image-set behavior — one prediction returning several images — which stays refused rather than emulated.
 - Automatically compiling characters, wardrobe, chats, locations, visual state, or simulation state into freeform Generator prompts.
 - Making `baseline_scene` an exact replay engine.
 - Reconstructing old render requests from current state when exact request provenance was not captured originally.
@@ -1051,7 +1053,7 @@ During implementation:
 - update `docs/images/asset-registry.md` when Generator source/output asset kinds or retention rules are introduced;
 - update database/job documentation when the Generator run record/job type becomes current behavior;
 - record fixed validation evidence for SDXL, Qwen numbered references, dedicated pose/depth routing, advanced provider inputs, and duplicate/seed reproducibility;
-- document intentionally deferred multi-output, unsafe raw-key mode, upload retention, or exact production replay work rather than silently widening this plan during implementation;
+- document intentionally deferred native image sets, unsafe raw-key mode, upload retention, or exact production replay work rather than silently widening this plan during implementation;
 - remove resolved items from `docs/image-lab/limitations.md` only after the corresponding runtime/UI behavior is true.
 
 Record architectural rulings and reasons rather than a chronological implementation diary. In particular, preserve the reason for the main boundary: **the Image Generator exists so raw model exploration does not weaken the Advanced Image Lab's evidence contracts, while both continue sharing one registered-model/capability/provider stack.**

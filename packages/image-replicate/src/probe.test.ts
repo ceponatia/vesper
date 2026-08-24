@@ -435,26 +435,49 @@ describe("probeReplicateModel", () => {
       expect(result.probe.advancedCapabilities.controls.seed).toEqual({ field: "seed", type: "number" });
     });
 
-    it("resolves an alias pair to the FIRST declared field", async () => {
+    it("walks the guidance alias chain in order, and binds a model that publishes only the middle spelling", async () => {
+      // `guidance_scale` was missing from the chain, and its absence was silent:
+      // a model publishing that spelling probed to NO guidance binding, so the
+      // control simply was not offered on the bench — no refusal, no drop entry,
+      // nothing to read. The repo's own fixtures already model such a model
+      // (render-fingerprint.test.ts binds guidance to `guidance_scale`).
       stubFetch(() => ({
-        name: "both-guidance",
+        name: "every-guidance",
         latest_version: {
           id: "v1",
           openapi_schema: openapi({
             properties: {
               prompt: { type: "string" },
               guidance: { type: "number", minimum: 0, maximum: 10 },
+              guidance_scale: { type: "number", minimum: 0, maximum: 20 },
               cfg: { type: "number", minimum: 0, maximum: 30 },
             },
           }),
         },
       }));
-      const both = await probeReplicateModel("acme/both-guidance");
-      expect(both.ok && both.probe.advancedCapabilities.controls.guidance).toEqual({
+      const every = await probeReplicateModel("acme/every-guidance");
+      expect(every.ok && every.probe.advancedCapabilities.controls.guidance).toEqual({
         field: "guidance",
         type: "number",
         minimum: 0,
         maximum: 10,
+      });
+
+      stubFetch(() => ({
+        name: "guidance-scale-only",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: { prompt: { type: "string" }, guidance_scale: { type: "number", minimum: 0, maximum: 20 } },
+          }),
+        },
+      }));
+      const scaleOnly = await probeReplicateModel("acme/guidance-scale-only");
+      expect(scaleOnly.ok && scaleOnly.probe.advancedCapabilities.controls.guidance).toEqual({
+        field: "guidance_scale",
+        type: "number",
+        minimum: 0,
+        maximum: 20,
       });
 
       stubFetch(() => ({
@@ -473,6 +496,60 @@ describe("probeReplicateModel", () => {
         minimum: 0,
         maximum: 30,
       });
+
+      // `true_cfg_scale` is deliberately NOT a fourth alias, and this pins the
+      // ruling rather than the omission: on a CFG-distilled checkpoint it is a
+      // DIFFERENT quantity from the embedded guidance above, running an order of
+      // magnitude higher. Binding both to one normalized name would leave a run
+      // record unable to say which knob moved.
+      stubFetch(() => ({
+        name: "true-cfg-only",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: { prompt: { type: "string" }, true_cfg_scale: { type: "number", minimum: 1, maximum: 10 } },
+          }),
+        },
+      }));
+      const trueCfgOnly = await probeReplicateModel("acme/true-cfg-only");
+      expect(trueCfgOnly.ok && trueCfgOnly.probe.advancedCapabilities.controls.guidance).toBeUndefined();
+    });
+
+    it("binds the accelerated sampling path as a control while keeping it pinned in the raw bag", async () => {
+      // `qwen/qwen-image-edit-2511`'s real shape, and the pairing that makes this
+      // control safe to add. `go_fast` becomes a normalized `fastMode` binding
+      // AND stays a pinned `extraInput` constant with a reserved descriptor —
+      // not a contradiction, because a mapped control overlays `extraInput` on
+      // the way out. The typed control opens; the raw provider bag stays shut.
+      // Dropping the pin instead would change every production payload on the
+      // model whose reviewed policy exists to keep this path off.
+      stubFetch(() => ({
+        name: "qwen-image-edit-2511",
+        latest_version: {
+          id: "v1",
+          openapi_schema: openapi({
+            properties: {
+              prompt: { type: "string" },
+              image: uriArray(),
+              go_fast: {
+                type: "boolean",
+                default: true,
+                description: "Run faster predictions with additional optimizations.",
+              },
+            },
+            required: ["prompt", "image"],
+          }),
+        },
+      }));
+
+      const result = await probeReplicateModel("qwen/qwen-image-edit-2511");
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.probe.advancedCapabilities.controls.fastMode).toEqual({ field: "go_fast", type: "boolean" });
+      expect(result.probe.extraInput).toMatchObject({ go_fast: true });
+      expect(
+        result.probe.advancedCapabilities.providerInputs.find((input) => input.field === "go_fast"),
+      ).toMatchObject({ type: "boolean", reserved: true });
     });
 
     it("derives a resolution tier only from a tier-bearing size ENUM, never a free string", async () => {

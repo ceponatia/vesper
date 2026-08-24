@@ -199,6 +199,13 @@ export const imageRenderControlsSchema = z.object({
   outputCount: z.number().int().min(1).max(16).optional(),
   coherentSet: z.boolean().optional(),
   thinkingMode: z.boolean().optional(),
+  /**
+   * The endpoint's accelerated sampling path. Absent means "say nothing", which
+   * leaves the provider's own preference standing — and those preferences differ
+   * per wrapper, so both `true` and `false` are real requests here rather than
+   * one of them being a synonym for silence.
+   */
+  fastMode: z.boolean().optional(),
   resolution: imageResolutionTierSchema.optional(),
   width: z.number().int().min(64).max(8192).optional(),
   height: z.number().int().min(64).max(8192).optional(),

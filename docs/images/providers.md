@@ -78,16 +78,24 @@ further columns are **probe-owned** — the admin PATCH cannot set either:
 `probedVersionId` (the exact version the stored bindings were read from — for a
 pinned `owner/name:version` slug it must equal the pin) and
 `advancedCapabilities` (optional control bindings — seed, guidance, steps, edit
-strength, output count, thinking mode, LoRA … — plus extra image inputs, output
-arity, and the `knownInputFields` allowlist a profile's raw overrides are
-validated against). The probe derives the full known-alias binding set — seed,
-negative prompt, guidance (`guidance`/`cfg`), steps (`num_inference_steps`),
+strength, output count, thinking mode, fast mode, LoRA … — plus extra image
+inputs, output arity, and the `knownInputFields` allowlist a profile's raw
+overrides are validated against). The probe derives the full known-alias binding
+set — seed, negative prompt, guidance
+(`guidance`/`guidance_scale`/`cfg`), steps (`num_inference_steps`),
 edit strength (`strength`/`prompt_strength`), output count
-(`num_outputs`/`max_images`), thinking mode, sequential/set modes, a tier-like
+(`num_outputs`/`max_images`), thinking mode, fast mode (`go_fast`),
+sequential/set modes, a tier-like
 `size` enum as `resolutionTier`, integer `width`/`height` as custom dimensions,
 and the two LoRA fields — types, ranges and enum values included, plus
 `knownInputFields` as the sorted list of every input property, all written
-atomically beside `probedVersionId` at create and re-probe. The same pass
+atomically beside `probedVersionId` at create and re-probe. **An alias list is a
+claim that two spellings mean the same quantity**, which is why
+`true_cfg_scale` is deliberately not a fourth guidance alias: on a CFG-distilled
+checkpoint the embedded `guidance_scale` sits near 1 while real classifier-free
+guidance runs several times higher, so one normalized name over both would leave
+a run record unable to say which knob moved. A model that publishes it earns its
+own slot and its own reviewed decision. The same pass
 derives **`additionalImageInputs`** — dedicated structural image slots — from a
 conservative alias table (`depth_image`→depth, `pose_image`→pose,
 `mask`/`mask_image`→mask, `control_image`→control, `edge_image`/`canny_image`→edge):
@@ -176,8 +184,16 @@ before any provider work when the LoRA's own curation says no
 outside the curated range) or the configuration cannot reach the provider
 (`image_lora.unreachable_configuration` — row missing or disabled, the active
 version declaring no LoRA bindings, scale outside the provider's declared
-range). A scale is refused, never clamped. The resolved locator and scale land
-on the version's two declared fields; prompt additions and any trigger word not
+range). A scale is refused, never clamped, which makes a band a **curation
+claim** rather than a slider's convenience range — and the two gates are
+independent, so widening a row's band never widens what reaches the provider.
+The built-in intimate-scene row ships at **0–2 around a default of 1**, inside
+the 0–4 both Qwen wrappers declare: wide enough on purpose to reach the
+strengths the provider documents as the strong ones, so a scale sweep can find
+the too-strong edge and not only the too-weak one. Seeded rows are ordinary
+rows — an admin may retune any band, and the retuned value is the one every
+later render is judged against. The resolved locator and scale land on the
+version's two declared fields; prompt additions and any trigger word not
 already present are woven into the compiled prompt so the recorded final prompt
 is the sent prompt; the record keeps `{ id, scale }` while the locator goes to
 the provider payload and nowhere else, with URL query strings redacted from

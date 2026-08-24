@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import type { ImageGeneratorRun } from "@/contracts/images/image-generator";
+import {
+  imageGeneratorRunOutputImageIds,
+  imageGeneratorRunOutputsOf,
+} from "@/contracts/images/image-generator-outputs";
 import { imageGeneratorApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -31,6 +35,11 @@ import { imageGeneratorStatusChip } from "./image-generator-copy";
  *
  * Selection lives here rather than on the page: it is spent the moment the
  * delete resolves, and nothing above the list has a use for a half-made one.
+ *
+ * A run that rendered several images still shows ONE cover — the first output,
+ * which is what its row's column names — plus a "×N" beside the status chip.
+ * The row is a pointer to the detail; a strip of thumbnails here would compete
+ * with the grid that answers the same question properly one click away.
  */
 
 export interface ImageGeneratorRunListProps {
@@ -63,6 +72,36 @@ function deleteConfirmCopy({ ids, outputs }: PendingDelete): string {
   const rendered = outputs === 1 ? "the hidden image" : `the ${String(outputs)} hidden images`;
   const who = ids.length === 1 ? "it" : "they";
   return `${subject} and ${rendered} ${who} rendered are removed. Input images are not touched.`;
+}
+
+/**
+ * How many rendered images one row takes with it when deleted — the number the
+ * confirmation has to be right about.
+ *
+ * A fan-out run stored one image per prediction and the `resultImageId` column
+ * names only the first, so counting the column would promise to remove one
+ * image and remove four. A run written before the fan-out existed has no
+ * per-prediction record and the column is the whole answer.
+ */
+function renderedImageCount(run: ImageGeneratorRun): number {
+  const stored = imageGeneratorRunOutputImageIds(imageGeneratorRunOutputsOf(run));
+  if (stored.length > 0) return stored.length;
+  return run.resultImageId === null ? 0 : 1;
+}
+
+/**
+ * The "×N" a multi-image run wears beside its status, or null for the ordinary
+ * one-image run. It names what the row actually HOLDS, and says so against what
+ * was asked for when a prediction came back empty — a row that quietly showed
+ * "×4" for two stored images would misdescribe both the bench and the delete.
+ */
+function outputBadge(run: ImageGeneratorRun): string | null {
+  const outputs = imageGeneratorRunOutputsOf(run);
+  if (outputs.length <= 1) return null;
+  const stored = imageGeneratorRunOutputImageIds(outputs).length;
+  return stored === outputs.length
+    ? `×${String(stored)}`
+    : `×${String(stored)} of ${String(outputs.length)}`;
 }
 
 function RunThumb({ run }: { run: ImageGeneratorRun }) {
@@ -109,7 +148,10 @@ export function ImageGeneratorRunList({ runs, loading, error, onReload, onSelect
 
   const askDelete = (ids: string[]) => {
     const chosen = new Set(ids);
-    setPending({ ids, outputs: visible.filter((run) => chosen.has(run.id) && run.resultImageId !== null).length });
+    setPending({
+      ids,
+      outputs: visible.reduce((total, run) => (chosen.has(run.id) ? total + renderedImageCount(run) : total), 0),
+    });
   };
 
   const confirmDelete = async () => {
@@ -166,6 +208,7 @@ export function ImageGeneratorRunList({ runs, loading, error, onReload, onSelect
       {visible.map((run) => {
         const chip = imageGeneratorStatusChip(run.status);
         const picked = selected.has(run.id);
+        const badge = outputBadge(run);
         return (
           <div
             key={run.id}
@@ -199,6 +242,7 @@ export function ImageGeneratorRunList({ runs, loading, error, onReload, onSelect
                     <code>{run.modelSlug}</code>
                   </h3>
                   <Tag tone={chip.tone}>{chip.label}</Tag>
+                  {badge !== null ? <Tag>{badge}</Tag> : null}
                   {run.sourceRunId !== null ? <Tag>variant</Tag> : null}
                 </div>
                 <p className="mt-1 text-[11px] text-paper-500">

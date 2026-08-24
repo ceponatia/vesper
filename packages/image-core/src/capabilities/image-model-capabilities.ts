@@ -232,13 +232,13 @@ export const imagePromptBindingSchema = z.object({
 export type ImagePromptBinding = z.infer<typeof imagePromptBindingSchema>;
 
 /**
- * The fourteen normalized control slots, each either absent (this version does
+ * The fifteen normalized control slots, each either absent (this version does
  * not expose the control) or bound to a concrete provider field.
  *
  * Named slots rather than a free `Record<string, ImageInputBinding>` because the
  * point of the layer is that alias discovery happens ONCE, in the probe: a
  * render-time mapper that searched a bag for something guidance-shaped would
- * reintroduce exactly the guessing this contract removes. Adding a fifteenth
+ * reintroduce exactly the guessing this contract removes. Adding a sixteenth
  * control is a deliberate edit here plus a probe rule, which is the intended cost.
  */
 export const imageModelControlBindingsSchema = z.object({
@@ -251,6 +251,14 @@ export const imageModelControlBindingsSchema = z.object({
   coherentSet: imageInputBindingSchema.optional(),
   sequentialMode: imageInputBindingSchema.optional(),
   thinkingMode: imageInputBindingSchema.optional(),
+  /**
+   * The accelerated sampling path several wrappers default ON — a real quality
+   * trade, not a performance detail, which is why it earns a slot rather than
+   * staying a raw provider override. Vesper's reviewed policy turns it off for
+   * identity-critical production work; the bench needs to be able to turn it
+   * back on to see what the endpoint does at its own default.
+   */
+  fastMode: imageInputBindingSchema.optional(),
   customWidth: imageInputBindingSchema.optional(),
   customHeight: imageInputBindingSchema.optional(),
   resolutionTier: imageInputBindingSchema.optional(),
