@@ -22,6 +22,15 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 ## Active (building now)
 
+- **Image model adapters and the feature composer** —
+  [plan](image-model-adapters.plan.md) ·
+  [spec](image-model-adapters.spec.md) — model families become composable
+  adapters over shared semantic capabilities (`@vesper/image-models`, Qwen
+  first), LoRA curation splits mechanical compatibility from production task
+  policy so the Image Generator bench can finally run a LoRA at all, and the
+  Replicate lifecycle gains startup/render budgets so a cold-start queue stops
+  consuming the whole prediction budget.
+
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — affectionate player
