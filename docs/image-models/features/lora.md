@@ -29,9 +29,9 @@ This is the cheap model/request compatibility check. It does not replace `@vespe
 
 ## Current Qwen composition
 
-Only `qwen/qwen-image-edit-plus-lora` composes `lora`.
+Only `qwen/qwen-image-edit-plus-lora` composes `lora` in the current package.
 
-`qwen/qwen-image-edit-2511` deliberately does not. Its endpoint exposes no runtime LoRA weights/scale inputs; references to integrated LoRAs describe acceleration built into the published model rather than a caller-loadable LoRA.
+`qwen/qwen-image-edit-2511` deliberately does not compose it **for the active Vesper package/probe state**. The Vesper probe snapshot the adapter was built against has no normalized LoRA bindings. Replicate's latest 2511 wrapper checked on 2026-08-24 now advertises `lora_weights` and `lora_scale`, but that provider-side change is not an active Vesper capability until the candidate version is probed, smoke-tested, and activated. The [2511 model reference](../models/qwen-image-edit-2511.md) owns that version-drift history.
 
 `qwen/qwen-image-2512` also does not compose this feature.
 
