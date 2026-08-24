@@ -526,6 +526,13 @@ export async function storeLabRender(
     predictionId: rendered.predictionId ?? null,
     executedVersionId: rendered.executedVersionId ?? null,
   };
+  // The full attempt history when the bench budget created more than a lone
+  // prediction — a probe that succeeded on retry is two paid provider records,
+  // and provenance that names only the second hides both the first id and the
+  // evidence it never ran. Recorded on success AND failure, same as the
+  // Generator's `meta.providerAttempts`.
+  const attemptsMeta =
+    rendered.attempts && rendered.attempts.length > 0 ? { providerAttempts: rendered.attempts } : {};
 
   if (!rendered.ok || !rendered.image) {
     const message = rendered.error ?? `${row.modelSlug} returned no image`;
@@ -535,7 +542,7 @@ export async function storeLabRender(
     const renderFailure = classifyImageFailure(message);
     return await settleFailed(row, labFailure("render_failed"), message, sink, {
       columns: { ...input.columns, ...provenance },
-      meta: { renderFailure, ...(input.outcome ? { outcome: input.outcome } : {}) },
+      meta: { renderFailure, ...(input.outcome ? { outcome: input.outcome } : {}), ...attemptsMeta },
       providerOutcome: imageFailureHealthOutcome(renderFailure),
     });
   }
@@ -554,7 +561,7 @@ export async function storeLabRender(
     await deleteOwnedImage(asset.id, row.ownerId, { kind: "lab_output" });
     return await settleFailed(row, labFailure("render_failed"), "the lab output could not be written", sink, {
       columns: { ...input.columns, ...provenance },
-      ...(input.outcome ? { meta: { outcome: input.outcome } } : {}),
+      meta: { ...(input.outcome ? { outcome: input.outcome } : {}), ...attemptsMeta },
       // The provider rendered; OUR disk did not take it. Reporting that as a
       // lane failure would shed everyone's work over a local write.
       providerOutcome: true,
@@ -566,10 +573,13 @@ export async function storeLabRender(
     .set({
       ...input.columns,
       ...provenance,
-      // Written only when a plan produced one, so probe rows — whose meta this
-      // update never touched before — keep exactly the meta they had. Merged,
-      // never assigned, so a create-time key survives its own run.
-      ...(input.outcome ? { meta: labMeta(row, { outcome: input.outcome }) } : {}),
+      // Written only when there is something to record — a reference-plan
+      // outcome, an attempt history, or both — so probe rows that produced
+      // neither keep exactly the meta they had. Merged, never assigned, so a
+      // create-time key survives its own run.
+      ...(input.outcome || "providerAttempts" in attemptsMeta
+        ? { meta: labMeta(row, { ...(input.outcome ? { outcome: input.outcome } : {}), ...attemptsMeta }) }
+        : {}),
       resultImageId: saved.id,
       status: "succeeded",
       failureCode: null,

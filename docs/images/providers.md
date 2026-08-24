@@ -425,9 +425,18 @@ with no reference yields an empty chain and a visible refusal. The
 **Transport** (`@vesper/image-replicate`): the model prediction endpoint (`POST
 /models/{owner}/{name}/predictions`) with `Prefer: wait=60`, then poll — or
 `POST /predictions` carrying a version id when the slug is pinned
-`owner/name:version`. `REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default
-5m) drives both deadlines — Replicate's `Cancel-After` header and the client's own
-poll cutoff — so raising it can't leave the provider cancelling at a stale bound.
+`owner/name:version`. Production renders run under one budget:
+`REPLICATE_PREDICTION_TIMEOUT_MS` (clamped 30s–30m, default 5m) drives both
+deadlines — Replicate's `Cancel-After` header and the client's own poll cutoff —
+so raising it can't leave the provider cancelling at a stale bound. Bench lanes
+(Image Generator, Image Lab) instead pass a `ProviderExecutionPolicy` splitting
+that budget into a startup phase (creation → first execution) and a render phase
+(execution start → output); `Cancel-After` carries the sum, the phases are
+enforced client-side, and a prediction that dies in the queue without ever
+executing — confirmed by re-reading its record after the cancel — is recreated
+up to the policy's retry count, with every attempt reported to the caller. A
+started prediction is never recreated, and an unconfirmable cancellation refuses
+the retry rather than risk paying for two renders.
 Reference and control bytes cross a **preparation pass** at the
 `renderWithModel` choke point (`reference-preparation.ts`: EXIF orientation
 applied, metadata stripped, alpha flattened only for non-alpha targets, encoded

@@ -119,6 +119,14 @@ Rulings the build settled:
   carrying error text never retries (an input error would be re-billed).
 - Recreations have no backoff — acceptable at one retry; a ruling is needed
   before retries ever exceed one or reach production.
+- The startup cutoff CONFIRMS the cancellation before its caller may retry:
+  cancel, then re-read the record (up to three polls). Execution evidence
+  flips the attempt into the render phase and it is watched to its end; a
+  terminal record with no execution evidence is the one retryable answer; an
+  unconfirmable record refuses the retry outright — a second prediction beside
+  an unconfirmed first could pay for two renders. Render-timeout and
+  single-budget cutoffs never retry, so best-effort cancellation remains
+  sufficient there.
 - A policy with unusable numbers degrades to the legacy single budget rather
   than failing the render; the summed budget is not clamped here — the app
   owns the ceiling.
@@ -213,9 +221,9 @@ Rulings the build settled:
   orphan marking, and raising it would cost every player five extra minutes of
   a wedged chat when a real job dies. The only effect on a slow bench run is a
   cosmetic, self-correcting "orphaned" reading between minute 15 and settle.
-- Lab runs do not record attempts yet: their wire record lives in an
-  `image-core` contract, so the member lands with the next Lab contract change
-  (deferred follow-up).
+- Lab runs record attempts the same way: `meta.providerAttempts`, written on
+  success and failure by `storeLabRender`, surfaced through the experiment wire
+  record's own loose `providerAttempts` field.
 
 - Context at every `resolveImageLoraForRender` call site:
   `render-intent.ts` and `nsfw-lora.ts` → `production(task)`;

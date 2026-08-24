@@ -327,8 +327,42 @@ async function attemptPrediction(
 
   while (!isTerminal(prediction.status) && pickOutput(prediction.output) === null) {
     if (Date.now() >= deadlineMs()) {
-      await cancelPrediction(http, prediction.id);
-      return timedOutAttempt(prediction, budget, createdAtMs, observedStartMs);
+      // Render-timeout and single-budget cutoffs never retry, so a best-effort
+      // cancel is sufficient there — the worst a lost cancel costs is the
+      // provider's own Cancel-After backstop. The startup cutoff is different:
+      // its caller may CREATE A SECOND PREDICTION, so "it never started" must
+      // be a confirmed fact, not the last polled state. `cancelPrediction`
+      // suppresses errors, and execution can begin between the last poll and
+      // the cancel — either way an unconfirmed retry pays for two renders.
+      if (budget.kind !== "phased" || observedStartMs !== null) {
+        await cancelPrediction(http, prediction.id);
+        return timedOutAttempt(prediction, budget, createdAtMs, observedStartMs);
+      }
+      const confirmation = await confirmStartupCancellation(http, prediction.id);
+      if (confirmation.kind === "executing") {
+        // It started under the wire. The render is paid for either way, so the
+        // honest move is to switch to the render phase and keep watching — if
+        // the cancel also landed, the next iteration sees the terminal record
+        // and settles it as the non-retryable cancel it was.
+        prediction = confirmation.prediction;
+        observedStartMs = Date.now();
+        continue;
+      }
+      if (confirmation.kind === "dead_unstarted") {
+        return timedOutAttempt(confirmation.prediction, budget, createdAtMs, null);
+      }
+      // Unconfirmed: the record could not be re-read, or the prediction was
+      // still live after the confirmation window. Refusing the retry is the
+      // only answer that cannot double-bill; the message says why no second
+      // attempt follows.
+      return {
+        result: {
+          ok: false,
+          predictionId: prediction.id,
+          error: `replicate prediction ${prediction.id} timed out in the provider queue and its cancellation could not be confirmed (${confirmation.detail}); no retry was attempted, because a second prediction beside an unconfirmed first could pay for two renders`,
+        },
+        record: attemptRecord(prediction, "startup_timeout", createdAtMs, null),
+      };
     }
     await sleep(POLL_INTERVAL_MS);
     try {
@@ -615,6 +649,57 @@ function timestampMs(value: string | null | undefined): number | undefined {
 
 function seconds(ms: number): number {
   return Math.round(ms / 1_000);
+}
+
+/**
+ * How many post-cancel reads may confirm a startup death before the client
+ * stops guessing. Three polls is ~4.5s — enough for Replicate's cancel to
+ * settle the record in the observed cases, short enough that a wedged
+ * confirmation does not eat the retry's own startup budget.
+ */
+const CANCEL_CONFIRMATION_READS = 3;
+
+type StartupCancellationConfirmation =
+  | { kind: "dead_unstarted"; prediction: ReplicatePrediction }
+  | { kind: "executing"; prediction: ReplicatePrediction }
+  | { kind: "unconfirmed"; detail: string };
+
+/**
+ * Cancel a queued prediction and CONFIRM what became of it, because the caller
+ * is deciding whether to buy a replacement. Three honest answers:
+ *
+ * - `dead_unstarted`: the record is terminal with no execution evidence — the
+ *   only state a startup retry may follow.
+ * - `executing`: the record shows execution evidence — the render is being paid
+ *   for whatever the cancel did, so the caller must keep watching it, never
+ *   duplicate it.
+ * - `unconfirmed`: the record could not be re-read, or stayed non-terminal past
+ *   the confirmation window. The caller must NOT retry on this answer.
+ */
+async function confirmStartupCancellation(
+  http: ReplicateHttp,
+  predictionId: string,
+): Promise<StartupCancellationConfirmation> {
+  await cancelPrediction(http, predictionId);
+  for (let read = 1; read <= CANCEL_CONFIRMATION_READS; read += 1) {
+    try {
+      const response = await http.apiFetch(`/predictions/${encodeURIComponent(predictionId)}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) return { kind: "unconfirmed", detail: await responseError(response) };
+      const prediction = predictionSchema.parse(await response.json());
+      // Execution evidence outranks terminality: a canceled prediction that DID
+      // start is a paid render that died, not a queue death, and reporting it
+      // as retryable would re-bill the work.
+      if (hasStartedExecuting(prediction)) return { kind: "executing", prediction };
+      if (isTerminal(prediction.status)) return { kind: "dead_unstarted", prediction };
+    } catch (err) {
+      return { kind: "unconfirmed", detail: errorText(err) };
+    }
+    if (read < CANCEL_CONFIRMATION_READS) await sleep(POLL_INTERVAL_MS);
+  }
+  return { kind: "unconfirmed", detail: "the prediction was still live after the cancellation window" };
 }
 
 async function cancelPrediction(http: ReplicateHttp, predictionId: string): Promise<void> {

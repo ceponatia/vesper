@@ -1010,6 +1010,15 @@ export const imageLabExperimentSchema = z.object({
   verdictNote: z.string().max(2000).nullable().default(null),
 
   predictionId: z.string().min(1).nullable().default(null),
+  /**
+   * The provider attempt history, once per prediction the run created, oldest
+   * first — present only when the run executed under a two-phase budget that
+   * could retry a queue death. Deliberately loose records (the transport owns
+   * the attempt vocabulary), matching the Image Generator's field: a newer
+   * deploy's record reaches the inspector instead of being stripped by this
+   * explicit field list. `predictionId` keeps naming the FINAL attempt.
+   */
+  providerAttempts: z.array(z.record(z.string(), z.unknown())).nullable().catch(null).default(null),
   createdAt: z.string().min(1),
   startedAt: z.string().min(1).nullable().default(null),
   finishedAt: z.string().min(1).nullable().default(null),

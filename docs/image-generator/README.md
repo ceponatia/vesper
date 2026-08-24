@@ -33,9 +33,9 @@ through `renderImageIntent`, the curated LoRA library, the job and
 provider-health machinery, and the owner-scoped byte readers
 (`apps/web/src/server/images/owned-image-reads.ts`) — and nothing else.
 
-## Runs are immutable one-attempt records
+## Runs are immutable records
 
-One run is one row in `image_generator_runs` and one paid attempt:
+One run is one row in `image_generator_runs`:
 `pending → running → succeeded | failed`. The row snapshots the model slug at
 create; the runner re-resolves it against the registry at run time and writes
 the exact pinned provider version and the post-preparation `final_prompt`
@@ -46,6 +46,15 @@ guarded on `running`, so two deliveries of one job cannot both reach the
 provider and a settled row cannot be rewritten. Rows CASCADE
 with their owner; the result and lineage pointers are SET NULL, so deleting
 an output or a source run never erases the record of what happened.
+
+A run executes under the bench's two-phase prediction budget (8 minutes to
+start, 3 to render), and a prediction the provider abandons in the queue —
+confirmed cancelled without ever executing — is recreated once. One run can
+therefore create up to two provider predictions; each is billed only if it
+actually executes, and every prediction the run created appears in the row's
+`providerAttempts` record (outcome, queue and render durations, prediction id),
+oldest first, with the `prediction_id` column naming the final one. The run
+detail panel renders this history.
 
 The admin's prompt is the whole positive prompt. The only transformations
 between the text box and the wire are the shared model-boundary preparation

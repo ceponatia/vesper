@@ -185,6 +185,7 @@ export function toWireExperiment(row: ImageLabExperimentRow, sink?: DiagnosticSi
     verdict: row.verdict,
     verdictNote: row.verdictNote,
     predictionId: row.predictionId,
+    providerAttempts: storedProviderAttempts(row, sink),
     createdAt: row.createdAt.toISOString(),
     startedAt: row.startedAt?.toISOString() ?? null,
     finishedAt: row.finishedAt?.toISOString() ?? null,
@@ -219,6 +220,21 @@ function storedOutcome(row: ImageLabExperimentRow, sink?: DiagnosticSink): Image
   const raw = imageMeta(row.meta)["outcome"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(imageLabOutcomeSchema, raw, sink, "image_lab_experiments.meta.outcome");
+}
+
+/**
+ * The provider attempt history, read out of the meta bag on the same terms as
+ * `outcome` and as the Generator's own copy of this field: absent (every run
+ * that created one prediction) is a quiet null, loose records because the
+ * transport owns the attempt vocabulary, and a bag that no longer parses costs
+ * the field rather than the row.
+ */
+const storedAttemptListSchema = z.array(z.record(z.string(), z.unknown()));
+
+function storedProviderAttempts(row: ImageLabExperimentRow, sink?: DiagnosticSink): Record<string, unknown>[] | null {
+  const raw = imageMeta(row.meta)["providerAttempts"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(storedAttemptListSchema, raw, sink, "image_lab_experiments.meta.providerAttempts");
 }
 
 const sourceExperimentIdSchema = z.string().min(1);

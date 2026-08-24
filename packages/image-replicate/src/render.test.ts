@@ -1026,6 +1026,16 @@ describe("two-phase prediction budgets", () => {
     created_at: "2026-08-24T10:00:00.000Z",
   });
 
+  /** What a successful cancel of a queued prediction settles into: terminal, never executed. */
+  const canceledUnstarted = (id: string): Record<string, unknown> => ({
+    id,
+    status: "canceled",
+    error: null,
+    logs: "",
+    metrics: null,
+    created_at: "2026-08-24T10:00:00.000Z",
+  });
+
   /**
    * Script one CREATE body per attempt (the last repeats), plus the body every
    * poll answers with. Returns the calls a case needs to reason about: a retry
@@ -1035,16 +1045,19 @@ describe("two-phase prediction budgets", () => {
   function scriptPredictions(
     creates: Array<Record<string, unknown>>,
     poll?: Record<string, unknown>,
+    postCancelPoll?: Record<string, unknown>,
   ): { posts: RequestInit[]; cancels: string[] } {
     const posts: RequestInit[] = [];
     const cancels: string[] = [];
     let created = 0;
+    let cancelled = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input);
         if (init?.method === "POST" && url.endsWith("/cancel")) {
           cancels.push(url);
+          cancelled = true;
           return Response.json({});
         }
         if (init?.method === "POST") {
@@ -1053,7 +1066,11 @@ describe("two-phase prediction budgets", () => {
           created += 1;
           return Response.json(body);
         }
-        if (url.includes("/v1/predictions/")) return Response.json(poll ?? creates[creates.length - 1]);
+        if (url.includes("/v1/predictions/")) {
+          // After a cancel, reads answer with `postCancelPoll` when a case
+          // scripts one — that is how a case says what the cancel settled into.
+          return Response.json((cancelled ? postCancelPoll : undefined) ?? poll ?? creates[creates.length - 1]);
+        }
         return new Response(Buffer.from("image-bytes"), { status: 200 });
       }),
     );
@@ -1139,7 +1156,9 @@ describe("two-phase prediction budgets", () => {
   });
 
   it("cancels a prediction that is still queued when the startup budget runs out", async () => {
-    const script = scriptPredictions([stillQueued("pred-q")], stillQueued("pred-q"));
+    // The cancel lands and the record settles terminal-unstarted — the one
+    // confirmed state a startup cutoff may treat as a queue death.
+    const script = scriptPredictions([stillQueued("pred-q")], stillQueued("pred-q"), canceledUnstarted("pred-q"));
     const result = await onFakeClock(
       () =>
         client().runRegistryImageModel(model(), {
@@ -1162,5 +1181,48 @@ describe("two-phase prediction budgets", () => {
     // The render never began, so there is no render duration to report.
     expect(result.attempts?.[0]?.renderMs).toBeUndefined();
     expect(result.attempts?.[0]?.queuedMs ?? 0).toBeGreaterThanOrEqual(6_000);
+  });
+
+  it("keeps watching a prediction that started under the wire instead of retrying it", async () => {
+    // Execution began between the last poll and the cancel. The render is being
+    // paid for whatever the cancel did, so the client must follow it to its end
+    // — a second create here would buy the same image twice.
+    const script = scriptPredictions([stillQueued("pred-q")], stillQueued("pred-q"), succeeded("pred-q"));
+    const result = await onFakeClock(
+      () =>
+        client().runRegistryImageModel(model(), {
+          prompt: "portrait",
+          executionPolicy: { startupBudgetMs: 6_000, renderBudgetMs: 60_000, maxStartupRetries: 1 },
+        }),
+      15_000,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(script.posts).toHaveLength(1);
+    expect(script.cancels).toHaveLength(1);
+    expect(result.attempts?.map((attempt) => attempt.outcome)).toEqual(["succeeded"]);
+  });
+
+  it("refuses to retry when the cancelled prediction cannot be confirmed dead", async () => {
+    // The record never goes terminal after the cancel — maybe the cancel was
+    // lost. Retries are allowed by the policy and still must not happen: a
+    // second prediction beside an unconfirmed first can pay for two renders.
+    const script = scriptPredictions([stillQueued("pred-q")], stillQueued("pred-q"));
+    const result = await onFakeClock(
+      () =>
+        client().runRegistryImageModel(model(), {
+          prompt: "portrait",
+          executionPolicy: { startupBudgetMs: 6_000, renderBudgetMs: 60_000, maxStartupRetries: 1 },
+        }),
+      18_000,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(script.posts).toHaveLength(1);
+    expect(result.error).toContain("could not be confirmed");
+    // Still a queue-shaped failure: the model never ran, so the shared
+    // classifier keeps reading it as transient.
+    expect(classifyImageFailureMessage(result.error ?? "")).toBe("transient");
+    expect(result.attempts?.map((attempt) => attempt.outcome)).toEqual(["startup_timeout"]);
   });
 });
