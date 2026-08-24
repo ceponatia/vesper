@@ -133,18 +133,31 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const stale = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
     await db().update(images).set({ createdAt: old }).where(eq(images.id, stale.id));
 
+    // a row that failed over a day ago — retention's target, and the proof the
+    // third pass is actually wired into the sweep rather than merely written
+    const longFailed = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
+    await db()
+      .update(images)
+      .set({ status: "failed", meta: { failedAt: new Date(Date.now() - 25 * 60 * 60_000).toISOString() } })
+      .where(eq(images.id, longFailed.id));
+
     const result = await sweepOrphans({ ownerId: userId });
     expect(result.errors).toEqual([]);
     expect(result.orphanFilesRemoved).toBeGreaterThanOrEqual(1);
     expect(result.stalePendingFilesRemoved).toBeGreaterThanOrEqual(1);
     expect(result.rowsMarkedFailed).toBeGreaterThanOrEqual(2);
+    expect(result.failedRowsRetired).toBe(1);
     await expect(fs.access(orphan)).rejects.toThrow();
     await expect(fs.access(stalePending)).rejects.toThrow();
 
     const [lostRow] = await db().select().from(images).where(eq(images.id, lost.id)).limit(1);
     const [staleRow] = await db().select().from(images).where(eq(images.id, stale.id)).limit(1);
+    const [retired] = await db().select().from(images).where(eq(images.id, longFailed.id)).limit(1);
+    // Load-bearing: both rows were marked failed by THIS pass, so retention
+    // running last must leave them — a failure is feedback for a day first.
     expect(lostRow?.status).toBe("failed");
     expect(staleRow?.status).toBe("failed");
+    expect(retired).toBeUndefined();
 
     // idempotent: a second run finds nothing new
     const again = await sweepOrphans({ ownerId: userId });
