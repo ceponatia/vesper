@@ -9,6 +9,7 @@ import {
   type ImageRenderControls,
 } from "../models/image-model-profiles";
 import { baseImageModelSlug } from "../models/quality-presets";
+import { imageExecutionContextTask, type ImageExecutionContext } from "./execution-context";
 
 /**
  * The curated LoRA library (image-model-capabilities.spec.md §`image_loras`).
@@ -24,11 +25,12 @@ import { baseImageModelSlug } from "../models/quality-presets";
  * Three properties are load-bearing:
  *
  * 1. **A locator is never guessed and never widened.** `https_url` must parse as
- *    an HTTPS URL and `huggingface_repo` must look like `owner/repo`. Nothing
- *    here accepts a scheme-bearing slug, a three-segment path, or credentials
- *    embedded in a URL — a locator is a public retrieval address, and a private
- *    one is out of scope until there is somewhere outside the database to keep
- *    the secret.
+ *    an HTTPS URL, `huggingface_repo` must look like `owner/repo`, and
+ *    `civitai_model_version` must be digits and nothing else. Nothing here
+ *    accepts a scheme-bearing slug, a three-segment path, a pasted catalogue URL
+ *    where an id belongs, or credentials embedded in a URL — a locator is a
+ *    public retrieval address, and a private one is out of scope until there is
+ *    somewhere outside the database to keep the secret.
  * 2. **A locator is redacted everywhere it is reported.** Direct URLs may carry
  *    signed query parameters, so {@link redactImageLoraLocator} is what reaches
  *    a diagnostic, never the raw string.
@@ -52,10 +54,27 @@ import { baseImageModelSlug } from "../models/quality-presets";
  * and a single "locator" that is checked one way would let a typo'd slug travel
  * as if it were a URL.
  *
+ * `civitai_model_version` stores the numeric MODEL-VERSION id rather than the
+ * download URL that id builds. Civitai's download address is a derived fact —
+ * the same version is reachable through several pasted URLs, some carrying a
+ * one-operator API token in the query string — so storing the id keeps the
+ * secret out of the library, keeps two rows for one version from looking
+ * different, and leaves {@link resolveImageLoraArtifactLocator} as the single
+ * place the address is spelled. Its download needs the deployment's Civitai
+ * token; completing that stays in the application, which is the only layer
+ * allowed to hold a credential.
+ *
+ * A fourth source is deliberately NOT here: `managed_asset`, weights Vesper
+ * hosts itself, is documented headroom (plan §11/§22). It stays unbuilt until
+ * there is somewhere to put the file, because a member nothing can resolve is a
+ * locator type that saves and never renders.
+ *
  * `schema.ts` imports this tuple for its `text(..., { enum })` column, so the
- * column and the parser cannot drift.
+ * column and the parser cannot drift. Widening it needs no migration — the
+ * column is plain text and the enum is TypeScript-level — and existing rows keep
+ * the type they were saved with.
  */
-export const imageLoraLocatorTypes = ["https_url", "huggingface_repo"] as const;
+export const imageLoraLocatorTypes = ["https_url", "huggingface_repo", "civitai_model_version"] as const;
 export const imageLoraLocatorTypeSchema = z.enum(imageLoraLocatorTypes);
 export type ImageLoraLocatorType = (typeof imageLoraLocatorTypes)[number];
 
@@ -86,6 +105,24 @@ export const IMAGE_LORA_MAX_TRIGGER_WORDS = 8;
 const HUGGINGFACE_REPO_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 /**
+ * A Civitai model-version id: digits, and nothing else.
+ *
+ * Nothing else is the point. An operator copying from Civitai has a full URL on
+ * the clipboard, and half of those URLs carry `?token=…`; accepting one would
+ * put an API token in the database and on the admin screen, and accepting a
+ * MODEL id where a model-VERSION id belongs would download a different set of
+ * weights than the row was reviewed for. Refusing everything but the bare id
+ * makes both mistakes visible at the moment of saving.
+ */
+const CIVITAI_MODEL_VERSION_PATTERN = /^[0-9]+$/;
+
+/**
+ * Where a Civitai model version is downloaded from — the one place this address
+ * is spelled, so a stored id and a sent URL cannot drift.
+ */
+const CIVITAI_DOWNLOAD_BASE = "https://civitai.com/api/download/models/";
+
+/**
  * Whether this locator is usable for its declared type.
  *
  * Exported because three callers must agree on the answer: the admin route that
@@ -99,6 +136,48 @@ export function isValidImageLoraLocator(locatorType: ImageLoraLocatorType, locat
       return isPublicHttpsUrl(locator);
     case "huggingface_repo":
       return HUGGINGFACE_REPO_PATTERN.test(locator);
+    case "civitai_model_version":
+      return CIVITAI_MODEL_VERSION_PATTERN.test(locator);
+  }
+}
+
+/**
+ * The two stored fields that say where a LoRA's weights live.
+ *
+ * A structural pair rather than the whole row, so both callers can pass what
+ * they actually hold: {@link resolveImageLoraArtifactLocator} takes a parsed
+ * {@link ImageLora} unchanged, and an admin form validating a not-yet-saved
+ * entry passes the two fields it has.
+ */
+export interface ImageLoraArtifactSource {
+  locatorType: ImageLoraLocatorType;
+  locator: string;
+}
+
+/**
+ * The stored source turned into the address the PROVIDER can consume.
+ *
+ * Two of the three sources already are that address — a direct HTTPS URL and a
+ * Hugging Face slug are both written into the version's `loraWeights` field
+ * verbatim, which is exactly what every render has always sent — and the third
+ * is an id that only means something once this function builds its download URL.
+ * That is the whole reason the step exists as one pure function: the alternative
+ * is each caller assembling a Civitai URL of its own, and the day one of them
+ * spells it differently is the day a run records weights it did not fetch.
+ *
+ * Deliberately credential-free. The Civitai download needs the deployment's API
+ * token, and this package may not hold one; the application completes the
+ * address it gets back (`lora-credentials.ts`), which it already does for the
+ * legacy rows that stored a `civitai.com` URL directly — and because the URL
+ * built here is on that same host, those rows and these resolve to one code path.
+ */
+export function resolveImageLoraArtifactLocator(source: ImageLoraArtifactSource): string {
+  switch (source.locatorType) {
+    case "https_url":
+    case "huggingface_repo":
+      return source.locator;
+    case "civitai_model_version":
+      return `${CIVITAI_DOWNLOAD_BASE}${source.locator}`;
   }
 }
 
@@ -128,7 +207,10 @@ function isPublicHttpsUrl(locator: string): boolean {
  *
  * A Hugging Face slug has none of those parts and passes through unchanged, as
  * does anything that does not parse as a URL at all — redaction must never be the
- * step that throws.
+ * step that throws. A Civitai model-version id is in that second group and needs
+ * no redaction on its own account: a bare number is a public catalogue
+ * identifier, and the token that completes its download is added by the
+ * application at send time and never stored beside it.
  */
 export function redactImageLoraLocator(locator: string): string {
   let url: URL;
@@ -327,9 +409,11 @@ export type ImageLoraUpdateRequest = z.infer<typeof imageLoraUpdateRequestSchema
  * that come with it.
  *
  * A separate type from {@link ImageLora} because it is a DECISION rather than a
- * row — it exists only after a specific model, version and task agreed to it, so
- * carrying the whole row down the render path would invite a second, weaker
- * check somewhere further in.
+ * row — it exists only after a specific model, version and execution context
+ * agreed to it, so carrying the whole row down the render path would invite a
+ * second, weaker check somewhere further in. `locator` is the RESOLVED artifact
+ * address ({@link resolveImageLoraArtifactLocator}), not the stored one, because
+ * what a render needs is where the weights are fetched from.
  */
 export const imageLoraRenderBindingSchema = z.object({
   id: z.string().min(1),
@@ -365,13 +449,24 @@ export type ImageLoraEvaluation =
   | { ok: true; binding: ImageLoraRenderBinding }
   | { ok: false; code: ImageLoraRefusalCode; message: string };
 
+/** The refusal half of {@link ImageLoraEvaluation}, named so a check can return it or null. */
+type ImageLoraRefusal = Extract<ImageLoraEvaluation, { ok: false }>;
+
 export interface EvaluateImageLoraForRenderInput {
   lora: ImageLora;
   /** The model row's slug, pinned or bare — compared base-slug to base-slug. */
   modelSlug: string;
   /** The version this render will execute, or null when nothing can say. */
   versionId: string | null;
-  task: ImageProfileTask;
+  /**
+   * WHERE this render is being run from ({@link ImageExecutionContext}), which
+   * decides whether the row's production task curation applies at all.
+   *
+   * A context rather than a bare task because the Image Generator has no task
+   * and used to borrow one, which refused mechanically perfect weights for
+   * breaking a curation rule about a lane the bench is not in.
+   */
+  context: ImageExecutionContext;
   /** The per-render scale; absent takes the row's `defaultScale`. */
   requestedScale?: number;
   /** The ACTIVE version's probed bindings — the only source of field names. */
@@ -381,18 +476,74 @@ export interface EvaluateImageLoraForRenderInput {
 /**
  * Whether this LoRA may be sent on this render, and with what.
  *
- * The order of the gates is the order an operator wants the answer in, cheapest
- * and most specific first: the row's own switch, then what it was trained for,
- * then what the version can express. Splitting the answer across two codes is the
- * point — "this LoRA is not for this job" and "this model has no LoRA input" send
- * an operator to two different screens, and one merged `lora_refused` would send
- * them to neither.
+ * The decision is TWO questions, asked in this order and kept apart on purpose
+ * (image-model-adapters.spec.md §"Execution context"):
+ *
+ * 1. {@link mechanicalLoraRefusal} — can these weights physically run here? The
+ *    row's own switch, the model, the version, the scale against both the
+ *    curated band and the version's binding, the two provider fields, the
+ *    locator. True or false regardless of who is asking, so it runs in EVERY
+ *    context.
+ * 2. {@link productionTaskPolicyRefusal} — may Vesper use them for this job? The
+ *    reviewer's `allowedTasks` curation, which is a product policy about
+ *    player-facing lanes. It runs for `production` and `image_lab`, and is
+ *    skipped for `generator_bench`, which serves no lane.
+ *
+ * Splitting the ANSWER across two codes is a third, older property and stays as
+ * it was: "this LoRA is not for this job" and "this model has no LoRA input"
+ * send an operator to two different screens, and one merged `lora_refused` would
+ * send them to neither. A task-policy refusal keeps `incompatible`, because from
+ * the operator's side it is still the row's own rules refusing the render.
+ *
+ * Mechanical runs first, so a row that fails both reports the physical reason —
+ * the one that would still refuse after the curation was edited.
  *
  * Pure: it decides, it does not read a row or push a diagnostic. The server seam
  * (`resolveImageLoraForRender`) loads the row and reports the refusal.
  */
 export function evaluateImageLoraForRender(input: EvaluateImageLoraForRenderInput): ImageLoraEvaluation {
-  const { lora, task, bindings } = input;
+  const { lora } = input;
+  // Refused, never clamped: sending 1.0 where 2.5 was asked for renders something
+  // nobody configured under a record that claims 2.5 was requested. Resolved
+  // before either check because both the curated band and the version's binding
+  // judge this one number, and the binding below sends it.
+  const scale = input.requestedScale ?? lora.defaultScale;
+
+  const mechanical = mechanicalLoraRefusal(input, scale);
+  if (mechanical) return mechanical;
+
+  const policy = productionTaskPolicyRefusal(lora, imageExecutionContextTask(input.context));
+  if (policy) return policy;
+
+  return {
+    ok: true,
+    binding: {
+      id: lora.id,
+      label: lora.label,
+      // The stored source resolved to the address the provider consumes. Verbatim
+      // for a URL or a repo slug — every render that already works sends exactly
+      // what it sent before — and the built download URL for a Civitai id, which
+      // is the only form the provider could act on.
+      locator: resolveImageLoraArtifactLocator(lora),
+      scale,
+      promptPrefix: lora.promptPrefix,
+      promptSuffix: lora.promptSuffix,
+      triggerWords: [...lora.triggerWords],
+    },
+  };
+}
+
+/**
+ * Can these weights run on this model at this scale — the half that is true or
+ * false no matter which surface asked.
+ *
+ * The gate ORDER is the order an operator wants the answer in, cheapest and most
+ * specific first: the row's own switch, then what it was trained against, then
+ * what the version can express. Returns the refusal, or null when nothing
+ * mechanical stands in the way.
+ */
+function mechanicalLoraRefusal(input: EvaluateImageLoraForRenderInput, scale: number): ImageLoraRefusal | null {
+  const { lora, bindings } = input;
   if (!lora.enabled) {
     return unreachable(`LoRA ${lora.label} is switched off in the library`);
   }
@@ -414,13 +565,6 @@ export function evaluateImageLoraForRender(input: EvaluateImageLoraForRenderInpu
     }
   }
 
-  if (!lora.allowedTasks.includes(task)) {
-    return incompatible(`LoRA ${lora.label} is not allowed for ${task} renders`);
-  }
-
-  // Refused, never clamped: sending 1.0 where 2.5 was asked for renders something
-  // nobody configured under a record that claims 2.5 was requested.
-  const scale = input.requestedScale ?? lora.defaultScale;
   if (!Number.isFinite(scale) || scale < lora.minimumScale || scale > lora.maximumScale) {
     return incompatible(
       `scale ${String(scale)} is outside LoRA ${lora.label}'s curated range ${String(lora.minimumScale)}–${String(lora.maximumScale)}`,
@@ -448,25 +592,33 @@ export function evaluateImageLoraForRender(input: EvaluateImageLoraForRenderInpu
     );
   }
 
-  return {
-    ok: true,
-    binding: {
-      id: lora.id,
-      label: lora.label,
-      locator: lora.locator,
-      scale,
-      promptPrefix: lora.promptPrefix,
-      promptSuffix: lora.promptSuffix,
-      triggerWords: [...lora.triggerWords],
-    },
-  };
+  return null;
 }
 
-function incompatible(message: string): ImageLoraEvaluation {
+/**
+ * May Vesper use these weights for THIS job — the reviewer's curation, which
+ * only some surfaces are subject to.
+ *
+ * `task` is null exactly when the context serves no player-facing lane
+ * (`generator_bench`), and then there is no curation to apply: the list names
+ * production tasks, so judging a bench render against it would refuse a LoRA for
+ * a lane the bench is not rendering into.
+ *
+ * Empty `allowedTasks` still means NONE rather than "anything" — same fail-closed
+ * reading as `compatibleModelSlugs`, and the reason the bench needed its own
+ * context instead of a permissive task.
+ */
+function productionTaskPolicyRefusal(lora: ImageLora, task: ImageProfileTask | null): ImageLoraRefusal | null {
+  if (task === null) return null;
+  if (lora.allowedTasks.includes(task)) return null;
+  return incompatible(`LoRA ${lora.label} is not allowed for ${task} renders`);
+}
+
+function incompatible(message: string): ImageLoraRefusal {
   return { ok: false, code: IMAGE_LORA_INCOMPATIBLE, message };
 }
 
-function unreachable(message: string): ImageLoraEvaluation {
+function unreachable(message: string): ImageLoraRefusal {
   return { ok: false, code: IMAGE_LORA_UNREACHABLE, message };
 }
 

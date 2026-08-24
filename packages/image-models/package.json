@@ -1,0 +1,24 @@
+{
+  "name": "@vesper/image-models",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Model-family adapters: the semantic feature vocabulary, the adapter composer, per-family prompt dialects and execution hints, and the adapter registry.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vesper/contracts": "workspace:*",
+    "@vesper/image-core": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.8"
+  }
+}

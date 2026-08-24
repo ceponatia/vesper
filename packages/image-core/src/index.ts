@@ -157,6 +157,7 @@ export {
   identityLoraBindingSchema,
   identityLoraBindingStates,
   identityLoraUnusableReasons,
+  imageExecutionContextTask,
   imageLoraCreateRequestSchema,
   imageLoraLocatorTypes,
   imageLoraScalesOrdered,
@@ -164,6 +165,7 @@ export {
   imageLoraUpdateRequestSchema,
   isValidImageLoraLocator,
   redactImageLoraLocator,
+  resolveImageLoraArtifactLocator,
 } from "./loras";
 export type {
   IdentityLoraBinding,
@@ -171,7 +173,9 @@ export type {
   IdentityLoraBindingState,
   IdentityLoraBindingUsability,
   IdentityLoraUnusableReason,
+  ImageExecutionContext,
   ImageLora,
+  ImageLoraArtifactSource,
   ImageLoraCreateRequest,
   ImageLoraLocatorType,
   ImageLoraRefusalCode,
@@ -391,6 +395,7 @@ export {
 export type {
   CompileProfileRenderPlanInput,
   CompileProfileRenderPlanResult,
+  ImagePromptPreparer,
   ImageRenderDimensionFacts,
   ProfileRenderControlsFingerprintInput,
   ProfileRenderPlan,
@@ -651,6 +656,7 @@ export {
 export type {
   ImageFailureReason,
   ImageProviderFailure,
+  ProviderExecutionPolicy,
   ProviderRenderResult,
   SceneAttemptId,
   SceneRenderRequest,
