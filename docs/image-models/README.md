@@ -12,6 +12,14 @@ table and is managed from the admin page at `/settings/image-models` — see
 Adding a model to the app does not require adding a file here, but doing so is
 the difference between a model we understand and one we merely call.
 
+> **Provider latest is not production truth.** Replicate can move an official
+> model's `latest_version` underneath its bare slug. Vesper records/probes an exact
+> version and promotes a new one through probe-latest → smoke-test →
+> activate-version. A capability described as newly present on Replicate's latest
+> wrapper is not available to production until the active Vesper row has been
+> re-probed/activated and its stored bindings show that capability. Per-model
+> pages call out known provider drift explicitly.
+
 ## Why these files exist
 
 Replicate's schemas disagree with each other in ways that cannot be papered
@@ -65,7 +73,10 @@ looked at their output.
   edit yes, 1 reference. `img2img` · `weak`. Vesper's new-portrait default.
 - [Qwen Image Edit 2511](qwen-image-edit-2511.md) — `qwen/qwen-image-edit-2511`.
   Generate **no**, edit yes, 3 references. `instruction_edit` · `strong`. Vesper's
-  variant and scene default.
+  variant and scene default. **Replicate's latest wrapper checked 2026-08-24 also
+  exposes runtime `lora_weights`/`lora_scale`; Vesper's older 2026-08-05 probe did
+  not. Treat LoRA support as version-dependent until a newer candidate is
+  activated.**
 - [Seedream 4.5](seedream-4-5.md) — `bytedance/seedream-4.5`. Generate yes, edit
   yes, 14 references. `multi_reference_compose` · `moderate`.
 - [Seedream 5 Lite](seedream-5-lite.md) — `bytedance/seedream-5-lite`. Generate
@@ -91,13 +102,17 @@ Of those last four, only SDXL PuLID takes a reference image, which is why it is
 the only one on the variant and scene surfaces — the other three cannot hold a
 character's face across a render at all.
 
-Registered by admin, rated, and deliberately on **no** player surface:
+Registered by admin, rated, and deliberately on **no ordinary player picker**:
 
 - [Qwen Image Edit Plus LoRA](qwen-image-edit-plus-lora.md) —
   `qwen/qwen-image-edit-plus-lora`. Generate **no**, edit yes, 3 references,
-  plus the `lora_weights`/`lora_scale` pair no other Qwen edit endpoint has.
-  `instruction_edit` · `moderate`. The Advanced Image Lab's LoRA finishing
-  connector; unreachable from every picker.
+  plus runtime `lora_weights`/`lora_scale`. `instruction_edit` · `moderate`.
+  This older 2509-generation wrapper is still used by the intimate-scene LoRA
+  model-swap route and by LoRA-focused lab work. A registered row is also
+  reachable from the admin Image Generator when its active version exposes the
+  bindings. It is **not** offered by an ordinary portrait/variant/scene picker.
+  Replicate's latest 2511 wrapper now exposes the same class of runtime LoRA
+  inputs, so this wrapper is no longer uniquely LoRA-capable.
 
 Documented but not seeded — no row, and therefore no reviewed rating:
 
@@ -156,48 +171,58 @@ Two facts on each row are **not** probed, because no schema states them:
 `unknown`) and
 `identity_preservation` (`strong` / `moderate` / `weak` / `unknown`, how well a
 face survives). A third, `operator_warning`, is free text bound for the admin card
-and the pickers — no surface renders it yet. These are human ratings from looking at
-output; **a re-probe must
+and the pickers. These are human ratings from looking at output; **a re-probe must
 never overwrite them**, and `unknown` is permissive so an unreviewed row keeps
 working as it does today. Each file records its model's ratings and the reasoning.
 
-The rule they feed is already written, though nothing runs it yet (§Seeded
-profiles): the identity-critical tasks (`variant`, `scene`, `chat_look`) refuse a
-`weak` rating or an `img2img` edit kind outright, because `canEdit` alone was never
-evidence that a face survives ([../images/providers.md](../images/providers.md)). The legacy
-`for_portrait`/`for_variant`/`for_scene` toggles are what actually gate today's
-pickers.
+The identity-critical tasks (`variant`, `scene`, `chat_look`) **actively enforce
+these ratings during profile offering/resolution**. A model rated `weak` or with
+`edit_kind: img2img` is ineligible for those tasks, so a stale stored selection
+falls through the profile-resolution chain instead of rendering a stranger.
+`imageProfileOffered` composes this structural eligibility with the profile's
+enabled flag and the remaining legacy surface toggle. The database profile rows,
+not the prose here, are the runtime source of truth
+([../images/providers.md](../images/providers.md)).
 
 `probed_version_id` — the version the stored bindings came from, and the
 `Probed:` header in each file — is written on rows added through the admin page
 and on the four seeded rows whose slugs name it. The six original seeded rows
-carry none: they predate the column. `advanced_capabilities` (the optional
-control bindings each file's Inputs section lists in prose) is `{}` on every row;
-the column was introduced by
-`image-model-capabilities.plan.md`.
+carry none: they predate the column. `advanced_capabilities` is probe-owned and
+holds optional control bindings plus provider-input descriptors; a row created
+before a capability derivation existed gains those fields on re-probe or version
+activation. Do not infer the active row's capability from the current Replicate
+playground alone.
 
 ## Seeded profiles
 
 Beneath each model sit `image_model_profiles` rows — "how to use this model for
 one job" (task, operation, prompt strategy, reference policy, control defaults,
-timeout). There are 22 built-ins, each reproducing what its lane resolves today,
-and **every render now resolves one** ([../images/providers.md](../images/providers.md)
-§Every render resolves a profile) — a model offered on a surface with no profile
-for that task is passed over for the task default, which is why a seeded model
-gets a seeded profile per surface it is offered on. Each file lists the profiles
-seeded on its model. Profiles are ordinary deletable rows; the database, not these
-files, is the runtime source of truth.
+timeout). There are built-in profiles reproducing the production lanes plus
+curated alternatives, and **every production render resolves one**
+([../images/providers.md](../images/providers.md) §Every render resolves a
+profile). A model offered on a surface with no eligible profile for that task is
+passed over for the task default. Profiles are ordinary deletable rows; the
+database, not these files, is the runtime source of truth.
+
+The admin-only **Image Generator is intentionally different**: it is a freeform
+registered-model bench rather than a player task-profile picker. It derives its
+controls from the selected row's currently probed capability record and pins the
+chosen provider version for the run. A model being absent from ordinary player
+pickers therefore does **not** mean the Image Generator cannot run it.
 
 ## Keeping these current
 
 Replicate does not version this metadata: a model's `latest_version` can change
 its input schema underneath a fixed slug. Each file records the version id it was
 read from and the date. When a render starts failing on a payload that used to
-work, re-probe before debugging Vesper:
+work — or Replicate documents a new capability — re-probe before debugging or
+redesigning Vesper:
 
 ```bash
 curl -s -H "Authorization: Bearer $REPLICATE_API_TOKEN" https://api.replicate.com/v1/models/qwen/qwen-image-edit-2511 | jq '.latest_version.id, .latest_version.openapi_schema.components.schemas.Input'
 ```
 
-The admin page's re-probe button does the same thing and writes the result back
-to the row.
+The admin page's probe-latest flow does the same discovery without mutating the
+active row. Smoke-test the candidate, then activate it explicitly. A per-model
+page should record both the active/probed snapshot and any known newer provider
+schema when those differ.
