@@ -89,10 +89,13 @@ covers the first implementation), and multi-output runs.
 - **The pending → running claim is a conditional update** returning the claimed
   row, and both settles are guarded on `running`. The read-then-write claim let
   two deliveries of one job both see `pending` and both spend.
-- `sequentialMode` remains a probed normalized binding with no Generator
-  control and no `ImageRenderControls` member. It stays reserved from the raw
-  bag and deliberately unsupported: exposing a provider switch Vesper has no
-  semantic use for would widen the contract for completeness alone.
+- Probed-but-unreachable normalized controls got a ruling each. `thinkingMode`
+  is now a Generator control wherever the version binds it. `sequentialMode`
+  has a probed binding but no `ImageRenderControls` member, and `coherentSet`
+  and `outputCount` are image-SET controls the one-output policy makes
+  meaningless here — all three stay reserved from the raw bag and deliberately
+  unsupported, and a duplicate that carried one lists it under the drift
+  warning rather than dropping it silently.
 
 ### Rulings the build settled (2026-08-23)
 

@@ -833,6 +833,20 @@ describe.skipIf(!ready)("image generator output shape", () => {
 });
 
 describe.skipIf(!ready)("image generator pre-spend payload gate", () => {
+  it("refuses an empty prompt on a version whose schema requires one", async () => {
+    // Prompt requiredness is a capability fact, so the contract accepts an
+    // empty prompt and the version decides. A record with no prompt descriptor
+    // says nothing, and silence is refused rather than guessed at.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: STRUCTURAL_MODEL_ID, prompt: "" });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("prompt_required"));
+    expect(captured).toHaveLength(0);
+  });
+
   it("refuses a required provider field bound to a normalized control the run left unset", async () => {
     // The raw bag may not fill a reserved field, so this omission is invisible
     // to every earlier check — without the final pass the provider is the

@@ -388,7 +388,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   const metaWithOutcome = generatorRunMeta(row, {
     outcome,
     effectiveRequest: effectiveRequestRecord({
-      model,
+      model: plan.model,
       versionId,
       versionRequest,
       inputs,
@@ -415,7 +415,12 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // largest-area tie-break would quietly answer a request for the small one
   // with the huge one. For production that is a sensible resolution; for a
   // bench it is the operator's explicit choice being replaced.
-  const plannedShape = plannedShapeInput(model, shape, plan);
+  // `plan.model` throughout, not the registry row: the compile step already
+  // merged the reviewed quality inputs and resolved the safety toggle into
+  // `extraInput`, and the transport wrapper sends THAT model. Asking the
+  // pre-spend gate about the unmerged row would report a reviewed pin as a
+  // missing required field.
+  const plannedShape = plannedShapeInput(plan.model, shape, plan);
   if (shape.requested !== null && plannedShape.value !== shape.requested) {
     return await settleGeneratorRunFailed(
       rowWithOutcome,
@@ -436,9 +441,9 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // field that is reserved to a normalized control and has no provider default,
   // which the bag may not fill and the render path did not.
   const violations = providerInputViolations(
-    model,
+    plan.model,
     previewRegistryModelInput({
-      model,
+      model: plan.model,
       prompt: finalPrompt,
       referenceCount: plan.references.length,
       controlReferences: plan.controlReferences.map((control) => ({
@@ -456,7 +461,7 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
     return await settleGeneratorRunFailed(
       rowWithOutcome,
       generatorFailure("provider_input_rejected"),
-      `${model.slug} would reject this request: ${violations.map((violation) => violation.detail).join("; ")}`,
+      `${plan.model.slug} would reject this request: ${violations.map((violation) => violation.detail).join("; ")}`,
       sink,
       { columns: columnsWithPrompt, meta: { result: { spent: false, providerInputViolations: violations } } },
     );

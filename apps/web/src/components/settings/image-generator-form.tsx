@@ -302,6 +302,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // Blank is the MODEL's own shape, not a Vesper default — the Generator sends
   // no aspect/size key unless this names one of the version's own members.
   const [aspect, setAspect] = useState(prefill?.controls.aspect ?? "");
+  const [thinkingMode, setThinkingMode] = useState(prefill?.controls.thinkingMode ?? false);
   // A duplicate whose model has been re-probed can either replay the exact
   // version the source ran, or run today's. Neither is a safe default to pick
   // silently, so the choice is only offered when the two actually differ.
@@ -358,6 +359,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     setEditStrength("");
     setResolution("");
     setAspect("");
+    setThinkingMode(false);
     setLoraId("");
     setLoraScale("");
     setVersionPolicy("current");
@@ -505,6 +507,10 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     assembledControls.aspect = aspect;
     controlLines.push(`shape ${aspect}`);
   }
+  if (bindings.thinkingMode !== undefined && thinkingMode) {
+    assembledControls.thinkingMode = true;
+    controlLines.push("thinking mode");
+  }
   if (loraBound && selectedLora !== null) {
     assembledControls.lora = {
       id: selectedLora.id,
@@ -613,6 +619,13 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     if (prefill.controls.aspect !== undefined && !selectedModel.supportedAspects.includes(prefill.controls.aspect)) {
       prefillDrift.push("output shape");
     }
+    if (prefill.controls.thinkingMode !== undefined && bindings.thinkingMode === undefined) {
+      prefillDrift.push("thinking mode");
+    }
+    // Multi-image controls the one-output policy makes unreachable here, so a
+    // duplicate that carried one says so rather than dropping it silently.
+    if (prefill.controls.coherentSet !== undefined) prefillDrift.push("coherent set");
+    if (prefill.controls.outputCount !== undefined) prefillDrift.push("output count");
     if (prefill.controls.lora !== undefined && !loraBound) prefillDrift.push("LoRA");
     for (const field of Object.keys(prefill.providerInputs)) {
       if (!advancedInputs.some((descriptor) => descriptor.field === field)) prefillDrift.push(field);
@@ -1003,6 +1016,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           bindings.steps !== undefined ||
           bindings.editStrength !== undefined ||
           bindings.resolutionTier !== undefined ||
+          bindings.thinkingMode !== undefined ||
           shapeOptions.length > 0 ||
           loraBound) ? (
           <div className="flex flex-col gap-3">
@@ -1087,6 +1101,21 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                     </p>
                   ) : null}
                 </div>
+              ) : null}
+              {bindings.thinkingMode !== undefined ? (
+                <Field label="Thinking mode" hint="Unchecked is the provider default — the switch is only sent when ticked.">
+                  {(id) => (
+                    <label htmlFor={id} className="flex items-center gap-2 text-sm text-paper-300">
+                      <input
+                        id={id}
+                        type="checkbox"
+                        checked={thinkingMode}
+                        onChange={(e) => setThinkingMode(e.target.checked)}
+                      />
+                      {"Ask the model to reason before rendering"}
+                    </label>
+                  )}
+                </Field>
               ) : null}
               {shapeOptions.length > 0 ? (
                 <Field

@@ -70,8 +70,12 @@ probed capability record, never from its slug:
   bind to their own provider fields. An explicitly dedicated selection never
   falls back to the numbered reference array.
 - **Normalized controls** (seed, negative prompt, guidance, steps, edit
-  strength, resolution tier, custom dimensions, LoRA) are editable only where
-  the active version binds a field for them.
+  strength, thinking mode, resolution tier, custom dimensions, LoRA) are
+  editable only where the active version binds a field for them. The
+  image-set controls — `coherentSet`, `outputCount`, `sequentialMode` — are
+  deliberately absent: a bench that renders one image per run has no use for
+  them, and the server refuses them rather than reinterpreting a set request
+  as a single render.
 - **Output shape** offers the version's own declared shapes, filtered to the
   members the shared shape mapper actually resolves back to. Blank — the
   default — is the model's own shape; see below.
