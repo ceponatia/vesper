@@ -62,7 +62,12 @@ every registered-model render applies and, when a curated LoRA is selected,
 that LoRA's own prompt additions — and the recorded `final_prompt` is the
 post-transform text actually sent.
 
-Deleting a run hard-deletes its hidden output image in the same call.
+Deleting a run hard-deletes its hidden output image in the same call. Deletion
+is a **list** action as much as a detail one: every row in the run history
+carries its own Delete, and the tick boxes beside them clear a whole batch in
+one call. Both doors end in the same confirmation, which names how many records
+and how many rendered images are about to go — the record is provenance and
+nothing brings it back.
 
 ## The form is capability-driven
 
@@ -282,12 +287,16 @@ the staged scene's optional location reference.
 | Route                                          | Wrapper                  | Methods              |
 | ---------------------------------------------- | ------------------------ | -------------------- |
 | `/api/admin/self/image-generator/runs`         | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/runs/delete`  | `withOwnerAdmin`         | POST bulk delete     |
 | `/api/admin/self/image-generator/runs/[runId]` | `withOwnerAdminResource` | GET detail, DELETE   |
 | `/api/admin/self/owned-images`                 | `withOwnerAdmin`         | GET                  |
 
 Everything is self-scoped: models, images, and runs resolve against the
 requesting admin's own id, and another owner's run answers the same 404 a
-nonexistent one does. The POST runs the shared admission guard with
+nonexistent one does. The bulk delete takes its ids in a body — a list of them
+does not belong in a URL — capped at the list route's own maximum, and both of
+its statements carry the owner predicate, so an id that is not this admin's is
+simply absent from the count rather than refused, and never deleted. The POST runs the shared admission guard with
 `outputKind: "generator_output"` (provider budget applies, storage
 reservation skipped), creates the pending row, then starts the
 `generator_image` job from the route — a refused job slot deletes the

@@ -21,6 +21,7 @@ import { runImageGeneratorRun } from "./image-generator-run";
 import {
   createImageGeneratorRun,
   deleteImageGeneratorRun,
+  deleteImageGeneratorRuns,
   getImageGeneratorRunDetail,
   type ImageGeneratorRunRow,
 } from "./image-generator-store";
@@ -335,8 +336,10 @@ beforeEach(() => {
 afterEach(async () => {
   setImageGeneratorRendererForTesting(null);
   if (!ready) return;
-  await db().delete(imageGeneratorRuns).where(eq(imageGeneratorRuns.ownerId, ownerId));
-  await db().delete(images).where(eq(images.ownerId, ownerId));
+  // Both owners: the batch-delete case below plants a row under the second one,
+  // and a survivor left behind would be a fixture the next test never asked for.
+  await db().delete(imageGeneratorRuns).where(inArray(imageGeneratorRuns.ownerId, [ownerId, otherOwnerId]));
+  await db().delete(images).where(inArray(images.ownerId, [ownerId, otherOwnerId]));
 });
 
 // ---------------------------------------------------------------------------
@@ -1209,5 +1212,45 @@ describe.skipIf(!ready)("image generator records", () => {
     const row = await storedRow(id);
     expect(row?.status).toBe("succeeded");
     expect(row?.resultImageId).not.toBeNull();
+  });
+
+  // Falsified against a batch delete whose row statement matches the REQUESTED
+  // ids instead of the owned subset. That implementation passes the single
+  // foreign id above — one unowned id makes the batch return before the delete
+  // ever runs — and destroys another admin's run the moment one list mixes both,
+  // which is exactly what the list's multi-select delete sends.
+  it("deletes only this admin's rows when one batch also names another owner's run", async () => {
+    stubSuccessfulRenderer();
+    const mine = await createRun();
+    await runImageGeneratorRun(mine.id, ownerId, mine.sink);
+    const alsoMine = await createRun();
+    await runImageGeneratorRun(alsoMine.id, ownerId, alsoMine.sink);
+
+    const foreign = await createImageGeneratorRun({
+      ownerId: otherOwnerId,
+      request: { modelId: PINNED_MODEL_ID, prompt: "The other admin's own bench run." },
+    });
+    if (!foreign.ok) throw new Error(`unexpected create refusal: ${foreign.refusal.code}`);
+    await runImageGeneratorRun(foreign.run.id, otherOwnerId);
+
+    const result = await deleteImageGeneratorRuns(
+      [mine.id, alsoMine.id, foreign.run.id, mine.id],
+      ownerId,
+    );
+
+    // Two rows and their two outputs: the repeated id counts once, and the
+    // foreign id is absent rather than refused.
+    expect(result).toEqual({ deleted: 2, outputImagesRemoved: 2 });
+    expect(await storedRow(mine.id)).toBeUndefined();
+    expect(await storedRow(alsoMine.id)).toBeUndefined();
+
+    const survivor = await storedRow(foreign.run.id);
+    expect(survivor?.status).toBe("succeeded");
+    const [output] = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(eq(images.id, survivor?.resultImageId ?? ""))
+      .limit(1);
+    expect(output).toBeDefined();
   });
 });

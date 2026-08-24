@@ -158,6 +158,8 @@ export {
   type CreateImageGeneratorRunResult,
   deleteImageGeneratorRun,
   type DeleteImageGeneratorRunResult,
+  deleteImageGeneratorRuns,
+  type DeleteImageGeneratorRunsResult,
   getImageGeneratorRunDetail,
   type ImageGeneratorProviderOutcome,
   type ImageGeneratorRunPayload,
