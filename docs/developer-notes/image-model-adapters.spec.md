@@ -7,7 +7,27 @@ owning layer; implementation status lives beside each area.
 
 ## Contracts (`@vesper/image-core`)
 
-Status: in progress (Stage 1).
+Status: built 2026-08-24 — awaiting CI.
+
+Rulings the build settled:
+
+- Mechanical checks run entirely before task policy, so a row failing both
+  reports the mechanical reason (previously the task check came before the
+  scale/binding checks). Both remain `incompatible`; only which message wins
+  changed.
+- The evaluator resolves the artifact locator itself: `binding.locator` is the
+  resolved provider address (`resolveImageLoraArtifactLocator`), verbatim for
+  the two legacy types, so a Civitai row can never reach a payload as a bare
+  id — and the resolved URL is on `civitai.com`, so the app's existing
+  credential host-match completes the token with no app change.
+- The wire invariant treats a present-but-nullish provider field as missing;
+  `missingField` names the provider field when the version declares a binding
+  and the binding name when it declares none. A profile override that
+  *replaces* `lora_weights` with a different value does not breach the
+  invariant — overrides win is the documented escape hatch.
+- The kernel's prompt preparer rides `ImageRenderRuntimeFacts.preparePrompt`,
+  defaulting to the legacy `preparePromptForImageModel` until Stage 4 rewires
+  callers.
 
 ### Execution context
 
@@ -83,7 +103,29 @@ Owned and unit-tested at this one layer.
 
 ## Transport (`@vesper/image-replicate`)
 
-Status: in progress (Stage 2).
+Status: built 2026-08-24 — awaiting CI.
+
+Rulings the build settled:
+
+- Result contract for consumers: `attempts?: ReplicatePredictionAttempt[]`
+  (oldest first, emitted ONLY under a policy so stored production results gain
+  no new keys); outcome vocabulary `succeeded | failed | canceled |
+  aborted_before_start | startup_timeout | render_timeout`;
+  `predictionId`/`executedVersionId` keep describing the final attempt.
+- Execution evidence is `processing`/`succeeded` status, a numeric
+  `metrics.predict_time`, or non-empty logs — `started_at` is explicitly not
+  proof (the observed abort stamps it at abort time).
+- The retryable class is a terminal `aborted`, or a terminal `failed` with no
+  execution evidence AND no error text, plus the client's own startup cutoff;
+  `canceled` never retries (a cancel is somebody's decision) and a failure
+  carrying error text never retries (an input error would be re-billed).
+- Recreations have no backoff — acceptable at one retry; a ruling is needed
+  before retries ever exceed one or reach production.
+- A policy with unusable numbers degrades to the legacy single budget rather
+  than failing the render; the summed budget is not clamped here — the app
+  owns the ceiling.
+- Startup-timeout failure wording contains "timed out" so the app's failure
+  classifier keeps reading it as transient (asserted by a package test).
 
 - `runPrediction` accepts an optional `ProviderExecutionPolicy`. With one:
   `Cancel-After = startupBudgetMs + renderBudgetMs`; locally, an unstarted
@@ -101,7 +143,29 @@ Status: in progress (Stage 2).
 
 ## Composer and Qwen family (`@vesper/image-models`)
 
-Status: in progress (Stage 3).
+Status: built 2026-08-24 — awaiting CI.
+
+Rulings the build settled:
+
+- **Owner ruling (2026-08-24): the numbered-reference dialect is a Qwen
+  Edit-family behavior**, composed by both `image-edit-2511` and
+  `image-edit-plus-lora` — never a 2511-specific conditional. The legacy
+  slug-check restriction was an artifact, not a decision; once Stage 4 wires
+  adapters, wrapper renders (intimate scene, portrait-studio NSFW test) get
+  the numbered-reference identity locks instead of the legacy lock passing
+  through unswapped. Endpoint differences — LoRA support, cold-start hints,
+  `go_fast` — stay endpoint-level.
+- Feature factories carry a `Feature` suffix (`promptFeature`, `loraFeature`);
+  feature ids use the spec's camelCase names.
+- Execution hints arrive via a quirk (the wrapper's cold-start quirk sets
+  `startupBudgetMs: 8 min`, `maxStartupRetries: 1`, no render budget — the
+  lane's default governs).
+- Quirk merge: declaration order, each optional hook claimable exactly once —
+  a second claim throws at definition time, as does a duplicate feature id.
+- `image-2512` composes no negative-prompt feature — the endpoint ignores its
+  negative field.
+- The adapter's `preparePrompt` takes the full `ImageModel`; Stage 4 injection
+  sites must hold the whole record.
 
 - New workspace package: rank 30 peer of `image-replicate`/`image-sd`, runtime
   `universal`, depends on `@vesper/image-core` (and `@vesper/contracts` if

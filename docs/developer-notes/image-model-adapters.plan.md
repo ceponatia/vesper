@@ -302,7 +302,7 @@ five-minute queue; provider history shows zero `lora_weights` ever sent.
 
 ### Stage 1 — Contracts and boundaries (image-core)
 
-Status: in progress.
+Status: built 2026-08-24 — awaiting CI.
 
 Execution contexts, the compatibility/policy split in the evaluator, the
 artifact-source union and pure resolver, the execution-policy type, the compile
@@ -311,14 +311,14 @@ wire invariant, and the kernel prompt hook (defaulting to legacy behavior).
 
 ### Stage 2 — Transport lifecycle (image-replicate)
 
-Status: in progress.
+Status: built 2026-08-24 — awaiting CI.
 
 Two-phase budgets, startup-abort retry, attempt records. Without a policy the
 transport behaves exactly as today. **Production behavior changes:** none.
 
 ### Stage 3 — The composer and the Qwen family (image-models)
 
-Status: in progress.
+Status: built 2026-08-24 — awaiting CI.
 
 Package scaffolding and registration, feature modules, `defineImageModel`, the
 Qwen family adapters and dialect quirk, the adapter registry.
@@ -326,7 +326,7 @@ Qwen family adapters and dialect quirk, the adapter registry.
 
 ### Stage 4 — Application wiring
 
-Status: queued.
+Status: in progress.
 
 Contexts at every LoRA call site; adapter hooks into kernel and
 `renderWithModel`; Qwen dialect deleted from quality presets; bench execution
