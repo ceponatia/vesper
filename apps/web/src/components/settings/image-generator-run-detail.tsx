@@ -32,15 +32,21 @@ import type { ImageGeneratorPrefill } from "./image-generator-form";
  * line rather than the suspect banner (`providerVersionsDisagree`).
  *
  * The final prompt is shown ONLY when it differs from the authored prompt: the
- * only permitted transformations are the shared boundary's
- * (`preparePromptForImageModel`), so identical text is the common case and a
- * second copy of it would bury the one time the boundary actually changed
- * something.
+ * only layer allowed to rewrite it is the model family's own dialect, applied
+ * by the adapter the render was compiled against (`@vesper/image-models`,
+ * injected app-side), so identical text is the common case and a second copy of
+ * it would bury the one time the dialect actually changed something.
  *
  * The attempt inspector (`meta.attempt`) is the developer-facing half —
  * applied and dropped controls, the sent reference roles — kept expandable
  * because it answers "what did the planner decide", which is a different
  * question from the request facts above it.
+ *
+ * `providerAttempts` is the third question, and only the bench asks it: under a
+ * two-phase budget one run may create several predictions, and the single
+ * `predictionId` above cannot tell a model that ran and failed from one the
+ * queue never let start. Absent on every single-prediction run, which is every
+ * run written before bench budgets existed.
  */
 
 const POLL_MS = 3000;
@@ -135,6 +141,49 @@ const runResultViewSchema = z.object({
     .catch(() => ({ cropTarget: null }))
     .default(() => ({ cropTarget: null })),
 });
+
+/**
+ * One created prediction's display shape, read on the same lenient terms as the
+ * records above: the elements ARE the transport's own attempt records, so a
+ * field a newer deploy added must cost nothing and a malformed element must
+ * cost only its own line.
+ */
+const providerAttemptViewSchema = z.object({
+  predictionId: z.string().catch(""),
+  outcome: z.string().catch(""),
+  queuedMs: z.number().nullable().catch(null).default(null),
+  renderMs: z.number().nullable().catch(null).default(null),
+});
+
+/**
+ * How one attempt ended, in English.
+ *
+ * A Record with a verbatim fallback rather than an exhaustive switch, because
+ * the outcome crosses the wire as a loose string: an outcome a newer deploy
+ * writes is better shown as its own stable name than mistranslated into one of
+ * these — the same rule the failure copy keeps for a code from another
+ * vocabulary.
+ *
+ * The distinction the words have to carry is the one the single prediction id
+ * could not: `failed` and `render_timeout` are a model that RAN, while
+ * `aborted_before_start` and `startup_timeout` never rendered anything and
+ * taught nothing about the model.
+ */
+const PROVIDER_ATTEMPT_OUTCOMES: Record<string, string> = {
+  succeeded: "succeeded",
+  failed: "ran and failed",
+  canceled: "canceled — from the provider dashboard, or by an operator",
+  aborted_before_start: "abandoned in the queue — it never started",
+  startup_timeout: "canceled here — it outwaited the startup budget",
+  render_timeout: "started, then outran the render budget",
+};
+
+/** A recorded span in the units a person reads it in. */
+function spanText(ms: number): string {
+  if (ms >= 60_000) return `${String(Math.floor(ms / 60_000))}m ${String(Math.round((ms % 60_000) / 1000))}s`;
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${String(Math.round(ms))}ms`;
+}
 
 /** One labelled fact in the recorded-request grid. */
 function Fact({ label, value }: { label: string; value: ReactNode }) {
@@ -270,6 +319,12 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
   const effectiveView =
     run.effectiveRequest === null ? null : effectiveRequestViewSchema.safeParse(run.effectiveRequest);
   const resultView = run.result === null ? null : runResultViewSchema.safeParse(run.result);
+  // Element by element, so one unreadable record costs its own line rather than
+  // the whole list — the same reading every other stored bag on this page gets.
+  const providerAttempts = (run.providerAttempts ?? []).flatMap((entry) => {
+    const parsed = providerAttemptViewSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
   const promptTransformed = run.finalPrompt !== null && run.finalPrompt !== run.prompt;
 
   const duplicate = () => {
@@ -426,6 +481,29 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
             The provider does not disclose which version ran; the requested pin was validated when the prediction was
             created.
           </p>
+        ) : null}
+
+        {providerAttempts.length > 0 ? (
+          <div className="mt-4">
+            <h3 className="text-[11px] tracking-wide text-paper-500 uppercase">
+              Provider attempts ({providerAttempts.length})
+            </h3>
+            <ol className="mt-1 flex flex-col gap-0.5 text-xs text-paper-300">
+              {providerAttempts.map((attempt, index) => (
+                <li key={`${String(index)}-${attempt.predictionId}`}>
+                  <span className="text-paper-500">{`#${String(index + 1)} —`}</span>{" "}
+                  {PROVIDER_ATTEMPT_OUTCOMES[attempt.outcome] ?? attempt.outcome}
+                  {attempt.queuedMs === null ? "" : ` · queued ${spanText(attempt.queuedMs)}`}
+                  {attempt.renderMs === null ? "" : ` · rendered ${spanText(attempt.renderMs)}`}{" "}
+                  <code className="break-all">{attempt.predictionId}</code>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-1 text-xs text-paper-500">
+              {"Every prediction this run created, oldest first — recorded when it executed under the bench's "}
+              {"two-phase budget. The Prediction above is the last of them."}
+            </p>
+          </div>
         ) : null}
 
         <div className="mt-4">

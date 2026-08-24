@@ -109,10 +109,17 @@ function generatorFailureCopy(code: ImageGeneratorFailureCode): string {
  * The curated LoRA library's two refusals, which land on a generator run in
  * their OWN namespace: the library decides them pre-spend and the code settles
  * verbatim. Two codes because they send an operator to two different screens.
+ *
+ * The incompatible copy names MECHANICAL causes only — the model, the version,
+ * the scale — and deliberately not the row's `allowedTasks`. That list is
+ * production curation about player-facing lanes, and a Generator run executes
+ * under `generator_bench`, which serves no lane and is never judged against it.
+ * Naming it here would send an operator to edit a list that had no part in the
+ * refusal they are reading about.
  */
 const LORA_FAILURE_COPY: Record<ImageLoraRefusalCode, string> = {
   [IMAGE_LORA_INCOMPATIBLE]:
-    "The LoRA's own rules refuse this render — the model, the version, the task, or the requested scale is outside the curated range the library row declares. Nothing was spent. Pick a different LoRA, or widen this one's rules in the LoRA library.",
+    "The LoRA's own rules refuse this render — the model, the version, or the requested scale is outside the curated range the library row declares. Nothing was spent. Pick a different LoRA, or widen this one's rules in the LoRA library.",
   [IMAGE_LORA_UNREACHABLE]:
     "The LoRA configuration cannot reach the provider — the library row is missing or switched off, the model's version exposes no LoRA inputs, or the scale is outside the provider's own range. Nothing was spent. Run this against a model whose version accepts LoRA weights, or fix the row in the library.",
 };
