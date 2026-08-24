@@ -17,6 +17,7 @@ import {
   dataRoot,
   imageMeta,
   imageRelativePath,
+  planFailedImageRetirement,
   runImagePipeline,
   writeWebpAtomic,
   type ImagePipelineOutcome,
@@ -371,5 +372,63 @@ describe("runImagePipeline", () => {
     expect(order).toEqual([`reserved:${RESERVED.id}`, "produce"]);
     expect(sink.items[0]?.code).toBe("images.chat_look.failed");
     expect(sink.items[0]?.context).toBeUndefined();
+  });
+});
+
+/**
+ * Retention's decision rule (docs/images/asset-registry.md §image_sweep).
+ *
+ * Falsified against two implementations that look reasonable and destroy data:
+ * one that ages a row by `created_at`, which deletes the "this render failed"
+ * tile in the same tick the failure appeared for any row that was `ready` first;
+ * and one with no proportion rail, which turns a volume that did not mount —
+ * every ready row marked failed — into a wiped images table one day later.
+ */
+describe("planFailedImageRetirement", () => {
+  const now = new Date("2026-08-24T12:00:00.000Z");
+  const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
+  const DAY = 24 * 60 * 60_000;
+
+  /** Every candidate is months old by `created_at`; only the stamp differs. */
+  const row = (id: string, failedAt?: string) => ({
+    id,
+    meta: failedAt === undefined ? {} : { failedAt },
+    createdAt: new Date(now.getTime() - 90 * DAY),
+  });
+
+  it("ages a row by its failure stamp, retiring the oldest failures first", () => {
+    const plan = planFailedImageRetirement(
+      [
+        row("just-failed", ago(60_000)),
+        row("two-days", ago(2 * DAY)),
+        row("exactly-a-day", ago(DAY)),
+        row("still-fresh", ago(DAY - 60_000)),
+        // No stamp: it failed before `failImage` wrote one, so `created_at`
+        // stands in — and such a row is older than the window by definition.
+        { ...row("legacy"), meta: { error: "provider exploded" } },
+        // A row reserved minutes ago and failed immediately: the fallback must
+        // not retire it either.
+        { id: "legacy-fresh", meta: {}, createdAt: new Date(now.getTime() - 60_000) },
+      ],
+      100,
+      now,
+    );
+
+    expect(plan).toEqual({ ids: ["legacy", "two-days", "exactly-a-day"], disagreement: false });
+  });
+
+  it("refuses a scope that is mostly long-failed, and bounds an ordinary pass", () => {
+    const expired = (count: number, since = 2 * DAY) =>
+      Array.from({ length: count }, (_, index) => row(`expired-${String(index)}`, ago(since + index)));
+
+    // 30 of 40 rows failed: the database and the volume disagree, and deleting
+    // rows on that reading is as unrecoverable as wiping the volume.
+    expect(planFailedImageRetirement(expired(30), 40, now)).toEqual({ ids: [], disagreement: true });
+
+    // Below the floor the proportion is noise — a small database still gets cleaned.
+    expect(planFailedImageRetirement(expired(3), 3, now).ids).toHaveLength(3);
+
+    // A genuine backlog drains a bounded slice per pass rather than in one statement.
+    expect(planFailedImageRetirement(expired(250), 1000, now).ids).toHaveLength(200);
   });
 });

@@ -723,7 +723,15 @@ export async function cloneEntityImages(
   return idMap;
 }
 
-/** `extraMeta` rides the same update as the error text; the error wins a collision. */
+/**
+ * `extraMeta` rides the same update as the error text; the error wins a collision.
+ *
+ * `failedAt` is stamped here because `created_at` is when the row was RESERVED,
+ * not when it failed — a row that was `ready` for a month before its file
+ * vanished fails today. Retention reads this stamp
+ * ({@link planFailedImageRetirement}), so writing it at the one choke point every
+ * failure passes through is what keeps that clock honest.
+ */
 export async function failImage(
   imageId: string,
   error: string,
@@ -732,7 +740,14 @@ export async function failImage(
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
   const [updated] = await db()
     .update(images)
-    .set({ status: "failed", meta: mergeMeta(row?.meta, { ...(extraMeta ?? {}), error: error.slice(0, 500) }) })
+    .set({
+      status: "failed",
+      meta: mergeMeta(row?.meta, {
+        ...(extraMeta ?? {}),
+        error: error.slice(0, 500),
+        failedAt: new Date().toISOString(),
+      }),
+    })
     .where(eq(images.id, imageId))
     .returning();
   return updated ?? null;
@@ -744,6 +759,8 @@ export interface SweepResult {
   orphanFilesRemoved: number;
   stalePendingFilesRemoved: number;
   rowsMarkedFailed: number;
+  /** Long-failed rows hard-deleted by the retention pass. */
+  failedRowsRetired: number;
   errors: string[];
 }
 
@@ -757,11 +774,95 @@ export interface SweepOptions {
 const SWEEP_GRACE_MS = 10 * 60_000;
 
 /**
+ * How long a `failed` row outlives the failure that produced it.
+ *
+ * A failed row is not garbage immediately: the scene strip, the portrait studio
+ * and the entity studio each paint a "this render failed" tile from one, which
+ * is how a player learns their render did not happen. A day later nobody is
+ * looking and what remains is a row with no file, no bytes and no reader — the
+ * eight that had accumulated by 2026-08-24 were all July/August scene failures
+ * (owner report). Retention deletes it then, so the lifecycle finally closes:
+ * `pending` → `failed` → gone, instead of `failed` forever.
+ */
+const FAILED_ROW_RETENTION_MS = 24 * 60 * 60_000;
+
+/**
+ * At most this many rows leave in one pass, oldest failure first. A burst of
+ * failures drains over several passes, loudly, rather than in one statement.
+ */
+const FAILED_ROW_RETIREMENT_LIMIT = 200;
+
+/**
+ * Below this many rows in scope, "most of them are failed" is noise rather than
+ * a signal — a fresh install, or a per-owner sweep of someone with three
+ * images — so a small database still gets cleaned.
+ */
+const RETENTION_RAIL_MIN_ROWS = 20;
+
+/** What retention needs to know about one failed row. */
+export interface FailedImageCandidate {
+  id: string;
+  meta: unknown;
+  createdAt: Date;
+}
+
+export interface FailedImageRetirementPlan {
+  /** Rows to purge — oldest failure first, capped at one pass's budget. */
+  ids: string[];
+  /** The failed set is too large to read as garbage; nothing is retired. */
+  disagreement: boolean;
+}
+
+/**
+ * Which failed rows have outlived {@link FAILED_ROW_RETENTION_MS} — the decision
+ * half of the retention pass, kept pure so the rule is testable without a
+ * database (docs/images/asset-registry.md).
+ *
+ * The clock is `meta.failedAt`, stamped by {@link failImage}. `created_at` is the
+ * fallback for rows that failed before that stamp existed; those are older than
+ * the window by definition, so the fallback only ever frees genuine legacy
+ * garbage.
+ *
+ * **Safety rail** — the row-side counterpart to the file side's empty-table
+ * check above: when MOST of the rows in scope are expired failures, that reading
+ * is the database and the volume disagreeing (a volume that did not mount, a
+ * mis-set `DATA_ROOT`, which marks every ready row failed), not a database full
+ * of garbage. Deleting rows on that reading is exactly as unrecoverable as
+ * wiping the volume, so nothing is retired and the disagreement is logged.
+ */
+export function planFailedImageRetirement(
+  failed: readonly FailedImageCandidate[],
+  rowsScanned: number,
+  now: Date,
+): FailedImageRetirementPlan {
+  const expired = failed
+    .map((row) => ({ id: row.id, failedAtMs: failedAtMs(row) }))
+    .filter((row) => now.getTime() - row.failedAtMs >= FAILED_ROW_RETENTION_MS)
+    .sort((left, right) => left.failedAtMs - right.failedAtMs);
+  if (expired.length === 0) return { ids: [], disagreement: false };
+  if (rowsScanned >= RETENTION_RAIL_MIN_ROWS && expired.length * 2 > rowsScanned) {
+    return { ids: [], disagreement: true };
+  }
+  return { ids: expired.slice(0, FAILED_ROW_RETIREMENT_LIMIT).map((row) => row.id), disagreement: false };
+}
+
+/** When the failure happened: the stamp `failImage` wrote, else the row's own creation. */
+function failedAtMs(row: FailedImageCandidate): number {
+  const stamped = imageMeta(row.meta).failedAt;
+  const parsed = typeof stamped === "string" ? Date.parse(stamped) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : row.createdAt.getTime();
+}
+
+/**
  * Idempotent rows↔files reconciliation (docs/images/asset-registry.md). Both directions:
  * ready rows whose file vanished are marked failed; files without a row (and
  * crash-leftover `.pending.webp` temps) older than the grace period are
  * removed. Never throws, and every scanned or row-derived path passes through
  * the same DATA_ROOT containment and symlink checks as ordinary asset access.
+ *
+ * A third pass RETIRES what the first two produce: a row failed longer ago than
+ * {@link FAILED_ROW_RETENTION_MS} is hard-deleted, so a failure is user-visible
+ * feedback for a day and then stops being a row at all.
  */
 export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult> {
   const now = opts.now ?? new Date();
@@ -771,6 +872,7 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
     orphanFilesRemoved: 0,
     stalePendingFilesRemoved: 0,
     rowsMarkedFailed: 0,
+    failedRowsRetired: 0,
     errors: [],
   };
   try {
@@ -832,7 +934,10 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
         if (row.status === "ready") {
           const exists = await fileExists(absoluteImagePath(row));
           if (exists) continue;
-          await db().update(images).set({ status: "failed" }).where(eq(images.id, row.id));
+          // Through `failImage` rather than a bare status update so the row carries
+          // the `failedAt` stamp retention reads: this is precisely the transition
+          // whose failure time is nothing like its `created_at`.
+          await failImage(row.id, "ready row lost its file; reclaimed by image_sweep");
           result.rowsMarkedFailed += 1;
           log.warn("images", "ready row lost its file; marked failed", { imageId: row.id, path: row.path });
         } else if (row.status === "pending" && now.getTime() - row.createdAt.getTime() >= SWEEP_GRACE_MS) {
@@ -844,11 +949,53 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
         result.errors.push(`row ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+
+    // Last, so a row this pass just marked failed carries a stamp of NOW and is
+    // therefore a day away from being eligible — never reconciled and retired in
+    // the same tick.
+    try {
+      await retireFailedRows(now, opts, result);
+    } catch (err) {
+      result.errors.push(`retention: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } catch (err) {
     result.errors.push(err instanceof Error ? err.message : String(err));
     log.warn("images", "sweepOrphans degraded", { error: result.errors.at(-1) ?? "unknown" });
   }
   return result;
+}
+
+/**
+ * Hard-delete the rows {@link planFailedImageRetirement} judges expired — the IO
+ * half of retention, owner-scoped exactly like the pass around it.
+ *
+ * It goes through `purgeImagesWhere` like every other delete path, so a retired
+ * row takes its identity-pack derivations and any stray file with it, and the
+ * soft pointers entity rows keep are cleared the way the Gallery's own delete
+ * clears them: a character whose avatar failed a day ago must not be left
+ * pointing at a row that no longer exists.
+ */
+async function retireFailedRows(now: Date, opts: SweepOptions, result: SweepResult): Promise<void> {
+  const ownerScope = opts.ownerId === undefined ? undefined : eq(images.ownerId, opts.ownerId);
+  const failed = await db()
+    .select({ id: images.id, meta: images.meta, createdAt: images.createdAt })
+    .from(images)
+    .where(and(eq(images.status, "failed"), ownerScope));
+  const plan = planFailedImageRetirement(failed, result.rowsScanned, now);
+  if (plan.disagreement) {
+    log.warn("images", "retention skipped: most rows in scope are long-failed", {
+      expiredFailures: failed.length,
+      rowsScanned: result.rowsScanned,
+    });
+    return;
+  }
+  if (plan.ids.length === 0) return;
+  const removed = await purgeImagesWhere(and(inArray(images.id, plan.ids), ownerScope));
+  if (removed > 0) {
+    await clearEntityImagePointers(plan.ids);
+    log.warn("images", "retired rows that failed over a day ago", { removed });
+  }
+  result.failedRowsRetired += removed;
 }
 
 async function fileExists(absolute: string): Promise<boolean> {
@@ -925,7 +1072,12 @@ async function runScheduledSweep(now: Date): Promise<void> {
     const summary = { ...result, jobsReclaimed, ...identity };
     const identityTotal = Object.values(identity).reduce((total, value) => total + value, 0);
     if (
-      result.orphanFilesRemoved + result.stalePendingFilesRemoved + result.rowsMarkedFailed + jobsReclaimed + identityTotal >
+      result.orphanFilesRemoved +
+        result.stalePendingFilesRemoved +
+        result.rowsMarkedFailed +
+        result.failedRowsRetired +
+        jobsReclaimed +
+        identityTotal >
       0
     ) {
       log.warn("images", "sweep reconciled orphaned rows/files", summary);

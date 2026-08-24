@@ -44,6 +44,18 @@ reclaims `queued`/`running` job rows whose process died, and runs
 identity-pack maintenance. That closes half of slice 4 and establishes the
 scheduling pattern the retention half should reuse.
 
+A second piece arrived the same way (2026-08-24, from an owner check of the
+Image Generator's delete path, which found eight July/August render failures
+still sitting in the table): **failed image rows now expire.** The sweep's third
+pass deletes a row that failed more than 24 hours ago, so a failed render is a
+visible "this didn't work" tile for a day and then stops being a row at all. It
+rides the existing tick exactly as §Design says retention should, and it
+establishes two rails the three remaining deletions should reuse: a cap on how
+many rows one pass may remove, and a refusal to delete anything when *most* of
+the rows in scope are expired failures — the reading a volume that failed to
+mount produces, where deleting rows is as unrecoverable as wiping the volume.
+Slice 4's own three deletions are untouched by it.
+
 Nothing else in this plan has landed. Re-verified 2026-08-07: `jobs` and
 `events` still carry no `chat_id`; `sim_provisioning_requests.chat_id` is
 still loose text; `deleteChat` still leaves jobs, telemetry, and provisioning
