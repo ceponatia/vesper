@@ -17,7 +17,6 @@ import {
   type ImageRenderControls,
   type ImageRenderIntent,
   type ImageRenderReference,
-  type ImageRenderRuntimeFacts,
   isImageLabControlRole,
   pinnedImageModelVersion,
   planImageRender,
@@ -26,11 +25,12 @@ import {
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import { classifyImageFailure, disableSafetyChecker, replicateClient } from "../ai";
+import { classifyImageFailure, replicateClient } from "../ai";
 import { db, imageLabExperiments } from "../db";
 import { createImageAsset, deleteOwnedImage, saveImageBuffer } from "./assets";
 import { ownedImageRow } from "./owned-image-reads";
 import { resolveImageLoraForRender } from "./image-loras";
+import { benchExecutionPolicy, imageRenderRuntimeFacts } from "./model-adapters";
 import { loadImageModels, type RenderWithModelResult } from "./models";
 import { prepareRenderReferences, referencePreparationTarget } from "./reference-preparation";
 import { renderImageIntent } from "./render-intent";
@@ -49,20 +49,16 @@ import {
  *
  * Everything here is shared by two or more experiment kinds — that is the
  * admission rule. A helper only one lane uses lives with that lane.
- */
-
-/**
- * The deployment facts the lab's own planning paths hand the pure planner.
  *
  * The lab plans directly rather than through `renderImageIntent` — it needs the
- * compiled prompt before it renders, so the experiment row records what actually
- * ran — which means it also owns reading the setting the planner may not read.
- * Same value, same moment as the production path (monorepo-image-core.spec.render-kernel.md
- * §"The remaining inversions").
+ * compiled prompt BEFORE it renders, so the experiment row records what actually
+ * ran — which means it also owns resolving the deployment facts a pure planner
+ * may not read. It reaches for the SHARED resolver (`imageRenderRuntimeFacts`)
+ * rather than one of its own, so a lab render can never compile under a
+ * different safety setting or a different model dialect than the lane it is
+ * imitating (monorepo-image-core.spec.render-kernel.md §"The remaining
+ * inversions").
  */
-export function labRuntimeFacts(): ImageRenderRuntimeFacts {
-  return { safetyCheckerDisabled: disableSafetyChecker() };
-}
 
 // ---------------------------------------------------------------------------
 // The renderer seam
@@ -130,6 +126,11 @@ async function runRealLabRender(request: ImageLabRenderRequest, sink?: Diagnosti
           aspect: request.aspect,
           controlInput: request.controlInput,
           versionId: request.versionId,
+          // The probe is a bench render like every other lab run, so it gets the
+          // same two-phase budget. It is set here rather than by the probe's
+          // caller because `direct` is the one arm that reaches the transport
+          // without an intent to carry it.
+          executionPolicy: benchExecutionPolicy(request.model),
         },
         sink,
       );
@@ -402,7 +403,12 @@ export async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeI
   if (selection) {
     const resolved = await resolveImageLoraForRender(
       selection,
-      { model, versionId: input.versionId, task: recipeProfile.task },
+      // `image_lab`, not `generator_bench`: the lab REPRODUCES a production
+      // render for evidence, so it is judged by production's rules — the row's
+      // `allowedTasks` curation included. Evidence gathered under rules
+      // production does not apply would be evidence about a lane that does not
+      // exist (image-model-adapters.spec.md §"Execution context").
+      { model, versionId: input.versionId, execution: { kind: "image_lab", task: recipeProfile.task } },
       sink,
     );
     if (!resolved.ok) {
@@ -425,8 +431,13 @@ export async function runRecipeIntent(row: ImageLabExperimentRow, input: RecipeI
     versionId: input.versionId,
     // Passed along so the renderer does not read the library a second time.
     ...(resolvedLora ? { resolvedLora } : {}),
+    // A bench lane, so two-phase budgets and one startup retry: an admin
+    // waiting on evidence can afford a cold-boot queue that a player cannot,
+    // and a prediction the queue killed says nothing about the recipe under
+    // test (plan §8). Production lanes deliberately carry none.
+    executionPolicy: benchExecutionPolicy(model),
   };
-  const planned = planImageRender(intent, labRuntimeFacts());
+  const planned = planImageRender(intent, imageRenderRuntimeFacts(model));
   if (!planned.ok) {
     return await settleFailed(row, planned.refusal.code, planned.refusal.message, sink, { columns });
   }

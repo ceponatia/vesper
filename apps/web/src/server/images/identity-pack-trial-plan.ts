@@ -28,6 +28,7 @@ import { db, imageIdentityPackTrialCells, imageIdentityPackTrialRuns } from "../
 import { ensureIdentityPack } from "./identity-pack-ensure";
 import { IDENTITY_PACK_TRIAL_CORPORA } from "./identity-pack-preparation";
 import { getIdentityPackRevisionForTrial, type IdentityPackRevisionForTrialResult } from "./identity-pack-read";
+import { preparePromptFor } from "./model-adapters";
 import {
   evaluateIdentityPackContractForProfile,
   evaluateIdentityPackForProfile,
@@ -677,13 +678,25 @@ async function resolveTrialCell(
     // value, which is what makes a flip between planning and execution a
     // `cell_conflict` rather than an invisible change.
     safetyCheckerDisabled: disableSafetyChecker(),
+    // The chosen model family's dialect, resolved at the same boundary and for
+    // the same reason: the compile step may not reach up to the adapter package,
+    // and a cell hashed under one dialect must execute under the same one.
+    ...preparePromptFor(model),
     references: { vocabulary: "identity_pack", roles },
   });
   if (!compiled.ok) {
+    // Discriminated on `reason` FIRST: the refusal is a union, and only the
+    // strategy arm carries a `promptStrategy`. The wire-invariant arm — the plan
+    // would have claimed a LoRA its own payload does not carry — is a defect
+    // rather than a configuration an operator can fix, so it is reported in its
+    // own words instead of under a field it does not have.
     return {
       status: "refused",
       code: "profile_ineligible",
-      message: `prompt strategy ${compiled.promptStrategy} is not executable by the identity trial`,
+      message:
+        compiled.reason === "unsupported_prompt_strategy"
+          ? `prompt strategy ${compiled.promptStrategy} is not executable by the identity trial`
+          : compiled.message,
       spec: { ...planFields, ...profileFields, ...versionFields, ...variant.pack, ...variant.evaluation },
     };
   }

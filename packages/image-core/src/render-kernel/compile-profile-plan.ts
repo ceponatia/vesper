@@ -15,7 +15,7 @@ import type {
   ImageRenderControls,
   ImageResolutionTier,
 } from "../models/image-model-profiles";
-import { preparePromptForImageModel, withReviewedImageQuality } from "../models/quality-presets";
+import { withReviewedImageQuality } from "../models/quality-presets";
 import { compileIdentityReferencePrompt } from "../references/identity-reference-prompt";
 import { type CompileReferenceBinding, compileReferenceRolePrompt } from "../references/reference-role-prompt";
 
@@ -127,8 +127,8 @@ function nonBlank(value: string | null | undefined): string | null {
  * `render_intent` is the production lanes' general role vocabulary (identity,
  * location, style, object…), where the lane's own prompt builder ALREADY names
  * its references — the scene builder writes the multi-reference bindings for a
- * scene, and Qwen Edit's multi-reference lock is applied by
- * {@link preparePromptForImageModel} on the way out.
+ * scene, and a family that addresses references by number (Qwen Edit) applies
+ * its own lock through the injected {@link ImagePromptPreparer} on the way out.
  *
  * So the vocabulary decides whether the strategy prefixes anything at all. It is
  * a discriminated union rather than a widened role array because those two
@@ -150,9 +150,10 @@ export type PromptReferenceBinding =
 /**
  * How many references this binding names, whichever arm it is.
  *
- * Read by {@link preparePromptForImageModel}, which applies Qwen Edit's
- * multi-reference lock from the COUNT alone — so the two arms have to answer it
- * the same way even though they store their references differently.
+ * Handed to the {@link ImagePromptPreparer}, whose dialects choose between "the
+ * reference image" and numbered bindings from the COUNT alone — so the two arms
+ * have to answer it the same way even though they store their references
+ * differently.
  */
 function referenceBindingCount(references: PromptReferenceBinding): number {
   switch (references.vocabulary) {
@@ -260,11 +261,13 @@ export interface CompileProfileRenderPlanInput {
   /**
    * The model-dialect prompt step ({@link ImagePromptPreparer}).
    *
-   * Absent uses {@link preparePromptForImageModel}, which is what every caller
-   * gets until the application injects a model family's own preparer — so the
-   * field's arrival changes no compiled prompt anywhere. Injected rather than
-   * imported because the family that owns a dialect sits ABOVE this package, and
-   * an upward import is the one thing the layering forbids.
+   * Absent means NO DIALECT — the compiled text reaches the provider exactly as
+   * the strategy wrote it. That is the honest default because this package
+   * cannot know which family a model belongs to: dialects live in
+   * `@vesper/image-models`, which sits ABOVE this one, and an upward import is
+   * the one thing the layering forbids. So the application resolves the adapter
+   * and injects its preparer here; a model whose family has no adapter yet is
+   * the ordinary case and compiles unchanged.
    */
   preparePrompt?: ImagePromptPreparer;
 }
@@ -484,14 +487,11 @@ function compileRenderIntentPrompt(
  * that a caller could mistake for a runnable one.
  *
  * The dialect step runs HERE and again inside the transport's render call. That
- * is deliberate and safe: the rewrite is idempotent (the legacy preparer
- * replaces the legacy identity lock, and a prompt with no legacy lock left in it
- * passes through untouched), so the text fingerprinted here is byte-for-byte the
- * text the provider receives. Relying on that property beats adding an "already
- * prepared" flag whose two code paths would need keeping honest forever — and it
- * is why {@link ImagePromptPreparer} makes idempotence a contract rather than a
- * courtesy: an injected preparer that rewrote on the second pass would break the
- * same promise from a different file.
+ * is deliberate and safe because {@link ImagePromptPreparer} makes idempotence a
+ * CONTRACT: a family's rewrite leaves an already-rewritten prompt byte-identical,
+ * so the text fingerprinted here is byte-for-byte the text the provider
+ * receives. Relying on that property beats adding an "already prepared" flag
+ * whose two code paths would need keeping honest forever.
  *
  * The LAST step is the final-wire LoRA invariant
  * ({@link loraWireInvariantBreach}), which is the second of the two ways this
@@ -511,11 +511,13 @@ export function compileProfileRenderPlan(input: CompileProfileRenderPlanInput): 
   // record that nobody sent, and doing it before the strategy would let a
   // numbered-reference preamble be pushed below the LoRA's own prefix.
   const loraPrompt = applyImageLoraPromptAdditions(strategyPrompt.prompt, input.resolvedLora);
-  // The dialect step, injected or legacy. `preparePromptForImageModel` is the
-  // default rather than a fallback the caller may forget: an absent preparer is
-  // the ordinary case, and it must compile the same bytes it always did.
-  const preparePrompt = input.preparePrompt ?? preparePromptForImageModel;
-  const finalPrompt = preparePrompt(effectiveModel, loraPrompt, referenceBindingCount(references));
+  // The dialect step, or none. There is no dialect without an injected preparer
+  // — model dialects live in the adapter package, one layer up — so the default
+  // is the identity function rather than a slug check this package would have to
+  // keep in step with a registry it cannot see.
+  const finalPrompt = input.preparePrompt
+    ? input.preparePrompt(effectiveModel, loraPrompt, referenceBindingCount(references))
+    : loraPrompt;
 
   const defaults = profile.controlDefaults;
   const requested = input.controlOverrides;

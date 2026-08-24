@@ -7,7 +7,6 @@ import {
   type ImageModelProfile,
   type ImagePromptStrategy,
 } from "../models/image-model-profiles";
-import { preparePromptForImageModel } from "../models/quality-presets";
 import {
   compileProfileRenderPlan,
   MAX_TRIAL_PREDICTION_MS,
@@ -815,9 +814,11 @@ describe("the injected prompt preparer", () => {
     expect(compiled.finalPrompt).toBe("vesper-test/compile|1|change the outfit");
   });
 
-  it("falls back to the legacy preparation when none is injected", () => {
-    // Absence must be byte-identical to what every lane compiled before the hook
-    // existed, which is what makes the field's arrival payload-neutral.
+  it("applies no dialect at all when none is injected", () => {
+    // There is no dialect without an injected preparer: model families live in
+    // `@vesper/image-models`, one layer up, and this package deliberately keeps
+    // no slug check of its own. Even the slug whose dialect used to be hardcoded
+    // here compiles its text through untouched now.
     const legacy =
       "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
     const compiled = compiledPlan({
@@ -828,22 +829,6 @@ describe("the injected prompt preparer", () => {
       safetyCheckerDisabled: true,
       references: { vocabulary: "identity_pack", roles: ["canonical_identity"] },
     });
-    expect(compiled.finalPrompt).toBe(preparePromptForImageModel({ slug: "qwen/qwen-image-edit-2511" }, legacy, 1));
-    expect(compiled.finalPrompt).not.toContain(legacy);
-  });
-});
-
-describe("preparePromptForImageModel idempotency", () => {
-  it("leaves an already-prepared prompt byte-identical", () => {
-    // `compileProfileRenderPlan` fingerprints the prepared prompt and the
-    // transport prepares again on the way out. If this ever stops holding, every
-    // trial cell starts refusing cell_conflict against its own compiled prompt.
-    const legacy =
-      "Generate a new image of the exact same person shown in the reference image. Preserve face, hair color and style, skin tone, body proportions, and apparent age.";
-    const target = { slug: "qwen/qwen-image-edit-2511" };
-    for (const count of [1, 2]) {
-      const once = preparePromptForImageModel(target, `${legacy} Then change the outfit.`, count);
-      expect(preparePromptForImageModel(target, once, count)).toBe(once);
-    }
+    expect(compiled.finalPrompt).toBe(legacy);
   });
 });

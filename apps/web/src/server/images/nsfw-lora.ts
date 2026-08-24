@@ -82,7 +82,14 @@ export async function pairProfileWithNsfwLora(
   // rule `renderImageIntent` uses for a caller that did not resolve its own LoRA.
   const resolved = await resolveImageLoraForRender(
     { id: INTIMATE_SCENE_LORA_ID },
-    { model: wrapper, versionId: pinnedImageModelVersion(wrapper), task: profile.profile.task },
+    {
+      model: wrapper,
+      versionId: pinnedImageModelVersion(wrapper),
+      // A player-facing render on both callers — the chat scene lane and the
+      // portrait studio's test variant — so the row's `allowedTasks` curation
+      // applies, exactly as it did before contexts existed.
+      execution: { kind: "production", task: profile.profile.task },
+    },
     sink,
   );
   // The refusal's own `image_lora.*` diagnostic is already on the sink, in the

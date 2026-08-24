@@ -365,9 +365,9 @@ function effectiveFaceVisibility(plan: SceneRenderPlan): "full" | "partial" | "h
  * and saying outright that the turn is not on the table.
  *
  * **Appended as its own sentence, never woven into the lock.** `PORTRAIT_IDENTITY_LOCK` is
- * matched verbatim at the model boundary (`preparePromptForImageModel` swaps it for Qwen's
- * numbered-reference dialect), so editing that string here would silently un-Qwen every
- * adapted prompt. The lock also stays whole rather than being replaced: hair, build and tone
+ * matched verbatim at the model boundary (the Qwen edit adapter in `@vesper/image-models`
+ * swaps it for that family's numbered-reference dialect), so editing that string here would
+ * silently un-Qwen every adapted prompt. The lock also stays whole rather than being replaced: hair, build and tone
  * still bind to the reference, and `identityAnchors` keep emitting — the reference remains
  * authoritative for whatever the shot does show.
  *

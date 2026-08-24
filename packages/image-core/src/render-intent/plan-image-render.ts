@@ -125,9 +125,10 @@ export interface ImageRenderRuntimeFacts {
    * It sits with the deployment facts rather than on the intent for the same
    * reason the safety setting does: a lane says what it wants rendered, and
    * which dialect the chosen model speaks is something the process resolves
-   * around it. Absent keeps the legacy `preparePromptForImageModel` behavior, so
-   * every lane compiles the same bytes until the application starts injecting a
-   * family adapter's own preparer.
+   * around it. Absent means no dialect at all — the prompt crosses the model
+   * boundary untouched, because model dialects live in the adapter package and
+   * a kernel that guessed one would re-create the slug checks the adapters
+   * replaced.
    */
   preparePrompt?: ImagePromptPreparer;
 }

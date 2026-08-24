@@ -4,16 +4,15 @@ import {
   type ImageReferenceRole,
   type ImageRenderIntent,
   type ImageRenderReferenceSpec,
-  type ImageRenderRuntimeFacts,
   pinnedImageModelVersion,
   planImageRender,
   type PlannedImageRender,
   type ResolvedImageAttempt,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { disableSafetyChecker } from "../ai";
 import { resolveImageLoraForRender } from "./image-loras";
 import { withLoraDownloadCredential } from "./lora-credentials";
+import { imageRenderRuntimeFacts } from "./model-adapters";
 import { renderWithModel, type RenderWithModelResult } from "./models";
 
 /**
@@ -23,28 +22,15 @@ import { renderWithModel, type RenderWithModelResult } from "./models";
  * The planning half is `planImageRender` in `@vesper/image-core`: pure,
  * database-free, deployment-free. What is left here is everything that is not —
  * resolving the LoRA binding against the library, resolving the seed (the one
- * place randomness may enter a plan), resolving the deployment facts a pure
- * planner may not read, reporting diagnostics, calling the transport, and
- * assembling the attempt's provenance record.
+ * place randomness may enter a plan), resolving the deployment facts and the
+ * model family's dialect a pure planner may not read (`imageRenderRuntimeFacts`),
+ * reporting diagnostics, calling the transport, and assembling the attempt's
+ * provenance record.
  *
  * That split is the point of the render-kernel slice: the decisions about what a
  * provider is sent can now be exercised with no application in the process,
  * while the application keeps ownership of everything stateful.
  */
-
-/**
- * The deployment facts this process is configured with, read at the boundary and
- * handed to the pure planner.
- *
- * Resolved immediately before planning rather than cached, because that is where
- * today's payload builder reads it too: the compile path and the send path
- * currently ask the same environment the same question at two moments. Slice 4
- * of the monorepo plan closes that seam by resolving Replicate configuration
- * once for the process — until then, this matches existing behavior exactly.
- */
-function currentRuntimeFacts(): ImageRenderRuntimeFacts {
-  return { safetyCheckerDisabled: disableSafetyChecker() };
-}
 
 /** The intent a plan will be built from, or the refusal that stops the render. */
 type PreparedIntent = { ok: true; intent: ImageRenderIntent } | { ok: false; error: string };
@@ -77,7 +63,14 @@ async function resolveIntentLora(intent: ImageRenderIntent, sink?: DiagnosticSin
 
   const resolved = await resolveImageLoraForRender(
     selection,
-    { model, versionId: intent.versionId ?? pinnedImageModelVersion(model), task: profile.task },
+    {
+      model,
+      versionId: intent.versionId ?? pinnedImageModelVersion(model),
+      // THE production lane: both the mechanical checks and the row's own
+      // `allowedTasks` curation apply, exactly as they did before contexts
+      // existed. Every caller reaching this function is serving a player.
+      execution: { kind: "production", task: profile.task },
+    },
     sink,
   );
   // The refusal's diagnostic is pushed by the resolver, in the code it decided —
@@ -236,7 +229,10 @@ export async function renderImageIntent(
   // carrying segments can lose optional detail, or a mandatory sentence, to a
   // version's declared prompt ceiling, and that is a degradation an operator has
   // to be able to see.
-  const planned = planImageRender(seeded.intent, currentRuntimeFacts(), sink);
+  // The deployment facts, with this model family's dialect joined to them. Read
+  // immediately before planning rather than cached, because that is where the
+  // payload builder reads the same environment too.
+  const planned = planImageRender(seeded.intent, imageRenderRuntimeFacts(seeded.intent.profile.model), sink);
   if (!planned.ok) {
     const { code, message, context } = planned.refusal;
     sink?.push(diag("warn", code, message, { path: "image_model_profiles", context }));
@@ -302,6 +298,13 @@ export async function renderImageIntent(
       policy: plan.policy,
       timeoutMs: plan.timeoutMs,
       ...(intent.versionId ? { versionId: intent.versionId } : {}),
+      // PASSED THROUGH, never synthesized. A production lane deliberately
+      // carries no execution policy and keeps the transport's single-budget
+      // shell (plan §8, owner ruling 2026-08-24); only the benches put one on
+      // their intent, and this is where theirs reaches the transport. Inventing
+      // a default here would silently move every player-facing render onto
+      // two-phase budgets and startup retries.
+      ...(intent.executionPolicy ? { executionPolicy: intent.executionPolicy } : {}),
     },
     sink,
   );

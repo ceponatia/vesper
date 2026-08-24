@@ -2,6 +2,8 @@ import { asc, eq } from "drizzle-orm";
 import {
   evaluateImageLoraForRender,
   IMAGE_LORA_UNREACHABLE,
+  type ImageExecutionContext,
+  imageExecutionContextTask,
   type ImageLora,
   type ImageLoraCreateRequest,
   type ImageLoraRefusalCode,
@@ -11,7 +13,6 @@ import {
   type ImageLoraSelection,
   type ImageLoraUpdateRequest,
   type ImageModel,
-  type ImageProfileTask,
   isValidImageLoraLocator,
   redactImageLoraLocator,
 } from "@vesper/image-core";
@@ -135,12 +136,25 @@ export async function deleteImageLora(id: string): Promise<boolean> {
   return true;
 }
 
-/** The model, version and job a selection is being judged against. */
+/** The model, version and lane a selection is being judged against. */
 export interface ImageLoraRenderContext {
   model: ImageModel;
   /** The version this render will execute, or null when nothing pins the row. */
   versionId: string | null;
-  task: ImageProfileTask;
+  /**
+   * WHERE this render is being run from ({@link ImageExecutionContext}) — a
+   * lane, not a bare task.
+   *
+   * The bare task was the bug. Mechanical compatibility ("can these weights run
+   * on this version?") and the row's production task curation ("may Vesper use
+   * them for THIS job?") are different questions, and a task answers only the
+   * second. The Image Generator has no task at all, so it borrowed one, and a
+   * mechanically perfect LoRA was refused for breaking a curation rule about a
+   * lane the bench is not in. The evaluator now applies task policy only where
+   * the context says a lane exists (image-model-adapters.spec.md §"Execution
+   * context").
+   */
+  execution: ImageExecutionContext;
 }
 
 export type ImageLoraResolution =
@@ -165,11 +179,15 @@ export async function resolveImageLoraForRender(
   context: ImageLoraRenderContext,
   sink?: DiagnosticSink,
 ): Promise<ImageLoraResolution> {
+  // Both the lane and the task it implies, because a refusal read months later
+  // has to say which rule refused: `generator_bench` carries no task at all, and
+  // "task: item" on a bench row was exactly the fiction that hid the defect.
+  const lane = { executionContext: context.execution.kind, task: imageExecutionContextTask(context.execution) };
   const lora = await loadImageLora(selection.id);
   if (!lora) {
     return refused(
       { ok: false, code: IMAGE_LORA_UNREACHABLE, message: `no usable LoRA library entry ${selection.id}` },
-      { loraId: selection.id, slug: context.model.slug, task: context.task },
+      { loraId: selection.id, slug: context.model.slug, ...lane },
       sink,
     );
   }
@@ -178,7 +196,7 @@ export async function resolveImageLoraForRender(
     lora,
     modelSlug: context.model.slug,
     versionId: context.versionId,
-    task: context.task,
+    context: context.execution,
     ...(selection.scale === undefined ? {} : { requestedScale: selection.scale }),
     bindings: context.model.advancedCapabilities.controls,
   });
@@ -188,7 +206,7 @@ export async function resolveImageLoraForRender(
     {
       loraId: lora.id,
       slug: context.model.slug,
-      task: context.task,
+      ...lane,
       versionId: context.versionId,
       locator: redactImageLoraLocator(lora.locator),
     },

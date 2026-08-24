@@ -69,6 +69,9 @@ const RUN_LIST_MAX_LIMIT = 200;
 /** The loose attempt record, exactly as the Gallery reads `meta.render`. */
 const storedAttemptSchema = z.record(z.string(), z.unknown());
 
+/** The provider attempt history — the same loose record, once per prediction. */
+const storedAttemptListSchema = z.array(storedAttemptSchema);
+
 /**
  * One stored row as the routes report it. Every jsonb column crosses `parseOr`
  * (docs/resilience.md §1): a bag that no longer parses costs the display its
@@ -91,6 +94,7 @@ export function toWireImageGeneratorRun(row: ImageGeneratorRunRow, sink?: Diagno
     versionPolicy: storedVersionRequest(row).mode,
     effectiveRequest: storedMetaRecord(row, "effectiveRequest", sink),
     result: storedMetaRecord(row, "result", sink),
+    providerAttempts: storedProviderAttempts(row, sink),
     resultImageId: row.resultImageId,
     failureCode: row.failureCode,
     error: row.error,
@@ -142,6 +146,23 @@ export function storedRunProviderInputs(
  */
 function storedRunAttempt(row: ImageGeneratorRunRow, sink?: DiagnosticSink): Record<string, unknown> | null {
   return storedMetaRecord(row, "attempt", sink);
+}
+
+/**
+ * The provider attempt history, out of the same meta bag.
+ *
+ * A LIST rather than a record, and read with its own parse for that reason
+ * alone — everything else about it follows `attempt`: absent (every run that
+ * created one prediction) is a quiet null, and a bag that no longer parses costs
+ * the field rather than the row.
+ */
+function storedProviderAttempts(
+  row: ImageGeneratorRunRow,
+  sink?: DiagnosticSink,
+): Record<string, unknown>[] | null {
+  const raw = imageMeta(row.meta)["providerAttempts"];
+  if (raw === undefined || raw === null) return null;
+  return parseOrNull(storedAttemptListSchema, raw, sink, "image_generator_runs.meta.providerAttempts");
 }
 
 /** One loose per-run record out of the meta bag, on the same forgiving terms. */

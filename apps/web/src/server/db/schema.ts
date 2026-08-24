@@ -1691,9 +1691,14 @@ export const imageLoras = pgTable(
   {
     id: id(),
     label: text("label").notNull(),
-    /** `https_url` or `huggingface_repo` — the shape `locator` is validated as. */
+    /** `https_url`, `huggingface_repo` or `civitai_model_version` — the shape `locator` is validated as. */
     locatorType: text("locator_type", { enum: imageLoraLocatorTypes }).notNull(),
-    /** A public retrieval address: an HTTPS URL, or an `owner/repo` slug. */
+    /**
+     * A public retrieval address: an HTTPS URL, an `owner/repo` slug, or a bare
+     * Civitai model-version id. The id is stored rather than the download URL it
+     * builds, so the one place that address is spelled stays in the contract
+     * (`resolveImageLoraArtifactLocator`) and no pasted `?token=` reaches the row.
+     */
     locator: text("locator").notNull(),
     /** jsonb string arrays — base model slugs, exact provider versions, trigger words. */
     compatibleModelSlugs: jsonb("compatible_model_slugs").notNull().default([]),

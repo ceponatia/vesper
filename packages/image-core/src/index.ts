@@ -103,7 +103,6 @@ export {
   imageSeedPolicies,
   isUndisclosedProviderVersion,
   parseAspectValue,
-  preparePromptForImageModel,
   profileEligibility,
   providerDefaultDimensions,
   providerVersionsDisagree,

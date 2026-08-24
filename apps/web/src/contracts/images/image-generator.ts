@@ -336,5 +336,22 @@ export const imageGeneratorRunSchema = z.object({
   effectiveRequest: z.record(z.string(), z.unknown()).nullable().catch(null).default(null),
   /** What came back: returned dimensions, whether Vesper cropped, unsent inputs. */
   result: z.record(z.string(), z.unknown()).nullable().catch(null).default(null),
+  /**
+   * Every provider prediction this run created, oldest first — each carrying a
+   * `predictionId`, an `outcome` (`succeeded`, `failed`, `canceled`,
+   * `aborted_before_start`, `startup_timeout`, `render_timeout`) and, where the
+   * provider record allowed it to be worked out, `queuedMs` and `renderMs`.
+   *
+   * Null on every run that created exactly one prediction, which is every run
+   * written before bench execution policies existed and every run that started
+   * on its first attempt. Present, it is what distinguishes a model that ran and
+   * failed from a prediction the queue never let start — the two the single
+   * `predictionId` column could not tell apart.
+   *
+   * Kept LOOSE, for the same reason `attempt` and `result` are: the elements are
+   * the transport's own attempt records, and a strict shape here would silently
+   * strip a field a newer deploy added rather than carry it to the inspector.
+   */
+  providerAttempts: z.array(z.record(z.string(), z.unknown())).nullable().catch(null).default(null),
 });
 export type ImageGeneratorRun = z.infer<typeof imageGeneratorRunSchema>;
