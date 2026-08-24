@@ -160,6 +160,9 @@ beforeAll(async () => {
           additionalImageInputs: [
             { roleHint: "pose", binding: { field: "pose_image", arity: "single", required: false } },
           ],
+          // Declared fields but NO provider-input descriptors — the shape every
+          // row registered before descriptors existed still has.
+          knownInputFields: ["prompt", "pose_image", "extra_image"],
         },
       },
       {
@@ -270,6 +273,10 @@ beforeAll(async () => {
         aspectMode: "size",
         supportedAspects: ["768*1024", "1536*2048"],
         probedVersionId: PINNED_VERSION,
+        // Wan's real shape: the tier and the shape list are one provider input.
+        advancedCapabilities: {
+          controls: { resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] } },
+        },
       },
       {
         // Registered only to be deleted mid-test: the `model_missing` case is
@@ -805,6 +812,22 @@ describe.skipIf(!ready)("image generator output shape", () => {
     });
   });
 
+  it("refuses a resolution tier on a model whose shape list IS its size list", async () => {
+    // Falsified against the version that let the tier through: it mapped onto
+    // the reserved `size` key, was filtered out of the payload, and surfaced as
+    // `provider_input_rejected` naming a provider field the operator can
+    // neither see nor set.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: SIZE_MODEL_ID, controls: { resolution: "2K" } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(row?.error).toContain("output shape");
+    expect(captured).toHaveLength(0);
+  });
+
   it("refuses when the chosen shape resolves to a different declared member", async () => {
     // Several members can share one ratio (Wan's three 3:4 sizes), and the
     // largest-area tie-break would answer a request for one with another.
@@ -847,6 +870,25 @@ describe.skipIf(!ready)("image generator pre-spend payload gate", () => {
     expect(captured).toHaveLength(0);
   });
 
+  it("refuses any advanced value on a model with no probed provider-input descriptors", async () => {
+    // `knownInputFields` lists every declared property, URI inputs included, so
+    // accepting the bag on a descriptor-less record would let a direct API
+    // caller hand the provider an arbitrary address. The form shows no advanced
+    // editor on such a row, so this closes the API path only.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({
+      modelId: DEDICATED_MODEL_ID,
+      providerInputs: { extra_image: "https://elsewhere.invalid/face.png" },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(row?.error).toContain("re-probe");
+    expect(captured).toHaveLength(0);
+  });
+
   it("refuses a required provider field bound to a normalized control the run left unset", async () => {
     // The raw bag may not fill a reserved field, so this omission is invisible
     // to every earlier check — without the final pass the provider is the
@@ -875,7 +917,22 @@ describe.skipIf(!ready)("image generator pre-spend payload gate", () => {
 
     expect(payload.status).toBe("succeeded");
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
-      providerControls: { cfg: 4 },
+      providerRequest: { cfg: 4 },
+    });
+  });
+
+  it("records the whole provider request, not only the mapped controls", async () => {
+    // A record listing `controlInput` alone says nothing about the model row's
+    // own pinned fields — which the provider is definitely sent, and which the
+    // reviewed-quality seam adds more of on the way out.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: ADVANCED_MODEL_ID });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerRequest: { go_fast: true, prompt: expect.stringContaining("lighthouse") as unknown as string },
     });
   });
 

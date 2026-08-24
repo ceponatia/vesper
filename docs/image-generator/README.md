@@ -78,11 +78,15 @@ probed capability record, never from its slug:
   as a single render.
 - **Output shape** offers the version's own declared shapes, filtered to the
   members the shared shape mapper actually resolves back to. Blank — the
-  default — is the model's own shape; see below.
+  default — is the model's own shape; see below. On a version whose shape list
+  IS its size list, the shape select replaces the resolution tier outright,
+  because there the two are one provider input.
 - **Advanced model inputs** render from the probed `providerInputs`
   descriptors: non-reserved fields of a type the bag can express become typed
   inputs, while reserved fields — owned by the prompt/reference/aspect/
-  control/dedicated plumbing — are listed but not editable.
+  control/dedicated plumbing — are listed but not editable. A model registered
+  before descriptors existed has none, so it offers no advanced inputs at all
+  and the server refuses any sent directly to the API; a re-probe restores them.
 - **The prompt** is required only where the version's probed prompt
   descriptor says so. On a model whose schema does not require it, an empty
   prompt sends no prompt field at all rather than an empty string.
@@ -168,7 +172,7 @@ the last two codes below is checked before the provider is paid:
 | `capacity_exceeded`       | selected references exceed capacity or the inline byte budget   |
 | `dedicated_input_unbound` | a structural role with no dedicated capability binding          |
 | `prompt_required`         | the prompt is empty and this version requires one               |
-| `control_refused`         | an explicitly set normalized control or shape cannot be sent    |
+| `control_refused`         | a set control or shape cannot be sent on this version           |
 | `provider_input_rejected` | an unknown, reserved, unsupported, or invalid provider value    |
 | `version_replay_unsafe`   | a captured version cannot be replayed against trusted facts     |
 | `render_failed`           | provider execution failed                                       |
@@ -199,14 +203,21 @@ any post-render crop was going to happen. Once the provider answers, the run
 settles the returned pixel dimensions, whether Vesper cropped, and the
 prediction and executed-version echoes.
 
-The reason is drift. Vesper keeps one capability record per registered model
-and replaces it wholesale on re-probe, so a row saying `guidance = 4` cannot
-by itself say whether the provider received `guidance: 4` or `cfg: 4`, and a
-row saying "3:4" cannot say whether that reached `aspect_ratio`, reached
-`size` as `1536*2048`, or was applied by cropping afterwards. Recording the
-bound names makes a run's account of itself independent of a capability
-record that will move. Each run also freezes the mechanical capability facts
-it executed under, which is what makes exact replay possible below.
+The recorded request is the **whole** payload, assembled by the same builder
+the transport uses — not just the controls the run set. The model row's own
+pinned fields, the output format, and the reviewed quality corrections Vesper
+applies to a few known models all reach the provider too, and a record that
+omitted them would be describing a request nobody sent.
+
+The reason for all of it is drift. Vesper keeps one capability record per
+registered model and replaces it wholesale on re-probe, so a row saying
+`guidance = 4` cannot by itself say whether the provider received
+`guidance: 4` or `cfg: 4`, and a row saying "3:4" cannot say whether that
+reached `aspect_ratio`, reached `size` as `1536*2048`, or was applied by
+cropping afterwards. Recording the bound names makes a run's account of itself
+independent of a capability record that will move. Each run also freezes the
+mechanical capability facts it executed under, which is what makes exact
+replay possible below.
 
 Nothing sensitive is kept: no bytes, no data URLs, no signed download URLs,
 no credentials. A LoRA reaches the payload as a download address, so that
@@ -236,6 +247,12 @@ the form says so and asks which version to run:
   `version_replay_unsafe` rather than pointing today's field bindings at
   yesterday's weights. The current version is never substituted for a replay
   the admin asked for.
+
+One limit worth knowing: Vesper's reviewed quality corrections for a handful of
+known models live in code rather than in the capability record, so a replay
+picks up whatever those corrections say today. That is deliberate — they exist
+to correct harmful provider defaults, and dropping them for a replay would make
+it less like a real Vesper render, not more.
 
 The run detail likewise surfaces a requested-vs-executed version disagreement
 on any single run.

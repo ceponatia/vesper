@@ -65,14 +65,56 @@ covers the first implementation), and multi-output runs.
   sizes), the run refuses rather than substituting, and the form withholds the
   unreachable members.
 - **Strictness is a policy on the shared request, not a Generator fork.**
-  `ImageRenderPolicy` carries `references: "allow_trim" | "require_all"` and
-  `providerInputs: "declared_only" | "strict"`. Absent is production's answer,
+  `ImageRenderPolicy` carries `references: "allow_trim" | "require_all"`,
+  `providerInputs: "declared_only" | "strict"`, and
+  `emptyPrompt: "send" | "omit"`. Absent is production's answer on all three,
   so no existing lane moves.
 - **The final provider-input gate runs over the assembled payload**, built by
   the provider package's own builder (`previewRegistryModelInput`) so the
   application never predicts what the payload looks like. It is what catches a
   required field RESERVED to a normalized control with no provider default —
   invisible to the raw-bag sweep, which may not fill a reserved field.
+- **The gate and the record use the model the TRANSPORT sends**, not the row as
+  stored. `PlannedImageRender.model` is deliberately the raw row (its own doc
+  says so) and `renderWithModel` applies `withReviewedImageQuality` on the way
+  out, merging pinned fields into `extraInput` — `width`/`height` on the SDXL
+  rows, `method` on PuLID, `go_fast` on Qwen Edit. A pre-spend view built from
+  the unmerged row reported reviewed pins as missing required fields, let an
+  advanced value overlay one, and recorded a request that did not mention values
+  the provider was sent. The runner reapplies the same seam before previewing,
+  gating, and recording.
+- **The effective request records the whole payload**, not just
+  `plan.controlInput`. A record listing only the mapped controls said nothing
+  about the row's `extraInput` pins, the output format, or the reviewed quality
+  corrections, all of which the provider definitely receives.
+- **The raw bag fails closed on a record with NO descriptors.**
+  `knownInputFields` lists every declared property, URI inputs included, so a row
+  registered before descriptors existed would otherwise let a direct API caller
+  hand the provider an arbitrary address. The form already offers no advanced
+  editor there, so this closes the API path only, and a re-probe reopens it.
+- **A size-mode model's resolution tier is refused with its own message.** On
+  such a version the declared shapes ARE the sizes, so the tier and the Output
+  shape select are two spellings of one request — and the render path reserves
+  that key for the shape, dropping the mapped tier out of the payload. The form
+  withholds the tier there and the runner refuses it in words the operator can
+  act on, rather than surfacing it later as a rejected provider field they can
+  neither see nor set.
+- **Shape reachability is one predicate.** Several declared members can share a
+  ratio, and the mapper resolves a ratio to the largest of them, so membership in
+  `supportedAspects` is not the same question as "would this be sent". The form's
+  select, its request assembly, and its drift warning all ask the reachability
+  question, and the runner refuses a member it would have to substitute.
+- **An empty prompt is omitted only on request.**
+  `ImageRenderPolicy.emptyPrompt` defaults to `send`, so the Image Lab's control
+  probe keeps posting `prompt: ""` for a blank instruction; the Generator asks
+  for `omit`, which it only ever reaches once the version's descriptor said a
+  prompt is not required.
+- **Known limitation:** the reviewed-quality table is CODE, keyed on the base
+  slug, and applies to every render including a captured-version replay. A run's
+  `capabilitySnapshot` cannot freeze it, so changing that table changes what a
+  replay sends. Accepted: those pins exist to correct harmful provider defaults,
+  and suppressing them for replays would make a replay less faithful to how
+  Vesper actually calls the model, not more.
 - **The raw bag fails closed on `uri`, `array` and `unknown` descriptor
   types.** The form already withheld editors for them; the server is what makes
   it a rule, and a URI field in particular must never be reachable by typing a
@@ -135,6 +177,8 @@ covers the first implementation), and multi-output runs.
   asks for `require_all`, and the transport refuses before creating a
   prediction. `meta.trimmedPrimaries` remains as the net for any caller that
   does not ask for the strict arm.
+- The resolution tier select is offered only on aspect-ratio-mode versions
+  (superseded 2026-08-23 by the size-mode ruling above).
 - The form withholds Width/Height until the shared custom-resolution path
   (`resolution: "custom"` + dimension bindings) works end to end — the compile
   honors explicit dimensions only under that mode, so offering the fields
@@ -201,6 +245,7 @@ what was coming. `PlannedImageRender.targetRatio` and
 export interface ImageRenderPolicy {
   references?: "allow_trim" | "require_all";        // default allow_trim
   providerInputs?: "declared_only" | "strict";      // default declared_only
+  emptyPrompt?: "send" | "omit";                    // default send
 }
 ```
 
@@ -466,7 +511,8 @@ transport without rebuilding the payload rules in application code.
    `validateProviderOverrides`' refusal.
 8b. Shape: `controls.aspect` absent → `target: { aspectRatio: null }`. Present
    → it must be a member of this version's `supportedAspects` and parse as a
-   ratio, else `control_refused`.
+   ratio, else `control_refused`. `controls.resolution` on a size-mode model is
+   `control_refused` too: there the shape list IS the size list.
 8. Build the synthetic Generator profile (below) and the `ImageRenderIntent`:
    whole prompt; primary references with role `reference` in caller order;
    dedicated inputs with their structural roles; explicit `controls` minus
@@ -543,7 +589,7 @@ Written before spend into `meta.effectiveRequest`; the run detail's
 | --------------------------------- | ----------------------------------------------------------- |
 | `model`                           | id, slug, pinned version, version policy, capability version |
 | `prompt` / `negativePrompt`       | the compiled text as it will be sent                         |
-| `providerControls`                | `plan.controlInput`, sanitized — real field names            |
+| `providerRequest`                 | the whole assembled payload, sanitized — real field names    |
 | `appliedControls`                 | the plan's normalized-name record, unchanged                 |
 | `shape`                           | mode, requested member, field, value, expected ratio, tier   |
 | `primaryInputs`                   | image id → requested slot, provider slot, provider field     |

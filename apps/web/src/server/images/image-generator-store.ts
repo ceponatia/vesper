@@ -405,8 +405,21 @@ export async function deleteImageGeneratorRun(runId: string, ownerId: string): P
     row.resultImageId === null
       ? false
       : await deleteOwnedImage(row.resultImageId, ownerId, { kind: "generator_output" });
-  await db()
+  const [removed] = await db()
     .delete(imageGeneratorRuns)
-    .where(and(eq(imageGeneratorRuns.id, runId), eq(imageGeneratorRuns.ownerId, ownerId)));
-  return { deleted: true, outputImagesRemoved: outputRemoved ? 1 : 0 };
+    .where(and(eq(imageGeneratorRuns.id, runId), eq(imageGeneratorRuns.ownerId, ownerId)))
+    .returning({ resultImageId: imageGeneratorRuns.resultImageId });
+
+  // A render that settled BETWEEN the read above and this delete attached an
+  // output the read could not see, and its own settle succeeded (the row was
+  // still `running`), so it kept the image. The delete's own RETURNING is the
+  // only view of the row as it finally stood; without this the image would
+  // survive with nothing pointing at it, invisible to every listing and to the
+  // sweep, which only reconciles rows whose file vanished.
+  const late = removed?.resultImageId ?? null;
+  const lateRemoved =
+    late !== null && late !== row.resultImageId
+      ? await deleteOwnedImage(late, ownerId, { kind: "generator_output" })
+      : false;
+  return { deleted: true, outputImagesRemoved: (outputRemoved ? 1 : 0) + (lateRemoved ? 1 : 0) };
 }

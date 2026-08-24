@@ -144,14 +144,27 @@ export type ImageReferenceTransmissionPolicy = (typeof imageReferenceTransmissio
 export const imageProviderInputPolicies = ["declared_only", "strict"] as const;
 export type ImageProviderInputPolicy = (typeof imageProviderInputPolicies)[number];
 
+export const imageEmptyPromptPolicies = ["send", "omit"] as const;
+export type ImageEmptyPromptPolicy = (typeof imageEmptyPromptPolicies)[number];
+
 export interface ImageRenderPolicy {
   references?: ImageReferenceTransmissionPolicy;
   providerInputs?: ImageProviderInputPolicy;
+  /**
+   * What an EMPTY prompt means. `send` writes the empty string, which is what
+   * every caller did before this field existed — including the Image Lab's
+   * control probe, whose instruction may legitimately be blank. `omit` writes
+   * no prompt key at all, so a version declaring its own prompt default gets
+   * that default rather than an empty string standing in for one; only a
+   * caller that has already checked the version does not REQUIRE a prompt may
+   * ask for it.
+   */
+  emptyPrompt?: ImageEmptyPromptPolicy;
 }
 
 /** The policy an absent one means: exactly what every lane did before policies existed. */
 export function defaultImageRenderPolicy(): Required<ImageRenderPolicy> {
-  return { references: "allow_trim", providerInputs: "declared_only" };
+  return { references: "allow_trim", providerInputs: "declared_only", emptyPrompt: "send" };
 }
 
 /** The caller's policy filled in with the defaults above. */

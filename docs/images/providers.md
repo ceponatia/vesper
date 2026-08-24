@@ -448,16 +448,19 @@ Nothing throws — a failure degrades to an error string the caller turns into a
 failed row.
 
 **Send strictness is the caller's policy** (`ImageRenderPolicy`). By default a
-render trims what will not fit and lets the provider judge the values, which is
-what every production lane wants. A caller may instead ask for
+render trims what will not fit, lets the provider judge the values, and posts an
+empty prompt as an empty string — which is what every production lane and the
+Image Lab's control probe want. A caller may instead ask for
 `references: "require_all"`, which refuses **before a prediction is created**
 when capacity or the inline byte budget would leave a selected reference
 behind, and `providerInputs: "strict"`, which holds the finished payload
 against the version's probed descriptors — required presence (unless the schema
 declares its own default), primitive type, integer-ness, enum membership,
 range — and fails closed on `uri`, `array` and `unknown` shapes no typed
-transport owns. Both refusals name what was wrong and create nothing, so the
-caller settles them as unspent rather than as provider failures. The rules live
+transport owns. A third member, `emptyPrompt: "omit"`, drops the prompt key
+entirely for an empty prompt so a version's own declared default applies. Both
+refusals name what was wrong and create nothing, so the caller settles them as
+unspent rather than as provider failures. The rules live
 in `packages/image-replicate/src/strict-request.ts`, beside the payload builder
 they judge; the admin Image Generator is the only caller asking for them today. `disable_safety_checker` is only ever sent to models whose schema
 declares it (Replicate rejects unknown inputs); its value comes from

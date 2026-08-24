@@ -878,6 +878,14 @@ An independent review of the built Generator found six places where an operator-
 
 Also corrected while in the runner: two deliveries of the same queued run can no longer both pay for a render, and a settled run cannot be rewritten.
 
+A second, adversarial review of the corrected code found five more, all fixed in the same stage:
+
+- The pre-spend record described the wrong request on the handful of models Vesper applies reviewed quality corrections to. Those corrections are added on the way out, so the record — and the check that runs just before the provider call — now look at the request as the provider will receive it, and the record lists the whole request rather than only the controls the owner set.
+- On a model whose declared shapes are its sizes, asking for a resolution tier always failed, naming a provider field the owner could neither see nor set. The form no longer offers the tier there — the shape picker is the same choice — and a request that still carries one is refused in plain words.
+- A model registered before Vesper started recording per-field descriptions accepted raw provider values it could not check. Those are now refused until the model is re-probed.
+- A duplicated run could carry an output shape the model declares but never actually uses, which the form showed as blank and the run then refused. The form now treats "declared" and "actually sent" as the same question everywhere.
+- Deleting a run at the exact moment its render finished could leave the produced image behind with nothing pointing at it.
+
 ### Stage 7 — First production integration
 
 void — the Image Generator is intentionally admin tooling and ordinary player-facing image generation must not route through it.

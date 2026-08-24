@@ -14,6 +14,7 @@ import {
   type DimensionChoice,
   parseAspectValue,
   pinnedImageModelVersion,
+  withReviewedImageQuality,
   planImageRender,
   type PlannedImageRender,
   profileEligibility,
@@ -72,7 +73,14 @@ import type { RenderImageIntentResult } from "./render-intent";
  * applies. Holding the finished payload against them turns a certain provider
  * rejection into a refusal that costs nothing.
  */
-const IMAGE_GENERATOR_RENDER_POLICY = { references: "require_all", providerInputs: "strict" } as const;
+const IMAGE_GENERATOR_RENDER_POLICY = {
+  references: "require_all",
+  providerInputs: "strict",
+  // Only ever reached when the version's own descriptor said a prompt is not
+  // required, so an absent key means the version's declared default applies —
+  // never an empty string standing in for one.
+  emptyPrompt: "omit",
+} as const;
 
 /**
  * The Image Generator's runner (image-lab-general-model-trials.spec.md
@@ -310,6 +318,21 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   if (!shape.ok) {
     return await settleGeneratorRunFailed(row, generatorFailure("control_refused"), shape.message, sink, { columns });
   }
+  // On a size-mode model the declared shapes ARE the sizes, so a resolution
+  // tier and an output shape are two spellings of one request — and the tier's
+  // spelling loses: the render path reserves the `size` key for the shape, then
+  // drops the mapped tier out of the payload. Refused here, in words the
+  // operator can act on, rather than surfacing later as a rejected provider
+  // field they can neither see nor set.
+  if (model.aspectMode === "size" && controls.resolution !== undefined) {
+    return await settleGeneratorRunFailed(
+      row,
+      generatorFailure("control_refused"),
+      `${model.slug} expresses resolution through its own shape list; pick an output shape instead of a resolution tier`,
+      sink,
+      { columns },
+    );
+  }
 
   // 9. Resolve the LoRA FIRST when one is asked for, so a library refusal
   // settles pre-spend under the layer's own verbatim `image_lora.*` code.
@@ -364,11 +387,36 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
       { columns },
     );
   }
-  const refusedControl = refusedDroppedControl(plan.droppedControls);
+  const refusedControl = refusedDroppedControl(plan);
   if (refusedControl) {
     return await settleGeneratorRunFailed(row, generatorFailure(refusedControl.code), refusedControl.message, sink, {
       columns,
     });
+  }
+
+  // THE model the provider will actually be handed. `plan.model` is the row as
+  // stored — the planner says so itself — and the transport wrapper applies the
+  // reviewed-quality seam on the way out, which merges pinned fields
+  // (`width`/`height` on the SDXL rows, `method` on PuLID, `go_fast` on Qwen
+  // Edit) into `extraInput`. A pre-spend view built from the unmerged row would
+  // report a reviewed pin as a missing required field, refuse an advanced value
+  // that collides with one, and — worst — record an effective request that does
+  // not mention values the provider was sent.
+  const sentModel = withReviewedImageQuality(plan.model);
+  const plannedShape = plannedShapeInput(sentModel, shape, plan);
+  // An explicitly chosen shape must be the shape that goes. `chooseAspect`
+  // resolves a RATIO, and several declared members can share one — Wan offers
+  // three 3:4 sizes — so the largest-area tie-break would quietly answer a
+  // request for the small one with the huge one. For production that is a
+  // sensible resolution; for a bench it is the operator's choice being replaced.
+  if (shape.requested !== null && plannedShape.value !== shape.requested) {
+    return await settleGeneratorRunFailed(
+      row,
+      generatorFailure("control_refused"),
+      `the shape ${shape.requested} resolves to ${plannedShape.value ?? "no shape at all"} on this version; pick that one instead`,
+      sink,
+      { columns },
+    );
   }
 
   // 11. The record BEFORE the spend: the compiled prompt as it will be sent,
@@ -380,6 +428,24 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   const finalPrompt = plan.prompt;
   const columnsWithPrompt = { ...columns, finalPrompt };
   const snapshot = capabilitySnapshotOf(model);
+  // The payload this request WILL become, assembled by the provider package's
+  // own builder rather than predicted here. It is both what the pre-spend gate
+  // judges and what the record reports, so the two can never describe different
+  // requests.
+  const sentRequest = previewRegistryModelInput({
+    model: sentModel,
+    prompt: finalPrompt,
+    referenceCount: plan.references.length,
+    controlReferences: plan.controlReferences.map((control) => ({
+      field: control.field,
+      arity: control.arity,
+      count: control.buffers.length,
+    })),
+    aspect: plannedShape.value,
+    controlInput: plan.controlInput,
+    policy: IMAGE_GENERATOR_RENDER_POLICY,
+    safetyCheckerDisabled: disableSafetyChecker(),
+  });
   const outcome = {
     sentRoles: plan.sentReferences.map((reference) => reference.role),
     dedicatedFields: plan.controlReferences.map((reference) => reference.field),
@@ -388,13 +454,15 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   const metaWithOutcome = generatorRunMeta(row, {
     outcome,
     effectiveRequest: effectiveRequestRecord({
-      model: plan.model,
+      model: sentModel,
       versionId,
       versionRequest,
       inputs,
       plan,
       planReferences: references.list,
       shape,
+      plannedShape,
+      sentRequest,
       finalPrompt,
     }),
     ...(snapshot ? { capabilitySnapshot: snapshot } : {}),
@@ -408,29 +476,6 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // erased by the settle's own assignment.
   const rowWithOutcome: ImageGeneratorRunRow = { ...row, meta: metaWithOutcome };
 
-  // 11a. An explicitly chosen shape must be the shape that goes.
-  //
-  // `chooseAspect` resolves a RATIO, and several declared members can share
-  // one — Wan offers 768*1024, 1536*2048 and 3072*4096 all at 3:4, and the
-  // largest-area tie-break would quietly answer a request for the small one
-  // with the huge one. For production that is a sensible resolution; for a
-  // bench it is the operator's explicit choice being replaced.
-  // `plan.model` throughout, not the registry row: the compile step already
-  // merged the reviewed quality inputs and resolved the safety toggle into
-  // `extraInput`, and the transport wrapper sends THAT model. Asking the
-  // pre-spend gate about the unmerged row would report a reviewed pin as a
-  // missing required field.
-  const plannedShape = plannedShapeInput(plan.model, shape, plan);
-  if (shape.requested !== null && plannedShape.value !== shape.requested) {
-    return await settleGeneratorRunFailed(
-      rowWithOutcome,
-      generatorFailure("control_refused"),
-      `the shape ${shape.requested} resolves to ${plannedShape.value ?? "no shape at all"} on this version; pick that one instead`,
-      sink,
-      { columns: columnsWithPrompt },
-    );
-  }
-
   // 11b. THE final pre-spend gate: the payload this request will actually
   // become, held against the version's own declared schema.
   //
@@ -441,27 +486,15 @@ async function runGeneratorBody(row: ImageGeneratorRunRow, sink?: DiagnosticSink
   // field that is reserved to a normalized control and has no provider default,
   // which the bag may not fill and the render path did not.
   const violations = providerInputViolations(
-    plan.model,
-    previewRegistryModelInput({
-      model: plan.model,
-      prompt: finalPrompt,
-      referenceCount: plan.references.length,
-      controlReferences: plan.controlReferences.map((control) => ({
-        field: control.field,
-        arity: control.arity,
-        count: control.buffers.length,
-      })),
-      aspect: plannedShape.value,
-      controlInput: plan.controlInput,
-      safetyCheckerDisabled: disableSafetyChecker(),
-    }),
+    sentModel,
+    sentRequest,
     plan.controlReferences.map((control) => control.field),
   );
   if (violations.length > 0) {
     return await settleGeneratorRunFailed(
       rowWithOutcome,
       generatorFailure("provider_input_rejected"),
-      `${plan.model.slug} would reject this request: ${violations.map((violation) => violation.detail).join("; ")}`,
+      `${sentModel.slug} would reject this request: ${violations.map((violation) => violation.detail).join("; ")}`,
       sink,
       { columns: columnsWithPrompt, meta: { result: { spent: false, providerInputViolations: violations } } },
     );
@@ -798,11 +831,17 @@ function capabilitySnapshotOf(model: ImageModel): ImageGeneratorCapabilitySnapsh
  * and the pre-spend gate cannot describe a different payload than the one that
  * goes. A native request resolves to no key at all.
  */
+interface PlannedShape {
+  field: string;
+  value: string | null;
+  dimensions: DimensionChoice;
+}
+
 function plannedShapeInput(
   model: ImageModel,
   shape: Extract<GeneratorShape, { ok: true }>,
   plan: PlannedImageRender,
-): { field: string; value: string | null; dimensions: DimensionChoice } {
+): PlannedShape {
   const dimensions =
     shape.aspectRatio === null
       ? providerDefaultDimensions()
@@ -820,6 +859,9 @@ interface EffectiveRequestInput {
   plan: PlannedImageRender;
   planReferences: readonly ImageRenderReference[];
   shape: Extract<GeneratorShape, { ok: true }>;
+  plannedShape: PlannedShape;
+  /** The assembled payload, from the provider package's own builder. */
+  sentRequest: Record<string, unknown>;
   finalPrompt: string;
 }
 
@@ -847,8 +889,12 @@ interface EffectiveRequestInput {
  */
 function effectiveRequestRecord(input: EffectiveRequestInput): Record<string, unknown> {
   const { model, plan, shape } = input;
-  const { field: aspectField, value: aspectValue, dimensions } = plannedShapeInput(model, shape, plan);
+  const { field: aspectField, value: aspectValue, dimensions } = input.plannedShape;
   const willCrop = shape.aspectRatio !== null && (dimensions.needsCrop || dimensions.expectedAspect === null);
+  const imageFields = new Set<string>([
+    ...(plan.references.length > 0 ? [model.referenceField] : []),
+    ...plan.controlReferences.map((control) => control.field),
+  ]);
 
   const primaryOrder = input.planReferences.slice(0, input.inputs.primary.length);
   return {
@@ -862,7 +908,11 @@ function effectiveRequestRecord(input: EffectiveRequestInput): Record<string, un
     },
     prompt: input.finalPrompt,
     negativePrompt: plan.negativePrompt,
-    providerControls: sanitizedProviderControls(model, plan.controlInput),
+    // The WHOLE provider request, not just the mapped controls: a reviewed
+    // quality pin, an `extraInput` constant and an output format all reach the
+    // provider too, and a record that listed only `controlInput` would say
+    // nothing about values this run definitely sent.
+    providerRequest: sanitizedProviderRequest(model, input.sentRequest, imageFields),
     appliedControls: plan.appliedControls,
     shape: {
       mode: shape.mode,
@@ -908,10 +958,20 @@ function effectiveRequestRecord(input: EffectiveRequestInput): Record<string, un
  * of here, a credential), and any URL or inline data is an ephemeral handle
  * whose stored copy would be both useless and unsafe.
  */
-function sanitizedProviderControls(model: ImageModel, controlInput: Record<string, unknown>): Record<string, unknown> {
+function sanitizedProviderRequest(
+  model: ImageModel,
+  request: Record<string, unknown>,
+  imageFields: ReadonlySet<string>,
+): Record<string, unknown> {
   const loraField = model.advancedCapabilities.controls.loraWeights?.field;
   const sanitized: Record<string, unknown> = {};
-  for (const [field, value] of Object.entries(controlInput)) {
+  for (const [field, value] of Object.entries(request)) {
+    if (imageFields.has(field)) {
+      // The addresses do not exist yet and would be useless if they did; the
+      // image ids that DO identify these inputs are recorded below.
+      sanitized[field] = Array.isArray(value) ? `[${String(value.length)} images]` : "[image]";
+      continue;
+    }
     sanitized[field] = field === loraField ? "[locator redacted]" : sanitizedControlValue(value);
   }
   return sanitized;
@@ -1019,9 +1079,9 @@ async function readGeneratorReferences(inputs: ImageGeneratorRunInputs, ownerId:
  * represent.
  */
 function refusedDroppedControl(
-  droppedControls: readonly { control: string; reason: string }[],
+  plan: PlannedImageRender,
 ): { code: Extract<ImageGeneratorFailureCode, "control_refused" | "provider_input_rejected">; message: string } | null {
-  for (const entry of droppedControls) {
+  for (const entry of plan.droppedControls) {
     // The synthetic profile's own `seedPolicy: "caller"` records a drop on
     // every unseeded run; nobody selected it, so it refuses nothing. The
     // controls schema cannot express `seedPolicy`, so this can never mask an
@@ -1058,9 +1118,13 @@ function refusedDroppedControl(
  * Records probed before descriptors existed simply skip layers 2–3.
  */
 function rejectedProviderInput(
-  model: ImageModel,
+  registered: ImageModel,
   providerInputs: Record<string, string | number | boolean>,
 ): string | null {
+  // The REVIEWED model, because the transport sends that one: the quality seam
+  // merges its pins into `extraInput` on the way out, and a bag key naming one
+  // of them would overlay LAST and quietly undo a reviewed correction.
+  const model = withReviewedImageQuality(registered);
   // No empty-bag early return: the required-descriptor sweep at the bottom
   // must run even when the admin set nothing at all.
   const keys = Object.keys(providerInputs);
@@ -1087,7 +1151,19 @@ function rejectedProviderInput(
   const descriptors = new Map(
     model.advancedCapabilities.providerInputs.map((descriptor) => [descriptor.field, descriptor]),
   );
-  if (descriptors.size === 0) return null;
+  // A record with no descriptors cannot say what SHAPE any field takes, and the
+  // plan's rule for an unprobed field is to reject it (§13). `knownInputFields`
+  // is not a substitute: it lists every declared property, URI inputs included,
+  // so accepting the bag here would let a direct API caller hand the provider an
+  // arbitrary address on any model registered before descriptors existed. The
+  // form already offers no advanced editor on such a row, so this only closes
+  // the API path — and a re-probe reopens it properly.
+  if (descriptors.size === 0) {
+    const first = keys[0];
+    return first === undefined
+      ? null
+      : `${model.slug} has no probed provider-input descriptors, so ${first} cannot be set safely — re-probe the model first`;
+  }
   for (const key of keys) {
     const descriptor = descriptors.get(key);
     const value = providerInputs[key];

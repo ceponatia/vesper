@@ -517,8 +517,8 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
                   ? "No shape field was sent — the model answered at its own default."
                   : `${effectiveView.data.shape.field} = ${effectiveView.data.shape.value}`}
                 {effectiveView.data.postprocess.cropTarget === null
-                  ? " Vesper cropped nothing."
-                  : ` Vesper cropped the result to ${String(effectiveView.data.postprocess.cropTarget)}.`}
+                  ? " No crop was planned."
+                  : ` A crop to ${String(effectiveView.data.postprocess.cropTarget)} was planned; the result below says what happened.`}
               </p>
             </div>
             <div>

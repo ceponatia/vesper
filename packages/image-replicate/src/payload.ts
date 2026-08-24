@@ -1,4 +1,9 @@
-import { type ImageModel, type ImageRenderPolicy, reservedImageInputFields } from "@vesper/image-core";
+import {
+  type ImageEmptyPromptPolicy,
+  type ImageModel,
+  type ImageRenderPolicy,
+  reservedImageInputFields,
+} from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@vesper/contracts";
 import type { PreparedReferenceBytes } from "./files";
 
@@ -155,13 +160,15 @@ export function buildRegistryModelInput(
   referenceUrls: readonly string[],
   aspect: string | null | undefined,
   safetyCheckerDisabled: boolean,
+  emptyPrompt: ImageEmptyPromptPolicy = "send",
 ): Record<string, unknown> {
-  // An EMPTY prompt writes no prompt key, so a version whose schema declares a
-  // prompt default gets its own default rather than an empty string standing in
-  // for one. No production lane produces an empty prompt (every one compiles
-  // text), so this only reaches the admin bench, where "leave it unset" has to
-  // mean the provider's answer rather than Vesper's.
-  const input: Record<string, unknown> = prompt.length > 0 ? { prompt } : {};
+  // An empty prompt writes the empty string unless the CALLER asked for it to
+  // be omitted (`ImageRenderPolicy.emptyPrompt`). The distinction matters: the
+  // Image Lab's control probe may legitimately send a blank instruction and
+  // must keep posting `prompt: ""`, while a caller that has checked the version
+  // does not require a prompt wants the version's own default to apply, which
+  // only an absent key produces.
+  const input: Record<string, unknown> = prompt.length > 0 || emptyPrompt === "send" ? { prompt } : {};
 
   if (referenceUrls.length > 0) {
     input[model.referenceField] = model.referenceArity === "single" ? referenceUrls[0] : [...referenceUrls];
@@ -194,7 +201,14 @@ export function buildPayload(
   safetyCheckerDisabled: boolean,
   sink?: DiagnosticSink,
 ): Record<string, unknown> {
-  const built = buildRegistryModelInput(model, request.prompt, referenceUris, request.aspect, safetyCheckerDisabled);
+  const built = buildRegistryModelInput(
+    model,
+    request.prompt,
+    referenceUris,
+    request.aspect,
+    safetyCheckerDisabled,
+    request.policy?.emptyPrompt,
+  );
   const reserved = new Set(reservedImageInputFields(model));
   const refused: string[] = [];
   for (const control of controls) {
@@ -239,6 +253,7 @@ export function previewRegistryModelInput(input: {
   controlReferences?: readonly { field: string; arity: "single" | "array"; count: number }[];
   aspect: string | null;
   controlInput?: Record<string, unknown>;
+  policy?: ImageRenderPolicy;
   safetyCheckerDisabled: boolean;
 }): Record<string, unknown> {
   const placeholder = (index: number): string => `https://placeholder.invalid/reference-${String(index + 1)}`;
@@ -251,7 +266,12 @@ export function previewRegistryModelInput(input: {
   });
   return buildPayload(
     input.model,
-    { prompt: input.prompt, aspect: input.aspect, ...(input.controlInput ? { controlInput: input.controlInput } : {}) },
+    {
+      prompt: input.prompt,
+      aspect: input.aspect,
+      ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+      ...(input.policy ? { policy: input.policy } : {}),
+    },
     references,
     controls,
     input.safetyCheckerDisabled,

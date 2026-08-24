@@ -591,6 +591,29 @@ describe("runRegistryImageModel", () => {
     ]);
   });
 
+  it("keeps posting an empty prompt unless the caller asks for it to be omitted", async () => {
+    // The Image Lab's control probe may legitimately send a blank instruction,
+    // and it used to POST `prompt: ""`. Only a caller that has checked the
+    // version does not require a prompt asks for the key to disappear, so a
+    // version declaring its own default gets that default.
+    const bodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (String(input).includes("/predictions")) {
+          bodies.push(String(init?.body ?? ""));
+          return Response.json({ id: "p", status: "succeeded", output: ["https://replicate.delivery/o.webp"] });
+        }
+        return new Response(Buffer.from("bytes"), { status: 200 });
+      }),
+    );
+    await client().runRegistryImageModel(model(), { prompt: "" });
+    expect(bodies.at(-1)).toContain('"prompt":""');
+
+    await client().runRegistryImageModel(model(), { prompt: "", policy: { emptyPrompt: "omit" } });
+    expect(bodies.at(-1)).not.toContain('"prompt"');
+  });
+
   it("refuses a URI-shaped field the raw overlay wrote rather than a typed transport", async () => {
     // The smuggling case: an admin API caller putting an arbitrary address into
     // a `uri` input. Only the owner-scoped picker may supply an image, so a URI

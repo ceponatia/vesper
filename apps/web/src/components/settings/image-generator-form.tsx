@@ -141,6 +141,22 @@ function dedicatedSlotsOf(model: ImageModel | null): { role: ImageGeneratorDedic
   return slots;
 }
 
+/**
+ * Whether this version would actually send `option` if it were asked for.
+ *
+ * Membership in `supportedAspects` is not enough. Several declared members can
+ * share one ratio — Wan lists five pixel pairs that each lose their ratio group
+ * to a larger sibling — and the shared mapper resolves a ratio to the largest,
+ * so asking for one of the others is a guaranteed refusal. One predicate for
+ * the select, the request, and the drift warning, so the three cannot disagree
+ * about what "supported" means.
+ */
+function shapeIsReachable(model: ImageModel | null, option: string): boolean {
+  if (model === null) return false;
+  const ratio = parseAspectValue(option);
+  return ratio !== null && chooseAspect(model, ratio).value === option;
+}
+
 /** The provider-input types the advanced editor can offer a control for. */
 const EDITABLE_PROVIDER_TYPES = ["string", "integer", "number", "boolean", "enum"] as const;
 
@@ -394,11 +410,16 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // ratio (Wan's three 3:4 sizes) and the shared mapper resolves a ratio to the
   // largest of them. The server refuses a pick it would have to substitute, so
   // offering the unreachable members here would only sell a guaranteed refusal.
-  const shapeOptions = (selectedModel?.supportedAspects ?? []).filter((option) => {
-    if (selectedModel === null) return false;
-    const ratio = parseAspectValue(option);
-    return ratio !== null && chooseAspect(selectedModel, ratio).value === option;
-  });
+  const shapeOptions = (selectedModel?.supportedAspects ?? []).filter((option) =>
+    shapeIsReachable(selectedModel, option),
+  );
+
+  // On a size-mode model the declared shapes ARE the sizes, so the tier and the
+  // Output shape select would be two controls for one request — and the render
+  // path reserves that key for the shape, so a tier picked here would be
+  // refused pre-spend. Offer the shape only.
+  const resolutionTierOffered =
+    bindings.resolutionTier !== undefined && selectedModel !== null && selectedModel.aspectMode !== "size";
 
   const pinnedVersion = selectedModel === null ? null : pinnedImageModelVersion(selectedModel);
   const modelCapacity = selectedModel === null ? null : referenceCapacity(selectedModel).max;
@@ -497,13 +518,15 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     assembledControls.editStrength = parsedStrength.value;
     controlLines.push(`edit strength ${String(parsedStrength.value)}`);
   }
-  if (bindings.resolutionTier !== undefined && resolution !== "") {
+  if (resolutionTierOffered && resolution !== "") {
     assembledControls.resolution = resolution;
     controlLines.push(`resolution ${resolution}`);
   }
-  // Only a member the CURRENT version still declares travels; a stale pick from
-  // a duplicate is listed under the drift warning instead of silently sent.
-  if (aspect !== "" && (selectedModel?.supportedAspects.includes(aspect) ?? false)) {
+  // Only a member the current version still declares AND still resolves to
+  // travels. Reachability rather than mere membership, because the two differ:
+  // a declared-but-unreachable member is not in the select, so sending it would
+  // submit a value the operator cannot see and the runner is certain to refuse.
+  if (aspect !== "" && shapeIsReachable(selectedModel, aspect)) {
     assembledControls.aspect = aspect;
     controlLines.push(`shape ${aspect}`);
   }
@@ -608,7 +631,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     if (prefill.controls.editStrength !== undefined && bindings.editStrength === undefined) {
       prefillDrift.push("edit strength");
     }
-    if (prefill.controls.resolution !== undefined && bindings.resolutionTier === undefined) {
+    if (prefill.controls.resolution !== undefined && !resolutionTierOffered) {
       prefillDrift.push("resolution");
     }
     // Explicit dimensions are withheld by this form outright (see the Controls
@@ -616,7 +639,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
     // the current version binds.
     if (prefill.controls.width !== undefined) prefillDrift.push("width");
     if (prefill.controls.height !== undefined) prefillDrift.push("height");
-    if (prefill.controls.aspect !== undefined && !selectedModel.supportedAspects.includes(prefill.controls.aspect)) {
+    if (prefill.controls.aspect !== undefined && !shapeIsReachable(selectedModel, prefill.controls.aspect)) {
       prefillDrift.push("output shape");
     }
     if (prefill.controls.thinkingMode !== undefined && bindings.thinkingMode === undefined) {
@@ -1015,7 +1038,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           bindings.guidance !== undefined ||
           bindings.steps !== undefined ||
           bindings.editStrength !== undefined ||
-          bindings.resolutionTier !== undefined ||
+          resolutionTierOffered ||
           bindings.thinkingMode !== undefined ||
           shapeOptions.length > 0 ||
           loraBound) ? (
@@ -1134,7 +1157,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                   )}
                 </Field>
               ) : null}
-              {bindings.resolutionTier !== undefined ? (
+              {resolutionTierOffered ? (
                 <Field label="Resolution" hint="Blank is the provider default tier.">
                   {(id) => (
                     <Select
