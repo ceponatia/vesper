@@ -26,16 +26,20 @@ asset kind.
 
 ## Implementation status
 
-| Slice                                                        | State            |
-| ------------------------------------------------------------ | ---------------- |
-| 1. Capability contracts + Replicate probe derivation          | built 2026-08-23 |
-| 2. Generator run record, API, job, runner (server)            | built 2026-08-23 |
-| 3. Generator UI (page, form, history, inspector, duplicate)   | built 2026-08-23 |
-| 4. General owned-image picker + sources endpoint              | built 2026-08-23 |
-| 5. Image Lab affordance cleanup (model/mode/fixture copy)     | built 2026-08-23 |
-| 6. General picker reuse in Lab (object/location/extraction)   | built 2026-08-23 |
-| 7. Correctness pass (operation, shape, strictness, replay)     | built 2026-08-23 |
-| 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)          | not started — needs a deploy plus owner-approved provider spend, and the SDXL re-probe below |
+| Slice                                                       | State                                  |
+| ----------------------------------------------------------- | -------------------------------------- |
+| 1. Capability contracts + Replicate probe derivation         | built 2026-08-23                       |
+| 2. Generator run record, API, job, runner (server)           | built 2026-08-23                       |
+| 3. Generator UI (page, form, history, inspector, duplicate)  | built 2026-08-23                       |
+| 4. General owned-image picker + sources endpoint             | built 2026-08-23                       |
+| 5. Image Lab affordance cleanup (model/mode/fixture copy)    | built 2026-08-23                       |
+| 6. General picker reuse in Lab (object/location/extraction)  | built 2026-08-23                       |
+| 7. Correctness pass (operation, shape, strictness, replay)   | built 2026-08-23                       |
+| 8. Stage 3 validation runs (SDXL, Qwen, prompt-only)         | not started — see below                |
+
+Slice 8 needs three things it cannot supply itself: a production deploy, the
+owner's approval to spend on real predictions, and the Vesper SDXL re-probe
+recorded below. The plan's Stage 3 carries the run-by-run checklist.
 
 Not built by design: direct source uploads (awaiting the plan's retention/quota
 ruling), a side-by-side A/B view (the detail inspector plus duplicate lineage
@@ -586,7 +590,7 @@ stop and hand it to the owner):
 | `prompt`               | text notNull                                               |
 | `final_prompt`         | text                                                       |
 | `inputs`               | jsonb default `{}` (`imageGeneratorRunInputsSchema`)       |
-| `controls`             | jsonb default `{}` (`imageRenderControlsSchema`)           |
+| `controls`             | jsonb default `{}` (`imageGeneratorControlsSchema`)        |
 | `provider_inputs`      | jsonb default `{}`                                         |
 | `result_image_id`      | text FK `images.id` SET NULL                               |
 | `failure_code`         | text (generator codes + shared layer codes, two vocabularies) |
