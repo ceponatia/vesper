@@ -2,7 +2,7 @@
 
 **Slug:** `qwen/qwen-image-edit-2511`
 **Vesper probe snapshot:** 2026-08-05, version `a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729`
-**Provider latest checked:** 2026-08-24
+**Provider LoRA schema rechecked:** 2026-08-24
 **Quality ruling:** 2026-08-05
 
 > An enhanced version over Qwen-Image-Edit-2509, featuring multiple improvements
@@ -15,29 +15,34 @@ of exact likeness. The owner has observed faces that remain similar while losing
 recognisable facial structure, which is why identity continuity must be judged
 from output rather than inferred from a successful edit request.
 
-## Read the two schema states separately
+## Runtime LoRA support
 
-The Vesper probe snapshot above and Replicate's current latest wrapper are **not
-the same API surface**.
+Replicate's published 2511 API currently exposes one custom runtime LoRA through:
 
-The version Vesper probed on 2026-08-05 declares the required `prompt` + `image`
-edit inputs and does **not** expose runtime LoRA controls. Replicate's latest
-2511 wrapper, checked 2026-08-24, additionally exposes:
-
-- `lora_weights` — a Hugging Face repo slug (`owner/model`) or direct
+- `lora_weights` — string; a Hugging Face repo slug (`owner/model`) or direct
   `.safetensors` URL; blank means no custom LoRA;
 - `lora_scale` — number 0–4, default 1.
 
-That provider change is useful but **does not make LoRA available to the active
-Vesper row by documentation alone**. Vesper sends optional controls only through
-the active version's probed `advancedCapabilities`. The newer candidate must be
-probe-latest'd, smoke-tested and activated before production can resolve a LoRA
-onto 2511. Check the row's active pin/bindings when diagnosing a render; do not
-infer them from Replicate's current playground.
+The same fields are compatible with Vesper's normalized LoRA control vocabulary
+(`loraWeights` / `loraScale`). The probe already derives those bindings whenever
+it sees them.
 
-This distinction is load-bearing. A sentence such as “2511 supports LoRA” means
-“Replicate's current wrapper supports it,” not “every historical 2511 prediction
-or every Vesper deployment sent `lora_weights`.”
+The long-lived built-in 2511 registry row was originally probed before LoRA
+binding derivation shipped, so its stored `advancedCapabilities` could remain
+stale even though the provider version exposes the inputs. Migration 0118
+backfills the two verified bindings and their known-input names without changing
+the selected provider version or any other capability fact. That is what makes
+the capability-driven Image Generator offer its LoRA picker when 2511 is
+selected; there is no 2511-only form exception.
+
+The Qwen model adapter likewise composes the semantic `lora` feature. The two
+layers have different jobs: the adapter says that this endpoint family can load
+a custom LoRA; the registry's probed bindings remain authoritative for the exact
+provider fields a concrete version can send.
+
+This does **not** imply that every historical 2511 prediction carried a LoRA.
+A render uses a custom LoRA only when Vesper resolves a curated library row and
+the final provider payload contains both `lora_weights` and `lora_scale`.
 
 ## The edit-only built-in
 
@@ -54,9 +59,9 @@ new-portrait task.
   URI.
 - **Reference workflow:** 1–3 reference images. Vesper stores a cap of 3.
 - **Aspect handling:** `aspect_ratio` enum includes `3:4`.
-- **Runtime custom LoRA:** **version-dependent**. The 2026-08-05 Vesper probe did
-  not expose it; Replicate latest checked 2026-08-24 exposes
-  `lora_weights`/`lora_scale`.
+- **Runtime custom LoRA:** yes, one custom LoRA through
+  `lora_weights`/`lora_scale` when the active capability record carries the
+  verified bindings.
 - **Output:** array of URIs; WebP available.
 
 ## Reviewed capability
@@ -96,8 +101,10 @@ Diagnostics and provenance report the final payload, not infer it from the row.
 
 Qwen's multi-image guidance recommends identifying which image supplies which
 subject or visual element and stating what should change versus remain fixed.
-The existing Vesper builders still emit a provider-neutral identity sentence, so
-`preparePromptForImageModel` rewrites only that exact sentence for this model.
+The Qwen Edit-family adapter in `@vesper/image-models` rewrites Vesper's exact
+provider-neutral identity sentence into the family's numbered-reference dialect.
+The same behavior is shared by 2511 and the older plus-LoRA wrapper rather than
+implemented as a slug check in the shared render kernel.
 
 With one reference:
 
@@ -113,9 +120,9 @@ Use numbered references as assigned below. Preserve each person's exact face,
 hair, skin tone, build, and apparent age; change only requested details.
 ```
 
-The scene prompt already enumerates references later in send order. The quality
-seam supplies the interpretation contract without changing non-Qwen prompts or
-custom Qwen instructions that do not contain the legacy lock.
+The scene prompt already enumerates references later in send order. The adapter
+supplies the interpretation contract without changing non-Qwen prompts or custom
+Qwen instructions that do not contain the legacy lock.
 
 Both replacements are no longer than the generic sentence they replace. The edit
 builder has already fitted its prompt before model selection, so provider-specific
@@ -158,13 +165,16 @@ blocked; it does not silently read an arbitrary gallery image. In chat scenes a
 current generated `chat_look` may be the cast member's anchor; otherwise the
 canonical identity-pack references are used.
 
-## Inputs — Vesper's 2026-08-05 probe snapshot
+## Inputs
 
 - `prompt` — string, required. It is an edit instruction, not merely a scene
   description.
 - `image` — array of URI strings, required. JPEG, PNG, GIF, or WebP references.
 - `aspect_ratio` — enum, provider default `"match_input_image"`. Values:
   `match_input_image`, `1:1`, `16:9`, `9:16`, `4:3`, `3:4`.
+- `lora_weights` — string, default blank. Hugging Face repo slug or direct
+  `.safetensors` URL.
+- `lora_scale` — number, default 1, range 0–4.
 - `go_fast` — boolean, provider default `true`; Vesper's current reviewed value
   is `false`.
 - `output_format` — enum, provider default `"webp"`. Values: `webp`, `jpg`,
@@ -172,19 +182,6 @@ canonical identity-pack references are used.
 - `output_quality` — integer, default `95`, range 0–100.
 - `seed` — integer.
 - `disable_safety_checker` — boolean, default `false`.
-
-That historical probe did not bind a custom LoRA input.
-
-## Additional inputs on Replicate latest checked 2026-08-24
-
-- `lora_weights` — string, default blank. Hugging Face repo slug or direct
-  `.safetensors` URL.
-- `lora_scale` — number, default 1, range 0–4.
-
-These belong to production only after Vesper activates a version whose probe
-actually derives those bindings. Prefer a Hugging Face repo slug for curated
-library LoRAs; it avoids expiring/query-token URLs and matches Replicate's
-advertised loader contract.
 
 There is no `strength` or `prompt_strength` control. Edit intensity and unchanged
 content are governed by the instruction and references.
@@ -210,18 +207,20 @@ Ordinary production edit, on the current reviewed policy:
 }
 ```
 
-If and only if the active 2511 version exposes LoRA bindings **and** the render
-resolves a curated library LoRA, the payload can additionally contain:
+When the render resolves a compatible curated library LoRA, the final payload
+additionally contains the provider bindings:
 
 ```json
 {
-  "lora_weights": "owner/hugging-face-repo",
+  "lora_weights": "owner/hugging-face-repo-or-direct-safetensors-url",
   "lora_scale": 1.0
 }
 ```
 
-`aspect_ratio` is sent explicitly rather than left at `match_input_image`, so a
-non-conforming reference cannot dictate the output shape.
+The compile-step LoRA invariant refuses pre-spend if the recorded library LoRA
+and those final provider fields disagree. `aspect_ratio` is sent explicitly
+rather than left at `match_input_image`, so a non-conforming reference cannot
+dictate the output shape.
 
 ## Known limitations
 
@@ -233,9 +232,10 @@ non-conforming reference cannot dictate the output shape.
 - several references compete for a cap of three; the single-edit degradation
   rung sends only one reference, so additional characters can become prompt-only
   on that rung;
+- one custom LoRA per prediction through the currently verified 2511 schema;
 - no negative prompt or numeric edit-strength control exists;
 - a second full-frame repair pass may change pose, body, clothing, or setting;
 - multi-character face repair is deferred until target localization and
   role-aware reference capacity are proven;
 - provider capability drift is real: diagnose the active Vesper pin and stored
-  probe before assuming the current Replicate schema was used.
+  probe before assuming a future Replicate schema is unchanged.
