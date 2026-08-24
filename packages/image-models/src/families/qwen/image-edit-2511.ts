@@ -4,7 +4,7 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
 /**
  * `qwen/qwen-image-edit-2511` — the current Qwen instruction editor, and
  * Vesper's default for chat scene images and portrait variants
- * (`docs/image-models/qwen-image-edit-2511.md`).
+ * (`docs/image-models/models/qwen-image-edit-2511.md`).
  *
  * Endpoint facts worth carrying here rather than rediscovering:
  *
@@ -17,11 +17,12 @@ import { QWEN_IMAGE_FAMILY, qwenEditFeatures, qwenEditPromptDialect } from "./sh
  *   governed by the instruction and the references, which is what makes this an
  *   instruction editor rather than a repainter.
  *
- * **No LoRA feature, deliberately.** The model card's phrase "integrated LoRAs"
- * describes acceleration baked into the published weights, not a loadable
- * input: this endpoint exposes no LoRA field whatsoever. Composing the feature
- * "for symmetry" with the sibling wrapper would be a claim the schema cannot
- * back, and the wrapper below exists precisely because this one cannot do it.
+ * **No LoRA feature, deliberately.** The active Vesper probe snapshot this
+ * adapter was built against exposes no LoRA binding, so the current adapter
+ * cannot honestly claim one. Replicate's latest 2511 wrapper checked on
+ * 2026-08-24 does advertise runtime LoRA inputs; that provider drift becomes a
+ * Vesper capability only after the candidate version is probed, smoke-tested,
+ * and activated. The provider-reference page above owns that version history.
  */
 export const qwenImageEdit2511: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,
