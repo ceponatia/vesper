@@ -12,13 +12,10 @@ table and is managed from the admin page at `/settings/image-models` — see
 Adding a model to the app does not require adding a file here, but doing so is
 the difference between a model we understand and one we merely call.
 
-> **Provider latest is not production truth.** Replicate can move an official
-> model's `latest_version` underneath its bare slug. Vesper records/probes an exact
-> version and promotes a new one through probe-latest → smoke-test →
-> activate-version. A capability described as newly present on Replicate's latest
-> wrapper is not available to production until the active Vesper row has been
-> re-probed/activated and its stored bindings show that capability. Per-model
-> pages call out known provider drift explicitly.
+> **Version note:** [providers.md](../images/providers.md) owns how Vesper probes,
+> pins, and activates provider versions. Each per-model page owns that model's
+> external API snapshot and any known provider drift. Do not infer an active
+> row's controls from Replicate's current playground alone.
 
 ## Why these files exist
 
@@ -73,10 +70,7 @@ looked at their output.
   edit yes, 1 reference. `img2img` · `weak`. Vesper's new-portrait default.
 - [Qwen Image Edit 2511](qwen-image-edit-2511.md) — `qwen/qwen-image-edit-2511`.
   Generate **no**, edit yes, 3 references. `instruction_edit` · `strong`. Vesper's
-  variant and scene default. **Replicate's latest wrapper checked 2026-08-24 also
-  exposes runtime `lora_weights`/`lora_scale`; Vesper's older 2026-08-05 probe did
-  not. Treat LoRA support as version-dependent until a newer candidate is
-  activated.**
+  variant and scene default. Its page owns version-specific optional controls.
 - [Seedream 4.5](seedream-4-5.md) — `bytedance/seedream-4.5`. Generate yes, edit
   yes, 14 references. `multi_reference_compose` · `moderate`.
 - [Seedream 5 Lite](seedream-5-lite.md) — `bytedance/seedream-5-lite`. Generate
@@ -107,12 +101,12 @@ Registered by admin, rated, and deliberately on **no ordinary player picker**:
 - [Qwen Image Edit Plus LoRA](qwen-image-edit-plus-lora.md) —
   `qwen/qwen-image-edit-plus-lora`. Generate **no**, edit yes, 3 references,
   plus runtime `lora_weights`/`lora_scale`. `instruction_edit` · `moderate`.
-  This older 2509-generation wrapper is still used by the intimate-scene LoRA
-  model-swap route and by LoRA-focused lab work. A registered row is also
-  reachable from the admin Image Generator when its active version exposes the
-  bindings. It is **not** offered by an ordinary portrait/variant/scene picker.
-  Replicate's latest 2511 wrapper now exposes the same class of runtime LoRA
-  inputs, so this wrapper is no longer uniquely LoRA-capable.
+  This older 2509-generation wrapper is used by the intimate-scene LoRA
+  model-swap route and by LoRA-focused lab work. Any registered/enabled model row
+  is selectable in the admin Image Generator; LoRA bindings only determine
+  whether the Generator exposes LoRA controls for that row. The wrapper is
+  **not** offered by an ordinary portrait/variant/scene picker. See the
+  [2511 page](qwen-image-edit-2511.md) for that endpoint's version-specific API.
 
 Documented but not seeded — no row, and therefore no reviewed rating:
 

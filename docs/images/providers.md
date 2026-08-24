@@ -131,13 +131,11 @@ Ordinary renders follow whatever the slug resolves to, so pinning the slug is
 what pins production.
 
 **Replicate latest and Vesper active are different facts.** An official wrapper
-may gain a field after Vesper last probed it. Qwen Image Edit 2511 is the current
-example: the 2026-08-05 schema snapshot documented in this repo had no runtime
-LoRA fields, while Replicate latest checked 2026-08-24 exposes
-`lora_weights`/`lora_scale`. Production does not gain those controls until a
-candidate carrying them is explicitly activated and the row's stored bindings
-say they exist. Never debug a historical render from the provider's current
-playground schema alone.
+may change underneath a bare slug. Production behavior comes from the model
+row's active slug or pin and its stored probe. Version-specific provider API
+snapshots and drift belong on that model's page in
+[image-models/](../image-models/README.md), not here. Never debug a historical
+render from the provider's current playground schema alone.
 
 **Beneath a model sit task profiles — "how to use this model for one job."**
 `image_model_profiles` (contract `packages/image-core/src/models/image-model-profiles.ts`) is

@@ -9,15 +9,9 @@
 > safetensor.
 
 This is Vesper's older, dedicated Qwen 2509 LoRA wrapper. It accepts a
-user-supplied LoRA at runtime, but it is **no longer accurate to call it the only
-Qwen edit endpoint with runtime LoRA support**: Replicate's current
-`qwen/qwen-image-edit-2511` wrapper, checked 2026-08-24, also exposes
-`lora_weights`/`lora_scale`.
-
-The distinction is version-sensitive. Vesper's older 2511 probe from 2026-08-05
-did not expose those fields, so production 2511 only gains them after a newer
-candidate is probed, smoke-tested and activated. See
-[qwen-image-edit-2511.md](qwen-image-edit-2511.md).
+user-supplied LoRA at runtime. Runtime-LoRA support on
+[Qwen Image Edit 2511](qwen-image-edit-2511.md) is version-specific; that model
+page is the canonical owner of the 2511 provider API state.
 
 ## The built-in adapter is not the custom LoRA
 
@@ -45,17 +39,18 @@ not unreachable:
    profile with this wrapper and a curated LoRA binding when the intimate staging
    trigger applies (`apps/web/src/server/images/scene-lora.ts`);
 2. LoRA-focused Image Lab recipes can address it;
-3. a registered/enabled row is available to the admin Image Generator when the
-   active version exposes the required bindings.
+3. any registered/enabled row is selectable in the admin Image Generator for an
+   ordinary supported run. LoRA bindings only determine whether that Generator
+   run can expose and send a LoRA control.
 
 It has no ordinary portrait/variant/scene profile row of its own. The intimate
 route works by pairing the lane's existing scene profile with the wrapper model,
 not by making this wrapper a normal player selection.
 
-This matters when comparing output: it is a generation older than 2511 and its
-reviewed identity rating is weaker. Until the production intimate route moves to
-a LoRA-capable 2511 pin, an intimate render can therefore lose identity quality
-simply because the route swaps model generations.
+This matters when comparing output: the production intimate route swaps from
+2511 to this older 2509-generation wrapper, whose reviewed identity rating is
+weaker. The model swap itself can therefore reduce identity fidelity even when
+the prompt and reference are otherwise unchanged.
 
 ## Capabilities
 
@@ -101,8 +96,8 @@ missing or incompatible file still fails at provider time.
   observed as weaker at identity than 2511;
 - **Operator warning:** none.
 
-The `moderate` rating records that this route is usable for identity work but is
-not the preferred base once a LoRA-capable 2511 version has been validated.
+The `moderate` rating records that the wrapper remains usable for identity work
+while acknowledging the step down from 2511.
 
 ## Inputs
 
@@ -140,9 +135,8 @@ reaching Replicate.
 ## Known limitations
 
 - One custom LoRA per prediction.
-- Identity is a generation behind 2511; the current intimate model swap trades
-  identity strength for LoRA access until a LoRA-capable 2511 pin is validated
-  and the route is changed.
+- Identity is a generation behind 2511; the current intimate route swaps the
+  base model to obtain this wrapper's runtime LoRA path.
 - The built-in Lightning fast path and the custom LoRA are separate controls;
   comparisons must keep `go_fast` constant or the A/B changes two things.
 - Low-credit Replicate accounts may throttle prediction creation; classify those
