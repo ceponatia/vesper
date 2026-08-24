@@ -1,4 +1,6 @@
-# Image models
+# Provider model reference
+
+This subfolder preserves the per-model reference catalog that previously lived at the root of `docs/image-models/`. The parent [image-models documentation](../README.md) now documents the `@vesper/image-models` package itself.
 
 Per-model reference for every Replicate image model Vesper can run. One file per
 model, recording the API attributes the render path depends on: what the model's
@@ -12,7 +14,7 @@ table and is managed from the admin page at `/settings/image-models` — see
 Adding a model to the app does not require adding a file here, but doing so is
 the difference between a model we understand and one we merely call.
 
-> **Version note:** [providers.md](../images/providers.md) owns how Vesper probes,
+> **Version note:** [providers.md](../../images/providers.md) owns how Vesper probes,
 > pins, and activates provider versions. Each per-model page owns that model's
 > external API snapshot and any known provider drift. Do not infer an active
 > row's controls from Replicate's current playground alone.
@@ -29,7 +31,7 @@ over with one shared mapping:
   ControlNet `depth_image` *before* its `reference_image`, so "the first image
   input" is the wrong answer — the probe searches identity names first and
   control names (`depth_image`, `pose_image`, `mask`, …) last
-  ([../images/providers.md](../images/providers.md)).
+  ([providers.md](../../images/providers.md)).
 - Some models expose `aspect_ratio` and offer `3:4`. One offers `aspect_ratio`
   without `3:4`. One has no `aspect_ratio` at all and is driven by `size`. Six
   have no aspect input whatsoever and are sized by `width`/`height` integers;
@@ -176,7 +178,7 @@ falls through the profile-resolution chain instead of rendering a stranger.
 `imageProfileOffered` composes this structural eligibility with the profile's
 enabled flag and the remaining legacy surface toggle. The database profile rows,
 not the prose here, are the runtime source of truth
-([../images/providers.md](../images/providers.md)).
+([providers.md](../../images/providers.md)).
 
 `probed_version_id` — the version the stored bindings came from, and the
 `Probed:` header in each file — is written on rows added through the admin page
@@ -193,7 +195,7 @@ Beneath each model sit `image_model_profiles` rows — "how to use this model fo
 one job" (task, operation, prompt strategy, reference policy, control defaults,
 timeout). There are built-in profiles reproducing the production lanes plus
 curated alternatives, and **every production render resolves one**
-([../images/providers.md](../images/providers.md) §Every render resolves a
+([providers.md](../../images/providers.md) §Every render resolves a
 profile). A model offered on a surface with no eligible profile for that task is
 passed over for the task default. Profiles are ordinary deletable rows; the
 database, not these files, is the runtime source of truth.
