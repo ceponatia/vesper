@@ -31,6 +31,7 @@ import {
   imageLabModeLabel,
   imageLabRoleLabel,
   imageLabStatusChip,
+  imageLabSubjectFactsLabel,
   imageLabVerdictChip,
   imageLabVerdictHint,
   imageLabVerdictLabel,
@@ -70,8 +71,9 @@ import type { ImageLabExperimentPrefill } from "./image-lab-experiment-form";
  * swapped", "character duplicated") are claims about which reference was supposed
  * to produce which person.
  *
- * A STAGED SCENE shows the staging it was told to render — the registry id and
- * the scene facts the row states around it — and shows NO control panel, because
+ * A STAGED SCENE shows the staging it was told to render — the registry id, the
+ * scene facts the row states around it, and which arm described its subject —
+ * and shows NO control panel, because
  * it declares no fixture and the empty box would read as a missing input on a
  * kind that cannot have one. Its final prompt carries more weight here than
  * anywhere else on this page: the row's instruction is empty by construction, so
@@ -539,6 +541,16 @@ export function ImageLabExperimentDetail({
               <Fact label="Setting">{staging.setting ?? "— (the lane's own empty backdrop)"}</Fact>
               <Fact label="Lighting">{staging.lighting ?? "— (derived from the time of day)"}</Fact>
               <Fact label="Time of day">{staging.timeOfDay ?? "— (none stated)"}</Fact>
+              {/* Which arm described the SUBJECT. A row that records none ran
+                  before the arms existed, and every one of those sent the
+                  name-only prompt — so the absence is reported as the ablation
+                  it was rather than as today's default, which would claim a
+                  description the render never carried. */}
+              <Fact label="Subject facts">
+                {experiment.subjectFacts === null
+                  ? `${imageLabSubjectFactsLabel("reference_only")} (recorded no arm — written before the choice existed)`
+                  : imageLabSubjectFactsLabel(experiment.subjectFacts)}
+              </Fact>
             </>
           ) : null}
           {loraSelection !== null ? (
@@ -707,15 +719,15 @@ export function ImageLabExperimentDetail({
           </p>
           {/* On every other kind this is a record of what the admin's text became.
               Here it is the only place the words exist at all — the row's
-              instruction is empty by construction — and it is what the chat lane
-              would have sent for the same staging, which is the claim the whole
-              bench rests on. */}
+              instruction is empty by construction — and on the parity arm it is
+              what the chat lane would have sent for the same staging, which is
+              the claim the whole bench rests on. */}
           {isStaged ? (
             <p className="mt-1 text-[11px] text-paper-500">
               {"The whole of what was sent, compiled from the staging registry the way the chat lane compiles it: "}
-              {"the staged sentence, the character's appearance, the setting and lighting above, and the shot line "}
-              {"the staging's own camera fixes. No model wrote any of it, so a ruling above is a ruling on this "}
-              {"text and the weights it ran with."}
+              {"the staged sentence, the setting and lighting above, the shot line the staging's own camera fixes, "}
+              {"and the character's own description on the parity arm (the ablation states nothing but their name). "}
+              {"No model wrote any of it, so a ruling above is a ruling on this text and the weights it ran with."}
             </p>
           ) : null}
         </div>

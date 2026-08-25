@@ -13,6 +13,7 @@ import {
   REPLICATE_VERSION_UNDISCLOSED,
 } from "@vesper/image-core";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
+import { emptyCharacterProfile } from "@/contracts/world/profile";
 import {
   imageRenderRejection,
   laneHealth,
@@ -38,6 +39,7 @@ import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
 import { stagedSceneWords } from "./image-lab-staged";
+import { buildStagedSubjectVisual } from "./image-lab-staged-visual";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -524,9 +526,32 @@ function stagedEntry(): SceneStaging {
   return entry;
 }
 
-/** What the lane compiles for that entry — the words the provider must be handed unchanged. */
+/**
+ * What the lane compiles for that entry — the words the provider must be handed
+ * unchanged.
+ *
+ * Built on the PRODUCTION-PARITY arm, because that is what a created row takes
+ * when the request names no mode (owner ruling 2026-08-25) and this suite's rows
+ * name none. The seeded character carries the `characters.profile` column
+ * default, so `emptyCharacterProfile()` is the same sheet the runner reads;
+ * `characterId` and `revision` reach only the digest's provenance, never a
+ * clause, so the stand-ins here cannot move the prompt.
+ */
 function stagedWords(): { prompt: string } {
-  return stagedSceneWords(STAGED_SUBJECT, stagedEntry(), { id: STAGED_ID, setting: STAGED_SETTING, timeOfDay: "night" });
+  const visual = buildStagedSubjectVisual({
+    characterId: "staged-int-subject",
+    name: STAGED_SUBJECT,
+    profile: emptyCharacterProfile(),
+    revision: "1970-01-01T00:00:00.000Z",
+    entry: stagedEntry(),
+  });
+  if (!visual.ok) throw new Error(`the parity arm refused an empty sheet: ${visual.refusal}`);
+  return stagedSceneWords(
+    STAGED_SUBJECT,
+    stagedEntry(),
+    { id: STAGED_ID, setting: STAGED_SETTING, timeOfDay: "night" },
+    visual.facts,
+  );
 }
 
 interface StagedSceneOptions {

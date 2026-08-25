@@ -156,7 +156,16 @@ beforeEach(() => {
   vi.mocked(composeSceneSpec).mockResolvedValue(emptySceneRenderPlan());
 });
 
-const characterRow = { id: "charaaaaaaaaaaaaaaaaaaaa", name: "Mira", profile: {}, avatarImageId: "imgavatar" };
+// `updatedAt` is load-bearing since the Stage 4 variant cutover: the lane folds
+// the character row's revision into the standalone read token that names the
+// visual cut its prompt was assembled from.
+const characterRow = {
+  id: "charaaaaaaaaaaaaaaaaaaaa",
+  name: "Mira",
+  profile: {},
+  avatarImageId: "imgavatar",
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
 
 describe("variant lane", () => {
   const run = () =>

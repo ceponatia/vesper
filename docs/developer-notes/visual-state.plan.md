@@ -534,7 +534,19 @@ and trials rather than guessed:
 - whether located facts and canonical presentation should gain per-character
   persistence so accepted extraction proposals can apply to them, or whether
   accepted rulings stay preserved-unapplied until their owning plans persist
-  those lanes (today only attribute proposals can apply).
+  those lanes (today only attribute proposals can apply);
+- whether the chat shadow road should project cataloged recognition marks the
+  way the standalone snapshot road does. Measured 2026-08-25 during the image
+  lane consolidation: a standalone snapshot (the avatar and portrait-variant
+  lanes) projects a cataloged distinctive value into the digest as a mark, and
+  the chat shadow (the scene and chat-look lanes) projects none at all —
+  verified by suppression record, not inferred. The scene lane never noticed
+  because its route-owned attribute sheet states the mark regardless; the
+  chat-look mint has no such sheet, so on that lane the mark is simply unstated
+  today. The image consumer chose silence deliberately rather than adding a
+  local workaround, because that lane edits from an identity photograph and the
+  owner ruled such detail stays unstated there. The projection is this plan's,
+  so the decision is too: close the asymmetry, or record it as intended.
 
 Any new owner question discovered during design or implementation must be
 restated here before work proceeds.

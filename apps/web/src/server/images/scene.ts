@@ -193,10 +193,13 @@ export interface RenderResolvedSceneInput {
   identityProvenance?: IdentityReferenceProvenance[];
   /**
    * The app-owned `meta.visualState` fragment from the visual image digest
-   * (image-lane-consolidation Stage 3) — `{ visualState: <provenance> }`,
-   * exactly as `visualStateImageDigestOfShadow` returns it. Merged into the
-   * row's reserve-time meta as a SIBLING of the package-owned render provenance,
-   * so a failed or refused render still records which visual moment fed it.
+   * (image-lane-consolidation Stages 3–4) — `{ visualState: <provenance> }`. One
+   * record however many people the scene draws: the cast seam
+   * (`scene-subject-visual.ts` §"One render, N cuts") folds each subject's cut
+   * into a single provenance carrying one `subjects[]` entry per person. Merged
+   * into the row's reserve-time meta as a SIBLING of the package-owned render
+   * provenance, so a failed or refused render still records which visual moment
+   * fed it.
    */
   visualStateMeta?: Record<string, unknown>;
   /**

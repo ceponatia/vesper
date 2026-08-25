@@ -121,6 +121,34 @@ to the model profile.
 Single-reference and multi-reference renders use one segment builder. Reference
 count changes transport strategy, not the algorithm that describes a person.
 
+### An edit lane states shape, not color
+
+Owner ruling (2026-08-25). A lane that edits an existing photograph of the
+character — the portrait variant, the chat-look anchor — states the body-shape
+anchors an image model tends to correct away: species features and anatomy
+departures such as horns, wings or a tail. It does not state hair, eye or skin
+color. Those come off the reference picture, which is a better source than any
+sentence, and a written color beside the picture only competes with it.
+
+The consequence worth knowing: these two lanes carry no route-owned attribute
+sheet at all, unlike the avatar and scene lanes, which describe a body from
+scratch and therefore still need one.
+
+### The staged bench describes the character
+
+Owner ruling (2026-08-25), reversing a narrower ruling of 2026-08-16. The Image
+Lab's staged-scene bench used to send the character's name and nothing else
+about them. Since the chat lane now describes its subject from the visual
+digest, a bench sending a shorter prompt is no longer benching production's
+prompt, so describing the character is the default.
+
+The old behavior is kept as an explicitly chosen ablation rather than deleted:
+it is the only way to ask whether the written description helps the face or
+fights the reference image, and it must be read beside a parity run of the same
+staging. A run that cannot describe its subject fails rather than quietly
+falling back to the ablation, because an arm nobody chose answers a different
+question than the one the row asks.
+
 ### Delete verified legacy code
 
 After replacement coverage and relevant trials pass, superseded code is removed
@@ -143,9 +171,10 @@ The freeze renders one character through all six lanes and records which of that
 character's facts each prompt actually states. It reads facts rather than
 wording, so the later stages are free to rewrite prompts and are still caught the
 moment a lane loses, duplicates, or newly exposes a fact. It also puts two
-existing disagreements on the record: the text-to-image lane describes skin a
-garment covers where the reference lanes do not, and the chat-look and variant
-lanes carry no identity or morphology fact at all.
+disagreements on the record as they stood at the freeze: the text-to-image lane
+described skin a garment covers where the reference lanes did not, and the
+chat-look and variant lanes carried no identity or morphology fact at all.
+Stages 3 and 4 closed both.
 
 ### Stage 2 — one image visual digest
 
@@ -176,7 +205,8 @@ changes (the covered-skin fix and the morphology anchors scenes were missing).
 
 ### Stage 4 — remaining character-bearing lanes
 
-Status: queued — depends on Stage 3.
+Status: built 2026-08-25 — awaiting the same pinned image trials Stage 3 waits
+on before Stage 6 removes the fallback assembly.
 
 Move multi-character scenes, variants/edits, chat look/selfie, and staged
 character renders onto the same digest and segments. Represent an edit as an
@@ -184,9 +214,20 @@ operation/change contract while required identity and age preservation remain
 semantic facts. Do not migrate item-, location-, or operator-authored lab
 prompts without a character dependency.
 
+Every present member of a multi-character scene is now described by the one
+per-subject producer that already described a lone character, and the portrait
+variant and chat-look lanes — which used to state the requested change and
+almost nothing else about the person — now carry the same body-shape anchors as
+the rest. The chat lane's staged renders needed no move: a staging only ever
+survives on a cast of one, which had already migrated. The Image Lab's staged
+bench did, and it gained a choice of arms while it moved
+([The staged bench describes the character](#the-staged-bench-describes-the-character)).
+[The companion spec](image-lane-consolidation.spec.prompts.md) lists what each
+lane sends.
+
 ### Stage 5 — one scene assembly and downstream reference ownership
 
-Status: queued — depends on Stage 4 and on the model-aware plan's dialect
+Status: next — Stage 4 is built; still waiting on the model-aware plan's dialect
 compilation reaching the character-bearing lanes.
 
 Collapse the single- and multi-reference scene assemblers into one scene segment
@@ -269,7 +310,18 @@ Before a legacy path is removed:
 
 ## Open questions
 
-No owner decision blocks Stage 4.
+Stage 4's two product decisions are ruled and recorded above
+([An edit lane states shape, not color](#an-edit-lane-states-shape-not-color),
+[The staged bench describes the character](#the-staged-bench-describes-the-character)).
+No owner decision blocks Stage 5.
+
+One effect of Stage 4 is on the record without a ruling: the staged bench's
+parity arm adds roughly 500–700 characters to a staged prompt, and a rich
+character sheet can push it past the 1,500-character edit limit. A bench prompt
+has little for the budgeter to shrink, so the clamp cuts the mood, lighting and
+quality tail. Parity with the chat lane still holds, because the chat side
+clamps identically — the question is whether the bench should keep matching
+production here or get room of its own.
 
 The following are evidence questions governed by the named neighboring plans,
 not reasons to invent local defaults:

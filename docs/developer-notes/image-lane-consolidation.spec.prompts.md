@@ -37,8 +37,8 @@ dialects, negatives, and measured model budgets.
   `promptSegments` would override the adapted string in the kernel — segment
   transport for scenes lands with Stage 5's unified assembly. Deliberate fact
   changes: the text-to-image row no longer states covered intimate skin, and
-  every scene row gains the digest's mandatory morphology anchors. A cast of
-  two or more keeps the legacy field production untouched (Stage 4).
+  every scene row gains the digest's mandatory morphology anchors. Stage 4
+  extended the same field production to every present member.
 - Render-intent capture and comparison: **built 2026-08-21.**
   `captureRenderIntent` (`server/images/render-intent-capture.ts`) records the
   transport half plan-first with no provider IO;
@@ -47,7 +47,65 @@ dialects, negatives, and measured model budgets.
   unexplained fact delta (the intentional deltas are named, self-verifying
   allowlists). Pinned image trials over live providers remain owner-run work
   before Stage 6 deletes fallback assembly.
-- Remaining character-bearing lanes: remaining (Stage 4).
+- Multi-character scene migration: **built 2026-08-25.** `applySceneCastVisual`
+  (`server/images/scene-subject-visual.ts`) runs one shadow assembly, one
+  camera-bound selection and one digest realization PER SUBJECT — each person's
+  own committed cut — and patches `plan.focal` plus the matching `plan.others`
+  entries through ONE shared per-subject field producer. There is no second
+  appearance algorithm for bystanders: `applySceneSubjectVisual` is now the
+  one-subject spelling of the same call. `character-scene.ts` takes a
+  `subjectVisuals` map keyed by character id instead of a single cut, and the
+  scene queue (`app/api/chats/[chatId]/scene/queue.ts`) builds a cut per present
+  member, resolving every member's `memoryGroupId` in ONE batched query; a
+  member with no participant row warns and keeps the legacy `presentCharacter`
+  fields for that member alone. Transport still sends an opaque compiled prompt
+  for the same reason the cast-of-one lane does (Stage 5). The per-subject
+  digest records merge into ONE `meta.visualState` record: `subjects` and
+  `suppressions` concatenated in cast order, snapshot and selection fingerprints
+  combined into a cast-wide composite, `cutId`/`atMinutes` from the shared cut,
+  `cameraFingerprint` from the focal.
+- Portrait variants and edits: **built 2026-08-25.** `buildVariantSegments`
+  (`server/images/variant-segments.ts`) assembles the lane from the standalone
+  digest; `variants.ts` sets BOTH `prompt` and `intent.promptSegments`, which is
+  safe here and only here because this lane's `instruction_edit` strategy passes
+  the base prompt through unchanged. Policy: state age, full-figure frame, never
+  intimate, omit exposure. The lane now loads the default wardrobe for coverage
+  and camera perception and mints a `standaloneCharacterReadToken`; a digest it
+  cannot build refuses through `failedPrecondition` before provider spend.
+  Measured fact-set delta against the legacy builder: gains horns, wings and
+  tail; loses nothing. See [What the variant prompt gains](#what-the-variant-prompt-gains).
+- Chat-look mint: **built 2026-08-25.** `buildChatLookSegments`
+  (`server/images/chat-look-segments.ts`); the mint sets both `prompt` and
+  `promptSegments`. Policy: omit age, waist-up frame, never intimate, omit
+  exposure. Route-owned segments are the outfit-change/undress/keep-casual line
+  (`operation`), the identity lock (`identity`), and the framing sentence
+  (`framing`). Current-state facts — active conditions, body-surface wetness —
+  are suppressed as lane policy, because `chatLookKey` caches and reproduces the
+  anchor and cannot see transient body state; `chatLookKey` itself is unchanged.
+  `chat-reference-images.ts` resolves the `memoryGroupId` and hands the render
+  the committed cut; a missing participant row warns and the mint still happens
+  without a digest. The refusal stays pre-reserve, so an ineligible chat leaves
+  no failed row. Measured delta: gains horns, wings and tail; loses nothing.
+- Staged character renders: **built 2026-08-25.** The chat lane's staged renders
+  needed no work — every scene staging is solo-cast, so a staging can only
+  survive on a cast of one, which rode the digest from Stage 3. The Advanced
+  Image Lab's `staged_scene` bench kind was the only unmigrated staged path, and
+  it now carries a `subjectFacts` mode
+  ([The staged bench's two arms](#the-staged-benchs-two-arms));
+  the implementation is `server/images/image-lab-staged-visual.ts`.
+- Shared standalone assembly: **built 2026-08-25.**
+  `buildStandaloneSubjectVisual` (`server/images/standalone-subject-visual.ts`)
+  is the no-chat digest assembly extracted from the avatar lane and now shared by
+  the avatar, variant and staged-bench lanes. The avatar lane's output is
+  byte-identical across the extraction.
+- Scene transport budget: **fixed 2026-08-25.** In `prompts-scene-render.ts` the
+  single-reference assembler left a textual subject's `appearance` unbudgeted
+  while the multi-reference assembler capped it. That was harmless while a cast
+  of two or more carried the legacy 200-character summary; digest-sourced
+  appearance is longer, and an uncapped field could push the prompt past the
+  1,500-character limit so `clampToLimit` cut the tail — taking the
+  clothing-authority clause the builder is documented never to drop. Both
+  assemblers now budget it identically.
 - Unified scene segment builder: remaining (Stage 5).
 - Local string-budget retirement: remaining (Stage 6).
 
@@ -82,6 +140,28 @@ Use the existing segment vocabulary. At minimum:
 Do not add a generic `appearance` segment containing a preformatted paragraph
 when a narrower semantic kind exists.
 
+### Task policy hooks
+
+`VisualSegmentTaskPolicy` (`contracts/images/visual-segments.ts`) carries the
+per-lane hooks the shared subject builder reads. `exposure` joined the existing
+`age`, `frame` and `intimate` hooks for Stage 4's edit lanes: where coverage
+belongs to the reference image, or where the requested change IS the coverage,
+an authoritative coverage readout beside the instruction either restates it or
+contradicts it. Omitting it is recorded as a policy suppression, never as a
+missing mandatory fact or a fitting decision.
+
+The migrated lanes' values:
+
+- **Avatar** — age `state`, frame `waist_up`, intimate `never`, exposure `state`.
+- **Chat scene** — age `omit`, frame `full_figure`, intimate `when_bare`,
+  exposure `state`.
+- **Portrait variant** — age `state`, frame `full_figure`, intimate `never`,
+  exposure `omit`.
+- **Chat look** — age `omit`, frame `waist_up`, intimate `never`, exposure
+  `omit`.
+- **Staged bench (parity arm)** — the chat scene's policy, imported rather than
+  restated.
+
 ## Lane migration order
 
 ### Avatar
@@ -108,10 +188,81 @@ Express the requested delta as an operation/change contract. Identity,
 morphology, age, and unchanged wardrobe/scene facts remain separate mandatory
 segments. The compiler, not the app, writes model-specific preserve wording.
 
+#### What the variant prompt gains
+
+**Owner ruling (2026-08-25):** the variant prompt gains only the digest's
+body-shape anchors — species feature groups and anatomy departures — and
+nothing else. Hair, eye and skin color keep coming from the identity reference
+photograph and stay unstated, because the picture is a better source than any
+sentence and a text anchor beside it only competes with it. This lane therefore
+ships **no route-owned identity residual sheet**, unlike the avatar lane; the
+digest's cataloged-mark clause is the only statement of a mark, so the clause
+resolver runs with an empty omit set here.
+
+The route-owned segments are:
+
+- the identity lock, byte-identical to `PORTRAIT_IDENTITY_LOCK` (the Qwen
+  dialect matches the literal string; see
+  [Identity-lock migration](#identity-lock-migration));
+- the apparent-age anchor, emitted only when non-empty — a missing anchor is
+  never a missing required fact;
+- the requested change, as the `operation` segment;
+- the outfit-keep line as a `wardrobe` segment, omitted for the `outfit` and
+  `nsfw_test` kinds, where the wardrobe IS the operation's target and an
+  authoritative wardrobe line would contradict the instruction;
+- the `nsfw_test` anatomy line, route-owned on purpose: that bench kind states
+  the sheet's intimate anatomy with no exposure state at all, and routing it
+  through the digest's coverage gate would delete it the moment the character
+  owns a wardrobe;
+- the quality tail.
+
 ### Chat look/selfie and staged character renders
 
 Consume the same digest. Preserve each lane's actual camera, setting, social
 format, and staging responsibilities.
+
+#### The staged bench's two arms
+
+The chat lane's staged renders never needed migrating: every scene staging is
+solo-cast, so a staging survives only on a cast of one, which moved to the
+digest in Stage 3. The Advanced Image Lab's `staged_scene` bench kind was the
+only unmigrated staged path. It was built name-only, and
+`intimate-scene-lora.spec.md` §"What the bench does NOT reproduce" recorded that
+gap as deliberate on 2026-08-16.
+
+**Owner ruling (2026-08-25):** that ruling is reversed for the default mode
+only. `staged_scene` carries a `subjectFacts` mode
+(`imageLabSubjectFactsModes`, `packages/image-core/src/lab/image-lab.ts`), an
+extensible union rather than a boolean:
+
+- `production_parity` — the new default. The bench reads the character sheet,
+  builds the standalone digest, and describes the subject the way the production
+  chat lane now does. It imports `SCENE_SEGMENT_POLICY` and the scene lane's
+  `RECOGNITION_RESIDUE_ATTRIBUTE_IDS` omit set rather than restating either, so
+  a policy change on the chat lane cannot silently leave the bench behind.
+- `reference_only` — the pre-ruling behavior, preserved as an explicit,
+  operator-selectable ablation. It is the only way to ask whether the written
+  anchors help or fight the identity reference, and a mode that always sends
+  them cannot answer that.
+
+The mode is resolved at create time and recorded on the row, because it is a
+fact about the run rather than a preference. A row that records none predates
+the vocabulary and reads back as `reference_only`, which is what it actually
+sent.
+
+The staging's invented exposure premise (`entry.requiresBare`) and the
+hard-coded viewer exposure stay. They are statements about the ACT, not about
+the character's closet: a real coverage read would switch several stagings off,
+and the bench would quietly pay for an ordinary portrait. The premise is handed
+to the standalone assembly as worn coverage, so the digest's exposure readout
+and the camera's per-location perception answer the same premise and cannot
+disagree.
+
+A digest the parity arm cannot build settles the row with the lab failure code
+`visual_digest_unavailable` before any provider spend. It never falls back to
+the ablation: an arm the operator did not choose would answer a different
+question than the row asks, which is the one failure a comparison bench cannot
+survive.
 
 ### Exempt lanes
 
@@ -205,9 +356,12 @@ by giving every lane one coverage-aware selection:
   `characterAppearanceSummary`, which applies no coverage gate, so it describes
   skin a garment is covering — while the reference lanes, routing the same fact
   through the exposure-gated reveal line, stay silent;
-- the chat-look and portrait-variant lanes state apparent age and the requested
-  change and no other character fact at all, leaning entirely on the reference
-  image, and take their age anchor as a caller-supplied string.
+- the chat-look and portrait-variant lanes state the requested change and
+  almost no other character fact, leaning entirely on the reference image. The
+  variant lane also states apparent age, from a caller-supplied string. The
+  chat-look mint no longer does: the narrative/visual age split took age out of
+  that lane after the freeze was written, leaving the garment as its only fact
+  until the Stage 4 cutover.
 
 A third disagreement surfaced after the freeze and is closed in code rather
 than waiting on Stage 2: the chat scene lane resolved condition overlays but
@@ -216,9 +370,12 @@ or dye reached the narrator prompt and the visual-state projection while the
 scene prompt's identity anchor still asserted the authored hair. Closed
 2026-08-21 by giving `character-scene.ts` the same base → persisted → condition
 resolve `resolveShadowAttributes` takes; the digest cutover must preserve that
-layering. The chat-look mint and the variant lane still resolve no overlays at
-all (`visual-state.audit.md` finding 6) — a Stage 3/4 cutover decision, not a
-patch here.
+layering. Stage 4 closed the rest of that finding
+(`visual-state.audit.md` finding 6): the chat-look mint now takes its cut from
+the same shared chat factory and reads the same base → persisted → condition
+resolve, so a recorded haircut or dye reaches the look anchor. The variant lane
+has no chat and therefore no persisted narrative overlays to resolve at all: the
+character sheet plus its default wardrobe ARE that lane's committed cut.
 
 One invariant is asserted across every lane rather than frozen per lane, because
 it holds today and must survive every stage: covered intimate **skin** is never
@@ -237,6 +394,28 @@ everywhere transport was not supposed to move.
 Image trials cover representative avatar, scene, edit, chat-image, realistic,
 stylized, human, non-human, altered anatomy, wardrobe, exposure, and embodied
 viewer cases.
+
+### The two roads a recognition mark travels
+
+A cataloged recognition mark reaches a lane by one of two roads, and Stage 4
+measured that they do not agree. The STANDALONE snapshot road (avatar, variant)
+projects a cataloged distinctive value into the digest as a mark. The chat
+SHADOW road (scene, chat-look) projects none at all — verified by suppression
+record: the avatar build records `nose/shape` as a `lane_curated` suppression,
+and both chat builds record no such fact.
+
+The scene lane never noticed, because its route-owned residual attribute sheet
+states the mark regardless. The chat-look mint has no residual sheet, so there
+the mark is simply unstated.
+
+Left silent deliberately for now: that lane edits FROM an identity reference,
+and identity detail the reference already carries is exactly what the owner
+ruled stays unstated on the sibling edit lane
+([What the variant prompt gains](#what-the-variant-prompt-gains)). Closing the
+asymmetry belongs to the plan that owns the projection —
+`visual-state.plan.md` — not to this one; when it lands, the chat lanes gain the
+mark with no change here. The claim is pinned by
+`lane-characterization.test.ts`'s distinctive-mark test.
 
 ## Failure behavior
 

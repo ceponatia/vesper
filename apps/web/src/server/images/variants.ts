@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile, resolveAttributes } from "@/contracts";
+import { characterProfileSchema, emptyCharacterProfile, outfitItems } from "@/contracts";
 import { IMAGE_TARGET_ASPECT, type ImageLoraRenderBinding, type ResolvedImageProfile } from "@vesper/image-core";
 import { parseOr } from "@/lib/parse";
 import { characters, db, images } from "../db";
@@ -9,13 +9,19 @@ import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { HIDDEN_IMAGE_KINDS, runImagePipeline, type ImageKind } from "./assets";
+import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { queueIdentityPackPreparation } from "./identity-pack-preparation";
 import { monogramSvg } from "./monogram";
 import { pairProfileWithNsfwLora } from "./nsfw-lora";
-import { apparentAgeAnchor, intimateAnatomySummary } from "./prompts-appearance";
-import { buildVariantInstruction, NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
+import { NSFW_TEST_VARIANT_KIND, type VariantKind } from "./prompts-variant";
+import {
+  buildVariantSegments,
+  type VariantSegmentAssembly,
+  type VariantSegmentAssemblyInput,
+} from "./variant-segments";
 
 export interface GenerateVariantInput {
   characterId: string;
@@ -49,6 +55,64 @@ async function resolveNsfwTestRoute(profile: ResolvedImageProfile, sink?: Diagno
 }
 
 /**
+ * A refused variant render's diagnostic: the standalone visual digest could not
+ * make the character render-eligible — a required fact resolved no clause, or
+ * the assembly itself threw. The row is failed BEFORE any provider spend
+ * (spec.prompts.md §Failure behavior), through `failedPrecondition` rather than
+ * `produce`, so no `images.variant.generate_failed` fires: a render that never
+ * ran did not fail to generate.
+ */
+export const VARIANT_DIGEST_INELIGIBLE = "images.variant.visual_digest_ineligible";
+
+/** The assembled segments (kept even when refused, so the row records what was attempted) and the refusal. */
+interface VariantDigestBuild {
+  readonly assembly: VariantSegmentAssembly | null;
+  /** The precondition text, or null when the render may proceed. */
+  readonly refusal: string | null;
+}
+
+/**
+ * The pure segment assembly, run at the route boundary with the resilient
+ * shape: a throw here is a defect, but the honest outcome is a failed row
+ * carrying a diagnostic rather than a lost request, so it degrades to a
+ * refusal (docs/resilience.md §diagnostics over exceptions).
+ *
+ * Typed as the assembly's OWN input (minus the sink, threaded separately) so a
+ * degradation flag like `wardrobeUnavailable` can never be silently dropped at
+ * this seam — an inline retype in the avatar lane once omitted it, and a
+ * refactor could have reverted the failed-load-renders-topless fix with no type
+ * error.
+ */
+function buildVariantDigest(
+  input: Omit<VariantSegmentAssemblyInput, "sink">,
+  sink?: DiagnosticSink,
+): VariantDigestBuild {
+  let assembly: VariantSegmentAssembly;
+  try {
+    assembly = buildVariantSegments({ ...input, ...(sink === undefined ? {} : { sink }) });
+  } catch (err) {
+    sink?.push(
+      diag("warn", VARIANT_DIGEST_INELIGIBLE, "variant segment assembly failed", {
+        path: "images.variant",
+        context: {
+          characterId: input.characterId,
+          error: err instanceof Error ? err.message.slice(0, 300) : String(err).slice(0, 300),
+        },
+      }),
+    );
+    return { assembly: null, refusal: "the variant's visual digest could not be assembled" };
+  }
+  if (assembly.missingRequired.length === 0) return { assembly, refusal: null };
+  sink?.push(
+    diag("warn", VARIANT_DIGEST_INELIGIBLE, "a required visual fact resolved no prompt clause", {
+      path: "images.variant",
+      context: { characterId: input.characterId, missingRequired: [...assembly.missingRequired] },
+    }),
+  );
+  return { assembly, refusal: "the variant's visual digest is missing required facts" };
+}
+
+/**
  * Portrait-variant pipeline (docs/images/pipelines.md §Portrait variants):
  * single-reference registry edit of
  * the canonical avatar, identity-locked + age-anchored (owner ruling 2026-07-29 —
@@ -61,11 +125,17 @@ async function resolveNsfwTestRoute(profile: ResolvedImageProfile, sink?: Diagno
  * image. Runs on the shared reserve → generate → save-or-fail → log shell
  * (`runImagePipeline`); failures mark the row failed and return its id.
  *
+ * The prompt is the Stage 4 cutover's semantic segments (`variant-segments.ts`)
+ * — the operation contract plus the standalone visual digest — set on BOTH
+ * `prompt` and `intent.promptSegments`, with `meta.visualState` provenance
+ * attached at reserve time so the visual moment survives a failed render.
+ *
  * The render seam reports an edit failure as `ok: false` rather than throwing, so this
  * lane's generation failure is a RETURNED failure and pushes its own
  * `images.variant.generate_failed` (the ruled normalization). Its precondition
- * miss — no character — stays diagnostic-free, exactly like the entity lane's
- * not-found; the pack evaluation pushes its own diagnostics for the rest.
+ * misses — no character, an ineligible digest — stay out of that path entirely,
+ * exactly like the entity lane's not-found; the pack evaluation and the digest
+ * guard push their own diagnostics for the rest.
  */
 export async function generateVariant(input: GenerateVariantInput): Promise<string> {
   const demo = isDemoMode();
@@ -90,15 +160,40 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     undefined,
     "characters.profile",
   );
-  const attributes = resolveAttributes(profile.attributes, []);
-  const ageAnchor = apparentAgeAnchor(character?.name ?? "", attributes);
-  const prompt = buildVariantInstruction(input.kind, input.instruction, {
-    ageAnchor,
-    // Stated for the bench kind alone. Every other variant leans on the
-    // reference portrait for the body it already shows, and naming anatomy a
-    // waist-up edit cannot depict only fights the picture.
-    ...(nsfwTest ? { anatomy: intimateAnatomySummary(attributes, profile) } : {}),
-  });
+  // The lane had no wardrobe load before the Stage 4 cutover, and therefore no
+  // honest coverage at all. It loads one now for the same reason the avatar
+  // lane does: the camera's perception and the exposure the intimate gate reads
+  // must come from the saved outfit, not from an assumed-bare body. No garment
+  // NAME reaches this prompt — the reference image shows the clothes.
+  const load = character
+    ? await loadDefaultWardrobeWithRevisions(input.userId, outfitItems(profile), input.sink)
+    : { wardrobe: [], revisions: [] };
+  // Guarded on the character: the missing-character path used to build a prompt
+  // from an empty profile, which a digest cannot honestly do — there is no row
+  // to take a read token from. That path is already a failed precondition.
+  const digest: VariantDigestBuild = character
+    ? buildVariantDigest(
+        {
+          characterId: input.characterId,
+          name: character.name,
+          profile,
+          kind: input.kind,
+          instruction: input.instruction,
+          wardrobe: load.wardrobe,
+          ...(load.failed === true ? { wardrobeUnavailable: true } : {}),
+          ...((load.coverageUnreliableIds?.length ?? 0) > 0 ? { coverageUnreliable: true } : {}),
+          // The character row's own revision plus every wardrobe row read for
+          // this render — an edit to either mints a different token.
+          readToken: standaloneCharacterReadToken({
+            characterId: input.characterId,
+            revision: character.updatedAt.toISOString(),
+            extraRevisions: load.revisions,
+          }),
+        },
+        input.sink,
+      )
+    : { assembly: null, refusal: null };
+  const prompt = digest.assembly?.prompt ?? "";
   const packIdentity: IdentityPackRenderReferencesResult | null =
     !demo && character && resolved
       ? await identityPackRenderReferences({
@@ -126,10 +221,16 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         // records, and never the locator.
         ...(nsfwRoute?.ok ? { lora: nsfwRoute.binding.id } : {}),
         ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
+        // The visual moment that shaped the prompt, attached at RESERVE time
+        // beside the model decisions: a thrown or refused produce carries no
+        // meta, and the provenance must survive a failed render.
+        ...(digest.assembly?.digestMeta ?? {}),
       },
     },
-    // The row is on record for a missing character too — failed, unlogged.
-    failedPrecondition: character ? null : `character ${input.characterId} not found`,
+    // The row is on record for a missing character too — failed, unlogged. An
+    // ineligible digest refuses HERE rather than in `produce`, so the row fails
+    // before provider spend and no generation diagnostic fires.
+    failedPrecondition: character ? digest.refusal : `character ${input.characterId} not found`,
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
       if (demo) return { ok: true, image: monogramSvg(`${character?.name ?? ""} ${input.kind}`) };
@@ -149,6 +250,12 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         {
           profile: resolved,
           prompt,
+          // The semantic segments are authoritative; `prompt` is the same
+          // segments compiled, stored on the row and carried as the intent's
+          // string form. Safe to send both here because this lane's profiles
+          // run `instruction_edit`, which passes the base prompt through
+          // unchanged — the two spellings cannot diverge.
+          ...(digest.assembly ? { promptSegments: digest.assembly.segments } : {}),
           // The identity the variant instruction modifies, which this lane
           // always re-rolls from rather than chaining edits: the pack's
           // candidate references for the resolved profile.

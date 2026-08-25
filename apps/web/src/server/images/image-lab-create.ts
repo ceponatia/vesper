@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import {
   emptyImageLabSettings,
+  IMAGE_LAB_DEFAULT_SUBJECT_FACTS,
   type ImageLabCreateExperimentRequest,
   type ImageLabExperiment,
 } from "@vesper/image-core";
@@ -144,8 +145,9 @@ export async function createImageLabExperiment(
       controlKind: request.controlKind ?? null,
       settings: request.settings ?? emptyImageLabSettings(),
       // The create-time meta keys — a finishing pass's two (the run it refines
-      // and the arm it runs) and a staged scene's one. Written here and
-      // preserved by every later write through `labMeta`.
+      // and the arm it runs) and a staged scene's two (the act it benches and
+      // where its subject's facts come from). Written here and preserved by
+      // every later write through `labMeta`.
       ...createMeta(request),
       status: "pending",
     })
@@ -174,12 +176,26 @@ export async function createImageLabExperiment(
  * all. It is NOT validated against the registry here — that is the runner's
  * `subject_invalid`, settled onto the row where an admin can read which id
  * nothing answered to, exactly as the control-fixture gates are the runner's.
+ *
+ * The staged scene's SUBJECT-FACTS mode is the one field written even when the
+ * request named none, which is the exact opposite of the finishing variant's
+ * rule and deliberate. An absent `finishingVariant` and an explicit `identity`
+ * mean the same run, so flattening one into the other would lose a fact for
+ * nothing. An absent subject-facts mode does NOT mean today's default: every
+ * staged row written before the mode existed ran the name-only ablation, so
+ * leaving a new row silent would make the ablation and the parity arm
+ * indistinguishable on a record whose whole purpose is telling two arms apart.
+ * Resolving the default HERE, once, is what keeps absence meaning exactly one
+ * thing to the runner.
  */
 function createMeta(request: ImageLabCreateExperimentRequest): { meta?: Record<string, unknown> } {
   const meta: Record<string, unknown> = {};
   if (request.sourceExperimentId !== undefined) meta.sourceExperimentId = request.sourceExperimentId;
   if (request.finishingVariant !== undefined) meta.finishingVariant = request.finishingVariant;
   if (request.staging !== undefined) meta.staging = request.staging;
+  if (request.kind === "staged_scene") {
+    meta.subjectFacts = request.subjectFacts ?? IMAGE_LAB_DEFAULT_SUBJECT_FACTS;
+  }
   return Object.keys(meta).length === 0 ? {} : { meta };
 }
 
