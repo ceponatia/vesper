@@ -255,7 +255,8 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
       [
         `"surfaceDeposits": what got ONTO ${ctx.characterName}'s skin or hair this exchange, or came off it — mud, blood, dust, food, paint, makeup. [] when nothing did (the overwhelming common case).`,
         `   Shape: [{ "location": "<one of: ${surfaceDepositLocations.join(", ")}>", "substance": "${alt(surfaceDepositKinds)}", "direction": "add" | "remove", "degree": 1 | 2 | 3, "cause": "<a few words: 'kneeling in the flowerbed'>" }]. Degree is how much: 1 a smear, 2 clearly marked, 3 covered in it — and on a "remove", how much came off, where 3 is all of it.`,
-        `   Only what the fiction actually put there or took off. Substance "unknown" is for something real the text did not name; never guess blood. Only ${ctx.characterName}'s own body — never ${ctx.playerName}'s, and never clothing (a stained shirt belongs in the wardrobe fields). It does NOT come off by itself between exchanges, so report the wash or the wipe when it happens, and never re-report material that is simply still there.`,
+        `   "substance" is optional, and on a "remove" leaving it out means "whatever is on there" — use that for a general wash, and name the substance when only one thing came off. Substance "unknown" is for something real the text did not name; never guess blood.`,
+        `   Only what the fiction actually put there or took off. Only ${ctx.characterName}'s own body — never ${ctx.playerName}'s, and never clothing (a stained shirt belongs in the wardrobe fields). It does NOT come off by itself between exchanges, so report the wash or the wipe when it happens, and never re-report material that is simply still there.`,
       ].join("\n"),
   },
 
@@ -540,7 +541,7 @@ const EXAMPLES: readonly ExtractorExample[] = [
       surfaceDeposits: [
         { location: "hands", substance: "mud", direction: "add", degree: 3, cause: "pushing the car free" },
         { location: "forearms", substance: "mud", direction: "add", degree: 2, cause: "pushing the car free" },
-        { location: "hands", substance: "mud", direction: "remove", degree: 2 },
+        { location: "hands", direction: "remove", degree: 2 },
       ],
     },
   },

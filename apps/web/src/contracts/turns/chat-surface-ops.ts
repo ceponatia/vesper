@@ -400,12 +400,20 @@ export const SURFACE_DEPOSIT_DEGREE_DELTA: Readonly<Record<1 | 2 | 3, number>> =
  * operation already treats it. Something is on her hands either way; refusing
  * the whole proposal because the fiction said "glitter" would lose the true
  * half to protect a vocabulary that has already made room for the case.
+ *
+ * It is also OPTIONAL, and the difference between absent and `unknown` is
+ * load-bearing on a removal. **Absent is a wildcard** — "she scrubs her hands"
+ * names no substance and takes off whatever is there. **`unknown` is a
+ * substance** — the real member above, the one an unrecognised name degrades
+ * into. Collapsing the two would make wiping the glitter off her hands remove
+ * the mud with it, because the name nobody modelled would have been read as
+ * "everything".
  */
 export const surfaceDepositProposalSchema = z
   .object({
     /** A body-location id. Parsed as free text so an unowned one can be REPORTED, not silently swallowed. */
     location: z.string().trim().min(1).max(64),
-    substance: surfaceDepositKindSchema.catch("unknown"),
+    substance: surfaceDepositKindSchema.optional().catch("unknown"),
     direction: z.enum(["add", "remove"]),
     degree: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     /** Free-text provenance ("kneeling in the flowerbed"), never a mechanic. */
@@ -466,7 +474,11 @@ function isOwnedDepositLocation(locationId: string): locationId is SurfaceDeposi
  * A REMOVE names a place and may name a substance. Unnamed means all of it —
  * "she scrubs her hands" does not itemise what came off — while a named one
  * takes only that substance, so wiping blood off a muddy forearm leaves the mud
- * where it is.
+ * where it is. A substance the vocabulary could not place is still a NAMED one:
+ * it removes the unknown material and nothing else.
+ *
+ * An ADD with no substance commits as `unknown`, which is the same sentence
+ * from the other side — something landed and the fiction did not say what.
  */
 export function applySurfaceDepositProposals(input: {
   surface: BodySurfaceState;
@@ -487,9 +499,12 @@ export function applySurfaceDepositProposals(input: {
     const magnitude = SURFACE_DEPOSIT_DEGREE_DELTA[proposal.degree];
     const before = surface;
     if (proposal.direction === "add") {
+      // An unnamed substance still lands: `unknown` is the vocabulary's own way
+      // of saying something is there and nobody committed what.
+      const substance = proposal.substance ?? "unknown";
       surface = commitBodySurfaceDeposit(surface, {
         locationId: proposal.location,
-        kind: proposal.substance,
+        kind: substance,
         amount: magnitude,
         atMinutes: input.atMinutes,
         ...(proposal.cause === undefined ? {} : { cause: proposal.cause }),
@@ -501,14 +516,14 @@ export function applySurfaceDepositProposals(input: {
         // whether this key already stands.
         const standing = bodySurfaceDepositSlot(
           surface,
-          bodySurfaceDepositIdFor(proposal.location, proposal.substance, input.atMinutes),
+          bodySurfaceDepositIdFor(proposal.location, substance, input.atMinutes),
         );
         if (standing === undefined) {
-          const detail = `deposit record is full (${BODY_SURFACE_MAX_DEPOSITS}) — ${proposal.substance} dropped`;
+          const detail = `deposit record is full (${BODY_SURFACE_MAX_DEPOSITS}) — ${substance} dropped`;
           trace.push({ kind: "deposit", target: proposal.location, outcome: "rejected", code: CHAT_SURFACE_DEPOSIT_CAPACITY, detail });
           input.sink?.push(diag("warn", CHAT_SURFACE_DEPOSIT_CAPACITY, detail));
         } else {
-          trace.push({ kind: "deposit", target: proposal.location, outcome: "no_change", code: "", detail: `${proposal.substance} already at this depth` });
+          trace.push({ kind: "deposit", target: proposal.location, outcome: "no_change", code: "", detail: `${substance} already at this depth` });
         }
         continue;
       }
@@ -516,7 +531,8 @@ export function applySurfaceDepositProposals(input: {
       surface = reduceBodySurfaceDeposits(surface, {
         locationId: proposal.location,
         amount: magnitude,
-        ...(proposal.substance === "unknown" ? {} : { kind: proposal.substance }),
+        // Absent is the wildcard; `unknown` is a substance like any other.
+        ...(proposal.substance === undefined ? {} : { kind: proposal.substance }),
       });
       if (surface === before) {
         trace.push({ kind: "deposit", target: proposal.location, outcome: "no_change", code: "", detail: "nothing there to remove" });
@@ -528,7 +544,7 @@ export function applySurfaceDepositProposals(input: {
       target: proposal.location,
       outcome: "applied",
       code: "",
-      detail: `${proposal.direction} ${proposal.substance} ${proposal.degree}`,
+      detail: `${proposal.direction} ${proposal.substance ?? "everything"} ${proposal.degree}`,
     });
   }
 

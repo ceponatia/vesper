@@ -99,9 +99,12 @@ lane does.
   of being repaired into a real 50% wetness change. `cause` stays lenient (provenance
   only). `surfaceDeposits` follows the same shape — `{ location, substance, direction
   add/remove, degree 1-3, cause? }`, parsed per item by `parseSurfaceDepositProposals` —
-  with one deliberate difference: an unrecognised **substance** degrades to `unknown`
+  with two deliberate differences. An unrecognised **substance** degrades to `unknown`
   rather than failing its item, because `unknown` is a real member of the vocabulary and
-  something is genuinely on her hands either way. Its locations are the everyday body
+  something is genuinely on her hands either way. And `substance` is **optional**, where
+  an absent one is not the same answer as `unknown`: absent is the wildcard that removes
+  whatever is on the location (a general wash), while `unknown` is the substance an
+  unrecognised name became — so wiping the glitter off muddy hands leaves the mud. Its locations are the everyday body
   surfaces; the intimate sub-tree is excluded by construction, since it is gated per
   character and would need that gate honoured on every read first. A full record refuses
   with `chat_surface.deposit_capacity` rather than reporting a silent no-op.

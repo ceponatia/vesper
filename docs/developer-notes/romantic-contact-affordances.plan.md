@@ -154,8 +154,12 @@ propose a garment change; it never edits one. Detail:
 **Body-surface state owns what is currently on skin and hair.** Whole-body
 wetness is live and already consumed elsewhere. Owner ruling (2026-08-22):
 surface products, residues, deposits, and temporary contact marks expand this
-same owner rather than becoming a new subsystem — designated, but not yet built,
-so contact still cannot commit them.
+same owner rather than becoming a new subsystem. Contact marks were built
+2026-08-22 and residues and deposits on 2026-08-25 — a character can now carry
+material on a named body part, and it is live for every chat rather than gated,
+because material on skin is ordinary body state. Surface products remain
+designated and unbuilt. Contact itself still cannot commit anything here: it
+proposes, and the body-surface owner commits.
 
 **Visual state owns the visual read** — what each observer can see, what is
 worth noticing, what has already been mentioned, how often to repeat it, and

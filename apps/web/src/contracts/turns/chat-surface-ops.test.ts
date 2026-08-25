@@ -369,10 +369,44 @@ describe("applySurfaceDepositProposals", () => {
     // would record that her hands are clean.
     const parsed = parseSurfaceDepositProposals([{ ...deposit(), substance: "glitter" }]);
     expect(parsed[0]?.substance).toBe("unknown");
+    // An OMITTED substance stays omitted — it is the wildcard, not the member.
+    expect(parseSurfaceDepositProposals([{ location: "hands", direction: "add", degree: 1 }])[0]?.substance)
+      .toBeUndefined();
     // The magnitude and the sign stay strict, because those are what move state.
     const sink = new DiagnosticCollector();
     expect(parseSurfaceDepositProposals([{ ...deposit(), degree: 9 }], sink)).toEqual([]);
     expectDiagnostic(sink, CHAT_SURFACE_PROPOSAL_INVALID, { times: 1 });
+  });
+
+  it("removes only the unknown material when the substance was unrecognised, not everything present", () => {
+    // Falsified against the first implementation, which read `unknown` as the
+    // wildcard: wiping the glitter off muddy hands took the mud with it,
+    // because a name nobody modelled had been treated as "all of it".
+    let surface = applySurfaceDepositProposals({
+      surface: emptyBodySurfaceState(),
+      proposals: [deposit({ degree: 3 })],
+      atMinutes: 10,
+    }).surface;
+    surface = applySurfaceDepositProposals({
+      surface,
+      proposals: [deposit({ substance: "unknown", degree: 3 })],
+      atMinutes: 11,
+    }).surface;
+    const wiped = applySurfaceDepositProposals({
+      surface,
+      proposals: parseSurfaceDepositProposals([
+        { location: "hands", substance: "glitter", direction: "remove", degree: 3 },
+      ]),
+      atMinutes: 12,
+    });
+    expect(bodySurfaceDepositsAt(wiped.surface, "hands", 12).map((row) => row.read.deposit.kind)).toEqual(["mud"]);
+    // The wildcard is the ABSENT substance, and it still takes everything.
+    const scrubbed = applySurfaceDepositProposals({
+      surface: wiped.surface,
+      proposals: parseSurfaceDepositProposals([{ location: "hands", direction: "remove", degree: 3 }]),
+      atMinutes: 13,
+    });
+    expect(scrubbed.surface.deposits).toBeUndefined();
   });
 
   it("refuses a location outside the owned set — the intimate tree is excluded by construction", () => {

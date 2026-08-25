@@ -1,7 +1,9 @@
 # Romantic contact affordances — observations, effects, and sensory routing
 
-Status: **implementation stages 1–6 built 2026-08-22 — the effect-commit leg
-waits on its default-off switch (`CHAT_CONTACT_EFFECTS`); stages 7–9 remain.**
+Status: **implementation stages 1–7 built — 1–6 on 2026-08-22, the deposits
+owner (stage 7) on 2026-08-25. The effect-commit leg waits on its default-off
+switch (`CHAT_CONTACT_EFFECTS`); the deposits owner is deliberately ungated.
+Stages 8–10 remain.**
 This spec replaces the older contact-specific perception/ranking design. Visual state owns visual perception,
 attention, repetition, memory, and narrator/image selection. Contact owns pure
 physical phenomenon resolution and effect proposals. Persistent aftermath is
@@ -382,7 +384,11 @@ Only the contact-derived transfer producer belongs behind that flag.
   there would need that gate honoured on every read first. An unrecognised
   substance degrades to `unknown` and still commits; an unowned location drops
   with `chat_surface.location_unknown`; a full record refuses with
-  `chat_surface.deposit_capacity` rather than reporting a silent no-op.
+  `chat_surface.deposit_capacity` rather than reporting a silent no-op. On a
+  removal the substance is OPTIONAL, and absent is not the same answer as
+  `unknown`: absent is the wildcard that takes whatever is there, while
+  `unknown` is the substance an unrecognised name degrades into. Collapsing the
+  two would make wiping the glitter off muddy hands remove the mud with it.
 - **Persistence** — the deposits fold runs at settle in `finalizeChatState`,
   between the wetness fold and the contact-effects transaction, so all three
   modules land in one state value under one rollback anchor and a retake
@@ -784,7 +790,8 @@ for or duplicating body-surface work.
 ### Body-surface deposits
 
 - material does not shrink on the story clock — only an explicit removal does;
-- a removal naming a substance leaves the other substances at that location;
+- a removal naming a substance leaves the other substances at that location,
+  and an unrecognised name is still a NAME rather than a wildcard;
 - a corrupt slot quarantines rather than dropping, so absent still means clean;
 - one module emptying out does not discard a sibling module's record;
 - an unrecognised substance commits as `unknown` rather than losing the fact;
