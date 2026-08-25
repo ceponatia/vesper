@@ -35,9 +35,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the romantic player
   surface still waits on its evidence-capturing live rerun; visual contact
-  continuity and visual-only routing are built, and the first pressure-mark
-  effect proof is built behind its default-off switch while NPC shadow review
-  runs independently.
+  continuity and visual-only routing are built, the first pressure-mark effect
+  proof is built behind its default-off switch, and skin now has a live owner
+  for the material it carries, leaving conserved transfer and the sensory owners
+  while NPC shadow review runs independently.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·

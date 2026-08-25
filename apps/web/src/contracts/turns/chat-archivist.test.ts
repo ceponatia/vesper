@@ -144,6 +144,7 @@ describe("the extraction legs (chat-agent-improvements slice 1b)", () => {
       scene: whole.scene,
       environment: whole.environment,
       surfaceWetness: whole.surfaceWetness,
+      surfaceDeposits: whole.surfaceDeposits,
       garmentOperations: whole.garmentOperations,
       outfit: whole.outfit,
       playerOutfit: whole.playerOutfit,

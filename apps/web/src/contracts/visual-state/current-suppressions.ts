@@ -34,7 +34,7 @@ import type { VisualStateSuppression } from "./suppression";
 export const visualStateUnsupportedFamilies = [
   /** Involuntary body responses — swelling, visible fatigue, flushing. */
   "physiology",
-  /** Substances ON skin — dirt, blood, cosmetics wear. Garment deposits exist; skin has no equivalent. */
+  /** Makeup coming off. Substances ON skin now have the body-surface deposits module; wear does not. */
   "contamination",
   /** Visible traces of committed contact — pressure marks, an occupied surface. */
   "contact",
@@ -58,9 +58,15 @@ export interface VisualStateUnsupportedFact {
 export const VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS: readonly VisualStateUnsupportedFact[] = [
   { family: "physiology", fact: "swelling", nearest: "authored static attributes" },
   { family: "physiology", fact: "visible_fatigue", nearest: "energy meter prompt hint (prose-only)" },
-  { family: "contamination", fact: "dirt_on_skin", nearest: "garment deposits (mud, dust)" },
-  { family: "contamination", fact: "blood_on_skin", nearest: "garment deposit blood" },
-  { family: "contamination", fact: "cosmetics_wear", nearest: "garment deposit cosmetic" },
+  // `dirt_on_skin` and `blood_on_skin` were tabled here and have been RETIRED
+  // per the rule above: the body-surface owner's deposits module commits
+  // material on skin and `projectBodySurfaceFeatures` reads it as
+  // `body_surface.deposit`, so both facts now have an owner and an adapter.
+  // `cosmetics_wear` STAYS, because it is a different fact: a cosmetic deposit
+  // is makeup material present on a surface, while this row is makeup coming
+  // OFF — the degradation of a deliberate presentation, which the deposits
+  // module cannot state and no producer writes.
+  { family: "contamination", fact: "cosmetics_wear", nearest: "presentation makeup disturbance (smudged, running)" },
   // `contact_marks` was tabled here and has been RETIRED per the rule above:
   // the body-surface owner's marks module commits temporary contact marks and
   // `projectBodySurfaceFeatures` reads them as `body_surface.contact_mark`

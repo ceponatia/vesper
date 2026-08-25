@@ -24,8 +24,10 @@ import {
   emptySceneState,
   parseSceneState,
   applyBodyMarkProposals,
+  applySurfaceDepositProposals,
   applyEnvironmentProposal,
   applySurfaceWetnessProposals,
+  parseSurfaceDepositProposals,
   parseSurfaceWetnessProposals,
   bodySurfaceStateSchema,
   chatEnvironmentSchema,
@@ -2577,6 +2579,25 @@ export async function finalizeChatState(input: {
     environment: environmentFold.environment,
     sink: input.sink,
   });
+  // Deposits fold next, onto the wetness fold's result — the same owner, one
+  // more module, and no flag: material on skin is ordinary authoritative body
+  // state exactly as wetness is, and gating it behind the contact-effects
+  // switch would make "she still has mud on her hands" unrememberable for the
+  // continuity system that has nothing to do with contact.
+  //
+  // No environment argument, and no prune pass: a deposit does not leave a
+  // surface on its own, so there is nothing for the clock to integrate and an
+  // empty proposal list returns the wetness fold's surface by reference.
+  const depositFold = applySurfaceDepositProposals({
+    surface: surfaceFold.surface,
+    proposals: parseSurfaceDepositProposals(
+      archivist.value?.surfaceDeposits ?? [],
+      input.sink,
+      "chat_archivist.surfaceDeposits",
+    ),
+    atMinutes: input.scenario.clockMinutes,
+    sink: input.sink,
+  });
   // --- Contact-effect owner transaction (`CHAT_CONTACT_EFFECTS`, default off) ---
   // The pressure-mark commit (effects spec §8): the body-surface owner
   // validates each proposal against its own vocabulary and commits at most one
@@ -2587,13 +2608,18 @@ export async function finalizeChatState(input: {
   const effectFold =
     input.contactMarkProposals !== undefined && input.contactMarkProposals.length > 0
       ? applyBodyMarkProposals({
-          surface: surfaceFold.surface,
+          surface: depositFold.surface,
           proposals: input.contactMarkProposals,
           atMinutes: input.scenario.clockMinutes,
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         })
-      : { surface: surfaceFold.surface, trace: [] };
-  const surfaceTrace: ChatSurfaceTraceEntry[] = [...environmentFold.trace, ...surfaceFold.trace, ...effectFold.trace];
+      : { surface: depositFold.surface, trace: [] };
+  const surfaceTrace: ChatSurfaceTraceEntry[] = [
+    ...environmentFold.trace,
+    ...surfaceFold.trace,
+    ...depositFold.trace,
+    ...effectFold.trace,
+  ];
   if (surfaceTrace.length > 0) {
     input.sink?.push(
       diag(

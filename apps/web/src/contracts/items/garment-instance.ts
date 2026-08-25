@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  surfaceDepositKindSchema,
+  surfaceDepositKinds,
+  type SurfaceDepositKind,
+} from "../materials/surface-deposits";
 import { garmentDegreeBandSchema, garmentUnitSchema, GARMENT_UNIT_ONE, type GarmentUnit } from "./garment-material";
 import {
   garmentBlueprintSchema,
@@ -220,9 +225,16 @@ export const garmentConditionOverrideSchema = z
   .strict();
 export type GarmentConditionOverride = z.infer<typeof garmentConditionOverrideSchema>;
 
-export const garmentDepositKinds = ["mud", "blood", "dust", "food", "paint", "cosmetic", "unknown"] as const;
-export const garmentDepositKindSchema = z.enum(garmentDepositKinds);
-export type GarmentDepositKind = z.infer<typeof garmentDepositKindSchema>;
+/**
+ * ALIAS of the shared surface vocabulary (`materials/surface-deposits.ts`).
+ * Garments introduced this list, and skin now carries the same substances
+ * through the body-surface owner — so the list moved somewhere neither owner
+ * owns rather than being copied. The garment names stay because every consumer
+ * downstream of this file speaks them.
+ */
+export const garmentDepositKinds = surfaceDepositKinds;
+export const garmentDepositKindSchema = surfaceDepositKindSchema;
+export type GarmentDepositKind = SurfaceDepositKind;
 
 export const garmentDepositSchema = z
   .object({

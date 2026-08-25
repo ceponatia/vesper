@@ -11,6 +11,7 @@ import {
   VISUAL_STATE_BODY_LANGUAGE_MOTION_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_POSTURE_KIND_ID,
   VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
+  VISUAL_STATE_BODY_SURFACE_DEPOSIT_KIND_ID,
   VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID,
   VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
   VISUAL_STATE_CONDITION_ACTIVE_KIND_ID,
@@ -402,6 +403,23 @@ function featureClause(input: {
       const band = text(parsed?.["band"]);
       const word = band === undefined ? undefined : SURFACE_MARK_WORD[band];
       return word === undefined ? undefined : `there is ${word} on ${thing}`;
+    }
+
+    case VISUAL_STATE_BODY_SURFACE_DEPOSIT_KIND_ID: {
+      // The garment-deposit clause's wording, deliberately: the same substance
+      // in the same three freshness states should read the same whether it is
+      // on her sleeve or on the arm inside it. `unknown` is a real member —
+      // something is there and nobody committed what — so it renders as a mark
+      // rather than as silence. The AMOUNT band is not spoken: "slight" and
+      // "extreme" are the owner's scale, and a narrator told there is blood on
+      // her hands does not also need to be told how much before it can avoid
+      // contradicting the record.
+      const deposit = text(parsed?.["deposit"]);
+      const freshness = text(parsed?.["freshness"]);
+      if (deposit === undefined) return undefined;
+      const what = deposit === "unknown" ? "a mark" : humanize(deposit);
+      const fresh = freshness === "fresh" ? "fresh " : freshness === "drying" ? "drying " : "";
+      return `there is ${fresh}${what} on ${thing}`;
     }
 
     case VISUAL_STATE_GARMENT_CONDITION_KIND_ID: {

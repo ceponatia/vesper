@@ -1,8 +1,13 @@
 import { addClamped, proportionalDecayStep, scaleFixedPoint } from "@/lib/fixed-point";
 import { diag, type DiagnosticSink } from "../diagnostics";
+import {
+  surfaceDepositFreshnessBandOf,
+  surfaceDepositFreshnessBands,
+  SURFACE_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES,
+  type SurfaceDepositFreshnessBand,
+} from "../materials/surface-deposits";
 import { garmentPartNode, type GarmentBlueprint } from "./garment-blueprint";
 import {
-  garmentDegreeBandOf,
   garmentMaterialProfile,
   GARMENT_DEGREE_BAND_VALUES,
   GARMENT_UNIT_ONE,
@@ -193,17 +198,12 @@ export function hystereticGarmentConditionBand(
 
 // --- Deposit freshness (derived, never stored twice) ---------------------------
 
-export const garmentDepositFreshnessBands = ["set", "drying", "fresh"] as const;
-export type GarmentDepositFreshnessBand = (typeof garmentDepositFreshnessBands)[number];
+/** ALIASES of the shared surface vocabulary — see `garmentDepositKinds` for why. */
+export const garmentDepositFreshnessBands = surfaceDepositFreshnessBands;
+export type GarmentDepositFreshnessBand = SurfaceDepositFreshnessBand;
 
 /** Half-life of "this just happened" — phrasing only; freshness never removes a deposit. */
-export const GARMENT_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES = 45;
-
-const FRESHNESS_LADDER: readonly (readonly [GarmentUnit, GarmentDepositFreshnessBand])[] = [
-  [0, "set"],
-  [2_000, "drying"],
-  [6_000, "fresh"],
-];
+export const GARMENT_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES = SURFACE_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES;
 
 /**
  * A deposit's freshness AT a story minute. Derived from the stored stamp rather
@@ -221,12 +221,7 @@ export function garmentDepositFreshnessAt(deposit: GarmentDeposit, atMinutes: nu
 }
 
 export function garmentDepositFreshnessBand(deposit: GarmentDeposit, atMinutes: number): GarmentDepositFreshnessBand {
-  const value = garmentDepositFreshnessAt(deposit, atMinutes);
-  let band: GarmentDepositFreshnessBand = "set";
-  for (const [floor, label] of FRESHNESS_LADDER) {
-    if (value >= floor) band = label;
-  }
-  return band;
+  return surfaceDepositFreshnessBandOf(garmentDepositFreshnessAt(deposit, atMinutes));
 }
 
 // --- Reading the vector --------------------------------------------------------
