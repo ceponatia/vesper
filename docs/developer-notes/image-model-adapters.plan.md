@@ -1,6 +1,6 @@
 # Image model adapters and the feature composer
 
-Status: awaiting acceptance — CI on the draft PR, then the owner's Stage 7 bench validation
+Status: awaiting acceptance — the build is merged on main; the owner's Stage 7 deployed bench validation and Stage 9 promotion ruling remain
 
 Outcome: The owner can run any registered image model — LoRA weights included —
 from the Image Generator and trust that what the record claims was sent is what
@@ -62,9 +62,9 @@ apps/web                     (100) joins adapters to transport; owns DB, UI, job
 - **Feature modules** (`features/`): reusable semantic capabilities a model
   composes rather than reimplements. Built as needed, not exhaustively.
 - **Model-family adapters** (`families/qwen/…` first): shared family behavior,
-  per-endpoint differences (the LoRA wrapper is the older 2509-generation edit
-  endpoint, not Edit 2511), prompt dialects, execution hints (startup/render
-  budgets, startup-retry counts).
+  per-endpoint differences (the older 2509-generation LoRA wrapper and current
+  Edit 2511 both expose runtime LoRA, but keep different reviewed capabilities),
+  prompt dialects, execution hints (startup/render budgets, startup-retry counts).
 - **The adapter registry**: resolve an adapter from a registered model's base
   slug; absence of an adapter is a legal state meaning "no special behavior".
 
@@ -135,11 +135,13 @@ normalized concept (execution context) and one new provider-neutral type
 ## 7. Model / provider / implementation strategy
 
 The Qwen image family is the reference implementation: shared family behavior,
-`qwen-image-edit-2511`, `qwen-image-edit-plus-lora` (the LoRA-capable
+`qwen-image-edit-2511` (current identity-critical editor, now verified to expose
+one runtime custom LoRA), `qwen-image-edit-plus-lora` (the older
 2509-generation wrapper), and `qwen-image-2512` as the family's generator arm.
-Other families (Flux, Wan, SDXL) stay on the legacy path and migrate when next
-touched — the adapter registry treats "no adapter" as ordinary. Replicate stays
-the only transport.
+The probed registry remains authoritative for the exact LoRA bindings on the
+version Vesper will run. Other families (Flux, Wan, SDXL) stay on the legacy
+path and migrate when next touched — the adapter registry treats "no adapter"
+as ordinary. Replicate stays the only transport.
 
 ## 8. Starting configuration
 
@@ -302,7 +304,7 @@ five-minute queue; provider history shows zero `lora_weights` ever sent.
 
 ### Stage 1 — Contracts and boundaries (image-core)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 Execution contexts, the compatibility/policy split in the evaluator, the
 artifact-source union and pure resolver, the execution-policy type, the compile
@@ -311,14 +313,14 @@ wire invariant, and the kernel prompt hook (defaulting to legacy behavior).
 
 ### Stage 2 — Transport lifecycle (image-replicate)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 Two-phase budgets, startup-abort retry, attempt records. Without a policy the
 transport behaves exactly as today. **Production behavior changes:** none.
 
 ### Stage 3 — The composer and the Qwen family (image-models)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 Package scaffolding and registration, feature modules, `defineImageModel`, the
 Qwen family adapters and dialect quirk, the adapter registry.
@@ -326,7 +328,7 @@ Qwen family adapters and dialect quirk, the adapter registry.
 
 ### Stage 4 — Application wiring
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 Contexts at every LoRA call site; adapter hooks into kernel and
 `renderWithModel`; Qwen dialect deleted from quality presets; bench execution
@@ -336,13 +338,13 @@ credential seam. **Production behavior changes:** none intended — the
 
 ### Stage 5 — UI
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 Generator form filter, run-detail attempts, LoRA library Civitai source option.
 
 ### Stage 6 — Invariant coverage
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — 2026-08-24.
 
 The cross-stack final-wire test plus the compile-invariant unit tests, per the
 testing skill's one-owning-layer rule.
@@ -351,9 +353,10 @@ testing skill's one-owning-layer rule.
 
 Status: next — owner-triggered bench validation on the deployed app.
 
-The owner's bench validation: the NSFW LoRA on the Qwen wrapper from the
-Generator, rendered end to end on the deployed app — the run this plan exists
-to make possible. Owner-triggered spend.
+The owner's bench validation: the curated NSFW LoRA on Qwen Image Edit 2511
+from the Generator, rendered end to end on the deployed app — the run this plan
+exists to make possible. The exact active provider version must carry the
+verified LoRA bindings; owner-triggered spend.
 
 ### Stage 8 — Complex cases
 
@@ -399,7 +402,7 @@ the abstraction is wrong before any UI or transport work lands on top of it.
 | Question                                                        | Why it matters                            | Resolution                          |
 | --------------------------------------------------------------- | ----------------------------------------- | ----------------------------------- |
 | Why has production never sent `lora_weights` (dormant vs bug)?  | A defect would hide behind the bench fix  | Wire invariant test + Stage 7 run   |
-| Do the stored extensionless locator URLs satisfy the wrapper?   | First real LoRA send could still fail     | Stage 7 bench run answers it live   |
+| Do the stored LoRA locators satisfy the selected Qwen endpoint?  | First real LoRA send could still fail     | Stage 7 bench run answers it live   |
 | Are 8 min startup / 3 min render the right bench budgets?       | Too tight re-creates the abort; too loose wastes bench time | Tune from Stage 7 observations |
 
 ## 24. Definition of done
@@ -424,8 +427,9 @@ the abstraction is wrong before any UI or transport work lands on top of it.
 
 - `@vesper/image-models` package README (composer, features, adapter registry).
 - Reference-tier updates: `docs/` image system docs gain the execution-context
-  and adapter facts once shipped; `docs/image-models/qwen-image-edit-plus-lora.md`
-  stays the endpoint reference.
+  and adapter facts once shipped; the endpoint references live under
+  `docs/image-models/models/`, including `qwen-image-edit-2511.md` and
+  `qwen-image-edit-plus-lora.md`.
 - The spec (`image-model-adapters.spec.md`) records every ruling this build
   settles; deferred follow-ups (family migration, managed weights, production
   policy adoption) recorded there, not silently dropped.
