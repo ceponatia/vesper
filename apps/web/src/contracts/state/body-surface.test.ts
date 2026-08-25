@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../diagnostics";
 import { parseOr } from "@/lib/parse";
 import {
+  bodySurfaceDepositAt,
+  bodySurfaceDepositIdFor,
+  bodySurfaceDepositsAt,
   bodySurfaceMarkAt,
   bodySurfaceStateSchema,
   bodySurfaceWetnessAt,
@@ -11,8 +14,10 @@ import {
   BODY_SURFACE_MAX_LOCATIONS,
   BODY_SURFACE_MAX_MARKS,
   BODY_SURFACE_UNIT_ONE,
+  commitBodySurfaceDeposit,
   commitBodySurfaceMark,
   emptyBodySurfaceState,
+  reduceBodySurfaceDeposits,
   pruneDryBodySurface,
   pruneFadedBodySurfaceMarks,
   setBodySurfaceWetness,
@@ -279,5 +284,90 @@ describe("marks", () => {
     }
     expect(Object.keys(full.marks ?? {})).toHaveLength(BODY_SURFACE_MAX_MARKS);
     expect(commitBodySurfaceMark(full, { markId: "evt_over", locationId: "chest", kind: "pressure", band: "strong", atMinutes: 0 })).toBe(full);
+  });
+});
+
+
+/**
+ * The deposits module (romantic-contact-affordances.spec.effects.md §7; owner
+ * ruling 2026-08-25). Its whole reason to exist separately from the two modules
+ * above is one asymmetry, and that asymmetry is what these pin: wetness dries
+ * and marks fade because a surface is returning to its resting state, while a
+ * DEPOSIT is material that has to go somewhere. A surface that quietly cleaned
+ * itself would be an unowned sink, which is exactly what the conserved-transfer
+ * proof this module was built to unblock must be able to rely on not existing.
+ */
+describe("deposits", () => {
+  const WEEK = 7 * 24 * HOUR;
+  const muddy = commitBodySurfaceDeposit(emptyBodySurfaceState(), {
+    locationId: "hands",
+    kind: "mud",
+    amount: BODY_SURFACE_UNIT_ONE,
+    atMinutes: 10,
+    cause: "pushing the car free",
+  });
+  const mudId = bodySurfaceDepositIdFor("hands", "mud", 10);
+
+  it("keeps every unit of material a story week later — only FRESHNESS moves with the clock", () => {
+    // Falsified against a deposits module that reused the mark fade: material
+    // that expires on a timer is material nobody removed, and the transfer
+    // proof cannot conserve what the clock is allowed to delete.
+    const now = bodySurfaceDepositAt(muddy, mudId, 10);
+    expect(now).toMatchObject({ status: "known", amount: BODY_SURFACE_UNIT_ONE, freshness: "fresh" });
+    const later = bodySurfaceDepositAt(muddy, mudId, 10 + WEEK);
+    expect(later).toMatchObject({ status: "known", amount: BODY_SURFACE_UNIT_ONE, freshness: "set" });
+    expect(bodySurfaceDepositAt(muddy, "never_committed", 10)).toEqual({ status: "none" });
+  });
+
+  it("removes only the substance a wipe names, and drops the entry once nothing is left to see", () => {
+    // Falsified against a removal that ignored `kind`: washing blood off a
+    // muddy forearm would have taken the mud with it.
+    const both = commitBodySurfaceDeposit(muddy, {
+      locationId: "hands",
+      kind: "blood",
+      amount: 5_000,
+      atMinutes: 12,
+    });
+    const wiped = reduceBodySurfaceDeposits(both, { locationId: "hands", kind: "blood", amount: BODY_SURFACE_UNIT_ONE });
+    expect(bodySurfaceDepositsAt(wiped, "hands", 20).map((row) => row.read.deposit.kind)).toEqual(["mud"]);
+    // Unnamed takes everything at the location — "she scrubs her hands" does
+    // not itemise what came off — and an emptied record loses the key entirely,
+    // so a cleaned-up row persists byte-identically to one that never held
+    // anything.
+    const scrubbed = reduceBodySurfaceDeposits(wiped, { locationId: "hands", amount: BODY_SURFACE_UNIT_ONE });
+    expect(scrubbed.deposits).toBeUndefined();
+    expect(reduceBodySurfaceDeposits(muddy, { locationId: "face", amount: 5_000 })).toBe(muddy);
+  });
+
+  it("quarantines a corrupt slot rather than dropping it — absent means CLEAN, and unknown is not", () => {
+    const parsed = bodySurfaceStateSchema.parse({
+      wetness: {},
+      deposits: {
+        dep_ok: { locationId: "hands", kind: "mud", amount: 5_000, createdAtMinutes: 0 },
+        dep_bad: { locationId: "hands", kind: "ectoplasm", amount: 5_000, createdAtMinutes: 0 },
+      },
+    });
+    expect(parsed.deposits?.dep_bad).toEqual(BODY_SURFACE_INVALID_ENTRY);
+    expect(bodySurfaceDepositAt(parsed, "dep_bad", 0)).toEqual({ status: "invalid" });
+    // A quarantined slot is not material, so a place-scoped read cannot spend it.
+    expect(bodySurfaceDepositsAt(parsed, "hands", 0).map((row) => row.depositId)).toEqual(["dep_ok"]);
+    // A wholly corrupt record degrades to ABSENT, which claims nothing.
+    expect(bodySurfaceStateSchema.parse({ wetness: {}, deposits: "rubbish" }).deposits).toBeUndefined();
+  });
+
+  it("survives the marks prune — one module emptying out must not take a sibling with it", () => {
+    // Falsified against the prune that rebuilt the state as `{ wetness }` when
+    // its last mark went: every deposit on that body disappeared with it, on an
+    // ordinary quiet exchange, with nothing on the record to say so.
+    const marked = commitBodySurfaceMark(muddy, {
+      markId: "evt_1",
+      locationId: "hands",
+      kind: "pressure",
+      band: "strong",
+      atMinutes: 10,
+    });
+    const pruned = pruneFadedBodySurfaceMarks(marked, 10 + HOUR);
+    expect(pruned.marks).toBeUndefined();
+    expect(bodySurfaceDepositAt(pruned, mudId, 10 + HOUR)).toMatchObject({ status: "known" });
   });
 });

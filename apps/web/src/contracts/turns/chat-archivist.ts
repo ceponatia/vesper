@@ -24,7 +24,11 @@ import {
   garmentOperationProposalListSchema,
   garmentOperationTraceSchema,
 } from "./chat-garment-ops";
-import { chatEnvironmentProposalSchema, surfaceWetnessProposalListSchema } from "./chat-surface-ops";
+import {
+  chatEnvironmentProposalSchema,
+  surfaceDepositProposalListSchema,
+  surfaceWetnessProposalListSchema,
+} from "./chat-surface-ops";
 
 /**
  * The character-chat extraction contract. Historically ONE "archivist-lite" agent call
@@ -138,6 +142,19 @@ export const chatArchivistSchema = z.object({
    * minting state nothing reads. `[]` is the overwhelming common case.
    */
   surfaceWetness: surfaceWetnessProposalListSchema,
+  /**
+   * **Material arriving on or leaving skin and hair** — mud, blood, dust, food,
+   * paint, cosmetics (romantic-contact-affordances.spec.effects.md §7).
+   *
+   * Raw here for `surfaceWetness`'s exact reason: `parseSurfaceDepositProposals`
+   * does the per-item parse because it has a sink to report drops to. The two
+   * fields differ in one place — an unrecognised SUBSTANCE degrades to
+   * `unknown` rather than dropping the item, because the vocabulary already
+   * carries `unknown` as a real answer and something is genuinely on her hands
+   * either way. An unowned LOCATION still drops at the fold. `[]` is the
+   * overwhelming common case.
+   */
+  surfaceDeposits: surfaceDepositProposalListSchema,
   /**
    * **Grounded wardrobe operations** (clothing-state-graph.plan.md slice 5) — the
    * field that demotes `outfit` / `playerOutfit` below to a degraded legacy bridge.
@@ -349,6 +366,7 @@ export function degradedChatArchivist(): ChatArchivist {
     scene: { places: [] },
     environment: {},
     surfaceWetness: [],
+    surfaceDeposits: [],
     garmentOperations: [],
     outfit: { description: "", changeEvidence: "", exposed: false, removed: [], added: [] },
     playerOutfit: { description: "", changeEvidence: "", removed: [], added: [] },
@@ -391,6 +409,7 @@ export const chatContinuitySchema = chatArchivistSchema.pick({
   // different sky.
   environment: true,
   surfaceWetness: true,
+  surfaceDeposits: true,
   // The grounded wardrobe lane (clothing-state-graph slice 5) rides the SHARED
   // continuity leg for the same reason `playerOutfit` does: the garment store is
   // chat-wide, and several members proposing operations over one store would

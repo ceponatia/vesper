@@ -90,6 +90,7 @@ describe("visualStateKindRegistry", () => {
       "presentation.cosmetic_mark",
       "body_surface.wetness",
       "body_surface.contact_mark",
+      "body_surface.deposit",
       "garment.condition",
       "garment.presentation",
       "garment.deposit",

@@ -59,6 +59,7 @@ export * from "./players/persona-profile";
 export * from "./players/chat-player-state";
 export * from "./world/profile";
 export * from "./world/location";
+export * from "./materials/surface-deposits";
 export * from "./state/scene-gen";
 export * from "./state/body-surface";
 export * from "./state/chat-environment";

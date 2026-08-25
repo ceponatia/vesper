@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 import { DiagnosticCollector } from "../diagnostics";
+import { garmentDegreeBands } from "../items/garment-material";
+import { surfaceDepositAmountBands } from "../materials/surface-deposits";
 import {
   BODY_SURFACE_INVALID_ENTRY,
   bodySurfaceWetnessAt,
+  commitBodySurfaceDeposit,
   commitBodySurfaceMark,
   emptyBodySurfaceState,
   setBodySurfaceWetness,
@@ -252,5 +255,57 @@ describe("projectBodySurfaceFeatures — marks", () => {
       },
     ]);
     expectDiagnostic(sink, VISUAL_STATE_SOURCE_INVALID, { times: 1 });
+  });
+});
+
+
+/**
+ * Deposits at the read side. The projection's own claim — the one no lower
+ * layer states — is that this is the single feature family with NO expiry
+ * window: everything else here can name the minute its band stops holding
+ * because something is integrating it toward a resting state, and material is
+ * not going anywhere until somebody removes it.
+ */
+describe("projectBodySurfaceFeatures — deposits", () => {
+  const muddy = commitBodySurfaceDeposit(emptyBodySurfaceState(), {
+    locationId: "hands",
+    kind: "mud",
+    amount: 10_000,
+    atMinutes: 0,
+  });
+
+  it("projects the heaviest deposit at a locus, banded and dateless, with no expiry window", () => {
+    // Falsified against a projection that stamped `validUntilMinutes` from a
+    // decay law: the narrator would stop being told about blood on her hands at
+    // a minute nothing in the world had washed it off.
+    const both = commitBodySurfaceDeposit(muddy, {
+      locationId: "hands",
+      kind: "blood",
+      amount: 2_500,
+      atMinutes: 0,
+    });
+    const sink = new DiagnosticCollector();
+    const { features, suppressions } = project(both, { sink });
+    expect(suppressions).toEqual([]);
+    expect(features).toHaveLength(1);
+    const [feature] = features;
+    expect(feature?.key).toBe(`${SUBJECT}/hands/body_surface.deposit`);
+    expect(feature?.value).toEqual({ deposit: "mud", amount: "extreme", freshness: "fresh" });
+    expect(feature?.validUntilMinutes).toBeUndefined();
+    expectCleanSink(sink);
+    // A story week on, the same committed state still reports the same material
+    // — only the phrasing band has moved.
+    expect(project(both, { atMinutes: 7 * 24 * 60 }).features[0]?.value).toEqual({
+      deposit: "mud",
+      amount: "extreme",
+      freshness: "set",
+    });
+  });
+
+  it("walks the same amount ladder as the garment lane, so skin and sleeves never disagree", () => {
+    // Two separate literal tuples on purpose — the garment list is a general
+    // degree scale that also grades damage and cleaning — so the shared
+    // membership is pinned here rather than by construction.
+    expect([...surfaceDepositAmountBands]).toEqual([...garmentDegreeBands]);
   });
 });

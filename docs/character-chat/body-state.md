@@ -2,8 +2,8 @@
 
 What the chat lane knows about the physical scene and the bodies standing in it: the
 chat-wide `environment` (wind, precipitation, indoors) and the per-character
-`body_surface` wetness — the two authoritative owners that let the visual layer read
-*state* rather than parse prose — plus everything projected from them: the affordance read
+`body_surface` — wetness, contact marks, and the material a body is carrying — the two
+authoritative owners that let the visual layer read *state* rather than parse prose — plus everything projected from them: the affordance read
 and its narrator cue block, recognizable features and visual memory, and the narrator's
 physical-consistency constraints and premise checks. Everything else a conversation carries
 between exchanges — the state row and the chat-wide scenario, wardrobe, scene memory,
@@ -66,7 +66,28 @@ lane does.
     is gated by `CHAT_CONTACT_EFFECTS` (off by default, and inert without
     `CHAT_CONTACT_ACTIONS`); the read side projects committed marks into visual state as
     `body_surface.contact_mark` current-state features.
-- **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness`, both on the
+  - **Deposits** are the owner's third module (`deposits`, keyed by a deterministic
+    `dep:<kind>:<location>:<minute>` identity): material standing on skin or hair — mud,
+    blood, dust, food, paint, cosmetic, or `unknown` when the fiction did not name it. The
+    substance kinds, amount bands, freshness bands and 45-minute freshness half-life live
+    in `contracts/materials/surface-deposits.ts` and are **shared outright with the garment
+    store**, so mud on a sleeve and mud on the forearm beneath it are one vocabulary. Each
+    entry carries a location, a fixed-point amount, the minute it landed, and a free-text
+    cause; per-entry quarantine, the 12-entry bound and the absent-until-first-commit key
+    rule all match `marks`. Ungated, unlike marks — material on skin is ordinary body
+    state, not a contact effect. The read projects as `body_surface.deposit` current-state
+    features (heaviest deposit per location, banded), which is what retired the
+    `dirt_on_skin` and `blood_on_skin` unsupported-fact rows.
+    - **Material never leaves on its own.** Wetness dries and marks fade because a surface
+      is returning to its resting state; a deposit is a substance, and a surface that
+      quietly cleaned itself would delete material nobody removed. Only an explicit
+      removal shrinks a deposit, everything at or under the removal floor drops, and a
+      removal that names a substance leaves the others where they are. What *does* move
+      with the clock is `freshness`, which drives phrasing (wet blood, drying blood, set
+      blood) and nothing else — which is also why a projected deposit is the one feature
+      family carrying no expiry window.
+- **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness` /
+  `.surfaceDeposits`, all on the
   shared continuity leg): a partial weather patch (absent key = unchanged) and a list of
   `{ location, direction, degree 1-3, cause? }`. Semantic, never numeric — the reducer
   owns the delta table and clamps regardless; an unowned location drops with
@@ -76,7 +97,14 @@ lane does.
   strict — the standing law is that **`.catch` is for narration-affecting leaves, never
   for state-mutating magnitudes**, so a hallucinated `degree: 999` fails its item instead
   of being repaired into a real 50% wetness change. `cause` stays lenient (provenance
-  only).
+  only). `surfaceDeposits` follows the same shape — `{ location, substance, direction
+  add/remove, degree 1-3, cause? }`, parsed per item by `parseSurfaceDepositProposals` —
+  with one deliberate difference: an unrecognised **substance** degrades to `unknown`
+  rather than failing its item, because `unknown` is a real member of the vocabulary and
+  something is genuinely on her hands either way. Its locations are the everyday body
+  surfaces; the intimate sub-tree is excluded by construction, since it is gated per
+  character and would need that gate honoured on every read first. A full record refuses
+  with `chat_surface.deposit_capacity` rather than reporting a silent no-op.
 - **`character_chats.affordance_cues`** (`AffordanceCueState`): what the affordance read
   has already offered the narrator, and in which band — the garment `cues` precedent. It
   sits on the SCENARIO because the read is a pure function of committed state plus this

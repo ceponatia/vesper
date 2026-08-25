@@ -317,8 +317,9 @@ Owner ruling: expand that **same body-surface domain** into the authoritative
 owner for current material and temporary condition on skin/hair:
 
 - wetness — already implemented;
-- surface products;
-- residue/deposits, including dirt/blood/cosmetics where represented;
+- surface products — remaining;
+- residue/deposits, including dirt/blood/cosmetics — **built 2026-08-25** as a
+  deposits module inside `contracts/state/body-surface.ts` (see below);
 - temporary pressure/contact marks — **built 2026-08-22** as a marks module
   inside `contracts/state/body-surface.ts` (see §8 for the shape).
 
@@ -334,15 +335,69 @@ flag-off row persists byte-identical to before the module existed.
 Contact may consume authoritative body-surface reads and propose mutations to
 that owner. Visual state remains a read/projection consumer.
 
-Current rules until the residue/product expansion exists:
+Current rules, with residue now owned and surface products still not:
 
-- contact may consume body wetness where the lane supplies it;
-- contact must not create a second moisture store;
-- residue/product composition may not be inferred from wetness;
-- missing residue/product support remains unavailable;
-- known dry is not the same thing as unavailable.
+- contact may consume body wetness and body deposits where the lane supplies
+  them;
+- contact must not create a second moisture or residue store;
+- product composition may not be inferred from wetness or from a deposit;
+- missing surface-product support remains unavailable;
+- known dry is not the same thing as unavailable, and neither is known clean.
 
 Scratch/skin damage is **not** included in this ruling and still has no owner.
+
+### Built shape — deposits, 2026-08-25
+
+Ungated, and that is a ruling rather than an omission: material on skin is
+ordinary authoritative body state exactly as wetness is, and putting it behind
+the contact-effects switch would make "she still has mud on her hands"
+unrememberable for the continuity system that has nothing to do with contact.
+Only the contact-derived transfer producer belongs behind that flag.
+
+- **Shared vocabulary** — `contracts/materials/surface-deposits.ts`, imported by
+  both surface owners: substance kinds (`mud`, `blood`, `dust`, `food`, `paint`,
+  `cosmetic`, `unknown`), the amount bands, the freshness bands, and the
+  45-story-minute freshness half-life. The garment store's `garmentDeposit*`
+  names are now aliases of these, so mud on a sleeve and mud on the forearm
+  beneath it cannot be different nouns. `unknown` is a real member, not a parse
+  failure — something is on the surface and nobody committed what.
+- **Owner state** — deposits module in `contracts/state/body-surface.ts`:
+  `bodySurfaceDepositSchema` (location, kind, fixed-point amount, creation
+  minute, free-text cause), keyed by the deterministic
+  `dep:<kind>:<location>:<minute>` identity so a replayed exchange lands on the
+  key it already wrote. `commitBodySurfaceDeposit` raises rather than stacks,
+  `reduceBodySurfaceDeposits` is the only shrink, `bodySurfaceDepositAt` is the
+  lazy freshness read, and per-entry quarantine, the 12-entry bound, and the
+  absent-until-first-commit key rule all follow the marks module.
+- **The one law that is not the marks module's** — material does not leave on
+  its own. Wetness dries and marks fade because a surface is returning to its
+  resting state; a deposit is a substance, and a surface that quietly cleaned
+  itself would be an unowned sink, which is exactly what §9's conservation
+  requirement must be able to rely on not existing. Only an explicit removal
+  shrinks a deposit. Freshness moves with the clock and is phrasing only.
+- **Producer** — the continuity extraction leg's `surfaceDeposits` field
+  (`contracts/turns/chat-surface-ops.ts`), an add/remove direction plus a
+  three-step degree over the everyday body locations. The intimate sub-tree is
+  excluded by construction: it is gated per character, and recording material
+  there would need that gate honoured on every read first. An unrecognised
+  substance degrades to `unknown` and still commits; an unowned location drops
+  with `chat_surface.location_unknown`; a full record refuses with
+  `chat_surface.deposit_capacity` rather than reporting a silent no-op.
+- **Persistence** — the deposits fold runs at settle in `finalizeChatState`,
+  between the wetness fold and the contact-effects transaction, so all three
+  modules land in one state value under one rollback anchor and a retake
+  restores them together.
+- **Visual read** — `body_surface.deposit`, the heaviest deposit per location as
+  one banded current-layer feature carrying substance, amount, and freshness. It
+  is the one feature family with no `validUntilMinutes`, for the law above. The
+  narrator clause reuses the garment-deposit wording verbatim. `imageEligible:
+  false` and `recognitionEligible: false`, the same deliberate-enable caution as
+  the contact relation and the pressure mark; `narratorEligible: true` is the
+  point of the slice. The `contamination` suppression rows `dirt_on_skin` and
+  `blood_on_skin` are retired accordingly. `cosmetics_wear` **stays** — a
+  cosmetic deposit is makeup material present on a surface, while that row is
+  makeup coming off, which is the degradation of a deliberate presentation and
+  still has no owner.
 
 ---
 
@@ -651,18 +706,39 @@ This order aligns with Track C/D of the parent plan:
 6. **Prove pressure mark end to end**: commit, duplicate retry, retake, later
    read, and visual projection where applicable. Built 2026-08-22 — proven by
    the §16 suites; the commit leg waits on its default-off switch.
-7. **Add residue/deposit support and conserved transfer** as the second proof,
-   including atomic source/destination conservation. Remaining.
-8. **Build modality-specific sensory sibling owners** before promoting tactile,
+7. **Add residue/deposit support**, so a body can carry material at all. Built
+   2026-08-25 (§7) — vocabulary, owner, extraction producer, settle fold and
+   visual projection, ungated.
+8. **Add conserved transfer** as the second proof, including atomic
+   source/destination conservation. Remaining, and **fixture-only when it
+   lands**, under §9's own escape clause. Owner ruling (2026-08-25): no live
+   pairing has two implemented owners today, and three separate things would
+   each have to change first —
+   - the player and ensemble members have no body-surface owner, so every
+     committed contact in the chat lane runs from an unowned surface to an owned
+     one, and conservation needs both sides;
+   - the chat lane's contact layers carry a coverage-region identity rather than
+     a garment one and report zero moisture transmission, so contact cannot
+     address the wardrobe owner or justify moving material through a layer —
+     and `absorbency` is not the missing number, because it says how much water
+     a fibre takes up from a wetting source, not what passes through it;
+   - skin and garments persist to two different rows with no enclosing
+     transaction, so a cross-owner transfer cannot satisfy the atomicity law
+     until the settle path changes.
+
+   Garment-to-garment transfer would sidestep all three, because both sides live
+   in one JSONB value — and it is explicitly not the proof, per §9's own warning
+   against using a partial owner path to claim the general problem is solved.
+9. **Build modality-specific sensory sibling owners** before promoting tactile,
    olfactory, or gustatory cues to live narration. Remaining.
-9. **Register only domain phenomena whose complete source -> commitment ->
-   perception path exists.** Unsupported foot/intimate phenomena remain
-   fixture-only. Remaining.
+10. **Register only domain phenomena whose complete source -> commitment ->
+    perception path exists.** Unsupported foot/intimate phenomena remain
+    fixture-only. Remaining.
 
 The pressure-mark visual read is deliberately a **later-cut read of committed
 body-surface state**, not a phenomenon producer: §16's first proof requires the
-observation to read committed mark state only, and stage 9 forbids registering a
-phenomenon before its complete path exists. The routing seam therefore still has
+observation to read committed mark state only, and stage 10 forbids registering
+a phenomenon before its complete path exists. The routing seam therefore still has
 no producer, and the pressure-mark path does not use it.
 
 Garment changes continue to delegate to wardrobe throughout rather than waiting
@@ -704,6 +780,17 @@ for or duplicating body-surface work.
 - later visual observation reads committed mark state only;
 - scratch/skin damage remains unavailable rather than being smuggled in as a
   pressure mark.
+
+### Body-surface deposits
+
+- material does not shrink on the story clock — only an explicit removal does;
+- a removal naming a substance leaves the other substances at that location;
+- a corrupt slot quarantines rather than dropping, so absent still means clean;
+- one module emptying out does not discard a sibling module's record;
+- an unrecognised substance commits as `unknown` rather than losing the fact;
+- a location outside the owned everyday set is refused with its stable code;
+- a full record reports the refusal rather than a silent no-op;
+- the projected feature carries no expiry window.
 
 ### Conserved transfer second proof
 

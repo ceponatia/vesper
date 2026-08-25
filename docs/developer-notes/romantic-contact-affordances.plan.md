@@ -139,6 +139,7 @@ Delivery state of what this work owns:
 | Character-authored movement, start, update         | Built; authority on hold pending reviewed evidence      |
 | Foot mechanics                                     | Built as fixtures; deliberately unregistered            |
 | Contact effects                                    | First proof (pressure mark) built 2026-08-22, switch off |
+| Material on skin — mud, blood, dust, cosmetics     | Live and ungated since 2026-08-25                       |
 | Intimate-region mechanics                          | Not built; blocked on several owners                    |
 
 ---
@@ -801,18 +802,29 @@ for the Track B rerun.
 ### Track D — grounded contact effects and richer domains
 
 Status: in progress — the pressure-mark first proof was built 2026-08-22 behind
-a default-off switch; residue, transfer, and the sensory owners remain.
+a default-off switch and the residue/deposit owner shipped 2026-08-25; transfer
+and the sensory owners remain.
 
 15. Expand the body-surface owner to cover surface material and temporary
     condition — deposits, residue, and contact marks beside the existing wetness
-    — rather than creating owners inside contact. Status: in progress — the
-    contact-marks half was built 2026-08-22 inside the same body-surface owner;
-    deposits and residue remain.
+    — rather than creating owners inside contact. Status: complete — 2026-08-25.
+    A character can now carry mud, blood, dust, food, paint or cosmetics on a
+    named part of their body, the continuity leg records it arriving and being
+    washed off, and the narrator can be told about it. It is deliberately
+    ungated: material on skin is ordinary body state, and hiding it behind the
+    contact switch would have made it unrememberable for the continuity system
+    that has nothing to do with contact. Surface products are the one part of
+    the ruling still unbuilt.
 16. Add effect transactions: the temporary pressure mark first, conserved
     transfer second, with garment changes delegated to wardrobe. Status: in
     progress — the pressure-mark transaction was built and proven 2026-08-22
     (commit, no double-commit on retry, clean removal on regenerate, readable
-    afterward); its switch stays off, and conserved transfer remains.
+    afterward) and its switch stays off. Conserved transfer remains, and owner
+    ruling (2026-08-25) settled that it lands **fixture-only** when it does: no
+    pairing the chat lane can actually produce has an implemented owner on both
+    sides, so nothing it committed would be conserved. Three separate gaps each
+    have to close first, and they are named in the
+    [effects spec](romantic-contact-affordances.spec.effects.md) §15 stage 8.
 17. Build the shared nonvisual sensory presentation owner as sibling packages
     beside visual state, before any touch, smell, or taste cue reaches live
     narration. Status: queued.

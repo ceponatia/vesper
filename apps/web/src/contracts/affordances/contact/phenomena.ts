@@ -29,7 +29,7 @@ import type { ContactBodySurfaceRef, ContactSurfaceRef } from "./surfaces";
  *
  * No producer registers phenomena yet — the effect slice is not live, and until
  * a domain's complete source → commitment → perception path exists its
- * phenomena stay fixture-only (spec §15 stage 9). The seam ships first so that
+ * phenomena stay fixture-only (spec §15 stage 10). The seam ships first so that
  * path has a contract to land on instead of widening the visual one.
  */
 

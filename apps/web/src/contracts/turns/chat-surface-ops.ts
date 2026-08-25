@@ -1,10 +1,16 @@
 import { z } from "zod";
 import { diag, type DiagnosticSink } from "../diagnostics";
+import { surfaceDepositKindSchema } from "../materials/surface-deposits";
 import {
+  bodySurfaceDepositIdFor,
+  bodySurfaceDepositSlot,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessCauseSchema,
+  BODY_SURFACE_MAX_DEPOSITS,
   BODY_SURFACE_UNIT_ONE,
+  commitBodySurfaceDeposit,
   pruneDryBodySurface,
+  reduceBodySurfaceDeposits,
   setBodySurfaceWetness,
   type BodySurfaceState,
   type BodySurfaceWetnessCause,
@@ -165,7 +171,7 @@ export type ChatSurfaceOutcome = (typeof chatSurfaceOutcomes)[number];
  * lifting it onto the memory trace later is a move, not a redesign.
  */
 export interface ChatSurfaceTraceEntry {
-  readonly kind: "environment" | "wetness" | "mark";
+  readonly kind: "environment" | "wetness" | "mark" | "deposit";
   /** The environment field or body location this entry is about. */
   readonly target: string;
   readonly outcome: ChatSurfaceOutcome;
@@ -320,6 +326,209 @@ export function applySurfaceWetnessProposals(input: {
       outcome: surface === before || (read.status === "known" && settled === current) ? "no_change" : "applied",
       code: "",
       detail: `${read.status === "known" ? current : "invalid"} → ${settled}${cause ? ` (${cause})` : ""}`,
+    });
+  }
+
+  return { surface, trace };
+}
+
+// ---------------------------------------------------------------------------
+// Body-surface deposits
+// ---------------------------------------------------------------------------
+
+/**
+ * The body locations this lane accepts deposits on.
+ *
+ * Wide where wetness is narrow, and both for the same reason: a location with
+ * no consumer would be state nobody reads, and the deposit projection reads
+ * every one of these. The list is the everyday tree's ordinary surfaces —
+ * explicitly NOT the intimate sub-tree, which is gated per character and whose
+ * material would need that gate honoured on every read before it could be
+ * recorded here at all. Adding a location is a data edit; adding an intimate
+ * one is a product decision that does not belong in a data edit.
+ */
+export const surfaceDepositLocations = [
+  "hair",
+  "face",
+  "lips",
+  "neck",
+  "shoulders",
+  "chest",
+  "back",
+  "arms",
+  "upper_arms",
+  "forearms",
+  "wrists",
+  "hands",
+  "fingers",
+  "waist",
+  "hips",
+  "thighs",
+  "calves",
+  "ankles",
+  "feet",
+] as const;
+export type SurfaceDepositLocation = (typeof surfaceDepositLocations)[number];
+
+/** Max deposit proposals accepted from one exchange — a beat dirties a hand or two, not a body chart. */
+export const CHAT_SURFACE_DEPOSIT_MAX = 4;
+
+/**
+ * Degree → fixed-point amount, the wetness table's shape and discipline: the
+ * model judges "a little / clearly / covered in it" and this row owns the
+ * numbers, so a hallucinated magnitude is unreachable. On a REMOVE, the same
+ * three steps read as how much came off — `3` takes everything, which is what
+ * "she scrubs her hands clean" has to mean.
+ */
+export const SURFACE_DEPOSIT_DEGREE_DELTA: Readonly<Record<1 | 2 | 3, number>> = {
+  1: 2_500,
+  2: 5_000,
+  3: BODY_SURFACE_UNIT_ONE,
+};
+
+/**
+ * A deposit proposal — one substance arriving at or leaving one place.
+ *
+ * `direction` and `degree` are **strict** for the wetness proposal's exact
+ * reason: they are the sign and the size of a state move, and repairing either
+ * would commit a change nothing in the exchange asked for.
+ *
+ * `substance` is deliberately LENIENT, and this is the one place this file
+ * differs from its wetness sibling. The vocabulary already contains `unknown`
+ * as a real member, so degrading an unrecognised substance is not a repair that
+ * invents a fact — it is the honest answer, exactly as the garment `deposit`
+ * operation already treats it. Something is on her hands either way; refusing
+ * the whole proposal because the fiction said "glitter" would lose the true
+ * half to protect a vocabulary that has already made room for the case.
+ */
+export const surfaceDepositProposalSchema = z
+  .object({
+    /** A body-location id. Parsed as free text so an unowned one can be REPORTED, not silently swallowed. */
+    location: z.string().trim().min(1).max(64),
+    substance: surfaceDepositKindSchema.catch("unknown"),
+    direction: z.enum(["add", "remove"]),
+    degree: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    /** Free-text provenance ("kneeling in the flowerbed"), never a mechanic. */
+    cause: z.string().trim().min(1).max(80).optional().catch(undefined),
+  })
+  .strict();
+export type SurfaceDepositProposal = z.infer<typeof surfaceDepositProposalSchema>;
+
+/** The RAW list as the extraction leg returned it — parsed per item by the function below. */
+export const surfaceDepositProposalListSchema = z.array(z.unknown()).catch([]).default([]);
+
+/** The deposit record is full; the commit was refused rather than evicting standing material. */
+export const CHAT_SURFACE_DEPOSIT_CAPACITY = "chat_surface.deposit_capacity";
+
+/** Parse the raw deposit list PER ITEM, dropping and REPORTING what fails. */
+export function parseSurfaceDepositProposals(
+  raw: unknown,
+  sink?: DiagnosticSink,
+  path?: string,
+): SurfaceDepositProposal[] {
+  const items = surfaceDepositProposalListSchema.parse(raw);
+  const proposals: SurfaceDepositProposal[] = [];
+  let dropped = 0;
+  for (const item of items) {
+    const parsed = surfaceDepositProposalSchema.safeParse(item);
+    if (parsed.success) proposals.push(parsed.data);
+    else dropped += 1;
+  }
+  if (dropped > 0) {
+    sink?.push(
+      diag("warn", CHAT_SURFACE_PROPOSAL_INVALID, `${dropped} malformed surface-deposit proposal(s) dropped`, {
+        ...(path === undefined ? {} : { path }),
+        context: { dropped, kept: proposals.length },
+      }),
+    );
+  }
+  return proposals.slice(0, CHAT_SURFACE_DEPOSIT_MAX);
+}
+
+export interface ChatSurfaceDepositFold {
+  surface: BodySurfaceState;
+  trace: ChatSurfaceTraceEntry[];
+}
+
+function isOwnedDepositLocation(locationId: string): locationId is SurfaceDepositLocation {
+  return (surfaceDepositLocations as readonly string[]).includes(locationId);
+}
+
+/**
+ * Fold this exchange's deposit proposals onto the surface state. PURE — the
+ * caller persists, exactly as with the wetness fold.
+ *
+ * There is no prune pass to open with, and that absence is the module's law
+ * rather than an omission: material does not leave a surface on its own, so a
+ * quiet exchange has nothing to integrate and an empty proposal list returns
+ * the input surface by reference.
+ *
+ * A REMOVE names a place and may name a substance. Unnamed means all of it —
+ * "she scrubs her hands" does not itemise what came off — while a named one
+ * takes only that substance, so wiping blood off a muddy forearm leaves the mud
+ * where it is.
+ */
+export function applySurfaceDepositProposals(input: {
+  surface: BodySurfaceState;
+  proposals: readonly SurfaceDepositProposal[];
+  atMinutes: number;
+  sink?: DiagnosticSink;
+}): ChatSurfaceDepositFold {
+  let surface = input.surface;
+  const trace: ChatSurfaceTraceEntry[] = [];
+
+  for (const proposal of input.proposals.slice(0, CHAT_SURFACE_DEPOSIT_MAX)) {
+    if (!isOwnedDepositLocation(proposal.location)) {
+      const detail = `no surface owner for "${proposal.location}" — deposit change dropped`;
+      trace.push({ kind: "deposit", target: proposal.location, outcome: "rejected", code: CHAT_SURFACE_LOCATION_UNKNOWN, detail });
+      input.sink?.push(diag("info", CHAT_SURFACE_LOCATION_UNKNOWN, detail));
+      continue;
+    }
+    const magnitude = SURFACE_DEPOSIT_DEGREE_DELTA[proposal.degree];
+    const before = surface;
+    if (proposal.direction === "add") {
+      surface = commitBodySurfaceDeposit(surface, {
+        locationId: proposal.location,
+        kind: proposal.substance,
+        amount: magnitude,
+        atMinutes: input.atMinutes,
+        ...(proposal.cause === undefined ? {} : { cause: proposal.cause }),
+      });
+      if (surface === before) {
+        // The owner refused. A same-key commit that changes nothing is the
+        // designed no-op (the fiction restating standing mud); a full record is
+        // a refusal the lane has to report, and the two are told apart by
+        // whether this key already stands.
+        const standing = bodySurfaceDepositSlot(
+          surface,
+          bodySurfaceDepositIdFor(proposal.location, proposal.substance, input.atMinutes),
+        );
+        if (standing === undefined) {
+          const detail = `deposit record is full (${BODY_SURFACE_MAX_DEPOSITS}) — ${proposal.substance} dropped`;
+          trace.push({ kind: "deposit", target: proposal.location, outcome: "rejected", code: CHAT_SURFACE_DEPOSIT_CAPACITY, detail });
+          input.sink?.push(diag("warn", CHAT_SURFACE_DEPOSIT_CAPACITY, detail));
+        } else {
+          trace.push({ kind: "deposit", target: proposal.location, outcome: "no_change", code: "", detail: `${proposal.substance} already at this depth` });
+        }
+        continue;
+      }
+    } else {
+      surface = reduceBodySurfaceDeposits(surface, {
+        locationId: proposal.location,
+        amount: magnitude,
+        ...(proposal.substance === "unknown" ? {} : { kind: proposal.substance }),
+      });
+      if (surface === before) {
+        trace.push({ kind: "deposit", target: proposal.location, outcome: "no_change", code: "", detail: "nothing there to remove" });
+        continue;
+      }
+    }
+    trace.push({
+      kind: "deposit",
+      target: proposal.location,
+      outcome: "applied",
+      code: "",
+      detail: `${proposal.direction} ${proposal.substance} ${proposal.degree}`,
     });
   }
 

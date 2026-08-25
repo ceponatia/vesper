@@ -12,6 +12,11 @@ import {
 } from "../affordances/scene";
 import { FEATURE_GROUPS } from "../body/locations";
 import { conditionSeveritySchema } from "../conditions/condition";
+import {
+  surfaceDepositAmountBands,
+  surfaceDepositFreshnessBands,
+  surfaceDepositKinds,
+} from "../materials/surface-deposits";
 import { bodySurfaceMarkBands, bodySurfaceMarkKinds } from "../state/body-surface";
 import {
   garmentDamageKinds,
@@ -289,6 +294,8 @@ function presentationPriors(
 export const VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID = "body_surface.wetness";
 /** A committed temporary contact mark on skin — the body-surface owner's marks module. */
 export const VISUAL_STATE_BODY_SURFACE_MARK_KIND_ID = "body_surface.contact_mark";
+/** Material standing on skin or hair — the body-surface owner's deposits module. */
+export const VISUAL_STATE_BODY_SURFACE_DEPOSIT_KIND_ID = "body_surface.deposit";
 /** One garment condition channel off its neutral band — wet, soiled, rumpled, worn. */
 export const VISUAL_STATE_GARMENT_CONDITION_KIND_ID = "garment.condition";
 /** One garment part's non-neutral arrangement — open, rolled, tucked, displaced. */
@@ -331,6 +338,26 @@ export const visualStateBodySurfaceMarkValueSchema = z
   .object({ kind: z.enum(bodySurfaceMarkKinds), band: z.enum(bodySurfaceMarkBands) })
   .strict();
 export type VisualStateBodySurfaceMarkValue = z.infer<typeof visualStateBodySurfaceMarkValueSchema>;
+
+/**
+ * One location's strongest standing deposit, in the SHARED surface-deposit
+ * vocabularies — the same three fields the garment deposit value carries, and
+ * deliberately the same words: mud on a sleeve and mud on the forearm under it
+ * are one substance at one depth, and a reader comparing the two features is
+ * entitled to one answer rather than two dialects.
+ *
+ * `parts` has no counterpart here because a body deposit is already located at
+ * exactly one body location — the locus IS the extent.
+ */
+export const visualStateBodySurfaceDepositValueSchema = z
+  .object({
+    deposit: z.enum(surfaceDepositKinds),
+    amount: z.enum(surfaceDepositAmountBands),
+    /** Freshness drives PHRASING (wet blood vs dried blood) — a visual change, so it fingerprints. */
+    freshness: z.enum(surfaceDepositFreshnessBands),
+  })
+  .strict();
+export type VisualStateBodySurfaceDepositValue = z.infer<typeof visualStateBodySurfaceDepositValueSchema>;
 
 /**
  * One condition channel's NON-NEUTRAL bands, per channel. Each list is its
@@ -436,6 +463,10 @@ const BODY_SURFACE_WETNESS_PRIORS = presentationPriors(3_500, 5_500, 2);
 // A fresh mark is rarer than wetness and reads as recent contact — slightly
 // more unique, comparably important, gone within the story hour either way.
 const BODY_SURFACE_MARK_PRIORS = presentationPriors(5_000, 5_000, 2);
+// Blood on her hands is the rarest thing on this list and the hardest to look
+// past — more unique and more important than the same substance on a sleeve,
+// because skin is not supposed to be carrying it.
+const BODY_SURFACE_DEPOSIT_PRIORS = presentationPriors(6_500, 6_000, 2);
 const GARMENT_CONDITION_PRIORS = presentationPriors(3_000, 5_000, 2);
 const GARMENT_PRESENTATION_CHANNEL_PRIORS = presentationPriors(3_500, 5_500, 2);
 const GARMENT_DEPOSIT_PRIORS = presentationPriors(5_500, 5_000, 2);
@@ -792,6 +823,28 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     narratorEligible: true,
     imageEligible: false,
     priors: BODY_SURFACE_MARK_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_BODY_SURFACE_DEPOSIT_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateBodySurfaceDepositValueSchema,
+    allowedLoci: ["body"],
+    // `transient` for the reason the mark is, and not because it decays: a
+    // deposit is state the very next beat may wash off, which is the stability
+    // question. Material persisting until something removes it is the OWNER's
+    // law, and the two are unrelated.
+    stability: "transient",
+    repeatFamily: "body_surface_deposit",
+    // Same deliberate-enable caution as the contact mark: recognition and image
+    // eligibility are how a fact reaches identity matching and a render prompt,
+    // and admitting a brand-new current-state family to either is its own
+    // decision with its own evidence, not a registration side effect. Narrator
+    // eligibility is the point of the slice — this is the family whose absence
+    // made "she still has blood on her hands" unsayable from state.
+    recognitionEligible: false,
+    narratorEligible: true,
+    imageEligible: false,
+    priors: BODY_SURFACE_DEPOSIT_PRIORS,
   }),
   defineVisualStateKind({
     id: VISUAL_STATE_GARMENT_CONDITION_KIND_ID,

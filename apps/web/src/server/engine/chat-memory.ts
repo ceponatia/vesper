@@ -7,6 +7,7 @@ import {
   degradedChatPersonalNotes,
   diag,
   mergeChatExtractions,
+  parseSurfaceDepositProposals,
   parseSurfaceWetnessProposals,
   type ChatArchivist,
   type ChatCharacterNotes,
@@ -354,11 +355,13 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
   // The raw list is parsed here the same way the fold parses it (no sink: this is
   // the inspector's read-only view, and the fold already reported the drops).
   const surfaceWetness = parseSurfaceWetnessProposals(v.surfaceWetness);
+  const surfaceDeposits = parseSurfaceDepositProposals(v.surfaceDeposits);
   return {
     summary: joinParts([
       v.scene.current ? `scene: ${v.scene.current}` : "",
       Object.keys(v.environment).length ? "environment" : "",
       surfaceWetness.length ? plural(surfaceWetness.length, "surface change") : "",
+      surfaceDeposits.length ? plural(surfaceDeposits.length, "deposit change") : "",
       v.garmentOperations.length ? plural(v.garmentOperations.length, "garment op") : "",
       outfitChanged(v.outfit) ? "outfit change" : "",
       v.attributeChanges.length ? `${v.attributeChanges.length} appearance` : "",
@@ -374,6 +377,14 @@ function describeContinuity(v: ChatContinuity): AgentRunDescription {
         ? {
             label: `Surface (${surfaceWetness.length})`,
             items: surfaceWetness.map((w) => `${w.location} ${w.direction} ${w.degree}${w.cause ? ` (${w.cause})` : ""}`),
+          }
+        : null,
+      surfaceDeposits.length
+        ? {
+            label: `Deposits (${surfaceDeposits.length})`,
+            items: surfaceDeposits.map(
+              (d) => `${d.location} ${d.direction} ${d.substance} ${d.degree}${d.cause ? ` (${d.cause})` : ""}`,
+            ),
           }
         : null,
       v.garmentOperations.length
@@ -467,6 +478,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
         scene: empty.scene,
         environment: empty.environment,
         surfaceWetness: empty.surfaceWetness,
+        surfaceDeposits: empty.surfaceDeposits,
         garmentOperations: empty.garmentOperations,
         outfit: empty.outfit,
         playerOutfit: empty.playerOutfit,

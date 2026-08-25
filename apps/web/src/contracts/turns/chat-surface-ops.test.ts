@@ -1,26 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "../diagnostics";
 import {
+  bodySurfaceDepositIdFor,
+  bodySurfaceDepositsAt,
   bodySurfaceStateSchema,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
   BODY_SURFACE_INVALID_ENTRY,
   BODY_SURFACE_UNIT_ONE,
+  commitBodySurfaceDeposit,
   emptyBodySurfaceState,
   setBodySurfaceWetness,
   type BodySurfaceState,
 } from "../state/body-surface";
 import { emptyChatEnvironment, type ChatEnvironment } from "../state/chat-environment";
+import { expectDiagnostic } from "@/test/diagnostics";
 import {
   applyEnvironmentProposal,
+  applySurfaceDepositProposals,
   applySurfaceWetnessProposals,
   chatEnvironmentProposalSchema,
+  CHAT_SURFACE_DEPOSIT_CAPACITY,
   CHAT_SURFACE_LOCATION_UNKNOWN,
   CHAT_SURFACE_PROPOSAL_INVALID,
   CHAT_SURFACE_WETNESS_MAX,
+  parseSurfaceDepositProposals,
   parseSurfaceWetnessProposals,
+  SURFACE_DEPOSIT_DEGREE_DELTA,
   SURFACE_WETNESS_DEGREE_DELTA,
   surfaceDryingSuspended,
+  type SurfaceDepositProposal,
   type SurfaceWetnessProposal,
 } from "./chat-surface-ops";
 
@@ -306,5 +315,124 @@ describe("a quarantined location", () => {
     expect(level(surface, "hair", 12)).toBe(SURFACE_WETNESS_DEGREE_DELTA[2]);
     expect(bodySurfaceWetnessEntry(surface, "hair")).toEqual({ level: 5_000, updatedAtMinutes: 12, cause: "rain" });
     expect(trace[0]).toMatchObject({ target: "hair", outcome: "applied", detail: "invalid → 5000 (rain)" });
+  });
+});
+
+
+/**
+ * The deposit proposals and their fold. Two things here are NOT the wetness
+ * lane's rules and are the reason this block exists: an unrecognised substance
+ * is admitted rather than dropped (the vocabulary already carries `unknown` as
+ * a real answer, so refusing the item would lose a true fact to protect a list
+ * that has already made room for the case), and a refusal to commit is reported
+ * as a refusal rather than as "nothing changed".
+ */
+describe("applySurfaceDepositProposals", () => {
+  const deposit = (overrides: Partial<SurfaceDepositProposal> = {}): SurfaceDepositProposal => ({
+    location: "hands",
+    substance: "mud",
+    direction: "add",
+    degree: 2,
+    ...overrides,
+  });
+
+  it("maps degree onto the delta table, and a remove of the same degree clears it", () => {
+    const added = applySurfaceDepositProposals({
+      surface: emptyBodySurfaceState(),
+      proposals: [deposit()],
+      atMinutes: 30,
+    });
+    expect(bodySurfaceDepositsAt(added.surface, "hands", 30)[0]?.read.amount).toBe(SURFACE_DEPOSIT_DEGREE_DELTA[2]);
+    expect(added.trace).toEqual([
+      { kind: "deposit", target: "hands", outcome: "applied", code: "", detail: "add mud 2" },
+    ]);
+    const removed = applySurfaceDepositProposals({
+      surface: added.surface,
+      proposals: [deposit({ direction: "remove" })],
+      atMinutes: 40,
+    });
+    expect(removed.surface.deposits).toBeUndefined();
+    // Nothing left to take off is a no-op, not a rejection — the fiction wiping
+    // clean hands is not a failure of anything.
+    const again = applySurfaceDepositProposals({
+      surface: removed.surface,
+      proposals: [deposit({ direction: "remove" })],
+      atMinutes: 41,
+    });
+    expect(again.surface).toBe(removed.surface);
+    expect(again.trace[0]?.outcome).toBe("no_change");
+  });
+
+  it("admits an unnamed substance as `unknown` rather than losing the fact", () => {
+    // Falsified against a strict substance field: "she comes back with something
+    // on her hands" is TRUE, and refusing the item to protect the vocabulary
+    // would record that her hands are clean.
+    const parsed = parseSurfaceDepositProposals([{ ...deposit(), substance: "glitter" }]);
+    expect(parsed[0]?.substance).toBe("unknown");
+    // The magnitude and the sign stay strict, because those are what move state.
+    const sink = new DiagnosticCollector();
+    expect(parseSurfaceDepositProposals([{ ...deposit(), degree: 9 }], sink)).toEqual([]);
+    expectDiagnostic(sink, CHAT_SURFACE_PROPOSAL_INVALID, { times: 1 });
+  });
+
+  it("refuses a location outside the owned set — the intimate tree is excluded by construction", () => {
+    // The list is everyday surfaces only. Intimate anatomy is gated per
+    // character, and recording material there would need that gate honoured on
+    // every read before the fold could accept it at all.
+    const sink = new DiagnosticCollector();
+    const fold = applySurfaceDepositProposals({
+      surface: emptyBodySurfaceState(),
+      proposals: [deposit({ location: "groin" }), deposit({ location: "forearms" })],
+      atMinutes: 30,
+      sink,
+    });
+    expect(fold.trace.map((entry) => entry.outcome)).toEqual(["rejected", "applied"]);
+    expect(fold.trace[0]?.code).toBe(CHAT_SURFACE_LOCATION_UNKNOWN);
+    expectDiagnostic(sink, CHAT_SURFACE_LOCATION_UNKNOWN, { times: 1 });
+  });
+
+  it("reports a full record as a refusal, never as `no_change`", () => {
+    // Falsified against a fold that read "the owner returned the same surface"
+    // as "nothing needed doing": a body already carrying its maximum would then
+    // silently swallow every new deposit with nothing on the record to say the
+    // material was dropped.
+    let surface = emptyBodySurfaceState();
+    for (let index = 0; index < 12; index += 1) {
+      surface = commitBodySurfaceDeposit(surface, {
+        locationId: "hands",
+        kind: "dust",
+        amount: 5_000,
+        atMinutes: index,
+      });
+    }
+    const sink = new DiagnosticCollector();
+    const fold = applySurfaceDepositProposals({ surface, proposals: [deposit()], atMinutes: 100, sink });
+    expect(fold.surface).toBe(surface);
+    expect(fold.trace[0]).toMatchObject({ outcome: "rejected", code: CHAT_SURFACE_DEPOSIT_CAPACITY });
+    expectDiagnostic(sink, CHAT_SURFACE_DEPOSIT_CAPACITY, { times: 1 });
+    // Restating standing material IS the designed no-op, and it must stay
+    // distinguishable from the refusal above.
+    const standing = commitBodySurfaceDeposit(emptyBodySurfaceState(), {
+      locationId: "hands",
+      kind: "mud",
+      amount: SURFACE_DEPOSIT_DEGREE_DELTA[3],
+      atMinutes: 30,
+    });
+    const restated = applySurfaceDepositProposals({ surface: standing, proposals: [deposit()], atMinutes: 30 });
+    expect(restated.surface).toBe(standing);
+    expect(restated.trace[0]?.outcome).toBe("no_change");
+    expect(bodySurfaceDepositIdFor("hands", "mud", 30) in (restated.surface.deposits ?? {})).toBe(true);
+  });
+
+  it("an empty list is a no-op by reference — nothing leaves a surface on the clock", () => {
+    const surface = commitBodySurfaceDeposit(emptyBodySurfaceState(), {
+      locationId: "hands",
+      kind: "mud",
+      amount: 5_000,
+      atMinutes: 0,
+    });
+    const fold = applySurfaceDepositProposals({ surface, proposals: [], atMinutes: 10_000 });
+    expect(fold.surface).toBe(surface);
+    expect(fold.trace).toEqual([]);
   });
 });

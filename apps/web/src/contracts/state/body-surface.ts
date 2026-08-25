@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { clampFixedPoint, FIXED_POINT_ONE, linearDriftStep } from "@/lib/fixed-point";
+import { clampFixedPoint, FIXED_POINT_ONE, linearDriftStep, proportionalDecayStep } from "@/lib/fixed-point";
+import {
+  surfaceDepositFreshnessBandOf,
+  surfaceDepositKindSchema,
+  SURFACE_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES,
+  type SurfaceDepositFreshnessBand,
+  type SurfaceDepositKind,
+} from "../materials/surface-deposits";
 
 /**
  * Per-character BODY-SURFACE state — what is on the skin and hair right now
@@ -66,6 +73,26 @@ import { clampFixedPoint, FIXED_POINT_ONE, linearDriftStep } from "@/lib/fixed-p
  *    mark is one physical event's residue; pressing again is a NEW event with
  *    its own key, never a refresh of the old one. Absent entry = no mark, and a
  *    mark that fades to zero is pruned on the next write (the wetness rule).
+ *
+ * **Deposits are the THIRD module of this same owner** (effects spec §7's
+ * residue/deposit half; owner ruling 2026-08-25). Mud, blood, dust, food,
+ * paint, and cosmetics on skin were the visual layer's largest current-state
+ * gap — garments could carry them and the body under those garments could not —
+ * and they land here rather than in a store of their own for §7's stated
+ * reason: one body-surface domain owns all current material and condition on
+ * skin. The substance vocabulary is shared outright with the garment store
+ * (`materials/surface-deposits.ts`), so mud on a sleeve and mud on the forearm
+ * beneath it can never be different nouns. One deposit-specific law, and it is
+ * the one that separates this module from the two above:
+ *
+ * 8. **Material does not leave on its own.** Wetness dries and marks fade
+ *    because both are a surface returning to its resting state. A deposit is a
+ *    SUBSTANCE, and a substance that quietly decayed to nothing would make this
+ *    owner an unowned sink — the exact thing a conserved transfer must be able
+ *    to rely on not happening. Only an explicit removal (a wipe, a wash, and
+ *    later a transfer) shrinks a deposit. What DOES move with the clock is
+ *    `freshness`, which is phrasing — wet mud, drying mud, set mud — and never
+ *    a removal clock.
  */
 
 // ---------------------------------------------------------------------------
@@ -305,6 +332,81 @@ const marksRecordSchema = z
     return marks;
   });
 
+// ---------------------------------------------------------------------------
+// Deposits — vocabulary and shape (effects spec §7; owner ruling 2026-08-25)
+// ---------------------------------------------------------------------------
+
+/** Max deposit entries one character retains (bounded jsonb; the garment store's own cap). */
+export const BODY_SURFACE_MAX_DEPOSITS = 12;
+
+/**
+ * Material at or under this is nothing anyone can see — the deposit is gone and
+ * the entry drops. The garment lane's floor, shared so a wiped sleeve and a
+ * wiped wrist disappear at the same point.
+ */
+export const BODY_SURFACE_DEPOSIT_REMOVAL_FLOOR = 1_000;
+
+/**
+ * One committed deposit — the VALID shape. `kind`, `amount` and
+ * `createdAtMinutes` are **strict** for the wetness level's exact reason: two
+ * of them move state and the third is the vocabulary fence, and a repair would
+ * let a corrupt row buy a visible claim. Note that `unknown` is a real member
+ * of the vocabulary, so a *quarantined* kind is genuinely unreadable data
+ * rather than an unnamed substance — those are different answers and stay two.
+ * `cause` is lenient PROVENANCE, degradable to "no recorded reason".
+ *
+ * There is deliberately **no second `extent` axis** beside `amount`, though the
+ * garment record carries one. A garment spans parts and can be muddy at the hem
+ * alone; a body deposit is already located at exactly one body location, so the
+ * extent IS the locus. Adding an axis no producer can distinguish would be
+ * precision this lane cannot back — and the garment reducer itself writes its
+ * two axes from one degree band, which is the same admission.
+ */
+export const bodySurfaceDepositSchema = z.object({
+  /** A body-location id (`bodyLocationRegistry`), loose like the wetness keys. */
+  locationId: locationKeySchema,
+  kind: surfaceDepositKindSchema,
+  /** Fixed point `1 … BODY_SURFACE_UNIT_ONE`. Zero never persists — a removed deposit is dropped. */
+  amount: z.number().int().min(1).max(BODY_SURFACE_UNIT_ONE),
+  /** Story minute the material landed — the FRESHNESS anchor, and only that. */
+  createdAtMinutes: z.number().int().min(0),
+  cause: z.string().trim().min(1).max(80).optional().catch(undefined),
+});
+export type BodySurfaceDeposit = z.infer<typeof bodySurfaceDepositSchema>;
+
+/** One stored deposit slot: a parsed deposit, or the shared quarantine marker. */
+export type BodySurfaceDepositSlot = BodySurfaceDeposit | BodySurfaceInvalidEntry;
+
+export function isInvalidDepositSlot(slot: BodySurfaceDepositSlot): slot is BodySurfaceInvalidEntry {
+  return "status" in slot;
+}
+
+/** Item-lenient and quarantining, exactly like the wetness and marks records. */
+const depositsRecordSchema = z
+  .record(z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH), z.unknown())
+  .transform((raw) => {
+    const deposits: Record<string, BodySurfaceDepositSlot> = {};
+    for (const [depositId, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_DEPOSITS)) {
+      const parsed = bodySurfaceDepositSchema.safeParse(value);
+      deposits[depositId] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
+    }
+    return deposits;
+  });
+
+/**
+ * The identity a deposit is stored under: substance, place, and the minute it
+ * landed. Deterministic, so a replayed exchange lands on the key it already
+ * wrote — and so more of the same substance arriving at the same place in the
+ * same beat DEEPENS one deposit instead of stacking a second record, while the
+ * next story minute is honestly a new one.
+ */
+export function bodySurfaceDepositIdFor(locationId: string, kind: SurfaceDepositKind, atMinutes: number): string {
+  return `dep:${kind}:${locationId}:${Math.max(0, Math.trunc(atMinutes))}`.slice(
+    0,
+    BODY_SURFACE_MARK_ID_MAX_LENGTH,
+  );
+}
+
 export const bodySurfaceStateSchema = z.object({
   /**
    * Body-location id → standing wetness, or the quarantine marker. An ABSENT
@@ -321,12 +423,35 @@ export const bodySurfaceStateSchema = z.object({
    * is what makes that repair conservative where healing a LEVEL never is.
    */
   marks: marksRecordSchema.optional().catch(undefined),
+  /**
+   * Deposit identity → committed material, or the quarantine marker. OPTIONAL
+   * and absent until the first deposit commits, on the `marks` key's rule and
+   * for its reason: a chat whose fiction never put anything on anybody persists
+   * byte-identical state to before this module existed, and the writes below
+   * drop the key again when the last deposit is removed.
+   */
+  deposits: depositsRecordSchema.optional().catch(undefined),
 });
 export type BodySurfaceState = z.infer<typeof bodySurfaceStateSchema>;
 
 /** Nothing wet — the seed value and the degraded default at every trust boundary. */
 export function emptyBodySurfaceState(): BodySurfaceState {
   return { wetness: {} };
+}
+
+/**
+ * Drop one optional module's key entirely, leaving every other module alone.
+ *
+ * The point is the "leaving every other module alone" half. Both optional
+ * modules empty out to ABSENCE rather than to `{}`, so a fully healed record
+ * persists byte-identically to one that never held anything — and rebuilding
+ * the state from a literal to achieve that would silently discard whichever
+ * sibling module happened to be populated at the time.
+ */
+function withoutBodySurfaceKey(state: BodySurfaceState, key: "marks" | "deposits"): BodySurfaceState {
+  const next = { ...state };
+  delete next[key];
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +700,171 @@ export function pruneFadedBodySurfaceMarks(state: BodySurfaceState, atMinutes: n
   if (faded.length === 0) return state;
   const marks = { ...state.marks };
   for (const markId of faded) delete marks[markId];
-  if (Object.keys(marks).length === 0) return { wetness: state.wetness };
+  if (Object.keys(marks).length === 0) return withoutBodySurfaceKey(state, "marks");
   return { ...state, marks };
+}
+
+// ---------------------------------------------------------------------------
+// Deposits — reads and writes (effects spec §7)
+// ---------------------------------------------------------------------------
+
+/** This key's stored slot: a deposit, the quarantine marker, or `undefined` when nothing landed under it. */
+export function bodySurfaceDepositSlot(state: BodySurfaceState, depositId: string): BodySurfaceDepositSlot | undefined {
+  return state.deposits?.[depositId];
+}
+
+/**
+ * The answer to "what is on this surface now". THREE answers, like every other
+ * read here — except that `none` means ABSENT only. A deposit's amount does not
+ * fall on its own: material stays until something removes it, so there is no
+ * such thing as a deposit that quietly faded to nothing.
+ */
+export type BodySurfaceDepositRead =
+  | { readonly status: "none" }
+  | { readonly status: "invalid" }
+  | {
+      readonly status: "known";
+      readonly deposit: BodySurfaceDeposit;
+      readonly amount: number;
+      readonly freshness: SurfaceDepositFreshnessBand;
+    };
+
+const NO_DEPOSIT_READ: BodySurfaceDepositRead = { status: "none" };
+
+/**
+ * One deposit at `atMinutes`. Pure and total, and the ONE thing that moves with
+ * the clock is `freshness` — wet mud becoming dried mud becoming set mud.
+ *
+ * That asymmetry is the module's central law and it is deliberate: freshness is
+ * PHRASING and amount is MATERIAL. Letting the clock reduce the amount would
+ * make the surface an unowned sink — material would vanish from the world with
+ * nobody having removed it, which is precisely the thing a later conserved
+ * transfer must be able to rely on not happening. When skin should shed a
+ * substance over time, that is a grooming or physiology owner stating so, not a
+ * decay constant hidden here.
+ */
+export function bodySurfaceDepositAt(
+  state: BodySurfaceState,
+  depositId: string,
+  atMinutes: number,
+): BodySurfaceDepositRead {
+  const slot = state.deposits?.[depositId];
+  if (slot === undefined) return NO_DEPOSIT_READ;
+  if (isInvalidDepositSlot(slot)) return { status: "invalid" };
+  const amount = clampFixedPoint(slot.amount, BODY_SURFACE_UNIT_ONE);
+  if (amount <= 0) return NO_DEPOSIT_READ;
+  const freshness = proportionalDecayStep({
+    value: BODY_SURFACE_UNIT_ONE,
+    target: 0,
+    halfLife: SURFACE_DEPOSIT_FRESHNESS_HALF_LIFE_MINUTES,
+    elapsed: Math.max(0, atMinutes - slot.createdAtMinutes),
+  });
+  return { status: "known", deposit: slot, amount, freshness: surfaceDepositFreshnessBandOf(freshness) };
+}
+
+/**
+ * Every deposit standing on one location, newest first, quarantined slots
+ * excluded. The read a projection or a narrator guidance leg wants: "what is on
+ * her hands" is a question about a place, not about an identity.
+ */
+export function bodySurfaceDepositsAt(
+  state: BodySurfaceState,
+  locationId: string,
+  atMinutes: number,
+): readonly { readonly depositId: string; readonly read: Extract<BodySurfaceDepositRead, { status: "known" }> }[] {
+  const rows: { depositId: string; read: Extract<BodySurfaceDepositRead, { status: "known" }> }[] = [];
+  for (const depositId of Object.keys(state.deposits ?? {})) {
+    const slot = state.deposits?.[depositId];
+    if (slot === undefined || isInvalidDepositSlot(slot) || slot.locationId !== locationId) continue;
+    const read = bodySurfaceDepositAt(state, depositId, atMinutes);
+    if (read.status === "known") rows.push({ depositId, read });
+  }
+  return rows.sort((left, right) =>
+    right.read.deposit.createdAtMinutes === left.read.deposit.createdAtMinutes
+      ? left.depositId.localeCompare(right.depositId)
+      : right.read.deposit.createdAtMinutes - left.read.deposit.createdAtMinutes,
+  );
+}
+
+/**
+ * Put material on a surface, under its deterministic identity.
+ *
+ * Laws, in check order:
+ *
+ * - **The same substance in the same place in the same beat DEEPENS one
+ *   deposit** rather than stacking a second record: the stored amount rises to
+ *   the greater of the two and the entry keeps its original anchor. Rising
+ *   only, because the fiction saying "there is mud on her hands" a second time
+ *   is not a report that some of it left.
+ * - **A QUARANTINED slot loses to a fresh authoritative write**, the wetness
+ *   heal path exactly.
+ * - **Capacity refuses rather than evicts**, returning the SAME reference so
+ *   the caller can report the refusal instead of silently dropping material.
+ */
+export function commitBodySurfaceDeposit(
+  state: BodySurfaceState,
+  input: {
+    locationId: string;
+    kind: SurfaceDepositKind;
+    amount: number;
+    atMinutes: number;
+    cause?: string;
+  },
+): BodySurfaceState {
+  const amount = clampFixedPoint(Math.trunc(input.amount), BODY_SURFACE_UNIT_ONE);
+  if (amount <= 0) return state;
+  const atMinutes = Math.max(0, Math.trunc(input.atMinutes));
+  const depositId = bodySurfaceDepositIdFor(input.locationId, input.kind, atMinutes);
+  const deposits = { ...state.deposits };
+  const existing = deposits[depositId];
+  if (existing !== undefined && !isInvalidDepositSlot(existing)) {
+    if (existing.amount >= amount) return state;
+    deposits[depositId] = { ...existing, amount };
+    return { ...state, deposits };
+  }
+  if (existing === undefined && Object.keys(deposits).length >= BODY_SURFACE_MAX_DEPOSITS) return state;
+  deposits[depositId] = {
+    locationId: input.locationId,
+    kind: input.kind,
+    amount,
+    createdAtMinutes: atMinutes,
+    ...(input.cause === undefined ? {} : { cause: input.cause }),
+  };
+  return { ...state, deposits };
+}
+
+/**
+ * Take material off a surface — the ONLY way a deposit ever shrinks.
+ *
+ * Scoped by place, and optionally by substance, because that is how the fiction
+ * says it: wiping her cheek takes off whatever is on her cheek, while washing
+ * the blood off her hands names the substance. Everything at or under the
+ * removal floor is dropped, so a nearly-clean surface leaves no residue in the
+ * jsonb and the record stays bounded without an eviction policy.
+ *
+ * A QUARANTINED slot is never removed — dropping it would turn "unknown" into
+ * the absence default, which is "clean", which is the laundering the marker
+ * exists to prevent. Only an authoritative write clears it.
+ */
+export function reduceBodySurfaceDeposits(
+  state: BodySurfaceState,
+  input: { locationId: string; amount: number; kind?: SurfaceDepositKind },
+): BodySurfaceState {
+  if (state.deposits === undefined) return state;
+  const removal = clampFixedPoint(Math.trunc(input.amount), BODY_SURFACE_UNIT_ONE);
+  if (removal <= 0) return state;
+  const deposits = { ...state.deposits };
+  let changed = false;
+  for (const [depositId, slot] of Object.entries(deposits)) {
+    if (isInvalidDepositSlot(slot)) continue;
+    if (slot.locationId !== input.locationId) continue;
+    if (input.kind !== undefined && slot.kind !== input.kind) continue;
+    const remaining = slot.amount - removal;
+    changed = true;
+    if (remaining <= BODY_SURFACE_DEPOSIT_REMOVAL_FLOOR) delete deposits[depositId];
+    else deposits[depositId] = { ...slot, amount: remaining };
+  }
+  if (!changed) return state;
+  if (Object.keys(deposits).length === 0) return withoutBodySurfaceKey(state, "deposits");
+  return { ...state, deposits };
 }
