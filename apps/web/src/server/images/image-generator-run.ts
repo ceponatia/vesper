@@ -661,59 +661,85 @@ async function settleGeneratorRender(
   let firstProviderError: string | null = null;
 
   for (let index = 1; index <= imageCount; index += 1) {
-    const rendered = await renderer({ mode: "intent", intent }, sink);
-    firstRender ??= rendered;
-    if (rendered.attempts) attempts.push(...rendered.attempts);
+    // A pass may THROW rather than report: the transport, the asset row,
+    // or the disk write can raise. Caught HERE and not only by the runner's
+    // outer net, because `stored` lives in this frame — a throw that escaped
+    // would settle the run failed while the images earlier passes already
+    // wrote stayed behind as hidden rows no `meta.outputs` names, which is
+    // exactly what run deletion and the consistency sweep read to find them.
+    try {
+      const rendered = await renderer({ mode: "intent", intent }, sink);
+      firstRender ??= rendered;
+      if (rendered.attempts) attempts.push(...rendered.attempts);
 
-    const refusal = strictRenderRefusal(rendered, row.modelSlug);
-    if (refusal) {
-      // Nothing was spent, so nothing is reported to the breaker, and the
-      // message names exactly which selected inputs could not be represented.
-      // The remaining passes would be handed the same intent and refused
-      // identically, so the run stops here rather than asking again.
-      if (stored.length === 0 && outputs.length === 0) {
-        return await settleGeneratorRunFailed(row, generatorFailure(refusal.code), refusal.message, sink, {
-          columns,
-          meta: { result: refusal.result },
-        });
+      const refusal = strictRenderRefusal(rendered, row.modelSlug);
+      if (refusal) {
+        // Nothing was spent, so nothing is reported to the breaker, and the
+        // message names exactly which selected inputs could not be represented.
+        // The remaining passes would be handed the same intent and refused
+        // identically, so the run stops here rather than asking again.
+        if (stored.length === 0 && outputs.length === 0) {
+          return await settleGeneratorRunFailed(row, generatorFailure(refusal.code), refusal.message, sink, {
+            columns,
+            meta: { result: refusal.result },
+          });
+        }
+        outputs.push({ index, imageId: null, failureCode: generatorFailure(refusal.code), predictionId: null });
+        break;
       }
-      outputs.push({ index, imageId: null, failureCode: generatorFailure(refusal.code), predictionId: null });
+
+      if (!rendered.ok || !rendered.image) {
+        const message = rendered.error ?? `${row.modelSlug} returned no image`;
+        firstProviderError ??= message;
+        outputs.push({
+          index,
+          imageId: null,
+          failureCode: generatorFailure("render_failed"),
+          predictionId: rendered.predictionId ?? null,
+        });
+        continue;
+      }
+      renderedAnything = true;
+
+      const asset = await createImageAsset({
+        ownerId: row.ownerId,
+        kind: "generator_output",
+        prompt: finalPrompt,
+        meta: { hidden: true, imageGeneratorRunId: row.id },
+      });
+      const saved = await saveImageBuffer(asset.id, rendered.image, sink);
+      if (saved?.status !== "ready") {
+        await deleteOwnedImage(asset.id, row.ownerId, { kind: "generator_output" });
+        outputs.push({
+          index,
+          imageId: null,
+          failureCode: generatorFailure("output_store_failed"),
+          predictionId: rendered.predictionId ?? null,
+        });
+        continue;
+      }
+      stored.push(saved.id);
+      storedRender ??= rendered;
+      outputs.push({ index, imageId: saved.id, failureCode: null, predictionId: rendered.predictionId ?? null });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Nothing stored yet: rethrow, so the runner settles `run_threw` with
+      // the real message exactly as it did before fan-out existed. There is
+      // no orphan to protect, and a code invented here would be worse
+      // evidence than the one the thrown error carries.
+      if (stored.length === 0) throw err;
+      // Images already exist and were already paid for. Record this pass,
+      // stop asking, and let the ordinary settle write `meta.outputs` — the
+      // run keeps its evidence AND stays sweepable. The message rides a
+      // diagnostic rather than the output record, which carries codes only.
+      sink?.push(
+        diag("error", IMAGE_GENERATOR_RUN_THREW, "a fan-out pass threw after earlier passes had stored images", {
+          context: { runId: row.id, index, message },
+        }),
+      );
+      outputs.push({ index, imageId: null, failureCode: IMAGE_GENERATOR_RUN_THREW, predictionId: null });
       break;
     }
-
-    if (!rendered.ok || !rendered.image) {
-      const message = rendered.error ?? `${row.modelSlug} returned no image`;
-      firstProviderError ??= message;
-      outputs.push({
-        index,
-        imageId: null,
-        failureCode: generatorFailure("render_failed"),
-        predictionId: rendered.predictionId ?? null,
-      });
-      continue;
-    }
-    renderedAnything = true;
-
-    const asset = await createImageAsset({
-      ownerId: row.ownerId,
-      kind: "generator_output",
-      prompt: finalPrompt,
-      meta: { hidden: true, imageGeneratorRunId: row.id },
-    });
-    const saved = await saveImageBuffer(asset.id, rendered.image, sink);
-    if (saved?.status !== "ready") {
-      await deleteOwnedImage(asset.id, row.ownerId, { kind: "generator_output" });
-      outputs.push({
-        index,
-        imageId: null,
-        failureCode: generatorFailure("output_store_failed"),
-        predictionId: rendered.predictionId ?? null,
-      });
-      continue;
-    }
-    stored.push(saved.id);
-    storedRender ??= rendered;
-    outputs.push({ index, imageId: saved.id, failureCode: null, predictionId: rendered.predictionId ?? null });
   }
 
   // The row's single-output columns — `result_image_id`, `prediction_id`,

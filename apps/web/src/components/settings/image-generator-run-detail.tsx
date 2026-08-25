@@ -516,7 +516,19 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
             }
           />
           <Fact label="Executed version" value={<code className="break-all">{run.executedVersionId ?? "—"}</code>} />
-          <Fact label="Prediction" value={<code className="break-all">{run.predictionId ?? "—"}</code>} />
+          {/* Named on a fan-out, because this column describes ONE pass and the
+              page is showing several images. Without the qualifier an operator
+              reading a grid would attach this id to whichever tile they were
+              looking at. */}
+          <Fact
+            label="Prediction"
+            value={
+              <>
+                <code className="break-all">{run.predictionId ?? "—"}</code>
+                {outputs.length > 1 ? " — the pass that stored the first image" : ""}
+              </>
+            }
+          />
           <Fact
             label="Explicit controls"
             value={controls.length > 0 ? controls.join(" · ") : "— none; the model’s own defaults ruled"}
@@ -560,7 +572,10 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
             </ol>
             <p className="mt-1 text-xs text-paper-500">
               {"Every prediction this run created, oldest first — recorded when it executed under the bench's "}
-              {"two-phase budget. The Prediction above is the last of them."}
+              {"two-phase budget. "}
+              {outputs.length > 1
+                ? "The Prediction above is not the last of them: it names the pass the Result, Executed version and timings all describe — the first image this run stored."
+                : "The Prediction above is the last of them."}
             </p>
           </div>
         ) : null}

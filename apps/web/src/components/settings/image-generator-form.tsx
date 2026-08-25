@@ -491,7 +491,19 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // `loraId` through the model reset above and re-arms this, because the
   // stamped id no longer matches. A duplicated run arrives already stamped, so
   // the run record — not this default — decides what a replay carries.
-  if (loras.data !== null && selectedModel !== null && modelId !== loraPrefilledForModelId) {
+  if (
+    loras.data !== null &&
+    selectedModel !== null &&
+    modelId === prevModelId &&
+    modelId !== loraPrefilledForModelId
+  ) {
+    // Waits for `modelId === prevModelId` — the model-change reset above has
+    // SCHEDULED `setLoraId("")` but this render still reads the outgoing row's
+    // id, so deciding now would see a non-empty `loraId`, skip the fill, and
+    // stamp the wrapper as answered. The prefill would then depend on whether
+    // the previous model happened to carry a LoRA. One render later the reset
+    // has landed and the state is the one the decision is about.
+    //
     // Advanced for EVERY model, not only the wrapper: the stamp records which
     // model this default has already answered for, so leaving the wrapper and
     // coming back re-arms it, while a manual clear on the model still in the
