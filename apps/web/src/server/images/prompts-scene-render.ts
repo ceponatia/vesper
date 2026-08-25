@@ -471,7 +471,18 @@ export function buildSceneRenderPrompt(plan: SceneRenderPlan, opts: SceneRenderO
       // the reference fell back to another present NPC — still owns the staged geometry;
       // only the sentence's neighbours change.
       const action = c === plan.focal ? poseTextFor(c.action, staged) : c.action;
-      const detail = [species, c.appearance, clothing, c.exposure, intimate, action].filter(Boolean).join("; ");
+      // `appearance` is budgeted exactly as the multi-reference builder budgets
+      // it, and for the same reason: it is a per-person field that scales with
+      // cast size. Before Stage 4 a cast of 2+ on THIS route carried the legacy
+      // 200-char summary, so leaving it uncapped never bit; the digest-sourced
+      // production is longer, and an uncapped one puts the budgeter's five
+      // steps out of reach of the limit so `clampToLimit` cuts the TAIL —
+      // taking the clothing-authority clause this builder is documented never
+      // to drop. At the first step the cap is Infinity, so a prompt that
+      // already fits is byte-unchanged.
+      const detail = [species, fit(c.appearance, outfitCap), clothing, c.exposure, intimate, action]
+        .filter(Boolean)
+        .join("; ");
       const label = !reference && c === plan.focal ? "Subject" : "Also in frame";
       pieces.push(`${label}: ${c.name} — ${detail}.`);
       // The anchor-less (text-to-image) focal has no reference to mis-read, but the

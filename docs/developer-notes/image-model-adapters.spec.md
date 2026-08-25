@@ -7,7 +7,7 @@ owning layer; implementation status lives beside each area.
 
 ## Contracts (`@vesper/image-core`)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 Rulings the build settled:
 
@@ -115,7 +115,7 @@ closing the latent strict-arm gap in this PR).
 
 ## Transport (`@vesper/image-replicate`)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 Rulings the build settled:
 
@@ -166,7 +166,7 @@ Rulings the build settled:
 
 ## Composer and Qwen family (`@vesper/image-models`)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 Rulings the build settled:
 
@@ -178,6 +178,12 @@ Rulings the build settled:
   the numbered-reference identity locks instead of the legacy lock passing
   through unswapped. Endpoint differences — LoRA support, cold-start hints,
   `go_fast` — stay endpoint-level.
+- **Provider recheck 2026-08-24:** Qwen Image Edit 2511 itself now exposes one
+  runtime custom LoRA through `lora_weights`/`lora_scale`. Its adapter composes
+  `loraFeature`, and migration 0118 backfills the verified bindings on the
+  long-lived pinned registry row without changing its version. The older 2509
+  plus-LoRA wrapper remains supported; it is no longer the only Qwen edit
+  endpoint with runtime LoRA.
 - Feature factories carry a `Feature` suffix (`promptFeature`, `loraFeature`);
   feature ids use the spec's camelCase names.
 - Execution hints arrive via a quirk (the wrapper's cold-start quirk sets
@@ -202,11 +208,11 @@ Rulings the build settled:
 - `defineImageModel({ family, features, quirks })` → `ImageModelAdapter`
   `{ family, capabilities, preparePrompt?, validateRequest?, executionHints? }`.
 - Qwen family: `families/qwen/shared.ts` (dialect + conventions),
-  `image-edit-2511.ts` (edit, no loadable LoRA), `image-edit-plus-lora.ts`
-  (2509-generation wrapper, LoRA feature, 3-reference cap, `go_fast` note),
-  `image-2512.ts` (generator arm, ignores negative field — see
-  `model-aware-image-prompts` docs). The dialect quirk carries the two
-  identity-lock constants moved from `quality-presets.ts`.
+  `image-edit-2511.ts` (current edit endpoint, runtime LoRA feature),
+  `image-edit-plus-lora.ts` (2509-generation wrapper, LoRA feature,
+  3-reference cap, `go_fast` note), `image-2512.ts` (generator arm, ignores
+  negative field — see `model-aware-image-prompts` docs). The dialect quirk
+  carries the two identity-lock constants moved from `quality-presets.ts`.
 - Registry: `adapterForImageModel(baseSlug)` → adapter or null; null is the
   ordinary no-special-behavior answer.
 - The probed registry stays authoritative for wire fields; adapters never
@@ -214,7 +220,7 @@ Rulings the build settled:
 
 ## Application wiring (Stage 4)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 Rulings the build settled:
 
@@ -271,7 +277,7 @@ Rulings the build settled:
 
 ## UI (Stage 5)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 Rulings the build settled:
 
@@ -295,7 +301,7 @@ Rulings the build settled:
 
 ## Invariant coverage (Stage 6)
 
-Status: built 2026-08-24 — awaiting CI.
+Status: complete — merged 2026-08-24.
 
 The final-wire test lives at
 `packages/image-replicate/src/lora-final-wire.test.ts`, beside the payload

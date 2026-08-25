@@ -10,24 +10,24 @@ The lab is deliberately separate from player-facing image generation. Some exper
 
 ### Experiment types
 
-| Experiment | What it answers |
-| --- | --- |
-| [Control probe](control-probe.md) | Does a pinned model obey one reviewed pose, depth, or edge fixture at all? |
-| [Baseline portrait](baseline-portrait.md) | What does the production portrait/variant lane do with this instruction and character? |
-| [Baseline scene](baseline-scene.md) | What does the production scene lane do with this instruction and conversation? |
-| [Controlled portrait](controlled-portrait.md) | Does a structural control still hold in a production-shaped portrait recipe? |
-| [Controlled scene](controlled-scene.md) | Does a structural control still hold in a production-shaped scene recipe? |
-| [Two-character scene](two-character-scene.md) | Can the model keep two named identities distinct, optionally under a structural control? |
-| [Finishing pass](finishing-pass.md) | Can identity be improved without changing the rest of an existing lab render? |
-| [Staged scene](staged-scene.md) | Can a selected intimate staging be depicted under the same staging wording used by production? |
+| Experiment                                    | What it answers                                                                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [Control probe](control-probe.md)             | Does a pinned model obey one reviewed pose, depth, or edge fixture at all?                                             |
+| [Baseline portrait](baseline-portrait.md)     | What does the production portrait/variant lane do with this instruction and character?                                 |
+| [Baseline scene](baseline-scene.md)           | What does the production scene lane do with this instruction and conversation?                                         |
+| [Controlled portrait](controlled-portrait.md) | Does a structural control still hold in a production-shaped portrait recipe?                                           |
+| [Controlled scene](controlled-scene.md)       | Does a structural control still hold in a production-shaped scene recipe?                                              |
+| [Two-character scene](two-character-scene.md) | Can the model keep two named identities distinct, optionally under a structural control?                               |
+| [Finishing pass](finishing-pass.md)           | Can identity be improved without changing the rest of an existing lab render?                                          |
+| [Staged scene](staged-scene.md)               | Can a selected intimate staging be depicted under the same staging wording and subject description used by production? |
 
 ### Control fixtures
 
-| Fixture | How it is produced | What it represents |
-| --- | --- | --- |
-| [Pose fixture](pose-fixture.md) | Pinned OpenPose preprocessor or hand-authored upload | Body/joint layout |
+| Fixture                           | How it is produced                                            | What it represents   |
+| --------------------------------- | ------------------------------------------------------------- | -------------------- |
+| [Pose fixture](pose-fixture.md)   | Pinned OpenPose preprocessor or hand-authored upload          | Body/joint layout    |
 | [Depth fixture](depth-fixture.md) | Pinned Depth Anything v2 preprocessor or hand-authored upload | Relative scene depth |
-| [Edge fixture](edge-fixture.md) | Local Sharp/Sobel pass or hand-authored upload | Strong image edges |
+| [Edge fixture](edge-fixture.md)   | Local Sharp/Sobel pass or hand-authored upload                | Strong image edges   |
 
 See [Generating and reviewing control fixtures](generating-control-fixtures.md) for the complete fixture workflow.
 
@@ -64,6 +64,6 @@ A fixture-sending experiment may only rely on a fixture that is identifiable and
 
 ## Failure records
 
-Lab failures settle onto the experiment instead of throwing away the attempt. Stable lab reasons include missing input, unpinned version, invalid/unreviewed control, control-source contamination, capacity overflow, invalid source experiment, invalid subject binding, unavailable identity reference, unsupported settings, invalid preprocessor output, and provider render failure.
+Lab failures settle onto the experiment instead of throwing away the attempt. Stable lab reasons include missing input, unpinned version, invalid/unreviewed control, control-source contamination, capacity overflow, invalid source experiment, invalid subject binding, an undescribable subject, unavailable identity reference, unsupported settings, invalid preprocessor output, and provider render failure.
 
 That persistence is intentional: a failed experiment is still evidence about why a test could not be run.

@@ -8,11 +8,14 @@ import {
   type AvatarWardrobeItem,
   buildAvatarSegments,
   buildCharacterSceneContext,
+  buildVariantSegments,
   resolveScenePlan,
   type SceneCastMember,
   type SceneRenderPlan,
   sceneSpecSchema,
   toWornInputs,
+  type VariantKind,
+  type VariantSegmentAssembly,
 } from "@/server/images";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 import { attr, makeProfile } from "./profile-fixtures";
@@ -78,37 +81,99 @@ export interface VisualFactProbe {
 }
 
 /**
+ * One row of the probe table: the fact, the FIRST fixture's wording for it, and
+ * the SECOND fixture's.
+ *
+ * The second column is what makes a two-subject prompt readable
+ * (image-lane-consolidation Stage 4, the cast ≥2 scene). `observeVisualFacts`
+ * counts tokens across the whole compiled prompt and has no way to scope a
+ * count to one person's clause — the prompt interleaves per-subject detail
+ * lines with lane-owned framing, and slicing it by subject label would be a
+ * parser that drifts the moment the transport rewords a heading. Disjoint
+ * VALUES answer the same question without a parser: if only one character in
+ * the fixture has gossamer wings, then "gossamer" appearing means the prompt
+ * stated THAT character's wings, and appearing twice means it stated them
+ * twice. So every second-column token is chosen to share no substring with any
+ * first-column token, in either direction ("male" is not usable beside
+ * "female", because `indexOf` finds the first inside the second).
+ *
+ * `null` means the second fixture authors no value for that fact, and the
+ * second probe list simply omits the row: a token that can never match is not a
+ * weaker assertion, it is no assertion at all, and leaving one in the list would
+ * read as coverage.
+ */
+interface VisualFactProbeSpec extends VisualFactProbe {
+  readonly secondTokens: readonly string[] | null;
+}
+
+/**
  * `voice.timbre` is the negative control: `kind: "sensory"` never renders, so a
  * lane that starts emitting "gravelly" has grown a leak, not a feature.
  */
-export const VISUAL_FACT_PROBES: readonly VisualFactProbe[] = [
-  { key: "gender", bucket: "identity", mandatory: true, tokens: ["female"] },
-  { key: "ethnicity", bucket: "identity", mandatory: true, tokens: ["Latina"] },
-  { key: "species", bucket: "morphology", mandatory: true, tokens: ["succubus"] },
-  { key: "hairColor", bucket: "identity", mandatory: true, tokens: ["deep violet"] },
-  { key: "eyeColor", bucket: "identity", mandatory: true, tokens: ["amber"] },
-  { key: "skinTone", bucket: "identity", mandatory: true, tokens: ["bronze"] },
+const VISUAL_FACT_PROBE_TABLE: readonly VisualFactProbeSpec[] = [
+  { key: "gender", bucket: "identity", mandatory: true, tokens: ["female"], secondTokens: ["androgynous"] },
+  /**
+   * The second fixture authors no heritage, and the reason is the legacy
+   * builder it is compared against: `characterAppearanceSummary` excerpts each
+   * person's line at 200 characters, and the bystander's longer gender value spends
+   * more of that budget than the focal's. One more cell would put the fixture on
+   * the cap's edge, where an unrelated wording change silently truncates a
+   * DIFFERENT fact and re-blesses itself as a delta.
+   */
+  { key: "ethnicity", bucket: "identity", mandatory: true, tokens: ["Latina"], secondTokens: null },
+  { key: "species", bucket: "morphology", mandatory: true, tokens: ["succubus"], secondTokens: ["faerie"] },
+  { key: "hairColor", bucket: "identity", mandatory: true, tokens: ["deep violet"], secondTokens: ["dyed teal"] },
+  { key: "eyeColor", bucket: "identity", mandatory: true, tokens: ["amber"], secondTokens: ["emerald"] },
+  { key: "skinTone", bucket: "identity", mandatory: true, tokens: ["bronze"], secondTokens: ["ashen"] },
   /**
    * A recognition-catalog DISTINCTIVE mark (`nose.shape: "crooked"`), authored
    * only by {@link laneProbeMarkedProfile} — the base fixture leaves it unset, so
    * every pre-existing frozen matrix is untouched. It exists to catch the
    * duplication seam the digest cutover opened: a cataloged distinctive value
    * can reach a lane through BOTH the digest's mark clause and the route-owned
-   * residual attribute sheet, and only one of them may phrase it.
+   * residual attribute sheet, and only one of them may phrase it. The second
+   * fixture carries no mark: the seam is a property of the projection road, not
+   * of the cast size, and one marked subject already exercises it.
    */
-  { key: "noseShape", bucket: "identity", mandatory: false, tokens: ["crooked"] },
-  { key: "horns", bucket: "morphology", mandatory: true, tokens: ["spiraled"] },
-  { key: "wings", bucket: "morphology", mandatory: true, tokens: ["membranous"] },
-  { key: "tail", bucket: "morphology", mandatory: true, tokens: ["spaded"] },
-  { key: "apparentAge", bucket: "apparentAge", mandatory: true, tokens: ["late twenties"] },
-  { key: "garment", bucket: "wardrobe", mandatory: true, tokens: ["kimono"] },
-  { key: "bareTorso", bucket: "exposure", mandatory: true, tokens: ["topless", "fully nude"] },
-  { key: "legBuild", bucket: "lowerBody", mandatory: false, tokens: ["athletic"] },
-  { key: "toenails", bucket: "lowerBody", mandatory: false, tokens: ["painted"] },
-  { key: "bustSize", bucket: "intimate", mandatory: false, tokens: ["ample"] },
-  { key: "nipples", bucket: "intimate", mandatory: false, tokens: ["puffy"] },
-  { key: "voiceTimbre", bucket: "nonvisual", mandatory: false, tokens: ["gravelly"] },
+  { key: "noseShape", bucket: "identity", mandatory: false, tokens: ["crooked"], secondTokens: null },
+  { key: "horns", bucket: "morphology", mandatory: true, tokens: ["spiraled"], secondTokens: ["antlered"] },
+  { key: "wings", bucket: "morphology", mandatory: true, tokens: ["membranous"], secondTokens: ["gossamer"] },
+  { key: "tail", bucket: "morphology", mandatory: true, tokens: ["spaded"], secondTokens: ["fox"] },
+  { key: "apparentAge", bucket: "apparentAge", mandatory: true, tokens: ["late twenties"], secondTokens: ["forties"] },
+  { key: "garment", bucket: "wardrobe", mandatory: true, tokens: ["kimono"], secondTokens: ["tunic"] },
+  /**
+   * The one fact that CANNOT be attributed per subject: exposure wording is
+   * lane-owned (`formatExposure` says "topless" for anybody), so a second column
+   * here would count the first fixture's clause as the second fixture's. Both
+   * cast members are dressed for exactly that reason — a bare bystander would
+   * need a fact set this probe cannot read.
+   */
+  { key: "bareTorso", bucket: "exposure", mandatory: true, tokens: ["topless", "fully nude"], secondTokens: null },
+  { key: "legBuild", bucket: "lowerBody", mandatory: false, tokens: ["athletic"], secondTokens: ["toned"] },
+  { key: "toenails", bucket: "lowerBody", mandatory: false, tokens: ["painted"], secondTokens: ["chipped"] },
+  { key: "bustSize", bucket: "intimate", mandatory: false, tokens: ["ample"], secondTokens: ["petite"] },
+  { key: "nipples", bucket: "intimate", mandatory: false, tokens: ["puffy"], secondTokens: ["inverted"] },
+  { key: "voiceTimbre", bucket: "nonvisual", mandatory: false, tokens: ["gravelly"], secondTokens: ["reedy"] },
 ];
+
+function probeOf(spec: VisualFactProbeSpec, tokens: readonly string[]): VisualFactProbe {
+  return { key: spec.key, bucket: spec.bucket, mandatory: spec.mandatory, tokens };
+}
+
+/** The probe set for the first fixture ({@link laneProbeProfile}) — every lane's default. */
+export const VISUAL_FACT_PROBES: readonly VisualFactProbe[] = VISUAL_FACT_PROBE_TABLE.map((spec) =>
+  probeOf(spec, spec.tokens),
+);
+
+/**
+ * The same facts read off the SECOND fixture ({@link laneProbeSecondProfile}),
+ * for the cast ≥2 scene. Same keys in the same order, so a per-subject fact set
+ * and a delta over it are directly comparable with the first fixture's — minus
+ * the rows the second fixture authors nothing for.
+ */
+export const SECOND_SUBJECT_VISUAL_FACT_PROBES: readonly VisualFactProbe[] = VISUAL_FACT_PROBE_TABLE.flatMap((spec) =>
+  spec.secondTokens === null ? [] : [probeOf(spec, spec.secondTokens)],
+);
 
 const PROBES_BY_KEY = new Map(VISUAL_FACT_PROBES.map((probe) => [probe.key, probe]));
 
@@ -157,6 +222,103 @@ export const LANE_PROBE_NAME = "Nyx";
 
 /** The fixture's subject id — the one id the assemblies, digests and captures all name. */
 export const LANE_PROBE_SUBJECT_ID = "probe-character";
+
+/** The second cast member's name; distinct from {@link LANE_PROBE_NAME} in every letter. */
+export const LANE_PROBE_SECOND_NAME = "Ilsa";
+
+/** The second cast member's subject id — their own committed cut, never the focal's. */
+export const LANE_PROBE_SECOND_SUBJECT_ID = "probe-character-second";
+
+/**
+ * The SECOND fixture character, for the cast ≥2 scene lane.
+ *
+ * Every probed value is disjoint from {@link laneProbeProfile}'s (see the probe
+ * table's second column), because that disjointness is the whole attribution
+ * mechanism: a two-subject prompt has no per-subject scope a counter can read,
+ * so the only way to prove "this fact was stated for HER" is that nobody else
+ * in the fixture could have produced the word.
+ *
+ * The rest of the design is chosen so the bystander exercises the seams a clone
+ * of the focal would hide:
+ *
+ * - a DIFFERENT species with its own feature groups — faerie, with horns and a
+ *   tail switched on through the per-character `bodyFeatures` override the
+ *   species contract exists for. Same three morphology anchors as the focal,
+ *   none of the same words, so "reference count does not change character
+ *   wording" is testable as a fact set rather than asserted in a comment, and a
+ *   production that handed `others` the focal's digest would state the focal's
+ *   morphology twice and the bystander's not at all.
+ * - a body whose coverage DISAGREES with the focal's: this wardrobe leaves the
+ *   feet bare where the focal's slippers cover them, so the coverage-aware
+ *   residue must keep one subject's `imageReveal: "skin"` toenails while
+ *   dropping the other's — one prompt, both directions of the gate.
+ * - an androgynous-born-male presentation with breasts configured — a
+ *   transitioned body the gender attribute explicitly documents as authorable,
+ *   and the reason the covered-intimate-skin invariant means something for a
+ *   subject who is not the focal.
+ */
+export function laneProbeSecondProfile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
+  const base = (id: AttributeValue["id"], value: AttributeValue["value"]): AttributeValue =>
+    attr(id, value, "base");
+  return makeProfile({
+    bio: "A fae courier who runs the long roads.",
+    personality: "Brisk, dry, never still for long.",
+    age: "88",
+    speciesId: "faerie",
+    // The species defaults to wings alone; horns and a tail are this character's
+    // own additive override, which is exactly what `bodyFeatures` is for.
+    bodyFeatures: ["wings", "horns", "tail"],
+    intimateRegions: ["breasts"],
+    attributes: [
+      base("identity.apparent_age", "forties"),
+      base("identity.gender", "androgynous_born_male"),
+      base("hair.color", "dyed_teal"),
+      base("eyes.color", "emerald"),
+      base("skin.tone", "ashen"),
+      base("horns.shape", "antlered"),
+      base("wings.type", "gossamer"),
+      base("tail.type", "fox"),
+      base("legs.build", "toned"),
+      base("feet.nails", "chipped"),
+      base("breasts.size", "petite"),
+      base("breasts.nipples", "inverted"),
+      base("voice.timbre", "reedy"),
+    ],
+    ...overrides,
+  });
+}
+
+/**
+ * The second fixture's wardrobe: torso through thighs covered, FEET BARE. The
+ * bare feet are the point — the focal's slippers cover those, so one prompt
+ * carries a covered `imageReveal: "skin"` fact for one person and the same
+ * fact's uncovered twin for the other.
+ */
+export function laneProbeSecondWardrobe(): AvatarWardrobeItem[] {
+  return [
+    {
+      name: "linen tunic",
+      description: "a knee-length grey linen tunic",
+      appearance: "faded at the hems",
+      coverage: ["chest", "groin", "hips", "buttocks", "thighs"],
+      layer: 1,
+      opacity: "opaque",
+    },
+  ];
+}
+
+/** The second fixture as one scene cast member, dressed unless overridden. */
+export function laneProbeSecondCastMember(over: Partial<SceneCastMember> = {}): SceneCastMember {
+  return {
+    characterId: LANE_PROBE_SECOND_SUBJECT_ID,
+    name: LANE_PROBE_SECOND_NAME,
+    profile: laneProbeSecondProfile(),
+    avatarImageId: null,
+    outfit: "a knee-length grey linen tunic",
+    exposure: exposedRegions(toWornInputs(laneProbeSecondWardrobe())),
+    ...over,
+  };
+}
 
 /**
  * The base fixture plus one recognition-catalog distinctive mark
@@ -234,6 +396,31 @@ export function laneProbeAvatarSegments(
   });
 }
 
+/**
+ * The variant/edit lane's PRODUCTION Stage 4 assembly over the same fixture —
+ * the exact call `generateVariant` makes, minus the database around it. It
+ * takes the DRESSED wardrobe by default because the lane now loads one: no
+ * garment name reaches the prompt (the reference image shows the clothes), but
+ * coverage drives the camera's perception, so a probe built on a bare body
+ * would exercise a selection production never runs.
+ */
+export function laneProbeVariantSegments(
+  kind: VariantKind,
+  instruction: string,
+  wardrobe: ReadonlyArray<AvatarWardrobeItem> = laneProbeWardrobe(),
+  profile: CharacterProfile = laneProbeProfile(),
+): VariantSegmentAssembly {
+  return buildVariantSegments({
+    characterId: LANE_PROBE_SUBJECT_ID,
+    name: LANE_PROBE_NAME,
+    profile,
+    kind,
+    instruction,
+    wardrobe,
+    readToken: "lane-probe-token",
+  });
+}
+
 /** The probe subject as one scene cast member, dressed unless overridden. */
 export function laneProbeCastMember(over: Partial<SceneCastMember> = {}): SceneCastMember {
   return {
@@ -256,14 +443,44 @@ export function laneProbeCastMember(over: Partial<SceneCastMember> = {}): SceneC
  * comparison renders both sides of it.
  */
 export function laneProbeScenePlan(member: SceneCastMember = laneProbeCastMember()): SceneRenderPlan {
+  return laneProbeCastScenePlan([member]);
+}
+
+/** One subject the cast production draws, paired with the committed cut it draws them from. */
+export interface LaneProbeCastSubject {
+  readonly member: SceneCastMember;
+  readonly shadow: Omit<VisualStateShadowInput, "sink" | "camera">;
+}
+
+/**
+ * The two-subject cast every Stage 4 cast ≥2 assertion reads the lane through:
+ * the focal, then the bystander, each with their OWN committed cut. Built here
+ * so the comparison suite and the cross-lane invariants can never assemble two
+ * different "same" casts.
+ */
+export function laneProbeCastSubjects(): LaneProbeCastSubject[] {
+  return [
+    { member: laneProbeCastMember(), shadow: laneProbeShadowInput() },
+    { member: laneProbeSecondCastMember(), shadow: laneProbeSecondShadowInput() },
+  ];
+}
+
+/**
+ * The same plan for a cast of N, the first member focal — the shape the cast ≥2
+ * cutover comparison reads the lane through. `laneProbeScenePlan` is the
+ * one-member spelling of this call, exactly as `applySceneSubjectVisual` is the
+ * one-subject spelling of `applySceneCastVisual`.
+ */
+export function laneProbeCastScenePlan(cast: readonly SceneCastMember[]): SceneRenderPlan {
+  const focal = cast[0]?.name ?? LANE_PROBE_NAME;
   const context = buildCharacterSceneContext({
-    cast: [member],
+    cast: [...cast],
     room: "a lamplit study, rain on the window",
-    recentChat: [`${LANE_PROBE_NAME} settles into the chair by the window.`],
+    recentChat: [`${focal} settles into the chair by the window.`],
   });
   return resolveScenePlan(
     sceneSpecSchema.parse({
-      focalCharacter: LANE_PROBE_NAME,
+      focalCharacter: focal,
       pose: "settling into the chair",
       setting: "a lamplit study",
     }),
@@ -305,6 +522,22 @@ export function laneProbeShadowInput(
   };
 }
 
+/**
+ * The SECOND cast member's camera-less shadow input. Their own subject id and
+ * their own memory-group scope — chat scopes a memory group per participant, so
+ * two people in one render never share one — while `cutId` and the clock stay
+ * the focal's, because the queue mints ONE cut id per scene for the whole cast.
+ */
+export function laneProbeSecondShadowInput(
+  profile: CharacterProfile = laneProbeSecondProfile(),
+): Omit<VisualStateShadowInput, "sink" | "camera"> {
+  return {
+    ...laneProbeShadowInput(profile),
+    subjectId: LANE_PROBE_SECOND_SUBJECT_ID,
+    scope: { kind: "chat", memoryGroupId: "probe-group-second" },
+  };
+}
+
 /** How many times each probed fact appears in a compiled prompt. */
 export type VisualFactObservation = Readonly<Record<string, number>>;
 
@@ -325,10 +558,13 @@ function countOccurrences(haystack: string, needle: string): number {
  * folded first, so neither a line break between a token's two words nor a
  * clause-initial capital reads as the fact's absence.
  */
-export function observeVisualFacts(prompt: string): VisualFactObservation {
+export function observeVisualFacts(
+  prompt: string,
+  probes: readonly VisualFactProbe[] = VISUAL_FACT_PROBES,
+): VisualFactObservation {
   const text = prompt.replace(/\s+/gu, " ").toLowerCase();
   const out: Record<string, number> = {};
-  for (const probe of VISUAL_FACT_PROBES) {
+  for (const probe of probes) {
     out[probe.key] = probe.tokens.reduce(
       (total, token) => total + countOccurrences(text, token.toLowerCase()),
       0,
@@ -342,10 +578,18 @@ export function observeVisualFacts(prompt: string): VisualFactObservation {
  * frozen matrices assert against. Order is the declaration order of
  * `VISUAL_FACT_PROBES`, never the order the prompt happens to state them, so a
  * pure reordering of a prompt is not a test failure.
+ *
+ * `probes` selects WHOSE facts are read: the default first fixture's, or
+ * {@link SECOND_SUBJECT_VISUAL_FACT_PROBES} for the second cast member. Because
+ * the two token columns are disjoint, reading one subject's list off a
+ * two-subject prompt reports that subject's facts and nobody else's.
  */
-export function presentVisualFacts(prompt: string): string[] {
-  const observed = observeVisualFacts(prompt);
-  return VISUAL_FACT_PROBES.filter((probe) => (observed[probe.key] ?? 0) > 0).map((probe) => probe.key);
+export function presentVisualFacts(
+  prompt: string,
+  probes: readonly VisualFactProbe[] = VISUAL_FACT_PROBES,
+): string[] {
+  const observed = observeVisualFacts(prompt, probes);
+  return probes.filter((probe) => (observed[probe.key] ?? 0) > 0).map((probe) => probe.key);
 }
 
 /**
@@ -353,8 +597,15 @@ export function presentVisualFacts(prompt: string): string[] {
  * mode (spec.prompts: "fail on lost, duplicated, newly exposed … facts"), because
  * two builders that both describe a person read as emphasis to an image model and
  * spend budget twice.
+ *
+ * In a cast of two this is also how "the bystander was described with the
+ * FOCAL's digest" fails: the focal's own tokens would land twice and the
+ * bystander's not at all.
  */
-export function duplicatedVisualFacts(prompt: string): string[] {
-  const observed = observeVisualFacts(prompt);
-  return VISUAL_FACT_PROBES.filter((probe) => (observed[probe.key] ?? 0) > 1).map((probe) => probe.key);
+export function duplicatedVisualFacts(
+  prompt: string,
+  probes: readonly VisualFactProbe[] = VISUAL_FACT_PROBES,
+): string[] {
+  const observed = observeVisualFacts(prompt, probes);
+  return probes.filter((probe) => (observed[probe.key] ?? 0) > 1).map((probe) => probe.key);
 }

@@ -22,8 +22,6 @@ describe("unsupportedCurrentStateSuppressions", () => {
     expect(suppressions.map((suppression) => suppression.detail)).toEqual([
       "physiology:swelling",
       "physiology:visible_fatigue",
-      "contamination:dirt_on_skin",
-      "contamination:blood_on_skin",
       "contamination:cosmetics_wear",
       "fit:garment_fit",
     ]);
@@ -31,13 +29,20 @@ describe("unsupportedCurrentStateSuppressions", () => {
 
   it("does not declare a fact an adapter now owns", () => {
     // The table retires a row when its owner ships. `body_language.hand_occupation`
-    // (slice 4) derives occupied hands from the committed contacts, and
+    // (slice 4) derives occupied hands from the committed contacts,
     // `body_surface.contact_mark` (the effects first proof) reads committed
-    // marks from the body-surface owner — a row for either would make one
-    // snapshot call the fact unavailable and state it at once.
+    // marks from the body-surface owner, and `body_surface.deposit` reads its
+    // committed material — a row for any of them would make one snapshot call
+    // the fact unavailable and state it at once.
     const facts = VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS.map((row) => `${row.family}:${row.fact}`);
     expect(facts).not.toContain("contact:occupied_hands");
     expect(facts).not.toContain("contact:contact_marks");
+    expect(facts).not.toContain("contamination:dirt_on_skin");
+    expect(facts).not.toContain("contamination:blood_on_skin");
+    // Makeup coming OFF is not a deposit and keeps its row: the deposits module
+    // can say cosmetic material is present, and nothing can yet say it wore
+    // away.
+    expect(facts).toContain("contamination:cosmetics_wear");
   });
 
   it("reports each gap on the sink as context, not as a degradation alarm", () => {

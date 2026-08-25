@@ -20,9 +20,16 @@ vi.mock("../images", () => ({
 vi.mock("./chat-state", () => ({
   loadChatState: vi.fn(),
   loadChatScenario: vi.fn(async () => null),
+  seedChatScenario: vi.fn(() => ({ garments: {}, clockMinutes: 0 })),
 }));
 vi.mock("./chat-wardrobe", () => ({
   resolveChatWardrobe: vi.fn(),
+}));
+// The look mint's digest cut rides the shared committed-cut factory since the
+// Stage 4 cutover; mocked like every other collaborator so this unit stays
+// hermetic (the factory itself is exercised by the visual-state suites).
+vi.mock("./chat-pipeline", () => ({
+  chatVisualStateShadowInput: vi.fn(() => ({ subjectId: "chr-1", cutId: "cut-1" })),
 }));
 
 import { db } from "../db";
@@ -55,8 +62,14 @@ describe("runChatLookImage over a degraded wardrobe resolve", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // loadRenderContext's two limited selects: the chat row, then the character.
-    const rows = [[{ ownerId: "owner-1" }], [{ profile: {}, avatarImageId: "img-avatar" }]];
+    // loadRenderContext's two limited selects: the chat row, then the
+    // character — then, past the unreliable-wardrobe gate, the participant row
+    // the digest cut's `memoryGroupId` comes from.
+    const rows = [
+      [{ ownerId: "owner-1" }],
+      [{ profile: {}, avatarImageId: "img-avatar" }],
+      [{ memoryGroupId: "mg-1" }],
+    ];
     vi.mocked(db).mockImplementation(
       () =>
         ({
@@ -89,6 +102,9 @@ describe("runChatLookImage over a degraded wardrobe resolve", () => {
     expect(vi.mocked(renderChatLookImage).mock.calls[0]?.[0]).toMatchObject({
       lookKey: "look-key",
       outfit: "a linen shirt",
+      // The digest cut travels with the mint since Stage 4 — a mint that lost
+      // it would silently drop back to the route-owned prompt with no record.
+      visual: { subjectId: "chr-1", cutId: "cut-1" },
     });
     expect(sink.items).toEqual([]);
   });

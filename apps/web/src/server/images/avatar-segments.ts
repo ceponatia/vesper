@@ -1,32 +1,18 @@
 import { compileImagePromptSegments, orderImagePromptSegments, type ImagePromptSegment } from "@vesper/image-core";
 import {
   AFFORDANCE_UNIT_ONE,
-  affordancePerceptionView,
   attributeRegistry,
-  bodyLocationRegistry,
-  exposedRegions,
-  FULLY_COVERED,
   isBelowWaist,
   isFeatureAttributeCategory,
-  resolveVisualViewingConditions,
-  selectVisualImageFacts,
   speciesLabelPhrase,
-  visualCameraReadsOfSceneCamera,
-  type AffordanceExposure,
-  type AffordancePerceptionView,
   type AttributeValue,
   type DiagnosticSink,
   type RealizedBody,
   type RegionExposure,
   type SceneCameraSpec,
-  type VisualAttentionContext,
   type VisualStateSuppression,
-  type WornItemInput,
 } from "@/contracts";
-import { buildVisualSubjectSegments } from "@/contracts/images/visual-segments";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { assembleVisualStateSnapshot, buildVisualStateImageDigest } from "@/server/visual-state";
-import { apparentAgeAnchor } from "./prompts-appearance";
 import { toWornInputs, visibleAvatarOutfit, type AvatarStyle, type AvatarWardrobeItem } from "./prompts-avatar";
 import {
   clause,
@@ -37,7 +23,8 @@ import {
   orderedAppearanceClauses,
   subjectDescriptor,
 } from "./prompts-format";
-import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./visual-fact-clauses";
+import { buildStandaloneSubjectVisual } from "./standalone-subject-visual";
+import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS } from "./visual-fact-clauses";
 
 /**
  * THE AVATAR LANE'S SEGMENT ASSEMBLY (image-lane-consolidation.plan.md Stage 3;
@@ -51,14 +38,14 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  *
  * ## What the digest owns here, and what the route still owns
  *
- * The standalone snapshot is assembled from the character sheet alone — scope
- * `standalone_character`, the read token as its committed cut, attributes and
- * the realized body — so it carries what visual state PROJECTS today: species
- * feature groups (the morphology anchors an image model "corrects" away) and
- * the cataloged distinctive marks. Those flow through
- * `buildVisualSubjectSegments` under the avatar policy (state age, waist-up
- * frame, intimate never), phrased by the shared `visual-fact-clauses` table,
- * with the canonical exposure readout stated as the `exposure` segment.
+ * The standalone cut — snapshot, portrait camera, selection, digest, subject
+ * segments — is assembled by the shared `standalone-subject-visual.ts`, which
+ * the variant lane and the Image Lab's staged bench call with their own camera
+ * and policy. It carries what visual state PROJECTS today: species feature
+ * groups (the morphology anchors an image model "corrects" away) and the
+ * cataloged distinctive marks, phrased by the shared `visual-fact-clauses`
+ * table under the avatar policy (state age, waist-up frame, intimate never,
+ * exposure stated as its own segment).
  *
  * Everything visual state does not yet project stays ROUTE-OWNED, emitted as
  * segments beside the builder's output with today's avatar wording preserved:
@@ -86,12 +73,27 @@ import { RECOGNITION_RESIDUE_ATTRIBUTE_IDS, visualFactClauseResolver } from "./v
  * freeze re-run the production assembly without a database.
  */
 
+/**
+ * The degraded-coverage perception, re-exported from its new shared home.
+ *
+ * It moved to `standalone-subject-visual.ts` with the variant cutover because
+ * every standalone lane needs the same fully-covered degrade; the export stays
+ * here because that is where the pin importing it has always looked, and a
+ * moved test import would have hidden whether the degrade itself still held.
+ */
+export { portraitPerception } from "./standalone-subject-visual";
+
 // ---------------------------------------------------------------------------
 // Lane policy
 // ---------------------------------------------------------------------------
 
 /** The avatar's task policy: state age, waist-up frame, never intimate anatomy. */
-export const AVATAR_SEGMENT_POLICY = { age: "state", frame: "waist_up", intimate: "never" } as const;
+export const AVATAR_SEGMENT_POLICY = {
+  age: "state",
+  frame: "waist_up",
+  intimate: "never",
+  exposure: "state",
+} as const;
 
 /**
  * The portrait studio's fixed viewpoint: facing the camera at medium distance,
@@ -144,6 +146,9 @@ const AVATAR_OMIT_ATTRIBUTE_IDS: ReadonlySet<string> = new Set([
  * the scene lane's `visualFactClauseResolverForScene`). The residual sheet
  * keeps the only statement; the resolver's `{ omit }` records lane policy,
  * never degradation.
+ *
+ * The variant lane deliberately passes NO omit set: it has no residual sheet,
+ * so the digest's mark clause is that lane's only statement of the fact.
  */
 const AVATAR_CLAUSE_OMIT_ATTRIBUTE_IDS: ReadonlySet<string> = new Set([
   ...AVATAR_OMIT_ATTRIBUTE_IDS,
@@ -167,86 +172,6 @@ const AVATAR_STYLE_QUALITY: Record<AvatarStyle, string> = {
   stylized:
     "Beautiful stylized portrait, flattering soft lighting, photogenic composition, vibrant colors, shallow depth of field, magazine-quality illustration, no text, no watermark.",
 };
-
-// ---------------------------------------------------------------------------
-// Standalone selection inputs
-// ---------------------------------------------------------------------------
-
-/**
- * The wardrobe the degraded perception reads instead of an unreadable one:
- * opaque cover over the four exposure-region roots — exactly the regions
- * `FULLY_COVERED` claims — so the camera's per-location answers and the
- * exposure readout degrade to the SAME fully-covered body. Locations no
- * exposure region reaches (head, face, hair, hands, arms, wings, horns, tail)
- * stay in plain view, which is what keeps a portrait's identity and morphology
- * facts resolvable; the mandatory lane never consults perception at all
- * (selection invariant 7), so this degrade can only suppress OPTIONAL detail —
- * a chest tattoo under the saved outfit goes unstated instead of being
- * asserted onto a body the camera could not actually see.
- */
-const UNKNOWN_COVERAGE_WORN: readonly WornItemInput[] = [
-  {
-    instanceId: "wardrobe:unknown",
-    garmentId: "wardrobe:unknown",
-    name: "unknown wardrobe",
-    coverage: ["torso", "pelvis", "legs", "feet"],
-    layer: 3,
-    opacity: "opaque",
-  },
-];
-
-/**
- * Per-body-location exposure from the worn coverage — the camera's perception
- * view. The optional selection lane fails closed on an unlisted location, so a
- * studio portrait must positively answer for the whole body: an opaque garment
- * hides what it covers, a sheer one hints it, and everything else is in plain
- * view of the camera. Same coverage expansion as `exposedRegions`, read per
- * location instead of per region.
- *
- * `coverageUnreadable` is the perception half of the FULLY_COVERED degrade:
- * when the wardrobe (or its coverage) could not be read, the camera reads
- * {@link UNKNOWN_COVERAGE_WORN} instead of the failed-empty list — every
- * location a fully-covering wardrobe hides answers `hidden`, never `visible`.
- * Exported so the degrade's per-location answers stay pinned by test.
- */
-export function portraitPerception(
-  worn: readonly WornItemInput[],
-  coverageUnreadable = false,
-): AffordancePerceptionView {
-  const opaque = new Set<string>();
-  const sheer = new Set<string>();
-  for (const item of coverageUnreadable ? UNKNOWN_COVERAGE_WORN : worn) {
-    const into = item.opacity === "sheer" ? sheer : opaque;
-    for (const cover of item.coverage) {
-      if (bodyLocationRegistry.byId(cover) === undefined) continue;
-      for (const location of bodyLocationRegistry.expand(cover)) into.add(location);
-    }
-  }
-  const exposure: Record<string, AffordanceExposure> = {};
-  for (const location of bodyLocationRegistry.all) {
-    exposure[location.id] = opaque.has(location.id) ? "hidden" : sheer.has(location.id) ? "hinted" : "visible";
-  }
-  return affordancePerceptionView({ exposure });
-}
-
-/**
- * The one attention context the selection AND the digest run under. Lighting
- * and motion are the release's declared bases (nothing owns a studio lamp as
- * typed data); distance, angle and framing are the portrait camera's own reads.
- */
-function portraitContext(perception: AffordancePerceptionView): VisualAttentionContext {
-  const camera = visualCameraReadsOfSceneCamera(AVATAR_PORTRAIT_CAMERA);
-  return {
-    viewpoint: { kind: "camera", cameraId: AVATAR_PORTRAIT_CAMERA_ID },
-    perception,
-    ...resolveVisualViewingConditions(),
-    distance: camera.distance,
-    angle: camera.angle,
-    framing: camera.framing,
-    intimateAllowed: false,
-    consumer: "image",
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Route-owned segments
@@ -350,73 +275,32 @@ export interface AvatarSegmentAssembly {
 
 /**
  * Build the avatar's render segments from the character sheet, through the
- * standalone visual digest. One snapshot, ONE camera-bound selection pass, one
- * digest realized from that exact selection — never a re-select.
+ * shared standalone visual cut under the portrait studio's camera and policy.
  */
 export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSegmentAssembly {
   const { profile, sink } = input;
-  const worn = toWornInputs(input.wardrobe);
-  // The canonical exposure readout, computed ONCE over the FULL wardrobe
-  // (before the waist-up garment filter): a covering garment still hides its
-  // region even when it is dropped from the visible outfit. A FAILED wardrobe
-  // load — or one whose coverage columns could not be parsed — is unknown
-  // state, not a bare body: coverage degrades to fully covered so the prompt
-  // stays silent about exposure (silence IS covered in the builder's contract)
-  // instead of asserting a nudity the saved outfit denies. ONE flag drives the
-  // exposure readout AND the perception below, so the two halves cannot
-  // disagree about what the camera may see.
-  const coverageUnreadable = input.wardrobeUnavailable === true || input.coverageUnreliable === true;
-  const exposure = coverageUnreadable ? FULLY_COVERED : exposedRegions(worn);
-
-  const assembly = assembleVisualStateSnapshot({
-    scope: { kind: "standalone_character", characterId: input.characterId },
-    cutId: input.readToken,
-    // A standalone portrait has no story clock; zero is the fixed, honest
-    // "no elapsed time" answer and keeps the token the only variance source.
-    atMinutes: 0,
-    subjectId: input.characterId,
-    attributes: profile.attributes,
-    realize: {
-      speciesId: profile.speciesId,
-      heritageId: profile.heritageId,
-      bodyPlanId: profile.bodyPlanId,
-      intimateRegions: profile.intimateRegions,
-      bodyFeatures: profile.bodyFeatures,
-    },
-    ...(sink === undefined ? {} : { sink }),
-  });
-
-  const context = portraitContext(portraitPerception(worn, coverageUnreadable));
-  const selection = selectVisualImageFacts({
-    snapshot: assembly.snapshot,
-    context,
-    ...(sink === undefined ? {} : { sink }),
-  });
-  const digestBuild = buildVisualStateImageDigest({
-    snapshot: assembly.snapshot,
-    context,
-    selection,
-    forCutId: input.readToken,
-    ...(sink === undefined ? {} : { sink }),
-  });
-
-  const resolved = assembly.stableResolved;
-  const subject = buildVisualSubjectSegments({
-    digest: digestBuild.digest,
-    subjectId: input.characterId,
-    exposure,
+  const visual = buildStandaloneSubjectVisual({
+    characterId: input.characterId,
+    name: input.name,
+    profile,
+    readToken: input.readToken,
+    worn: toWornInputs(input.wardrobe),
+    ...(input.wardrobeUnavailable === undefined ? {} : { wardrobeUnavailable: input.wardrobeUnavailable }),
+    ...(input.coverageUnreliable === undefined ? {} : { coverageUnreliable: input.coverageUnreliable }),
+    camera: AVATAR_PORTRAIT_CAMERA,
+    cameraId: AVATAR_PORTRAIT_CAMERA_ID,
     policy: AVATAR_SEGMENT_POLICY,
-    clause: visualFactClauseResolver({
-      attributes: resolved,
-      realizedBody: assembly.realizedBody,
-      omitAttributeIds: AVATAR_CLAUSE_OMIT_ATTRIBUTE_IDS,
-    }),
+    omitAttributeIds: AVATAR_CLAUSE_OMIT_ATTRIBUTE_IDS,
+    // The portrait studio is intimate-free by rule, and states no intimate
+    // anatomy from any source — so the digest never carries it either.
+    intimateAllowed: false,
     ...(sink === undefined ? {} : { sink }),
   });
 
   // Route-owned segments, today's avatar wording preserved. The subject line
   // leads the identity kind (highest priority, first at ties); the residual
   // sheet trails any digest identity marks.
+  const resolved = visual.resolved;
   const subjectName = input.name.trim() || "an unnamed character";
   const descriptor = subjectDescriptor(
     undefined,
@@ -424,13 +308,12 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     speciesLabelPhrase(profile.speciesId, profile.heritageId),
     identityToken(resolved, "identity.heritage"),
   );
-  const ageAnchor = apparentAgeAnchor(input.name, resolved);
-  const sheet = residualSheetClauses(resolved, assembly.realizedBody, exposure).join("; ");
+  const sheet = residualSheetClauses(resolved, visual.realizedBody, visual.exposure).join("; ");
   const wearing = visibleAvatarOutfit(input.wardrobe).map(formatGarment).join("; ");
 
   const route: ImagePromptSegment[] = [
     segment("identity", descriptor ? `Subject: ${subjectName} — ${descriptor}.` : `Subject: ${subjectName}.`, true, AFFORDANCE_UNIT_ONE),
-    ...(ageAnchor ? [segment("age", ageAnchor, true, AFFORDANCE_UNIT_ONE)] : []),
+    ...(visual.ageAnchor ? [segment("age", visual.ageAnchor, true, AFFORDANCE_UNIT_ONE)] : []),
     ...(sheet ? [segment("identity", `Appearance: ${clause(sheet)}.`, true, 0)] : []),
     ...(wearing
       ? [segment("wardrobe", `Wearing (authoritative — depict exactly this clothing): ${clause(wearing)}.`, true, AFFORDANCE_UNIT_ONE)]
@@ -446,7 +329,7 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
 
   // Route segments first, so a priority tie inside a kind keeps the subject
   // line ahead of digest detail; the canonical kind order does the rest.
-  const segments = orderImagePromptSegments([...route, ...subject.segments]);
+  const segments = orderImagePromptSegments([...route, ...visual.subject.segments]);
 
   return {
     segments,
@@ -454,8 +337,8 @@ export function buildAvatarSegments(input: AvatarSegmentAssemblyInput): AvatarSe
     // of these segments produces this exact string. No sink here: the planner
     // reports fitting when the render actually runs.
     prompt: compileImagePromptSegments(segments),
-    digestMeta: digestBuild.meta,
-    missingRequired: subject.missingRequired,
-    suppressions: subject.suppressions,
+    digestMeta: visual.digestMeta,
+    missingRequired: visual.subject.missingRequired,
+    suppressions: visual.subject.suppressions,
   };
 }

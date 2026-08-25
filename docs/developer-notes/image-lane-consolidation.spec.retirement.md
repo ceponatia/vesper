@@ -87,7 +87,12 @@ zero-consumer portions of:
 - local exposure and wardrobe prose renderers;
 - scene-local string budget helpers after profile budget acceptance;
 - portrait identity-lock constants and exact-string rewrite;
-- app-side reference numbering and cast-integrity text.
+- app-side reference numbering and cast-integrity text;
+- the legacy per-lane prompt builders Stage 4 left production-uncalled:
+  `buildChatLookPrompt` (`chat-look.ts`) and `buildVariantInstruction`
+  (`prompts-variant.ts`, still exported from the `server/images` barrel), each
+  with the private wording constants the segment modules restate until both
+  copies retire together.
 
 File deletion is determined after the import graph is clean. Do not delete a
 whole module merely because its best-known exports migrated; retain legitimate

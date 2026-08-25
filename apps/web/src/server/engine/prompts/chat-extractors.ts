@@ -3,6 +3,8 @@ import {
   chatPrecipitationLevels,
   chatWindLevels,
   surfaceWetnessLocations,
+  surfaceDepositKinds,
+  surfaceDepositLocations,
   clothingCategoryIds,
   garmentCleanTargets,
   garmentConditionKeys,
@@ -58,6 +60,7 @@ export type ChatExtractorFieldKey =
   | "scene"
   | "environment"
   | "surfaceWetness"
+  | "surfaceDeposits"
   | "garmentOperations"
   | "outfit"
   | "playerOutfit"
@@ -242,6 +245,18 @@ const FIELDS: Record<ChatExtractorFieldKey, ExtractorField> = {
         `"surfaceWetness": how much wetter or drier ${ctx.characterName}'s ${alt(surfaceWetnessLocations)} got THIS exchange — rain on it, a shower, a dunking, a towel, an hour by the fire. [] when it did not move (the overwhelming common case).`,
         `   Shape: [{ "location": "${alt(surfaceWetnessLocations)}", "direction": "increase" | "decrease", "degree": 1 | 2 | 3, "cause": "${alt(bodySurfaceWetnessCauses)}" }]. Degree is how far it moved this exchange: 1 slightly, 2 clearly, 3 completely (soaked through, or dried right out). "cause" is only for an increase — what wet it.`,
         `   Only ${ctx.characterName}'s own body; never ${ctx.playerName}'s, and never clothing (wet clothes belong in the wardrobe fields). Only a change the fiction actually played — hair does not need re-reporting for staying damp, and it dries on its own between exchanges.`,
+      ].join("\n"),
+  },
+
+  surfaceDeposits: {
+    key: "surfaceDeposits",
+    empty: [],
+    instruction: (ctx) =>
+      [
+        `"surfaceDeposits": what got ONTO ${ctx.characterName}'s skin or hair this exchange, or came off it — mud, blood, dust, food, paint, makeup. [] when nothing did (the overwhelming common case).`,
+        `   Shape: [{ "location": "<one of: ${surfaceDepositLocations.join(", ")}>", "substance": "${alt(surfaceDepositKinds)}", "direction": "add" | "remove", "degree": 1 | 2 | 3, "cause": "<a few words: 'kneeling in the flowerbed'>" }]. Degree is how much: 1 a smear, 2 clearly marked, 3 covered in it — and on a "remove", how much came off, where 3 is all of it.`,
+        `   "substance" is optional, and on a "remove" leaving it out means "whatever is on there" — use that for a general wash, and name the substance when only one thing came off. Substance "unknown" is for something real the text did not name; never guess blood.`,
+        `   Only what the fiction actually put there or took off. Only ${ctx.characterName}'s own body — never ${ctx.playerName}'s, and never clothing (a stained shirt belongs in the wardrobe fields). It does NOT come off by itself between exchanges, so report the wash or the wipe when it happens, and never re-report material that is simply still there.`,
       ].join("\n"),
   },
 
@@ -519,6 +534,18 @@ const EXAMPLES: readonly ExtractorExample[] = [
     },
   },
   {
+    caption: "she helps push the stranded car and comes back filthy, then washes up at the tap",
+    values: {
+      episodeSummary:
+        "Mara put her shoulder to the stranded hatchback until it rolled clear, then scrubbed the worst of the mud off her hands at the standpipe.",
+      surfaceDeposits: [
+        { location: "hands", substance: "mud", direction: "add", degree: 3, cause: "pushing the car free" },
+        { location: "forearms", substance: "mud", direction: "add", degree: 2, cause: "pushing the car free" },
+        { location: "hands", direction: "remove", degree: 2 },
+      ],
+    },
+  },
+  {
     caption: "the character has her long hair cut to a bob during the scene",
     values: {
       episodeSummary:
@@ -708,6 +735,7 @@ const LEGS: Record<ChatExtractorLegId, ExtractorLeg> = {
       "scene",
       "environment",
       "surfaceWetness",
+      "surfaceDeposits",
       "garmentOperations",
       "outfit",
       "playerOutfit",

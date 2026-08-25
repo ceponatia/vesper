@@ -14,12 +14,18 @@ import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } fro
  * three-layer boundary in the spec's own words.
  *
  * The union has ONE implemented member. The spec's other proposal families are
- * deliberately absent rather than stubbed: `SurfaceTransferProposal` waits on
- * the residue/deposit owner expansion (stage 7), `GarmentOperationProposal` on
- * the wardrobe operation seam, and `ScratchProposal` on an owner that does not
- * exist at all — and a type with no owner behind it is exactly the "pressure
- * mark and scratch are not synonyms" smuggling path §8 forbids. A new member
- * joins this union when its complete proposal → owner-transaction path ships.
+ * deliberately absent rather than stubbed. `SurfaceTransferProposal` no longer
+ * waits on the residue owner — that shipped 2026-08-25 — but on the three
+ * things §15 stage 8 names: the player and ensemble members still have no
+ * body-surface owner, the chat lane's contact layers carry a coverage-region
+ * identity rather than a garment one and report zero moisture transmission, and
+ * skin and garments persist to two rows with no enclosing transaction, so no
+ * live pairing can satisfy the conservation and atomicity laws yet.
+ * `GarmentOperationProposal` waits on the wardrobe operation seam, and
+ * `ScratchProposal` on an owner that does not exist at all — a type with no
+ * owner behind it is exactly the "pressure mark and scratch are not synonyms"
+ * smuggling path §8 forbids. A new member joins this union when its complete
+ * proposal → owner-transaction path ships.
  */
 
 // ---------------------------------------------------------------------------

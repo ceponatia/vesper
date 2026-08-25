@@ -1,26 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { resolveAttributes } from "@/contracts/attributes/value";
+import type { CharacterProfile } from "@/contracts/world/profile";
 import {
   duplicatedVisualFacts,
   LANE_PROBE_NAME,
+  LANE_PROBE_SECOND_NAME,
   laneProbeAvatarSegments,
   laneProbeBareExposure,
   laneProbeCastMember,
+  laneProbeCastScenePlan,
+  laneProbeCastSubjects,
+  laneProbeDressedExposure,
   laneProbeMarkedProfile,
   laneProbeProfile,
   laneProbeScenePlan,
   laneProbeShadowInput,
+  laneProbeVariantSegments,
   laneProbeWardrobe,
   presentVisualFacts,
+  SECOND_SUBJECT_VISUAL_FACT_PROBES,
   VISUAL_FACT_PROBES,
 } from "@/server/test-support";
 import type { SceneCastMember } from "./character-scene";
-import { buildChatLookPrompt } from "./chat-look";
+import { buildChatLookSegments } from "./chat-look-segments";
 import { apparentAgeAnchor } from "./prompts-appearance";
 import type { AvatarWardrobeItem } from "./prompts-avatar";
 import { buildSceneRenderPrompt } from "./prompts-scene-render";
-import { buildVariantInstruction } from "./prompts-variant";
-import { applySceneSubjectVisual } from "./scene-subject-visual";
+import type { VariantKind } from "./prompts-variant";
+import { applySceneCastVisual, applySceneSubjectVisual } from "./scene-subject-visual";
 
 /**
  * The pre-migration freeze for every character-bearing image lane
@@ -51,12 +58,35 @@ import { applySceneSubjectVisual } from "./scene-subject-visual";
  *     (horns/wings/tail), closing the recorded "reference lanes lose morphology
  *     entirely" gap — a species appendage is exactly the anchor an edit model
  *     "corrects" away when only the reference asserts it.
- * - The chat-look lane states apparent age and the requested outfit and NOTHING
- *   else — no identity, morphology, or exposure fact at all. Same for the
- *   variant lane. Both take their age anchor as a caller-supplied string, which
- *   is the coupling Stage 4 replaces with a mandatory `age` segment.
+ * - The CHAT-LOOK lane (cut over to the Stage 4 digest assembly, 2026-08-25;
+ *   `buildChatLookSegments`) states the requested outfit plus the digest's
+ *   mandatory morphology anchors, and nothing else. That is deliberate rather
+ *   than a gap: it is an identity-locked EDIT of the character's own portrait,
+ *   so hair, eye and skin colour keep coming from the reference photograph
+ *   unstated, while a species appendage is exactly what an edit model
+ *   "corrects" away when only the picture asserts it. It carries no age (the
+ *   narrative/visual split) and no exposure or current-state fact (the outfit
+ *   line states coverage once as the operation, and the anchor's cache key
+ *   cannot see transient body state).
+ * - The VARIANT lane (cut over to the Stage 4 digest assembly, 2026-08-25;
+ *   `buildVariantSegments`) states the requested change as an operation
+ *   contract, the identity lock, an age anchor it now derives itself rather
+ *   than taking as a caller-supplied string, and the digest's morphology
+ *   anchors — the one fact-set gain. Hair, eye and skin colour stay unstated by
+ *   owner ruling: the reference photograph is the better source, so this lane
+ *   has no residual attribute sheet at all. It states no exposure (coverage
+ *   belongs to the reference, and may be exactly what the instruction changes).
  *
  * A lane that gains a fact it never had, or loses one it has, fails here first.
+ *
+ * The Stage 4 CAST ≥2 scene (`applySceneCastVisual`, 2026-08-25) has no frozen
+ * row of its own on purpose. Its per-subject fact sets are already pinned
+ * exactly by the legacy-vs-digest comparison, which can state them as a delta
+ * from the legacy production and therefore says something a second frozen list
+ * here would not. What the cast build IS used for below is the cross-lane
+ * invariants, because a leak that needs two people in one prompt — one
+ * character described from another's cut, one character's coverage gating
+ * everybody's skin — has nowhere else to show up.
  */
 
 const profile = laneProbeProfile();
@@ -79,6 +109,19 @@ function avatarPrompt(wardrobe: ReadonlyArray<AvatarWardrobeItem>, style: "reali
 }
 
 /**
+ * The variant/edit lane, through the PRODUCTION Stage 4 assembly
+ * (`buildVariantSegments` — the same standalone visual cut the avatar lane
+ * uses, under this lane's full-figure camera and its exposure-omitting policy).
+ * Eligibility is asserted for the same reason: a freeze over a prompt the
+ * production path would refuse to send before provider spend proves nothing.
+ */
+function variantPrompt(kind: VariantKind, instruction: string): string {
+  const built = laneProbeVariantSegments(kind, instruction);
+  expect(built.missingRequired).toEqual([]);
+  return built.prompt;
+}
+
+/**
  * The scene plan a lane renders, built through the production seams end to end:
  * context → composer-spec resolve (`laneProbeScenePlan`) → the cast-1 digest
  * patch the render job applies once the committed camera exists
@@ -96,7 +139,55 @@ function scenePlan(member: SceneCastMember = laneProbeCastMember()) {
   return applied.plan;
 }
 
+/**
+ * The cast ≥2 scene, through the PRODUCTION Stage 4 cast production
+ * (`applySceneCastVisual`): the focal beside a bystander from the second
+ * fixture, each drawn from their OWN committed cut.
+ *
+ * There is deliberately NO frozen fact matrix for this lane. The
+ * legacy-vs-digest comparison already pins both subjects' fact sets exactly
+ * (`lane-cutover-comparison.test.ts`), and a second copy of them here would be
+ * one more place to re-bless when the lane moves. What this build is used for
+ * is the cross-lane invariants below, which no other suite states — and which
+ * are the ones a second person in frame can break.
+ */
+function castScenePlan() {
+  const subjects = laneProbeCastSubjects();
+  const applied = applySceneCastVisual({
+    plan: laneProbeCastScenePlan(subjects.map((subject) => subject.member)),
+    members: subjects,
+  });
+  expect(applied.refusal).toBeNull();
+  return applied.plan;
+}
+
+/** The cast lane's two-character reference rung — where each subject gets identity anchors. */
+const CAST_MULTI_REFERENCES = {
+  multiReferences: [
+    { name: LANE_PROBE_NAME, kind: "character" as const },
+    { name: LANE_PROBE_SECOND_NAME, kind: "character" as const },
+  ],
+};
+
 const bareMember = laneProbeCastMember({ outfit: "", exposure: bareExposure });
+
+/**
+ * The chat-look mint, through the PRODUCTION Stage 4 assembly
+ * (`buildChatLookSegments` — the committed chat cut's visual digest plus this
+ * lane's three route-owned sentences). The refusal assertion matters for the
+ * same reason the avatar and scene helpers assert eligibility: a freeze over a
+ * prompt production the mint would refuse to send proves nothing.
+ */
+function chatLookPrompt(subject: CharacterProfile = laneProbeProfile()): string {
+  const built = buildChatLookSegments({
+    outfit: "a floor-length wine-red silk kimono",
+    outfitExposed: false,
+    shadow: laneProbeShadowInput(subject),
+    exposure: laneProbeDressedExposure(),
+  });
+  expect(built.refusal).toBeNull();
+  return built.prompt;
+}
 
 /**
  * Freeze one lane: exactly these facts, and none of them stated twice.
@@ -193,18 +284,38 @@ describe("image lane characterization — dressed subject", () => {
     expectLaneFacts(prompt, ["hairColor", "eyeColor", "skinTone", "horns", "wings", "tail", "garment", "legBuild"]);
   });
 
-  it("chat look: the requested outfit and no other character fact, age included", () => {
-    const prompt = buildChatLookPrompt({ outfit: "a floor-length wine-red silk kimono", outfitExposed: false });
-    // Age left the chat-look lane with the narrative/visual age split (#143):
-    // the builder no longer takes an anchor, so the garment is the only fact.
-    expectLaneFacts(prompt, ["garment"]);
+  it("chat look: the digest's morphology anchors join the requested outfit — and nothing else", () => {
+    // Re-frozen for the Stage 4 cutover. The row GAINS horns/wings/tail and
+    // gains nothing else, which is the whole shape of this lane's ruling: a
+    // look mint is an identity-locked EDIT of the character's own portrait, so
+    // hair, eye and skin colour keep coming from the reference photograph
+    // unstated (restating them is how an edit model is invited to repaint
+    // them), while a species appendage is exactly the anchor an edit model
+    // "corrects" away when only the picture asserts it.
+    //
+    // Age stays absent (the narrative/visual split, #143), and no exposure or
+    // current-state fact appears: the outfit line states coverage once as the
+    // operation, and the cached anchor's key cannot see transient body state.
+    expectLaneFacts(chatLookPrompt(), ["horns", "wings", "tail", "garment"]);
   });
 
-  it("portrait variant: apparent age and the requested change, and no other character fact", () => {
-    const prompt = buildVariantInstruction("outfit", "wearing a floor-length wine-red silk kimono", {
-      ageAnchor: apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, [])),
-    });
-    expectLaneFacts(prompt, ["apparentAge", "garment"]);
+  it("portrait variant: the digest's morphology anchors join the age and the requested change", () => {
+    // Re-frozen for the Stage 4 variant cutover (`buildVariantSegments`). The
+    // row GAINS horns/wings/tail and nothing else, which is the owner ruling
+    // stated as a fact set: the prompt takes only what the digest naturally
+    // projects — species morphology and cataloged distinctive marks — because
+    // those are the anchors an edit model "corrects" away. Hair, eye and skin
+    // colour stay ABSENT on purpose: they come off the reference photo, which
+    // is a better source than a sentence, so this lane deliberately has no
+    // residual attribute sheet. The age anchor is no longer caller-supplied —
+    // the assembly derives it — which is the coupling Stage 4 removed.
+    expectLaneFacts(variantPrompt("outfit", "wearing a floor-length wine-red silk kimono"), [
+      "horns",
+      "wings",
+      "tail",
+      "apparentAge",
+      "garment",
+    ]);
   });
 });
 
@@ -280,16 +391,22 @@ describe("image lane invariants that hold across the migration", () => {
         ],
       }),
     },
-    {
-      lane: "chat_look",
-      prompt: buildChatLookPrompt({ outfit: "a floor-length wine-red silk kimono", outfitExposed: false }),
-    },
-    { lane: "variant", prompt: buildVariantInstruction("outfit", "wearing a floor-length wine-red silk kimono") },
+    { lane: "chat_look", prompt: chatLookPrompt() },
+    { lane: "variant", prompt: variantPrompt("outfit", "wearing a floor-length wine-red silk kimono") },
+    // The Stage 4 cast lane joins the invariant sweep even though it has no
+    // frozen row: a leak class that needs two people in one prompt to appear
+    // has no other suite to appear in.
+    { lane: "scene_cast", prompt: buildSceneRenderPrompt(castScenePlan(), {}) },
   ];
 
   it("no lane emits a non-visual attribute", () => {
     const leaks = lanes().filter(({ prompt }) => presentVisualFacts(prompt).includes("voiceTimbre"));
     expect(leaks.map((l) => l.lane)).toEqual([]);
+    // …and the sensory skip is per SUBJECT, not per render: the bystander's own
+    // timbre must be silent in the same prompt the focal's is, read off their own
+    // disjoint vocabulary.
+    const cast = buildSceneRenderPrompt(castScenePlan(), {});
+    expect(presentVisualFacts(cast, SECOND_SUBJECT_VISUAL_FACT_PROBES)).not.toContain("voiceTimbre");
   });
 
   it("no lane describes covered intimate SKIN, even on an uncensored route", () => {
@@ -313,6 +430,19 @@ describe("image lane invariants that hold across the migration", () => {
     for (const prompt of [...lanes().map((l) => l.prompt), ...uncensored]) {
       expect(presentVisualFacts(prompt)).not.toContain("nipples");
     }
+
+    // The bystander half, and the reason it is worth its two lines: an
+    // uncensored cast render emits `intimateAppearance` for EVERY subject in
+    // frame, not only the anchored one, so a coverage gate that read the focal's
+    // exposure for everybody would describe a fully dressed second character's
+    // bare chest. That torso is covered, and the shape (`breasts.size`) is
+    // deliberately not asserted, exactly as the focal's is not.
+    const castUncensored = buildSceneRenderPrompt(castScenePlan(), {
+      ...CAST_MULTI_REFERENCES,
+      allowIntimate: true,
+    });
+    expect(presentVisualFacts(castUncensored, SECOND_SUBJECT_VISUAL_FACT_PROBES)).not.toContain("nipples");
+    expect(presentVisualFacts(castUncensored)).not.toContain("nipples");
   });
 
   it("states apparent age in the two lanes that still carry it, and in no other", () => {
@@ -325,10 +455,9 @@ describe("image lane invariants that hold across the migration", () => {
     const anchor = apparentAgeAnchor(LANE_PROBE_NAME, resolveAttributes(profile.attributes, []));
     expect(anchor).toContain("late twenties");
 
-    for (const prompt of [
-      avatarPrompt(dressed),
-      buildVariantInstruction("outfit", "wearing a kimono", { ageAnchor: anchor }),
-    ]) {
+    // Both lanes now DERIVE the anchor rather than being handed one, so the
+    // shared expectation is that each states the same band the fixture holds.
+    for (const prompt of [avatarPrompt(dressed), variantPrompt("outfit", "wearing a kimono")]) {
       expect(presentVisualFacts(prompt)).toContain("apparentAge");
     }
 
@@ -338,7 +467,7 @@ describe("image lane invariants that hold across the migration", () => {
     for (const prompt of [
       buildSceneRenderPrompt(scenePlan(), {}),
       buildSceneRenderPrompt(scenePlan(), { referenceName: LANE_PROBE_NAME }),
-      buildChatLookPrompt({ outfit: "a kimono", outfitExposed: false }),
+      chatLookPrompt(),
     ]) {
       expect(presentVisualFacts(prompt)).not.toContain("apparentAge");
     }
@@ -364,6 +493,28 @@ describe("image lane invariants that hold across the migration", () => {
     const scene = buildSceneRenderPrompt(scenePlan(member), {});
     expect(presentVisualFacts(scene)).toContain("noseShape");
     expect(duplicatedVisualFacts(scene)).toEqual([]);
+
+    // The chat-look mint states the mark ZERO times, and that is the honest
+    // reading of a seam Stage 4 measured rather than a cut this lane chose.
+    // Recognition marks reach a lane by two different roads: the STANDALONE
+    // snapshot road (the avatar and variant lanes) projects a cataloged
+    // distinctive value into the digest as a mark, while the chat SHADOW road
+    // (this lane and the scene lane) does not project one at all — verified by
+    // suppression: the avatar build records `nose/shape` as `lane_curated`,
+    // and both chat builds record no `nose/shape` fact whatever. The scene
+    // lane never noticed because its route-owned residual sheet says it
+    // anyway; the chat-look mint has no residue, so the silence shows.
+    //
+    // Left silent on purpose rather than patched here. This lane edits FROM an
+    // identity reference, and the owner's ruling for its sibling edit lane is
+    // that identity detail the reference photo already carries stays unstated
+    // (2026-08-25 — the variant lane gains body-shape anchors only). Closing
+    // the projection asymmetry belongs to `visual-state.plan.md`, which owns
+    // the projection; when it lands, this lane gains the mark for free and
+    // this assertion flips to `toContain`.
+    const look = chatLookPrompt(marked);
+    expect(presentVisualFacts(look)).not.toContain("noseShape");
+    expect(duplicatedVisualFacts(look)).toEqual([]);
   });
 
   it("the probe vocabulary itself stays stable", () => {

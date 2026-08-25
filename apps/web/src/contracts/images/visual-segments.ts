@@ -95,6 +95,18 @@ export interface VisualSegmentTaskPolicy {
   readonly frame: "waist_up" | "full_figure";
   /** The lane's intimate-anatomy rule. Avatar: `"never"`; uncensored scene: `"when_bare"`. */
   readonly intimate: "never" | "when_bare";
+  /**
+   * Whether this task states the coverage readout as an `exposure` segment.
+   *
+   * `"state"` is the rule for a lane that describes a body from committed
+   * wardrobe — the avatar and scene lanes. `"omit"` is the rule for an EDIT
+   * lane whose coverage belongs to the reference image and whose requested
+   * change may be exactly the coverage (the variant and chat-look lanes): the
+   * operation states what changes, and an authoritative "the torso is bare"
+   * beside it would either restate the instruction or contradict it. Omitting
+   * is a policy suppression, recorded per region, never a fitting decision.
+   */
+  readonly exposure: "state" | "omit";
 }
 
 // ---------------------------------------------------------------------------
@@ -127,6 +139,8 @@ export const VISUAL_SEGMENTS_OUT_OF_FRAME = "visual_state.segments.out_of_frame"
 export const VISUAL_SEGMENTS_INTIMATE_POLICY = "visual_state.segments.intimate_policy";
 /** An intimate SKIN fact dropped because its region does not read bare. */
 export const VISUAL_SEGMENTS_INTIMATE_COVERED = "visual_state.segments.intimate_covered";
+/** A coverage readout dropped because this task's policy states no exposure. */
+export const VISUAL_SEGMENTS_EXPOSURE_POLICY = "visual_state.segments.exposure_policy";
 /** The caller's resolver deliberately omitted this fact. */
 export const VISUAL_SEGMENTS_CLAUSE_OMITTED = "visual_state.segments.clause_omitted";
 /** No clause could be resolved; a required fact additionally lands in `missingRequired`. */
@@ -368,7 +382,15 @@ export function buildVisualSubjectSegments(input: VisualSubjectSegmentsInput): V
 
   const bared = exposureClauses(exposure, policy.frame);
   if (bared.length > 0) {
-    segments.push(segmentOf("exposure", joinClauses(bared), true, AFFORDANCE_UNIT_ONE));
+    if (policy.exposure === "omit") {
+      // Recorded per clause rather than as one line, so the degradation record
+      // names every region the lane chose not to state.
+      for (const clause of bared) {
+        suppressions.push({ key: `exposure:${clause}`, code: VISUAL_SEGMENTS_EXPOSURE_POLICY, detail: "exposure:omit" });
+      }
+    } else {
+      segments.push(segmentOf("exposure", joinClauses(bared), true, AFFORDANCE_UNIT_ONE));
+    }
   }
 
   return {

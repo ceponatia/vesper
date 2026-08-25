@@ -20,25 +20,26 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 > [roadmap.shipped.md](roadmap.shipped.md). Shipping a slice never removes an
 > entry — it may only correct a hook that has stopped being true.
 
-## Active (building now)
+## Awaiting acceptance
 
 - **Image model adapters and the feature composer** —
   [plan](image-model-adapters.plan.md) ·
-  [spec](image-model-adapters.spec.md) — model families become composable
-  adapters over shared semantic capabilities (`@vesper/image-models`, Qwen
-  first), LoRA curation splits mechanical compatibility from production task
-  policy so the Image Generator bench can finally run a LoRA at all, and the
-  Replicate lifecycle gains startup/render budgets so a cold-start queue stops
-  consuming the whole prediction budget.
+  [spec](image-model-adapters.spec.md) — the adapter/composer build, LoRA
+  compatibility split, final-wire invariant and two-phase bench budgets are
+  merged; the owner's deployed Stage 7 Generator run with a curated LoRA is the
+  remaining acceptance gate before any production-policy promotion.
+
+## Active (building now)
 
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
-  [spec index](romantic-contact-affordances.spec.md) — affectionate player
-  contact is live and the romantic producer passed its first controlled proof,
-  which exposed two gaps now closed in code: a refusal the narrator was never
-  told about, and character names players could not write. The owner has ruled
-  the surface ships if the rerun against the fixed lane passes; the NPC shadow
-  review runs in parallel.
+  [spec index](romantic-contact-affordances.spec.md) — the romantic player
+  surface still waits on its evidence-capturing live rerun; visual contact
+  continuity and visual-only routing are built, the first pressure-mark effect
+  proof is built behind its default-off switch, and skin has an ungated owner
+  for the material it carries that no deployed exchange has exercised yet,
+  leaving conserved transfer and the sensory owners while NPC shadow review runs
+  independently.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·
@@ -48,10 +49,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 
 - **Visual state and attention** — [plan](visual-state.plan.md) ·
   [spec](visual-state.spec.md) — one lane-neutral projection over the existing
-  appearance, wardrobe, body-condition and scene owners; slices 0–6, 8 and 9
-  are built (projection, attention, shadow + inspector, image digest,
-  reference extraction, narrator wiring behind a per-chat switch that is off by
-  default), leaving the final consolidation.
+  appearance, wardrobe, body-condition and scene owners; slices 0–9 are
+  complete, including narrator wiring behind a per-chat switch that is off by
+  default, leaving slice 10's final consolidation.
 
 - **Image render quality — per-model prompts, negative steering, and face
   fidelity** — [plan](image-render-quality.plan.md) ·
@@ -69,9 +69,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
   every character-bearing image route onto semantic visual facts, then remove
   the duplicated appearance, reference-numbering, and prompt-budget machinery;
-  Stages 1–3 are in — the avatar and cast-of-one scene routes now render from
-  the digest with provenance on the row — and moving the remaining
-  character-bearing lanes (Stage 4) is the next step.
+  Stages 1–4 are in — every character-bearing lane, including multi-character
+  scenes, portrait edits, the chat-look anchor and the staged bench, now renders
+  from the digest with provenance on the row — and collapsing the two scene
+  assemblers into one (Stage 5) is the next step.
 
 - **Model-aware image prompt programs** —
   [plan](model-aware-image-prompts.plan.md) ·
@@ -123,9 +124,10 @@ the scene owner.
   undressed, so a shot taken from behind anchors on her real back.
 
 - **Body-attribute visual affordances — remainder** —
-  [plan](body-attribute-affordances.plan.md) — `chat-affordances.ts` still
-  doesn't read the scene owner, which is all that keeps hair adhesion and garment
-  cling silent; the successor adapter waits on the successor lane.
+  [plan](body-attribute-affordances.plan.md) — the release-contract remainder is
+  the successor adapter; separately unblocked scene-owner wiring enables hair
+  adhesion and garment drape, while wet cling still waits on a recorded garment
+  fit.
 
 - **Clothing state graph — remainder** — [plan](clothing-state-graph.plan.md) ·
   [audit](clothing-state-graph.audit.md) — slice 7 maps the contracts onto

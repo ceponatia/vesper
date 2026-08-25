@@ -65,6 +65,12 @@ const APPROVED: Readonly<Record<string, number>> = {
   "apps/web/src/server/images/avatar-segments.ts": 2,
   // The variant instruction's tail, on every portrait edit.
   "apps/web/src/server/images/prompts-variant.ts": 1,
+  // The SAME tail sentence, carried verbatim through the Stage 4 variant
+  // cutover as the route-owned `quality` segment (variant wording is preserved
+  // behavior). Not a new exclusion: this copy and the legacy one above retire
+  // together when Stage 6 deletes `buildVariantInstruction` and the tail moves
+  // into a versioned negative pack under the model-aware plan.
+  "apps/web/src/server/images/variant-segments.ts": 1,
   // The POV rule's "never visible", the two cast-integrity lines, the
   // turned-away adaptation's "not visible"/"do not rotate" pair, the
   // clothing-authority sentence, the empty-scene "no people in frame", the
@@ -75,6 +81,12 @@ const APPROVED: Readonly<Record<string, number>> = {
   // people anywhere in frame" — the same claim the item and location lanes now
   // make as an operation contract with `subjectCount: 0`.
   "apps/web/src/server/images/chat-look.ts": 2,
+  // The SAME clothing-authority sentence, carried verbatim through the Stage 4
+  // chat-look cutover as the route-owned `operation` segment (look wording is
+  // preserved behavior). Not a new exclusion: this copy and the legacy one
+  // above retire together when Stage 6 deletes `buildChatLookPrompt` and the
+  // clause becomes an operation contract with a garment authority.
+  "apps/web/src/server/images/chat-look-segments.ts": 1,
   // The composer's instructions to the scene-spec LLM, not prompt text sent to
   // an image provider — but counted, because the day the composer's output
   // feeds a prompt program these become claims like any other.

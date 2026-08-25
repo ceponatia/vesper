@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   characterProfileSchema,
@@ -16,10 +16,11 @@ import {
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { logDiagnostics } from "@/server/log";
 import { isDemoMode } from "../ai";
-import { characterChats, characters, db } from "../db";
+import { characterChats, characters, chatParticipants, db } from "../db";
 import { chatHasRenders, chatLookKey, latestChatLook, renderChatLookImage, renderChatPlaceImage } from "../images";
 import { chatGarmentLookKey } from "./chat-garments";
-import { loadChatScenario, loadChatState } from "./chat-state";
+import { chatVisualStateShadowInput } from "./chat-pipeline";
+import { loadChatScenario, loadChatState, seedChatScenario } from "./chat-state";
 import { resolveChatWardrobe } from "./chat-wardrobe";
 import { registerJobHandler } from "./jobs";
 
@@ -110,6 +111,53 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
     // sibling's look and skip minting one for the member whose outfit moved.
     if (await latestChatLook(input.chatId, input.characterId, lookKey)) return; // already fresh (a lost race, or a no-op change)
 
+    // The look mint's digest cut (image-lane-consolidation Stage 4): the SAME
+    // committed-cut factory the scene queue and the visual-state inspector use,
+    // over the state, scenario and wardrobe THIS job already resolved above —
+    // never a second load that could disagree with the key it just hashed.
+    //
+    // Deliberately AFTER the unreliable-wardrobe skip: the digest re-derives
+    // coverage from the garment store internally, and building it before that
+    // gate would route around the one check that stops a degraded resolve from
+    // minting a wrong anchor and purging the right one.
+    //
+    // `memoryGroupId` is the only input the job did not already have; the scene
+    // queue takes the same select. A missing row is corrupt membership, so it
+    // degrades to the route-owned prompt production (docs/resilience.md §2 —
+    // a degraded default over a failed turn) rather than refusing an anchor
+    // over a continuity id.
+    const [participant] = await db()
+      .select({ memoryGroupId: chatParticipants.memoryGroupId })
+      .from(chatParticipants)
+      .where(and(eq(chatParticipants.chatId, input.chatId), eq(chatParticipants.characterId, input.characterId)))
+      .limit(1);
+    if (!participant) {
+      jobSink.push(
+        diag("warn", "images.chat_look.participant_missing", "no participant row for the look subject — minting without the visual digest", {
+          path: "images.chat_look",
+          context: { chatId: input.chatId, characterId: input.characterId },
+        }),
+      );
+    }
+    const visual = participant
+      ? chatVisualStateShadowInput({
+          characterId: input.characterId,
+          memoryGroupId: participant.memoryGroupId,
+          // A job-local cut id: the mint realizes the cut it assembles, so the
+          // digest's `forCutId` gate matches by construction and the row's
+          // provenance names the key the anchor was minted under.
+          cutId: `chat_look:${lookKey}`,
+          cut: {
+            profile: ctx.profile,
+            state: stored,
+            scenario: scenario ?? seedChatScenario(ctx.profile),
+            wardrobe,
+            owner: ctx.ownerId,
+          },
+          sink: jobSink,
+        })
+      : undefined;
+
     // Identity sourcing lives in the render lane itself (chat-look.ts): the pack
     // service evaluates the character's canonical portrait for the resolved
     // profile, and an ineligible pack reserves nothing — the next change
@@ -123,6 +171,10 @@ export async function runChatLookImage(input: z.infer<typeof lookPayloadSchema>,
       lookKey,
       outfit: wardrobe.garments,
       outfitExposed: wardrobe.exposed,
+      // The SAME coverage readout the key above hashed, so the anchor's
+      // coverage reads and its cache key cannot disagree.
+      exposure: wardrobe.exposure,
+      ...(visual === undefined ? {} : { visual }),
       // Visible age comes from the portrait reference itself. Scene-supporting
       // look renders never receive chronological or apparent-age fields.
     });

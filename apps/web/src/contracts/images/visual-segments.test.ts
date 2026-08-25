@@ -112,7 +112,7 @@ function digestOf(features: readonly VisualStateFeature[], intimateAllowed = fal
   });
 }
 
-const FULL: VisualSegmentTaskPolicy = { age: "state", frame: "full_figure", intimate: "never" };
+const FULL: VisualSegmentTaskPolicy = { age: "state", frame: "full_figure", intimate: "never", exposure: "state" };
 
 function build(input: {
   digest: VisualImageDigest;
