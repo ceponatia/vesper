@@ -204,15 +204,18 @@ Rulings the build settled:
 - `ImageFeature`: id plus optional hooks (payload contribution/validation
   against probed bindings). Feature modules built as needed: prompt,
   multi-reference, aspect-ratio, seed, LoRA, output-format, output-quality,
-  safety-toggle, negative-prompt, guidance.
+  safety-toggle, negative-prompt, guidance, fast-mode.
 - `defineImageModel({ family, features, quirks })` → `ImageModelAdapter`
   `{ family, capabilities, preparePrompt?, validateRequest?, executionHints? }`.
 - Qwen family: `families/qwen/shared.ts` (dialect + conventions),
   `image-edit-2511.ts` (current edit endpoint, runtime LoRA feature),
   `image-edit-plus-lora.ts` (2509-generation wrapper, LoRA feature,
-  3-reference cap, `go_fast` note), `image-2512.ts` (generator arm, ignores
-  negative field — see `model-aware-image-prompts` docs). The dialect quirk
-  carries the two identity-lock constants moved from `quality-presets.ts`.
+  3-reference cap), `image-2512.ts` (generator arm, ignores negative field —
+  see `model-aware-image-prompts` docs). All three compose the `fastMode`
+  feature: `go_fast` became a normalized control rather than a per-family note,
+  so the bench can ask for or refuse the accelerated path on any of them. The
+  dialect quirk carries the two identity-lock constants moved from
+  `quality-presets.ts`.
 - Registry: `adapterForImageModel(baseSlug)` → adapter or null; null is the
   ordinary no-special-behavior answer.
 - The probed registry stays authoritative for wire fields; adapters never
