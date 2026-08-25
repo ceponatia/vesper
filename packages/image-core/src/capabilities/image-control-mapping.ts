@@ -178,6 +178,11 @@ export function mapImageRenderControls(input: MapImageRenderControlsInput): Mapp
     { control: "editStrength", value: controls.editStrength, binding: bindings.editStrength },
     { control: "outputCount", value: controls.outputCount, binding: bindings.outputCount },
     { control: "thinkingMode", value: controls.thinkingMode, binding: bindings.thinkingMode },
+    // `fastMode` is the one control whose FALSE is as much a request as its
+    // true: the wrappers that expose it default it on, so "do not accelerate"
+    // has to travel as a value rather than as silence. `bindingAccepts` already
+    // takes booleans, so the row needs nothing the others do not.
+    { control: "fastMode", value: controls.fastMode, binding: bindings.fastMode },
     { control: "resolution", value: controls.resolution, binding: bindings.resolutionTier },
     { control: "width", value: controls.width, binding: bindings.customWidth },
     { control: "height", value: controls.height, binding: bindings.customHeight },

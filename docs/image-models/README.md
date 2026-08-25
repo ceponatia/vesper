@@ -32,11 +32,11 @@ The registry keys adapters by the model's **base slug**, so a reproducibility pi
 
 ### Registered Qwen adapters
 
-| Model                                                                   | Role                                                                    | Composed features                                                                                          | Family behavior                                                          |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
-| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                              | numbered-reference dialect; eight-minute startup hint; one startup retry |
-| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
+| Model                                                                   | Role                                                                    | Composed features                                                                                                      | Family behavior                                                          |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [`qwen/qwen-image-edit-2511`](models/qwen-image-edit-2511.md)           | Instruction editor; default for scene images and portrait variants      | `prompt`, `multiReference`, `aspectRatio`, `seed`, `fastMode`, `lora`, `outputFormat`, `outputQuality`, `safetyToggle` | Qwen numbered-reference prompt dialect                                   |
+| [`qwen/qwen-image-edit-plus-lora`](models/qwen-image-edit-plus-lora.md) | 2509-generation instruction editor; separate legacy comparison endpoint | same edit feature set as 2511                                                                                          | numbered-reference dialect; eight-minute startup hint; one startup retry |
+| [`qwen/qwen-image-2512`](models/qwen-image-2512.md)                     | Text-to-image generator arm; default for a brand-new portrait           | `prompt`, `aspectRatio`, `seed`, `guidance`, `fastMode`, `outputFormat`, `outputQuality`, `safetyToggle`               | no edit dialect; no execution hint                                       |
 
 One absence is deliberate:
 
@@ -48,7 +48,7 @@ Both edit adapters compose `lora`. Composing it states that the endpoint family 
 
 A feature answers a semantic question such as "can this render carry several references?" or "can the caller select guidance strength?" It does not answer "which provider field carries that value?" The latter belongs to the probed model record.
 
-The package exports ten feature constructors:
+The package exports eleven feature constructors:
 
 | Feature id       | Meaning                                              | Documentation                            |
 | ---------------- | ---------------------------------------------------- | ---------------------------------------- |
@@ -57,6 +57,7 @@ The package exports ten feature constructors:
 | `aspectRatio`    | caller-selected output shape                         | [Aspect ratio](features/aspect-ratio.md) |
 | `seed`           | reproducible seeded generation                       | [Controls](features/controls.md)         |
 | `guidance`       | prompt-guidance strength                             | [Controls](features/controls.md)         |
+| `fastMode`       | accelerated sampling the caller may choose or refuse | [Controls](features/controls.md)         |
 | `negativePrompt` | a negative prompt that actually affects output       | [Controls](features/controls.md)         |
 | `lora`           | one external LoRA with a chosen strength             | [LoRA](features/lora.md)                 |
 | `outputFormat`   | caller-selected output encoding                      | [Output](features/output.md)             |

@@ -30,10 +30,13 @@ it sees them.
 The long-lived built-in 2511 registry row was originally probed before LoRA
 binding derivation shipped, so its stored `advancedCapabilities` could remain
 stale even though the provider version exposes the inputs. Migration 0118
-backfills the two verified bindings and their known-input names without changing
-the selected provider version or any other capability fact. That is what makes
-the capability-driven Image Generator offer its LoRA picker when 2511 is
-selected; there is no 2511-only form exception.
+backfilled the two verified bindings and their known-input names without changing
+the selected provider version or any other capability fact, and
+`0119_qwen-capability-backfill.sql` then replaced that partial snapshot with the
+whole probed record — the same LoRA bindings plus the seed, the accelerated
+sampling path, and one descriptor per declared input. That is what makes the
+capability-driven Image Generator offer its LoRA picker when 2511 is selected;
+there is no 2511-only form exception.
 
 The Qwen model adapter likewise composes the semantic `lora` feature. The two
 layers have different jobs: the adapter says that this endpoint family can load
@@ -62,6 +65,9 @@ new-portrait task.
 - **Runtime custom LoRA:** yes, one custom LoRA through
   `lora_weights`/`lora_scale` when the active capability record carries the
   verified bindings.
+- **Accelerated sampling:** yes — `go_fast`, provider default `true`, reachable
+  as the normalized `fastMode` control. Production refuses it; see the quality
+  policy below.
 - **Output:** array of URIs; WebP available.
 
 ## Reviewed capability
@@ -93,6 +99,15 @@ All current production Qwen Edit jobs are identity-critical. Quality therefore
 wins over the provider's speed preset. This model carries no curated fast/quality
 profile variants; a non-identity task on it would need profile-level settings in
 place of this global override before fast and quality work could diverge.
+
+**The admin [Image Generator](../../image-generator/README.md) is the one
+surface allowed to say otherwise.** The probed row binds `go_fast` as the
+normalized `fastMode` control, so a bench run can ask this model for the
+accelerated path — which is what a bench is for, since a control that only ever
+agreed with production could not investigate the ruling it runs under.
+Production is unaffected: the reviewed policy keeps `go_fast` as a
+`providerOverrides` entry and overrides merge last, so no player-facing render
+can pick up a bench setting.
 
 The effective value differs from the raw `image_models.extra_input` row.
 Diagnostics and provenance report the final payload, not infer it from the row.

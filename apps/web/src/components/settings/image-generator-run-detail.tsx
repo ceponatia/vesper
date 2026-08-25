@@ -8,6 +8,11 @@ import {
   type ImageRenderControls,
 } from "@vesper/image-core";
 import type { ImageGeneratorRun } from "@/contracts/images/image-generator";
+import {
+  type ImageGeneratorRunOutput,
+  imageGeneratorRunOutputImageIds,
+  imageGeneratorRunOutputsOf,
+} from "@/contracts/images/image-generator-outputs";
 import { imageGeneratorApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
@@ -47,6 +52,11 @@ import type { ImageGeneratorPrefill } from "./image-generator-form";
  * `predictionId` above cannot tell a model that ran and failed from one the
  * queue never let start. Absent on every single-prediction run, which is every
  * run written before bench budgets existed.
+ *
+ * A run that asked for several images renders a GRID of its outputs instead of
+ * the single result tile — one tile per prediction, a failed one showing the
+ * code that stopped it. A single-image run keeps the panel it has always had:
+ * grid chrome around one picture would be furniture, not information.
  */
 
 const POLL_MS = 3000;
@@ -325,6 +335,11 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
     const parsed = providerAttemptViewSchema.safeParse(entry);
     return parsed.success ? [parsed.data] : [];
   });
+  // A run that asked for several images recorded one entry per prediction. One
+  // entry — or none, which is every run written before the count existed — is a
+  // single-image run, and it keeps exactly the panel it has always had.
+  const outputs: ImageGeneratorRunOutput[] = imageGeneratorRunOutputsOf(run);
+  const storedOutputIds = imageGeneratorRunOutputImageIds(outputs);
   const promptTransformed = run.finalPrompt !== null && run.finalPrompt !== run.prompt;
 
   const duplicate = () => {
@@ -393,18 +408,62 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
       </header>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
-        <figure className="flex flex-col gap-1 sm:col-span-1">
-          <figcaption className="text-[11px] tracking-wide text-paper-500 uppercase">Result</figcaption>
-          {run.resultImageId !== null ? (
-            <RecordedImage imageId={run.resultImageId} label="Run result" onEnlarge={setEnlarged} />
-          ) : live ? (
-            <Skeleton className="aspect-[3/4] w-full rounded-card" />
-          ) : (
-            <div className={MISSING_IMAGE_TILE}>
-              {run.status === "failed" ? "the run failed before an image existed" : "no result yet"}
-            </div>
-          )}
-        </figure>
+        {outputs.length > 1 ? (
+          <figure className="flex flex-col gap-1 sm:col-span-3">
+            <figcaption className="text-[11px] tracking-wide text-paper-500 uppercase">
+              {`Results (${String(storedOutputIds.length)} of ${String(outputs.length)})`}
+            </figcaption>
+            <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {outputs.map((output) => (
+                <li key={`output-${String(output.index)}`} className="flex flex-col gap-1">
+                  {output.imageId !== null ? (
+                    <RecordedImage
+                      imageId={output.imageId}
+                      label={`Image ${String(output.index)}`}
+                      onEnlarge={setEnlarged}
+                    />
+                  ) : (
+                    // The CODE in the tile, the sentence behind it on hover: a
+                    // failure explanation is a paragraph, and four of them in a
+                    // grid would bury the images that did render.
+                    <div
+                      className={MISSING_IMAGE_TILE}
+                      title={
+                        output.failureCode === null
+                          ? undefined
+                          : imageGeneratorFailureExplanation(output.failureCode)
+                      }
+                    >
+                      {output.failureCode === null ? (
+                        "this image never rendered"
+                      ) : (
+                        <code className="break-all">{output.failureCode}</code>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-paper-500">{`Image ${String(output.index)}`}</p>
+                </li>
+              ))}
+            </ol>
+            <figcaption className="text-xs text-paper-500">
+              {"One prediction per image — every model here renders exactly one — so each tile is its own paid "}
+              {"attempt against the same compiled request. A run keeps whatever it managed to render."}
+            </figcaption>
+          </figure>
+        ) : (
+          <figure className="flex flex-col gap-1 sm:col-span-1">
+            <figcaption className="text-[11px] tracking-wide text-paper-500 uppercase">Result</figcaption>
+            {run.resultImageId !== null ? (
+              <RecordedImage imageId={run.resultImageId} label="Run result" onEnlarge={setEnlarged} />
+            ) : live ? (
+              <Skeleton className="aspect-[3/4] w-full rounded-card" />
+            ) : (
+              <div className={MISSING_IMAGE_TILE}>
+                {run.status === "failed" ? "the run failed before an image existed" : "no result yet"}
+              </div>
+            )}
+          </figure>
+        )}
       </div>
 
       {run.sourceRunId !== null ? (
@@ -457,7 +516,19 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
             }
           />
           <Fact label="Executed version" value={<code className="break-all">{run.executedVersionId ?? "—"}</code>} />
-          <Fact label="Prediction" value={<code className="break-all">{run.predictionId ?? "—"}</code>} />
+          {/* Named on a fan-out, because this column describes ONE pass and the
+              page is showing several images. Without the qualifier an operator
+              reading a grid would attach this id to whichever tile they were
+              looking at. */}
+          <Fact
+            label="Prediction"
+            value={
+              <>
+                <code className="break-all">{run.predictionId ?? "—"}</code>
+                {outputs.length > 1 ? " — the pass that stored the first image" : ""}
+              </>
+            }
+          />
           <Fact
             label="Explicit controls"
             value={controls.length > 0 ? controls.join(" · ") : "— none; the model’s own defaults ruled"}
@@ -501,7 +572,10 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
             </ol>
             <p className="mt-1 text-xs text-paper-500">
               {"Every prediction this run created, oldest first — recorded when it executed under the bench's "}
-              {"two-phase budget. The Prediction above is the last of them."}
+              {"two-phase budget. "}
+              {outputs.length > 1
+                ? "The Prediction above is not the last of them: it names the pass the Result, Executed version and timings all describe — the first image this run stored."
+                : "The Prediction above is the last of them."}
             </p>
           </div>
         ) : null}
@@ -751,13 +825,22 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
           </>
         }
       >
-        The record and the hidden image it rendered are removed. Input images are not touched.
+        {storedOutputIds.length > 1
+          ? `The record and the ${String(storedOutputIds.length)} hidden images it rendered are removed. Input images are not touched.`
+          : "The record and the hidden image it rendered are removed. Input images are not touched."}
       </Dialog>
 
+      {/* The prompt rides the lightbox only for an image this run PRODUCED —
+          every output of a fan-out, not just the one the row's column names.
+          An input image was not made from this prompt and must not claim it. */}
       <ImageLightbox
         imageId={enlarged}
         alt="Generator run image"
-        prompt={enlarged !== null && enlarged === run.resultImageId ? (run.finalPrompt ?? run.prompt) : null}
+        prompt={
+          enlarged !== null && (enlarged === run.resultImageId || storedOutputIds.includes(enlarged))
+            ? (run.finalPrompt ?? run.prompt)
+            : null
+        }
         onClose={() => setEnlarged(null)}
       />
     </div>

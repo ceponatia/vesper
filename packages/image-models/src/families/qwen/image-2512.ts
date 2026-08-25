@@ -1,6 +1,7 @@
 import { defineImageModel, type ImageModelAdapter } from "../../composer";
 import {
   aspectRatioFeature,
+  fastModeFeature,
   guidanceFeature,
   outputFormatFeature,
   outputQualityFeature,
@@ -36,7 +37,10 @@ import { QWEN_IMAGE_FAMILY } from "./shared";
  * one that steers here, and every exclusion that matters has to be written as
  * an affirmative claim about what the picture should contain.
  *
- * It does take a guidance strength, which its edit-family siblings do not.
+ * It does take a guidance strength, which its edit-family siblings do not. It
+ * shares their accelerated sampling path, and here the trade is the caller's to
+ * make either way: this row carries no reviewed correction turning it off, so
+ * both asking for speed and refusing it are things a run has to be able to say.
  */
 export const qwenImage2512: ImageModelAdapter = defineImageModel({
   family: QWEN_IMAGE_FAMILY,
@@ -45,6 +49,7 @@ export const qwenImage2512: ImageModelAdapter = defineImageModel({
     aspectRatioFeature(),
     seedFeature(),
     guidanceFeature(),
+    fastModeFeature(),
     outputFormatFeature(),
     outputQualityFeature(),
     safetyToggleFeature(),

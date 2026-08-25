@@ -19,10 +19,17 @@ import { sceneStagingById } from "@/contracts/images/scene-staging";
  *
  * Two collaborators are mocked because they are IO and are tested where they
  * live — the model registry read and the library resolution. Everything the
- * route itself decides is exercised for real, including the seeded row's
- * compatibility fields, which no other test could catch a mistake in: a wrong
- * slug or a missing task in the migration would degrade silently in production
- * and look exactly like a deployment without the token.
+ * route itself decides is exercised for real, which is the whole of what this
+ * file owns: WHEN the intimate LoRA is taken, and what each missing leg costs.
+ *
+ * It deliberately does NOT own two neighbouring facts, and must not grow them
+ * back. Which strengths, models and tasks a library row may reach — and the
+ * diagnostic each refusal carries — belongs to `evaluateImageLoraForRender`'s
+ * own matrix in `@vesper/image-core`. What the MIGRATED row holds after the
+ * whole 0108 → 0114 → 0118 → 0120 chain belongs to `qwen-2511-lora.int.test.ts`,
+ * which reads a real database. A fixture here can only restate one migration's
+ * text, so a containment claim asserted against it proves the fixture, not
+ * production — and would keep passing after the row moved underneath it.
  */
 
 vi.mock("./models", () => ({ loadImageModels: vi.fn() }));
@@ -312,11 +319,18 @@ const SEEDED_ROW: ImageLora = imageLoraSchema.parse({
   builtin: true,
 });
 
-describe("the seeded library row", () => {
+describe("the row 0108 seeds", () => {
   it("is written by the migration exactly as this fixture states it", () => {
-    // The fixture below is what the compatibility cases judge, so it has to be
-    // the row production actually gets. Each literal is load-bearing: a wrong
-    // slug or a missing task degrades every intimate render silently.
+    // A PIN ON 0108's OWN TEXT, and deliberately nothing more: that migration is
+    // applied in production, so its literals are frozen history. It is NOT a
+    // description of the live row, and must not be read as one — later data
+    // migrations have moved three of these fields on purpose (0114 widened
+    // `allowed_tasks`, 0118 added the 2511 slug, 0120 widened the scale band to
+    // 0–2), and no single file in a chain can state what the chain produces.
+    // What the migrated database actually holds is asserted against a real one
+    // in `qwen-2511-lora.int.test.ts`. The identity literals are what earns this
+    // case: a changed id, label or locator points every intimate render at
+    // different weights with nothing else noticing.
     const sql = repoFile(MIGRATION);
     expect(sql).toContain(`'${SEEDED_ROW.id}'`);
     expect(sql).toContain(`'${SEEDED_ROW.label}'`);
@@ -340,17 +354,6 @@ describe("the seeded library row", () => {
     // The locator that reaches a render is the STORED one: no credential is in
     // the row, and nothing before the transport puts one there.
     expect(evaluated.ok && evaluated.binding.locator).toBe(CIVITAI_LOCATOR);
-  });
-
-  it("is refused on the stock scene model, so only this route can reach it", () => {
-    const evaluated = evaluateImageLoraForRender({
-      lora: SEEDED_ROW,
-      modelSlug: "qwen/qwen-image-edit-2511",
-      versionId: null,
-      context: { kind: "production", task: "scene" },
-      bindings: {},
-    });
-    expect(evaluated.ok).toBe(false);
   });
 });
 

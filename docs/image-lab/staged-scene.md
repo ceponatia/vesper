@@ -42,7 +42,7 @@ Exactly one identity reference is required. The staged recipe also permits an op
 
 The selected model is honored and must be pinnable. In the Model picker, `Default` resolves to the intimate LoRA-capable wrapper rather than the ordinary Qwen edit default, because the normal default cannot load the seeded staging LoRA.
 
-LoRA resolution is shared with production. The lab can override the selected LoRA's scale within its curated range, making this kind useful for scale sweeps.
+LoRA resolution is shared with production. The lab can override the selected LoRA's scale within its curated range, making this kind useful for scale sweeps. The built-in staging LoRA's band is deliberately wider than the strengths already graded, because a sweep is only informative if it can reach both edges the verdicts below distinguish — `anatomy_withheld` is the scale too low, `geometry_wrong` is the scale too high.
 
 Raw provider input is refused because the experiment is specifically meant to reproduce a production-shaped staging request.
 

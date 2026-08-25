@@ -79,6 +79,7 @@ describe("imageGeneratorControlsSchema", () => {
       editStrength: 0.5,
       outputCount: 1,
       coherentSet: false,
+      fastMode: false,
       thinkingMode: false,
       resolution: "2K",
       width: 512,

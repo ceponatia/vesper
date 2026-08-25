@@ -62,6 +62,9 @@ the prompt and reference are otherwise unchanged.
   `match_input_image`.
 - **Runtime custom LoRA:** yes, one custom LoRA through
   `lora_weights`/`lora_scale`.
+- **Accelerated sampling:** yes — `go_fast`, provider default `true`, reachable
+  as the normalized `fastMode` control. On this wrapper it is also the Lightning
+  switch described above, so a comparison run has to hold it constant.
 - **Output:** array of URIs; WebP available.
 
 ## LoRA support

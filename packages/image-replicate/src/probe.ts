@@ -356,11 +356,30 @@ function deriveAdvancedCapabilities(
 
   assign("seed", numericBinding(properties, "seed"));
   assign("negativePrompt", stringBinding(properties, "negative_prompt"));
-  assign("guidance", numericBinding(properties, "guidance") ?? numericBinding(properties, "cfg"));
+  // Three spellings of the SAME quantity — how hard the sampler is pushed toward
+  // the prompt. `true_cfg_scale` is deliberately NOT a fourth: on CFG-distilled
+  // checkpoints (Qwen among them) `guidance_scale` is the embedded guidance,
+  // usually pinned near 1.0 and near-meaningless to raise, while
+  // `true_cfg_scale` is real classifier-free guidance and runs an order of
+  // magnitude higher. Folding both into one slot would make two different knobs
+  // answer to one name, and nothing in a run record would say which one moved.
+  // A registered model that publishes `true_cfg_scale` deserves its own slot and
+  // its own reviewed decision rather than a guess made here in advance.
+  assign(
+    "guidance",
+    numericBinding(properties, "guidance") ??
+      numericBinding(properties, "guidance_scale") ??
+      numericBinding(properties, "cfg"),
+  );
   assign("steps", numericBinding(properties, "num_inference_steps"));
   assign("editStrength", numericBinding(properties, "strength") ?? numericBinding(properties, "prompt_strength"));
   assign("outputCount", numericBinding(properties, "num_outputs") ?? numericBinding(properties, "max_images"));
   assign("thinkingMode", booleanBinding(properties, "thinking_mode"));
+  // Exactly one alias. `go_fast` is the Replicate wrapper convention for the
+  // accelerated sampling path, and inventing `fast_mode`/`lightning` beside it
+  // would bind a field no schema here declares — a provider rejection at spend
+  // time, which is the failure the alias list exists to prevent.
+  assign("fastMode", booleanBinding(properties, "go_fast"));
   assign("sequentialMode", enumOrStringBinding(properties, schemas, "sequential_image_generation"));
   assign("coherentSet", booleanBinding(properties, "image_set_mode"));
 

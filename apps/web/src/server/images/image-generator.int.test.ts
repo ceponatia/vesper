@@ -6,6 +6,10 @@ import {
   imageGeneratorDiagnosticCode,
 } from "@/contracts/images/image-generator";
 import {
+  imageGeneratorRunOutputImageIds,
+  imageGeneratorRunOutputsOf,
+} from "@/contracts/images/image-generator-outputs";
+import {
   endTestPool,
   probeIntegrationDb,
   purgeOwnerRows,
@@ -1252,5 +1256,115 @@ describe.skipIf(!ready)("image generator records", () => {
       .where(eq(images.id, survivor?.resultImageId ?? ""))
       .limit(1);
     expect(output).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// More than one image per run
+// ---------------------------------------------------------------------------
+
+/**
+ * A renderer that answers each pass of a fan-out in turn, so the passes can be
+ * told apart — `provider_failed` is a prediction the provider lost.
+ */
+function stubSequencedRenderer(passes: readonly ("ok" | "provider_failed")[]): void {
+  let pass = 0;
+  setImageGeneratorRendererForTesting(async (request) => {
+    captured.push(request);
+    const outcome = passes[pass] ?? "ok";
+    pass += 1;
+    const predictionId = `pred_generator_${String(pass)}`;
+    if (outcome === "provider_failed") {
+      return { ok: false, error: "replicate 503: service unavailable", predictionId };
+    }
+    return { ok: true, image: await testPngBuffer(), predictionId, executedVersionId: EXECUTED_VERSION };
+  });
+}
+
+describe.skipIf(!ready)("image generator multi-image runs", () => {
+  // Falsified against a runner that renders once whatever the count says: every
+  // registered model returns one image per prediction, so N images can only be
+  // N predictions — and against a delete that sweeps `result_image_id` alone,
+  // which would leave two hidden images with nothing in the database pointing
+  // at them.
+  it("renders one prediction per image from a single compiled plan, and deletes every one of them", async () => {
+    stubSequencedRenderer(["ok", "ok", "ok"]);
+    const { id, sink } = await createRun({ controls: { imageCount: 3 } });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(payload.providerOutcome).toBe(true);
+    // ONE compiled intent, handed to the seam three times — object identity,
+    // because a runner that re-planned per image would re-decide the request
+    // (and re-run the pre-spend gates) between paid predictions.
+    expect(captured).toHaveLength(3);
+    expect(captured[1]?.intent).toBe(captured[0]?.intent);
+    expect(captured[2]?.intent).toBe(captured[0]?.intent);
+    // No seed travels: an unseeded fan-out leaves each prediction to the
+    // provider, which is what makes three renders three different pictures.
+    expect(captured.every((request) => request.intent.controls?.seed === undefined)).toBe(true);
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const outputs = imageGeneratorRunOutputsOf({ result: run?.result ?? null });
+    expect(outputs.map((output) => output.index)).toEqual([1, 2, 3]);
+    expect(outputs.map((output) => output.predictionId)).toEqual([
+      "pred_generator_1",
+      "pred_generator_2",
+      "pred_generator_3",
+    ]);
+    const storedIds = imageGeneratorRunOutputImageIds(outputs);
+    expect(storedIds).toHaveLength(3);
+    // The column keeps naming the FIRST output — the thumbnail, the lineage
+    // pointer and the FK-SET-NULL target are unchanged by a fan-out.
+    expect(run?.resultImageId).toBe(storedIds[0]);
+    expect(run?.predictionId).toBe("pred_generator_1");
+    expect(await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId))).toHaveLength(3);
+
+    const result = await deleteImageGeneratorRun(id, ownerId);
+
+    expect(result).toEqual({ deleted: true, outputImagesRemoved: 3 });
+    expect(await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId))).toHaveLength(0);
+  });
+
+  // Falsified against a settle that fails the whole run when any pass failed:
+  // that discards paid images the operator can no longer see, and reports a
+  // dead lane to the breaker on the strength of a provider that answered twice.
+  it("keeps what a partly failed fan-out rendered, and reports the provider alive", async () => {
+    stubSequencedRenderer(["ok", "provider_failed", "ok"]);
+    const { id, sink } = await createRun({ controls: { imageCount: 3 } });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    expect(payload.providerOutcome).toBe(true);
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.status).toBe("succeeded");
+    expect(run?.failureCode).toBeNull();
+    const outputs = imageGeneratorRunOutputsOf({ result: run?.result ?? null });
+    expect(outputs.map((output) => output.failureCode)).toEqual([
+      null,
+      imageGeneratorDiagnosticCode("render_failed"),
+      null,
+    ]);
+    expect(imageGeneratorRunOutputImageIds(outputs)).toHaveLength(2);
+  });
+
+  // Falsified against a runner that drops the seed, or trims the count, to make
+  // the pair work: both spend real money on a request nobody made, and the
+  // seeded arm would render the same picture three times over.
+  it("refuses an explicit seed beside a multi-image count, before spend", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ controls: { seed: 7, imageCount: 3 } });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("failed");
+    expect(payload.providerOutcome).toBeNull();
+    expect(captured).toHaveLength(0);
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("control_refused"));
+    expect(row?.error).toContain("seed 7");
+    expect(codes(sink)).toContain(imageGeneratorDiagnosticCode("control_refused"));
   });
 });

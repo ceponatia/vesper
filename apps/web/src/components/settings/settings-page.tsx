@@ -130,33 +130,26 @@ export function SettingsPage() {
       )}
 
       {/* Admin tools. The page itself re-checks and the API is role-gated, so
-          hiding the link is tidiness rather than access control. */}
+          hiding the link is tidiness rather than access control.
+
+          The three image benches — generator, lab, and model registry — used to
+          be listed here too. They are standalone tools rather than account
+          preferences, so they now hang off the account dropdown beside Engine
+          Comparison (`components/shell/account-menu.tsx`). Their routes are
+          unchanged. Identity trials stays because it is a one-off review screen
+          rather than a tool reached every session. */}
       {me.data?.role === "admin" ? (
         <section className="mt-6 rounded-card border border-ink-600 bg-ink-850 p-5">
           <h2 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Admin</h2>
-          <p className="mt-2 text-sm text-paper-400">
-            <Link href="/settings/image-models" className="underline underline-offset-4">
-              Image models
-            </Link>{" "}
-            — which Replicate models the portrait studio and scene generator can use.
-          </p>
           <p className="mt-2 text-sm text-paper-400">
             <Link href="/settings/identity-trials" className="underline underline-offset-4">
               Identity trials
             </Link>{" "}
             — blinded A/B runs comparing identity-reference strategies before one is promoted.
           </p>
-          <p className="mt-2 text-sm text-paper-400">
-            <Link href="/settings/image-lab" className="underline underline-offset-4">
-              Image lab
-            </Link>{" "}
-            — control fixtures and one-off experiments, for questions a provider schema can&apos;t answer.
-          </p>
-          <p className="mt-2 text-sm text-paper-400">
-            <Link href="/settings/image-generator" className="underline underline-offset-4">
-              Image generator
-            </Link>{" "}
-            — raw prompt-and-model runs against any registered image model, outside the lab&apos;s evidence rules.
+          <p className="mt-3 text-xs text-paper-500">
+            The image generator, image lab, and image model registry moved to your account menu, above Engine
+            Comparison.
           </p>
         </section>
       ) : null}

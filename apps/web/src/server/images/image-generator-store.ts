@@ -14,6 +14,10 @@ import {
   type ImageGeneratorVersionPolicy,
   imageGeneratorVersionPolicySchema,
 } from "@/contracts/images/image-generator";
+import {
+  imageGeneratorRunOutputImageIds,
+  imageGeneratorRunOutputs,
+} from "@/contracts/images/image-generator-outputs";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { db, imageGeneratorRuns } from "../db";
@@ -93,7 +97,7 @@ export function toWireImageGeneratorRun(row: ImageGeneratorRunRow, sink?: Diagno
     sourceRunId: row.sourceRunId,
     versionPolicy: storedVersionRequest(row).mode,
     effectiveRequest: storedMetaRecord(row, "effectiveRequest", sink),
-    result: storedMetaRecord(row, "result", sink),
+    result: storedRunResult(row, sink),
     providerAttempts: storedProviderAttempts(row, sink),
     resultImageId: row.resultImageId,
     failureCode: row.failureCode,
@@ -163,6 +167,23 @@ function storedProviderAttempts(
   const raw = imageMeta(row.meta)["providerAttempts"];
   if (raw === undefined || raw === null) return null;
   return parseOrNull(storedAttemptListSchema, raw, sink, "image_generator_runs.meta.providerAttempts");
+}
+
+/**
+ * What came back, with the run's per-prediction outcomes folded in.
+ *
+ * `outputs` is stored at the TOP of the meta bag, beside `attempt` and
+ * `providerAttempts`, because it is the run's own account of its passes rather
+ * than a detail of any one of them. It travels to the client inside `result`
+ * for one reason: `result` is a loose `z.record` on the wire and a first-class
+ * field would be a contract change, while the record itself is exactly "what
+ * came back". Promoting it to its own wire member later moves this one line.
+ */
+function storedRunResult(row: ImageGeneratorRunRow, sink?: DiagnosticSink): Record<string, unknown> | null {
+  const result = storedMetaRecord(row, "result", sink);
+  const outputs = imageGeneratorRunOutputs(imageMeta(row.meta)["outputs"]);
+  if (outputs.length === 0) return result;
+  return { ...result, outputs };
 }
 
 /** One loose per-run record out of the meta bag, on the same forgiving terms. */
@@ -417,12 +438,28 @@ export interface DeleteImageGeneratorRunsResult {
 }
 
 /**
+ * Every image one run stored: the column that names the first, plus the
+ * siblings a fan-out recorded in `meta.outputs`.
+ *
+ * The column alone is not enough once a run can produce several images. It
+ * names the FIRST — the thumbnail, the lineage pointer, the FK-SET-NULL
+ * target — and the rest are ordinary `generator_output` rows whose only pointer
+ * is the run's own record of its passes. Read leniently: a meta bag too damaged
+ * to describe itself costs the sweep those ids, and the periodic image sweep
+ * reconciles what is left rather than the delete refusing.
+ */
+function runOutputImageIds(row: { resultImageId: string | null; meta: unknown }): string[] {
+  const siblings = imageGeneratorRunOutputImageIds(imageGeneratorRunOutputs(imageMeta(row.meta)["outputs"]));
+  return row.resultImageId === null ? siblings : [row.resultImageId, ...siblings];
+}
+
+/**
  * Hard-delete a set of runs and the renders they produced — outputs FIRST,
  * exactly as the Lab's delete orders it: a row is the only pointer to its
- * hidden image, so a crash between the two steps leaves an FK-nulled pointer
+ * hidden images, so a crash between the two steps leaves an FK-nulled pointer
  * that a re-run cleans, never an orphaned `generator_output` nothing can find.
  * `pending`/`running` rows stay deletable on purpose (a deploy can strand one);
- * an in-flight settle matches nothing and discards its own output.
+ * an in-flight settle matches nothing and discards its own outputs.
  *
  * Owner-scoped in both statements, so a crafted list of ids reaches only the
  * caller's own rows — a foreign id is not an error, it is simply not there.
@@ -436,31 +473,36 @@ export async function deleteImageGeneratorRuns(
   const ids = [...new Set(runIds)];
   if (ids.length === 0) return { deleted: 0, outputImagesRemoved: 0 };
 
+  // `meta` rides along in the same SELECT rather than a second read: the
+  // sibling outputs of a fan-out live nowhere else, and a run deleted between
+  // two reads would take them with it as orphans.
   const owned = await db()
-    .select({ id: imageGeneratorRuns.id, resultImageId: imageGeneratorRuns.resultImageId })
+    .select({
+      id: imageGeneratorRuns.id,
+      resultImageId: imageGeneratorRuns.resultImageId,
+      meta: imageGeneratorRuns.meta,
+    })
     .from(imageGeneratorRuns)
     .where(and(inArray(imageGeneratorRuns.id, ids), eq(imageGeneratorRuns.ownerId, ownerId)));
   if (owned.length === 0) return { deleted: 0, outputImagesRemoved: 0 };
 
   const ownedIds = owned.map((row) => row.id);
-  const seenOutputs = owned.map((row) => row.resultImageId).filter((id): id is string => id !== null);
+  const seenOutputs = [...new Set(owned.flatMap(runOutputImageIds))];
   const outputsRemoved = await deleteOwnedImages(seenOutputs, ownerId, { kind: "generator_output" });
 
   const removed = await db()
     .delete(imageGeneratorRuns)
     .where(and(inArray(imageGeneratorRuns.id, ownedIds), eq(imageGeneratorRuns.ownerId, ownerId)))
-    .returning({ resultImageId: imageGeneratorRuns.resultImageId });
+    .returning({ resultImageId: imageGeneratorRuns.resultImageId, meta: imageGeneratorRuns.meta });
 
-  // A render that settled BETWEEN the read above and this delete attached an
-  // output the read could not see, and its own settle succeeded (the row was
-  // still `running`), so it kept the image. The delete's own RETURNING is the
-  // only view of the rows as they finally stood; without this the image would
-  // survive with nothing pointing at it, invisible to every listing and to the
+  // A render that settled BETWEEN the read above and this delete attached
+  // outputs the read could not see, and its own settle succeeded (the row was
+  // still `running`), so it kept them. The delete's own RETURNING is the only
+  // view of the rows as they finally stood; without this those images would
+  // survive with nothing pointing at them, invisible to every listing and to the
   // sweep, which only reconciles rows whose file vanished.
   const known = new Set(seenOutputs);
-  const late = removed
-    .map((row) => row.resultImageId)
-    .filter((id): id is string => id !== null && !known.has(id));
+  const late = [...new Set(removed.flatMap(runOutputImageIds))].filter((id) => !known.has(id));
   const lateRemoved = await deleteOwnedImages(late, ownerId, { kind: "generator_output" });
   return { deleted: removed.length, outputImagesRemoved: outputsRemoved + lateRemoved };
 }

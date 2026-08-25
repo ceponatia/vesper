@@ -24,12 +24,12 @@ The documentation mirrors the package's `src/features/` modules:
 - [Prompt](prompt.md) — `prompt`
 - [References](references.md) — `multiReference`
 - [Aspect ratio](aspect-ratio.md) — `aspectRatio`
-- [Controls](controls.md) — `seed`, `guidance`, `negativePrompt`
+- [Controls](controls.md) — `seed`, `guidance`, `fastMode`, `negativePrompt`
 - [LoRA](lora.md) — `lora`
 - [Output](output.md) — `outputFormat`, `outputQuality`
 - [Safety](safety.md) — `safetyToggle`
 
-Together these are the ten feature constructors exported from the package root.
+Together these are the eleven feature constructors exported from the package root.
 
 ## Binding is different from composition
 
@@ -59,6 +59,7 @@ These are model/request compatibility checks. They do not replace `@vesper/image
 | `aspectRatio`    | yes       | yes            | yes        |
 | `seed`           | yes       | yes            | yes        |
 | `guidance`       | no        | no             | yes        |
+| `fastMode`       | yes       | yes            | yes        |
 | `negativePrompt` | no        | no             | no         |
 | `lora`           | yes       | yes            | no         |
 | `outputFormat`   | yes       | yes            | yes        |
@@ -66,5 +67,7 @@ These are model/request compatibility checks. They do not replace `@vesper/image
 | `safetyToggle`   | yes       | yes            | yes        |
 
 An exported feature is vocabulary, not proof that a Qwen adapter composes it. `negativePrompt` is the clearest example: the package can represent families that genuinely act on negative conditioning, while Qwen Image 2512 omits the feature because its declared negative field does not steer output.
+
+`fastMode` is the mirror case, and worth reading beside it. All three Qwen adapters compose it because all three endpoints genuinely offer the accelerated sampling path — composition is about what an endpoint can express. Whether Vesper *should* ask for it is a reviewed judgment held elsewhere, and for Qwen Image Edit 2511 that judgment is no.
 
 [Back to `@vesper/image-models`](../README.md).

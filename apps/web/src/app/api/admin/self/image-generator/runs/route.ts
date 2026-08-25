@@ -1,6 +1,10 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { imageGeneratorCreateRunRequestSchema } from "@/contracts/images/image-generator";
+import {
+  emptyImageGeneratorControls,
+  imageGeneratorCreateRunRequestSchema,
+  imageGeneratorImageCount,
+} from "@/contracts/images/image-generator";
 import {
   imageRenderRejection,
   jobCapRejection,
@@ -39,7 +43,10 @@ export const GET = withOwnerAdmin(async (user, req: NextRequest) => {
  * The cost guard runs after body validation and before the row: an admission
  * refusal must not leave a `pending` record that never runs. `outputKind`
  * marks the render a hidden `generator_output`, so admission skips the visible
- * storage reservation while the provider budget still applies.
+ * storage reservation while the provider budget still applies — charged by the
+ * number of images asked for, because every registered model renders one image
+ * per prediction and a run asking for four buys four of them. A budget that
+ * charged one would let a single request spend four times its allowance.
  *
  * The job is started by the ROUTE, never the service: `@/server/api` imports
  * `@/server/images`, so a `startJob` call from the service would close an
@@ -52,7 +59,10 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   const body = await readBody(req, imageGeneratorCreateRunRequestSchema);
   if (!body.ok) return body.response;
 
-  const blocked = await imageRenderRejection(user, req, { outputKind: "generator_output" });
+  const blocked = await imageRenderRejection(user, req, {
+    outputKind: "generator_output",
+    count: imageGeneratorImageCount(body.value.controls ?? emptyImageGeneratorControls()),
+  });
   if (blocked) return blocked;
 
   const created = await createImageGeneratorRun({ ownerId: user.id, request: body.value });

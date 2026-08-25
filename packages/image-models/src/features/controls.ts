@@ -2,7 +2,7 @@ import type { ImageModel } from "@vesper/image-core";
 import type { ImageFeature } from "./image-feature";
 
 /**
- * The three single-binding normalized controls a family can compose.
+ * The four single-binding normalized controls a family can compose.
  *
  * Each one's `isBound` asks the record's control bindings — the slots the probe
  * filled when it resolved this version's field aliases — so an adapter never
@@ -12,7 +12,7 @@ import type { ImageFeature } from "./image-feature";
  * is the truthful answer, and it matches what the control mapper actually does
  * (it sends nothing).
  *
- * Grouped in one module because they are the same shape of fact asked three
+ * Grouped in one module because they are the same shape of fact asked four
  * times; a control that needed genuine logic (see `./lora`) gets its own file.
  */
 
@@ -31,6 +31,25 @@ export function guidanceFeature(): ImageFeature {
     id: "guidance",
     semantic: "Accepts a guidance strength controlling how closely the render follows the prompt.",
     isBound: (model: ImageModel) => model.advancedCapabilities.controls.guidance !== undefined,
+  };
+}
+
+/**
+ * The endpoint offers an accelerated sampling path, and the caller may choose
+ * it or refuse it.
+ *
+ * Unlike the three controls around it, this one is a QUALITY choice wearing a
+ * speed name: the wrappers that expose it turn it on by default, so a family
+ * that composes this feature is saying its renders can be asked to slow down,
+ * not merely to hurry. Vesper's reviewed policy already refuses it for
+ * identity-critical production work; the feature is what lets a bench state
+ * the opposite request instead of reaching for a raw provider value.
+ */
+export function fastModeFeature(): ImageFeature {
+  return {
+    id: "fastMode",
+    semantic: "Accepts an accelerated sampling mode, so a render can trade fidelity for speed or refuse the trade.",
+    isBound: (model: ImageModel) => model.advancedCapabilities.controls.fastMode !== undefined,
   };
 }
 
