@@ -10,7 +10,7 @@ import {
 } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
-import { FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
+import type { RegionExposure } from "@/contracts/items/visibility";
 import { db, images } from "../db";
 import {
   carriesRawProviderBag,
@@ -23,9 +23,17 @@ import {
   UNDECLARED_CONTROL_ROLE,
 } from "./image-lab-render";
 import {
+  REFERENCE_ONLY_SUBJECT_FACTS,
+  type StagedSubjectFacts,
+  stagedSubjectExposure,
+  tryBuildStagedSubjectVisual,
+} from "./image-lab-staged-visual";
+import {
   type ImageLabExperimentRow,
   type ImageLabRunPayload,
   labCharacterNames,
+  labCharacterSheet,
+  stagedSubjectFactsMode,
   storedInputs,
   storedSettings,
   storedStaging,
@@ -68,6 +76,18 @@ import { heuristicLighting } from "./scene";
  * lane states the claim directly — a staged intimate render on the pinned model
  * with the selected LoRA — and lets the library seam refuse it if that model
  * cannot carry it.
+ *
+ * - **The SUBJECT's facts** come from the character's visual digest on the
+ *   default arm (owner ruling 2026-08-25), assembled by
+ *   `image-lab-staged-visual.ts` through the same standalone seam the avatar and
+ *   variant lanes take and under the chat scene lane's own policy. That is the
+ *   third half of the parity claim, and it was missing until this ruling: the
+ *   kind was built name-only, which was already recorded as a deliberate gap
+ *   (`intimate-scene-lora.spec.md`) and became a parity BREAK once the chat lane
+ *   moved its own character fields onto the digest. The `reference_only` arm
+ *   keeps the name-only behavior as an explicit ablation — the only way to ask
+ *   whether the textual anchors help or fight the identity reference — and is
+ *   never reached by degradation, only by an operator choosing it.
  */
 
 // --- staged scenes ---------------------------------------------------------
@@ -228,6 +248,41 @@ export async function runStagedScene(row: ImageLabExperimentRow, sink?: Diagnost
     );
   }
 
+  // The subject's own facts, on the arm this row RECORDED (an absent arm means
+  // the row predates the choice and ran name-only). Placed after the shape
+  // checks above and before the byte reads: a row that declares a fixture this
+  // recipe cannot send is malformed whatever its character sheet says, and those
+  // refusals should keep naming the malformation — but no S3 read or provider
+  // call should be spent on a subject the prompt cannot describe.
+  //
+  // The ablation arm reads NOTHING but the name, which is not an optimization:
+  // its whole claim is that the prompt carries no textual subject facts, and a
+  // profile read it did not use would be a claim nobody could check.
+  let facts: StagedSubjectFacts = REFERENCE_ONLY_SUBJECT_FACTS;
+  if (stagedSubjectFactsMode(row, sink) === "production_parity") {
+    const sheet = await labCharacterSheet(characterId, row.ownerId, sink);
+    if (!sheet) {
+      return await settleFailed(
+        row,
+        labFailure("input_missing"),
+        "this experiment names a character this owner does not have, so the staged act has nobody to be about",
+        sink,
+        { columns },
+      );
+    }
+    const visual = tryBuildStagedSubjectVisual(
+      { characterId, name: subject, profile: sheet.profile, revision: sheet.revision, entry },
+      sink,
+    );
+    // No fall back to the ablation: an arm the operator did not choose would
+    // answer a different question than this row asks, and a bench row that
+    // looked like it ran would corrupt the comparison it exists to feed.
+    if (!visual.ok) {
+      return await settleFailed(row, labFailure("visual_digest_unavailable"), visual.refusal, sink, { columns });
+    }
+    facts = visual.facts;
+  }
+
   const read = await readOrderedInputBytes(inputs, row.ownerId);
   if (!read.ok) {
     return await settleFailed(row, labFailure("input_missing"), read.message, sink, { columns });
@@ -263,7 +318,7 @@ export async function runStagedScene(row: ImageLabExperimentRow, sink?: Diagnost
     // NOT `row.instruction`: the words are the registry's, compiled the way the
     // chat lane compiles them. The recipe's compose strategy prefixes its
     // numbered role bindings to this, exactly as it does for every other recipe.
-    prompt: stagedSceneWords(subject, entry, scene).prompt,
+    prompt: stagedSceneWords(subject, entry, scene, facts).prompt,
     // Straight through, unexamined: the merge with the recipe's own control
     // defaults and every library gate belong to the shared runner, which is what
     // makes this bench's LoRA binding the production one rather than a copy.
@@ -304,22 +359,46 @@ export interface StagedSceneWords {
  * out of frame.
  *
  * Pure, and exported for that reason: the prompt this returns is the parity pin
- * — for the same plan it must be byte-identical to what the chat lane produces,
- * and a test can only assert that against a seam with no database behind it.
+ * — for the same plan and the same subject facts it must be byte-identical to
+ * what the chat lane produces, and a test can only assert that against a seam
+ * with no database behind it.
+ *
+ * `facts` is where the two subject-facts arms differ, and it is the ONLY place
+ * they differ: `production_parity` hands the digest-produced fields in,
+ * `reference_only` hands {@link REFERENCE_ONLY_SUBJECT_FACTS} — four empty
+ * strings, which `characterSpec` turns back into the absent keys the kind
+ * carried before the 2026-08-25 ruling. It defaults to the ablation so that a
+ * caller who states no facts gets the arm that CLAIMS no facts; the runner
+ * always passes an explicit value.
  */
-export function stagedSceneWords(subject: string, entry: SceneStaging, scene: ImageLabStaging): StagedSceneWords {
+export function stagedSceneWords(
+  subject: string,
+  entry: SceneStaging,
+  scene: ImageLabStaging,
+  facts: StagedSubjectFacts = REFERENCE_ONLY_SUBJECT_FACTS,
+): StagedSceneWords {
   const present: ScenePresentCharacter = {
     name: subject,
     // No worn items and no described outfit: a bench states what the staging
     // needs bare and leaves the rest to the reference image, which the prompt's
     // clothing-authority clause already treats as authoritative when nothing
-    // contradicts it.
+    // contradicts it. This holds on BOTH arms — the parity arm describes the
+    // person, never their closet, because the coverage this bench renders is the
+    // staging's premise and a garment list would contradict it.
     wornVisible: [],
     exposure: stagedSubjectExposure(entry),
     // The gate for bare phrasing at all — without it `formatExposure` returns ""
     // and a staging whose template describes bare skin would ride a prompt that
     // never said the subject was undressed.
     wardrobeTracked: true,
+    // The digest-produced fields, or the ablation's empty strings.
+    // `ageAnchor` is deliberately absent on both arms: a staged render inherits
+    // visible age from the identity reference, which is the same call the scene
+    // lane's segment policy makes (`age: "omit"`).
+    appearance: facts.appearance,
+    identityAnchors: facts.identityAnchors,
+    lowerBody: facts.lowerBody,
+    intimateAppearance: facts.intimateAppearance,
   };
   const resolvedPlan = resolveScenePlan(
     {
@@ -369,25 +448,6 @@ export function stagedSceneWords(subject: string, entry: SceneStaging, scene: Im
       allowIntimate: true,
     }),
   };
-}
-
-/**
- * The subject's coverage: bare for exactly the regions this staging's template
- * describes as bare, covered everywhere else.
- *
- * A bench row states its own exposure because there is no wardrobe state here to
- * derive one from, and it states the MINIMUM the template needs rather than
- * undressing the subject wholesale — `astride_viewer_away` needs a bare pelvis
- * and describes a clothed back, and a prompt that stripped her torso as well
- * would contradict the registry's own wording. An entry with no bare regions
- * (`requiresBare: []`) stays fully covered, and the prompt then falls through to
- * "Keep the same outfit as the reference image", which is the honest instruction
- * for a bench that said nothing about clothes.
- */
-function stagedSubjectExposure(entry: SceneStaging): RegionExposure {
-  const exposure: RegionExposure = { ...FULLY_COVERED };
-  for (const region of entry.requiresBare) exposure[region] = "bare";
-  return exposure;
 }
 
 /**

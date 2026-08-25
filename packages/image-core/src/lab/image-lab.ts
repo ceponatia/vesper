@@ -479,6 +479,51 @@ export const imageLabFinishingVariantSchema = z.enum(imageLabFinishingVariants);
 export type ImageLabFinishingVariant = (typeof imageLabFinishingVariants)[number];
 
 /**
+ * Where a `staged_scene` gets the SUBJECT's own facts from — the character
+ * sheet, or nothing but their name (owner ruling 2026-08-25).
+ *
+ * The kind was built name-only: the focal spec carried no appearance, no
+ * identity anchors and no intimate anatomy, and the likeness rode the required
+ * identity reference under the lock. That was a deliberate 2026-08-16 ruling and
+ * it has been reversed for the DEFAULT mode, because a bench whose prompt is
+ * shorter than production's is not benching production's prompt.
+ *
+ * - `production_parity` — the character's visual digest feeds the focal spec's
+ *   character fields, exactly as the chat scene lane feeds them since the
+ *   image-lane consolidation. A verdict then rules on the sentence a real chat
+ *   would have sent for this staging, weights included.
+ * - `reference_only` — the pre-ruling behavior, kept as a deliberate LAB
+ *   ABLATION rather than deleted: it is the only way to ask whether the textual
+ *   anchors help or fight the identity reference, and that question cannot be
+ *   answered by a mode that always sends them.
+ *
+ * An extensible union rather than a boolean, on the repo's forward-compatible
+ * schema preference: "which facts does the subject get" already has obvious
+ * third answers (identity anchors without the digest's morphology; the digest
+ * without the anchors), and a boolean would have to be migrated to ask any of
+ * them.
+ *
+ * The mode is a fact about the RUN, not a preference, so it is resolved at
+ * create and recorded on the row: two runs of one staging that describe the
+ * subject differently are the comparison this vocabulary exists to make, and a
+ * row that did not say which arm it was would make both of them unreadable.
+ */
+export const imageLabSubjectFactsModes = ["production_parity", "reference_only"] as const;
+export const imageLabSubjectFactsModeSchema = z.enum(imageLabSubjectFactsModes);
+export type ImageLabSubjectFactsMode = (typeof imageLabSubjectFactsModes)[number];
+
+/**
+ * The mode a staged row RUNS when its request named none — the create path's
+ * default, applied there so the row records the arm it actually took.
+ *
+ * It is deliberately NOT the fallback for a row that RECORDS none: an absent
+ * mode means the row predates the vocabulary, and every such row ran the
+ * name-only behavior. See `stagedSubjectFactsMode` in the app's lab store for
+ * that reading.
+ */
+export const IMAGE_LAB_DEFAULT_SUBJECT_FACTS: ImageLabSubjectFactsMode = "production_parity";
+
+/**
  * An experiment's lifecycle position. `pending` has spent nothing, `running` has
  * begun charging the image budget, and the two terminal states are settled by
  * the runner — never by the reviewer, whose verdict is a separate field
@@ -537,6 +582,15 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   plain string — see {@link imageLabStagingSchema} — so the lane is where
  *   membership is checked), or an identity image that is not a render of the
  *   character the row names. Both leave the row claiming a render nothing sent.
+ * - `visual_digest_unavailable` — a `staged_scene` running
+ *   {@link imageLabSubjectFactsModes}' `production_parity` could not describe its
+ *   subject from the character's visual digest: the assembly failed, or a
+ *   REQUIRED visual fact resolved no prompt clause. Refused before any provider
+ *   spend, and deliberately not degraded to the `reference_only` ablation — an
+ *   arm the operator did not choose would silently answer a different question
+ *   than the one the row asks, which is the one failure a comparison bench
+ *   cannot survive. One code covers both halves, the way `control_invalid`
+ *   covers a family; the recorded MESSAGE names which of them happened.
  * - `identity_unavailable` — no identity reference could be drawn for the
  *   subject: the finishing pass has nothing to improve the face TOWARD, and a
  *   run without one would be an unconstrained re-edit wearing the name of an
@@ -560,6 +614,7 @@ export const imageLabFailureCodes = [
   "capacity_exceeded",
   "source_invalid",
   "subject_invalid",
+  "visual_digest_unavailable",
   "identity_unavailable",
   "settings_unsupported",
   "preprocessor_output_invalid",
@@ -1004,6 +1059,24 @@ export const imageLabExperimentSchema = z.object({
    */
   staging: imageLabStagingSchema.nullable().catch(null).default(null),
 
+  /**
+   * Which subject-facts arm a `staged_scene` RAN — null on every other kind, and
+   * null on a staged row written before the mode existed.
+   *
+   * Unlike `finishingVariant`, a null here is never "the row took today's
+   * default": the create path resolves the default and WRITES it, precisely so
+   * that absence keeps one unambiguous meaning — this row predates the question,
+   * and therefore ran the name-only behavior. Recording the resolved default is
+   * what keeps the two readings apart; leaving it absent would make a row that
+   * chose parity indistinguishable from one that never had the choice, and the
+   * two produce different prompts.
+   *
+   * It rides the meta bag beside `staging` for the same two reasons — no
+   * migration, and it is a fact about what the experiment IS — and carries
+   * `.catch` because a bag that no longer parses costs the field, never the row.
+   */
+  subjectFacts: imageLabSubjectFactsModeSchema.nullable().catch(null).default(null),
+
   status: imageLabExperimentStatusSchema,
   failureCode: z.string().min(1).max(120).nullable().default(null),
   verdict: imageLabVerdictSchema.nullable().default(null),
@@ -1088,7 +1161,9 @@ export const imageLabExperimentListSchema = z.array(imageLabExperimentSchema).ca
  *   only be recorded and never sent.
  * - no other kind carries a staging. A staging on a controlled scene would name
  *   an act its runner never compiles, leaving a row that claims a staged render
- *   and an image that is not one.
+ *   and an image that is not one. A `subjectFacts` mode is refused everywhere
+ *   else on exactly the same terms: no other kind's runner reads one, so a
+ *   stored mode would describe an arm the render never ran.
  * - a `finishing_pass` names its source experiment and nothing else: no
  *   subject, no ordered inputs, no control. Every one of those is INHERITED or
  *   RESOLVED — the subject from the source (so the two arms of a comparison can
@@ -1132,6 +1207,12 @@ export const imageLabCreateExperimentRequestSchema = z
     finishingVariant: imageLabFinishingVariantSchema.optional(),
     /** The staging a `staged_scene` benches. Required there, refused everywhere else. */
     staging: imageLabStagingSchema.optional(),
+    /**
+     * Where a `staged_scene` gets its subject's facts. Absent means
+     * {@link IMAGE_LAB_DEFAULT_SUBJECT_FACTS}, which the create path resolves and
+     * records; refused on every other kind, whose runners read none.
+     */
+    subjectFacts: imageLabSubjectFactsModeSchema.optional(),
     settings: imageLabSettingsSchema.optional(),
   })
   .superRefine((request, ctx) => {
@@ -1281,12 +1362,21 @@ export const imageLabCreateExperimentRequestSchema = z
           message: "a staged scene sends no control fixture; its structure is the staging's own wording, and the recipe has no slot to send one under",
         });
       }
-    } else if (request.staging !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["staging"],
-        message: `only a staged scene benches a staging; a ${request.kind} runner compiles none, so the row would claim an act its render never staged`,
-      });
+    } else {
+      if (request.staging !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["staging"],
+          message: `only a staged scene benches a staging; a ${request.kind} runner compiles none, so the row would claim an act its render never staged`,
+        });
+      }
+      if (request.subjectFacts !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["subjectFacts"],
+          message: `only a staged scene chooses where its subject's facts come from; a ${request.kind} runner reads none, so the row would record an arm its render never ran`,
+        });
+      }
     }
     if (request.kind === "baseline_portrait" && request.characterId === undefined) {
       ctx.addIssue({

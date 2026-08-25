@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   baseImageModelSlug,
   compileReferenceRolePrompt,
+  IMAGE_LAB_DEFAULT_SUBJECT_FACTS,
   IMAGE_LAB_MAX_INPUTS,
   type ImageLabControl,
   type ImageLabControlledKind,
@@ -15,6 +16,8 @@ import {
   imageLabFinishingInstruction,
   type ImageLabInput,
   imageLabProbeInstruction,
+  type ImageLabSubjectFactsMode,
+  imageLabSubjectFactsModes,
   type ImageReferenceRole,
   isImageLabControlledKind,
   isImageLabFinishableKind,
@@ -47,6 +50,8 @@ import {
   imageLabStagingCameraSummary,
   imageLabStagingOptionLabel,
   imageLabStagingViewerPartsSummary,
+  imageLabSubjectFactsHint,
+  imageLabSubjectFactsLabel,
 } from "./image-lab-copy";
 import {
   ImageChoiceGrid,
@@ -442,6 +447,12 @@ export function ImageLabExperimentForm({
   const [stagingSetting, setStagingSetting] = useState("");
   const [stagingLighting, setStagingLighting] = useState("");
   const [stagingTimeOfDay, setStagingTimeOfDay] = useState("");
+  // Which arm describes the subject. Seeded from the contract's own default
+  // rather than a literal, and SENT explicitly on every staged run: the record
+  // has to name the arm even when the operator took the default, because the
+  // two arms compile different prompts and a silent row could not be read back
+  // as either one.
+  const [subjectFacts, setSubjectFacts] = useState<ImageLabSubjectFactsMode>(IMAGE_LAB_DEFAULT_SUBJECT_FACTS);
   // The staged kind's optional place imagery, from the general picker — this
   // kind refuses a chat outright, so no scene-scoped list could ever feed it.
   const [stagedLocationImageId, setStagedLocationImageId] = useState<string | null>(null);
@@ -977,6 +988,12 @@ export function ImageLabExperimentForm({
               ...(stagingLighting.trim() === "" ? {} : { lighting: stagingLighting.trim() }),
               ...(stagingTimeOfDay === "" ? {} : { timeOfDay: stagingTimeOfDay }),
             },
+            // Always stated, never left to the server's default — the opposite
+            // rule to `finishingVariant` above, and for the opposite reason: an
+            // absent subject-facts mode on a stored row means "written before
+            // this question existed", which is the ablation. A run that took
+            // today's default has to say so or it becomes unreadable.
+            subjectFacts,
             // The same rule the finishing pass sends its weights under, and the
             // same shape: a library id and the scale, never a locator. No
             // `finishingVariant` — no other kind's runner reads one, and the
@@ -1455,8 +1472,9 @@ export function ImageLabExperimentForm({
                   <p className="mt-2 text-xs text-paper-500">
                     {"The camera is the staging's own and overrides anything a composer would have proposed — the "}
                     {"geometry is entailed by the act. The runner compiles the rest of the prompt around this "}
-                    {"sentence exactly as the chat lane does: appearance, setting, lighting, and the shot line. That "}
-                    {"parity is what makes this a bench, so no words are typed on this form."}
+                    {"sentence exactly as the chat lane does: the setting, the lighting, the shot line, and — on the "}
+                    {"parity arm below — the character's own description. That parity is what makes this a bench, so "}
+                    {"no words are typed on this form."}
                   </p>
                 </>
               )}
@@ -1501,6 +1519,25 @@ export function ImageLabExperimentForm({
                 )}
               </Field>
             </div>
+
+            <Field
+              label="Subject facts"
+              hint={imageLabSubjectFactsHint(subjectFacts)}
+            >
+              {(id) => (
+                <Select
+                  id={id}
+                  value={subjectFacts}
+                  onChange={(e) => setSubjectFacts(e.target.value as ImageLabSubjectFactsMode)}
+                >
+                  {imageLabSubjectFactsModes.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {imageLabSubjectFactsLabel(mode)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
 
             <OwnedImagePicker
               label="Location reference (optional)"

@@ -69,9 +69,10 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   [retirement spec](image-lane-consolidation.spec.retirement.md) — consolidate
   every character-bearing image route onto semantic visual facts, then remove
   the duplicated appearance, reference-numbering, and prompt-budget machinery;
-  Stages 1–3 are in — the avatar and cast-of-one scene routes now render from
-  the digest with provenance on the row — and moving the remaining
-  character-bearing lanes (Stage 4) is the next step.
+  Stages 1–4 are in — every character-bearing lane, including multi-character
+  scenes, portrait edits, the chat-look anchor and the staged bench, now renders
+  from the digest with provenance on the row — and collapsing the two scene
+  assemblers into one (Stage 5) is the next step.
 
 - **Model-aware image prompt programs** —
   [plan](model-aware-image-prompts.plan.md) ·

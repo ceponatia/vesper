@@ -13,6 +13,7 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { imageMeta, purgeImagesWhere, readImageBytes, runImagePipeline } from "./assets";
+import { buildChatLookSegments, type ChatLookVisualCut } from "./chat-look-segments";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
@@ -29,7 +30,11 @@ import { PORTRAIT_IDENTITY_LOCK } from "./prompts-variant";
  *   stop arguing the edit model out of repainting the reference's clothes. Only
  *   the LATEST look is kept (ruled); the cache pointer is the images table
  *   itself (`meta.lookKey` on the newest ready row) — no state column, so a
- *   regenerate rollback can never desync pointer from asset.
+ *   regenerate rollback can never desync pointer from asset. Since Stage 4 of
+ *   image-lane-consolidation its prompt is assembled by
+ *   `buildChatLookSegments` — the committed visual digest's morphology and
+ *   distinctive marks, plus this lane's three route-owned sentences — rather
+ *   than by `buildChatLookPrompt`.
  * - **`chat_place`**: a text-to-image establishing shot of the current
  *   scene-memory place, minted lazily from its agent-written sketch on the
  *   first render there; feeds the chat lane's multi-edit rung as the second
@@ -83,6 +88,13 @@ export function chatLookKey(input: {
  * The identity-locked look-edit instruction: same person, new outfit, neutral
  * framing. Age is inherited from the portrait reference; neither chronological
  * nor apparent-age fields are accepted by this scene-supporting render.
+ *
+ * RETAINED BUT UNCALLED BY PRODUCTION since the Stage 4 cutover
+ * (image-lane-consolidation.plan.md): `renderChatLookImage` now assembles its
+ * prompt from `buildChatLookSegments`, which carries these three sentences as
+ * route-owned segments beside the visual digest's facts. This builder stays in
+ * the tree as the frozen comparison baseline (`prompt-freeze.test.ts`) exactly
+ * as `buildAvatarPrompt` did, and Stage 6 deletes both.
  */
 export function buildChatLookPrompt(input: { outfit: string; outfitExposed: boolean }): string {
   const outfit = input.outfit.trim();
@@ -152,6 +164,23 @@ export interface RenderChatLookInput {
   lookKey: string;
   outfit: string;
   outfitExposed: boolean;
+  /**
+   * This character's committed chat cut, as the shared factory
+   * (`chatVisualStateShadowInput`) hands it over — the Stage 4 digest source.
+   *
+   * OPTIONAL, and the absence is a real production path: the caller could not
+   * load a `chat_participants` row for this subject (corrupt membership), and
+   * the mint degrades to the route-owned segments rather than refusing a
+   * wardrobe anchor over a continuity id. Every pre-cutover call site (the
+   * identity-render-lane tests, the lab baselines) supplies none.
+   */
+  visual?: ChatLookVisualCut;
+  /**
+   * The canonical garment-coverage readout — the same `wardrobe.exposure` the
+   * look key hashed. Passed rather than recomputed so the anchor's coverage
+   * reads and its cache key can never disagree.
+   */
+  exposure?: RegionExposure;
   sink?: DiagnosticSink;
 }
 
@@ -197,7 +226,10 @@ async function chatLookIdentity(
  *
  * Both anchor lanes check their preconditions BEFORE reserving anything (a
  * keyless or demo chat leaves no row at all) and log no event — the two
- * differences from the avatar/entity shape, both deliberate.
+ * differences from the avatar/entity shape, both deliberate. The Stage 4 digest
+ * refusal joins that set rather than becoming a `failedPrecondition`: this job
+ * re-fires on every outfit and appearance change, so a reserving refusal would
+ * accumulate one failed row per change for every ineligible chat, forever.
  *
  * Both lanes also DRAIN their diagnostics into the process log (the scene
  * lane's collector pattern): the production caller is a detached job with no
@@ -215,10 +247,22 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     // having a control of its own.
     const resolved = await resolveImageProfileForTask("chat_look", null, sink);
     if (!resolved) return null;
+    // The Stage 4 segment assembly runs BEFORE the identity pack is consulted:
+    // it is pure and free, and refusing here costs no owned byte reads. Its
+    // refusal has this lane's shape — no row, no mint, retry on the next
+    // outfit or appearance change.
+    const assembly = buildChatLookSegments({
+      outfit: input.outfit,
+      outfitExposed: input.outfitExposed,
+      ...(input.visual === undefined ? {} : { shadow: input.visual }),
+      ...(input.exposure === undefined ? {} : { exposure: input.exposure }),
+      sink,
+    });
+    if (assembly.refusal !== null) return null;
     const identity = await chatLookIdentity(input, resolved, sink);
     if (!identity) return null;
     const model = resolved.model;
-    const prompt = buildChatLookPrompt({ outfit: input.outfit, outfitExposed: input.outfitExposed });
+    const prompt = assembly.prompt;
     const { imageId, status } = await runImagePipeline({
       asset: {
         ownerId: input.userId,
@@ -231,13 +275,22 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           lookKey: input.lookKey,
           model: `replicate/${model.slug}`,
           identityReferences: identity.provenance,
+          // The digest provenance lands at RESERVE time beside the key, so the
+          // visual moment that shaped the prompt survives a failed render — the
+          // avatar and scene lanes record it the same way.
+          ...(assembly.digestMeta ?? {}),
         },
       },
       produce: async () => {
         const edit = await renderImageIntent(
           {
             profile: resolved,
+            // `instruction_edit` passes the base prompt through unchanged and
+            // `resolveIntentPrompt` makes segments authoritative, so the
+            // segments ARE the payload here; `prompt` is the same segments
+            // compiled, stored on the row and carried as the string form.
             prompt,
+            promptSegments: assembly.segments,
             references: identity.references,
             target: { aspectRatio: IMAGE_TARGET_ASPECT },
           },

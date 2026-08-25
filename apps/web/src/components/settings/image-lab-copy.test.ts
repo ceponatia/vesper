@@ -7,6 +7,7 @@ import {
   imageLabFailureCodes,
   imageLabOutcomeDropReasons,
   imageLabStagedSceneVerdicts,
+  imageLabSubjectFactsModes,
   imageLabTwoCharacterVerdicts,
   imageLabVerdictOptions,
   imageLabVerdicts,
@@ -21,6 +22,8 @@ import {
   imageLabStagingCameraSummary,
   imageLabStagingOptionLabel,
   imageLabStagingViewerPartsSummary,
+  imageLabSubjectFactsHint,
+  imageLabSubjectFactsLabel,
   imageLabVerdictChip,
   imageLabVerdictHint,
   imageLabVerdictLabel,
@@ -92,6 +95,30 @@ describe("staging copy", () => {
       // lands, so it must be saying something.
       expect(imageLabStagingViewerPartsSummary(staging)).not.toBe("none");
     }
+  });
+});
+
+/**
+ * The staged bench's two subject-facts arms produce measurably different
+ * prompts, and the operator picks between them from these words alone. The one
+ * thing this copy must never do is present them as two equally ordinary styles:
+ * `reference_only` is a deliberately reduced run whose result is meaningless on
+ * its own, and an option that did not say so would be picked by accident.
+ */
+describe("subject-facts copy", () => {
+  it("names and explains every arm without leaking its identifier", () => {
+    for (const mode of imageLabSubjectFactsModes) {
+      expect(imageLabSubjectFactsLabel(mode)).not.toBe(mode);
+      expect(imageLabSubjectFactsHint(mode).length).toBeGreaterThan(40);
+    }
+    const labels = imageLabSubjectFactsModes.map(imageLabSubjectFactsLabel);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("labels the reduced arm as an ablation, in both the option and the hint", () => {
+    expect(imageLabSubjectFactsLabel("reference_only").toLowerCase()).toContain("ablation");
+    expect(imageLabSubjectFactsHint("reference_only")).toContain("beside");
+    expect(imageLabSubjectFactsLabel("production_parity").toLowerCase()).not.toContain("ablation");
   });
 });
 

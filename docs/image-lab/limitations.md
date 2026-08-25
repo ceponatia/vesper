@@ -12,7 +12,7 @@ No lab experiment kind means simply “run this registered model with this promp
 - `controlled_portrait` and `controlled_scene` require identity plus a control fixture.
 - `two_character_scene` requires a chat and two bound identities.
 - `finishing_pass` requires a prior finishable experiment.
-- `staged_scene` requires a character, an identity reference, and registry-owned staging wording.
+- `staged_scene` requires a character, an identity reference, and registry-owned staging wording, and describes the subject from that character's visual state unless the operator picks the name-only ablation.
 - `baseline_portrait` and `baseline_scene` reproduce production profile selection.
 
 ## Baseline model selection follows production
@@ -26,6 +26,10 @@ No lab experiment kind means simply “run this registered model with this promp
 ## Controlled Mode is recorded metadata
 
 Controlled experiments can store one of four modes: `identity_priority`, `controlled_composition`, `balanced`, or `style_priority`. No runner or recipe builder reads the stored mode to change a render request, so the create form does not offer it; historic stored values remain visible on the experiment detail view.
+
+## A staged parity prompt can outgrow the edit prompt limit
+
+Describing the subject adds roughly 500–700 characters to a staged prompt, so a character with a rich sheet can push one past the 1,500-character edit limit. A bench prompt has little the budgeter can shrink, so the clamp cuts the tail — the mood, lighting, and quality sentences — before it cuts anything the staging depends on. Production clamps a chat scene identically, so the parity claim still holds; the practical effect is that the most detailed characters buy the least room for style wording. The name-only ablation is unaffected.
 
 ## Repeatability controls are limited
 

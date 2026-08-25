@@ -264,6 +264,32 @@ export {
   type AvatarSegmentAssemblyInput,
 } from "./avatar-segments";
 export {
+  buildStandaloneSubjectVisual,
+  portraitPerception,
+  type StandaloneSubjectVisual,
+  type StandaloneSubjectVisualInput,
+} from "./standalone-subject-visual";
+export {
+  buildVariantSegments,
+  VARIANT_EDIT_CAMERA,
+  VARIANT_EDIT_CAMERA_ID,
+  VARIANT_SEGMENT_POLICY,
+  type VariantSegmentAssembly,
+  type VariantSegmentAssemblyInput,
+} from "./variant-segments";
+export {
+  buildChatLookSegments,
+  CHAT_LOOK_CAMERA,
+  CHAT_LOOK_CAMERA_ID,
+  CHAT_LOOK_SEGMENT_POLICY,
+  CHAT_LOOK_VISUAL_DIGEST_UNAVAILABLE,
+  CHAT_LOOK_VISUAL_REQUIRED_MISSING,
+  VISUAL_CLAUSE_OMIT_CHAT_LOOK_CACHE,
+  type ChatLookSegmentAssembly,
+  type ChatLookSegmentInput,
+  type ChatLookVisualCut,
+} from "./chat-look-segments";
+export {
   VISUAL_CLAUSE_OMIT_CURATED,
   VISUAL_CLAUSE_OMIT_ELIDED,
   VISUAL_CLAUSE_OMIT_INAPPLICABLE,

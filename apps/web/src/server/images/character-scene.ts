@@ -26,11 +26,11 @@ import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scen
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene } from "./scene";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
-import { applySceneSubjectVisual, visualStateNote } from "./scene-subject-visual";
+import { applySceneCastVisual, visualStateNote, type SceneCastVisualSubject } from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
-// The meter note moved to the cast-1 cutover module with WP-C; the legacy
-// cast ≥2 path below and existing consumers keep this import surface.
+// The meter note moved to the cutover module with WP-C; the legacy no-cut path
+// below and existing consumers keep this import surface.
 export { visualStateNote } from "./scene-subject-visual";
 
 export const DEFAULT_CHAT_ROOM =
@@ -104,29 +104,33 @@ export interface RenderCharacterSceneInput {
    */
   composerModel?: string;
   /**
-   * The single subject's committed chat cut as a camera-less shadow input
-   * (image-lane-consolidation Stage 3, WP-C) — the queue builds it through
-   * `chatVisualStateShadowInput` when the effective cast is one person. When
-   * present (and matching the lone cast member), the visual image digest — with
-   * the plan's committed camera bound into its one selection pass — becomes the
-   * character-fact source for the focal spec, and a digest that cannot be built
-   * fails the row before provider spend. Absent (pre-digest callers: tests, the
-   * lab baseline), the legacy field production stands.
+   * Each drawn subject's committed chat cut as a camera-less shadow input, keyed
+   * by `characterId` (image-lane-consolidation Stage 4) — the queue builds one
+   * per present cast member through `chatVisualStateShadowInput`. For every
+   * member with an entry (whose cut names them), the visual image digest — with
+   * the plan's committed camera bound into that subject's one selection pass —
+   * becomes the character-fact source for their plan spec, focal or not, and a
+   * digest that cannot be built fails the row before provider spend. A member
+   * with no entry keeps the legacy `presentCharacter` production, which is also
+   * what every pre-digest caller (tests, the lab baseline) gets by passing
+   * nothing at all.
    */
-  subjectVisual?: Omit<VisualStateShadowInput, "sink" | "camera">;
+  subjectVisuals?: ReadonlyMap<string, Omit<VisualStateShadowInput, "sink" | "camera">>;
   sink?: DiagnosticSink;
 }
 
 /**
  * One cast member's composer entry — everything the shot needs about that person.
  *
- * LEGACY field production (image-lane-consolidation Stage 3 scope ruling): for
- * an effective cast of ONE with a supplied `subjectVisual` cut, the appearance,
- * identity-anchor and reveal fields written here are replaced after the plan
- * resolves by `applySceneSubjectVisual` — the digest-sourced production with the
- * committed camera bound in. A cast of 2+ keeps exactly this code path until
- * Stage 4. The composer prompt reads none of those fields, so the pre-plan
- * values never steer the shot either way.
+ * LEGACY field production (image-lane-consolidation Stage 4): for any member
+ * with a supplied `subjectVisuals` cut, the appearance, identity-anchor and
+ * reveal fields written here are replaced after the plan resolves by
+ * `applySceneCastVisual` — the digest-sourced production with the committed
+ * camera bound in, run once per subject. This path survives for the members a
+ * caller supplies NO cut for: a corrupt participant row (the queue's documented
+ * degradation), and every pre-digest caller — the tests and the lab baseline,
+ * which have no chat to cut from. The composer prompt reads none of those
+ * fields, so the pre-plan values never steer the shot either way.
  */
 function presentCharacter(member: SceneCastMember): ScenePresentCharacter {
   const exposure: RegionExposure =
@@ -258,33 +262,38 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   });
   let plan = await composeSceneSpec({ ...context, sink, composerModel: input.composerModel });
 
-  // The cast-1 digest cutover (image-lane-consolidation Stage 3, WP-C): applied
-  // AFTER the plan resolves because the committed scene camera is `plan.camera`
-  // and it must enter the digest's ONE selection pass. Cast ≥2 keeps the legacy
-  // `presentCharacter` production untouched (Stage 4), and a selfie's forced
-  // single-subject cast rides the new path. A refusal here reaches the row as a
-  // failed precondition — reserved, failed, never sent to a provider.
+  // The cast digest cutover (image-lane-consolidation Stage 4): applied AFTER
+  // the plan resolves because the committed scene camera is `plan.camera` and it
+  // must enter EACH subject's ONE selection pass. Every present member with a
+  // supplied cut goes through it — the focal and everyone else, through the one
+  // shared field production — and a selfie's forced single-subject cast is just
+  // the one-member case of the same loop. A refusal reaches the row as a failed
+  // precondition: reserved, failed, never sent to a provider.
+  //
+  // A member whose cut names somebody else is skipped rather than refused, and
+  // keeps the legacy fields: a mis-keyed cut is a caller bug about ONE person,
+  // and losing the whole picture over it would be the worse degradation.
   let visualRefusal: string | null = null;
   let visualStateMeta: Record<string, unknown> | undefined;
-  const soleMember = cast.length === 1 ? cast[0] : undefined;
-  if (soleMember !== undefined && input.subjectVisual !== undefined) {
-    if (input.subjectVisual.subjectId !== soleMember.characterId) {
+  const castVisuals: SceneCastVisualSubject[] = [];
+  for (const member of cast) {
+    const shadow = input.subjectVisuals?.get(member.characterId);
+    if (shadow === undefined) continue;
+    if (shadow.subjectId !== member.characterId) {
       sink.push(
         diag("warn", "images.scene_render.visual_subject_mismatch", "subject visual cut names a different character — digest skipped", {
-          context: { cut: input.subjectVisual.subjectId, cast: soleMember.characterId },
+          context: { cut: shadow.subjectId, cast: member.characterId },
         }),
       );
-    } else {
-      const applied = applySceneSubjectVisual({
-        plan,
-        member: soleMember,
-        shadow: input.subjectVisual,
-        sink,
-      });
-      plan = applied.plan;
-      visualRefusal = applied.refusal;
-      visualStateMeta = applied.digestMeta;
+      continue;
     }
+    castVisuals.push({ member, shadow });
+  }
+  if (castVisuals.length > 0) {
+    const applied = applySceneCastVisual({ plan, members: castVisuals, sink });
+    plan = applied.plan;
+    visualRefusal = applied.refusal;
+    visualStateMeta = applied.digestMeta;
   }
 
   // The chat's stored scene-model pick, resolved against the profile registry. A

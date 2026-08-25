@@ -62,12 +62,19 @@ snapshot and selection primitives; this spec owns only their image-lane use.
 - Digest→segments: built 2026-08-21 under this stage, shared by both lanes —
   `buildVisualSubjectSegments` (`contracts/images/visual-segments.ts`) with a
   per-task policy (`age` state/omit, `frame` waist_up/full_figure, `intimate`
-  never/when_bare) plus the lane-neutral clause resolver and its
+  never/when_bare, and — added for Stage 4's edit lanes — `exposure`
+  state/omit) plus the lane-neutral clause resolver and its
   catalog-derived residue set (`server/images/visual-fact-clauses.ts`). A
   cataloged distinctive mark is stated exactly once per lane; the residue set
   is the single owner of which attribute ids stay route-phrased.
-- Remaining consumers: multi-character scenes, variants/edits, chat look/selfie
-  mint, and staged renders (Stage 4).
+- Remaining consumers: none. Stage 4 (built 2026-08-25) moved multi-character
+  scenes, variants/edits, the chat-look mint and the Image Lab's staged bench
+  onto the digest, and added `buildStandaloneSubjectVisual`
+  (`server/images/standalone-subject-visual.ts`) as the shared no-chat assembly
+  behind the avatar, variant and staged-bench lanes. Every one of those lanes
+  records `meta.visualState` at reserve time; a multi-subject scene merges its
+  per-subject records into one. Per-lane detail lives in
+  [the prompt spec](image-lane-consolidation.spec.prompts.md).
 
 ## Ownership boundary
 

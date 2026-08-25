@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   affordanceSubjectId,
   type CharacterProfile,
@@ -242,9 +242,9 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
             attributeOverlays: state.attributeOverlays,
             lookKey,
           },
-          // Kept beside the member for the cast-1 visual cut below — the SAME
-          // state and wardrobe resolution the member's fields came from, never
-          // a second load or seed that could disagree with them.
+          // Kept beside the member for this person's visual cut below — the
+          // SAME state and wardrobe resolution the member's fields came from,
+          // never a second load or seed that could disagree with them.
           state,
           wardrobe,
         };
@@ -252,51 +252,65 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     );
     const cast = castDetail.map((detail) => detail.member);
 
-    // The cast-1 digest cut (image-lane-consolidation Stage 3, WP-C): when one
-    // subject will be drawn — a lone present member, or any selfie — hand the
-    // render their committed chat cut as a camera-less shadow input through the
-    // SHARED factory the inspector preview uses. The render binds the resolved
-    // plan's committed camera into the one selection pass and produces the
-    // focal spec's character fields from the digest; a cast of 2+ passes
-    // nothing and keeps the legacy field production untouched (Stage 4).
-    let subjectVisual: Omit<VisualStateShadowInput, "sink" | "camera"> | undefined;
-    const sole = cast.length === 1 ? castDetail[0] : undefined;
-    if (sole !== undefined) {
-      const [participant] = await db()
-        .select({ memoryGroupId: chatParticipants.memoryGroupId })
-        .from(chatParticipants)
-        .where(
-          and(eq(chatParticipants.chatId, args.chatId), eq(chatParticipants.characterId, sole.member.characterId)),
-        )
-        .limit(1);
-      if (participant) {
-        subjectVisual = chatVisualStateShadowInput({
-          characterId: sole.member.characterId,
-          memoryGroupId: participant.memoryGroupId,
-          // A job-local cut id: the render realizes the cut it assembles, so
-          // the digest's `forCutId` gate matches by construction and the row's
-          // provenance names the moment it was asked over.
-          cutId: `chat_scene:${anchorMessageId ?? args.chatId}`,
+    // The cast digest cut (image-lane-consolidation Stage 4): hand the render
+    // EVERY drawn member's committed chat cut as a camera-less shadow input,
+    // through the SHARED factory the inspector preview uses. The render binds
+    // the resolved plan's committed camera into each subject's own selection
+    // pass and produces that person's plan-spec fields from their digest — one
+    // field production for the focal and the rest alike.
+    //
+    // The continuity ids come from ONE query over the whole cast rather than a
+    // lookup per person: a full room would otherwise pay a round trip per face
+    // on the tail of a turn that has already spent its budget.
+    const participants = await db()
+      .select({ characterId: chatParticipants.characterId, memoryGroupId: chatParticipants.memoryGroupId })
+      .from(chatParticipants)
+      .where(
+        and(
+          eq(chatParticipants.chatId, args.chatId),
+          inArray(
+            chatParticipants.characterId,
+            castDetail.map((detail) => detail.member.characterId),
+          ),
+        ),
+      );
+    const memoryGroups = new Map(participants.map((row) => [row.characterId, row.memoryGroupId]));
+    // A job-local cut id, one for the whole cast: the render realizes the cuts
+    // it assembles, so the digest's `forCutId` gate matches by construction and
+    // the row's provenance names the moment it was asked over.
+    const cutId = `chat_scene:${anchorMessageId ?? args.chatId}`;
+    const subjectVisuals = new Map<string, Omit<VisualStateShadowInput, "sink" | "camera">>();
+    for (const detail of castDetail) {
+      const memoryGroupId = memoryGroups.get(detail.member.characterId);
+      if (memoryGroupId === undefined) {
+        // A structurally guaranteed row is missing — corrupt membership.
+        // Degrade to the legacy field production FOR THIS MEMBER (a degraded
+        // default over a failed turn) rather than refusing over a continuity
+        // id — and without taking the rest of the cast's digests down with it.
+        log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
+          chatId: args.chatId,
+          characterId: detail.member.characterId,
+        });
+        continue;
+      }
+      subjectVisuals.set(
+        detail.member.characterId,
+        chatVisualStateShadowInput({
+          characterId: detail.member.characterId,
+          memoryGroupId,
+          cutId,
           cut: {
-            profile: sole.member.profile,
-            // The stored-or-seeded state the member's own fields resolved from
+            profile: detail.member.profile,
+            // The stored-or-seeded state this member's own fields resolved from
             // above, and the wardrobe resolution that rode it.
-            state: sole.state,
-            scenario: scenario ?? seedChatScenario(sole.member.profile),
-            wardrobe: sole.wardrobe,
+            state: detail.state,
+            scenario: scenario ?? seedChatScenario(detail.member.profile),
+            wardrobe: detail.wardrobe,
             owner: args.userId,
           },
           sink: collected,
-        });
-      } else {
-        // A structurally guaranteed row is missing — corrupt membership.
-        // Degrade to the legacy field production (a degraded default over a
-        // failed turn) rather than refusing over a continuity id.
-        log.warn("chat_scene", "no participant row for scene subject — visual digest skipped", {
-          chatId: args.chatId,
-          characterId: sole.member.characterId,
-        });
-      }
+        }),
+      );
     }
     // What the chat's typed movements have actually COMMITTED about each cast member and the
     // player (scene-composition.plan.md slice 3) — posture, facing, distance, touch. A
@@ -352,7 +366,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
           place: place?.imageId ? { name: place.name, imageId: place.imageId } : undefined,
           sceneModel: scenario?.sceneModel,
           composerModel,
-          subjectVisual,
+          subjectVisuals,
         }),
       }),
     });
