@@ -139,7 +139,7 @@ Delivery state of what this work owns:
 | Character-authored movement, start, update         | Built; authority on hold pending reviewed evidence      |
 | Foot mechanics                                     | Built as fixtures; deliberately unregistered            |
 | Contact effects                                    | First proof (pressure mark) built 2026-08-22, switch off |
-| Material on skin — mud, blood, dust, cosmetics     | Live and ungated since 2026-08-25                       |
+| Material on skin — mud, blood, dust, cosmetics     | Merged 2026-08-25, ungated; not yet seen on a real turn  |
 | Intimate-region mechanics                          | Not built; blocked on several owners                    |
 
 ---
@@ -811,14 +811,24 @@ and the sensory owners remain.
 
 15. Expand the body-surface owner to cover surface material and temporary
     condition — deposits, residue, and contact marks beside the existing wetness
-    — rather than creating owners inside contact. Status: complete — 2026-08-25.
-    A character can now carry mud, blood, dust, food, paint or cosmetics on a
-    named part of their body, the continuity leg records it arriving and being
-    washed off, and the narrator can be told about it. It is deliberately
-    ungated: material on skin is ordinary body state, and hiding it behind the
-    contact switch would have made it unrememberable for the continuity system
-    that has nothing to do with contact. Surface products are the one part of
-    the ruling still unbuilt.
+    — rather than creating owners inside contact. Status: built 2026-08-25,
+    merged to `main` — awaiting a first live observation. A character can carry
+    mud, blood, dust, food, paint or cosmetics on a named part of their body,
+    the continuity leg is asked to record it arriving and being washed off, and
+    the narrator can be told about it. It is deliberately ungated: material on
+    skin is ordinary body state, and hiding it behind the contact switch would
+    have made it unrememberable for the continuity system that has nothing to do
+    with contact.
+
+    Being ungated is also why the remaining check matters. There is no flag to
+    turn on, so the path goes live for every chat on the next deploy — and
+    nothing has exercised it outside the test suite. What is unproven is
+    specifically the model half: the extraction leg has never actually been
+    asked for a `surfaceDeposits` list on a real exchange, so nobody has seen
+    whether a narrator that dirties a character's hands produces one. The owner
+    check is a single deployed exchange that puts material on a character and a
+    later one that washes it off. Surface products are the one part of the
+    ruling still unbuilt.
 16. Add effect transactions: the temporary pressure mark first, conserved
     transfer second, with garment changes delegated to wardrobe. Status: in
     progress — the pressure-mark transaction was built and proven 2026-08-22

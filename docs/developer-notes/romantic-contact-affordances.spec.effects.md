@@ -1,9 +1,10 @@
 # Romantic contact affordances — observations, effects, and sensory routing
 
 Status: **implementation stages 1–7 built — 1–6 on 2026-08-22, the deposits
-owner (stage 7) on 2026-08-25. The effect-commit leg waits on its default-off
-switch (`CHAT_CONTACT_EFFECTS`); the deposits owner is deliberately ungated.
-Stages 8–10 remain.**
+owner (stage 7) merged to `main` 2026-08-25. The effect-commit leg waits on its
+default-off switch (`CHAT_CONTACT_EFFECTS`); the deposits owner is deliberately
+ungated and therefore activates on the next deploy, with no live exchange having
+exercised it yet. Stages 8–10 remain.**
 This spec replaces the older contact-specific perception/ranking design. Visual state owns visual perception,
 attention, repetition, memory, and narrator/image selection. Contact owns pure
 physical phenomenon resolution and effect proposals. Persistent aftermath is
@@ -714,7 +715,10 @@ This order aligns with Track C/D of the parent plan:
    the §16 suites; the commit leg waits on its default-off switch.
 7. **Add residue/deposit support**, so a body can carry material at all. Built
    2026-08-25 (§7) — vocabulary, owner, extraction producer, settle fold and
-   visual projection, ungated.
+   visual projection, ungated. Merged to `main`; the deterministic half is
+   covered by the §16 suites, and the model half — whether the continuity leg
+   actually returns a `surfaceDeposits` list when a reply dirties somebody — is
+   unobserved until a deployed exchange runs it.
 8. **Add conserved transfer** as the second proof, including atomic
    source/destination conservation. Remaining, and **fixture-only when it
    lands**, under §9's own escape clause. Owner ruling (2026-08-25): no live
