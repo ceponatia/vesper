@@ -24,11 +24,11 @@ export interface DispositionEditorProps {
 }
 
 /**
- * The "Disposition" tab (docs/developer-notes/personality-and-state.spec.md §6): atomic
- * trait scalars and the reusable **tags** social-reaction cards key overrides on
- * (autocompleted from the dev registry, free-form allowed). Likes/dislikes and the
- * character's social cards live on the Personality tab (moved 2026-07-11 for room);
- * the `disposition` re-draft scope still owns preferences alongside tags + traits.
+ * The "Disposition" tab: atomic trait scalars and the reusable **tags**
+ * social-reaction cards key overrides on (autocompleted from the dev registry,
+ * free-form allowed). Likes/dislikes and the character's social cards live on the
+ * Personality tab (moved 2026-07-11 for room); the `disposition` re-draft scope
+ * still owns preferences alongside tags + traits.
  */
 export function DispositionEditor({ traits, onChangeTraits, tags, onChangeTags }: DispositionEditorProps) {
   // A slider edit is a `manual` overlay; keep one entry per trait id (it wins resolution).

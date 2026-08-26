@@ -18,10 +18,9 @@ import {
 import type { ImageProfileTask } from "../models/image-model-profiles";
 
 /**
- * Pure identity-pack trial logic
- * (docs/developer-notes/image-identity-packs.spec.trial.md): the checked-in
- * prompt fixtures, the cartesian cell planner, the deterministic pairing rule,
- * and the grade aggregation the summary surface reports.
+ * Pure identity-pack trial logic: the checked-in prompt fixtures, the
+ * cartesian cell planner, the deterministic pairing rule, and the grade
+ * aggregation the summary surface reports.
  *
  * Everything here is plain data in and plain data out — no persistence, no
  * randomness, no clock. Determinism is a product property, not a style choice:

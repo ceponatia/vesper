@@ -22,8 +22,7 @@
  * stay in the application. The rule of thumb: if a primitive can describe a
  * chat, a character or the simulation, it belongs to the app; if it is generic
  * infrastructure for the boundary between workspaces, it may belong here.
- * Convenience alone is never a reason to move something in
- * (docs/developer-notes/monorepo-image-core.spec.foundation.md).
+ * Convenience alone is never a reason to move something in.
  *
  * **This list is the package's entire public API, and it is deliberately
  * explicit.** `export *` in a package root barrel would publish helpers without

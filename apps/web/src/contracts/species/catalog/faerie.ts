@@ -36,7 +36,7 @@ export const faerie = defineSpecies({
         "Slightly smaller than a true faerie, with bright, mischievous eyes and a wiry, restless frame.",
       lore: "Sprites are the mischievous, more feral offshoot of the Faerie species. They prefer the outdoors, dislike wearing shoes, and are known for getting into trouble and pulling pranks. They're a little smaller than true Faeries and have pointed ears.",
       // The originating example for the species/heritage `intimacy` note (narrator-only,
-      // surfaced at the intimate exposure tier) — see docs/developer-notes/intimacy-notes.spec.md.
+      // surfaced at the intimate exposure tier).
       // Replaces the faerie species note for sprite characters (heritage-replaces-species).
       intimacy:
         "Mischievous and devious by nature; those who enjoy sass and very animated, playful lovemaking find this makes them exciting, unpredictable lovers.",

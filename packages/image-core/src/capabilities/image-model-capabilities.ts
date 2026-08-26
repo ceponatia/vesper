@@ -67,10 +67,10 @@ export type ImageEditKind = (typeof imageEditKinds)[number];
  * fact that decides whether it may serve variant, scene, and chat-look work.
  *
  * `strong` is a model observed to carry a face through a full scene change
- * (`bytedance/seedream-5-lite`, `docs/developer-notes/images/seedream-5-lite.trial.md`);
- * `weak` is a model that produces a plausible stranger. Like `editKind`, this is
- * a judgment from looking at output, never a schema read, and `unknown` is
- * permissive so an unreviewed row is not silently demoted.
+ * (`bytedance/seedream-5-lite`); `weak` is a model that produces a plausible
+ * stranger. Like `editKind`, this is a judgment from looking at output, never a
+ * schema read, and `unknown` is permissive so an unreviewed row is not silently
+ * demoted.
  */
 export const imageIdentityPreservationRatings = ["strong", "moderate", "weak", "unknown"] as const;
 export const imageIdentityPreservationSchema = z.enum(imageIdentityPreservationRatings);

@@ -4,9 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type PackageExport, type WorkspacePackage, listWorkspacePackages } from "./check-workspace-imports";
 
 /**
- * Real-workspace resolution smoke check
- * (docs/developer-notes/monorepo-image-core.spec.guardrails.md §"Prefer real
- * workspace resolution over aliases").
+ * Real-workspace resolution smoke check.
  *
  * TypeScript and Vitest can both be told where a package's source lives. That
  * convenience hides exactly the failures that matter here: a `package.json`

@@ -134,7 +134,7 @@ with aggregate `verify`, and reviews on its own.
 ## Risks & coordination
 
 - **Guardrail 1 — never delete the parked branch/fork/replay primitives.**
-  [deferred/sim-branch-ux.plan.md](deferred/sim-branch-ux.plan.md) (stub D19)
+  `sim-branch-ux.plan.md` (stub D19)
   intentionally retains fork, ancestry, replay-assembly, narrative-cut and
   placement-explain primitives with **zero production callers by design**,
   awaiting the UI that will use them. A17 is the exception the audit singled out

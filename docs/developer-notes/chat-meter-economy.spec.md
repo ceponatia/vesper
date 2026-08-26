@@ -280,7 +280,7 @@ heart rate → hydration, once [chat-body-needs.plan.md](chat-body-needs.plan.md
 a **desire** appetite meter (days without intimacy raising the arousal *baseline* and
 feeding initiative), which is the romance-lane meter this taxonomy most obviously wants.
 The full triggered-response generalization is parked in
-[deferred/physiology.plan.md](deferred/physiology.plan.md). `intercourse` as an interaction
+`physiology.plan.md`. `intercourse` as an interaction
 concept stays unnecessary for meters — the intimacy read covers them — and remains a
 registry data edit for the day a preference card needs to like or dislike the act itself
 rather than the ask.

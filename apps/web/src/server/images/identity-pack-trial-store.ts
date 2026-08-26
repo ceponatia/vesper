@@ -34,12 +34,11 @@ import { readJsonColumn } from "./identity-pack-store";
 import { profileRenderControlsHash, sha256Hex } from "./render-fingerprint";
 
 /**
- * The fixed identity-reference trial service
- * (docs/developer-notes/image-identity-packs.spec.trial.md): plan a bounded
- * grid of comparison cells, execute them a few renders at a time, serve blinded
- * pairs for review, aggregate the grades, and record per-(profile, strategy)
- * verdicts. Everything pure — the cartesian planner, the pairing rule, the
- * unblinding flip, the aggregation math — lives in
+ * The fixed identity-reference trial service: plan a bounded grid of comparison
+ * cells, execute them a few renders at a time, serve blinded pairs for review,
+ * aggregate the grades, and record per-(profile, strategy) verdicts. Everything
+ * pure — the cartesian planner, the pairing rule, the unblinding flip, the
+ * aggregation math — lives in
  * `packages/image-core/src/identity/identity-pack-trial-planning.ts`; this service owns persistence, the
  * pack/profile resolution at planning time, and the provider call.
  *

@@ -662,8 +662,7 @@ export const characterChatMessages = pgTable(
 );
 
 /**
- * Rolling background summary for one character chat
- * (docs/developer-notes/character-chat-summary.plan.md). One row per
+ * Rolling background summary for one character chat. One row per
  * (ownerId, characterId): a running prose recap of the transcript OLDER than the
  * verbatim window, plus a **watermark** — the (createdAt, id) of the newest
  * message already folded into `summary`. The chat prompt sends `summary` +
@@ -690,8 +689,7 @@ export const characterChatSummaries = pgTable(
 );
 
 /**
- * Character-chat state (docs/character-chat/state.md; origin:
- * docs/developer-notes/finished/character-chat-state.spec.md). One row per
+ * Character-chat state (docs/character-chat/state.md). One row per
  * (chatId, characterId) — a multi-character roster holds one row per member
  * (multi-character-chat.plan.md): the character's tracked state beside the
  * message window, the rolling summary, and the chat-scoped facts/episodes —

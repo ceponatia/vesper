@@ -4,9 +4,9 @@ Status: draft — the open remainder of an otherwise-shipped slice, **re-verifie
 against the code 2026-08-07 and still open in full**. No later work closed any
 of it. Re-drafted 2026-08-02; the original 2026-06-15 analysis mostly shipped
 via
-[finished/character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md)
+`character-chat-state-narration.spec.md`
 §2 (see git history for the original text). Supplement to
-[finished/character-schema-audit.md](finished/character-schema-audit.md) findings
+`character-schema-audit.md` findings
 **B2** and **B3**. **B2 is closed.** What remains is B3's other four source
 levels, the model-supplied effect channel, a missing rejection diagnostic, and
 two wiring gaps in the shipped slice. This document has no owning plan and no
@@ -18,7 +18,7 @@ files named; symbol names are the durable half.
 ## What shipped (and how it differs from this doc's proposal)
 
 Commit `4484cb4` (2026-06-30), built to
-[finished/character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md)
+`character-chat-state-narration.spec.md`
 §2 — **not** to this doc directly. The delta matters, because the shipped shape is
 cheaper than the one proposed here:
 
@@ -201,14 +201,14 @@ Doing (b) without (a), or (a) without (b), changes nothing observable.
 - **`senseEffects` now has zero readers.** The field survives on the contract
   (`contracts/conditions/condition.ts:19-23`, `:42`) and nothing in `src/` consumes
   it. It was deferred as **D6** in
-  [finished/character-chat-state-narration.spec.md](finished/character-chat-state-narration.spec.md):334
+  `character-chat-state-narration.spec.md`:334
   ("chat has no perception pipeline"), flagged to revisit. It is not in this doc's
   scope; it is recorded here so the next reader does not mistake it for a live
   channel.
 - **The arousal-flush question has a newer owner.** The original doc's third open
   question (visible flush as a meter hint vs. a condition-with-effect) is now posed
   more generally as the "Expression mechanism" question in
-  [deferred/physiology.plan.md](deferred/physiology.plan.md) §"Expression
+  `physiology.plan.md` §"Expression
   mechanism" — read-time composition vs. condition `attributeEffects` overlays,
   with the noted risk of
   double-authoring vocabulary the reads already own. Defer to that fork rather than

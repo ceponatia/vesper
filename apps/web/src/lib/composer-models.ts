@@ -24,8 +24,8 @@
  * `scripts/eval/scene-images/composer-model-ab.ts` — it runs the real system prompt,
  * the real schema and the real evidence gates over the seven fixture beats, four of
  * them explicitly intimate. **Promotion to the app default requires a recorded A/B
- * verdict** in `docs/developer-notes/composer-model.spec.md`; admin/eval candidates may
- * exist here before that verdict so they can be tried without a deploy.
+ * verdict**; admin/eval candidates may exist here before that verdict so they can
+ * be tried without a deploy.
  *
  * Nothing here needs tool calling or `response_format`: `generateChecked` sends the
  * JSON Schema as TEXT and parses the reply locally, deliberately not using

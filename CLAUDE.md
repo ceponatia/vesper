@@ -1,61 +1,61 @@
 # Vesper — agent notes
 
-- `AGENTS.md` is a symlink of `CLAUDE.md`; update `CLAUDE.md` only.
-- **Final summaries must be plain English, concise, and decision-oriented.** Write for the product owner, not another engineer. Start with what changed, what remains, and whether the owner needs to decide or do anything. If nothing needs their input, say so directly. Prefer concrete sentences over clever headings, fragments, metaphors, or jargon-heavy shorthand. Use technical names only when they help the owner locate code or understand a real tradeoff; briefly explain unavoidable jargon. Put implementation detail after the plain-English result, not instead of it.
-- This app is documented system-by-system in `docs/`. **Read `docs/README.md` first**, then the relevant system doc. Update the relevant doc in the same change when behavior or patterns shift.
-- **Before writing or editing Markdown under `docs/`, invoke the `vesper-docs` skill** (`.claude/skills/vesper-docs/`). It defines the reference/working-doc split, canonical ownership, required `Outcome:` lines, residue guardrails, templates, and validation.
-  - **Reference docs describe what is true now** (present tense, dateless, no plans/history). **Working docs describe planned or in-progress work** (dated, directional, status-carrying). Split files that try to do both.
-- If a reference doc would exceed ~400 lines after editing, consider splitting it by topic. This limit does **not** apply to `docs/developer-notes/`; split working docs by ownership or independently edited subject matter, not line count.
+- `AGENTS.md` is a symlink of `CLAUDE.md`; update `CLAUDE.md` only. Note this only works on Linux, not Windows. AGENTS.md will be blank on Windows.
 - This app is under active development. Do not preserve legacy behavior by default; prefer deleting obsolete code over deprecation wrappers.
-- **Product direction:** character chat was the test bed for the successor world model; the successor is now live and the legacy world/session model is deleted. Two lanes remain separate: legacy character chat, and successor chats (each bound to its own simulated world and controlled by per-chat `engine_authority`). New interaction/state/narration patterns are still proven in character chat first when they could land in either lane. Historical rollout detail: `docs/developer-notes/finished/engine.rollout.plan.md`.
-- Resilience rules in `docs/resilience.md` are mandatory: `parseOr` at trust boundaries, diagnostics over exceptions, degraded defaults over failed turns.
+
+## Documentation
+
+- Documented system-by-system in `docs/`. **Read `docs/README.md` first**, then the relevant system doc, and update it in the same change when behavior or patterns shift.
+- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`** (`.claude/skills/vesper-docs/`). It owns the reference/working split, canonical ownership, `Outcome:` lines, residue guardrails, templates, and validation.
+  - **Reference docs say what is true now** (present tense, dateless, no plans or history). **Working docs say what is planned or in progress** (dated, directional, status-carrying). Split a file that tries to be both.
+
+## Architecture
+
+- **This is a pnpm workspace.** The Next app is `@vesper/web` under `apps/web`; reusable packages live under `packages/`; the root holds scripts, migrations, deployment files, and repo-wide gates.
+  - Run pnpm from the repository root (`pnpm-workspace.yaml` pins it), never a parent directory.
+  - Packages import other packages by name only — never the app, never a filesystem path. If a package seems to need app code, pass the value in or leave the code in the app.
+  - Current packages:
+    - `@vesper/image-core` (provider-neutral image engine)
+    - `@vesper/simulation-core` (simulation contracts/kernels/scheduler)
+    - `@vesper/contracts` (diagnostics/parsing/determinism primitives)
+    - `@vesper/image-replicate` (server-only Replicate transport)
+    - `@vesper/image-sd` (Stable Diffusion recipes, training manifests, deployment contracts).
+  - `image-core` and `simulation-core` are peers, as are `image-sd` and `image-replicate`; peers never import each other, and the SD package never calls the provider. Stateful Vesper-specific image/simulation code stays under `apps/web/src/server`.
+  - Packages ship TypeScript source with declared `exports`. No tsconfig or Vitest alias may paper over a broken manifest, and published subpaths are exact entries, never `*` patterns.
+  - Adding a package: two registrations fail late and name no cause — a manifest COPY in the `Dockerfile`, and a `transpilePackages` entry in `apps/web/next.config.ts`. Ordinary scaffolding aside, everything else is caught by `lint:package-boundaries` or `lint:package-resolution` with a message naming the fix. Do not enumerate the package in root scripts or a root Vitest project; `pnpm -r` recursion finds it.
+  - `pnpm lint:package-boundaries` enforces dependency direction, declared dependencies/subpaths, browser-vs-Node runtime rules, no relative workspace escapes, and no published-entry `export *`. `pnpm lint:package-resolution` imports every declared entry. Both run in CI's static-checks job.
+  - `scripts/web.mjs` is the single owner of `DATA_ROOT` and the root `.env`; `pnpm dev`/`build`/`start` all run through it, Fly's Docker build included. Never add a second loader or load env in `next.config.ts` — `next start` never executes it, so a loader there works in dev and silently fails in production.
+  - Root scripts may import app source through `@/…` — the only sanctioned root→app edge. Relative root imports into `apps/web` are forbidden.
+  - Each workspace owns its `typecheck`/`test` scripts; root commands recurse with `pnpm -r --workspace-concurrency=1`, and workspace validation stays serial. `apps/web` has no `test` script by design: the root Vitest config owns the app/app-int suites and repo-root test setup. See `docs/testing.md`.
 - `apps/web/src/contracts` and `apps/web/src/lib` are pure (no IO/env/db). Server modules import each other only through `index.ts` barrels. Components never import `server/*`. ESLint enforces these boundaries.
-- **This is a pnpm workspace.** The Next app is `@vesper/web` under `apps/web`; reusable packages live under `packages/`; the repository root remains a workspace for scripts, migrations, deployment files, and repo-wide gates.
-  - Packages never import the app, whether through `@/…` or relative paths. Import another package by package name, never filesystem path. If a package appears to need app code, pass the value in or leave the code in the app.
-  - Current packages: `@vesper/image-core` (provider-neutral image engine), `@vesper/simulation-core` (simulation contracts/kernels/scheduler), `@vesper/contracts` (shared diagnostics/parsing/determinism primitives), `@vesper/image-replicate` (server-only Replicate transport), and `@vesper/image-sd` (Stable Diffusion recipes, training manifests, and deployment contracts). `@vesper/image-core` and `@vesper/simulation-core` are peers and may not import each other; `@vesper/image-sd` and `@vesper/image-replicate` are likewise peers — the SD package never calls the provider. Stateful Vesper-specific image/simulation code stays under `apps/web/src/server`.
-  - Packages ship TypeScript source with declared `exports`; no tsconfig or Vitest alias may hide a broken package manifest. Published subpaths must be exact entries, never `*` patterns.
-  - Adding a package requires: `package.json` with explicit exports/dependencies and `typecheck`/`test` scripts as applicable; package `tsconfig.json`; package `vitest.config.ts` when tested; a layer rank/runtime target in `scripts/check-workspace-imports.ts`; `transpilePackages` in `apps/web/next.config.ts`; a Dockerfile manifest COPY; a `workspace:*` declaration in the root `package.json` (`lint:package-resolution` imports every package by name from root context); and a matching `workspace:*` entry in `apps/web/package.json` (`scripts/workspace-registration.test.ts` asserts it set-equals `transpilePackages`). Do not enumerate it in root scripts or a root Vitest project.
-  - `pnpm lint:package-boundaries` enforces dependency direction, declared dependencies/subpaths, browser-vs-Node runtime rules, no relative workspace escapes, and no published-entry `export *`. `pnpm lint:package-resolution` imports every declared package entry. Both run in CI's static-checks job.
-  - **Start the app only through `scripts/web.mjs`** (`pnpm dev` / `build` / `start`, including Docker). It sets repository-level `DATA_ROOT` and loads the root `.env`. Do not add another `.env` loader or load env in `next.config.ts`. Fly sets `DATA_ROOT=/app/data` explicitly.
-  - Root scripts may import app source through `@/…`; that is the only sanctioned root→app source edge. Relative root imports into `apps/web` are forbidden.
-  - Each workspace owns its `typecheck`/`test` scripts; root commands recurse with `pnpm -r --workspace-concurrency=1`. Keep workspace validation serial. `apps/web` deliberately has no `test` script because the root Vitest config owns the app/app-int suites and repo-root test setup. See `docs/testing.md`.
-- **JSX prose-boundary whitespace:** guard line-wrapped boundaries after `{expr}`/elements with `{" "}` or explicit string-expression children. Next 16.2.x also drops a leading space in certain multiline entity-bearing JSX text nodes; prefer literal `’ “ ”` over entities and explicit string-expression children where prose crosses expression/element boundaries. This is fixed upstream in Next ≥16.3.0.
+- Resilience rules in `docs/resilience.md` are mandatory: `parseOr` at trust boundaries, diagnostics over exceptions, degraded defaults over failed turns.
 - Registries (attributes, meters, fact kinds, body locations) are extension points; vocabulary changes are data edits, not schema migrations.
+- **JSX prose-boundary whitespace:** guard line-wrapped boundaries after `{expr}`/elements with `{" "}` or explicit string-expression children.
 - DB workflow: edit `apps/web/src/server/db/schema.ts` → `pnpm db:generate` → review SQL in `drizzle/` → `pnpm db:migrate`. Never use `drizzle-kit push`. Preserve `CREATE EXTENSION IF NOT EXISTS vector` in the baseline migration.
-  - **Never automate `db:generate`'s interactive create-vs-rename prompt with a fake TTY or unbounded input.** If Drizzle asks, the diff is ambiguous and needs a human decision; stop and ask the owner to run `pnpm db:generate` themselves.
-- Tests: `pnpm test` (pure), `pnpm test:int` / `pnpm test:engine` (need Postgres). CI runs the pure suite on every ready PR and `test:engine` plus the Gate 1 benchmark in its engine job. `test:int` is manual and should be run when its covered surface changes. Degradation tests assert fallback **and** diagnostic code.
-  - **Before creating, expanding, or substantially rewriting tests, invoke the `vesper-testing` skill** (`.claude/skills/vesper-testing/`). It governs whether a test deserves to exist and where it belongs: protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it; and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
-- **UI testing runs against the Fly deploy.** Do not start a local Postgres + `pnpm dev` merely for UI testing. Deploy manually with `fly deploy -a vesper`, verify with `fly status -a vesper`, then test `https://vesper.fly.dev`. Local dev remains valid for non-UI work and DB scripts.
-  - Put ordinary screenshots in the gitignored root `screenshots/` folder. Graded render evidence goes in `evidence/`, where the scores and notes are tracked but **image files are gitignored and stay local** — generated imagery must never enter git history. See `evidence/README.md`.
-  - A React #418 hydration error immediately after a Fly deploy is a known transient deploy artifact; do not investigate unless it persists.
-- **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin`. Use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth.md`).
-  - On Fly, sign in through `/sign-in` with `uxtest-main@vesper.local` and the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is disabled in production.
-  - Prefer testing in an **existing** conversation. Create a new chat only when the test truly requires state that cannot be edited into an existing one, and delete that chat when done.
-  - On a fresh/missing-row Neon DB, seed over SSH with `fly ssh console -a vesper -C "pnpm db:seed"` so the QA account and credential are both provisioned.
-  - `/api/dev/impersonate` remains available only in local non-production builds.
-- Validation is **CI-gated: GitHub Actions on AWS CodeBuild managed runners is the gate** (`.github/workflows/ci.yml`, `runs-on: codebuild-vesper-ci-…`; owner decision 2026-08-21). There are **no local git hooks** — commits and pushes run nothing (owner decision 2026-08-21). The aggregate `verify` status check is **required on `main` and `prod`**; a PR merges only when it is green. The workflow is milestone-gated per its header: draft PRs run nothing, ready PRs run the applicable gates, and `gh workflow run CI --ref main` is the deliberate full pre-deploy run. CodeBuild bills per job-minute, so keep PRs draft while iterating.
-  - **Do not run local verification gates** (owner decision 2026-08-22): no `scripts/verify.sh` and no hand-chained `pnpm lint && pnpm typecheck && pnpm test` substitutes. Push the branch, open/ready the PR, and let CI validate. Individual commands (`pnpm test`, `pnpm lint`, `pnpm typecheck`) remain fine for a focused question while developing — as a gate, CI is the only run that counts.
-  - CI's gate set: lint → static checks (`lint:cycles`, `lint:authz`, `lint:package-boundaries`, `lint:package-resolution`) → typecheck → pure tests → jscpd, plus the engine and build jobs when their surfaces move.
-  - **Before every `fly deploy`: a clean `main` checkout plus a green `gh workflow run CI --ref main` dispatch** (the full suite, engine and build included). See `docs/deployment.md`.
-  - For documentation-only changes, review Markdown rendering, links, and consistency instead of running code gates.
-  - Gates enforce type-aware lint at zero warnings, import/provider guardrails, circular-import checks, package boundary/resolution checks, and jscpd duplication checks.
-  - Two workflows exist: `.github/workflows/ci.yml` (the CodeBuild-runner CI suite) and `.github/workflows/promote.yml` (manually opens the `main` → `prod` PR). Do not add another workflow without an explicit owner decision.
-- Git: after each **major task**, use a descriptive conventional commit (`feat:` / `chore:` / `docs:` …). **Code/config/dependency/workflow changes reach `main` through a branch + PR. Documentation-only changes may go directly to `main`.** Minor fixes can ride with the next major task instead of getting their own PR.
-  - `git doc` is the owner's doc-only shortcut (`git add -A && git commit -m "documentation updates" && git push`). Because it stages everything, first ensure the worktree contains only documentation changes; otherwise commit by pathspec. `git wip` remains the scratch equivalent.
-- Working docs (`docs/developer-notes/`) use **topic-named** files; priority lives only in `roadmap.md`. Do not encode reorderable priority in filenames.
-  - Plans: `<topic>.plan.md`; matching design detail: `<topic>.spec.md`; post-ship fixes: `<topic>.followups.md`; finer detail: `<topic>.<subtopic>.md`.
-  - Split independently edited plan/spec areas into hub + unit docs. Stable architectural gate numbers (such as `engine.gateN.*`) are allowed; reorderable `phase-N` naming is not.
-  - Every plan has `Status:` followed by `Outcome:`. Allowed plan statuses: **draft**, **next**, **active**, **awaiting acceptance**, **shipped — <date>**, or **parked**. `Outcome:` must be one plain-English sentence in the form `<A player | The owner | A developer> can <do something concrete> so that <observable consequence>.` Non-plan docs carry a descriptive `Status:` and no `Outcome:`. Full rules/templates live in `vesper-docs`.
-  - **Every new plan is written from the mandatory plan template** (`.claude/skills/vesper-docs/templates/plan.md`): every template section present — fill a non-applicable one with `N/A — <why>`, never omit it — and no sections the template does not define. If the template lacks a section a plan needs, ask the project owner to upgrade the template instead of deviating. Pre-template plans are migrated in dedicated tasks, not opportunistically.
-  - `roadmap.md` is the ordered source of truth for active/next work. Consult it before major feature work and update it as part of that work.
-    - `## To be Planned` is owner intake. Never add/edit/reword entries there unless explicitly asked to plan one; when planning one, create/fold the plan, add it to Active/Next, then remove the intake item.
-    - Work the roadmap order by default. Out-of-order work is allowed when deliberate, but still add it to Active/Next before or as work starts.
-    - Record progress one level up: slice → spec, spec → plan, completed plan → `roadmap.shipped.md`. Built-but-unaccepted work stays explicitly unshipped.
-    - `roadmap.shipped.md` contains completed plans only, one concise line each. When a plan fully ships: mark it `shipped — <date>`, move its topic docs to `finished/`, remove it from Active/Next, and add the shipped line.
-    - Reordering roadmap entries should be deliberate and rare; never rename files merely because priority changes.
-  - Open questions raised in topic docs must also appear in that topic's plan under `## Open questions`, with links to detail. Remove the question from the plan once resolved and record the ruling in detail.
-  - Unplanned ideas live in `deferred.plan.md`, with optional `<topic>.deferred.md` detail. When promoted, create the plan, add it to the roadmap, and remove it from deferred.
-  - When a plan fully ships, move its topic docs into `docs/developer-notes/finished/` and repoint all affected links in the same change, including inbound links and moved-doc outbound relative links. Verify links using the `vesper-docs` validation step.
-  - Reference docs under `docs/` do **not** link into `docs/developer-notes/`; copy the current fact into the reference doc and, if useful, mention the working-doc filename as plain code text.
-  - Existing legacy `phase-N` docs are historical and stay as-is. New work never uses phase numbering.
-- The repository root is the pnpm installation root (`pnpm-workspace.yaml` pins it). Run pnpm commands here, never from a parent directory.
+  - **Never automate `db:generate`'s interactive create-vs-rename prompt with a fake TTY or unbounded input.** If Drizzle asks, the diff is ambiguous — stop and ask the owner to run `pnpm db:generate` themselves.
+
+## Testing
+
+- Tests: `pnpm test` (pure), `pnpm test:int` / `pnpm test:engine` (need Postgres). CI runs the pure suite on every ready PR, and `test:engine` plus the Gate 1 benchmark in its engine job. Run `test:int` manually when its covered surface changes. Degradation tests assert fallback **and** diagnostic code.
+- **Invoke the `vesper-testing` skill before creating, expanding, or substantially rewriting tests** (`.claude/skills/vesper-testing/`). Protect meaningful invariants, regressions, and failure modes at their one owning layer; extend existing coverage instead of duplicating it, and do not add tests merely because code changed. Test count is not a quality metric here, and "no new test" is a valid outcome.
+- **UI testing runs against the Fly deploy** (`https://vesper.fly.dev`), never a local Postgres + `pnpm dev`. Local dev stays valid for non-UI work and DB scripts.
+  - **UI/QA account:** `uxtest-main@vesper.local`, id `uxtestmaina1b2c3d4e5f6g7`, role `admin` — use it for manual/Playwright UI tests instead of seed/`Player` data. Auth uses a signed Better Auth session (`docs/auth.md`); sign in at `/sign-in` with the `DEV_PASSWORD` Fly secret. `/api/dev/impersonate` is local-only, disabled in production.
+  - Prefer an **existing** conversation. Create a new chat only when the test needs state you cannot edit into an existing one, and delete it when done.
+  - Screenshots go in the gitignored root `screenshots/`; graded render evidence goes in `evidence/`.
+
+## Validation & CI
+
+- **CI is the gate:** GitHub Actions on AWS CodeBuild managed runners (`.github/workflows/ci.yml`, `runs-on: codebuild-vesper-ci-…`; owner decision 2026-08-21). There are **no local git hooks** — commits and pushes run nothing. The aggregate `verify` status check is **required on `main` and `prod`**; a PR merges only when it is green.
+- Milestone-gated per the workflow header: draft PRs run nothing, ready PRs run the applicable gates, and `gh workflow run CI --ref main` is the deliberate full run. CodeBuild bills per job-minute, so keep PRs draft while iterating.
+- For documentation-only changes, review Markdown rendering, links, and consistency instead of running code gates.
+- Two workflows exist: `ci.yml` (the CI suite) and `promote.yml` (manually opens the `main` → `prod` PR). Do not add another without an explicit owner decision.
+
+## Git & delivery
+
+- After each **major task**, use a descriptive conventional commit (`feat:` / `chore:` / `docs:` …). **Code, config, dependency, and workflow changes reach `main` through a branch + PR; documentation-only changes may go directly to `main`.** Minor fixes can ride with the next major task instead of getting their own PR.
+- `git doc` is the owner's doc-only shortcut (`git add -A && git commit -m "documentation updates" && git push`). It stages everything, so confirm the worktree is doc-only first; otherwise commit by pathspec. `git wip` is the scratch equivalent.
+
+## Deployment & environments
+
+- Deploy with `fly deploy -a vesper` and verify with `fly status -a vesper`. See `docs/deployment.md`.
+- On a fresh or missing-row Neon DB, seed over SSH with `fly ssh console -a vesper -C "pnpm db:seed"` so the QA account and its credential are both provisioned.

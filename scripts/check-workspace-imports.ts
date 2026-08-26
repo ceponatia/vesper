@@ -5,8 +5,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 /**
- * Workspace import integrity — the authoritative monorepo boundary check
- * (docs/developer-notes/monorepo-image-core.spec.guardrails.md).
+ * Workspace import integrity — the authoritative monorepo boundary check.
  *
  * ESLint's `no-restricted-imports` still runs in the editor for fast feedback,
  * but it can only judge how an import is SPELLED. This checker judges where an
@@ -1119,7 +1118,7 @@ function main(): void {
   console.error(`Workspace boundary violations (${violations.length}):`);
   console.error(formatViolations(violations));
   console.error(
-    "\nWorkspaces communicate only through declared public APIs — see docs/developer-notes/monorepo-image-core.spec.guardrails.md.",
+    "\nWorkspaces communicate only through declared public APIs.",
   );
   process.exit(1);
 }

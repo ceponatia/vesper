@@ -52,9 +52,8 @@ open handle. The output-directory default is still spelled with `||` in one runn
   Actions on AWS CodeBuild is now the sole verification gate, the required order
   lives in `.github/workflows/ci.yml`, and there is no local pre-push hook or
   authoritative wrapper to drift from it.
-- **F4 — doc drift.** `unconsumed-character-prose.md` was archived to `finished/`
-  on 2026-08-02 (kept rather than deleted because four archived docs link it at
-  that path). `docs/database.md`'s `travel_minutes` line now records the retain
+- **F4 — doc drift.** `unconsumed-character-prose.md` was archived on
+  2026-08-02. `docs/database.md`'s `travel_minutes` line now records the retain
   ruling, closing **C19**'s documentation half. One site remains and is
   **claimed elsewhere, not here**: `docs/ui.md` still credits
   `useDebouncedValue` to the new-chat dialog, which does not import it — that

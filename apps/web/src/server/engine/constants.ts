@@ -11,21 +11,20 @@ export const NARRATIVE_TEMPERATURE = 0.85;
 export const AFFINITY_DELTA_CLAMP = 5;
 
 /**
- * Character-chat harness (docs/developer-notes/character-chat.plan.md): the flat
- * message window replayed to the narrator in the Chat tab. The harness has no
- * episodes/RAG to lean on — the window IS its only memory. A "turn" is one
- * user+assistant exchange.
+ * Character-chat harness: the flat message window replayed to the narrator in the
+ * Chat tab. The harness has no episodes/RAG to lean on — the window IS its only
+ * memory. A "turn" is one user+assistant exchange.
  */
 export const CHARACTER_CHAT_HISTORY_TURNS = 40;
 /**
- * Rolling chat summary (docs/developer-notes/character-chat-summary.plan.md).
- * When the unsummarized tail reaches CHARACTER_CHAT_SUMMARIZE_AT exchanges, a
- * detached `chat_summary` job folds the oldest exchanges into the running
- * summary, leaving CHARACTER_CHAT_VERBATIM_KEEP verbatim. The fold size is the
- * difference (≈20 exchanges). CHARACTER_CHAT_HISTORY_TURNS stays the verbatim
- * *ceiling* — the degraded floor when summarization is off/failed (= the old
- * flat-window behavior). The gap between SUMMARIZE_AT (35) and the ceiling (40)
- * is headroom: the one-call fold settles before the window could overflow. A
+ * Rolling chat summary. When the unsummarized tail reaches
+ * CHARACTER_CHAT_SUMMARIZE_AT exchanges, a detached `chat_summary` job folds
+ * the oldest exchanges into the running summary, leaving
+ * CHARACTER_CHAT_VERBATIM_KEEP verbatim. The fold size is the difference (≈20
+ * exchanges). CHARACTER_CHAT_HISTORY_TURNS stays the verbatim *ceiling* — the
+ * degraded floor when summarization is off/failed (= the old flat-window
+ * behavior). The gap between SUMMARIZE_AT (35) and the ceiling (40) is
+ * headroom: the one-call fold settles before the window could overflow. A
  * "turn"/"exchange" is one user+assistant pair (≈2 messages).
  */
 export const CHARACTER_CHAT_SUMMARIZE_AT = 35;
@@ -33,14 +32,12 @@ export const CHARACTER_CHAT_SUMMARIZE_AT = 35;
 export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
 
 /**
- * Character-chat light state (docs/developer-notes/character-chat-state.spec.md §3,
- * re-ruled by character-chat-standalone.spec.md §8, D3/D8). The chat clock is the
- * ONLY time model: within a visit each exchange advances it CHAT_TICK_MINUTES;
- * between visits no time passes at all — a player away for a week returns to a
- * scene where nothing moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the
- * one between-scene lever, and in v1 they are narrative flavor only: clock +
- * condition expiry + the skip note — meters untouched (D14). (Affinity never
- * decays, spec §10.)
+ * Character-chat light state. The chat clock is the ONLY time model: within a
+ * visit each exchange advances it CHAT_TICK_MINUTES; between visits no time
+ * passes at all — a player away for a week returns to a scene where nothing
+ * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
+ * lever, and in v1 they are narrative flavor only: clock + condition expiry +
+ * the skip note — meters untouched (D14). (Affinity never decays, spec §10.)
  *
  * 4 → 1 (chat-clock-calendar.plan.md, owner ruling 2026-07-15): one exchange ≈ one
  * story minute, so ordinary conversation barely moves the visible clock and skips

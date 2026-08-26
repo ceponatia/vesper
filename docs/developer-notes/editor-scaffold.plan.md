@@ -48,7 +48,7 @@ wardrobe editors (**D6**) and the async loading/error shell (**D7**) — and one
 hook gets an adopt-or-delete ruling (**D8**).
 
 A second, independent pass reached the same conclusion:
-[codebase-modularity.audit.md](codebase-modularity.audit.md) (2026-08-06) names
+`codebase-modularity.audit.md` (2026-08-06) names
 the entity-editor shell its top components-domain item, verifies the five pages'
 skeleton as identical step for step, and lists the four divergences it considers
 parameterizable — persona's 409-to-field-error mapping, the forge and staged
@@ -96,7 +96,7 @@ decision is deliberate rather than forgotten.
   Cancel stops working mid-delete. No new tabs, fields or flows.
 - **Not the conversation page.** Decomposing `chat-conversation.tsx` is parked as
   stub **G25**
-  ([deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md)),
+  (`chat-conversation-refactor.plan.md`),
   and the transcript's streaming-render work (**D12**) belongs with it — cite, do not
   absorb.
 - **Not a client data layer.** `docs/ui.md` rules out react-query and that stands.

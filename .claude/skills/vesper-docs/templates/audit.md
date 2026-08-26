@@ -3,8 +3,8 @@
 Status: reference (audit run <date>)
 
 A snapshot of the code as it stood on the date above. It records findings; it
-does not plan the fixes. A finding worth acting on becomes a plan or an entry in
-[deferred.plan.md](deferred.plan.md) — link that destination from the finding.
+does not plan the fixes. A finding worth acting on becomes a plan — link that
+destination from the finding.
 
 ## Scope
 
@@ -24,8 +24,8 @@ not prescribe the fix beyond naming the shape of it.
 
 - **What** — the observation, with the file or module it lives in.
 - **Impact** — what it costs today, concretely.
-- **Where it goes** — the plan or deferred entry that owns any follow-up, or
-  "no action" with a reason.
+- **Where it goes** — the plan that owns any follow-up, or "no action" with a
+  reason.
 
 ## Nothing found
 

@@ -2,10 +2,10 @@ import { z } from "zod";
 import { provenanceSourceSchema, resolveProvenance } from "../../registry";
 
 /**
- * A stored trait value (docs/developer-notes/personality-and-state.spec.md §3/§8).
- * Reuses the attribute value's provenance shape so `base`/`creation` (forge),
- * `manual` (editor), and later `narrative` (a director-proposed arc) compose with
- * the same last-write-wins precedence — via the shared `resolveProvenance`.
+ * A stored trait value. Reuses the attribute value's provenance shape so
+ * `base`/`creation` (forge), `manual` (editor), and later `narrative` (a
+ * director-proposed arc) compose with the same last-write-wins precedence — via
+ * the shared `resolveProvenance`.
  *
  * `id` is validated loosely (the registry is the source of truth for the canonical
  * set); an unknown id is simply skipped when traits are resolved/surfaced, so a

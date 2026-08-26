@@ -1,6 +1,5 @@
 /**
- * Life-stage bands derived from the free-text `profile.age`
- * (docs/developer-notes/character-fidelity.plan.md slices 1–2). The narrator gets
+ * Life-stage bands derived from the free-text `profile.age`. The narrator gets
  * "You are 15 years old." and a generic speak-your-age rule, which models resolve
  * to their adult-competent default register — children and teens end up sounding
  * like therapists. These bands turn a numeric age into the same shape the trait

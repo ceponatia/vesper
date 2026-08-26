@@ -73,7 +73,7 @@ optional).
 - **No new client data layer.** docs/ui.md rules out react-query; D14 stays a few
   dozen lines behind the existing helper or it doesn't happen.
 - **No decomposition of the conversation component** — parked as **G25**
-  ([deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md));
+  (`chat-conversation-refactor.plan.md`);
   see Risks.
 - **No visible redesign.** No layout, label, flow, or narration changes.
 - **No contracts deletions.** The test fixtures shipping in the public contracts
@@ -150,7 +150,7 @@ Ordered so each stands alone and can ship on its own.
 ## Risks & coordination
 
 - **G25 owns the same file as slice 4.** The conversation-component
-  decomposition ([deferred/chat-conversation-refactor.plan.md](deferred/chat-conversation-refactor.plan.md))
+  decomposition (`chat-conversation-refactor.plan.md`)
   would restructure exactly the component slice 4 edits, so the two must not be
   built in parallel. If G25 is promoted and built first, **slice 4 folds into
   it** as a performance requirement of the extracted transcript hook rather than
@@ -171,7 +171,7 @@ Ordered so each stands alone and can ship on its own.
   most, it has 66 importers, and the image-model registry and capabilities work
   keeps adding endpoints to it. It is also the subject of a separate, unplanned
   split proposal in
-  [codebase-modularity.audit.md](codebase-modularity.audit.md) (layer the file,
+  `codebase-modularity.audit.md` (layer the file,
   keep `api.ts` as a re-export barrel). Whichever change lands first should land
   in a shape the other can build on — typed request bodies do not conflict with a
   layered split, but doing both in one diff would be unreviewable.

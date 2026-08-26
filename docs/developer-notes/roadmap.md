@@ -15,10 +15,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 > blocker, never explains it. Each plan carries its own `Status:` line; this
 > index does not restate it.
 >
-> A plan leaves this file only when the **whole** plan is done, at which point it
-> moves to `finished/` and earns one line in
-> [roadmap.shipped.md](roadmap.shipped.md). Shipping a slice never removes an
-> entry — it may only correct a hook that has stopped being true.
+> A plan leaves this file only when the **whole** plan is done and accepted.
+> Shipping a slice never removes an entry — it may only correct a hook that has
+> stopped being true.
 
 ## Awaiting acceptance
 
@@ -140,13 +139,10 @@ the scene owner.
   now needs owner spend and a verdict, not an instrument.
 
 - **Codebase efficiency — correctness and measured-response tranche** —
-  [disposition](codebase-efficiency.audit.md#review-disposition-and-owner-rulings--2026-07-30)
-  · [resilience](resilience-closures.plan.md) ·
+  [resilience](resilience-closures.plan.md) ·
   [confirm dialog](editor-scaffold.plan.md) ·
-  [command hot path](sim-command-shell.plan.md) ·
   [chat latency](chat-reply-latency.plan.md) — ordered: resilience closures →
-  `ConfirmDialog` alone → the cheap hot-path set → chat pre-reply latency after a
-  repeated baseline.
+  `ConfirmDialog` alone → chat pre-reply latency after a repeated baseline.
 
 - **Chat meter economy — the body on the story clock** —
   [plan](chat-meter-economy.plan.md) · [spec](chat-meter-economy.spec.md) —
@@ -157,57 +153,20 @@ the scene owner.
   [plan](chat-body-needs.plan.md) — the three asked-for meters plus the needs →
   initiative channel; depends on the meter economy landing first.
 
-- **Successor world engine — Gate 7: optional institutions & macro simulation** —
-  [plan](engine.plan.md) · [gate 7](engine.gate7.institutions.md) — employers, schools, markets, law and
-  weather admitted only as declared packages; unblocked, but explicitly optional
-  and opens only on the owner's call.
-
 - **Character schema improvements — facial realism + engine-shaped contracts** —
   [plan](character-schema.plan.md) — a descriptive `face.attractiveness`
   attribute replacing the portrait studio's hardcoded beauty bias, plus the
   template fields the engine can consume; owes a `character-schema.spec.md` split.
 
-- **Spatially controlled scene images — pose, depth, and character identity** —
-  [plan](spatial-scene-images.plan.md) — one validated 3D spatial frame driving
-  pose/depth/segmentation controls; the Qwen lab's Stage 0 probe answered its
-  gate-0 spike's central question in the affirmative, so the spike folds into
-  that evidence and this plan's distinct value is producing controls from a
-  validated spatial frame.
-
-- **RAG improvements — remainder** — [plan](RAG-improvements.plan.md) — the
-  presence half of the relevance floor, witness gating on a real viewpoint, and
-  RAG-as-history; all three stay near-worthless until multi-character
-  conversations are the normal case.
-
-- **At-rest encryption — user chat content unreadable on Neon** —
-  [plan](at-rest-encryption.plan.md) — app-side AES-256-GCM envelopes over
-  transcripts, memory rows and derived sinks, with the key in Fly secrets; gated
-  on owner ruling D1 (whether embeddings are encrypted too).
-
-- **World engine refactor — the unowned catalog** —
-  [plan](world-engine-refactor.plan.md) — an umbrella, never a build item; the
-  **salience bus**, a **composed scene frame** and the environment core are the
-  last named seams to promote out, after which it archives.
-
 - **Codebase efficiency — later consolidation sequence** —
-  [disposition](codebase-efficiency.audit.md#review-disposition-and-owner-rulings--2026-07-30)
-  · [command shell](sim-command-shell.plan.md) ·
-  [fork registry](sim-fork-registry.plan.md) ·
   [client safety](client-type-safety.plan.md) ·
   [library routes](library-route-registry.plan.md) ·
   [editor scaffold](editor-scaffold.plan.md) ·
   [contracts](contracts-hygiene.plan.md) ·
   [dead exports](dead-export-sweep.plan.md) ·
   [tooling](tooling-gates.plan.md) — dependency order only, **not promoted to
-  next**: command shell → fork registry → client type-safety → library routes →
-  an editor-scaffold go/no-go → contracts, dead-export and tooling hygiene.
-
-- **Codebase modularity — large-file splits and shared-code consolidation** —
-  [audit](codebase-modularity.audit.md) — the image-lifecycle and
-  simulation-store splits landed via the monorepo follow-through; the
-  chat/schema/client monsters and most dedup clusters still **need a plan**,
-  with correctness-flavoured findings folding into whichever plan touches each
-  file first.
+  next**: client type-safety → library routes → an editor-scaffold go/no-go →
+  contracts, dead-export and tooling hygiene.
 
 - **Headwear that actually covers hair** —
   [plan](headwear-hair-occlusion.plan.md) ·
@@ -217,12 +176,15 @@ the scene owner.
 
 ## Someday / parking lot
 
-Unpromoted ideas live in [deferred.plan.md](deferred.plan.md) — the
-successor-engine improvement backlog ([deferred/CLAUDE.md](deferred/CLAUDE.md)),
-owner-gated live eval runs, the body-affordance scene-image consumer,
-[NPC puppeting](npc-puppeting.deferred.md), comms expansions, in-play item
-acquisition, the remaining UX-audit deferrals, observer POV, and one permanent
-park (companion-role-as-romance-eligibility).
+Parked ideas are tracked as GitHub issues rather than in this repo.
+
+Three detail documents survive on disk without a plan above them, kept for the
+research in them: [attribute-scales.deferred.md](attribute-scales.deferred.md)
+(ordered attribute axes and composite body-types),
+[npc-puppeting.deferred.md](npc-puppeting.deferred.md) (the full puppet-handling
+system beyond the shipped deflection directive), and
+[video-generation.deferred.md](video-generation.deferred.md) (the model,
+provider and cost landscape for reference-driven clips).
 
 Two remainders are documented but unplanned and need a home:
 [condition-attribute-effects.md](condition-attribute-effects.md) (four small
@@ -234,14 +196,6 @@ re-derivation — belongs under character schema).
 
 Gates 0–6 and rollout R0–R6 shipped 2026-07-21/22; the engine is the live world
 authority for successor chats and the legacy world/session model is deleted.
-How it works: [docs/engine/](../engine/README.md). Normative contract, still live
-and cited from source: [engine.spec.md](engine.spec.md). Build history:
-[finished/engine/engine-foundation.plan.md](finished/engine/engine-foundation.plan.md)
-and its gate docs. What is still open lives in [engine.plan.md](engine.plan.md).
-What remains on this track: optional Gate 7 (queued above), the owner-gated live
-paired evals, product ruling 12 (route-estimate uncertainty exposure), and the
-parked backlog under `deferred/`.
-
-## Shipped (historical record)
-
-Moved to its own file to keep this index short — see **[roadmap.shipped.md](roadmap.shipped.md)** (newest-first).
+How it works: [docs/engine/](../engine/README.md). What remains on this track:
+the owner-gated live paired evals, and product ruling 12 (route-estimate
+uncertainty exposure).

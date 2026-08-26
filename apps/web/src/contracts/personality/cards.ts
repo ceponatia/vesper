@@ -4,10 +4,10 @@ import type { PreferenceValence } from "./preference";
 import { normalizeTag } from "./tags";
 
 /**
- * Social-reaction cards (docs/developer-notes/social-reaction-cards.plan.md): importable
- * taboo / social-rule content, reusable across worlds and attachable to characters, that
- * resolves a classified social act to a {@link SocialReaction} the §6 response curve then
- * scales (reactions.ts). Pure: no IO, no engine imports.
+ * Social-reaction cards: importable taboo / social-rule content, reusable across worlds
+ * and attachable to characters, that resolves a classified social act to a
+ * {@link SocialReaction} the §6 response curve then scales (reactions.ts). Pure: no IO,
+ * no engine imports.
  *
  * A card does **not** carry a raw affinity/mood delta (the companion-app shape). It sets a
  * single `severity` (0–100) → a tier → a base `intensity` via a fixed ramp; the curve

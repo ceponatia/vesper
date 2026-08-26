@@ -23,11 +23,11 @@ Related owners:
 - [model-aware image prompt programs](model-aware-image-prompts.plan.md), its
   child plan, owns the per-endpoint dialects and negative steering this plan's
   Stage 5 waits on;
-- [image model capabilities](finished/image-model-capabilities.plan.md) owns the
+- **Image model capabilities** owns the
   shared render intent, profile planning, and role-aware reference transport;
-- [scene composition](finished/scene-composition.plan.md) owns camera, staging,
+- **Scene composition** owns camera, staging,
   pose selection, and committed scene facts;
-- [identity packs](finished/image-identity-packs.plan.md) owns identity-reference
+- **Identity packs** owns identity-reference
   derivation and quality.
 
 ## Why this work is next

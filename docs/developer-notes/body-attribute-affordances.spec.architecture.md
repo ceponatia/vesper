@@ -348,7 +348,7 @@ fail: its cue arm increased specificity consistently but did not reduce
 contradictions. Image composition needs its own paired evaluation because
 paintable specificity may help a renderer even when it does not help prose.
 That evaluation is parked as
-[Body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer).
+Body-affordance scene-image consumer.
 Its stated precondition — the shared scene/body-relations owner — was met
 2026-07-31, so promotion is now a scheduling decision; the reads that made it
 worth waiting for still have to be wired into this layer before a broad

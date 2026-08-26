@@ -9,7 +9,7 @@
  * profiles (`AttributeValue.value`), so renaming one silently invalidates stored values
  * (they fail `parseValue` and degrade away). Add a constant here only when a real
  * duplication appears; curated, identity-defining lists (eyes/hair/skin color) stay
- * local on purpose — see docs/developer-notes/attribute-mutability.spec.md §6.
+ * local on purpose.
  */
 
 /**

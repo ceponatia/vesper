@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 /**
- * Interaction concepts (docs/developer-notes/personality-and-state.spec.md §6):
- * the shared, controlled vocabulary the intake agent classifies a player's social
- * act into, and that both bespoke preferences and (later) social-reaction cards
- * point at. One stable classification target; one key space for the two
- * disposition layers. Adding a concept is a one-file data edit + the registry test.
+ * Interaction concepts: the shared, controlled vocabulary the intake agent
+ * classifies a player's social act into, and that both bespoke preferences and
+ * (later) social-reaction cards point at. One stable classification target; one
+ * key space for the two disposition layers. Adding a concept is a one-file data
+ * edit + the registry test.
  *
  * `verb` is the past-tense phrase the pre-narration reaction line uses ("Brian
  * complimented Sabrina"). `family` lets a preference target a whole cluster.

@@ -1,10 +1,9 @@
 import { z } from "zod";
 
 /**
- * Relationship stages (docs/developer-notes/cast-tiers-and-affinity-spec.phase3.md):
- * the readable labels derived from an affinity scalar (−100..100). Stages —
- * never raw values — appear in prompts and gate behavior. Boundaries are data
- * (tune by editing this file).
+ * Relationship stages: the readable labels derived from an affinity scalar
+ * (−100..100). Stages — never raw values — appear in prompts and gate behavior.
+ * Boundaries are data (tune by editing this file).
  *
  * Widened from the original seven to eleven (personality-and-state.plan.md Slice 5 /
  * spec §4 "more levels") so progression reads less coarsely — the romance-leaning

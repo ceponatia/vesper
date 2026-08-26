@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 /**
- * Disposition tags (docs/developer-notes/personality-and-state.spec.md §3/§6):
- * short reusable labels that social-reaction cards key their `reactionOverrides`
- * on (the foot-fetish flip). A **dev-defined canonical registry** → the editor and
- * forge offer these by autocomplete; free-form tags are tolerated but second-class
- * (no autocomplete, no guaranteed card-override match).
+ * Disposition tags: short reusable labels that social-reaction cards key their
+ * `reactionOverrides` on (the foot-fetish flip). A **dev-defined canonical
+ * registry** → the editor and forge offer these by autocomplete; free-form tags
+ * are tolerated but second-class (no autocomplete, no guaranteed card-override
+ * match).
  *
  * Cards aren't built yet (social-reaction-cards.plan.md), so in v1 tags are
  * authored, stored, and surfaced for autocomplete only — functionally inert until

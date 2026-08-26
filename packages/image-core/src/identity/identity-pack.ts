@@ -2,9 +2,7 @@ import { z } from "zod";
 import type { DiagnosticSink } from "@vesper/contracts";
 
 /**
- * The identity-pack vocabulary and contracts
- * (docs/developer-notes/image-identity-packs.spec.data.md,
- * `.spec.derivation.md`, `.spec.integration.md`).
+ * The identity-pack vocabulary and contracts.
  *
  * An identity pack is the record of WHICH bytes a character's face reference was
  * derived from, HOW it was cropped, and WHAT was measured about it. Everything

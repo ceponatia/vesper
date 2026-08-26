@@ -9,7 +9,7 @@ Related owners:
 - [image render quality](image-render-quality.plan.md) owns model-native prompt quality, prompt budgets, and image trials;
 - [image lane consolidation](image-lane-consolidation.plan.md) owns migration from route-specific character prose to semantic prompt segments;
 - [visual state and attention](visual-state.plan.md) owns the committed visual snapshot and camera-aware character digest;
-- [image model capabilities](finished/image-model-capabilities.plan.md) owns endpoint profiles, normalized controls, role-aware references, and provider transport.
+- **Image model capabilities** owns endpoint profiles, normalized controls, role-aware references, and provider transport.
 
 ## Outcome
 

@@ -2,8 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { characterChatMessages, characterChatSummaries, characters, db, jobs } from "@/server/db";
 
-// Rolling chat-summary integration suite (docs/developer-notes/character-chat-summary.plan.md,
-// re-keyed on the conversation — character-chat-standalone.spec.md §1.2). The DB-bound
+// Rolling chat-summary integration suite (re-keyed on the conversation). The DB-bound
 // fold: processChatSummary, the watermark window, the enqueue guard, and the chat
 // DELETE cascading the summary row. generateChecked is mocked so the fold has a
 // deterministic recap without a provider (AI_FAKE keeps the reply stream in demo

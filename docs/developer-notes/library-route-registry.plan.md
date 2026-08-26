@@ -39,7 +39,7 @@ library where "support a new kind of authored thing" is one registry row plus a
 route re-export. It also closes two prior-art items re-verified as still open
 across two review cycles — **E-S1** (a shared owned-entity lookup was built but
 only one of five detail routes adopted it) and **E-S3** (the image route twins),
-both from [finished/codebase-review.md](finished/codebase-review.md).
+both from `codebase-review.md`.
 
 ## Scope
 

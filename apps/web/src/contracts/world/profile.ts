@@ -252,10 +252,10 @@ export const characterProfileObjectSchema = z.object({
   bodyFeatures: z.array(z.string()).optional(),
   attributes: z.array(attributeValueSchema).default([]),
   /**
-   * Disposition (docs/developer-notes/personality-and-state.spec.md §6): reusable
-   * `tags` (which social-reaction cards key overrides on — inert until cards ship)
-   * and `preferences` (bespoke likes/dislikes resolved against a classified social
-   * act). Both default `[]` ⇒ a character with no disposition plays exactly as before.
+   * Disposition: reusable `tags` (which social-reaction cards key overrides on — inert
+   * until cards ship) and `preferences` (bespoke likes/dislikes resolved against a
+   * classified social act). Both default `[]` ⇒ a character with no disposition plays
+   * exactly as before.
    */
   tags: z.array(z.string()).default([]),
   preferences: z.array(preferenceSchema).default([]),

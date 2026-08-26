@@ -12,12 +12,12 @@ Technical companion:
 
 Related work, and the boundary with each:
 
-- [scene image composition](finished/scene-composition.plan.md), shipped
+- **Scene image composition**, shipped
   2026-08-15, owns **which shot the story asks for** — the camera vocabulary,
   the evidence gate, the staging catalog. This plan owns **what the app has to
   show the model** once that shot says "from behind". The two meet at one
   lookup: a resolved camera picks a view.
-- [intimate-scene LoRA](finished/intimate-scene-lora.plan.md) owns **which model renders
+- **Intimate-scene LoRA** owns **which model renders
   an intimate act** — staged intimate scenes route through the probe-proven
   anatomy LoRA. This plan owns **what reference that model is handed**. They are
   complementary and land on the same renders: the LoRA fixes what the model
@@ -25,7 +25,7 @@ Related work, and the boundary with each:
   substitutes for the other, and the slice-4 trial grades this plan's
   contribution with the LoRA routing already in place, never against a
   pre-LoRA baseline.
-- [spatially controlled scene images](spatial-scene-images.plan.md) owns the
+- **Spatially controlled scene images** owns the
   long-horizon structural route, and already names "multi-view identity
   references" as something it needs and does not have. This plan builds that
   piece on its own terms, reachable now without a 3D frame, a pose solver, or a
@@ -33,7 +33,7 @@ Related work, and the boundary with each:
 - [image render quality](image-render-quality.plan.md) owns per-model prompt
   dialects and identity-lock wording. This plan hands it one more reference to
   bind; it does not re-word the lock.
-- **Character-LoRA training** (`deferred.plan.md`) is where this eventually
+- **Character-LoRA training** (parked, tracked as a GitHub issue) is where this eventually
   leads. Its own note says the pilot's limiting factor was its training set and
   that "the first thing it should make cheap is a deliberately varied training
   set" — a reviewed set of angles per character is exactly that seed. This plan
@@ -126,11 +126,11 @@ noisy the moment reacting means paying for renders. There is no way today to say
 ### Non-goals
 
 - **Training a character LoRA.** The reviewed view set is a seed for one, and
-  that work stays where it is (`deferred.plan.md` §"Character-LoRA training as an
-  in-app tool", built together with free-form image iteration).
-- **A 3D frame, pose solving, or control images.** Those belong to
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md), which this plan
-  partially unblocks and does not replace.
+  that work stays parked (the character-LoRA training tool, built together with
+  free-form character image iteration).
+- **A 3D frame, pose solving, or control images.** Those belong to the
+  spatially-controlled scene-images work, which this plan partially unblocks
+  and does not replace.
 - **A view set per outfit.** Two wardrobe states — as the portrait is dressed,
   and undressed — not one per garment combination. Tracking the fiction's
   changing clothes is already the chat look's job.

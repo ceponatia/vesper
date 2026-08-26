@@ -2,12 +2,11 @@ import { z } from "zod";
 import { traitCategorySchema } from "./category-ids";
 
 /**
- * Atomic personality traits (docs/developer-notes/personality-and-state.spec.md
- * §3): a numeric scalar with registry-defined bands — the affinity pattern applied
- * per trait. **Store the number, surface the band label, compute from the number.**
- * A separate registry from attributes (it must never leak to an image prompt) but
- * built on the same shared spine (`contracts/registry`), so traits inherit
- * base/creation/manual overlay precedence for free.
+ * Atomic personality traits: a numeric scalar with registry-defined bands — the
+ * affinity pattern applied per trait. **Store the number, surface the band label,
+ * compute from the number.** A separate registry from attributes (it must never
+ * leak to an image prompt) but built on the same shared spine (`contracts/registry`),
+ * so traits inherit base/creation/manual overlay precedence for free.
  */
 
 /** A declarative link from a trait to a state it shapes (§5). v1 metadata; the

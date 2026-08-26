@@ -20,7 +20,7 @@ cases plus ~1,000 integration cases. Every one of them is permanent: it runs on
 every push, gets read during every nearby refactor, and has to be updated when
 the code it touches moves. A 2026-07-28 audit found ~6k removable lines of
 scaffolding and hand-enumerated assertions, and the consolidation deleted ~5.9k
-net test lines (`docs/developer-notes/finished/test-consolidation.plan.md`).
+net test lines.
 That debt was not written by careless people; it accumulated one reasonable-
 looking test at a time.
 
@@ -288,9 +288,8 @@ the task into a test-cleanup project.
 - If your new test would duplicate an existing one, **strengthen the existing one
   instead** of adding yours.
 - If a small local consolidation is what avoids adding duplicate coverage, do it.
-- Otherwise, record the debt (a note in the relevant working doc, or
-  `deferred.plan.md`) and move on. Unrelated test rewrites do not belong in a
-  feature or bugfix change.
+- Otherwise, record the debt (a note in the relevant working doc) and move on.
+  Unrelated test rewrites do not belong in a feature or bugfix change.
 
 ## Working process
 

@@ -774,8 +774,7 @@ Update or create:
 - architecture/provider documentation;
 - model- or subsystem-specific operational notes;
 - relevant specs after implementation decisions are settled;
-- trial/evaluation results;
-- deferred-work documentation for intentionally postponed work.
+- trial/evaluation results.
 
 Record **rulings and reasons**, not a chronological diary of implementation activity.
 

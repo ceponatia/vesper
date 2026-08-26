@@ -205,7 +205,7 @@ Appendage, soft-tissue, garment, skin, and relative-geometry specs are
 design-ready companions, not silent promises that every domain ships in the
 first release. Each is now recorded as implemented, a named follow-up, or
 parked in §"Companion spec rulings" below. The active plan/spec family stays
-together; it may be archived to `finished/` only after the plan ships.
+together until the plan ships.
 
 ## Companion spec rulings
 
@@ -411,7 +411,7 @@ hair and garment surface phrasing while spending scarce prompt space already
 used for identity, pose, wardrobe, and setting.
 
 The parked
-[body-affordance scene-image consumer](deferred.plan.md#body-affordance-scene-image-consumer)
+body-affordance scene-image consumer
 named the relations owner as its promotion gate; that gate opened 2026-07-31,
 so promotion is now a scheduling decision and the reads it wants still have to
 be wired into this layer first (§"What remains" item 2). An owner may instead
@@ -460,7 +460,7 @@ contract live in the
 - [Clothing state graph](clothing-state-graph.plan.md) owns garment truth and
   must finish the relevant adapter/integration work before garment affordances
   claim lane parity.
-- [Physiology](deferred/physiology.plan.md) owns live responses. Skin and
+- **Physiology** owns live responses. Skin and
   intimate physiology observations wait for its authoritative outputs.
 - [Romantic contact](romantic-contact-affordances.plan.md) reuses the shared
   evidence, perception, ranking, and capture foundation but owns contact

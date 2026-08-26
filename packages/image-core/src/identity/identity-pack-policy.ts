@@ -1,9 +1,7 @@
 import type { IdentityPackIntrinsicPolicy, IdentityPackProfilePolicy } from "./identity-pack";
 
 /**
- * Every tunable identity-pack number, in one versioned place
- * (docs/developer-notes/image-identity-packs.spec.derivation.md §"Crop geometry"
- * and §"Versioned reference policy").
+ * Every tunable identity-pack number, in one versioned place.
  *
  * The concentration is the whole point. A crop fraction that lives in a detector
  * adapter and a minimum size that lives in a route cannot be re-run against a

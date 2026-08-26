@@ -1,8 +1,7 @@
 import type { IdentityReferenceRole } from "../identity/identity-pack";
 
 /**
- * The shared role-instruction compiler for multi-reference identity renders
- * (docs/developer-notes/image-identity-packs.spec.trial.md §"Fixed variables").
+ * The shared role-instruction compiler for multi-reference identity renders.
  *
  * When a render sends TWO reference images, the provider is handed an ordered
  * list and nothing else. Nothing in that transport says which image is the

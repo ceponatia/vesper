@@ -8,9 +8,9 @@ either body; and no `body_config` diagnostic exists anywhere in `src/`.
 Re-drafted 2026-08-02; the original 2026-06-15 analysis's headline fix shipped
 same-day in `9ed4e31` + `c7d45fd` (see git history for the original).
 Supplement to
-[character-schema-audit.md](finished/character-schema-audit.md) finding **E1**.
+`character-schema-audit.md` finding **E1**.
 The remaining work has no owning plan and no roadmap line — §1, §2 and §3a are
-queued nowhere. (§3b has a [roadmap.shipped.md](roadmap.shipped.md) entry.)
+queued nowhere. (§3b shipped 2026-08-07.)
 
 Line references were refreshed on 2026-08-07 and drift with every edit to the
 files named; symbol names are the durable half.
@@ -248,15 +248,15 @@ now be separated and answered independently:
   be enough — the model already picks the values; the registry decides what they
   activate.
 
-## Relationship to `deferred.plan.md` §Natal sex
+## Relationship to the parked natal-sex work
 
-[deferred.plan.md](deferred.plan.md) lines 355-392 holds two adjacent items that
-touch this territory without covering it:
+The parked structured-sex-at-birth item holds two adjacent points that touch
+this territory without covering it:
 
-- **Wider value set** (`:385-386`) — `intersex` on `natal_sex` "and the matching
+- **Wider value set** — `intersex` on `natal_sex` "and the matching
   body-config seeding story." That is a new *activation* to declare, i.e. §4's
   first bullet, not §1's provenance.
-- **Auto-consistency** (`:387-388`) — keep `natal_sex` and the gender
+- **Auto-consistency** — keep `natal_sex` and the gender
   born-variant in agreement. That is attribute↔attribute agreement; §1 is
   attribute↔body-config re-derivation. They are complementary: auto-consistency
   keeps the *seed input* coherent, B keeps the *seeded output* current.

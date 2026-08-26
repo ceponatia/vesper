@@ -1,14 +1,12 @@
 # Attribute scales — value relationships & composite body-types
 
-Status: parked detail for [deferred.plan.md](deferred.plan.md) §"Attribute value
-relationships & composite body-types" — not committed
-work. Raised by the owner 2026-07-23 ("a way to tell the narrator the
+Status: parked — not committed work; tracked as a GitHub issue. Raised by the owner 2026-07-23 ("a way to tell the narrator the
 relationship between attribute values — the real difference between 'wiry' /
 'slim' / 'athletic' — otherwise the values are amorphous, interpreted by the LLM
 in the moment").
 
 Successor to the shipped
-[finished/attribute-narrator-guidance.plan.md](finished/attribute-narrator-guidance.plan.md)
+`attribute-narrator-guidance.plan.md`
 (per-value glosses). This doc is the layer **above** it: the *relationship between
 sibling values*, plus a composite gestalt fill. Two facets, one foundation.
 

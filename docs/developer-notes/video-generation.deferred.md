@@ -1,8 +1,6 @@
 # Video generation — reference-driven clips and keyframe stitching
 
-Status: parked detail for [deferred.plan.md](deferred.plan.md) §"Video
-generation — reference-driven clips and keyframe stitching" — not committed
-work. Research run 2026-08-14; every price, catalog entry, and policy below is
+Status: parked — not committed work; tracked as a GitHub issue. Research run 2026-08-14; every price, catalog entry, and policy below is
 dated then, and this market shifts monthly — re-verify before building.
 
 ## The idea
@@ -95,7 +93,7 @@ Hosted-API lane (upstream-moderated; the SFW quality tier):
 - **Wan 2.2** (Apache 2.0 — the cleanest license here) is the workhorse: MoE
   A14B i2v/t2v, a 5B tier, speech-to-video, Animate (character ref + pose/face
   driving videos — the model
-  [spatial-scene-images.plan.md](spatial-scene-images.plan.md) §Animation
+  `spatial-scene-images.plan.md` §Animation
   extension already names), and by far the largest uncensored
   LoRA/merge/workflow ecosystem (Civitai). On Replicate as `wan-video/*` with
   per-video pricing: `wan-2.2-i2v-fast` is **$0.05–$0.145 per clip** (480p to
@@ -363,8 +361,7 @@ land, to size the work.
   precedent applies from day one.
 - **LoRA synergy.** `ostris/wan-lora-trainer` trains video LoRAs **from
   images** — the parked character-LoRA training tool's dataset-assembly work
-  (deferred.plan.md §"Character-LoRA training as an in-app tool") would serve
-  both image and video identity if both are built.
+  would serve both image and video identity if both are built.
 
 ## Costs at a glance (2026-08-14)
 

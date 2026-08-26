@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * Rolling chat-summary fold (docs/developer-notes/character-chat-summary.plan.md):
- * the structured output of the `chat_summary` background job. Deliberately tiny
- * (docs/resilience.md §3) — one prose field. Length and "did it actually fold"
- * are enforced server-side, never trusted to the model.
+ * Rolling chat-summary fold: the structured output of the `chat_summary`
+ * background job. Deliberately tiny (docs/resilience.md §3) — one prose field.
+ * Length and "did it actually fold" are enforced server-side, never trusted to
+ * the model.
  */
 
 /** Hard cap on the stored summary (~400 words) — clamped in processing, not by the schema. */

@@ -12,8 +12,7 @@ import { parseOr } from "@/lib/parse";
  *
  * They are here rather than in a package because the trust boundary is the
  * APPLICATION's — this is a database column, and `image-core` deliberately owns
- * no boundary parsing
- * (docs/developer-notes/monorepo-image-core.spec.foundation.md).
+ * no boundary parsing.
  */
 
 function derivationFixture(): Record<string, unknown> {

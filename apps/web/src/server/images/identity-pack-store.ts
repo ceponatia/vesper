@@ -25,9 +25,7 @@ import type { ImageRow } from "./assets";
 
 /**
  * The identity-pack service: the one place a character's face reference is
- * derived, promoted, and read
- * (docs/developer-notes/image-identity-packs.spec.derivation.md and
- * `.spec.data.md`).
+ * derived, promoted, and read.
  *
  * This module is the service's leaf: the row/contract boundary, the read-time
  * policy projection, the retry clock and the current-revision read, importing no

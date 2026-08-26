@@ -4,12 +4,11 @@ import { clampValueToBandSteps, traitRegistry } from "./traits";
 import { effectiveTraitValue, resolveTraits, type TraitValue } from "./traits/value";
 
 /**
- * Trait modulation (docs/developer-notes/personality-and-state.spec.md §5): pure
- * functions mapping a character's trait values → the coefficients the merge applies.
- * This is §5's "f(traits)" — kept deterministic in the merge, never decided by an
- * agent (resilience.md §3). Wires the **social-reaction `traitScale`** (the seam Slice 1
- * stubbed at 1, Slice 3), the **meter baseline/recovery** coefficients (Slice 4), and the
- * **affinity gain asymmetry + decay retention** coefficients (Slice 5).
+ * Trait modulation: pure functions mapping a character's trait values → the coefficients
+ * the merge applies. This is §5's "f(traits)" — kept deterministic in the merge, never
+ * decided by an agent (resilience.md §3). Wires the **social-reaction `traitScale`** (the
+ * seam Slice 1 stubbed at 1, Slice 3), the **meter baseline/recovery** coefficients
+ * (Slice 4), and the **affinity gain asymmetry + decay retention** coefficients (Slice 5).
  *
  * Constants are tunable placeholders (like the response-curve constants in
  * `reactions.ts`); they live here because `src/contracts` is IO-free and may not
