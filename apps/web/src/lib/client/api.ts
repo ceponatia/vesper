@@ -7,6 +7,7 @@ import type { CharacterSheetScope } from "@/lib/character-scopes";
 import { newId } from "@/lib/ids";
 import { parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
+import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
 import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
 import { portraitVariantKindLabel, portraitVariantKinds, type PortraitVariantKind, activeConditionSchema, type ActiveCondition, ambientSchema as ambientBaseSchema, attributeValueSchema, type AttributeValue, type ChatActionId, chatCapabilityManifestSchema, chatMemoryTraceSchema, emptyChatMemoryTrace, chatPulseTraceSchema, chatReplyFailureSchema, milestoneSchema, relationshipSampleSchema, relationshipTextureSchema, type RelationshipTexture, type ChatSkipAmount, type ChatPlayerState, characterProfileSchema, chatPlayerStateSchema, garmentBehaviors, garmentCleanlinessBands, garmentConditionKeys, garmentCreaseBands, garmentDamageKinds, garmentDegreeBands, garmentDepositFreshnessBands, garmentDepositKinds, garmentDisplacementKinds, garmentPresentationChannels, garmentTuckStates, garmentWearBands, garmentWetnessBands, GARMENT_CONDITION_NEUTRAL_BANDS, type GarmentOperation, emptyCharacterProfile, emptyChatPlayerState, emptyPersonaProfile, personaProfileSchema, diagnosticSchema, emotionLabelSchema, itemDefinitionSchema, itemKindSchema, itemSensorySchema, socialReactionCardExtrasSchema, socialReactionCardSchema, type SocialReactionCard, supportingCastSchema, type SupportingCastMember, chatPlansSchema, type ChatPlan } from "@/contracts";
 import {
@@ -338,10 +339,26 @@ export const personaDetailSchema = personaSummarySchema.extend({
 export type PersonaDetail = z.infer<typeof personaDetailSchema>;
 
 /** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
-/** Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1). */
+/**
+ * Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1).
+ *
+ * `provenance` names the narrator model and prompt revision that produced THIS
+ * take (narrator-prompt-lab.plan.md §Provenance) — the take browser's admin-only
+ * attribution label reads it. It is optional twice over: historical takes predate
+ * it entirely, and zod strips unknown keys, so leaving it off this schema would
+ * silently discard a field the server sends. Malformed ⇒ `undefined` ⇒ no label,
+ * never a failed transcript parse.
+ */
 export const replyTakesSchema = z
   .object({
-    takes: arrayOf(z.object({ id: z.string(), content: z.string(), createdAt: z.string().catch("") })),
+    takes: arrayOf(
+      z.object({
+        id: z.string(),
+        content: z.string(),
+        createdAt: z.string().catch(""),
+        provenance: narratorRunProvenanceSchema.optional().catch(undefined),
+      }),
+    ),
     activeId: z.string().catch(""),
   })
   .catch({ takes: [], activeId: "" });

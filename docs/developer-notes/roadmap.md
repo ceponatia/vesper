@@ -81,6 +81,14 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
   exclusion drops with a recorded reason because that endpoint ignores its
   negative field.
 
+- **Narrator Prompt Lab** — [plan](narrator-prompt-lab.plan.md) ·
+  [spec](narrator-prompt-lab.spec.md) — named,
+  hand-written narrator instruction prompts with immutable revisions, selected
+  per conversation, replacing only the narrator's behavior/craft layer while
+  Vesper keeps supplying character/world state, per-turn constraints and the
+  response contract; every take records the exact prompt revision and model that
+  produced it.
+
 - **Narrator model test bench** — [plan](narrator-model-bench.plan.md) ·
   [spec](narrator-model-bench.spec.md) — fourteen roleplay and low-refusal
   narrators are pickable from the chat menu, three of them served by a second

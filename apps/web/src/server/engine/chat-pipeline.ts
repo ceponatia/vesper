@@ -47,8 +47,19 @@ import {
   type PhysicalStateTransition,
   type VisualMemoryState,
 } from "@/contracts";
+import {
+  narratorPromptAuthorityWeights,
+  narratorPromptUnits,
+  narratorRunProvenanceSchema,
+  type NarratorInstructionSource,
+  type NarratorPromptNode,
+  type NarratorRunLane,
+  type NarratorRunProvenance,
+} from "@/contracts/narrator-prompts";
+import { fnv1aHex } from "@/lib/hash";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
+import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
 import {
   classifyEmptyNarratorCompletion,
   classifyProviderError,
@@ -202,10 +213,12 @@ import {
 } from "./constants";
 import { acquireKeyedLockWithin, CHAT_LOCK_LABEL_REPLY, chatExchangeLockKey, tryKeyedLock } from "./keyed-lock";
 import {
+  buildCharacterChatPromptNodes,
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
   buildChatPromptPartsForRoster,
   buildChatTurnMessage,
+  buildEnsembleChatPromptNodes,
   chatNotationNote,
   wrapNarratorInput,
   ENSEMBLE_QUIET_EXCHANGES,
@@ -476,7 +489,21 @@ const describeError = (error: unknown): string => (error instanceof Error ? erro
 // Reply takes (spec §4.1) — alternate generations browsable on the message row
 // ---------------------------------------------------------------------------
 
-const replyTakeSchema = z.object({ id: z.string(), content: z.string(), createdAt: z.string() });
+const replyTakeSchema = z.object({
+  id: z.string(),
+  content: z.string(),
+  createdAt: z.string(),
+  /**
+   * What produced this take (narrator-prompt-lab.plan.md §Provenance) — the lane,
+   * the effective narrator model, and the exact prompt revision when a Prompt Lab
+   * template was active.
+   *
+   * Optional **and** `.catch(undefined)`: every take written before slice 6 has
+   * none, and a malformed record must degrade this one take to "unlabelled"
+   * rather than reject the whole ring and lose the player's browsable history.
+   */
+  provenance: narratorRunProvenanceSchema.optional().catch(undefined),
+});
 export const replyTakesSchema = z.object({
   takes: z.array(replyTakeSchema).catch([]),
   activeId: z.string().catch(""),
@@ -486,22 +513,49 @@ export type ReplyTakes = z.infer<typeof replyTakesSchema>;
 export const emptyReplyTakes = (): ReplyTakes => ({ takes: [], activeId: "" });
 
 /**
+ * An assistant row's whole `meta` bag, kept open. Both lanes write different keys
+ * into it (the action-beat chip, the stop marker, the successor cut/model/attempts,
+ * composition fallbacks), and a take switch has to REWRITE one key while carrying
+ * the rest through — so this parse exists to make the merge safe, not to describe
+ * the shape. Unreadable meta degrades to an empty bag rather than losing the write.
+ */
+const replyMetaBagSchema = z.record(z.string(), z.unknown()).catch({});
+
+/**
  * Record a fresh take (PURE): the row's current content becomes a browsable entry
  * (seeded lazily on the first regenerate), the new take is appended and made
  * active, and the list is capped at CHAT_REPLY_TAKES_CAP — evicting the oldest
  * non-active entries first.
+ *
+ * `provenance.current` is what generated the content ALREADY on the row, and it
+ * rides the lazily-seeded historical take (plan §Alternate takes): the take that
+ * was written under the production prompt has to keep saying so after a retake
+ * under a test template, or the A/B comparison the Prompt Lab exists for reads
+ * both takes as the same experiment. A historical row carries none — that stays
+ * legal, and the take is simply unlabelled.
  */
 export function pushReplyTake(
   prior: ReplyTakes,
   currentContent: string,
   newContent: string,
   nowIso: string,
+  provenance: { current?: NarratorRunProvenance; fresh?: NarratorRunProvenance } = {},
 ): ReplyTakes {
   let takes = [...prior.takes];
   if (takes.length === 0) {
-    takes.push({ id: newId(), content: currentContent, createdAt: nowIso });
+    takes.push({
+      id: newId(),
+      content: currentContent,
+      createdAt: nowIso,
+      ...(provenance.current === undefined ? {} : { provenance: provenance.current }),
+    });
   }
-  const fresh = { id: newId(), content: newContent, createdAt: nowIso };
+  const fresh = {
+    id: newId(),
+    content: newContent,
+    createdAt: nowIso,
+    ...(provenance.fresh === undefined ? {} : { provenance: provenance.fresh }),
+  };
   takes.push(fresh);
   while (takes.length > CHAT_REPLY_TAKES_CAP) {
     const evictAt = takes.findIndex((t) => t.id !== fresh.id);
@@ -512,14 +566,87 @@ export function pushReplyTake(
 }
 
 /**
+ * Build one take's narrator-run provenance (PURE) — the record that answers
+ * "which prompt and which model wrote this?" months later
+ * (narrator-prompt-lab.plan.md §Provenance).
+ *
+ * Shared by all four prose narrator paths (legacy 1:1/ensemble, successor
+ * co-present, successor solo) so the four cannot drift into describing the same
+ * fact three different ways. It lives beside the take ring because that is what
+ * carries it.
+ *
+ * Two hashes, no prompt text. `instructionHash` identifies the instruction BODY —
+ * the immutable revision's own `bodyHash` for a test source, and for production a
+ * hash over the classified `behavior` units, which is the production text a test
+ * prompt would have replaced. `assembledSystemHash` identifies the whole assembly,
+ * so two takes generated from the same revision under different runtime state are
+ * still distinguishable. Storing the assembled prompt itself is forbidden by the
+ * plan: it would copy a large runtime prompt onto every message for a fact these
+ * two hashes already establish.
+ *
+ * Metrics are optional on purpose. A provider that reports no finish reason or no
+ * token counts leaves those fields absent rather than earning new plumbing.
+ */
+export function buildNarratorRunProvenance(args: {
+  lane: NarratorRunLane;
+  /** The narrator model that actually ran, post-curation — not the requested id. */
+  modelId: string;
+  /** The exchange's frozen instruction source; absent ⇒ production. */
+  source: NarratorInstructionSource | undefined;
+  /** The classified node trees this prompt was assembled from. */
+  nodes: readonly NarratorPromptNode[];
+  /** The assembled text actually sent, for the assembly hash. */
+  assembled: string;
+  attempts?: number;
+  finishReason?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+}): NarratorRunProvenance {
+  const { source } = args;
+  const productionInstructionText = narratorPromptUnits(args.nodes)
+    .filter((unit) => unit.authority === "behavior")
+    .map((unit) => unit.text)
+    .join("\n");
+  return {
+    lane: args.lane,
+    modelId: args.modelId,
+    promptSource: source?.kind === "test" ? "test" : "production",
+    ...(source?.kind === "test"
+      ? {
+          templateId: source.templateId,
+          templateName: source.templateName,
+          revisionId: source.revisionId,
+          revision: source.revision,
+          templateLanguage: source.templateLanguage,
+        }
+      : {}),
+    instructionHash: source?.kind === "test" ? source.bodyHash : fnv1aHex(productionInstructionText),
+    assembledSystemHash: fnv1aHex(args.assembled),
+    authorityWeights: narratorPromptAuthorityWeights(args.nodes),
+    mode: "instruction_override_v1",
+    ...(args.attempts === undefined ? {} : { attempts: args.attempts }),
+    ...(args.finishReason === undefined ? {} : { finishReason: args.finishReason }),
+    ...(args.inputTokens === undefined ? {} : { inputTokens: args.inputTokens }),
+    ...(args.outputTokens === undefined ? {} : { outputTokens: args.outputTokens }),
+    ...(args.latencyMs === undefined ? {} : { latencyMs: args.latencyMs }),
+  };
+}
+
+/**
  * Make one recorded take the displayed reply: the row's `content` is updated to
  * mirror it (spec §4.1 — transcript reads stay one-column). Returns the take's
  * content, or null when the message/take doesn't exist. Display-only: state and
  * memory keep reflecting the last GENERATED take (regenerate to re-run effects).
+ *
+ * `meta.narratorRun` moves with the switch. `content` mirrors the active take, so
+ * the row-level answer to "which prompt wrote what is showing?" has to mirror it
+ * too — otherwise a row displaying the production take would report the test
+ * template that wrote the take beside it.
  */
 export async function switchReplyTake(chatId: string, messageId: string, takeId: string): Promise<string | null> {
   const [row] = await db()
-    .select({ takes: characterChatMessages.takes })
+    .select({ takes: characterChatMessages.takes, meta: characterChatMessages.meta })
     .from(characterChatMessages)
     .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
     .limit(1);
@@ -527,9 +654,14 @@ export async function switchReplyTake(chatId: string, messageId: string, takeId:
   const takes = parseOr(replyTakesSchema, row.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
   const target = takes.takes.find((t) => t.id === takeId);
   if (!target) return null;
+  // Every OTHER meta key describes the row, not the displayed take (the action-beat
+  // chip, the stop marker, the successor cut id) and is carried through untouched.
+  const meta = parseOr(replyMetaBagSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  if (target.provenance === undefined) delete meta.narratorRun;
+  else meta.narratorRun = target.provenance;
   await db()
     .update(characterChatMessages)
-    .set({ content: target.content, takes: { ...takes, activeId: target.id } })
+    .set({ content: target.content, takes: { ...takes, activeId: target.id }, meta })
     .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)));
   return target.content;
 }
@@ -692,7 +824,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     /** The synthetic cue appended to history when there is no player line this turn. */
     let syntheticCue: string | null = null;
     /** For regenerate: the current (soon-to-be-old) reply text on the row. */
-    let regenerateTarget: { id: string; content: string } | null = null;
+    let regenerateTarget: { id: string; content: string; narratorRun?: NarratorRunProvenance } | null = null;
     let effectiveKind: ChatExchangeKind = kind;
     /** For rerun: the assistant successors deleted this exchange (their memory is retracted). */
     let rerunDeletedAssistantIds: string[] = [];
@@ -768,7 +900,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           releaseChatLock();
           return { ok: false, code: "nothing_to_regenerate", message: "there is no reply to regenerate yet" };
         }
-        regenerateTarget = { id: target.id, content: target.content };
+        // `narratorRun` travels with the content it produced: when this take becomes
+        // the first browsable historical entry below, it keeps its own provenance.
+        regenerateTarget = {
+          id: target.id,
+          content: target.content,
+          ...(target.narratorRun === undefined ? {} : { narratorRun: target.narratorRun }),
+        };
         assistantMessageId = target.id;
         const prev = await messageBefore(chatId, target);
         if (prev?.role === "user") {
@@ -899,6 +1037,20 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // outfit marker (raw item ids — also persisted verbatim by pre-fix rows) for
     // the readable garment phrase before the narrator or archivist see it.
     const owner = await chatOwnerId(chatId);
+
+    // --- The exchange's narrator instructions (narrator-prompt-lab.plan.md) ----
+    // ONE instruction source, resolved here and frozen for the whole exchange.
+    // "Here" is load-bearing twice over: the exchange lock is already held (this
+    // whole function runs inside it), and no narrator prompt has been built yet, so
+    // an owner saving revision N+1 in another browser tab while this reply streams
+    // cannot reach the reply being written — nothing downstream re-reads the
+    // template. Absent selection ⇒ production, byte-identical to the pre-Lab build.
+    //
+    // The sink is the turn's own, so a template that has been deleted or whose
+    // revision will not load lands `narrator_prompt_override_unavailable` in this
+    // exchange's diagnostics like every other degradation. The resolver never
+    // throws: a prompt experiment can never dead-end a conversation.
+    const instructionSource = await resolveNarratorInstructionSource(owner, chatId, sink);
 
     // --- The chat-wide scenario (followups ruling 8) --------------------------
     // Loaded once per exchange; regenerate/rerun roll it back with the state
@@ -2200,6 +2352,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     };
 
     const promptInput: CharacterChatPromptInput = {
+      // The exchange's frozen narrator instructions (narrator-prompt-lab.plan.md
+      // slice 5). This object reaches ONLY the three prose-narrator builds below —
+      // every helper agent (pulse, extractors, notes, classifiers, scene composer,
+      // meanwhile) assembles its own prompt from its own inputs and cannot see it.
+      instructionSource,
       name: characterName,
       profile,
       priorSummary: summaryState?.summary,
@@ -2311,6 +2468,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // The solo perks' group arms (followups ruling 12): each names the ONE
       // member it aims at, so the frame renders the license in third person.
       ensembleExtras = {
+        // The same frozen source the 1-on-1 build gets: an ensemble reply follows the
+        // owner's craft instructions while the roster, the presence law and the
+        // `[Name]` tag contract stay exactly where they are.
+        instructionSource,
         pairs,
         awayPairs,
         ...(selfieRequested
@@ -2369,13 +2530,22 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     );
     let system: string;
     let modelHistory: typeof history;
+    /**
+     * The whole assembled narrator prompt — prefix AND tail, whatever transport
+     * each carries. `assembledSystemHash` identifies the assembly, so it must not
+     * change meaning when the `turn_context` layout moves the tail beside the
+     * player's input; that is a placement decision, not a different prompt.
+     */
+    let assembledNarratorPrompt: string;
     if (ensemble) {
       const parts = buildChatPromptPartsForRoster(promptInput, ensemble, ensembleExtras);
       system = [parts.prefix, parts.tail].filter(Boolean).join("\n\n");
+      assembledNarratorPrompt = system;
       modelHistory = syntheticCue ? [...markedHistory, { role: "user" as const, content: syntheticCue }] : markedHistory;
     } else if (chatPromptLayout() === "turn_context" && playerContent) {
       const parts = buildCharacterChatPromptParts(promptInput);
       system = parts.prefix;
+      assembledNarratorPrompt = [parts.prefix, parts.tail].filter(Boolean).join("\n\n");
       // The window's last entry is the current player message (inserted before the window
       // loaded); it moves into the composed final message, so drop it from what we send.
       const priorHistory = markedHistory.at(-1)?.role === "user" ? markedHistory.slice(0, -1) : markedHistory;
@@ -2392,8 +2562,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ];
     } else {
       system = buildCharacterChatSystemPrompt(promptInput);
+      assembledNarratorPrompt = system;
       modelHistory = syntheticCue ? [...markedHistory, { role: "user" as const, content: syntheticCue }] : markedHistory;
     }
+
+    /**
+     * The classified node trees behind the prompt just built — the provenance's
+     * per-authority weights and, on production, the hash of the instruction text a
+     * test prompt would have replaced. Rebuilt rather than threaded because the
+     * builders own the byte-pinned assembly and must keep owning it; this is a pure
+     * tree walk with no IO, and it runs once, only on a reply that actually settled.
+     */
+    const narratorPromptNodes = (): readonly NarratorPromptNode[] => {
+      const nodes = ensemble
+        ? buildEnsembleChatPromptNodes(promptInput, ensemble, ensembleExtras)
+        : buildCharacterChatPromptNodes(promptInput);
+      return [...nodes.prefix, ...nodes.tail];
+    };
 
     const abortController = new AbortController();
     inflightReplyAborts.set(chatId, abortController);
@@ -2425,9 +2610,33 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Settle work (runs once the reply has fully streamed) ----------------
     const settle = async (full: string, stopped: boolean): Promise<void> => {
+      // What produced THIS take (narrator-prompt-lab.plan.md slice 6). The completion
+      // record is best-effort: a player Stop or a watchdog trip leaves it null, and
+      // those fields are then simply absent rather than guessed. The effective model
+      // is the one the generation actually ran, not the id the request asked for.
+      const narratorRun = buildNarratorRunProvenance({
+        lane: "legacy_chat",
+        modelId: narratorCompletion?.modelId ?? input.model ?? "",
+        source: instructionSource,
+        nodes: narratorPromptNodes(),
+        assembled: assembledNarratorPrompt,
+        ...(narratorCompletion === null
+          ? {}
+          : {
+              attempts: narratorCompletion.attempts,
+              finishReason: narratorCompletion.finishReason,
+              ...(narratorCompletion.inputTokens === undefined ? {} : { inputTokens: narratorCompletion.inputTokens }),
+              ...(narratorCompletion.outputTokens === undefined
+                ? {}
+                : { outputTokens: narratorCompletion.outputTokens }),
+            }),
+      });
       // The action-beat chip id rides the reply meta so a later regenerate reproduces
       // the cue + deterministic effect (recovered from the target's meta above).
-      const beatMeta = actionBeatId ? { actionBeat: actionBeatId } : {};
+      // `narratorRun` rides it too: `content` mirrors the active take, so the row's
+      // meta is the row-level answer to "which prompt wrote what is showing?" — and
+      // it is what the NEXT regenerate seeds the historical take's provenance from.
+      const beatMeta = actionBeatId ? { actionBeat: actionBeatId, narratorRun } : { narratorRun };
       const meta = stopped ? { ...beatMeta, stopped: true } : beatMeta;
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
@@ -2435,7 +2644,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // mid-stream makes this a no-op.
         const takes = await currentReplyTakes(chatId, regenerateTarget.id);
         if (takes === null) return; // row deleted mid-stream
-        const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString());
+        const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString(), {
+          // The take being displaced keeps the run that wrote it; a row from before
+          // slice 6 has none, and that take is simply unlabelled.
+          ...(regenerateTarget.narratorRun === undefined ? {} : { current: regenerateTarget.narratorRun }),
+          fresh: narratorRun,
+        });
         await db()
           .update(characterChatMessages)
           .set({ content: full, takes: next, meta })
@@ -3197,15 +3411,28 @@ async function loadMessageAttachments(
   };
 }
 
-/** Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate recovery). */
+/**
+ * Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate
+ * recovery) and the run that produced the content currently on the row — which the
+ * first regenerate hands to the historical take it seeds, so the old take keeps
+ * saying which prompt actually wrote it (narrator-prompt-lab.plan.md §Alternate
+ * takes). Rows written before slice 6 have none; absent is legal, never an error.
+ */
 const assistantReplyMetaSchema = z.object({
   actionBeat: chatActionIdSchema.optional().catch(undefined),
+  narratorRun: narratorRunProvenanceSchema.optional().catch(undefined),
 });
 
 /** The newest message when it is an assistant reply — the only regenerable target. */
 async function lastAssistantMessage(
   chatId: string,
-): Promise<{ id: string; content: string; createdAt: Date; actionBeat?: ChatActionId } | null> {
+): Promise<{
+  id: string;
+  content: string;
+  createdAt: Date;
+  actionBeat?: ChatActionId;
+  narratorRun?: NarratorRunProvenance;
+} | null> {
   const [row] = await db()
     .select({
       id: characterChatMessages.id,
@@ -3220,7 +3447,13 @@ async function lastAssistantMessage(
     .limit(1);
   if (!row || row.role !== "assistant") return null;
   const meta = parseOr(assistantReplyMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  return { id: row.id, content: row.content, createdAt: row.createdAt, actionBeat: meta.actionBeat };
+  return {
+    id: row.id,
+    content: row.content,
+    createdAt: row.createdAt,
+    actionBeat: meta.actionBeat,
+    narratorRun: meta.narratorRun,
+  };
 }
 
 /** The message immediately before `target`, collision-safe on the (createdAt, id) tuple. */
@@ -4054,6 +4287,25 @@ export async function previewChatPrompt(input: {
   character: { id: string; name: string; profile: unknown };
 }): Promise<ChatPromptPreview> {
   const sink = new DiagnosticCollector();
+  // The inspector SHOWS the narrator prompt, so it has to show the one the next
+  // exchange would actually build — including a Prompt Lab override
+  // (narrator-prompt-lab.plan.md). §Agent isolation does not apply here: that rule
+  // keeps the resolved source away from HELPER AGENTS (pulse, extractors,
+  // classifiers, composer, deliberator), which produce structured state rather
+  // than prose. This surface renders the prose narrator's own prompt, and an
+  // inspector that quietly showed production bytes for a conversation running a
+  // test template would be worse than no inspector: the one place you go to ask
+  // "what is the narrator actually being told" would answer wrongly, and the
+  // Prompt Lab's whole point is being able to read that answer.
+  //
+  // Read-only: this resolves the CURRENT selection at preview time and generates
+  // nothing. It is not the exchange's frozen source, and it takes no lock — the
+  // live turn resolves its own under its own lock.
+  const instructionSource = await resolveNarratorInstructionSource(
+    await chatOwnerId(input.chatId),
+    input.chatId,
+    sink,
+  );
   const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
   const { profile, scenario, state, player, wardrobe, playerWardrobe } = cut;
   const summaryState = await loadChatSummary(input.chatId);
@@ -4127,6 +4379,7 @@ export async function previewChatPrompt(input: {
   const parts = buildCharacterChatPromptParts({
     name: input.character.name,
     profile,
+    instructionSource,
     priorSummary: summaryState?.summary,
     memory,
     player: playerPromptSlice(player, playerWardrobe),

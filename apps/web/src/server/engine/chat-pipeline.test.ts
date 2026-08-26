@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import type { NarratorCompletion } from "@/server/ai";
 import { CHAT_REPLY_TAKES_CAP } from "./constants";
 import {
@@ -86,12 +87,72 @@ describe("pushReplyTake", () => {
       "fresh content",
     ]);
   });
+
+  /**
+   * Take provenance (narrator-prompt-lab.plan.md §Alternate takes). The whole point
+   * of the Prompt Lab's manual A/B is: generate under production, select a test
+   * template, ask for another take — and afterwards be able to tell the two apart.
+   *
+   * What this kills: stamping the exchange's freshly-resolved provenance onto BOTH
+   * entries. That reads as "both takes came from Player Agency Minimal v4", which
+   * silently destroys the comparison the owner ran the experiment for — and it is
+   * the natural implementation, because the fresh provenance is the only one in
+   * hand at the moment the seed is written.
+   */
+  it("labels the seeded historical take with the run that wrote it, not the run replacing it", () => {
+    const production: NarratorRunProvenance = {
+      lane: "legacy_chat",
+      modelId: "aion-2.0",
+      promptSource: "production",
+      instructionHash: "prod-hash",
+    };
+    const test: NarratorRunProvenance = {
+      lane: "legacy_chat",
+      modelId: "aion-3.0",
+      promptSource: "test",
+      templateId: "tpl-1",
+      templateName: "Player Agency Minimal",
+      revisionId: "rev-4",
+      revision: 4,
+      instructionHash: "hash-rev-4",
+    };
+    const next = pushReplyTake(emptyReplyTakes(), "the production reply", "the test-prompt reply", NOW, {
+      current: production,
+      fresh: test,
+    });
+
+    expect(next.takes.map((t) => t.provenance?.promptSource)).toEqual(["production", "test"]);
+    expect(next.takes[0]?.provenance?.modelId).toBe("aion-2.0");
+    expect(next.takes[1]?.provenance?.revisionId).toBe("rev-4");
+  });
+
+  it("leaves the seeded take unlabelled when the row it displaces predates provenance", () => {
+    // A reply written before slice 6 has no `meta.narratorRun` to hand over. That
+    // must stay legal: an unlabelled historical take, never a failed regenerate.
+    const next = pushReplyTake(emptyReplyTakes(), "an old reply", "a fresh reply", NOW);
+    expect(next.takes[0]?.provenance).toBeUndefined();
+    expect(next.takes[1]?.provenance).toBeUndefined();
+  });
 });
 
 describe("replyTakesSchema", () => {
   it("parses the legacy empty-object column default into an empty takes list", () => {
     const parsed = replyTakesSchema.parse({});
     expect(parsed).toEqual({ takes: [], activeId: "" });
+  });
+
+  it("keeps a take whose provenance is missing or malformed, unlabelled", () => {
+    // Historical rows carry no `provenance` at all, and a corrupt one must cost that
+    // ONE take its label — never the player's whole browsable history.
+    const parsed = replyTakesSchema.parse({
+      takes: [
+        { id: "t1", content: "historical", createdAt: NOW },
+        { id: "t2", content: "corrupt label", createdAt: NOW, provenance: { lane: "not_a_lane" } },
+      ],
+      activeId: "t2",
+    });
+    expect(parsed.takes.map((t) => t.content)).toEqual(["historical", "corrupt label"]);
+    expect(parsed.takes.every((t) => t.provenance === undefined)).toBe(true);
   });
 });
 

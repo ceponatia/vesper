@@ -3,8 +3,15 @@
 import { useState } from "react";
 import type { WorldBeatKind } from "@/lib/simulation/world-beat";
 import type { ReplyTakes } from "@/lib/client/api";
+import {
+  narratorProvenanceLabel,
+  narratorRunProvenanceSchema,
+  type NarratorRunProvenance,
+} from "@/contracts/narrator-prompts/provenance";
+import { parseOrNull } from "@/lib/parse";
 import { MessageContent } from "@/components/characters/message-content";
 import { chatReplySegments } from "@/components/characters/chat-segments";
+import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +34,21 @@ export interface ChatLine {
    * system line (no portrait, no bubble, no actions) — `content` is the phrased text.
    */
   worldBeat?: WorldBeatKind;
+}
+
+/**
+ * The narrator-run provenance recorded on one take, when it has any
+ * (narrator-prompt-lab.plan.md §Provenance / §"Alternate takes").
+ *
+ * Read structurally rather than off the take type: the field is optional
+ * everywhere, and every take generated before the Prompt Lab existed simply has
+ * none. A missing OR malformed record degrades to `null` — no label, no
+ * placeholder, no thrown render — which is exactly how a historical take should
+ * look. `parseOrNull` with no sink, because a take without provenance is the
+ * normal case here, not a boundary failure worth a diagnostic.
+ */
+function takeProvenance(take: { id: string; provenance?: unknown } | undefined): NarratorRunProvenance | null {
+  return take ? parseOrNull(narratorRunProvenanceSchema, take.provenance) : null;
 }
 
 /** Circular-arrow "rerun" glyph (stroke-based, 24×24 box — matches the nav icons). */
@@ -399,6 +421,15 @@ export function MessageBubble({
  * recorded takes stay discoverable. Switching is display-only: the conversation's
  * state and memory follow the newest generated take, so the arrows just swap which
  * take the bubble shows.
+ *
+ * For admins only, the pager also names what wrote the take on screen —
+ * `aion-2.0 · Player Agency Minimal v4` (narrator-prompt-lab.plan.md slice 6).
+ * That is the whole point of the manual A/B: generate on the production prompt,
+ * switch the conversation to a test prompt, take again, then step through the
+ * takes and watch the attribution change with them. Without it a pager reading
+ * "2/3" is unfalsifiable days later. A take carrying no provenance — every take
+ * predating the Prompt Lab — renders no label whatsoever, and a non-admin's
+ * pager is unchanged down to its class list.
  */
 function TakesPager({
   takes,
@@ -409,14 +440,18 @@ function TakesPager({
   disabled: boolean;
   onSwitch: (takeId: string) => void;
 }) {
+  const isAdmin = useIsAdmin();
   const found = takes.takes.findIndex((t) => t.id === takes.activeId);
   const active = found < 0 ? takes.takes.length - 1 : found; // unknown activeId ⇒ the newest take
   const prev = takes.takes[active - 1];
   const next = takes.takes[active + 1];
+  // The displayed take's attribution, so browsing takes moves the label with them.
+  const provenance = isAdmin ? takeProvenance(takes.takes[active]) : null;
+  const label = provenance ? narratorProvenanceLabel(provenance) : null;
   const arrow =
     "rounded px-1.5 py-1 hover:text-paper-200 disabled:pointer-events-none disabled:text-paper-600";
   return (
-    <div className="flex items-center text-[11px] text-paper-500">
+    <div className={`flex items-center text-[11px] text-paper-500${label ? " min-w-0" : ""}`}>
       <button
         type="button"
         onClick={() => (prev ? onSwitch(prev.id) : undefined)}
@@ -438,6 +473,18 @@ function TakesPager({
       >
         ›
       </button>
+      {label ? (
+        // Capped and truncating: a 120-character prompt name must not push the
+        // Edit / Delete / Another take levers out of the row. `min-w-0` above lets
+        // the pager itself shrink, so the ellipsis absorbs the pressure and the
+        // title attribute hands the full label back on hover.
+        <span
+          title={`The narrator model and prompt that wrote the take on screen (admin only): ${label}`}
+          className="ml-1 max-w-24 truncate text-paper-600 sm:max-w-56"
+        >
+          {label}
+        </span>
+      ) : null}
     </div>
   );
 }

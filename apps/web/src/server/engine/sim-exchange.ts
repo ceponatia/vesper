@@ -1,4 +1,5 @@
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile } from "@/contracts";
+import { narratorRunProvenanceSchema, type NarratorInstructionSource } from "@/contracts/narrator-prompts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { PublicFailurePresentation } from "@vesper/simulation-core/contracts/narrative";
 import { admitPlayerCommand, type AdmittedCommand } from "@vesper/simulation-core/input-admission";
@@ -41,11 +42,22 @@ import type {
 import type { SpaceProjection } from "@vesper/simulation-core/contracts/space";
 import { CompositionFallbackCollector } from "./composition-diagnostics";
 import { escalateToTimeJob } from "./sim-time-jobs";
-import { emptyReplyTakes, persistAssistantReply, pushReplyTake, replyTakesSchema } from "./chat-pipeline";
+import {
+  buildNarratorRunProvenance,
+  emptyReplyTakes,
+  persistAssistantReply,
+  pushReplyTake,
+  replyTakesSchema,
+} from "./chat-pipeline";
 import { enqueueChatSummary, loadChatSummary } from "./chat-summary";
 import { log } from "../log";
+import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
 import { narrationShapeId, type NarrationShapeId } from "./prompts/constants";
-import { buildSimSoloRenderPrompt } from "./prompts/sim-solo-render";
+import {
+  buildSimSoloRenderPrompt,
+  buildSimSoloRenderPromptNodes,
+  type SimSoloRenderContext,
+} from "./prompts/sim-solo-render";
 import { buildLiveDeliberation, renderCommittedCut, renderSoloNarration } from "./sim-narrator";
 import { runSimVisualStateShadow } from "./sim-visual-state";
 import {
@@ -597,8 +609,19 @@ export function isSimRoutedAuthority(
   );
 }
 
-/** Just the reply-meta field the retake path reads back — the committed cut id. */
-const simReplyMetaSchema = z.object({ cutId: z.string().min(1).optional() }).catch({});
+/**
+ * The reply-meta fields the retake path reads back: the committed cut id, and the
+ * run that produced the content currently on the row — which the retake hands to
+ * the historical take it seeds, so the displaced take keeps naming the prompt that
+ * actually wrote it (narrator-prompt-lab.plan.md §Alternate takes). A reply from
+ * before slice 6 carries neither; absent is legal.
+ */
+const simReplyMetaSchema = z
+  .object({
+    cutId: z.string().min(1).optional(),
+    narratorRun: narratorRunProvenanceSchema.optional().catch(undefined),
+  })
+  .catch({});
 
 interface ResolvedSimExchange {
   branchId: string;
@@ -608,14 +631,33 @@ interface ResolvedSimExchange {
   actorNames: Record<string, string>;
   playerName: string;
   ragEligibility: boolean;
+  /**
+   * The ONE narrator instruction source this exchange runs on, resolved once under
+   * the exchange lock (narrator-prompt-lab.plan.md slice 5).
+   *
+   * It rides the context because every successor turn shape — co-present, solo,
+   * departure, accompany, retake — receives this object, so carrying it here is
+   * what makes "leaving the primary's physical scene must not silently switch back
+   * to production instructions" true by construction rather than by remembering to
+   * pass it at five call sites.
+   */
+  instructionSource: NarratorInstructionSource;
+  /** Codes for a selection that failed to resolve — merged into the turn's diagnostics. */
+  instructionDiagnostics: readonly string[];
 }
 
 /**
  * The shared gate + world-truth names for one exchange: resolve authority, refuse
- * a non-sim chat, and load the branch's actor display names. Every mode starts
- * here so the gate lives in exactly one place.
+ * a non-sim chat, load the branch's actor display names, and freeze the narrator
+ * instruction source. Every mode starts here so the gate lives in exactly one place.
+ *
+ * Both callers of `runSimChatExchange` (the ordinary chat send and `/sim-turn`)
+ * hold the per-chat exchange lock before they get here, which is the condition the
+ * plan puts on resolution: one exact revision per exchange, read after the lock and
+ * never re-read.
  */
 async function resolveSimExchange(
+  ownerId: string,
   chatId: string,
 ): Promise<{ ok: true; ctx: ResolvedSimExchange } | { ok: false; result: SimChatExchangeResult }> {
   const authority = await readChatEngineAuthority(chatId);
@@ -637,6 +679,12 @@ async function resolveSimExchange(
     .from(simCharacters)
     .where(eq(simCharacters.branchId, branchId));
   const actorNames = Object.fromEntries(nameRows.map((row) => [row.characterId, row.name]));
+  // The Prompt Lab selection, resolved ONCE for the whole exchange. It never
+  // throws: a template that is gone, soft-deleted or unreadable degrades to
+  // production instructions and files the reason, which is then carried on the
+  // turn's diagnostics so a silently-degraded experiment is visible.
+  const instructions = new DiagnosticCollector();
+  const instructionSource = await resolveNarratorInstructionSource(ownerId, chatId, instructions);
   return {
     ok: true,
     ctx: {
@@ -646,6 +694,10 @@ async function resolveSimExchange(
       actorNames,
       playerName: actorNames[playerActorId] ?? "the player",
       ragEligibility: authority.ragEligibility,
+      instructionSource,
+      instructionDiagnostics: instructions.items.map((item) =>
+        typeof item.context?.reason === "string" ? `${item.code}:${item.context.reason}` : item.code,
+      ),
     },
   };
 }
@@ -872,7 +924,7 @@ export async function runSimChatExchange(input: {
    */
   inputMode?: "player" | "narrator";
 }): Promise<SimChatExchangeResult> {
-  const resolved = await resolveSimExchange(input.chatId);
+  const resolved = await resolveSimExchange(input.userId, input.chatId);
   if (!resolved.ok) return resolved.result;
   const mode = input.mode ?? "send";
   if (mode === "retake") {
@@ -1126,6 +1178,9 @@ async function runCoPresentTurn(input: {
     engagementId: input.engagementId,
     cutId: turn.cut.id,
     conversation: {
+      // The exchange's frozen instructions. Every retry inside `renderCommittedCut`
+      // rebuilds the prompt from THIS object, so the revision cannot move mid-render.
+      instructionSource: ctx.instructionSource,
       // No utterance ⇒ omit the player-turn block ("the scene breathes").
       ...(input.message === "" ? {} : { playerUtterance: input.message }),
       ...(input.narratorInput ? { narratorInput: true } : {}),
@@ -1163,6 +1218,9 @@ async function runCoPresentTurn(input: {
       // The opening-directive flag a later prompt slice reads (§4).
       ...(input.mode === "open" ? { simOpening: true } : {}),
       ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
+      // Which prompt and model wrote what this row displays (slice 6). Mirrors the
+      // active take, and is what a later retake seeds the historical take's label from.
+      ...(rendered.provenance === undefined ? {} : { narratorRun: rendered.provenance }),
       // C15 surface a: public-safe codes only (ruling 2) — open a degraded beat and see why.
       ...(input.fallbacks && input.fallbacks.codes().length ? { compositionFallbacks: input.fallbacks.codes() } : {}),
     },
@@ -1190,7 +1248,7 @@ async function runCoPresentTurn(input: {
     modelId: rendered.modelId,
     attempts: rendered.attempts,
     degraded: rendered.degraded,
-    diagnostics: rendered.diagnostics,
+    diagnostics: [...ctx.instructionDiagnostics, ...rendered.diagnostics],
   };
 }
 
@@ -1887,7 +1945,13 @@ async function runSimSoloTurn(input: {
     } satisfies SoloCutContext);
 
   const fallbackProse = buildSoloFallbackProse(soloContext);
-  const { system, prompt } = buildSimSoloRenderPrompt({
+  // Named so the provenance can weigh the SAME assembly the render used, rather
+  // than a second context built from the same fields and hoped to match.
+  const soloRenderContext: SimSoloRenderContext = {
+    // Walking out of the primary's physical scene must not quietly restore the
+    // production craft layer (plan §Successor solo narrator) — same frozen source
+    // the co-present renderer above gets.
+    instructionSource: ctx.instructionSource,
     storySecond: atStorySecond,
     calendarStart: clock?.calendarStart ?? null,
     actorNames,
@@ -1904,14 +1968,24 @@ async function runSimSoloTurn(input: {
     ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
     ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
     narrationShape: presentation.narrationShape,
-  });
+  };
+  const { system, prompt } = buildSimSoloRenderPrompt(soloRenderContext);
 
   const rendered = await renderSoloNarration({ system, prompt, fallbackProse });
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
   }
 
-  const diagnostics = [...solo.diagnostics, ...rendered.diagnostics];
+  const narratorRun = buildNarratorRunProvenance({
+    lane: "successor",
+    modelId: rendered.modelId,
+    source: ctx.instructionSource,
+    nodes: buildSimSoloRenderPromptNodes(soloRenderContext),
+    assembled: [system, prompt].join("\n\n"),
+    attempts: rendered.attempts,
+    ...(rendered.latencyMs === undefined ? {} : { latencyMs: rendered.latencyMs }),
+  });
+  const diagnostics = [...ctx.instructionDiagnostics, ...solo.diagnostics, ...rendered.diagnostics];
   const fallbackCodes = input.fallbacks?.codes() ?? [];
   const assistantMessageId = newId();
   await persistAssistantReply({
@@ -1925,6 +1999,7 @@ async function runSimSoloTurn(input: {
       solo: true,
       modelId: rendered.modelId,
       attempts: rendered.attempts,
+      narratorRun,
       ...(input.mode === "open" ? { simOpening: true } : {}),
       // C15 surface a: the composed-flow codes (public-safe), plus the solo render's own
       // stable diagnostic codes — both were previously returned then dropped at persist.
@@ -1981,8 +2056,10 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
   const engagementId = found.engagementId;
 
   // The cut id: from the reply's meta (persistAssistantReply stored it), else the
-  // engagement's newest persisted cut (ruling 18 fallback).
-  const metaCutId = parseOr(simReplyMetaSchema, target.meta, {}, undefined, "character_chat_messages.meta").cutId;
+  // engagement's newest persisted cut (ruling 18 fallback). The same read recovers
+  // the run that produced the take this retake is about to displace.
+  const priorMeta = parseOr(simReplyMetaSchema, target.meta, {}, undefined, "character_chat_messages.meta");
+  const metaCutId = priorMeta.cutId;
   const cutId = metaCutId ?? (await latestCutIdForEngagement(db(), branchId, engagementId));
   if (!cutId) {
     return { ok: false, code: "nothing_to_retake", message: "there is no committed cut to re-render", status: 409 };
@@ -2013,6 +2090,11 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
     engagementId,
     cutId,
     conversation: {
+      // A retake resolves its OWN instruction source (this whole function runs under
+      // the exchange lock), which is exactly the plan's A/B workflow: generate on
+      // production, select a test template, ask for another take, and get the new
+      // prompt while the previous take stays browsable under the old one.
+      instructionSource: ctx.instructionSource,
       ...(priorUtterance.trim() === "" ? {} : { playerUtterance: priorUtterance }),
       dialogueTail,
       viewpointIsPlayer: true,
@@ -2035,7 +2117,12 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
   // Replace the reply row in place: the prior text becomes a browsable take, the
   // fresh render is active (spec §4.1 — the same transcript semantics legacy gives).
   const priorTakes = parseOr(replyTakesSchema, target.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
-  const nextTakes = pushReplyTake(priorTakes, target.content, rendered.prose, new Date().toISOString());
+  const nextTakes = pushReplyTake(priorTakes, target.content, rendered.prose, new Date().toISOString(), {
+    // The displaced take keeps the run that wrote it — that is what makes the two
+    // takes comparable afterwards instead of both reading as this exchange's prompt.
+    ...(priorMeta.narratorRun === undefined ? {} : { current: priorMeta.narratorRun }),
+    ...(rendered.provenance === undefined ? {} : { fresh: rendered.provenance }),
+  });
   await db()
     .update(characterChatMessages)
     .set({
@@ -2046,6 +2133,7 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
         cutId: rendered.cutId,
         modelId: rendered.modelId,
         attempts: rendered.attempts,
+        ...(rendered.provenance === undefined ? {} : { narratorRun: rendered.provenance }),
         ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
       },
     })
@@ -2059,6 +2147,6 @@ async function runSimRetake(input: { chatId: string; userId: string; ctx: Resolv
     modelId: rendered.modelId,
     attempts: rendered.attempts,
     degraded: rendered.degraded,
-    diagnostics: rendered.diagnostics,
+    diagnostics: [...ctx.instructionDiagnostics, ...rendered.diagnostics],
   };
 }

@@ -345,6 +345,31 @@ export const characterChats = pgTable(
     })
       .notNull()
       .default("off"),
+    /**
+     * The Narrator Prompt Lab template this conversation is experimenting with
+     * (narrator-prompt-lab.plan.md §3) — `null`, the default and every
+     * pre-feature row, means Vesper's production narrator instructions.
+     *
+     * A sibling of `agentReasoningProfile` above, and for the same reason: this
+     * is **operational configuration, not story state**. Retakes, regenerate,
+     * rerun, state reset and simulation rollback never change it, it is not part
+     * of `ChatScenario`, and no scenario preset carries it. Per CHAT rather than
+     * per character on purpose — two conversations with the same character must
+     * be able to run different instruction prompts for a parallel A/B.
+     *
+     * A real FK with `ON DELETE SET NULL`, which is the integrity backstop for a
+     * genuine hard delete only. The NORMAL delete is SOFT (`deleted_at`), and
+     * `softDeleteNarratorPromptTemplate` explicitly clears live selections in the
+     * same transaction — those conversations fall back to production instructions
+     * on their next exchange while the immutable revisions stay put, so historical
+     * take provenance still resolves. Resolution is fail-open regardless: a
+     * selection that does not resolve degrades to production with a diagnostic
+     * rather than dead-ending the conversation.
+     */
+    narratorPromptTemplateId: text("narrator_prompt_template_id").references(
+      () => narratorPromptTemplates.id,
+      { onDelete: "set null" },
+    ),
     /** ChatSceneMemory — the shared imagined setting. */
     sceneMemory: jsonb("scene_memory").notNull().default({}),
     /**
@@ -2495,6 +2520,123 @@ export const usageCounters = pgTable(
     /** The upsert target — `ON CONFLICT` needs this to be unique, not merely indexed. */
     uniqueIndex("usage_counters_owner_kind_window_idx").on(t.ownerId, t.kind, t.windowStart),
   ],
+);
+
+/**
+ * A saved narrator instruction prompt — the Narrator Prompt Lab's template
+ * identity (narrator-prompt-lab.plan.md §Persistence).
+ *
+ * The template is the STABLE half; the body lives in
+ * `narrator_prompt_revisions`, which is append-only. Editing never overwrites:
+ * **Save** writes revision `N + 1` and re-points `current_revision` /
+ * `current_revision_id` at it. A conversation selects the TEMPLATE, not a pinned
+ * revision, so it picks up the newest body on its next exchange — while one
+ * exchange resolves exactly one revision under its lock and freezes it, so a
+ * save landing mid-stream can never change the reply being written.
+ *
+ * `current_revision` doubles as the **optimistic-concurrency token**. A save
+ * claims `base + 1` with a conditional `UPDATE … WHERE current_revision = $base`,
+ * which is a compare-and-swap: at READ COMMITTED the loser re-checks its
+ * predicate against the committed row, matches zero rows, and is reported as
+ * `prompt_conflict` for the editor to reload. No `SELECT … FOR UPDATE` and no
+ * SERIALIZABLE isolation are involved, and adding either would be a
+ * misunderstanding of why this works.
+ *
+ * `current_revision` and `current_revision_id` must always agree outside a
+ * transaction; both are written inside the same transaction that inserts the
+ * revision, which is the only reason `current_revision_id` may be nullable at
+ * all (revision 1 does not exist yet when the template row is inserted).
+ *
+ * Deletes are SOFT (`deleted_at`) so immutable revisions survive to explain
+ * historical takes; the service clears live chat selections in the same
+ * transaction. Owner-scoped, and cascaded from the owner.
+ */
+export const narratorPromptTemplates = pgTable(
+  "narrator_prompt_templates",
+  {
+    id: id(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Owner-visible label; unique case-insensitively among the owner's ACTIVE templates. */
+    name: text("name").notNull(),
+    /** Optional hypothesis — what this experiment is trying to prove. */
+    notes: text("notes").notNull().default(""),
+    /** The current revision NUMBER, and the compare-and-swap token every save claims against. */
+    currentRevision: integer("current_revision").notNull().default(0),
+    /**
+     * The current revision ROW. Nullable only for the instant inside the create
+     * transaction before revision 1 exists; no committed row ever has a
+     * `current_revision > 0` with a null pointer.
+     *
+     * Deliberately NOT a database FK: the revision table points at the template
+     * (cascade), and a second FK back would be a cycle the migration ordering has
+     * to unpick for no benefit. The service is the only writer.
+     */
+    currentRevisionId: text("current_revision_id"),
+    /** Provenance for **Duplicate** — the template this one was branched from. */
+    duplicatedFromId: text("duplicated_from_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    /** Soft delete. Set ⇒ hidden from every ordinary list and never resolvable as a test source. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    /**
+     * Case-insensitive active-name uniqueness per owner. Partial on
+     * `deleted_at is null` so a soft-deleted template does not squat its name
+     * forever, and expression-based on `lower(name)` so `Player Agency` and
+     * `player agency` cannot both be live — an experiment log with two prompts
+     * whose names differ only in case is unreadable.
+     */
+    uniqueIndex("narrator_prompt_templates_owner_active_name_unique")
+      .on(t.ownerId, sql`lower(${t.name})`)
+      .where(sql`deleted_at is null`),
+    index("narrator_prompt_templates_owner_updated_idx").on(t.ownerId, t.updatedAt),
+  ],
+);
+
+/**
+ * One immutable narrator prompt body (narrator-prompt-lab.plan.md §Persistence).
+ *
+ * **Rows here are never UPDATEd after insert.** That is the whole point: a take
+ * generated three weeks ago must still be explainable by the exact text that
+ * produced it, and "the template used to say something else" is not an answer a
+ * mutable body can give. Delete is soft at the template level precisely so these
+ * survive it.
+ *
+ * `UNIQUE(template_id, revision)` is the integrity backstop, not the lock — the
+ * conditional UPDATE on `narrator_prompt_templates.current_revision` is what
+ * serializes two concurrent saves. The constraint exists so a bug that bypasses
+ * that path fails loudly instead of forking the revision chain.
+ *
+ * `body_hash` is `fnv1aHex` over `` `${templateLanguage}\n${body}` `` — the
+ * LANGUAGE is inside the hash because the same characters mean different things
+ * under a future template language, so an identical body under `plain_v0` and a
+ * later `plain_v1` must not collide into one identity.
+ */
+export const narratorPromptRevisions = pgTable(
+  "narrator_prompt_revisions",
+  {
+    id: id(),
+    templateId: text("template_id")
+      .notNull()
+      .references(() => narratorPromptTemplates.id, { onDelete: "cascade" }),
+    /** 1-based, contiguous, and claimed by the template's compare-and-swap. */
+    revision: integer("revision").notNull(),
+    body: text("body").notNull(),
+    bodyHash: text("body_hash").notNull(),
+    /**
+     * A `NarratorPromptLanguage` (contracts/narrator-prompts/template.ts). v1
+     * bodies are literal text: braces and every other sigil are sent verbatim.
+     * An UNKNOWN value never executes as `plain_v0` by guess — resolution
+     * degrades to production instructions with a diagnostic instead, so a future
+     * language cannot retroactively reinterpret a hand-typed old prompt.
+     */
+    templateLanguage: text("template_language", { enum: ["plain_v0"] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("narrator_prompt_revisions_template_revision_unique").on(t.templateId, t.revision)],
 );
 
 

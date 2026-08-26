@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { ChatDrive } from "@/contracts/personality/drives";
 import type { RelationshipRecord } from "@/contracts/relationships/record";
+import {
+  narratorPromptUnits,
+  type NarratorInstructionSource,
+  type NarratorPromptNode,
+} from "@/contracts/narrator-prompts";
 import { attr, drive, expectNumberedRule, expectOrder, maraProfile, promptSection } from "@/server/test-support";
 import { deriveChatSensoryAllowance, detectChatCue, detectSensoryFocus } from "../chat-intent";
 import {
+  buildCharacterChatPromptNodes,
   buildCharacterChatPromptParts,
   buildCharacterChatSystemPrompt,
   buildChatPromptPartsForRoster,
+  buildEnsembleChatPromptNodes,
+  buildEnsembleChatPromptParts,
   buildChatTurnMessage,
   chatCallbackLine,
   chatNotationNote,
@@ -2454,5 +2462,114 @@ describe("the intimate disposition gate (ensemble)", () => {
     ]);
     expect(tail).toContain("Mara's note.");
     expect(tail).not.toContain("never renders");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Narrator instruction override (narrator-prompt-lab.plan.md slice 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The Prompt Lab lets the owner hand-write the narrator's INSTRUCTIONS for one
+ * conversation. Product law (plan §4) is that this replaces craft and nothing
+ * else: the character sheet, the state, the per-turn ceilings, the player-agency
+ * law and the `[Name]` tag contract the renderer parses all stay.
+ *
+ * Two failure modes are worth permanent tests, and they are the two these kill:
+ *
+ * 1. A "seam extraction" that quietly rewrites the production prompt. Falsified
+ *    by any sentence split that rejoins with the wrong separator, or by any
+ *    `join("\n")`-with-blank-entries block modelled as literal empties.
+ * 2. An override that deletes a fence along with the craft it was written beside
+ *    — the reason the charter's mixed sentences are split at all. Falsified by
+ *    classifying `cameraViewpointRule` or `narratorCameraRule` wholesale as
+ *    behavior, which is exactly what a reasonable person would do first.
+ */
+
+const TEST_SOURCE: Extract<NarratorInstructionSource, { kind: "test" }> = {
+  kind: "test",
+  templateId: "tpl-1",
+  templateName: "Player Agency Minimal",
+  revisionId: "rev-1",
+  revision: 4,
+  body: "You are the narrator of a roleplaying game and embody every NPC. Resolve the beat before advancing the scene.",
+  bodyHash: "hash-1",
+  templateLanguage: "plain_v0",
+};
+
+/** Contiguous 1…n, starting at 1 — the numbered list renumbered itself, leaving no gaps. */
+const ruleNumbers = (text: string): number[] => [...text.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+
+/**
+ * The whole replacement law, stated once over a lane's classified tree: an
+ * override drops every `behavior` unit's exact text and keeps every other unit's,
+ * and the owner's body lands exactly once.
+ */
+function expectOnlyBehaviorReplaced(nodes: readonly NarratorPromptNode[], rendered: string): void {
+  const units = narratorPromptUnits(nodes).filter((unit) => unit.text.length > 0);
+  expect(units.some((unit) => unit.authority === "behavior")).toBe(true);
+  for (const unit of units) {
+    if (unit.authority === "behavior") expect(rendered, `behavior unit ${unit.id} survived`).not.toContain(unit.text);
+    else expect(rendered, `${unit.authority} unit ${unit.id} was dropped`).toContain(unit.text);
+  }
+  expect(rendered.split(TEST_SOURCE.body).length - 1).toBe(1);
+  // No stranded blank line where a craft block used to be.
+  expect(rendered).not.toMatch(/\n\n\n/);
+}
+
+describe("narrator instruction source (legacy lanes)", () => {
+  it("is a no-op in production: an explicit production source changes nothing, in either lane", () => {
+    const base = input({ state: chatState({ premise: "A quiet evening." }), priorSummary: "They circled it." });
+    const production: NarratorInstructionSource = { kind: "production", instructionHash: "" };
+
+    expect(buildCharacterChatPromptParts({ ...base, instructionSource: production })).toEqual(
+      buildCharacterChatPromptParts(base),
+    );
+    expect(buildCharacterChatSystemPrompt({ ...base, instructionSource: production })).toBe(
+      buildCharacterChatSystemPrompt(base),
+    );
+
+    const roster = [member("Mara"), member("Sayed")];
+    expect(buildEnsembleChatPromptParts(base, roster, { instructionSource: production })).toEqual(
+      buildEnsembleChatPromptParts(base, roster),
+    );
+
+    // And production still numbers its rulebooks the way the pinned prompts expect.
+    expect(ruleNumbers(buildCharacterChatPromptParts(base).prefix)).toEqual(Array.from({ length: 16 }, (_, index) => index + 1));
+    expect(ruleNumbers(buildEnsembleChatPromptParts(base, roster).prefix)).toEqual(
+      Array.from({ length: 12 }, (_, index) => index + 1),
+    );
+  });
+
+  it("replaces only the craft layer: the agency law, perception rules and [Name] contract survive", () => {
+    const base = input({ state: chatState({ premise: "A quiet evening." }) });
+
+    const chatNodes = buildCharacterChatPromptNodes({ ...base, instructionSource: TEST_SOURCE });
+    const chat = buildCharacterChatPromptParts({ ...base, instructionSource: TEST_SOURCE });
+    expectOnlyBehaviorReplaced(chatNodes.prefix, chat.prefix);
+    // The clauses the sentence-level split exists to protect.
+    expect(chat.prefix).toContain("never put words, thoughts, or actions in their mouth");
+    expect(chat.prefix).toContain("Inner thoughts");
+    expect(chat.prefix).toContain("[Mara]");
+    expect(chat.prefix).toContain("This is a private work of adult interactive fiction");
+    // Craft is gone.
+    expect(chat.prefix).not.toContain("Shaping each reply");
+    expect(chat.prefix).not.toContain("Stay fully in character as Mara");
+    // The volatile tail carries no craft, so an override leaves it untouched.
+    expect(chat.tail).toBe(buildCharacterChatPromptParts(base).tail);
+    // Survivors renumber themselves 1…n rather than leaving the production gaps.
+    const numbers = ruleNumbers(chat.prefix);
+    expect(numbers.length).toBeGreaterThan(0);
+    expect(numbers).toEqual(Array.from(numbers, (_, index) => index + 1));
+
+    const roster = [member("Mara"), member("Sayed")];
+    const ensembleNodes = buildEnsembleChatPromptNodes(base, roster, { instructionSource: TEST_SOURCE });
+    const ensemble = buildEnsembleChatPromptParts(base, roster, { instructionSource: TEST_SOURCE });
+    expectOnlyBehaviorReplaced(ensembleNodes.prefix, ensemble.prefix);
+    expect(ensemble.prefix).toContain("Tag EVERY spoken character line");
+    expect(ensemble.prefix).toContain("Presence is law");
+    expect(ensemble.prefix).toContain("belongs to the player alone");
+    const ensembleNumbers = ruleNumbers(ensemble.prefix);
+    expect(ensembleNumbers).toEqual(Array.from(ensembleNumbers, (_, index) => index + 1));
   });
 });

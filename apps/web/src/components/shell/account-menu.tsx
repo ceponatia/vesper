@@ -7,26 +7,31 @@ import { cx } from "@/components/ui/cx";
 import { signOut, useSession } from "@/components/auth/auth-client";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 
-/** One row of the dropdown, so five identical link classNames stay one fact. */
+/** One row of the dropdown, so every identical link className stays one fact. */
 const MENU_ITEM_CLASS = "block px-3 py-2 text-sm text-paper-200 transition-colors hover:bg-ink-700";
 
 /**
  * The owner-admin destinations, in menu order.
  *
- * These are standalone tools rather than account settings, so they sit beside
- * Settings in this menu instead of nested inside the Settings page — the image
- * benches are reached far more often than the one preference that page holds.
- * Each page re-checks the role and every backing API is role-gated server-side,
- * so hiding the links is tidiness rather than access control.
+ * These are standalone developer/experiment tools rather than account settings,
+ * so they sit beside Settings in this menu instead of nested inside the Settings
+ * page — the benches are reached far more often than the one preference that
+ * page holds. Each page re-checks the role and every backing API is role-gated
+ * server-side, so hiding the links is tidiness rather than access control.
  *
- * The three image tools still answer at their `/settings/*` routes. Only the
- * navigation moved; relocating the URLs is deliberate future work, so existing
- * `?run=` / `?experiment=` links keep resolving.
+ * The list holds the three image benches, the Narrator Prompt Lab (handwritten
+ * narrator instruction prompts, narrator-prompt-lab.plan.md), and the Engine
+ * Comparison review screen.
+ *
+ * The `/settings/*` tools still answer at those routes. Only the navigation
+ * moved; relocating the URLs is deliberate future work, so existing
+ * `?run=` / `?experiment=` / `?prompt=` links keep resolving.
  */
 const ADMIN_LINKS = [
   { href: "/settings/image-generator", label: "Image generator" },
   { href: "/settings/image-lab", label: "Image lab" },
   { href: "/settings/image-models", label: "Image models" },
+  { href: "/settings/narrator-prompts", label: "Narrator prompts" },
   // R4, engine.rollout.plan.md: the Engine Comparison review screen — reports
   // and rulings without touching the API by hand.
   { href: "/admin/shadow", label: "Engine Comparison" },

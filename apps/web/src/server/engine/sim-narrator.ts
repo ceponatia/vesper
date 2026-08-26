@@ -9,6 +9,7 @@ import {
 import type { SoftCanonProposal } from "@vesper/simulation-core/contracts/soft-canon";
 import { simulationHash } from "@vesper/simulation-core/hash";
 import { auditPresentation, parseNarratorResult } from "@vesper/simulation-core/presentation";
+import type { NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import {
   chatNarrativeModelId,
   collapseRepeatedBlocks,
@@ -17,11 +18,13 @@ import {
   stripNarratorArtifacts,
 } from "@/server/ai";
 import { db, type Db } from "@/server/db";
+import { buildNarratorRunProvenance } from "./chat-pipeline";
 import { NARRATIVE_TEMPERATURE } from "./constants";
 import {
   beatHandlesForCut,
   buildSimHandleMap,
   buildSimRenderPrompt,
+  buildSimRenderPromptNodes,
   type SimRenderContext,
   type SimRenderCorrection,
 } from "./prompts/sim-render";
@@ -97,6 +100,13 @@ export interface RenderedCut {
   provider?: string | null;
   latencyMs?: number;
   diagnostics: string[];
+  /**
+   * What produced this render (narrator-prompt-lab.plan.md §Provenance) — built
+   * from the ACCEPTED attempt, so a run that needed the hidden retry is recorded as
+   * the assembly the player actually read. Present only on a `rendered` result: a
+   * withheld render persists no take for it to label.
+   */
+  provenance?: NarratorRunProvenance;
 }
 
 /** Demo/no-key fallback: a compliant render from the cut's own beat summaries. */
@@ -250,10 +260,13 @@ export async function renderCommittedCut(
   let correction: SimRenderCorrection | undefined;
   for (; attempts < maxAttempts; ) {
     attempts += 1;
-    const { system, prompt } = buildSimRenderPrompt(cut, context, {
-      attempt: attempts,
-      ...(correction === undefined ? {} : { correction }),
-    });
+    // Every attempt rebuilds the prompt from the SAME `context` — which is what
+    // freezes the resolved instruction revision across the hidden retry
+    // (narrator-prompt-lab.spec.md §Algorithms). Nothing here re-reads the
+    // template, so an owner saving a new revision between attempt 1 and attempt 2
+    // cannot change the prompt mid-exchange.
+    const attemptOpts = { attempt: attempts, ...(correction === undefined ? {} : { correction }) };
+    const { system, prompt } = buildSimRenderPrompt(cut, context, attemptOpts);
     const attempt = await render({ system, prompt, modelId, attempt: attempts });
     degraded = degraded || attempt.degraded;
     provider = attempt.provider ?? provider;
@@ -312,6 +325,18 @@ export async function renderCommittedCut(
       provider: provider ?? null,
       ...(latencyMs === undefined ? {} : { latencyMs }),
       diagnostics,
+      // The accepted attempt's own assembly. No token counts or finish reason: the
+      // successor's `generateChecked` calls do not request usage accounting, and the
+      // plan is explicit that a missing field is omitted, never newly plumbed for.
+      provenance: buildNarratorRunProvenance({
+        lane: "successor",
+        modelId,
+        source: context.instructionSource,
+        nodes: buildSimRenderPromptNodes(cut, context, attemptOpts),
+        assembled: [system, prompt].join("\n\n"),
+        attempts,
+        ...(latencyMs === undefined ? {} : { latencyMs }),
+      }),
     };
   }
 

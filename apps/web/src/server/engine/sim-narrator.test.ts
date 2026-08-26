@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { narrativeCutSchema, type NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
+import type { NarratorInstructionSource } from "@/contracts/narrator-prompts";
 import {
   buildConfirmCommand,
   renderCommittedCut,
@@ -83,6 +84,52 @@ describe("renderCommittedCut — targeted retry", () => {
     expect(prompts[0]).not.toContain("CORRECTION");
     expect(prompts[1]).toContain("CORRECTION");
     expect(prompts[1]).toContain("B1 (Nora sets down the cup.)");
+  });
+
+  /**
+   * ONE exchange, ONE instruction revision (narrator-prompt-lab.plan.md slice 5 and
+   * spec §Algorithms). The retry loop rebuilds the prompt on every attempt, so the
+   * frozen thing has to be the resolved SOURCE carried on the context — never a
+   * template id re-read per attempt.
+   *
+   * What this kills: a render loop that resolves (or re-resolves) the owner's
+   * template inside the attempt loop. That implementation passes every prompt test
+   * in `prompts/sim-render.test.ts` and still lets an owner's save land between
+   * attempt 1 and attempt 2, so the reply the player finally reads was written to
+   * instructions that were never the ones the exchange started under — and the
+   * provenance recorded for it would name the wrong revision.
+   */
+  it("renders every hidden retry from the one source the exchange resolved, and records that revision", async () => {
+    const source: NarratorInstructionSource = {
+      kind: "test",
+      templateId: "tpl-1",
+      templateName: "Player Agency Minimal",
+      revisionId: "rev-4",
+      revision: 4,
+      body: "Resolve the immediate beat before advancing the scene.",
+      bodyHash: "hash-rev-4",
+      templateLanguage: "plain_v0",
+    };
+    const missing = { prose: SUBSTANTIAL, enactedBeatEventIds: [], enactedArmedEffectIds: [], proposedSoftCanon: [] };
+    const { seam, prompts } = recordingSeam([missing, missing]);
+    const result = await renderCommittedCut(
+      {
+        branchId: "branch-1",
+        engagementId: "engagement-1",
+        cutId: "cut-n",
+        conversation: { instructionSource: source },
+      },
+      { render: seam, loadCut: async () => narratorCut() },
+    );
+
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) expect(prompt).toContain(source.body);
+    // The take's label names the exact revision, not just "a test prompt".
+    expect(result.provenance?.promptSource).toBe("test");
+    expect(result.provenance?.revisionId).toBe("rev-4");
+    expect(result.provenance?.revision).toBe(4);
+    expect(result.provenance?.instructionHash).toBe("hash-rev-4");
+    expect(result.provenance?.lane).toBe("successor");
   });
 });
 

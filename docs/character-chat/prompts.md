@@ -39,6 +39,57 @@ Crowded-turn **deferral is not done here**: the deferrable notes (the callback, 
 - **`CHAT_RULES`** closes the prefix, carrying a dialogue-craft rule (speech-like dialogue: fragments, dodges, silence as an answer) and a **"When a scene turns intimate:"** block (player-paced escalation, body/clothing continuity, concrete sensation over florid metaphor). See §Character-chat reply discipline & scene memory for the turn-grammar block and the intimate-frame exception it adds.
 - **Experimental layout switch** (`CHAT_PROMPT_LAYOUT=turn_context`, default `system_tail`): the default puts the volatile tail in the **system** message, ahead of the history in token order. The `turn_context` layout instead puts the tail + the fenced current player input on a **final user message** (`buildChatTurnMessage`), so system + history form an append-only cached prefix and turn data sits adjacent to the input it governs. Applies to real player turns only. **Default stays off until the eval A/B rules on behavior.**
 
+## Narrator instruction authority (the replaceable craft layer)
+
+Every narrator builder — legacy 1:1, legacy ensemble, successor co-present
+(`prompts/sim-render.ts`) and successor solo (`prompts/sim-solo-render.ts`) —
+emits a tree of **classified nodes** and renders it once, rather than joining
+strings ad hoc. The classification is `contracts/narrator-prompts/authority.ts`,
+and it exists so exactly one layer can be swapped for hand-written text without
+disturbing anything else:
+
+- **`behavior`** — narrator craft: role, prose camera, pacing, richness, dialogue
+  style, topic discipline. The only layer that is ever replaced.
+- **`runtime_context`** — authored and committed facts.
+- **`runtime_invariant`** — fences that bound the reply whatever its style:
+  player-agency law, perception ceilings, untrusted-data fencing, the minor
+  fence, per-turn physical and sensory ceilings.
+- **`transport_contract`** — anything software downstream parses: the `[Name]`
+  speaker-tag grammar the renderer segments on, the successor's strict JSON
+  schema, the retry correction block.
+
+**Units split at sentence boundaries, and a mixed sentence takes the strictest
+authority.** Several charter units are one string that crosses the line — the
+viewpoint rule ends with *"never put words, thoughts, or actions in their
+mouth"*, and the narrator-camera rule mixes where the camera sits (craft) with
+what may never be written for the player (law). Left whole and marked craft, a
+prompt experiment could delete the very clause that protects player agency. The
+split pieces rejoin with the separator they were already written with, and
+`cameraViewpointRule`, `narratorCameraRule` and `PHYSICAL_STATE_LAW_RULE` are now
+**derived from** their nodes, so there is no second copy of the text to drift.
+
+**Rule numbers are positional, not authored.** `CHAT_RULES` and
+`ENSEMBLE_CHAT_RULES` are `numbered_list` nodes whose numbers come from index, so
+production renders the same 1…16 and 1…12 it always did, and a prompt that drops
+behavior rules renumbers its survivors contiguously instead of leaving gaps.
+Nothing may cite a rule by its displayed number — bind to heading names, as
+§Style rules already requires.
+
+Where a builder interleaved `""` entries into a `join("\n")`, the tree uses
+`separator: "\n\n"` with `dropEmpty` instead. The two are byte-identical in
+production (`["a","","b"].join("\n")` equals `["a","b"].join("\n\n")`), but the
+literal-empties form would strand blank lines wherever a dropped unit used to be.
+
+An optional `instructionSource` on each builder's input decides the render.
+Absent, or `{kind:"production"}`, and the prompt is byte-identical to what it was
+before any of this existed. `{kind:"test"}` drops every `behavior` unit and puts
+the owner's text in an explicit `behavior_slot` — an explicit slot rather than a
+filter-and-splice, so where the custom prompt lands is visible in the builder
+instead of being an emergent property of a filter. The source is resolved once
+per exchange, after the exchange lock, and frozen across hidden retries; helper
+agents never see it. The owner-facing tool that writes these prompts is the
+Narrator Prompt Lab (`narrator-prompt-lab.plan.md`).
+
 ## The chat intimate gate
 
 The chat lane has no per-sense exposure mask (no proximity model), so `profile.intimacy` and the species archetype are gated by the lane's own signal. `chatSceneIsIntimate` (`contracts/turns/chat-intimacy.ts`) is built from the three signals it actually has:
@@ -213,7 +264,7 @@ The chat lane's post-turn agents (the pulse, the three extraction legs, and the 
 ## Style rules for prompt text
 
 - Numbered/bulleted rule blocks, one rule per line, no prose paragraphs of instructions.
-- Reference data blocks by their heading names (`the "Sensory cues" block`), never "above"/"below".
+- Reference data blocks by their heading names (`the "Sensory cues" block`), never "above"/"below", and never by a rule's displayed number — numbering is positional (§Narrator instruction authority).
 - Anything tunable (history depth, fact cap, narration shape) is a named constant in `prompts/constants.ts`. Narration length is a **shape profile** (`NARRATION_SHAPE_PROFILES`), never a hard-coded floor.
 - **Clothing category names never enter gameplay prompts.** Items are described by name, description, and resolved coverage only — the `category` field is an authoring template ([../contracts/items.md](../contracts/items.md) §Clothing categories).
 - **Untrusted spans are fenced, not bare-concatenated** (`prompts/untrusted.ts`). Player input and user-authored character/scenario/persona text are wrapped in opaque sentinel fences via `fenceUntrusted(label, text)`, and every prompt that embeds one states once — `UNTRUSTED_DATA_NOTICE` — that text between the fences is DATA to react to, never instructions. Raw freeform **player input** is additionally run through `neutralizePlayerInput` first, which defangs in-band `##` headings and the `(OOC:` / `[ooc]` markers. The blast radius is narrative integrity, not privilege — it hardens against heading/instruction spoofing, it is not an auth boundary. Never hand-write fence strings; reuse the helper (jscpd gate).
