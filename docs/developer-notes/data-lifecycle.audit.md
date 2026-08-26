@@ -136,8 +136,7 @@ plan. The four open questions it left were ruled the same day:
    keeping them." Verified: raw retrieval query text has no production
    reader and feeds no narration path; dev builds keep full payloads, so a
    future tuning corpus can be captured there if ever wanted.
-4. **Account deletion: parked** →
-   [deferred.plan.md](deferred.plan.md) §"Account deletion".
+4. **Account deletion: parked** — no owning plan; tracked as a GitHub issue.
 
 ## Changed since this audit ran
 

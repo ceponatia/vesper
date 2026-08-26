@@ -1,6 +1,6 @@
 # Intimate-scene LoRA follow-ups
 
-Status: parked detail for [deferred.plan.md](deferred.plan.md) §"Intimate-scene LoRA — consolidate onto Qwen Edit 2511" — runtime LoRA support is verified on 2511; the route comparison is not scheduled.
+Status: parked — runtime LoRA support is verified on 2511; the route comparison is not scheduled. Tracked as a GitHub issue.
 
 This document owns only the post-ship question of whether the intimate scene
 route should stop changing Qwen generations merely to obtain runtime LoRA

@@ -1,7 +1,6 @@
 # NPC puppeting — the full handling system (deferred)
 
-Status: parked detail for [deferred.plan.md](deferred.plan.md) §"NPC
-puppeting". The working v1 (the deflection directive) shipped with **personality Slice 2**
+Status: parked — not committed work; tracked as a GitHub issue. The working v1 (the deflection directive) shipped with **personality Slice 2**
 (2026-06-18); this file records what a complete puppet-handling system would add, so the
 seams Slice 2 created are not mistaken for the whole feature.
 
@@ -54,6 +53,6 @@ narrate it away, so out-of-character puppeting must be refused.
 ## Relationship to other work
 
 - A node in the pre-narrator before/during/after guardrail mesh
-  ([pre-narrator-agents.spec.md](finished/pre-narrator-agents.spec.md)).
+  (`pre-narrator-agents.spec.md`).
 - The contradiction-judging enrichment folds into **personality Slices 3–4**
-  ([personality-and-state.plan.md](finished/personality-and-state.plan.md)).
+  (`personality-and-state.plan.md`).

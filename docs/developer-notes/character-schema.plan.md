@@ -22,7 +22,7 @@ has grown that the character contracts can start feeding today.
 > model is deleted. Every engine feature named in thread 2 is **shipped and running**;
 > what is missing is the *authored* side, which is entirely this plan's. Section
 > references below (§25, §21.3, §21.4, §37.2, rulings 15 and 16) point at
-> [engine.spec.md](engine.spec.md)'s § index and still resolve.
+> `engine.spec.md`'s § index and still resolve.
 
 ---
 
@@ -233,7 +233,7 @@ such adapter exists today**, so "retire it" is a rule for whoever writes one, no
 task.
 
 This is the highest-leverage single field in this doc — a large fraction of
-[world-engine-refactor.plan.md](world-engine-refactor.plan.md)'s body and rhythm catalog
+`world-engine-refactor.plan.md`'s body and rhythm catalog
 depends on it, as does [chat-meter-economy.plan.md](chat-meter-economy.plan.md) §4.
 Whichever plan moves first adds the field; the other consumes it.
 

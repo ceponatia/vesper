@@ -23,14 +23,14 @@ Related work:
   scene / body-relations layer this plan reads for body language;
 - [narrator physical guidance](narrator-physical-guidance.plan.md) owns binding
   constraints and premise correction;
-- [image model capabilities](finished/image-model-capabilities.plan.md) owns the shared
+- **Image model capabilities** owns the shared
   render intent that will consume visual state;
 - [image render quality](image-render-quality.plan.md) owns model-specific
   prompting, reference quality, render QA, and image trials;
 - [image lane consolidation](image-lane-consolidation.plan.md) owns migration of
   character-bearing image routes onto this plan's digest, final reference
   ownership, and deletion of superseded image prompt machinery;
-- [scene composition](finished/scene-composition.plan.md) owns the scene image's camera,
+- **Scene composition** owns the scene image's camera,
   subject orientation, and intimate staging; its interim read of the scene /
   body-relations owner migrates onto this plan's now-built image digest when
   the image-lane consolidation plan cuts scene routes over.
@@ -52,12 +52,12 @@ One later slice has a real prerequisite:
   that is off by default. [visual-state.trial.md](visual-state.trial.md) owns the
   record.
 - **Slice 8** feeds the shared render intent, which shipped with the
-  [capabilities plan's](finished/image-model-capabilities.plan.md) slice 2 on
+  capabilities plan's slice 2 on
   2026-08-07 — that gate is open, and the intent's role-carrying references
   are waiting for this plan's image digest.
 
 This plan does **not** depend on
-[image identity packs](finished/image-identity-packs.plan.md). A pack is a stored picture
+image identity packs. A pack is a stored picture
 of a face; visual state is a computed description of a person right now. They
 meet only inside a render request, where the pack supplies the reference image
 and this plan's image digest supplies the facts, and neither reads the other.

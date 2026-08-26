@@ -5,10 +5,10 @@ If a complete reanalysis and rewrite of the planned work is needed due to other 
 
 **Before editing anything here, invoke the `vesper-docs` skill**
 (`.claude/skills/vesper-docs/`). It holds the full procedure for this folder —
-artifact ownership, the canonical-owner rule, the residue guardrail, the
-close-out sequence, and the validation checklist — plus copyable templates for
-plans, specs, trials, audits, and deferred stubs in its `templates/` folder.
-This file states the folder's local rules; the skill states how to apply them.
+artifact ownership, the canonical-owner rule, the residue guardrail, and the
+validation checklist — plus copyable templates for plans, specs, trials, and
+audits in its `templates/` folder. This file states the folder's local rules;
+the skill states how to apply them.
 
 ## No line limit in this folder
 
@@ -23,7 +23,7 @@ Split a document here when its **content** justifies it:
 - A spec covering separate domains a reader needs individually →
   `<topic>.spec.<area>.md`.
 - A topic whose parts are edited independently by different work → a hub plus
-  unit docs, per §"Engine gate docs" below.
+  unit docs.
 - A plan carrying spec-grade technical detail → that detail moves to the spec.
   That is a boundary fix which happens to shorten the plan, not a length fix.
 
@@ -61,8 +61,7 @@ here as oversized on line count alone.
 
 The mandatory structure for a `.plan.md` is the plan template at
 `.claude/skills/vesper-docs/templates/plan.md` (owner ruling 2026-08-22). It
-applies to every plan created from now on, including a deferred stub at the
-moment it is promoted into a real plan.
+applies to every plan created from now on.
 
 - **Every numbered template section appears in the plan**, in template order,
   under the template's headings. A section that does not apply is filled with
@@ -117,7 +116,7 @@ moment it is promoted into a real plan.
   use headings and bullets. Any table you touch gets brought into this shape as
   part of the edit. Full rules: the `vesper-docs` skill, §"Table formatting".
 
-## The progress ladder: slice → spec → plan → shipped
+## The progress ladder: slice → spec → plan
 
 Every finished piece of work is recorded **one rung up**, in the same change that
 finishes it. Landed work that its governing doc does not mention is unfinished
@@ -132,114 +131,33 @@ exists.
   are complete — one line each, not a slice narrative. The plan still owns the
   *delivery order*: it says which slices exist and what each makes true, while
   the spec says whether they are built. Intent in the plan, state in the spec.
-- **A finished plan is recorded in `roadmap.shipped.md`.** One line, and only
-  when the whole plan is delivered and accepted.
 
 **Built is not accepted.** When code has landed but the plan is waiting on a
 trial verdict, an owner review, or a flag enable, say so in the governing doc and
 name what is being waited on. Never write it as shipped, and never leave it
 unwritten.
 
-**The indexes stay short.** `roadmap.md` and `roadmap.shipped.md` are indexes,
-not records. Slice histories, rulings, and build narratives belong in the spec
-and the plan; an entry in either file that grows past a sentence or two is a plan
-leaking into its index.
+**The index stays short.** `roadmap.md` is an index, not a record. Slice
+histories, rulings, and build narratives belong in the spec and the plan; an
+entry that grows past a sentence or two is a plan leaking into its index.
 
-## Ship close-out: move shipped docs to finished/
+## Never link from docs/ into this folder
 
-Archiving is part of shipping, not an optional afterthought — un-archived
-shipped plans are how this folder rots. It happens once per plan, when the whole
-plan is delivered and accepted — never per slice. When a plan's `Status:` flips
-to **shipped** (or **superseded**), the same change that does the roadmap
-close-out also:
+A reference doc contains the information it needs; naming the governing doc is
+fine as **plain text** (`` `chat-initiative.plan.md` ``), never as a link.
+Working docs are dated and directional, so a reference doc that defers to one
+goes wrong the moment the plan ships — and it goes wrong in a way a path fix
+does not catch.
 
-- `git mv`s the `<topic>.plan.md` **and every `<topic>.*` companion** (spec,
-  followups, detail docs) into `finished/` together, so their mutual relative
-  links keep resolving.
-- Removes the plan's entry from `roadmap.md` entirely, and writes its single
-  line in `roadmap.shipped.md` pointing at the `finished/…` path.
-- **Repoints every link the move broke** (owner ruling 2026-08-15, reversing the
-  old "leave them stale" rule):
-  - **Inbound** — every link to the moved docs from anywhere under
-    `docs/developer-notes/`, including from docs already in `finished/`.
-  - **Outbound** — the moved docs' own relative links. Dropping a level into
-    `finished/` breaks every one of them; each needs one more `../`. This is the
-    single biggest source of rot, and it is invisible unless you check.
-  - Reference docs need no repointing, because they no longer link here at all
-    (see below).
-
-  The old rule assumed a shipped doc's stale links were harmless. They compound:
-  the 2026-08-15 sweep found **355 broken links across `docs/`**, 291 of them
-  inside `finished/` docs whose outbound paths broke when they were archived.
-
-- **Never link from `docs/` into this folder.** A reference doc contains the
-  information it needs; naming the governing doc is fine as **plain text**
-  (`` `chat-initiative.plan.md` ``), never as a link. Working docs are dated and
-  archivable, so a reference doc that defers to one goes wrong the moment the
-  plan ships — and it goes wrong in a way a path fix does not catch.
-- Trims the idea's `deferred.plan.md` entry if it graduated from the parking
-  lot (a one-line tombstone at most), and updates its line in
-  `deferred/CLAUDE.md`'s stub index if it started as a stub there.
-
-Two kinds of docs stay in this folder despite shipped work: plans with any slice
-still queued, however much of them has landed (their progress lives in their
-spec, not in the shipped history), and **normative contracts for systems that are
-still running**. When in doubt: if `roadmap.md` still lists it, it stays.
-
-The engine family is the worked example of that split, and the distinction is
-what a doc *is*, not which topic it belongs to (2026-08-16):
-
-- **`engine.spec.md` + its six cluster files stay.** A contract for a live system
-  is not history, and source cites it as `engine.spec §N` at 147 call sites
-  against a § index that never renumbers.
-- **`engine.gate7.institutions.md` stays** — never opened, still on `roadmap.md`.
-- **The old hub and the gate-0–6 docs are archived** to `finished/engine/` and
-  renamed `engine-foundation.*`. They are the build history of a closed scope.
-  The rename freed the `engine.` prefix so the live contract and Gate 7 nest
-  under a live `engine.plan.md`; it cost 4 code comments, where renaming the
-  spec cluster would have cost 156 `engine.spec §N` citations.
-
-Before the reference tier existed, the whole family was exempt because it was the
-only place the engine was written down. `docs/engine/` now owns everyday reading,
-so the exemption narrowed to the contract alone.
-
-## Engine gate docs (split 2026-07-21)
-
-The successor-engine plan and spec are split so no single file has to be read or
-edited whole:
-
-- **One doc per gate: `engine.gateN.<slug>.md`** (e.g. `engine.gate6.dual-lod.md`),
-  where the slug names what the gate delivers. Each holds that gate's full plan
-  section — scope, build order, and the shipped E-package histories.
-  [engine.plan.md](finished/engine/engine-foundation.plan.md) is the hub: goals, the gate index list
-  (one-line status + link per gate), dependency order, and cost/quality material.
-  The hub and gates 0–6 were archived to `finished/engine/` on 2026-08-16 as the
-  build history of a closed scope; **`engine.gate7.institutions.md` stays live**,
-  and a gate reopened later comes back out of the archive with it.
-  **Future gates get their own file at planning time** (Gate 7 already has one) —
-  never grow a new gate inline in the hub. Gate numbers in filenames are NOT the
-  deprecated `phase-N` pattern: gate numbers are stable architectural identities
-  (each gate's exit gates the next; they can never be resequenced), so the name
-  encodes *what*, not a reorderable *when*.
-- **The spec is split by §-cluster: `engine.spec.<cluster>.md`** (kernel / world /
-  mind / bodies-materials / lod / operations). Section numbering is GLOBAL across
-  the set and never renumbers; [engine.spec.md](engine.spec.md) is the
-  authoritative § → file index. Keep citing sections as "engine.spec §N" in code
-  and docs — the index resolves them. A new section joins the file owning its
-  range; a genuinely new domain gets a new cluster file plus an index row. Owner
-  rulings stay in §39 (engine.spec.operations.md).
-  **`scripts/engine-spec-citations.test.ts` gates this** — it runs in `pnpm test`
-  and fails if any `engine.spec §N` citation in code or docs stops resolving, so
-  renumbering a heading or deleting a numbered invariant is caught at push time
-  rather than by whoever next follows the reference.
-- When finishing gate work, update: the gate doc (status + package history), the
-  hub's gate index row, and roadmap.md — in that order of detail (full record in
-  the gate doc, one line in each index).
+Links **within** this folder are ordinary and expected. Keep them resolving:
+when a doc is renamed or removed, repoint or strip every inbound link in the
+same change. The 2026-08-15 sweep found 355 broken links across `docs/` because
+that was skipped, and a broken relative path is unresolvable to the next reader.
 
 ## App Development State
 
 Vesper is a fork of Reverie, a role playing game. Vesper is more romance focused while Reverie is general.
 Vesper began with a "World Model" system which had characters, locations, items, etc. and attempted to use map locations and schedules to have NPCs move around the world. This system became somewhat _broken_ and we weren't able to get characters to move to locations in a timely fashion to keep the story going, which broke the narrative aspect of the game.
 Because of this, we stepped back and created a 1-on-1 character chat which was initially run from within Character forms in the library. This worked quite well and after further development, we broke it out into its own flow and added multiple character chats to it. It lacks some features the World Model had such as locations-as-entitites and map navigation, but narratively it is greatly expanded over the World Model.
-The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate under [engine.plan.md](finished/engine/engine-foundation.plan.md) (gates 0–6) — rolled out through [finished/engine.rollout.plan.md](finished/engine.rollout.plan.md) (R0–R6), and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
+The World Model system is now fully retired. Its successor — the simulation engine built gate-by-gate through gates 0–6 — rolled out through releases R0–R6, and R6 (2026-07-22) deleted the legacy world/session-model code and database tables outright.
 Two lanes remain: legacy character chat (the live product for ordinary chats) and successor chats — a character chat bound to its own simulated world, created from the `/worlds` front door, with the engine authoritative per the `engine_authority` flag. New patterns still prove out in the chat lane first.

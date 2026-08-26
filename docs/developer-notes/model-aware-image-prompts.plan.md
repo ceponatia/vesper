@@ -12,9 +12,9 @@ Related plans:
 
 - [image lane consolidation](image-lane-consolidation.plan.md) owns migration away from route-specific character prompt builders;
 - [visual state and attention](visual-state.plan.md) owns the committed character visual snapshot and image digest;
-- [image model capabilities](finished/image-model-capabilities.plan.md) owns endpoint profiles, provider controls, references, and normalized render intent;
-- [scene composition](finished/scene-composition.plan.md) owns the committed camera, staging, pose, and action facts;
-- [identity packs](finished/image-identity-packs.plan.md) owns identity-reference assets and their quality.
+- **Image model capabilities** owns endpoint profiles, provider controls, references, and normalized render intent;
+- **Scene composition** owns the committed camera, staging, pose, and action facts;
+- **Identity packs** owns identity-reference assets and their quality.
 
 ## Outcome
 

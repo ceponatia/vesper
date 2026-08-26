@@ -45,8 +45,7 @@ isolation, and extraction handles before any paid call.
 
 Slice 8 needs nothing further from this plan: its affordance half shipped
 2026-07-28 from the affordance side, and its image half closed 2026-07-29 with
-the general scene-image consumer parked in
-[deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer).
+the general scene-image consumer parked.
 
 ## Recorded leftovers
 
@@ -589,9 +588,7 @@ closed.
   state model.~~ **Closed 2026-07-29 with a follow-up decision**: the
   production-capable garment observations are too narrow to justify a permanent
   scene-image consumer before the shared scene/body-relations owner exists, so
-  the general consumer is parked in
-  [deferred.plan.md](deferred.plan.md#body-affordance-scene-image-consumer)
-  behind either that owner or an explicitly scheduled narrow paired trial.
+  the general consumer is parked behind either that owner or an explicitly scheduled narrow paired trial.
   Nothing here waits on this plan.
 
 ## Acceptance criteria

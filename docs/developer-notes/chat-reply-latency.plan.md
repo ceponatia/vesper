@@ -15,7 +15,7 @@ genuinely composing a reply, and that part is fine: it reads as thinking. The re
 is bookkeeping the player never asked for, and all of it happens *before* the first
 word can appear.
 
-The efficiency audit measured that bookkeeping ([§B, §C](codebase-efficiency.audit.md)).
+The efficiency audit measured that bookkeeping (§B, §C).
 Before the stream opens, the chat's own row is fetched three or four times in
 sequence — including one lookup that re-reads the player's persona state the caller
 already holds (**B12**). The item table (clothing, props) is read five to eleven
@@ -66,7 +66,7 @@ estimate** — likeliest candidate is B13's per-fold query collapse.
   every streaming token (**D12**) is a separate audit batch, coordinated with the
   parked component decomposition (G25).
 - Not the successor lane. **G27** (the inline memory-index drain,
-  [deferred/sim-memory-index-worker.plan.md](deferred/sim-memory-index-worker.plan.md))
+  `sim-memory-index-worker.plan.md`)
   is the known latency item over there — cited so nobody re-derives it, deliberately
   not absorbed.
 - Not **C14** (batching the post-turn fact writes) — it changes which draft supersedes

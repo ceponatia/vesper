@@ -51,7 +51,7 @@ correctness weight; the audit's §Proposed batches has the full map.
 
 ## Scope
 
-Finding ids below; [the audit](codebase-efficiency.audit.md) carries the
+Finding ids below; the audit carries the
 file-and-line detail. Every one was re-checked against `src/` on 2026-08-07 and
 none has been fixed: `withGenerateTimeout` still appears nowhere outside
 `src/server/engine`, no `chatMessageMetaSchema` exists, and

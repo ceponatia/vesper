@@ -1,6 +1,6 @@
 ---
 name: vesper-docs
-description: Create, review, and migrate Vesper documentation across both tiers — reference docs in docs/ and working docs in docs/developer-notes/ (plans, specs, trials, audits, roadmap, deferred, finished). Use when writing or editing any Markdown under docs/, adding or closing out a plan, archiving shipped work, or restructuring documentation.
+description: Create, review, and migrate Vesper documentation across both tiers — reference docs in docs/ and working docs in docs/developer-notes/ (plans, specs, trials, audits, roadmap). Use when writing or editing any Markdown under docs/, adding or closing out a plan, or restructuring documentation.
 ---
 
 # Vesper documentation
@@ -47,17 +47,16 @@ checklist.
 6. **Never write conversation into a document.** See
    [The residue guardrail](#the-residue-guardrail).
 7. **Record every finished piece of work one rung up.** A finished slice goes in
-   its spec, a finished spec in its plan, a finished plan in
-   `roadmap.shipped.md` — in the same change that finishes it. See
-   [The progress ladder](#the-progress-ladder).
+   its spec, and a finished spec in its plan — in the same change that finishes
+   it. See [The progress ladder](#the-progress-ladder).
 8. **Never mark work shipped because code exists.** A merged PR, a passing test,
    a spec, or a written slice does not close a plan. `shipped` means the WHOLE
    plan is delivered *and accepted*; a behavior claim additionally requires a
    trial or evidence doc that says what was observed. Built-but-unaccepted is its
    own state and must be written as such.
-9. **Prefer deletion to preservation.** Superseded docs get removed or archived,
-   not annotated. This repo does not keep a legacy tier — `finished/` is
-   completed work, not an attic for the outdated.
+9. **Prefer deletion to preservation.** Superseded docs get removed, not
+   annotated. This repo does not keep a legacy tier, and git history is the
+   archive.
 10. **Tables follow the formatting rules or become lists.** See
     [Table formatting](#table-formatting). Both tiers, no exceptions.
 11. **Reference docs carry no dates, no slice numbers, and no future tense.** If
@@ -89,20 +88,10 @@ Working tier — `docs/developer-notes/`:
 - **`<topic>.trial.evidence.md`** — owns exactly what the trial doc may not:
   identifiers, timings, diagnostic codes, verification history.
 - **`<topic>.audit.md`** — owns findings about the code as it stood on a stated
-  date. Must not own the plan to fix them; a fix worth doing becomes a plan or a
-  `deferred.plan.md` entry.
+  date. Must not own the plan to fix them; a fix worth doing becomes a plan.
 - **`<topic>.followups.md`** — owns post-ship corrections to a shipped topic.
 - **`roadmap.md`** — owns priority order and nothing else. Its `## To be
   Planned` section is the owner's intake; agents never add to or reword it.
-- **`roadmap.shipped.md`** — owns one line per **completed plan**. A slice, a
-  spec, or a bug fix never earns an entry here.
-- **`deferred.plan.md` + `deferred/`** — owns parked ideas that are not
-  committed work.
-- **`finished/`** — owns the archived history of shipped topics. Read-only as to
-  **content**: never edit a `finished/` doc to keep its claims current. **Links
-  are the exception** (owner ruling 2026-08-15): a link is navigation, not
-  history, and a broken one is unresolvable to the next reader whether or not
-  the doc is archived. Repoint them, in and out.
 
 Reference tier — `docs/`:
 
@@ -121,11 +110,10 @@ Finished work is recorded **one rung up**, in the same change that finishes it.
 Landed work its governing doc does not mention is unfinished work: the next agent
 rebuilds it, or plans around a gap that closed weeks ago.
 
-| Finished | Recorded in          | As                                    |
-| -------- | -------------------- | ------------------------------------- |
-| A slice  | its spec             | implementation status + any ruling    |
-| A spec   | its plan             | one line, not a build narrative       |
-| A plan   | `roadmap.shipped.md` | one line, and the move to `finished/` |
+| Finished | Recorded in | As                                 |
+| -------- | ----------- | ---------------------------------- |
+| A slice  | its spec    | implementation status + any ruling |
+| A spec   | its plan    | one line, not a build narrative    |
 
 **Intent lives in the plan; state lives in the spec.** The plan says which slices
 exist and what each one makes true — that is the delivery order and it does not
@@ -164,24 +152,17 @@ Between "the code is merged" and "the plan is done" there is a real state, and i
 has to be written down: every slice built, nothing left to code, waiting on a
 paid trial, an owner review, or a flag enable. Record it in the governing doc and
 **name what is being waited on**. A plan in that state carries
-`Status: awaiting acceptance — <what>`. It is not `shipped`, it does not move to
-`finished/`, and it keeps its roadmap line.
+`Status: awaiting acceptance — <what>`. It is not `shipped`, and it keeps its
+roadmap line.
 
 The failure this prevents is the quiet one: work that reads as done because the
 PR merged, so nobody runs the trial that was the whole point of building it.
 
-### What a shipped line looks like
+### The index stays short
 
-Only a completed plan earns one, and it is a single line:
-
-```markdown
-- **<Plan title>** — [plan](finished/<topic>.plan.md) — <date> — <one-sentence hook>.
-```
-
-No slice list, no rulings, no build history — those stayed in the plan and its
-specs, which is why the line links to them. `roadmap.md` and
-`roadmap.shipped.md` are indexes, and an entry that grows past a sentence or two
-is a plan leaking into its index.
+No slice list, no rulings, no build history — those stay in the plan and its
+specs, which is why a roadmap entry links to them. `roadmap.md` is an index, and
+an entry that grows past a sentence or two is a plan leaking into it.
 
 ## The Outcome line
 
@@ -225,15 +206,11 @@ Non-plan docs do not carry an Outcome line. They carry a Status line saying what
 they are: `Status: companion to <plan>`, `Status: detail for <plan>`,
 `Status: reference (audit run <date>)`, `Status: closed — <verdict> <date>`.
 
-One `.plan.md` is deliberately exempt: `deferred.plan.md` is the parking-lot
-index, not a plan, and carries `Status: parking lot` with no Outcome line. Its
-individual stubs under `deferred/` each carry an `Outcome (provisional):` line.
-
 ## The plan template
 
 `templates/plan.md` (beside this file) is the **mandatory structure for every
-new `.plan.md`**, including a deferred stub at the moment it is promoted into a
-real plan. Owner ruling (2026-08-22): the template is enforced, not advisory.
+new `.plan.md`**. Owner ruling (2026-08-22): the template is enforced, not
+advisory.
 
 - **Every numbered section appears in the finished plan**, in template order,
   under the template's headings. There is no such thing as a section that is
@@ -255,9 +232,6 @@ real plan. Owner ruling (2026-08-22): the template is enforced, not advisory.
   dedicated tasks**, one plan at a time, on the owner's request. When editing a
   pre-template plan for any other reason, keep its existing structure — do not
   restructure it to the template as a side effect of another change.
-
-Deferred stubs are not plans and keep using `templates/deferred-stub.md`; the
-plan template applies when the stub graduates.
 
 ## Document length
 
@@ -385,29 +359,18 @@ the code:
 4. Correct the plan's own text where the build contradicted it. A plan that still
    describes a blocker the slice removed will send the next agent around it.
 
-Do **not** add a `roadmap.shipped.md` entry, and do not move anything to
-`finished/`. If the roadmap's one-line hook for the plan now says something
-untrue — it named this slice as the next work, or as a blocker — fix that line
-and nothing else.
+If the roadmap's one-line hook for the plan now says something untrue — it named
+this slice as the next work, or as a blocker — fix that line and nothing else.
 
 ### Closing out a plan
 
 Only when the whole plan is delivered **and accepted**. In one change: set the
 plan's `Status:` to `shipped — <date>` with a note naming leftovers and where
-they went; `git mv` the whole `<topic>.*` family into `finished/`; remove its
-entry from `roadmap.md`; add the single line to `roadmap.shipped.md` pointing at
-the `finished/…` path.
-
-Then repoint **every link the move broke** — inbound links from anywhere under
-`docs/developer-notes/` (including from docs already in `finished/`), and the
-moved docs' **own outbound links**, which all need one more `../` now that they
-sit a level deeper. Outbound is the one people forget and the largest single
-source of rot. Reference docs need nothing, because they do not link here.
-Run the link check below rather than trusting a read-through.
+they went, and remove its entry from `roadmap.md`.
 
 If the code is all written but acceptance has not happened, this is not that
 change. Set `Status: awaiting acceptance — <what>`, record it in the spec too,
-and leave the plan where it is.
+and leave the roadmap entry in place.
 
 ### Migrating or cleaning existing docs
 
@@ -419,7 +382,7 @@ and leave the plan where it is.
    Superseded content is deleted, not marked deprecated.
 4. **Synthesize then remove.** When a working page's unique information has been
    folded into its canonical owner, delete the page. Do not create an archive
-   tier for it — `finished/` is for shipped topics only.
+   tier for it — git history is the archive.
 5. **Verify links last**, after the moves settle.
 
 ## Validation
@@ -465,12 +428,10 @@ paths (root `CLAUDE.md`). Validate by hand before finishing:
   Pre-template plans you merely edited are exempt until their dedicated
   migration task.
 - **Every piece of dev work in this change is recorded one rung up** — the slice
-  in its spec, the completed spec in its plan, the completed plan in
-  `roadmap.shipped.md`. Anything built but not yet accepted says so, and names
-  what it waits on.
-- `roadmap.shipped.md` gained an entry **only** if a whole plan completed, and
-  that entry is one line pointing at `finished/`.
-- Nothing moved to `finished/` while its plan still has a queued slice.
+  in its spec, the completed spec in its plan. Anything built but not yet
+  accepted says so, and names what it waits on.
+- A plan left `roadmap.md` **only** if the whole plan completed and was
+  accepted, never because a slice landed.
 - Every table you touched obeys [Table formatting](#table-formatting): pipes
   aligned in the raw source, one physical line per row, no newlines in cells,
   2–4 columns, short cells — or it is a list instead.
@@ -486,8 +447,7 @@ checks above are additional, not a substitute.
 ## Templates
 
 In `templates/` beside this file: `plan.md`, `spec.md`, `trial.md`, `audit.md`,
-`deferred-stub.md`, `reference-doc.md`. Copy the file and keep the section
-order. `plan.md` is **mandatory and complete** — every numbered section appears
+`reference-doc.md`. Copy the file and keep the section order. `plan.md` is **mandatory and complete** — every numbered section appears
 in the finished plan, `N/A — <why>` where one does not apply, nothing added
 ([The plan template](#the-plan-template)). For the other templates, delete
 sections that genuinely do not apply rather than leaving them empty.

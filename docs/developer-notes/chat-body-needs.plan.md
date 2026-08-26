@@ -126,7 +126,7 @@ a full bladder that only shows a pip is worse than no bladder at all.
   body. One need surfaces at a time, most urgent wins, mirroring the anti-repetition
   foreground/standing split the state cues already use rather than inventing a second gate.
 - Nobody owns the initiative cue's budget today. That gap is named in
-  [world-engine-refactor.plan.md](world-engine-refactor.plan.md) §6.3 and is the reason
+  `world-engine-refactor.plan.md` §6.3 and is the reason
   this slice adds a *ranking*, not just another producer.
 
 ### 5. Authoring

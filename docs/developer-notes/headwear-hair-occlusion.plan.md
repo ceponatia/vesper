@@ -57,8 +57,8 @@ entirely. Nothing in the item model captures that today.
 ### Non-goals
 
 - **Hair that changes state under headwear** — flattened, hat-creased, pulled
-  through a cap. That is appearance simulation, not concealment;
-  [deferred.plan.md](deferred.plan.md) is where it goes if it is ever wanted.
+  through a cap. That is appearance simulation, not concealment, and
+  gets its own issue if it is ever wanted.
 - **Hood up versus hood down.** A hood occludes only when raised, which makes
   this a garment *presentation* question, and presentation belongs to
   [clothing-state-graph.plan.md](clothing-state-graph.plan.md). This plan leaves

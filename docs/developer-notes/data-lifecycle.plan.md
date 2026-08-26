@@ -158,13 +158,11 @@ the roadmap on completion.
 None. The four raised at planning — hidden chat-image kinds, retention
 windows, production telemetry content, account deletion — were all ruled
 2026-07-29; see [data-lifecycle.audit.md](data-lifecycle.audit.md)
-§"Rulings". Account deletion is parked in
-[deferred.plan.md](deferred.plan.md) §"Account deletion".
+§"Rulings". Account deletion is parked and tracked as a GitHub issue.
 
 ## Non-goals
 
-- At-rest encryption — its own queued plan
-  ([at-rest-encryption.plan.md](at-rest-encryption.plan.md)). It reads the same
+- At-rest encryption — separately tracked work. It reads the same
   columns this plan prunes, so shipping telemetry minimization first shrinks
   what encryption has to cover.
 - Gallery UX changes (visibility filters stay as they are).

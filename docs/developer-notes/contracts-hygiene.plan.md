@@ -52,7 +52,7 @@ Grouped by kind; ids are §E findings in the audit.
 - **Rule on the mood sub-module** — E7: the atmosphere module and the
   condition/atmosphere baseline-shift half of the mood events module have no
   consumers. This interacts with prior-art **E-K1** (fold the condition
-  vocabulary into the catalog — [finished/codebase-review.md](finished/codebase-review.md)):
+  vocabulary into the catalog — `codebase-review.md`):
   deleting may make E-K1 moot, so it gets a decision slice, not a quiet
   deletion. **E-K2** (concept sets copied outside the concept registry) sits in
   the same folder — decide in passing whether it rides along.
@@ -172,11 +172,11 @@ applicable CodeBuild CI run and aggregate `verify` check.
   correctness-and-measured-response tranche for E13/E14 and in the later
   consolidation sequence for the rest.
 - **Do not absorb the simulation contracts.** The
-  [modularity audit](codebase-modularity.audit.md) proposes a large
+  modularity audit proposes a large
   `packages/simulation-core/src/contracts` scaffolding pass (one command factory, one event
   envelope, one projection-schema factory). Its projection-schema item is the same
   branded-vs-plain drift the efficiency audit filed as **A9**, which
-  [sim-command-shell.plan.md](sim-command-shell.plan.md) owns — this plan's §E
+  `sim-command-shell.plan.md` owns — this plan's §E
   scope stops at the non-simulation contracts, and that boundary is deliberate.
 
 ## Open questions

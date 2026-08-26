@@ -12,7 +12,7 @@ she washed.
 
 ## Goal
 
-Since the clock change ([finished/chat-clock-calendar.plan.md](finished/chat-clock-calendar.plan.md):
+Since the clock change (`chat-clock-calendar.plan.md`:
 one exchange became one story minute, and skips became the primary time mover), the chat
 lane's meter economy is visibly broken in three ways: **hygiene never decays**, **arousal
 never resolves** after an intimate scene completes, and **skips carry no meter
@@ -95,7 +95,7 @@ deletes three special cases**:
   nothing moves — so the read-only projection path and the exchange path become one call.
 - **The away-freeze goes.** Freezing an off-screen character's body encoded a world-model
   assumption that off-screen bodies pause. They don't, and
-  [finished/chat-offscreen-life.plan.md](finished/chat-offscreen-life.plan.md) already
+  `chat-offscreen-life.plan.md` already
   ruled the cast keeps living. Away members simply catch up when next read. **Ruled: drift
   is presence-independent; presence gates narration, not physiology.**
 - **Skips need no meter code at all.** A skip advances the clock; the next drift covers
@@ -246,7 +246,7 @@ waits for that action to reach the chat lane with
 - **Intercourse as an interaction concept** — unnecessary for meters; a registry data edit
   for the day a preference card must like or dislike the act itself rather than the ask.
 - **Generalizing the triggered-response layer** — parked in
-  [deferred/physiology.plan.md](deferred/physiology.plan.md), which builds on this plan's
+  `physiology.plan.md`, which builds on this plan's
   substrate/read law.
 
 ## Open questions
