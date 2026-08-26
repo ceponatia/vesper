@@ -605,6 +605,49 @@ export const garmentOperationSchema = z.discriminatedUnion("kind", [
       degree: garmentDegreeBandSchema,
     })
     .strict(),
+  /**
+   * The destination leg of a CONSERVED surface transfer
+   * (romantic-contact-affordances.spec.effects.md §9; owner ruling 2026-08-22,
+   * "conserved transfer follows the pressure mark").
+   *
+   * Not a second spelling of `deposit`. `deposit` compiles the fiction's own
+   * sentence — "there is mud on her sleeve" — and a band is the honest reading
+   * of a sentence, because the extractor is reading prose rather than counting
+   * material. A transfer is an equation: the transaction has already decided
+   * how many units left the source, and this leg exists to put exactly that
+   * number somewhere. The two field-level divergences below are the whole
+   * difference, and both of them exist so the destination cannot quietly write
+   * a different fact than the source removed.
+   */
+  z
+    .object({
+      kind: z.literal("accept_transfer"),
+      garmentId: garmentInstanceIdSchema,
+      partIds: garmentPartIdsSchema,
+      /**
+       * NO `.catch("unknown")`, unlike `deposit` above, and the asymmetry is
+       * the point. On the ordinary path a substance the model invented
+       * degrading to `unknown` is honest — something IS on the garment and the
+       * fallback kind says so without pretending to name it. Here the substance
+       * is already owner-backed on the source side, so a kind that does not
+       * parse means the transaction is malformed: what left is not what would
+       * arrive. Voiding the operation is the refusal §9 asks for; degrading it
+       * would transmute mud into `unknown` mid-flight and still report
+       * conservation satisfied.
+       */
+      depositKind: garmentDepositKindSchema,
+      /**
+       * The EXACT fixed-point credit, `1..GARMENT_UNIT_ONE`, never a degree
+       * band. A band would hand this owner the right to recompile the number —
+       * `slight` is 2_500 here no matter what the source actually lost — and a
+       * destination that writes a different number than the source removed is
+       * not a transfer, it is a mint or a leak.
+       */
+      amount: garmentUnitSchema,
+      /** Provenance, exactly the shape `garmentDepositSchema` already stores. */
+      cause: z.string().trim().max(80).optional().catch(undefined),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("clean"),
@@ -635,20 +678,31 @@ export type GarmentOperation = z.infer<typeof garmentOperationSchema>;
 export type GarmentOperationKind = GarmentOperation["kind"];
 
 /**
- * The three CONDITION-CLASS operations for which an empty `partIds` legally
- * means the whole garment (OQ7) — "rain soaked her coat" needs no fallback.
+ * The CONDITION-CLASS operations for which an empty `partIds` legally means the
+ * whole garment (OQ7) — "rain soaked her coat" needs no fallback.
  * `restore_presentation` is deliberately NOT here: the audit lists it among the
  * operations that never fall back, so an empty list restores nothing — the slice-3
  * reducer drops it with `garment_op.restore_no_parts` rather than silently
  * no-opping, and a whole-garment restore is authored by naming the parts.
+ *
+ * `accept_transfer` IS here, deliberately, even though §9 wants an exact target
+ * locus. `partIds: []` is not vagueness in this list — it resolves to the
+ * garment ROOT, which is an exact, deterministic, single locus that the deposit
+ * identity and the whole-garment band reader both already understand. Excluding
+ * it would only mean that a transfer whose honest destination is "the coat"
+ * rather than a named panel has nowhere to land, which forces the transaction
+ * to either invent a part it cannot justify or refuse a leg the fiction
+ * supports. Neither is better than recording the truth at the scope the
+ * fiction actually named.
  */
 export const GARMENT_ROOT_SCOPED_OPERATIONS: readonly GarmentOperationKind[] = [
   "apply_condition",
   "deposit",
+  "accept_transfer",
   "clean",
 ];
 
-/** The part ids an operation addresses; empty `partIds` resolves to the root only for the three above. */
+/** The part ids an operation addresses; empty `partIds` resolves to the root only for those above. */
 export function garmentOperationPartIds(operation: GarmentOperation): readonly string[] {
   switch (operation.kind) {
     case "set_closure":
@@ -659,6 +713,7 @@ export function garmentOperationPartIds(operation: GarmentOperation): readonly s
       return [operation.partId];
     case "apply_condition":
     case "deposit":
+    case "accept_transfer":
     case "clean":
       return operation.partIds.length > 0 ? operation.partIds : [GARMENT_ROOT_PART_ID];
     case "restore_presentation":

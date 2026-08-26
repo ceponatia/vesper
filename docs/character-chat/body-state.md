@@ -36,7 +36,8 @@ lane does.
   garment-condition precedent: reading integrates forward and never mutates, writes touch
   only the locations a proposal named, and `updatedAtMinutes` therefore stays a truthful
   freshness stamp for the cause. **Primary character only** this release — `hair` is the
-  one owned location. Two laws about not letting a gap become a physical claim:
+  one owned location. Two laws about not letting a gap become a physical claim, then the
+  modules that ride beside wetness in the same state:
   - **Absent, dry, and invalid are three answers.** An absent entry is honestly dry
     (nothing ever recorded wetting it). A stored entry whose `level`/`updatedAtMinutes`
     fails parsing is **quarantined** as `{ status: "invalid" }` — persisted verbatim,
@@ -80,12 +81,48 @@ lane does.
     `dirt_on_skin` and `blood_on_skin` unsupported-fact rows.
     - **Material never leaves on its own.** Wetness dries and marks fade because a surface
       is returning to its resting state; a deposit is a substance, and a surface that
-      quietly cleaned itself would delete material nobody removed. Only an explicit
-      removal shrinks a deposit, everything at or under the removal floor drops, and a
-      removal that names a substance leaves the others where they are. What *does* move
+      quietly cleaned itself would delete material nobody removed. Only a *write* shrinks a
+      deposit — an explicit removal or a conserved take (below), never the clock. In a
+      removal (`reduceBodySurfaceDeposits`) everything at or under the removal floor drops,
+      and a removal that names a substance leaves the others where they are. What *does* move
       with the clock is `freshness`, which drives phrasing (wet blood, drying blood, set
       blood) and nothing else — which is also why a projected deposit is the one feature
       family carrying no expiry window.
+  - **Conserved transfer** adds a second pair of deposit writers and a fourth key, and the
+    pairs are deliberately unmistakable because picking the wrong one breaks conservation
+    silently. `commitBodySurfaceDeposit` **raises to the max** — the fiction saying there is
+    mud on her hands establishes *at least* that much — and `reduceBodySurfaceDeposits` is
+    an explicit sink that sweeps the removal floor off every substance at a location;
+    neither conserves. `takeBodySurfaceDeposit` reports **exactly what left** and does
+    **not** inherit the removal floor: taking 1,000 off a 1,400 deposit leaves 400 standing,
+    because the floor is washing's cleanup policy and a transfer that swept it would destroy
+    the difference between what left and what arrived. `acceptBodySurfaceDeposit` **adds**,
+    and refuses (`invalid_amount`/`saturated`/`quarantined`/`capacity`) rather than clamping,
+    evicting, or writing over a quarantined slot — a destination that absorbs less than the
+    source lost is the unowned sink the deposit law exists to prevent. Both are keyed by the
+    exact deposit identity, never by location, since the removal path takes from every
+    substance standing at a place and would destroy the blood while moving the mud.
+  - **`transfers` is a receipt record, not body state**, and it rides this owner
+    deliberately: a receipt has to roll back with the DEBIT, or a half-applied transfer
+    leaves a receipt claiming it happened. It is written in the same value, restored from
+    the same `pre_exchange_state` anchor, and dropped by the same retake, so a key here
+    inherits that boundary where a table of its own would have to be taught it. An *adding*
+    credit cannot tell a retry from a second helping by looking at its own amount, so the
+    transaction asks `bodySurfaceTransferCommitted` on the source surface and short-circuits
+    **before any debit** (a quarantined receipt answers "committed" — skipping a beat that
+    may already have happened beats debiting it twice). Receipts prune on the write path
+    only, past `BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES`, and capacity
+    (`BODY_SURFACE_MAX_TRANSFER_RECEIPTS`) refuses rather than evicting, because evicting a
+    receipt makes the transfer it recorded runnable again. Absent until the first transfer
+    commits, on the `marks`/`deposits` key rule; no migration.
+  - **The transaction is fixture-only** (`contracts/turns/chat-contact-transfer.ts`, over
+    proposals from `contracts/affordances/contact/transfer.ts`): no chat-lane producer
+    resolves a source material read or an owner-addressable layer path, so nothing in
+    production reaches it. It is all-or-nothing by construction — every owner is folded on a
+    local copy and a refusal simply never returns them — and it verifies each credit by
+    reading the owner back, so a garment or surface that clamps, evicts, or max-merges a
+    conserved credit fails the settlement with a `surface_transfer.*` code instead of
+    silently breaking conservation.
 - **The extraction** (`chatArchivistSchema.environment` / `.surfaceWetness` /
   `.surfaceDeposits`, all on the
   shared continuity leg): a partial weather patch (absent key = unchanged) and a list of

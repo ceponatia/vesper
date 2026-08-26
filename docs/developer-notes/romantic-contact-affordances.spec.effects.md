@@ -1,10 +1,12 @@
 # Romantic contact affordances — observations, effects, and sensory routing
 
-Status: **implementation stages 1–7 built — 1–6 on 2026-08-22, the deposits
-owner (stage 7) merged to `main` 2026-08-25. The effect-commit leg waits on its
+Status: **implementation stages 1–8 built — 1–6 on 2026-08-22, the deposits
+owner (stage 7) merged to `main` 2026-08-25, conserved transfer (stage 8) built
+2026-08-26 and fixture-only. The pressure-mark commit leg waits on its
 default-off switch (`CHAT_CONTACT_EFFECTS`); the deposits owner is deliberately
 ungated and therefore activates on the next deploy, with no live exchange having
-exercised it yet. Stages 8–10 remain.**
+exercised it yet; the transfer transaction needs no switch because no chat-lane
+producer reaches it at all. Stages 9–10 remain.**
 This spec replaces the older contact-specific perception/ranking design. Visual state owns visual perception,
 attention, repetition, memory, and narrator/image selection. Contact owns pure
 physical phenomenon resolution and effect proposals. Persistent aftermath is
@@ -42,20 +44,21 @@ already committed.
 
 Current delivery state:
 
-| Responsibility | State |
-| --- | --- |
-| Contact-derived hand occupation in visual state | Live |
-| Contact-motion bands in visual state | Live |
-| Generic visual affordance-observation bridge | Live for supported visual facts |
-| Full visual source-locus -> target-locus contact relation | Built 2026-08-22 (`body_language.contact_relation`) |
-| Channel-tagged contact phenomenon contract | Built 2026-08-22; no producer emits phenomena yet |
-| Body-surface wetness owner | Live |
-| Body-surface residues/deposits/products | Owner designated 2026-08-22; not built |
-| Temporary contact marks | Built 2026-08-22 inside the body-surface owner |
-| Pressure-mark first end-to-end proof | Built 2026-08-22 behind default-off `CHAT_CONTACT_EFFECTS` |
-| Conserved transfer | Second proof; not built |
-| Scratch/skin damage | No owner yet |
-| Tactile/olfactory/gustatory presentation | Future sibling sensory owners; not live |
+| Responsibility                             | State                                                      |
+| ------------------------------------------ | ---------------------------------------------------------- |
+| Hand occupation in visual state            | Live, derived from committed contact                       |
+| Contact-motion bands in visual state       | Live                                                       |
+| Generic visual observation bridge          | Live for supported visual facts                            |
+| Full source-locus -> target-locus relation | Built 2026-08-22 (`body_language.contact_relation`)        |
+| Channel-tagged phenomenon contract         | Built 2026-08-22; no producer emits phenomena yet          |
+| Body-surface wetness owner                 | Live                                                       |
+| Body-surface residues/deposits             | Built 2026-08-25, ungated; no live exchange has run it     |
+| Body-surface surface products              | Owner designated 2026-08-22; not built                     |
+| Temporary contact marks                    | Built 2026-08-22 inside the body-surface owner             |
+| Pressure-mark first proof                  | Built 2026-08-22 behind default-off `CHAT_CONTACT_EFFECTS` |
+| Conserved transfer second proof            | Built 2026-08-26; fixture-only, no lane can propose one    |
+| Scratch/skin damage                        | No owner yet                                               |
+| Tactile/olfactory/gustatory presentation   | Future sibling sensory owners; not live                    |
 
 ---
 
@@ -63,25 +66,28 @@ Current delivery state:
 
 Contact effects deliberately do **not** create a second state system.
 
-| Effect/current fact | Authoritative owner | Contact role |
-| --- | --- | --- |
-| Active contact | contact lifecycle | commit/read directly |
-| Body-surface wetness | body-surface state | consume; may propose owner-committed change when supported |
-| Body residue/product/deposit | body-surface state — owner ruled, expansion unbuilt | propose only; cannot commit yet |
-| Dirt/blood/cosmetics on skin | body-surface state — owner ruled, expansion unbuilt | propose only; cannot commit yet |
-| Pressure/contact mark | body-surface state — marks module built 2026-08-22 | propose; body-surface validates/commits (flag-gated) |
-| Scratch/skin damage | **missing owner** | proposal only; cannot commit |
-| Garment wetness/condition | wardrobe/garment condition | consume/propose mutation |
-| Garment deposit | wardrobe/garment state | propose; wardrobe commits |
-| Garment displacement/closure | wardrobe operation | propose; wardrobe validates/commits |
-| Physiology/swelling/flush | future physiology/body-state owner | consume only after owner exists |
-| Permission | permission ledger | consume elsewhere; never effect state |
-| Visual mention/memory | visual state | contact never writes |
-| Tactile/scent/taste notice/mention | future modality-specific sensory owners | contact never writes |
+| Effect/current fact          | Authoritative owner                       | Contact role                                  |
+| ---------------------------- | ----------------------------------------- | --------------------------------------------- |
+| Active contact               | contact lifecycle                         | commit/read directly                          |
+| Body-surface wetness         | body-surface state                        | consume; may propose a change where supported |
+| Body residue/deposit         | body-surface state — built 2026-08-25     | propose; body-surface validates/commits       |
+| Surface products on skin     | body-surface state — owner ruled, unbuilt | propose only; cannot commit yet               |
+| Pressure/contact mark        | body-surface state — built 2026-08-22     | propose; body-surface commits (flag-gated)    |
+| Conserved surface transfer   | body-surface + wardrobe, one transaction  | propose; the transaction settles both sides   |
+| Scratch/skin damage          | **missing owner**                         | proposal only; cannot commit                  |
+| Garment wetness/condition    | wardrobe/garment condition                | consume/propose mutation                      |
+| Garment deposit              | wardrobe/garment state                    | propose; wardrobe commits                     |
+| Garment displacement/closure | wardrobe operation                        | propose; wardrobe validates/commits           |
+| Physiology/swelling/flush    | future physiology/body-state owner        | consume only after owner exists               |
+| Permission                   | permission ledger                         | consume elsewhere; never effect state         |
+| Tactile/scent/taste notice   | future modality-specific sensory owners   | contact never writes                          |
+| Visual mention/memory        | visual state                              | contact never writes                          |
 
-“Owner ruled, expansion unbuilt” means the owning domain is settled but the
-mutation/read contract does not yet exist. Contact must still behave as though
-that effect is unavailable until the owner is implemented.
+“Owner ruled, unbuilt” means the owning domain is settled but the mutation/read
+contract does not yet exist. Contact must behave as though that effect is
+unavailable until the owner is implemented. Surface products are the one
+remaining case; residue/deposits left it on 2026-08-25 (§7) and conserved
+transfer on 2026-08-26 (§9).
 
 ---
 
@@ -290,6 +296,15 @@ type ContactEffectProposal =
   | GarmentOperationProposal;
 ```
 
+The implemented union in `contracts/affordances/contact/effects.ts` has **two**
+members, and a family joins it only when its complete proposal -> owner-
+transaction path ships: `BodyMarkProposal` (§8) since 2026-08-22, and
+`SurfaceTransferProposal` (§9) since 2026-08-26. `ScratchProposal` and a
+standalone `GarmentOperationProposal` stay absent rather than stubbed — the
+first has no owner at all, and the second waits on the contact -> wardrobe
+operation seam. A transfer's intermediate garment leg is **not** an instance of
+that second family; see §9.
+
 Every proposal contains:
 
 - stable idempotency key derived from the causal contact/action event;
@@ -369,9 +384,12 @@ Only the contact-derived transfer producer belongs behind that flag.
   minute, free-text cause), keyed by the deterministic
   `dep:<kind>:<location>:<minute>` identity so a replayed exchange lands on the
   key it already wrote. `commitBodySurfaceDeposit` raises rather than stacks,
-  `reduceBodySurfaceDeposits` is the only shrink, `bodySurfaceDepositAt` is the
-  lazy freshness read, and per-entry quarantine, the 12-entry bound, and the
-  absent-until-first-commit key rule all follow the marks module.
+  `reduceBodySurfaceDeposits` is the extraction lane's only shrink,
+  `bodySurfaceDepositAt` is the lazy freshness read, and per-entry quarantine,
+  the 12-entry bound, and the absent-until-first-commit key rule all follow the
+  marks module. Conserved transfer added a second, deliberately separate write
+  pair beside these two on 2026-08-26; the reason it is separate rather than a
+  mode on these is recorded in §9.
 - **The one law that is not the marks module's** — material does not leave on
   its own. Wetness dries and marks fade because a surface is returning to its
   resting state; a deposit is a substance, and a surface that quietly cleaned
@@ -540,10 +558,275 @@ Required laws:
 
 This two-sided conservation requirement is why transfer is not the first proof.
 
-If the destination body-residue owner is not yet implemented, keep transfer
-fixture-only. A garment-to-garment transfer may eventually be a useful proof only
-where the existing garment owner can complete both sides honestly; do not use a
-partial owner path to pretend the general body transfer problem is solved.
+A garment-to-garment transfer would be a useful proof only where the existing
+garment owner can complete both sides honestly; it is not a substitute, and a
+partial owner path must never be used to claim the general body transfer problem
+is solved.
+
+### Built shape — 2026-08-26
+
+Built end to end, and **fixture-only**, exactly as the 2026-08-25 owner ruling
+at §15 stage 8 said it would be. No chat-lane producer resolves a source
+material read or a path, so nothing in production proposes a transfer. Of the
+three gaps stage 8 names, the build closes the third — the settle path now has
+a conditional atomic boundary — and works around the first two, which is why the
+proof stays fixture-only. What it proves is the transaction.
+
+#### Contact is handed the two truths it does not own
+
+All contact knows is that a touch was committed. It does not know what material
+stands on the source surface — the body-surface owner holds that, and the import
+direction runs the other way — and it does not know what a layer lets through,
+which the wardrobe/material owner holds. So
+`surfaceTransferProposals({contact, material, path})` in
+`contracts/affordances/contact/transfer.ts` takes all three as arguments and
+combines them into at most one `SurfaceTransferProposal`. A lane
+that cannot answer supplies no read and no path, and therefore proposes nothing.
+An **empty** layer list is the meaningful common case — skin on skin, everything
+that leaves arrives — and it is not the same as an absent path, which is the
+lane saying it cannot answer.
+
+Qualifying evidence follows the pressure mark's own vocabulary: `moderate` and
+`firm` committed pressure move a fraction of the standing material, `trace`,
+`light`, and unstated pressure move nothing, and unstated is the load-bearing
+case because an unknown pressure is not a light one. Relative motion raises the
+fraction where it exists (`sliding`, `rolling`, `tapping`) but can never qualify
+a transfer alone — a hand resting still on a muddy knee has moved nothing. The
+`amount` on the proposal is an intent; the transaction re-reads the source in
+its own cut and moves what is actually there.
+
+#### Throughput is resolved path evidence, not a fabric constant
+
+Owner ruling (2026-08-26): a transfer path carries its own per-layer,
+per-substance `throughput`, and it is **not** `moistureTransmission`.
+
+Reusing the contact material layer's existing moisture channel was the tempting
+move and was rejected. Moisture transmission answers "does dampness reach the
+other side"; how much of a substance crosses a layer is a different question
+with a different answer per substance, and coupling them would mean that
+retuning how cotton carries damp silently retunes how dust travels through it.
+`absorbency` is not the number either — it says how much water a fibre takes up
+from a wetting source, not what passes through it.
+
+Throughput is the effective answer for *this* material crossing *this* layer
+under *this* contact, not a property of a fabric. Its eventual owner is
+wardrobe/material path resolution; for the fixture-only proof, fixtures stand in
+for that owner.
+
+#### Material is stepped through the path in real units
+
+Owner ruling (2026-08-26): the transaction walks the sorted layers one at a
+time, in the units actually being moved, and derives what each layer kept by
+**subtraction** from what reached it:
+
+```text
+carried_0 = D                                   (what the source actually lost)
+carried_(i+1) = floor(carried_i x throughput_i / ONE)
+retained_i    = carried_i - carried_(i+1)
+destination   = carried_final
+```
+
+so `D = sum(retained_i) + destination` holds by construction, with every integer
+remainder staying on the layer that failed to pass it. Composing the
+coefficients first and applying the amount once floors differently and can lose
+a unit into nowhere — harmless for a sensory channel, fatal for material
+accounting.
+
+At **zero throughput the layer receives everything**. A blocking layer is not a
+force field that keeps material on the original surface; it is the surface being
+contacted. "Cannot pass through" and "cannot receive material" are different
+claims, and keeping them apart is what makes §16's "blocked material cannot
+teleport to skin" a full conservation statement rather than a vacuous one.
+
+#### A transfer gets its own conserving pair on the body-surface owner
+
+Owner ruling (2026-08-26): the existing deposit writers are untouched, and
+`takeBodySurfaceDeposit` / `acceptBodySurfaceDeposit` are added beside them in
+`contracts/state/body-surface.ts`.
+
+`commitBodySurfaceDeposit` raises to the maximum because "there is mud on her
+hands" establishes *at least* that much material, and saying it twice is not a
+report that some of it left. `reduceBodySurfaceDeposits` sweeps everything under
+the removal floor off every substance at a location because "she washes her
+hands" is an explicit sink. Both are the right meaning for the sentence they
+compile, and neither is a conserved move. Stretching them until the conservation
+tests passed would have quietly changed what the fiction's own sentences mean.
+
+The pair is deliberately different from them:
+
+- `takeBodySurfaceDeposit` reports exactly how much left and **does not inherit
+  the removal floor**. Taking 1,000 off a 1,400 deposit leaves 400 standing,
+  because 400 units are still on her hand and the shared band reader calls
+  anything from 1 upward `slight`. The floor is washing's cleanup policy, where
+  the vanished trace goes to a modelled sink. A transfer that swept it would
+  destroy the difference between what left and what arrived — the unowned sink
+  §7 says must not exist.
+- `acceptBodySurfaceDeposit` **adds**, and refuses rather than clamping,
+  evicting, or discarding an overflow (`invalid_amount`, `saturated`,
+  `quarantined`, `capacity`). A destination that silently absorbs less than the
+  source lost is that same unowned sink.
+
+Both are keyed by the exact deposit record rather than by location, because a
+transfer moves one named substance and the reduce's take-from-everything
+behaviour would destroy the blood while moving the mud.
+
+#### All-or-nothing at commit time
+
+Owner ruling (2026-08-26): partial **physical** transfer is legitimate — the
+planner may decide a smaller amount moves. Partial **transaction** success is
+not. Once the equation is fixed by the debit, every leg lands exactly or none
+does, otherwise "retake removes both sides or neither" has nothing exact to
+undo.
+
+`applySurfaceTransferProposal` in `contracts/turns/chat-contact-transfer.ts`
+makes that structural rather than checked afterwards. Planning may degrade —
+before anything moves it can find an unresolvable layer, a stale source, or an
+unknown locus and refuse — but once material has left the source, every owner is
+folded on a local copy and a refusal simply never returns them. There is no
+partial success and no "committed but degraded" state. Every credit is also
+verified by reading its owner **back**: the delta the owner actually applied must
+equal the exact number this transaction planned, which makes the law independent
+of any owner's internal merge, clamp, eviction, or capacity policy.
+
+Order is the law's order: the receipt check first, then preflight, then the
+debit that defines the equation, then every credit verified, then the receipt
+write. Refusals are drops with stable `surface_transfer.*` codes —
+`locus_unknown`, `key_invalid`, `layer_unresolved`, `source_stale`,
+`layer_refused`, `destination_refused`, `receipt_refused` — and never
+exceptions. At most `CHAT_SURFACE_TRANSFER_MAX = 2` settlements per exchange,
+threaded in order so a second transfer off the same surface sees what the first
+one left.
+
+#### The intermediate leg is not a separate garment proposal
+
+Owner ruling (2026-08-26): an intermediate layer's credit is one leg of a single
+indivisible conserved event, mapped by the transaction onto a wardrobe-owned
+operation. Two proposals for one conserved event would make atomicity impossible
+to state.
+
+Contact still never imports or edits the layer store. The leg becomes a typed
+`accept_transfer` garment operation the layer's own owner validates and commits
+(§10), and the transaction addresses it through a lane-supplied resolver that
+turns the opaque path handle into an owner address — so contact never learns
+what a layer is made of or how its owner names a part of it.
+
+`accept_transfer` is deliberately not a mode on `deposit`. `deposit` compiles a
+sentence: it max-merges, and at capacity it evicts the oldest record. Both are
+correct for a sentence and both destroy material here. The conserved credit adds,
+refuses on saturation (`garment_op.transfer_saturated`), refuses at capacity
+rather than evicting a record this transfer never touched
+(`garment_op.transfer_capacity`), and refuses a non-positive or over-unit amount
+(`garment_op.transfer_invalid_amount`). Its substance does not degrade to
+`unknown` the way `deposit`'s does: on the ordinary path an unnameable substance
+is honest, but here the substance is already owner-backed on the source side, so
+a kind that fails to parse means what left is not what would arrive. It shares
+`deposit`'s record identity space so one substance in one place in one minute
+stays one fact, and it soils the garment on the merged total, because a garment
+carrying transferred mud that still reads pristine launders the transfer at the
+only layer anyone sees.
+
+Idempotency is explicitly **not** this reducer's job — a conserving add is by
+construction not idempotent, and the transaction dedupes before anything reaches
+it.
+
+Building this leg surfaced a divergence between the two surface owners that
+predates it: at capacity the garment deposit owner **evicts** the oldest record,
+while the body-surface deposit owner declines the new one and its producer
+reports `chat_surface.deposit_capacity`. They share the substance vocabulary, so
+mud on a sleeve and mud on the forearm beneath it behave differently when the
+record is full, and the eviction path has no test in either direction. The two
+conserved credits refuse outright, which makes the divergence three-way.
+Recorded as an open question in the
+[plan](romantic-contact-affordances.plan.md) §23.
+
+#### The idempotency receipt lives in the debited surface's own state
+
+Owner ruling (2026-08-26): the receipt is a `transfers` key on
+`BodySurfaceState`, on the `marks`/`deposits` precedent.
+
+An adding credit cannot tell a retry from a second helping by looking at its own
+amount, so the transaction needs a durable record of the causal identity — and
+that record must roll back with the **debit**, or a half-applied transfer leaves
+a receipt claiming it happened. The body-surface state is the one durable store
+already riding exactly the anchor the debit rides: written in the same value,
+restored by the same `pre_exchange_state`, dropped by the same retake. A separate
+table would have to be taught that boundary; a key here inherits it. There is no
+migration — it is a new optional key, absent until the first commit.
+
+The module keeps 8 receipts over a 720-story-minute horizon, pruned on the write
+path only so two readers of the same state cannot disagree about whether a
+transfer may run. A quarantined receipt answers "already committed", which is the
+conservative direction: re-running a transfer that may already have committed is
+the failure §9 forbids, while skipping one that did not is a beat that quietly
+does not happen. Recording refuses on a standing key and refuses at capacity
+rather than evicting, since evicting a receipt would make the transfer it
+recorded runnable a second time.
+
+**The stored key is validated per entry, not per record** (review finding,
+2026-08-26). `z.record`'s key schema rejects the whole RECORD rather than the
+entry that carried a bad key, and every one of these modules is
+`.optional().catch(undefined)` — so a single stored key that was empty or past
+the id bound used to swallow the failure and leave the record ABSENT, taking
+every valid sibling with it and saying nothing. For `transfers` that answers
+"never transferred" for a transfer that already committed, which is the second
+debit this section forbids, arrived at from the one direction the quarantine
+rule was written to close. The same shape had the same defect on `deposits`,
+where a lost record is §7's unowned sink, and on `marks`. All three now keep an
+unusable key under its own identity holding the shared quarantine marker:
+dropping it would claim the entry never existed, and truncating it would give
+two different events one slot.
+
+#### The atomic persistence seam is conditional
+
+Owner ruling (2026-08-26): with no transfer in an exchange, persistence stays
+byte-identical to today; with one, the finalized values go through a single
+database transaction covering every authoritative row the transfer touched. The
+ordinary hot path is not rewritten for a feature nothing can reach.
+
+The reason a transfer needs the boundary at all is that the debit and the credit
+land in different rows — the primary's surface in `character_chat_state`, the
+garment store in `character_chats.garments`, and the receiving character's row
+when material crosses bodies. A crash, a lost connection, or a deploy between two
+independent writes would leave material deleted from one row and never credited
+to the other, and no retry could detect it, because the transfer's receipt rides
+the surface that *did* get written. That is the third of the three gaps §15
+stage 8 names.
+
+The reason the ordinary settle stays outside it is that it runs on every exchange
+and has no cross-row invariant to protect when nothing moved between rows;
+wrapping four independently-succeeding writes in a transaction would hold a
+pooled connection open across the whole settle to buy nothing.
+
+Mechanically: `DbWriter` now includes `execute`, because the settle path's state
+upsert and scenario update are raw `sql` templates and a helper without `execute`
+would have fallen back to the root client and opened a second connection while
+the caller's transaction was still open — a write that cannot join the caller's
+transaction cannot take part in an atomic settlement. `saveChatScenario`,
+`savePreExchangeScenario`, `savePreExchangeSnapshot`, and `upsertChatState` each
+take an optional writer defaulting to the root client, so every ordinary caller
+is unchanged. `finalizeChatState` takes an optional already-settled transfer:
+present, the writes move into `persistSurfaceTransferSettlement`'s one
+transaction in the same order the ordinary settle uses; absent — which is every
+live exchange — the four independent writes run exactly as they always have.
+Fire-and-forget follow-ups such as the sketch and look enqueues stay outside the
+transaction, since they are not part of the conserved equation and a detached job
+must never hold one open or roll one back.
+
+**The settlement runs on one guard decision, taken under a row lock before any
+write** (review finding, 2026-08-26). Each of the settlement's writes carries the
+ordinary settle's `exists (select 1 from character_chat_messages …)` guard, and
+under READ COMMITTED each of those subqueries takes its own snapshot — so a
+Clear/Reset deleting the prompting message part-way through could let the first
+upsert land while every later write silently no-ops, and the transaction would
+still commit the difference. That is this section's own half-applied state
+reached from the other direction: a debit with no credit, and a rollback anchor
+that was never written, so the retake has nothing to restore. The transaction
+now locks the prompting message with `for update` before writing anything and
+throws when it is already gone, which collapses six independent decisions into
+one and makes a concurrent delete wait on the lock instead of racing the
+statements. The per-statement guards stay — they are the ordinary settle's own,
+and forking the two paths would buy nothing — but they are now backed by that
+single locked decision.
 
 ---
 
@@ -720,10 +1003,10 @@ This order aligns with Track C/D of the parent plan:
    actually returns a `surfaceDeposits` list when a reply dirties somebody — is
    unobserved until a deployed exchange runs it.
 8. **Add conserved transfer** as the second proof, including atomic
-   source/destination conservation. Remaining, and **fixture-only when it
-   lands**, under §9's own escape clause. Owner ruling (2026-08-25): no live
-   pairing has two implemented owners today, and three separate things would
-   each have to change first —
+   source/destination conservation. Built 2026-08-26 (§9) and **fixture-only**,
+   under §9's own escape clause. Owner ruling (2026-08-25): no live pairing has
+   two implemented owners today, and three separate things would each have to
+   change first —
    - the player and ensemble members have no body-surface owner, so every
      committed contact in the chat lane runs from an unowned surface to an owned
      one, and conservation needs both sides;
@@ -734,11 +1017,32 @@ This order aligns with Track C/D of the parent plan:
      a fibre takes up from a wetting source, not what passes through it;
    - skin and garments persist to two different rows with no enclosing
      transaction, so a cross-owner transfer cannot satisfy the atomicity law
-     until the settle path changes.
+     until the settle path changes. **Closed 2026-08-26** by the conditional
+     atomic seam in §9.
 
    Garment-to-garment transfer would sidestep all three, because both sides live
    in one JSONB value — and it is explicitly not the proof, per §9's own warning
    against using a partial owner path to claim the general problem is solved.
+
+   **What the build closed, and what it worked around.** The third gap is
+   closed: skin and worn layers still live in two rows, but the settle path now
+   puts a transfer-bearing exchange's writes inside one database transaction
+   while leaving every other exchange on its four independent writes (§9). The
+   first two are untouched — the player and ensemble members still have no
+   body-surface owner, and the chat lane's contact layers still carry a
+   coverage-region identity rather than an owner-addressable one — and they are
+   why this stays fixture-only.
+
+   The proof works around them rather than pretending they are closed. The
+   source material read and the resolved path are **arguments** the producer is
+   handed, and the layer address arrives through a lane-supplied resolver, so a
+   lane that cannot answer supplies nothing and proposes nothing. What is proven
+   regardless is the transaction itself — the conserving pair, the exact stepped
+   equation, the read-back verification of every credit, the all-or-nothing
+   discard, the receipt riding the debited surface, and the typed wardrobe
+   operation for an intermediate leg. Those are owner-boundary and arithmetic
+   properties, and none of them depends on which lane eventually supplies the
+   two reads.
 9. **Build modality-specific sensory sibling owners** before promoting tactile,
    olfactory, or gustatory cues to live narration. Remaining.
 10. **Register only domain phenomena whose complete source -> commitment ->
@@ -805,15 +1109,82 @@ for or duplicating body-surface work.
 
 ### Conserved transfer second proof
 
-- proposal is not current truth;
-- source material must actually exist;
-- source removal and destination/intermediate deposition are atomic;
-- transfer conserves source/target representation;
-- retry cannot transfer twice;
-- retake removes both sides or neither;
-- failed transaction exposes no result;
-- material blocked by a garment cannot teleport to skin;
-- intermediate garment receives transfer when permeability/path says it should.
+Covered as of 2026-08-26 by three suites: the producer in
+`affordances/contact/transfer.test.ts`, the transaction in
+`turns/chat-contact-transfer.test.ts`, and the garment credit leg in
+`items/garment-condition.test.ts`. The transaction suite asserts whole-world
+totals rather than spot-checking the destination, because every defect that
+matters here is a leak that a "the destination got some mud" assertion would
+pass.
+
+- proposal is not current truth — **covered**: the producer is pure over its
+  three inputs, and every refusal returns the owners it was handed;
+- source material must actually exist — **covered**: the transaction re-reads
+  the source record inside its own cut and refuses a proposal whose record no
+  longer holds what it read;
+- source removal and destination/intermediate deposition are atomic —
+  **covered**: a refused destination leg and a layer owner that credits the
+  wrong amount each discard the whole settlement;
+- transfer conserves source/target representation — **covered**: including the
+  sub-floor remainder that must stay standing, the destination that adds rather
+  than raising to the larger, and the integer remainder that must stay on the
+  layer that failed to pass it;
+- retry cannot transfer twice — **covered**: one causal identity settles once
+  and the retry answers `no_change`;
+- retake removes both sides or neither — **covered on both levels**: at the
+  owner value, restoring the source surface takes the receipt back with the
+  debit and the restored anchor replays to a fresh commit; through the database,
+  the integration suite proves the receiving character's rollback anchor is
+  written inside the same transaction as their credit, and that the anchor it
+  stores predates the debit;
+- failed transaction exposes no result — **covered**: every `surface_transfer.*`
+  refusal is a drop with the input owners returned by reference;
+- material blocked by a garment cannot teleport to skin — **covered**, and as a
+  full conservation statement: a zero-throughput layer receives everything and
+  the skin beneath it receives nothing;
+- intermediate garment receives transfer when permeability/path says it should —
+  **covered**: a partial crossing splits exactly, and two crossings in series
+  conserve the same total as one.
+
+The garment credit leg's own four laws — it adds rather than max-merging,
+saturation refuses instead of clamping, a full record refuses instead of
+evicting, and a zero leg refuses — are covered beside `deposit` in
+`items/garment-condition.test.ts`.
+
+The body-surface owner's own halves — the conserving pair's refusals and
+take-everything behaviour, and the receipt module's duplicate, capacity, horizon
+and absent-key rules — are covered in `state/body-surface.test.ts`, including
+that a state which never transferred stays byte-identical to one from before the
+module existed.
+
+The conditional atomic persistence seam is covered where it has to be — against
+a real database, in `server/engine/chat-state-fidelity.int.test.ts`. Two claims,
+and the failure is INJECTED rather than simulated: the receiving character id
+names nobody, so its upsert violates a foreign key *after* the primary row and
+the scenario are already written inside the transaction. A seam that ran those
+as independent statements would leave the debit standing, the credit missing,
+and the transfer's receipt persisted on the debited surface — the one state no
+retry can detect and no retake can undo. The success case proves the mirror:
+debit, layer store and both rollback anchors land together.
+
+A third case covers the guard decision: a settlement whose prompting message no
+longer exists rejects and leaves the state row untouched, which kills the
+implementation that returns quietly — indistinguishable from a successful settle
+to every caller, while the settlement's own diagnostics claim material moved.
+The interleaving race itself is deliberately untested: a concurrent delete cannot
+be scheduled between two statements of a transaction from the test runner, and
+the blocking behaviour the fix relies on is Postgres semantics rather than this
+code's.
+
+That suite runs under `pnpm test:int`, which is a manual gate rather than an
+automatic one, so the claim is checked when its surface moves rather than on
+every push.
+
+Deliberately **untested**: that a transfer-free exchange persists byte-identically
+to before this work. The transfer-free path is unchanged code taking the same
+branch it always took, and the existing suites passing is the proof — an
+assertion that four unchanged statements still run would pin the arrangement of
+the code rather than any behaviour.
 
 ### Garment operations
 

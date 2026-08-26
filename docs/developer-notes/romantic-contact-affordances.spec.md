@@ -322,8 +322,9 @@ Still missing on the body side:
 
 The first three have a designated owner (ruled 2026-08-22): they expand
 `BodySurfaceState` beside its existing wetness, split by module rather than
-into new subsystems. The expansion is not built; swelling/fatigue and
-temperature/physiology stay with a future physiology owner. Detail:
+into new subsystems. Contact marks and deposits are built; surface products are
+not, and swelling/fatigue and temperature/physiology stay with a future
+physiology owner. Detail:
 [effects spec](romantic-contact-affordances.spec.effects.md).
 
 Consequences:

@@ -357,6 +357,9 @@ function applyPresentationOperation(
 const CONDITION_CHANGE_KIND: Readonly<Record<GarmentConditionOperation["kind"], GarmentChangeKind>> = {
   apply_condition: "condition",
   deposit: "condition",
+  // A conserved transfer credit is condition, not a presentation move: what
+  // changed is what the garment carries, which is exactly what `deposit` says.
+  accept_transfer: "condition",
   clean: "condition",
   damage: "damage",
   repair: "repair",
@@ -419,6 +422,7 @@ export function applyGarmentOperations(
       }
       case "apply_condition":
       case "deposit":
+      case "accept_transfer":
       case "clean":
       case "damage":
       case "repair": {

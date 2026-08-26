@@ -243,10 +243,11 @@ describe("garment operations", () => {
     );
   });
 
-  it("empty partIds means the ROOT for the three condition-class operations (OQ7 / F16)", () => {
+  it("empty partIds means the ROOT for every root-scoped condition operation (OQ7 / F16)", () => {
     for (const operation of [
       { kind: "apply_condition" as const, garmentId: "g", partIds: [], channel: "wetness" as const, change: { direction: "increase" as const, degree: "substantial" as const } },
       { kind: "deposit" as const, garmentId: "g", partIds: [], depositKind: "mud" as const, degree: "slight" as const },
+      { kind: "accept_transfer" as const, garmentId: "g", partIds: [], depositKind: "mud" as const, amount: 2_500 },
       { kind: "clean" as const, garmentId: "g", partIds: [], target: "clean" as const },
     ]) {
       expect(garmentOperationPartIds(garmentOperationListSchema.parse([operation])[0]!)).toEqual(["root"]);

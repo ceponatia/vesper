@@ -806,8 +806,9 @@ for the Track B rerun.
 ### Track D — grounded contact effects and richer domains
 
 Status: in progress — the pressure-mark first proof was built 2026-08-22 behind
-a default-off switch and the residue/deposit owner shipped 2026-08-25; transfer
-and the sensory owners remain.
+a default-off switch, the residue/deposit owner shipped 2026-08-25, and the
+conserved-transfer second proof was built 2026-08-26 and is fixture-only; the
+sensory owners and the foot/intimate registration work remain.
 
 15. Expand the body-surface owner to cover surface material and temporary
     condition — deposits, residue, and contact marks beside the existing wetness
@@ -830,15 +831,27 @@ and the sensory owners remain.
     later one that washes it off. Surface products are the one part of the
     ruling still unbuilt.
 16. Add effect transactions: the temporary pressure mark first, conserved
-    transfer second, with garment changes delegated to wardrobe. Status: in
-    progress — the pressure-mark transaction was built and proven 2026-08-22
-    (commit, no double-commit on retry, clean removal on regenerate, readable
-    afterward) and its switch stays off. Conserved transfer remains, and owner
-    ruling (2026-08-25) settled that it lands **fixture-only** when it does: no
+    transfer second, with garment changes delegated to wardrobe. Status: built
+    2026-08-26 — awaiting a flag enable for the mark and two other domains'
+    owners for transfer; neither runs in production today. The
+    pressure-mark transaction was built and proven 2026-08-22 (commit, no
+    double-commit on retry, clean removal on regenerate, readable afterward) and
+    its switch stays off. Conserved transfer was built 2026-08-26 and is
+    **fixture-only**, exactly as owner ruling (2026-08-25) said it would be: no
     pairing the chat lane can actually produce has an implemented owner on both
-    sides, so nothing it committed would be conserved. Three separate gaps each
-    have to close first, and they are named in the
-    [effects spec](romantic-contact-affordances.spec.effects.md) §15 stage 8.
+    sides, so nothing in production proposes a transfer.
+
+    What the transfer build settles is the hard part — a transaction that debits
+    one surface, credits every layer the material crosses and the surface
+    underneath, and either lands all of that exactly or discards the whole thing.
+    Of the three gaps that had to close first, it closed one: an exchange
+    carrying a transfer now commits every row it touched in a single database
+    transaction, while every other exchange keeps the writes it always had. The
+    two that remain are why it stays fixture-only — the player and ensemble
+    members still have no body-surface owner, and the chat lane still cannot name
+    a worn layer in a way that layer's owner would accept. Both are named in the
+    [effects spec](romantic-contact-affordances.spec.effects.md) §15 stage 8, and
+    the built shape and its rulings are recorded there in §9.
 17. Build the shared nonvisual sensory presentation owner as sibling packages
     beside visual state, before any touch, smell, or taste cue reaches live
     narration. Status: queued.
@@ -970,6 +983,62 @@ romantic lane's strictness may refuse ordinary romantic prose more often than is
 comfortable. That is a known, one-directional cost — silence where a commit
 would have been acceptable, never the reverse — and the rerun is what measures
 whether it bites.
+
+**What should happen when a surface's material record is full?**
+
+- *What is unknown:* the two owners of the same shared substance vocabulary
+  disagree. A garment at capacity evicts its oldest deposit to make room; a body
+  surface at capacity declines the new one and reports it. Nothing has decided
+  which is right, and the eviction path is untested in either direction. The
+  conserved credits added on 2026-08-26 refuse outright, so there are now three
+  behaviours in play.
+- *Why it matters:* mud on a sleeve and mud on the forearm beneath it are the
+  same substance to every reader, so a record that quietly drops the oldest fact
+  on one surface and rejects the newest on the other will read as a continuity
+  bug rather than a policy. Eviction is also the more dangerous default, because
+  it destroys a fact nobody asked to remove.
+- *How it should be resolved:* an owner ruling on one capacity policy for
+  material records, then a single change that applies it to both owners, with the
+  eviction path covered by a test whichever way it lands. Detail:
+  [effects spec](romantic-contact-affordances.spec.effects.md) §9.
+
+**Should the chat lane ever produce a conserved transfer at all?**
+
+- *What is unknown:* whether the source material read and the resolved path
+  should eventually come from live chat, or whether transfer stays a fixture
+  proof until the remaining §15 stage 8 gaps close on their own schedules.
+- *Why it matters:* the two gaps behind it — no body-surface owner for the player
+  or ensemble members, and no owner-addressable identity for a worn layer — are
+  substantial pieces of work owned by other domains. Committing to a live
+  transfer producer would pull both forward; leaving it fixture-only means the
+  transaction sits proven and unused, which is cheap but easy to forget.
+- *How it should be resolved:* an owner ruling once one of the two gaps closes
+  for its own reasons. There is nothing to decide while both are open.
+
+**Should a corrupt wetness key be allowed to read as dry?**
+
+- *What is unknown:* whether `wetness` should get the per-entry key handling the
+  three identity-keyed modules received on 2026-08-26, and if so whether its key
+  schema's `.trim()` stays. Measured against the real schema while fixing the
+  others: one stored key that is empty or over its 64-character bound loses the
+  WHOLE wetness record, and a padded key such as `"  hair  "` is silently
+  rewritten on load.
+- *Why it matters:* this is the same defect class as the three that were fixed,
+  but the consequence is worse rather than milder. Absence is not neutral in this
+  module — the owner's own law says an absent location is honestly DRY — so one
+  unusable key turns "we do not know" into "she is dry" for every location on
+  that body, which is exactly the laundering the quarantine marker exists to
+  prevent, and dry hair carries mobility that wet hair does not. It was left
+  alone because folding it into the shared construction is a real fork, not a
+  mechanical change: a different key bound, a different degraded default, and a
+  trim that currently rewrites stored keys and would have to be kept
+  deliberately or dropped deliberately.
+- *How it should be resolved:* an owner ruling on the trim — normalise a padded
+  key on load, or quarantine it — after which the fix is the same three lines the
+  other three modules took. Noted alongside it, and not acted on: a stored key of
+  literally `__proto__` is assigned rather than defined, so it sets the record's
+  prototype instead of an own property. Pre-existing, unchanged by the 2026-08-26
+  fix, and negligible in effect, since no real identity collides with it.
 
 Every other question this plan once carried — the romantic surface's rollout,
 the sensory package boundary, whether the shared observation contract should

@@ -1,6 +1,7 @@
 import { affordanceEvidence, type AffordanceEvidence, type AffordanceIntensityBand, type AffordanceStoryTime, type AffordanceSubjectId } from "../core";
 import { CONTACT_KEY_FIELD_SEPARATOR } from "./identity";
 import type { ContactBodySurfaceRef } from "./surfaces";
+import type { SurfaceTransferProposal } from "./transfer";
 import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } from "./types";
 
 /**
@@ -13,19 +14,26 @@ import type { CommittedContactRead, ContactMotionBand, ContactPressureBand } fro
  * nothing here is observable, and nothing here carries narrator text — the
  * three-layer boundary in the spec's own words.
  *
- * The union has ONE implemented member. The spec's other proposal families are
- * deliberately absent rather than stubbed. `SurfaceTransferProposal` no longer
- * waits on the residue owner — that shipped 2026-08-25 — but on the three
- * things §15 stage 8 names: the player and ensemble members still have no
- * body-surface owner, the chat lane's contact layers carry a coverage-region
- * identity rather than a garment one and report zero moisture transmission, and
- * skin and garments persist to two rows with no enclosing transaction, so no
- * live pairing can satisfy the conservation and atomicity laws yet.
- * `GarmentOperationProposal` waits on the wardrobe operation seam, and
- * `ScratchProposal` on an owner that does not exist at all — a type with no
- * owner behind it is exactly the "pressure mark and scratch are not synonyms"
- * smuggling path §8 forbids. A new member joins this union when its complete
- * proposal → owner-transaction path ships.
+ * The union has TWO implemented members: the pressure mark (§8, first proof)
+ * and the conserved surface transfer (§9, second proof, in `transfer.ts`).
+ * Transfer joined on 2026-08-26 with its complete proposal → owner-transaction
+ * path, and it is FIXTURE-ONLY by owner ruling (2026-08-25). The third of the
+ * three gaps §15 stage 8 named is closed — a transfer-bearing settle now writes
+ * every row it touched inside one database transaction — but the first two are
+ * open: the player and ensemble members still have no body-surface owner, and
+ * the chat lane's contact layers still carry a coverage-region identity rather
+ * than an owner-addressable one. So no chat-lane pairing resolves a source
+ * material read or a path, and nothing in production proposes one.
+ *
+ * The spec's remaining proposal families stay deliberately absent rather than
+ * stubbed. A standalone `GarmentOperationProposal` waits on the contact→
+ * wardrobe operation seam — note that a transfer's intermediate leg is NOT one
+ * of those: it is one leg of a single indivisible conserved event, and splitting
+ * it into a second proposal would make §9's atomicity impossible to state.
+ * `ScratchProposal` waits on an owner that does not exist at all — a type with
+ * no owner behind it is exactly the "pressure mark and scratch are not
+ * synonyms" smuggling path §8 forbids. A new member joins this union when its
+ * complete proposal → owner-transaction path ships.
  */
 
 // ---------------------------------------------------------------------------
@@ -76,8 +84,8 @@ export interface BodyMarkProposal {
   readonly evidence: readonly AffordanceEvidence[];
 }
 
-/** The effect-proposal union. Single-membered until the next owner ships (see the header). */
-export type ContactEffectProposal = BodyMarkProposal;
+/** The effect-proposal union. One member per shipped proposal → owner-transaction path (see the header). */
+export type ContactEffectProposal = BodyMarkProposal | SurfaceTransferProposal;
 
 // ---------------------------------------------------------------------------
 // The pressure-mark producer (effects spec §8)

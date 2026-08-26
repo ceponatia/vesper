@@ -285,7 +285,6 @@ export function bodySurfaceMarkBandFloor(band: BodySurfaceMarkBand): number {
  * identity is two different events sharing one slot.
  */
 export const BODY_SURFACE_MARK_ID_MAX_LENGTH = 512;
-const markIdKeySchema = z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH);
 
 /**
  * One committed mark — the VALID shape. `magnitude`, `createdAtMinutes`, and
@@ -316,21 +315,58 @@ export function isInvalidMarkSlot(slot: BodySurfaceMarkSlot): slot is BodySurfac
 }
 
 /**
- * Item-lenient and quarantining, exactly like the wetness record: one corrupt
- * mark can neither void the record nor become a visible mark, and a stored kind
- * outside the vocabulary (the smuggled-scratch case) fails the item and lands
- * in quarantine rather than reading as the nearest supported thing.
+ * The record shape all three identity-keyed modules share — marks, deposits and
+ * transfer receipts. Item-lenient and quarantining exactly like the wetness
+ * record: one corrupt mark can neither void the record nor become a visible
+ * mark, and a stored kind outside the vocabulary (the smuggled-scratch case)
+ * fails the item and lands in quarantine rather than reading as the nearest
+ * supported thing.
+ *
+ * **The KEY is validated per item, deliberately, because a record-level key
+ * rejection is silently catastrophic.** `z.record`'s key schema rejects the
+ * whole RECORD, not the entry that carried the bad key — and every field that
+ * uses this shape is `.optional().catch(undefined)`, so one stored key that is
+ * empty or past `BODY_SURFACE_MARK_ID_MAX_LENGTH` used to swallow the failure
+ * and leave the record ABSENT, deleting every valid sibling with nothing on the
+ * record to say so. What that costs is different in each module:
+ *
+ * - `transfers` — an absent record makes `bodySurfaceTransferCommitted` answer
+ *   `false` for a transfer that already committed, so the settlement debits and
+ *   credits a second time. That defeats effects spec §9's "a retry cannot
+ *   transfer twice" in the exact direction this module is built to avoid: the
+ *   item-level quarantine answers `true` on purpose, so an unreadable receipt
+ *   SUPPRESSES a re-run, and a record-level rejection threw that decision away.
+ * - `deposits` — one bad key and every deposit on that body silently vanishes,
+ *   which is the unowned sink §7 says must not exist; §9's conservation law
+ *   leans on §7 being true.
+ * - `marks` — same shape, same class.
+ *
+ * So an entry whose key fails the bounds keeps its OWN key and holds
+ * `BODY_SURFACE_INVALID_ENTRY`. Not dropped — absence is a claim here ("no
+ * mark", "clean", "never transferred"), and laundering unknown into it is the
+ * thing the marker exists to prevent. Not truncated either, for the reason the
+ * owner transaction refuses an over-long key rather than shortening it: a
+ * truncated identity is two different events sharing one slot.
+ *
+ * The per-module cap still bounds the record, so a corrupt blob full of junk
+ * keys cannot grow the jsonb.
  */
-const marksRecordSchema = z
-  .record(markIdKeySchema, z.unknown())
-  .transform((raw) => {
-    const marks: Record<string, BodySurfaceMarkSlot> = {};
-    for (const [markId, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_MARKS)) {
-      const parsed = bodySurfaceMarkSchema.safeParse(value);
-      marks[markId] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
+function bodySurfaceKeyedRecordSchema<TEntry>(entrySchema: z.ZodType<TEntry>, maxEntries: number) {
+  return z.record(z.string(), z.unknown()).transform((raw) => {
+    const record: Record<string, TEntry | BodySurfaceInvalidEntry> = {};
+    for (const [key, value] of Object.entries(raw).slice(0, maxEntries)) {
+      if (key.length < 1 || key.length > BODY_SURFACE_MARK_ID_MAX_LENGTH) {
+        record[key] = BODY_SURFACE_INVALID_ENTRY;
+        continue;
+      }
+      const parsed = entrySchema.safeParse(value);
+      record[key] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
     }
-    return marks;
+    return record;
   });
+}
+
+const marksRecordSchema = bodySurfaceKeyedRecordSchema(bodySurfaceMarkSchema, BODY_SURFACE_MAX_MARKS);
 
 // ---------------------------------------------------------------------------
 // Deposits — vocabulary and shape (effects spec §7; owner ruling 2026-08-25)
@@ -381,17 +417,8 @@ export function isInvalidDepositSlot(slot: BodySurfaceDepositSlot): slot is Body
   return "status" in slot;
 }
 
-/** Item-lenient and quarantining, exactly like the wetness and marks records. */
-const depositsRecordSchema = z
-  .record(z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH), z.unknown())
-  .transform((raw) => {
-    const deposits: Record<string, BodySurfaceDepositSlot> = {};
-    for (const [depositId, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_DEPOSITS)) {
-      const parsed = bodySurfaceDepositSchema.safeParse(value);
-      deposits[depositId] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
-    }
-    return deposits;
-  });
+/** Item-lenient and quarantining — key included — exactly like the marks record. */
+const depositsRecordSchema = bodySurfaceKeyedRecordSchema(bodySurfaceDepositSchema, BODY_SURFACE_MAX_DEPOSITS);
 
 /**
  * The identity a deposit is stored under: substance, place, and the minute it
@@ -406,6 +433,60 @@ export function bodySurfaceDepositIdFor(locationId: string, kind: SurfaceDeposit
     BODY_SURFACE_MARK_ID_MAX_LENGTH,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Transfer receipts — shape (effects spec §9; owner ruling 2026-08-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * How many conserved transfers one surface remembers having sourced. Small on
+ * purpose: a receipt exists to answer "did this exact causal event already
+ * move material", and that question is only ever asked about the exchange
+ * currently settling or the one a retake is replaying.
+ */
+export const BODY_SURFACE_MAX_TRANSFER_RECEIPTS = 8;
+
+/**
+ * How long a receipt is kept, in story minutes. Generous by a wide margin — a
+ * retry lands in the same beat and a retake replays one exchange — because the
+ * cost of keeping one too long is a few bytes and the cost of dropping one too
+ * early is a double debit.
+ */
+export const BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES = 720;
+
+/**
+ * One committed transfer, from the source surface's point of view. STRICT on
+ * every field: a receipt whose amount or minute cannot be read is a receipt
+ * that cannot answer either of the questions it exists for, and repairing one
+ * would let a corrupt row either suppress a real transfer or wave a duplicate
+ * through.
+ */
+export const bodySurfaceTransferReceiptSchema = z.object({
+  /** Exactly what left this surface under this identity. */
+  amount: z.number().int().min(1).max(BODY_SURFACE_UNIT_ONE),
+  /** Story minute the transfer committed — the prune anchor, and only that. */
+  atMinutes: z.number().int().min(0),
+});
+export type BodySurfaceTransferReceipt = z.infer<typeof bodySurfaceTransferReceiptSchema>;
+
+export type BodySurfaceTransferReceiptSlot = BodySurfaceTransferReceipt | BodySurfaceInvalidEntry;
+
+export function isInvalidTransferReceiptSlot(
+  slot: BodySurfaceTransferReceiptSlot,
+): slot is BodySurfaceInvalidEntry {
+  return "status" in slot;
+}
+
+/**
+ * Item-lenient and quarantining, exactly like the three records beside it — and
+ * the module where the shared shape's per-item KEY check matters most, since an
+ * absent record here reads as "never transferred" and licenses the double debit
+ * §9 forbids.
+ */
+const transfersRecordSchema = bodySurfaceKeyedRecordSchema(
+  bodySurfaceTransferReceiptSchema,
+  BODY_SURFACE_MAX_TRANSFER_RECEIPTS,
+);
 
 export const bodySurfaceStateSchema = z.object({
   /**
@@ -431,6 +512,24 @@ export const bodySurfaceStateSchema = z.object({
    * drop the key again when the last deposit is removed.
    */
   deposits: depositsRecordSchema.optional().catch(undefined),
+  /**
+   * Transfer idempotency key → the receipt for material that already left this
+   * surface. OPTIONAL and absent until the first conserved transfer commits, on
+   * the two keys above's rule.
+   *
+   * A receipt is not body state, and it lives here anyway, deliberately
+   * (effects spec §9; ruling 2026-08-26). §9 requires that a retry cannot
+   * transfer twice and that a retake removes both sides or neither — and an
+   * ADDING destination cannot tell a retry from a second helping by looking at
+   * its own amount, so the transaction needs a durable record of the causal
+   * identity. That record has to fail and roll back with the DEBIT, or a
+   * half-applied transfer leaves a receipt claiming it happened. This state is
+   * the one durable store already riding exactly the anchor the debit rides:
+   * it is written in the same value, restored by the same `pre_exchange_state`,
+   * and dropped by the same retake. A separate table would have to be taught
+   * that boundary; a key here inherits it.
+   */
+  transfers: transfersRecordSchema.optional().catch(undefined),
 });
 export type BodySurfaceState = z.infer<typeof bodySurfaceStateSchema>;
 
@@ -448,7 +547,7 @@ export function emptyBodySurfaceState(): BodySurfaceState {
  * the state from a literal to achieve that would silently discard whichever
  * sibling module happened to be populated at the time.
  */
-function withoutBodySurfaceKey(state: BodySurfaceState, key: "marks" | "deposits"): BodySurfaceState {
+function withoutBodySurfaceKey(state: BodySurfaceState, key: "marks" | "deposits" | "transfers"): BodySurfaceState {
   const next = { ...state };
   delete next[key];
   return next;
@@ -867,4 +966,231 @@ export function reduceBodySurfaceDeposits(
   if (!changed) return state;
   if (Object.keys(deposits).length === 0) return withoutBodySurfaceKey(state, "deposits");
   return { ...state, deposits };
+}
+
+// ---------------------------------------------------------------------------
+// Deposits — the conserving pair (effects spec §9; owner ruling 2026-08-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * Why there are two more deposit writers here rather than a mode flag on the
+ * two above.
+ *
+ * `commitBodySurfaceDeposit` and `reduceBodySurfaceDeposits` mean what the
+ * fiction means. "There is mud on her hands" establishes *at least* that much
+ * material, so the commit RAISES and never adds — saying it twice is not a
+ * report that some of it left. "She washes her hands" is an explicit sink, so
+ * the reduce sweeps everything under `BODY_SURFACE_DEPOSIT_REMOVAL_FLOOR` away
+ * with it and takes the same amount off every substance standing there.
+ *
+ * Neither is a conserving move, and §9's transfer law is nothing but
+ * conservation: exactly what leaves one surface arrives on the others, in this
+ * representation, atomically. Stretching the two writers above until the
+ * conservation tests happened to pass would have quietly changed what the
+ * fiction's own sentences mean. So a transfer gets its own pair, and they are
+ * deliberately unmistakable:
+ *
+ * - `takeBodySurfaceDeposit` reports **exactly** how much actually left, and
+ *   does NOT inherit the removal floor. Taking 1,000 off a 1,400 deposit leaves
+ *   400 standing, because 400 units of mud are still on her hand and the shared
+ *   band reader calls anything from 1 upward `slight`. The floor is a cleanup
+ *   policy that belongs to washing, where the vanished trace went somewhere a
+ *   modelled sink accounts for.
+ * - `acceptBodySurfaceDeposit` **adds**, and refuses rather than clamping,
+ *   evicting, or discarding an overflow. A destination that silently absorbs
+ *   less than the source lost is the unowned sink §7 exists to prevent.
+ *
+ * Both are keyed by the exact deposit identity rather than by location, because
+ * a transfer moves one named substance and the reduce's take-from-everything
+ * behaviour would destroy the blood while moving the mud.
+ */
+
+/** What a conserving take actually removed. `taken` is the number the transaction must deposit. */
+export interface BodySurfaceTakeResult {
+  readonly state: BodySurfaceState;
+  /** Exactly the material that left, in fixed point. Zero means nothing moved and `state` is the input. */
+  readonly taken: number;
+}
+
+/** Why a conserving accept refused. Every one of these means nothing was written. */
+export type BodySurfaceAcceptRefusal = "invalid_amount" | "saturated" | "quarantined" | "capacity";
+
+export type BodySurfaceAcceptResult =
+  | { readonly status: "accepted"; readonly state: BodySurfaceState; readonly depositId: string; readonly accepted: number }
+  | { readonly status: "refused"; readonly reason: BodySurfaceAcceptRefusal };
+
+/**
+ * Take material off one named deposit, and report exactly how much left.
+ *
+ * Total and non-throwing on every axis (docs/resilience.md). A missing slot, a
+ * quarantined slot, and a non-positive request all answer `taken: 0` with the
+ * input state by reference — a quarantined slot most deliberately of all, since
+ * moving material out of an unreadable amount would invent the amount.
+ *
+ * A request larger than what stands takes everything that is there. That is not
+ * a degraded answer: the planner asked to move a substance and the surface had
+ * less of it than expected, so the honest conserved quantity is what was
+ * actually there, and `taken` is what the destination leg must receive.
+ */
+export function takeBodySurfaceDeposit(
+  state: BodySurfaceState,
+  input: { depositId: string; amount: number },
+): BodySurfaceTakeResult {
+  const request = clampFixedPoint(Math.trunc(input.amount), BODY_SURFACE_UNIT_ONE);
+  if (request <= 0) return { state, taken: 0 };
+  const slot = state.deposits?.[input.depositId];
+  if (slot === undefined || isInvalidDepositSlot(slot)) return { state, taken: 0 };
+  const taken = Math.min(request, slot.amount);
+  const remaining = slot.amount - taken;
+  const deposits = { ...state.deposits };
+  // Remaining material stays, however little of it: the removal floor is
+  // washing's policy, and a transfer that swept it would destroy the difference
+  // between what left and what arrived.
+  if (remaining <= 0) delete deposits[input.depositId];
+  else deposits[input.depositId] = { ...slot, amount: remaining };
+  if (Object.keys(deposits).length === 0) return { state: withoutBodySurfaceKey(state, "deposits"), taken };
+  return { state: { ...state, deposits }, taken };
+}
+
+/**
+ * Put an exact amount of material on a surface, ADDING to whatever already
+ * stands under that identity.
+ *
+ * Refuses, never approximates. The four refusals are the four ways a
+ * destination could otherwise absorb less than the source lost:
+ *
+ * - `invalid_amount` — a non-positive amount. A zero leg is a planner bug, not
+ *   a no-op to wave through: §9's transaction is an equation, and a leg that
+ *   moves nothing should never have been in it.
+ * - `saturated` — the sum would pass `BODY_SURFACE_UNIT_ONE`. Clamping here
+ *   would be the silent discard.
+ * - `quarantined` — an unreadable slot stands under this identity. Adding to an
+ *   amount nobody can read would invent the total; overwriting it would launder
+ *   the marker.
+ * - `capacity` — the record is full and refuses rather than evicting, exactly
+ *   as `commitBodySurfaceDeposit` does.
+ *
+ * The identity is the ordinary `dep:<kind>:<location>:<minute>` one, so
+ * material arriving in the same beat deepens one record and a replay lands on
+ * the key it already wrote.
+ */
+export function acceptBodySurfaceDeposit(
+  state: BodySurfaceState,
+  input: {
+    locationId: string;
+    kind: SurfaceDepositKind;
+    amount: number;
+    atMinutes: number;
+    cause?: string;
+  },
+): BodySurfaceAcceptResult {
+  const amount = Math.trunc(input.amount);
+  if (amount <= 0 || amount > BODY_SURFACE_UNIT_ONE) return { status: "refused", reason: "invalid_amount" };
+  const atMinutes = Math.max(0, Math.trunc(input.atMinutes));
+  const depositId = bodySurfaceDepositIdFor(input.locationId, input.kind, atMinutes);
+  const existing = state.deposits?.[depositId];
+  if (existing !== undefined && isInvalidDepositSlot(existing)) return { status: "refused", reason: "quarantined" };
+  if (existing === undefined && Object.keys(state.deposits ?? {}).length >= BODY_SURFACE_MAX_DEPOSITS) {
+    return { status: "refused", reason: "capacity" };
+  }
+  const total = (existing?.amount ?? 0) + amount;
+  if (total > BODY_SURFACE_UNIT_ONE) return { status: "refused", reason: "saturated" };
+  const deposits = { ...state.deposits };
+  deposits[depositId] =
+    existing === undefined
+      ? {
+          locationId: input.locationId,
+          kind: input.kind,
+          amount: total,
+          createdAtMinutes: atMinutes,
+          ...(input.cause === undefined ? {} : { cause: input.cause }),
+        }
+      : { ...existing, amount: total };
+  return { status: "accepted", state: { ...state, deposits }, depositId, accepted: amount };
+}
+
+// ---------------------------------------------------------------------------
+// Transfer receipts — reads and writes (effects spec §9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Has this exact causal identity already moved material off this surface?
+ *
+ * The one question the transaction asks BEFORE any debit or credit. A
+ * quarantined slot answers `true`, and that is the conservative direction: an
+ * unreadable receipt means something was written under this identity, and
+ * re-running a transfer that may already have committed is the failure §9
+ * forbids, while skipping one that did not is a beat that quietly does not
+ * happen.
+ */
+export function bodySurfaceTransferCommitted(state: BodySurfaceState, transferKey: string): boolean {
+  return state.transfers?.[transferKey] !== undefined;
+}
+
+/** The receipt under this identity, for evidence and traces. Quarantined slots included. */
+export function bodySurfaceTransferReceipt(
+  state: BodySurfaceState,
+  transferKey: string,
+): BodySurfaceTransferReceiptSlot | undefined {
+  return state.transfers?.[transferKey];
+}
+
+/**
+ * Drop receipts older than the horizon. Called on the write path, never on a
+ * read: pruning a receipt cannot change any answer about the body, and doing it
+ * lazily at read time would make two readers of the same state disagree about
+ * whether a transfer may run.
+ */
+export function pruneBodySurfaceTransferReceipts(state: BodySurfaceState, atMinutes: number): BodySurfaceState {
+  if (state.transfers === undefined) return state;
+  const now = Math.max(0, Math.trunc(atMinutes));
+  const transfers: Record<string, BodySurfaceTransferReceiptSlot> = {};
+  for (const [key, slot] of Object.entries(state.transfers)) {
+    // A quarantined receipt has no readable minute, so the horizon cannot
+    // retire it. It stays, and the capacity rule below is what eventually
+    // reports the record as full — a refusal, which is honest, rather than a
+    // guess about when an unreadable entry stopped mattering.
+    if (isInvalidTransferReceiptSlot(slot)) transfers[key] = slot;
+    else if (now - slot.atMinutes <= BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES) transfers[key] = slot;
+  }
+  if (Object.keys(transfers).length === Object.keys(state.transfers).length) return state;
+  if (Object.keys(transfers).length === 0) return withoutBodySurfaceKey(state, "transfers");
+  return { ...state, transfers };
+}
+
+/** Why a receipt could not be recorded. Both mean the transfer must not commit. */
+export type BodySurfaceReceiptRefusal = "duplicate" | "capacity";
+
+export type BodySurfaceReceiptResult =
+  | { readonly status: "recorded"; readonly state: BodySurfaceState }
+  | { readonly status: "refused"; readonly reason: BodySurfaceReceiptRefusal };
+
+/**
+ * Record that this causal identity moved `amount` off this surface.
+ *
+ * Refuses on a standing key rather than overwriting: the transaction is
+ * supposed to have short-circuited on `bodySurfaceTransferCommitted` long
+ * before reaching here, so arriving with a duplicate means the caller debited
+ * something it should not have, and the honest answer is to refuse the whole
+ * settlement rather than to paper over it with a fresh receipt.
+ *
+ * Refuses at capacity for the reason the deposit record does: evicting the
+ * oldest receipt would make the transfer it recorded runnable a second time,
+ * which is the exact duplicate this module exists to prevent.
+ */
+export function recordBodySurfaceTransferReceipt(
+  state: BodySurfaceState,
+  input: { transferKey: string; amount: number; atMinutes: number },
+): BodySurfaceReceiptResult {
+  const pruned = pruneBodySurfaceTransferReceipts(state, input.atMinutes);
+  if (bodySurfaceTransferCommitted(pruned, input.transferKey)) return { status: "refused", reason: "duplicate" };
+  const transfers = { ...pruned.transfers };
+  if (Object.keys(transfers).length >= BODY_SURFACE_MAX_TRANSFER_RECEIPTS) {
+    return { status: "refused", reason: "capacity" };
+  }
+  transfers[input.transferKey] = {
+    amount: clampFixedPoint(Math.trunc(input.amount), BODY_SURFACE_UNIT_ONE),
+    atMinutes: Math.max(0, Math.trunc(input.atMinutes)),
+  };
+  return { status: "recorded", state: { ...pruned, transfers } };
 }
