@@ -7,6 +7,7 @@ import {
   bodySurfaceWetnessAt,
   bodySurfaceWetnessEntry,
   BODY_SURFACE_INVALID_ENTRY,
+  BODY_SURFACE_MAX_LOCATIONS,
   BODY_SURFACE_UNIT_ONE,
   commitBodySurfaceDeposit,
   emptyBodySurfaceState,
@@ -23,6 +24,7 @@ import {
   CHAT_SURFACE_DEPOSIT_CAPACITY,
   CHAT_SURFACE_LOCATION_UNKNOWN,
   CHAT_SURFACE_PROPOSAL_INVALID,
+  CHAT_SURFACE_WETNESS_CAPACITY,
   CHAT_SURFACE_WETNESS_MAX,
   parseSurfaceDepositProposals,
   parseSurfaceWetnessProposals,
@@ -228,6 +230,37 @@ describe("applySurfaceWetnessProposals", () => {
     expect(pruned.wetness.hair).toBeUndefined();
     // …which changes no read: absent and zero are the same answer.
     expect(level(pruned, "hair", HOUR)).toBe(level(surface, "hair", HOUR));
+  });
+
+  it("reports a full record as a refusal, never as a quiet exchange", () => {
+    // Falsified against the pre-fix fold, which pushed a trace row whatever the
+    // owner did and filed no diagnostic at all on the wetness path: a body
+    // already at its maximum swallowed every wetting as `no_change`, so a
+    // permanently suppressed hair domain was indistinguishable from nothing
+    // having happened. The deposit lane already reported its own refusal.
+    const stored: Record<string, unknown> = {};
+    for (let index = 0; index < BODY_SURFACE_MAX_LOCATIONS; index += 1) {
+      stored[`loc_${index}`] = { level: BODY_SURFACE_UNIT_ONE, updatedAtMinutes: 0 };
+    }
+    const full = bodySurfaceStateSchema.parse({ wetness: stored });
+    const sink = new DiagnosticCollector();
+    const fold = applySurfaceWetnessProposals({ surface: full, proposals: [wet()], atMinutes: 0, sink });
+    expect(fold.surface.wetness.hair).toBeUndefined();
+    expect(fold.trace[0]).toMatchObject({ target: "hair", outcome: "rejected", code: CHAT_SURFACE_WETNESS_CAPACITY });
+    expectDiagnostic(sink, CHAT_SURFACE_WETNESS_CAPACITY, { times: 1 });
+
+    // A write that legitimately settles where it already was must stay
+    // distinguishable from the refusal above: both leave the location absent,
+    // and only one of them ever asked for a positive level.
+    const quiet = new DiagnosticCollector();
+    const dry = applySurfaceWetnessProposals({
+      surface: emptyBodySurfaceState(),
+      proposals: [wet({ direction: "decrease", degree: 1 })],
+      atMinutes: 0,
+      sink: quiet,
+    });
+    expect(dry.trace[0]).toMatchObject({ target: "hair", outcome: "no_change", code: "" });
+    expect(quiet.items).toEqual([]);
   });
 });
 

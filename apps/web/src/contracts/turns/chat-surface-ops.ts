@@ -6,7 +6,9 @@ import {
   bodySurfaceDepositSlot,
   bodySurfaceWetnessAt,
   bodySurfaceWetnessCauseSchema,
+  bodySurfaceWetnessEntry,
   BODY_SURFACE_MAX_DEPOSITS,
+  BODY_SURFACE_MAX_LOCATIONS,
   BODY_SURFACE_UNIT_ONE,
   commitBodySurfaceDeposit,
   pruneDryBodySurface,
@@ -129,6 +131,15 @@ export const CHAT_SURFACE_LOCATION_UNKNOWN = "chat_surface.location_unknown";
 
 /** One or more proposals in the list failed to parse and were dropped. */
 export const CHAT_SURFACE_PROPOSAL_INVALID = "chat_surface.proposal_invalid";
+
+/**
+ * The wetness record is full of real entries; the write was refused rather than
+ * evicting one (effects spec §9's material-capacity law, the deposit lane's
+ * `CHAT_SURFACE_DEPOSIT_CAPACITY` exactly). Before this code the wetness write
+ * path refused in total silence, which is what let a wedged record look like a
+ * run of quiet exchanges.
+ */
+export const CHAT_SURFACE_WETNESS_CAPACITY = "chat_surface.wetness_capacity";
 
 /**
  * Parse the raw proposal list PER ITEM, dropping what fails — the same boundary
@@ -307,7 +318,6 @@ export function applySurfaceWetnessProposals(input: {
     const current = read.status === "known" ? read.level : 0;
     const magnitude = SURFACE_WETNESS_DEGREE_DELTA[proposal.degree];
     const level = proposal.direction === "increase" ? current + magnitude : current - magnitude;
-    const before = surface;
     // A DECREASE never records a cause: towelling off is not a reason the hair is
     // wet, and carrying the old cause forward at a lower level would let a
     // half-dried head keep citing rain that stopped hours ago.
@@ -318,12 +328,27 @@ export function applySurfaceWetnessProposals(input: {
       atMinutes: input.atMinutes,
       ...(cause === undefined ? {} : { cause }),
     });
+    // The owner refuses at capacity, and a refusal has to be told apart from a
+    // write that legitimately settled where it already was — the deposit fold
+    // asks the same question of its own key. It is asked of the RECORD rather
+    // than of reference identity, because returning the input unchanged is the
+    // owner's current way of signalling a refusal and not a promise: a positive
+    // write that LANDED always leaves its location present, so a location still
+    // absent after a positive level was asked for was refused, and nothing else
+    // produces that pair. (A non-positive level is the drop path, where absence
+    // is the intended result.)
+    if (level > 0 && bodySurfaceWetnessEntry(surface, proposal.location) === undefined) {
+      const detail = `surface record is full (${BODY_SURFACE_MAX_LOCATIONS}) — ${proposal.location} wetness dropped`;
+      trace.push({ kind: "wetness", target: proposal.location, outcome: "rejected", code: CHAT_SURFACE_WETNESS_CAPACITY, detail });
+      input.sink?.push(diag("warn", CHAT_SURFACE_WETNESS_CAPACITY, detail));
+      continue;
+    }
     const after = bodySurfaceWetnessAt(surface, proposal.location, input.atMinutes, readOptions);
     const settled = after.status === "known" ? after.level : current;
     trace.push({
       kind: "wetness",
       target: proposal.location,
-      outcome: surface === before || (read.status === "known" && settled === current) ? "no_change" : "applied",
+      outcome: read.status === "known" && settled === current ? "no_change" : "applied",
       code: "",
       detail: `${read.status === "known" ? current : "invalid"} → ${settled}${cause ? ` (${cause})` : ""}`,
     });

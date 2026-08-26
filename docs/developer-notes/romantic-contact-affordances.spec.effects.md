@@ -832,6 +832,29 @@ caller asking for `hair` would still find absence and absence would still say
 dry. The asymmetry is deliberate and load-bearing: a corrupt VALUE has known
 scope, so it poisons nothing beyond the location its key names.
 
+**A tombstone is not a material fact, and it is the one thing a write at
+capacity may spend** (review finding, 2026-08-26). The poison had no exit: a
+write lands under a canonical location and never touches the raw key, so an
+unassignable key was permanent — and at `BODY_SURFACE_MAX_LOCATIONS` it also
+occupied a slot, so a full poisoned record read `hair` as unknown, sent the
+authoritative write, refused it for having no `hair` key to update, and could
+not free the slot because the prune declines to touch a poisoned record. That
+location stayed suppressed for the life of the row, silently. §9's capacity law
+protects committed material FACTS; a key nobody can assign to a location is not
+one, it is a marker that a fact was lost. So a write at capacity reclaims an
+unassignable key's slot — never a real entry, and never a value-quarantined one,
+whose key still names a real place — picking by sorted key order so a retake
+reproduces the identical record. A record full of real entries still refuses,
+and `applySurfaceWetnessProposals` now reports that as
+`chat_surface.wetness_capacity` instead of letting it pass for a quiet exchange.
+
+Two consequences of that shape, both deliberate: reclaiming the LAST tombstone
+lifts the poison for the whole record, because the unknown it stood for is no
+longer stored; and a record that is not full keeps its tombstone and its poison
+indefinitely, since only capacity pressure ever spends one. Absence there goes
+on reading `invalid`, which is the honest answer while the lost location is
+still unknown.
+
 Four scoped decisions came with the ruling:
 
 - **The trim is refused at the key path rather than removed from

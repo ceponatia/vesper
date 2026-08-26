@@ -51,6 +51,14 @@ import {
  *    asymmetry is deliberate: a corrupt VALUE has known scope (the location its
  *    key names) and poisons nothing else. Either way a bad jsonb blob can never
  *    buy the mobility that dry hair has and wet hair does not.
+ *
+ *    An unassignable key is nonetheless a **tombstone, not a material fact** —
+ *    it records that a fact was lost, and names no location to be true about —
+ *    so it is the one thing a write at capacity may spend to make room
+ *    (`setBodySurfaceWetness`; the 2026-08-26 ruling's own refinement of
+ *    romantic-contact-affordances.spec.effects.md §9). Without that exception
+ *    the poison could wedge a full record shut permanently, which is the
+ *    opposite of what law 4 exists to protect.
  * 5. **Standing outdoor precipitation HOLDS wetness** (`suspendDrying`). Drying
  *    forward through a downpour would report a soaked character bone dry after a
  *    few story hours of rain, because "the weather did not change" proposes no
@@ -695,8 +703,14 @@ export interface BodySurfaceReadOptions {
  * reads, deliberately, because every consumer already handles it conservatively
  * (the hair domain treats wetness as structural and falls silent; the visual
  * adapter files `affordance.input.invalid`) and a fourth answer would buy
- * nothing they could act on. A fresh authoritative write still heals any single
- * location, because a present key outranks the poison.
+ * nothing they could act on.
+ *
+ * A fresh authoritative write still heals the location it NAMES, because a
+ * present key outranks the poison — and when the record is full it makes room by
+ * spending an unassignable key rather than refusing (`setBodySurfaceWetness`),
+ * so the poison can never wedge a full record shut. What it does not do is heal
+ * the RECORD: absence keeps reading invalid for as long as any unassignable key
+ * is still standing.
  */
 export function bodySurfaceWetnessAt(
   state: BodySurfaceState,
@@ -738,6 +752,31 @@ export function bodySurfaceWetnessAt(
  * write replaces the marker outright (and a write of zero replaces it with
  * honest absence). Corruption is sticky until something states the truth again,
  * and then it is gone.
+ *
+ * **At capacity a new location reclaims the slot of an UNASSIGNABLE KEY, and of
+ * nothing else** (effects spec §9's material-capacity law, refined by the
+ * 2026-08-26 ruling). §9 protects committed material FACTS — an owner may never
+ * make room by destroying one. A key nobody can assign to a location is not a
+ * fact but a tombstone saying one was lost, so trading it for a named write
+ * strictly increases what the record knows: *some unknown location may be wet*
+ * becomes *this location is definitely this wet*. A real entry is never
+ * reclaimed, and neither is a VALUE-quarantined one — that entry's key still
+ * names a location, so it is a real, if unreadable, fact about a known place.
+ *
+ * Without the exception the poison of law 4 could wedge the record shut: an
+ * unassignable key occupies a slot AND makes every absence read invalid, so a
+ * full record answers "unknown" for `hair`, sends the authoritative write here,
+ * is refused for having no `hair` key to update — and `pruneDryBodySurface`
+ * declines to prune a poisoned record, so nothing frees the slot and that
+ * location is suppressed for the life of the row.
+ *
+ * The reclaim picks by **sorted key order**, so a retake of the same exchange
+ * against the same stored blob reproduces the identical record.
+ *
+ * A record full of REAL entries still refuses, returning the SAME reference.
+ * That is §9 working rather than the bug above, and
+ * `applySurfaceWetnessProposals` reports it as `chat_surface.wetness_capacity`
+ * instead of letting it pass for a quiet exchange.
  */
 export function setBodySurfaceWetness(
   state: BodySurfaceState,
@@ -750,7 +789,14 @@ export function setBodySurfaceWetness(
     return { ...state, wetness };
   }
   if (wetness[input.locationId] === undefined && Object.keys(wetness).length >= BODY_SURFACE_MAX_LOCATIONS) {
-    return state;
+    const tombstone = Object.keys(wetness)
+      .sort()
+      .find((key) => {
+        const entry = wetness[key];
+        return entry !== undefined && isUnusableSurfaceKeyEntry(entry);
+      });
+    if (tombstone === undefined) return state;
+    delete wetness[tombstone];
   }
   wetness[input.locationId] = {
     level,
@@ -777,6 +823,11 @@ export function setBodySurfaceWetness(
  * there reads INVALID rather than dry (law 4), so dropping a dried-out entry
  * would trade a true authoritative fact for silence. Housekeeping does not get
  * to cost information.
+ *
+ * Which does mean housekeeping can never free a slot in a poisoned record — and
+ * that is exactly why `setBodySurfaceWetness` reclaims the unassignable key's own
+ * slot at capacity. Recovery is an authoritative write stating a truth, never a
+ * prune quietly deciding a fact stopped mattering.
  */
 export function pruneDryBodySurface(
   state: BodySurfaceState,

@@ -271,6 +271,46 @@ describe("writes", () => {
     expect(pruneDryBodySurface(damp, HOUR).wetness.hair).toBeUndefined();
     expect(pruneDryBodySurface(damp, HOUR, { suspendDrying: true })).toBe(damp);
   });
+
+  /**
+   * The tombstone reclaim — the 2026-08-26 ruling's refinement of effects spec
+   * §9's material-capacity law.
+   *
+   * Falsified against the guard that refused ANY new location once the record
+   * was full: an unassignable key occupies a slot and poisons absence (law 4),
+   * so a full record read `hair` as unknown, sent the authoritative write, was
+   * refused for having no `hair` key to update, and — with the prune above
+   * declining to touch a poisoned record — could never free the slot again.
+   * Every later proposal was a silent no-op and the hair domain stayed
+   * suppressed for the life of the row.
+   */
+  it("at capacity a write spends an unassignable KEY, never a real entry", () => {
+    // Two tombstones first, then real entries up to the cap.
+    const stored: Record<string, unknown> = { "  hair  ": { level: 4_000, updatedAtMinutes: 0 }, "": 42 };
+    for (let index = 0; Object.keys(stored).length < BODY_SURFACE_MAX_LOCATIONS; index += 1) {
+      stored[`loc_${index}`] = { level: BODY_SURFACE_UNIT_ONE, updatedAtMinutes: 0 };
+    }
+    const full = bodySurfaceStateSchema.parse({ wetness: stored });
+    expect(Object.keys(full.wetness)).toHaveLength(BODY_SURFACE_MAX_LOCATIONS);
+    expect(level(full, "hair", 0)).toBe("invalid");
+
+    const healed = setBodySurfaceWetness(full, { locationId: "hair", level: 6_000, atMinutes: 0, cause: "rain" });
+    expect(level(healed, "hair", 0)).toBe(6_000);
+    // Sorted key order picks the slot, so a retake reproduces this record
+    // exactly — and the trade is a tombstone for a fact, never a fact for one.
+    expect(healed.wetness[""]).toBeUndefined();
+    expect(healed.wetness["  hair  "]).toEqual(BODY_SURFACE_UNUSABLE_KEY_ENTRY);
+    expect(Object.keys(healed.wetness).filter((key) => key.startsWith("loc_"))).toHaveLength(30);
+    // One tombstone still stands, so absence is still poisoned: the write heals
+    // the location it names, never the record.
+    expect(level(healed, "chest", 0)).toBe("invalid");
+
+    const second = setBodySurfaceWetness(healed, { locationId: "chest", level: 3_000, atMinutes: 0 });
+    expect(level(second, "chest", 0)).toBe(3_000);
+    expect(level(second, "face", 0)).toBe(0);
+    // Now genuinely full of facts — and refusing is §9 working, not the bug.
+    expect(setBodySurfaceWetness(second, { locationId: "face", level: 3_000, atMinutes: 0 })).toBe(second);
+  });
 });
 
 /**

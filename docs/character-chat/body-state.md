@@ -65,8 +65,11 @@ lane does.
     relationship — the predicate for "is this unreadable" answers true for both, so no caller
     can spend either as a level. Two consequences while debugging: `pruneDryBodySurface`
     prunes nothing at all in a record holding an unusable key, so pruning still cannot change
-    what any read returns; and a write still heals its own location, because a present key
-    outranks the poison.
+    what any read returns; and a write heals the location it NAMES — at capacity it makes
+    room by spending an unassignable key rather than refusing, since a tombstone is not a
+    material fact, so the poison can never wedge a full record shut. What a write does not
+    do is heal the record: absence keeps reading `invalid` while any unassignable key
+    stands, and only capacity pressure ever spends one.
   - **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
     `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
     standing in a continuing downpour read bone dry after a few story hours, because
@@ -156,7 +159,9 @@ lane does.
   owns the delta table and clamps regardless; an unowned location drops with
   `chat_surface.location_unknown`. `surfaceWetness` is carried **raw** on the aggregate
   and parsed per item by `parseSurfaceWetnessProposals`, which drops malformed items and
-  reports the count as `chat_surface.proposal_invalid`. `direction` and `degree` are
+  reports the count as `chat_surface.proposal_invalid`. A record already holding
+  its 32 locations refuses the write with `chat_surface.wetness_capacity` rather than
+  passing for a quiet exchange, the deposit lane's rule exactly. `direction` and `degree` are
   strict — the standing law is that **`.catch` is for narration-affecting leaves, never
   for state-mutating magnitudes**, so a hallucinated `degree: 999` fails its item instead
   of being repaired into a real 50% wetness change. `cause` stays lenient (provenance
