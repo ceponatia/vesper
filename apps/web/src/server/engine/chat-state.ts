@@ -148,8 +148,13 @@ import { parseOr, parseOrNull } from "@/lib/parse";
 import { calendarStartSchema, minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import type { AgentRunDescription, AgentRunDetailSection } from "@/contracts/turns/agent-failure";
+import type { SurfaceTransferProposal } from "@/contracts/affordances/contact";
+import {
+  applySurfaceTransferProposals,
+  type SurfaceTransferLayerResolver,
+} from "@/contracts/turns/chat-contact-transfer";
 import { agentModelId, generateChecked, isDemoMode, loadChatAgentReasoningProfile, withGenerateTimeout, type AgentTelemetry } from "../ai";
-import { characterChatMessages, characterChats, characterChatState, db } from "../db";
+import { characterChatMessages, characterChats, characterChatState, db, type DbWriter } from "../db";
 import { healOutfitMarker, loadChatWardrobe, playerWornIds, wardrobeDescriptors } from "./chat-wardrobe";
 import { chatGarmentLookChanged, garmentProjectionOr, syncGarmentsForExchange } from "./chat-garments";
 import { callbackHistorySchema, type CallbackEntry } from "./chat-callback";
@@ -958,12 +963,21 @@ export async function loadChatComposerModel(chatId: string): Promise<string> {
  * Persist the scenario onto the chat row. With `guardMessageId` the write only
  * lands while that prompting message still exists — the same clear-mid-stream
  * guard as the state save.
+ *
+ * `writer` defaults to the root client, so every ordinary caller is unchanged;
+ * pass a `db().transaction` handle to make this write part of a caller's atomic
+ * settlement (`persistSurfaceTransferSettlement`).
  */
-export async function saveChatScenario(chatId: string, scenario: ChatScenario, guardMessageId?: string): Promise<void> {
+export async function saveChatScenario(
+  chatId: string,
+  scenario: ChatScenario,
+  guardMessageId?: string,
+  writer: DbWriter = db(),
+): Promise<void> {
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
-  await db().execute(sql`
+  await writer.execute(sql`
     update ${characterChats} set
       premise = ${scenario.premise},
       active_social_cards = ${JSON.stringify(scenario.activeSocialCards)}::jsonb,
@@ -1008,12 +1022,20 @@ export async function loadMilestonesSeenAt(chatId: string): Promise<Date | null>
  * scenario field inherits the anchor with no new snapshot machinery — `scene`
  * (and the contact projection housed in it) rides here for free, exactly as
  * `garments` and `environment` do.
+ *
+ * `writer` defaults to the root client; pass a transaction handle to fold the
+ * anchor into a caller's atomic settlement (`persistSurfaceTransferSettlement`).
  */
-export async function savePreExchangeScenario(chatId: string, scenario: ChatScenario | null, guardMessageId?: string): Promise<void> {
+export async function savePreExchangeScenario(
+  chatId: string,
+  scenario: ChatScenario | null,
+  guardMessageId?: string,
+  writer: DbWriter = db(),
+): Promise<void> {
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
-  await db().execute(
+  await writer.execute(
     sql`update ${characterChats} set pre_exchange_scenario = ${JSON.stringify(scenario ?? {})}::jsonb where id = ${chatId} and ${guard}`,
   );
 }
@@ -1209,17 +1231,21 @@ const storedChatStateSchema = z.object({
  * target (re-seed). With `guardMessageId` the write only lands while that prompting
  * message still exists (followups F5) — same guard as the paired `saveChatState`, so
  * a mid-stream delete can't leave the anchor pointing at a state that was never saved.
+ *
+ * `writer` defaults to the root client; pass a transaction handle to fold the
+ * anchor into a caller's atomic settlement (`persistSurfaceTransferSettlement`).
  */
 export async function savePreExchangeSnapshot(
   chatId: string,
   characterId: string,
   state: ChatState | null,
   guardMessageId?: string,
+  writer: DbWriter = db(),
 ): Promise<void> {
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
-  await db()
+  await writer
     .update(characterChatState)
     .set({ preExchangeState: state ?? {} })
     .where(and(eq(characterChatState.chatId, chatId), eq(characterChatState.characterId, characterId), guard));
@@ -2165,6 +2191,30 @@ export async function finalizeChatState(input: {
    * Absent (the default) ⇒ the surface fold's result persists untouched.
    */
   contactMarkProposals?: readonly BodyMarkProposal[];
+  /**
+   * This exchange's conserved surface transfer (effects spec §9; §15 stage 8):
+   * the PROPOSALS, not a settlement. The owner transaction runs inside finalize,
+   * on the surface the surrounding folds just produced.
+   *
+   * That is deliberate and it is the whole reason this is a proposal input. A
+   * caller cannot settle a transfer itself, because the surface it would settle
+   * against does not exist outside this function: the wetness, deposit and
+   * pressure-mark folds all run here, and a `source` computed before them would
+   * either discard those folds when persisted or have to be merged back
+   * afterwards — a merge with no correct answer, since both sides edit the same
+   * deposit records. Computing the transfer here means the value that gets
+   * debited is byte-for-byte the value that gets written.
+   *
+   * A COMMITTED transfer moves the settle's writes inside ONE database
+   * transaction (`persistSurfaceTransferSettlement`), because §9's conservation
+   * law spans two rows and cannot be proven across independent statements.
+   * Absent — or present but committing nothing, which is every refusal and every
+   * duplicate retry — ⇒ every write below runs exactly as it always has. That
+   * is the whole of production today: transfer is fixture-only under §9's escape
+   * clause, so no live caller sets this and the hot settle path is untouched
+   * (owner ruling 2026-08-26).
+   */
+  surfaceTransfer?: ChatSurfaceTransferInput;
   sink?: DiagnosticSink;
 }): Promise<{
   /** True when this exchange landed a stage crossing or strong reaction (slice 9 "auto at big moments"). */
@@ -2614,11 +2664,75 @@ export async function finalizeChatState(input: {
           ...(input.sink === undefined ? {} : { sink: input.sink }),
         })
       : { surface: depositFold.surface, trace: [] };
+  // --- Conserved surface transfer (effects spec §9; §15 stage 8) ---
+  // The second effect proof, and the one that spans owners: material leaves one
+  // body's surface and lands on another body, or on a garment layer in between.
+  //
+  // It runs HERE, last in the fold chain and inside this function, because §9's
+  // conservation law is a statement about exact quantities: the debit has to come
+  // off the same surface value that gets persisted. `effectFold.surface` is that
+  // value — it already carries this exchange's drying, deposits and pressure
+  // marks — so settling against anything else (a copy loaded before the turn, say)
+  // would either silently un-apply those folds on write or need a merge that has
+  // no correct answer, both sides having edited the same deposit records.
+  //
+  // The layer side is `garmentStore` for the same reason: it is the post-fold,
+  // about-to-be-persisted wardrobe, so an intermediate garment is credited on the
+  // value the scenario write actually stores.
+  const transferFold =
+    input.surfaceTransfer !== undefined
+      ? applySurfaceTransferProposals({
+          proposals: input.surfaceTransfer.proposals,
+          owners: {
+            source: effectFold.surface,
+            // Same character on both ends ⇒ ONE surface, and it must be the
+            // folded one. The pure transaction warns it never assumes the pair
+            // differs: handing it the caller's separately-loaded copy here would
+            // fold the debit and the credit onto two stale objects and lose
+            // whichever landed second.
+            destination:
+              input.surfaceTransfer.destination.characterId === input.characterId
+                ? effectFold.surface
+                : input.surfaceTransfer.destination.state.bodySurface,
+            layers: garmentStore,
+          },
+          resolveLayer: input.surfaceTransfer.resolveLayer,
+          atMinutes: input.scenario.clockMinutes,
+          ...(input.sink === undefined ? {} : { sink: input.sink }),
+        })
+      : undefined;
+  // Nothing committed ⇒ nothing crossed an owner boundary, so there is no
+  // cross-row invariant to protect and the ordinary write path is the correct
+  // one. This covers every refusal AND the designed duplicate retry, which is
+  // exactly the case that must NOT look like a second transfer.
+  const transferSettled =
+    input.surfaceTransfer !== undefined && transferFold !== undefined && transferFold.committed > 0
+      ? {
+          bodySurface: transferFold.owners.source,
+          garments: transferFold.owners.layers,
+          // Absent when the material never left this character's own body: one
+          // row, already written above as `bodySurface`.
+          destination:
+            input.surfaceTransfer.destination.characterId === input.characterId
+              ? undefined
+              : {
+                  characterId: input.surfaceTransfer.destination.characterId,
+                  state: {
+                    ...input.surfaceTransfer.destination.state,
+                    bodySurface: transferFold.owners.destination,
+                  },
+                  preExchangeState: input.surfaceTransfer.destination.preExchangeState,
+                },
+        }
+      : undefined;
   const surfaceTrace: ChatSurfaceTraceEntry[] = [
     ...environmentFold.trace,
     ...surfaceFold.trace,
     ...depositFold.trace,
     ...effectFold.trace,
+    // Refusals included: a transfer that was rejected is a thing the inspector
+    // needs to see, and it contributes no entries at all when nobody proposed one.
+    ...(transferFold?.trace ?? []),
   ];
   if (surfaceTrace.length > 0) {
     input.sink?.push(
@@ -2770,66 +2884,92 @@ export async function finalizeChatState(input: {
   // an away departure that named where it went records the phrase.
   const whereabouts =
     input.driftedState.presence === "present" && input.driftedState.whereabouts ? "" : pulse.state.whereabouts;
-  await saveChatState({
-    chatId: input.chatId,
-    characterId: input.characterId,
-    promptMessageId: input.promptMessageId,
-    state: {
-      ...pulse.state,
-      whereabouts,
-      ...(selfPresence ? { presence: selfPresence } : {}),
-      ...(selfPresence === "away" && selfChange?.where ? { whereabouts: selfChange.where } : {}),
-      familiarity,
-      familiaritySceneGain,
-      surfacedCues,
-      memoryQueries: archivist.value?.memoryQueries ?? [],
-      openLoops,
-      attributeOverlays,
-      traitOverlays,
-      voiceExemplars,
-      lastMemoryTrace,
-      relationshipHistory,
-      milestones,
-      selfieHistory,
-      drives: driveResult.drives,
-      bodySurface: effectFold.surface,
-      ...outfitPatch,
-      // The worn list is a PROJECTION of the garment store (slice 2), re-derived
-      // after the reconcile AND the typed operations above so the column can never
-      // become a second truth.
-      wornItemIds,
-    },
-  });
+  const settledState: ChatState = {
+    ...pulse.state,
+    whereabouts,
+    ...(selfPresence ? { presence: selfPresence } : {}),
+    ...(selfPresence === "away" && selfChange?.where ? { whereabouts: selfChange.where } : {}),
+    familiarity,
+    familiaritySceneGain,
+    surfacedCues,
+    memoryQueries: archivist.value?.memoryQueries ?? [],
+    openLoops,
+    attributeOverlays,
+    traitOverlays,
+    voiceExemplars,
+    lastMemoryTrace,
+    relationshipHistory,
+    milestones,
+    selfieHistory,
+    drives: driveResult.drives,
+    // A committed transfer's DEBITED source surface wins over the effect fold's:
+    // the owner transaction (effects spec §9) removed the transferred material
+    // from it and wrote the idempotency receipt onto that same value, so
+    // persisting the fold's copy instead would un-remove what was moved AND drop
+    // the receipt, letting the next retry transfer the same material again.
+    bodySurface: transferSettled?.bodySurface ?? effectFold.surface,
+    ...outfitPatch,
+    // The worn list is a PROJECTION of the garment store (slice 2), re-derived
+    // after the reconcile AND the typed operations above so the column can never
+    // become a second truth.
+    wornItemIds,
+  };
   // The scenario save (followups ruling 8): the merged scene memory, the ticked
   // clock the pipeline already applied, and the one-shot skip note clearing —
   // guarded like the state save.
-  await saveChatScenario(
-    input.chatId,
+  const settledScenario: ChatScenario = {
     // Both one-shot notes clear together: the exchange that rendered the skip
     // note also rendered the meanwhile note (chat-offscreen-life).
-    {
-      ...input.scenario,
-      sceneMemory,
-      supportingCast,
-      plans,
-      playerState,
-      garments: garmentStore,
-      environment: environmentFold.environment,
-      // Mention history rides the scenario beside the weather it was read against
-      // (slice 5). Flag off ⇒ the prior memory passes through, exactly as the
-      // garment cue map does.
-      ...(input.affordanceCueState ? { affordanceCues: input.affordanceCueState } : {}),
-      pendingSkipNote: "",
-      pendingMeanwhileNote: "",
-    },
-    input.promptMessageId,
-  );
+    ...input.scenario,
+    sceneMemory,
+    supportingCast,
+    plans,
+    playerState,
+    // The transfer's layer owner is the credited half of the same equation as
+    // `bodySurface` above; the two must come from ONE settlement or conservation
+    // is only half-recorded.
+    garments: transferSettled?.garments ?? garmentStore,
+    environment: environmentFold.environment,
+    // Mention history rides the scenario beside the weather it was read against
+    // (slice 5). Flag off ⇒ the prior memory passes through, exactly as the
+    // garment cue map does.
+    ...(input.affordanceCueState ? { affordanceCues: input.affordanceCueState } : {}),
+    pendingSkipNote: "",
+    pendingMeanwhileNote: "",
+  };
   // The rollback anchors ride targeted follow-up UPDATEs (never the shared upsert
   // column list — an author edit must not clobber them): repeated "another take"s
   // keep rolling back to the same pre-exchange point. Guarded on the same prompting
   // message as saveChatState (F5), so a mid-stream delete leaves neither half written.
-  await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState, input.promptMessageId);
-  await savePreExchangeScenario(input.chatId, input.preExchangeScenario, input.promptMessageId);
+  //
+  // Two persistence shapes, one ruling (2026-08-26). A settle that COMMITTED a
+  // transfer moves all of this into ONE transaction, because §9 demands the debit
+  // and the credit commit together and they live in two different rows. Every
+  // other exchange — which is all of them today, transfer being fixture-only —
+  // keeps the four independent writes exactly as they were: this is the hot path,
+  // and there is no cross-row invariant to protect when nothing moved between rows.
+  if (transferSettled !== undefined) {
+    await persistSurfaceTransferSettlement({
+      chatId: input.chatId,
+      characterId: input.characterId,
+      promptMessageId: input.promptMessageId,
+      state: settledState,
+      scenario: settledScenario,
+      preExchangeState: input.preExchangeState,
+      preExchangeScenario: input.preExchangeScenario,
+      ...(transferSettled.destination === undefined ? {} : { destination: transferSettled.destination }),
+    });
+  } else {
+    await saveChatState({
+      chatId: input.chatId,
+      characterId: input.characterId,
+      promptMessageId: input.promptMessageId,
+      state: settledState,
+    });
+    await saveChatScenario(input.chatId, settledScenario, input.promptMessageId);
+    await savePreExchangeSnapshot(input.chatId, input.characterId, input.preExchangeState, input.promptMessageId);
+    await savePreExchangeScenario(input.chatId, input.preExchangeScenario, input.promptMessageId);
+  }
 
   // Location sketch (chat-scene-fidelity.plan.md slice 2b): a current place without a
   // sketch gets one from the detached background agent. Enqueued AFTER the state write so
@@ -3065,12 +3205,17 @@ export function settleEnsembleMember(args: {
  * still exists — the same `INSERT … WHERE EXISTS` shape as `persistAssistantReply`,
  * so a clear (Reset All) landing mid-stream can't resurrect a deleted state row.
  * jsonb values are cast from text params.
+ *
+ * `writer` defaults to the root client, so every ordinary caller keeps its own
+ * autocommitted statement; pass a `db().transaction` handle to run the upsert
+ * inside a caller's atomic settlement (`persistSurfaceTransferSettlement`).
  */
 async function upsertChatState(
   chatId: string,
   characterId: string,
   state: ChatState,
   guardMessageId?: string,
+  writer: DbWriter = db(),
 ): Promise<void> {
   const meters = JSON.stringify(state.meters);
   const conditions = JSON.stringify(state.conditions);
@@ -3094,7 +3239,7 @@ async function upsertChatState(
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
-  await db().execute(sql`
+  await writer.execute(sql`
     insert into ${characterChatState}
       (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
     select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
@@ -3137,23 +3282,171 @@ async function upsertChatState(
 /**
  * Persist the state at the end of an exchange, guarded on the prompting user
  * message still existing (see `upsertChatState`).
+ *
+ * `writer` defaults to the root client; pass a transaction handle to run the
+ * settle write inside a caller's atomic settlement.
  */
-export async function saveChatState(args: {
-  chatId: string;
-  characterId: string;
-  promptMessageId: string;
-  state: ChatState;
-}): Promise<void> {
-  await upsertChatState(args.chatId, args.characterId, args.state, args.promptMessageId);
+export async function saveChatState(
+  args: {
+    chatId: string;
+    characterId: string;
+    promptMessageId: string;
+    state: ChatState;
+  },
+  writer: DbWriter = db(),
+): Promise<void> {
+  await upsertChatState(args.chatId, args.characterId, args.state, args.promptMessageId, writer);
 }
 
 /**
  * Persist a full state row unguarded — for explicit author edits (the premise Save,
  * the state-tools modal, action chips) where no exchange is in flight, so the
  * stream-race guard is unnecessary. Upserts every field.
+ *
+ * `writer` defaults to the root client; pass a transaction handle to run the
+ * write inside a caller's atomic settlement.
  */
-export async function persistChatState(chatId: string, characterId: string, state: ChatState): Promise<void> {
-  await upsertChatState(chatId, characterId, state);
+export async function persistChatState(
+  chatId: string,
+  characterId: string,
+  state: ChatState,
+  writer: DbWriter = db(),
+): Promise<void> {
+  await upsertChatState(chatId, characterId, state, undefined, writer);
+}
+
+/**
+ * What a caller hands `finalizeChatState` to attempt a conserved surface
+ * transfer (effects spec §9): proposals and the OTHER side, never a settlement.
+ * The owner transaction runs inside finalize so it settles against the same
+ * folded surface that gets persisted.
+ */
+export interface ChatSurfaceTransferInput {
+  readonly proposals: readonly SurfaceTransferProposal[];
+  /**
+   * The receiving character. `characterId` equal to the primary's is the way to
+   * say "across one body" — finalize then settles both ends against the single
+   * folded surface and writes no second row.
+   */
+  readonly destination: {
+    readonly characterId: string;
+    /**
+     * The FULL state row to write for them: the settle upserts every column, so
+     * a caller holding only a surface has to load the rest of that character's
+     * state first. Its `bodySurface` is the pre-transfer value; finalize
+     * replaces it with the credited one.
+     */
+    readonly state: ChatState;
+    /**
+     * Their rollback anchor as it stood BEFORE this exchange — supplied, never
+     * derived, because finalize has no way to know what that character's row
+     * looked like before this turn and guessing it would corrupt their retake.
+     */
+    readonly preExchangeState: ChatState | null;
+  };
+  /** How this lane turns a proposal's opaque layer handle into an address the garment owner can validate. */
+  readonly resolveLayer: SurfaceTransferLayerResolver;
+}
+
+/**
+ * Persist a transfer-bearing settle. This function is the persistence AUTHORITY
+ * for the finalized values on such a settle: the state row, the scenario row,
+ * the receiving character's row, and every rollback anchor are written here and
+ * nowhere else for this exchange. No ordinary `saveChatState` /
+ * `saveChatScenario` may run after it on the same exchange — those carry the
+ * pre-transfer in-memory copies of the very rows this just debited and credited,
+ * and re-writing them would restore the material the transfer removed while
+ * leaving the credit standing, creating substance out of a stale object.
+ *
+ * The atomic boundary is the point. `romantic-contact-affordances.spec.effects.md`
+ * §9 requires source removal and destination/intermediate deposition to commit
+ * atomically under one idempotency key, and that law is simply unprovable across
+ * two independent statements: skin lives in `character_chat_state.body_surface`
+ * and garments in
+ * `character_chats.garments`, so a crash, a lost connection, or a deploy between
+ * the two writes leaves material deleted from one row and never credited to the
+ * other — a silent, permanent conservation violation that no retry can detect,
+ * because the transfer's receipt rides the surface that DID get written. One
+ * transaction makes the pair all-or-nothing, which is the only shape in which
+ * "conservation holds" is a checkable claim rather than a hope. This is the
+ * third of the three gaps §15 stage 8 names.
+ *
+ * The receiving character's ROLLBACK ANCHOR is inside the boundary for the same
+ * reason the credit is. §9 requires that a retake "removes both sides or
+ * neither", and a retake restores each character's row from its own
+ * `pre_exchange_state`: an anchor that was never written, or written outside this
+ * transaction and lost to the crash that rolled the credit back, leaves the
+ * retake able to undo the debit while the credit stands — precisely the
+ * half-applied state the atomicity law exists to forbid. Both anchors and both
+ * rows commit together or the exchange writes nothing.
+ *
+ * The ordinary, transfer-free settle deliberately does NOT come through here
+ * (owner ruling 2026-08-26). It runs on every exchange in the chat lane, and
+ * wrapping four writes that already succeed independently in a transaction would
+ * hold a pooled connection open across the whole settle to buy nothing — there
+ * is no cross-row invariant to protect when nothing moved between rows. Transfer
+ * is fixture-only under §9's escape clause, so the cost of the boundary is paid
+ * only by the path that needs it and the hot path stays byte-identical.
+ *
+ * Fire-and-forget follow-ups (sketch/look enqueues) stay OUTSIDE: they are not
+ * part of the conserved equation, and a detached job must never be able to hold
+ * a transaction open or roll one back.
+ *
+ * Two things are knowingly outside the boundary and acceptable only while
+ * transfer is fixture-only: `chatGarmentLookChanged` still compares against the
+ * PRE-transfer garment store, so a transfer that credits a garment does not
+ * trigger the look-refresh enqueue; and this transaction holds one pooled
+ * connection across two large JSONB upserts, which would be a real contention
+ * cost on a live per-exchange path.
+ */
+export async function persistSurfaceTransferSettlement(args: {
+  chatId: string;
+  characterId: string;
+  promptMessageId: string;
+  /** The primary's finalized state, already carrying the transfer's DEBITED source surface. */
+  state: ChatState;
+  /** The finalized scenario, already carrying the transfer's credited garment store. */
+  scenario: ChatScenario;
+  preExchangeState: ChatState | null;
+  preExchangeScenario: ChatScenario | null;
+  /**
+   * The receiving character's row and its own rollback anchor, when the
+   * destination is a different character. The anchor is passed in rather than
+   * derived: only the caller knows what that row held before this exchange.
+   */
+  destination?: {
+    readonly characterId: string;
+    readonly state: ChatState;
+    readonly preExchangeState: ChatState | null;
+  };
+}): Promise<void> {
+  await db().transaction(async (tx) => {
+    // Order mirrors the ordinary settle exactly: the upserts first, then the
+    // anchors. `savePreExchangeSnapshot` is a targeted UPDATE that assumes the
+    // state row already exists, so it can only ever follow its own upsert.
+    await upsertChatState(args.chatId, args.characterId, args.state, args.promptMessageId, tx);
+    await saveChatScenario(args.chatId, args.scenario, args.promptMessageId, tx);
+    const destination =
+      args.destination !== undefined && args.destination.characterId !== args.characterId
+        ? args.destination
+        : undefined;
+    if (destination !== undefined) {
+      await upsertChatState(args.chatId, destination.characterId, destination.state, args.promptMessageId, tx);
+    }
+    await savePreExchangeSnapshot(args.chatId, args.characterId, args.preExchangeState, args.promptMessageId, tx);
+    if (destination !== undefined) {
+      // The credited character's retake anchor — same transaction as their
+      // credit, so §9's "removes both sides or neither" stays provable.
+      await savePreExchangeSnapshot(
+        args.chatId,
+        destination.characterId,
+        destination.preExchangeState,
+        args.promptMessageId,
+        tx,
+      );
+    }
+    await savePreExchangeScenario(args.chatId, args.preExchangeScenario, args.promptMessageId, tx);
+  });
 }
 
 /**

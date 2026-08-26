@@ -237,7 +237,7 @@ located deposits and damage marks, integrated lazily to story minutes — only w
 autonomously, drying at a material-scaled rate via the shared fixed-point kernel (`@/lib/fixed-point`, a barrel over `@vesper/contracts`)).
 
 - **One dispatcher.** Every mutation is a typed `GarmentOperation` through
-  `applyGarmentOperations` (contracts) — transfers, five presentation ops, five condition
+  `applyGarmentOperations` (contracts) — transfers, five presentation ops, six condition
   ops — validated against the blueprint's behavior bindings; rejections are stable
   `garment_op.*` diagnostics, never throws. The state route PATCH accepts
   `garmentOperations`; the state-tools sheet queues them per part.

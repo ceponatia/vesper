@@ -171,7 +171,7 @@ export type ChatSurfaceOutcome = (typeof chatSurfaceOutcomes)[number];
  * lifting it onto the memory trace later is a move, not a redesign.
  */
 export interface ChatSurfaceTraceEntry {
-  readonly kind: "environment" | "wetness" | "mark" | "deposit";
+  readonly kind: "environment" | "wetness" | "mark" | "deposit" | "transfer";
   /** The environment field or body location this entry is about. */
   readonly target: string;
   readonly outcome: ChatSurfaceOutcome;

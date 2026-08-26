@@ -13,14 +13,20 @@ import {
   BODY_SURFACE_INVALID_ENTRY,
   BODY_SURFACE_MAX_LOCATIONS,
   BODY_SURFACE_MAX_MARKS,
+  BODY_SURFACE_MAX_TRANSFER_RECEIPTS,
+  BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES,
   BODY_SURFACE_UNIT_ONE,
+  acceptBodySurfaceDeposit,
+  bodySurfaceTransferCommitted,
   commitBodySurfaceDeposit,
   commitBodySurfaceMark,
   emptyBodySurfaceState,
   reduceBodySurfaceDeposits,
   pruneDryBodySurface,
   pruneFadedBodySurfaceMarks,
+  recordBodySurfaceTransferReceipt,
   setBodySurfaceWetness,
+  takeBodySurfaceDeposit,
   type BodySurfaceReadOptions,
   type BodySurfaceState,
 } from "./body-surface";
@@ -369,5 +375,116 @@ describe("deposits", () => {
     const pruned = pruneFadedBodySurfaceMarks(marked, 10 + HOUR);
     expect(pruned.marks).toBeUndefined();
     expect(bodySurfaceDepositAt(pruned, mudId, 10 + HOUR)).toMatchObject({ status: "known" });
+  });
+});
+
+/**
+ * The conserving pair and the receipt module
+ * (romantic-contact-affordances.spec.effects.md §9; ruling 2026-08-26).
+ *
+ * `contracts/turns/chat-contact-transfer.test.ts` owns the conservation law
+ * itself and proves it end to end. What is left here is what only the owner can
+ * be asked: the two ways a conserved move must refuse rather than approximate,
+ * and the quarantine rule, which the transaction cannot construct because a
+ * quarantined slot only exists on the far side of a parse.
+ */
+describe("the conserving pair", () => {
+  const dirty = (amount: number) =>
+    commitBodySurfaceDeposit(emptyBodySurfaceState(), { locationId: "hands", kind: "mud", amount, atMinutes: 0 });
+  const HANDS = bodySurfaceDepositIdFor("hands", "mud", 0);
+
+  it("takes nothing from a quarantined slot, because moving material out of an unreadable amount invents it", () => {
+    const quarantined = bodySurfaceStateSchema.parse({ wetness: {}, deposits: { [HANDS]: { kind: 42 } } });
+    const taken = takeBodySurfaceDeposit(quarantined, { depositId: HANDS, amount: 1_000 });
+    expect(taken.taken).toBe(0);
+    expect(taken.state).toBe(quarantined);
+  });
+
+  it("refuses to add onto a quarantined slot rather than overwriting or guessing the total", () => {
+    const quarantined = bodySurfaceStateSchema.parse({
+      wetness: {},
+      deposits: { [bodySurfaceDepositIdFor("hands", "mud", 5)]: { kind: 42 } },
+    });
+    const accepted = acceptBodySurfaceDeposit(quarantined, {
+      locationId: "hands",
+      kind: "mud",
+      amount: 1_000,
+      atMinutes: 5,
+    });
+    expect(accepted).toEqual({ status: "refused", reason: "quarantined" });
+  });
+
+  it("refuses a credit that would pass saturation, rather than clamping away the excess", () => {
+    const nearlyFull = dirty(BODY_SURFACE_UNIT_ONE - 100);
+    const accepted = acceptBodySurfaceDeposit(nearlyFull, {
+      locationId: "hands",
+      kind: "mud",
+      amount: 500,
+      atMinutes: 0,
+    });
+    expect(accepted).toEqual({ status: "refused", reason: "saturated" });
+  });
+
+  it("takes everything that is there when asked for more than stands", () => {
+    const taken = takeBodySurfaceDeposit(dirty(600), { depositId: HANDS, amount: 5_000 });
+    expect(taken.taken).toBe(600);
+    expect(taken.state.deposits).toBeUndefined();
+  });
+});
+
+describe("transfer receipts", () => {
+  it("refuses a duplicate key rather than papering over a debit that should not have happened", () => {
+    const once = recordBodySurfaceTransferReceipt(emptyBodySurfaceState(), { transferKey: "k", amount: 10, atMinutes: 4 });
+    expect(once.status).toBe("recorded");
+    if (once.status !== "recorded") return;
+    expect(bodySurfaceTransferCommitted(once.state, "k")).toBe(true);
+    expect(recordBodySurfaceTransferReceipt(once.state, { transferKey: "k", amount: 10, atMinutes: 4 })).toEqual({
+      status: "refused",
+      reason: "duplicate",
+    });
+  });
+
+  it("refuses at capacity rather than evicting, because an evicted receipt makes its transfer runnable again", () => {
+    let state = emptyBodySurfaceState();
+    for (let index = 0; index < BODY_SURFACE_MAX_TRANSFER_RECEIPTS; index += 1) {
+      const result = recordBodySurfaceTransferReceipt(state, { transferKey: `k${index}`, amount: 10, atMinutes: 4 });
+      if (result.status !== "recorded") throw new Error("fixture filled early");
+      state = result.state;
+    }
+    expect(recordBodySurfaceTransferReceipt(state, { transferKey: "one_more", amount: 10, atMinutes: 4 })).toEqual({
+      status: "refused",
+      reason: "capacity",
+    });
+  });
+
+  it("retires receipts past the horizon and drops the key when the last one goes", () => {
+    const recorded = recordBodySurfaceTransferReceipt(emptyBodySurfaceState(), {
+      transferKey: "k",
+      amount: 10,
+      atMinutes: 0,
+    });
+    if (recorded.status !== "recorded") throw new Error("fixture did not record");
+    const later = recordBodySurfaceTransferReceipt(recorded.state, {
+      transferKey: "k2",
+      amount: 10,
+      atMinutes: BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES + 1,
+    });
+    if (later.status !== "recorded") throw new Error("fixture did not record");
+    expect(bodySurfaceTransferCommitted(later.state, "k")).toBe(false);
+    expect(Object.keys(later.state.transfers ?? {})).toEqual(["k2"]);
+  });
+
+  it("leaves a state that never transferred byte-identical to one from before the module existed", () => {
+    const untouched = commitBodySurfaceDeposit(emptyBodySurfaceState(), {
+      locationId: "hands",
+      kind: "mud",
+      amount: 3_000,
+      atMinutes: 0,
+    });
+    expect(untouched.transfers).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(untouched))).toEqual({
+      wetness: {},
+      deposits: { [bodySurfaceDepositIdFor("hands", "mud", 0)]: { locationId: "hands", kind: "mud", amount: 3_000, createdAtMinutes: 0 } },
+    });
   });
 });

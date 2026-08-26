@@ -11,6 +11,7 @@ import {
   garmentWorstConditionVector,
   hystereticGarmentConditionBand,
   integrateGarmentCondition,
+  nextGarmentCondition,
   sameGarmentCondition,
   GARMENT_BAND_HYSTERESIS,
   GARMENT_CONDITION_BAND_LADDERS,
@@ -21,13 +22,17 @@ import {
   garmentConditionStateSchema,
   garmentOperationListSchema,
   pristineGarmentConditionState,
+  GARMENT_MAX_DEPOSITS,
   GARMENT_ROOT_SCOPED_OPERATIONS,
   type ChatGarmentStore,
+  type GarmentConditionState,
+  type GarmentDeposit,
   type GarmentInstanceState,
   type GarmentLocus,
   type GarmentOperation,
   emptyGarmentCueState,
 } from "./garment-instance";
+import { GARMENT_UNIT_ONE } from "./garment-material";
 import { applyGarmentOperations } from "./garment-presentation";
 import { templateFor } from "./garment-test-fixtures";
 
@@ -535,6 +540,131 @@ describe("deposit", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// accept_transfer — the conserved credit leg
+// ---------------------------------------------------------------------------
+
+/**
+ * The destination half of a conserved surface transfer
+ * (romantic-contact-affordances.spec.effects.md §9). Conservation is the whole
+ * claim: exactly what leaves one surface arrives here.
+ *
+ * Every case below is falsified by the obvious wrong implementation — reusing
+ * `applyDeposit`, or "harmonising" the new reducer with it. That path
+ * max-merges, clamps at the unit, and evicts the oldest record at capacity. All
+ * three are correct for `deposit`, which compiles a sentence, and all three
+ * destroy material here, where the number was already computed by a transaction
+ * that recorded the matching loss on the source side.
+ *
+ * Driven through `nextGarmentCondition` rather than the `run` helper because
+ * `applyGarmentOperations` does not route `accept_transfer` yet; the laws under
+ * test belong to the reducer either way.
+ */
+function hemMud(intensity: number, atMinutes = 4): GarmentDeposit {
+  return {
+    id: `dep:mud:hem:${atMinutes}`,
+    kind: "mud",
+    partIds: ["hem"],
+    intensity,
+    extent: intensity,
+    freshness: GARMENT_UNIT_ONE,
+    atMinutes,
+  };
+}
+
+/** A record standing at `GARMENT_MAX_DEPOSITS`: one mud slot per minute. */
+function fullRecord(): GarmentConditionState {
+  return {
+    ...pristineGarmentConditionState(),
+    deposits: Array.from({ length: GARMENT_MAX_DEPOSITS }, (_, minute) => hemMud(1_000, minute)),
+  };
+}
+
+function credit(condition: GarmentConditionState, amount: number, atMinutes: number) {
+  const sink = new DiagnosticCollector();
+  const operation: Extract<GarmentOperation, { kind: "accept_transfer" }> = {
+    kind: "accept_transfer",
+    garmentId: "g",
+    partIds: ["hem"],
+    depositKind: "mud",
+    amount,
+  };
+  return { next: nextGarmentCondition(condition, COTTON_TOP, operation, { atMinutes, sink }), sink };
+}
+
+describe("accept_transfer credits an exact amount and refuses rather than losing material", () => {
+  it("ADDS to what already stands under that identity — a max-merge would swallow the credit", () => {
+    const seeded = run(storeOf(COTTON_TOP), [{ ...mudOnHem, degree: "slight" }], 30).condition;
+    expect(seeded.deposits[0]?.intensity).toBe(2_500);
+    const once = credit(seeded, 1_000, 30).next;
+    const twice = once ? credit(once, 1_000, 30).next : null;
+    // 2_500 + 1_000 + 1_000, in ONE record: an `accept_transfer` shares the
+    // deposit identity space, so the same substance in the same place in the
+    // same minute stays one fact. `Math.max` would have left 2_500 both times.
+    expect(twice?.deposits).toHaveLength(1);
+    expect(twice?.deposits[0]).toMatchObject({ kind: "mud", partIds: ["hem"], intensity: 4_500, extent: 4_500 });
+    // Cleanliness follows the MERGED total, so transferred mud cannot land on a
+    // garment that still reads pristine to a band reader or a narrator.
+    expect(twice?.regionOverrides.hem?.cleanliness).toBe(GARMENT_UNIT_ONE - 4_500);
+  });
+
+  it.each([
+    {
+      law: "saturation refuses instead of clamping — a clamp is a silent discard",
+      condition: (): GarmentConditionState => ({ ...pristineGarmentConditionState(), deposits: [hemMud(9_500)] }),
+      amount: 1_000,
+      atMinutes: 4,
+      code: "garment_op.transfer_saturated",
+    },
+    {
+      law: "a full record refuses instead of evicting a deposit this transfer never touched",
+      condition: fullRecord,
+      amount: 1_000,
+      atMinutes: 99,
+      code: "garment_op.transfer_capacity",
+    },
+    {
+      law: "a zero leg refuses — a leg that moves nothing is a planner bug, not a no-op",
+      condition: pristineGarmentConditionState,
+      amount: 0,
+      atMinutes: 4,
+      code: "garment_op.transfer_invalid_amount",
+    },
+  ])("$law, and writes nothing", ({ condition, amount, atMinutes, code }) => {
+    const before = condition();
+    const result = credit(before, amount, atMinutes);
+    expect(result.next).toBeNull();
+    expectDiagnostics(result.sink, [code]);
+    expect(before).toEqual(condition());
+  });
+
+  it("takes an exact fit, and deepens an existing slot even at capacity", () => {
+    // `GARMENT_UNIT_ONE` exactly is a fit, not an overflow.
+    const exact = credit({ ...pristineGarmentConditionState(), deposits: [hemMud(9_500)] }, 500, 4);
+    expectCleanSink(exact.sink);
+    expect(exact.next?.deposits[0]?.intensity).toBe(GARMENT_UNIT_ONE);
+    // Capacity refuses a NEW identity only. Deepening one that is already there
+    // does not grow the record, so there is nothing to evict and nothing to
+    // refuse — the capacity check must not become a blanket "full" test.
+    const deepened = credit(fullRecord(), 1_000, 0);
+    expectCleanSink(deepened.sink);
+    expect(deepened.next?.deposits).toHaveLength(GARMENT_MAX_DEPOSITS);
+    expect(deepened.next?.deposits.find((deposit) => deposit.id === "dep:mud:hem:0")?.intensity).toBe(2_000);
+  });
+
+  it("voids an unrecognised substance, where `deposit` degrades it to `unknown`", () => {
+    // The asymmetry is deliberate and easy to "fix" by mistake. On the ordinary
+    // path something IS on the garment and `unknown` says so honestly; here the
+    // substance is already owner-backed on the source side, so a kind that does
+    // not parse means what left is not what would arrive.
+    expect(
+      garmentOperationListSchema.parse([
+        { kind: "accept_transfer", garmentId: "g", partIds: ["hem"], depositKind: "glitter", amount: 1_000 },
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe("damage and repair", () => {
   const tear: GarmentOperation = {
     kind: "damage",
@@ -601,12 +731,20 @@ describe("damage and repair", () => {
 // OQ7 — the root-scoped set
 // ---------------------------------------------------------------------------
 
-describe("OQ7 — an empty partIds list means the whole garment for exactly three operations", () => {
-  it("the contract's root-scoped set is apply_condition, deposit and clean", () => {
-    expect([...GARMENT_ROOT_SCOPED_OPERATIONS].sort()).toEqual(["apply_condition", "clean", "deposit"]);
+describe("OQ7 — an empty partIds list means the whole garment for the condition-class operations", () => {
+  it("the contract's root-scoped set is the four condition-class writers", () => {
+    // `accept_transfer` is in the set on purpose: `partIds: []` resolves to the
+    // ROOT, which is an exact single locus, and excluding it would leave a
+    // transfer whose honest destination is "the coat" with nowhere to land.
+    expect([...GARMENT_ROOT_SCOPED_OPERATIONS].sort()).toEqual([
+      "accept_transfer",
+      "apply_condition",
+      "clean",
+      "deposit",
+    ]);
   });
 
-  it("each of the three applies garment-wide with no diagnostic", () => {
+  it("each applies garment-wide with no diagnostic", () => {
     const result = run(storeOf(COTTON_TOP), [
       rain(),
       { kind: "deposit", garmentId: "g", partIds: [], depositKind: "dust", degree: "moderate" },
