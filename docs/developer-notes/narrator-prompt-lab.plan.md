@@ -1,6 +1,6 @@
 # Narrator Prompt Lab
 
-Status: planned — 2026-08-26
+Status: active
 
 Outcome: The owner can create, edit, duplicate, delete, and select named handwritten narrator instruction prompts, then use one as a per-conversation experiment in Character Chat without removing Vesper's authoritative world/character context, runtime constraints, or machine response contracts. Every generated take records enough provenance to identify the exact test prompt revision and narrator model that produced it.
 
@@ -239,23 +239,29 @@ Whether the column uses a database FK or the app's existing soft-pointer style i
 
 ## API shape
 
-Suggested owner-admin CRUD routes:
+Owner-admin CRUD routes:
 
 ```text
-GET    /api/admin/narrator-prompts
-POST   /api/admin/narrator-prompts
-GET    /api/admin/narrator-prompts/:promptId
-PATCH  /api/admin/narrator-prompts/:promptId
-DELETE /api/admin/narrator-prompts/:promptId
-POST   /api/admin/narrator-prompts/:promptId/duplicate
+GET    /api/admin/self/narrator-prompts
+POST   /api/admin/self/narrator-prompts
+GET    /api/admin/self/narrator-prompts/:promptId
+PATCH  /api/admin/self/narrator-prompts/:promptId
+DELETE /api/admin/self/narrator-prompts/:promptId
+POST   /api/admin/self/narrator-prompts/:promptId/duplicate
 ```
 
-Suggested per-chat operational route:
+Per-chat operational route:
 
 ```text
 GET   /api/admin/self/narrator-prompt/:chatId
 PATCH /api/admin/self/narrator-prompt/:chatId
 ```
+
+**Corrected during the build (2026-08-26):** this section originally suggested
+CRUD under a bare `/api/admin/…`. The owner-admin route wrapper fails closed for
+any path outside `/api/admin/self`, so those routes would have answered 404 by
+construction. Everything the owner-admin role reaches lives under `/self/`,
+whether it is a collection or a single conversation's setting.
 
 The chat PATCH accepts only:
 
@@ -463,7 +469,7 @@ The separate variables/template-language follow-on is the likely package candida
 
 ### Slice 1 — establish the replaceable instruction boundary
 
-Status: not started.
+Status: built 2026-08-26.
 
 - Introduce the typed narrator instruction source.
 - Classify/extract the existing production behavior/craft instruction units from runtime context and transport contracts.
@@ -480,7 +486,7 @@ Status: not started.
 
 ### Slice 2 — persist templates and immutable revisions
 
-Status: blocked on slice 1.
+Status: built 2026-08-26; the migration is generated but not applied.
 
 - Add template/revision tables and migration.
 - Add `character_chats.narrator_prompt_template_id`.
@@ -493,7 +499,7 @@ Status: blocked on slice 1.
 
 ### Slice 3 — Prompt Lab canvas
 
-Status: blocked on slice 2.
+Status: built 2026-08-26; unexercised until the migration is applied.
 
 - Add username-menu entry.
 - Build master/detail library/editor page.
@@ -506,7 +512,7 @@ Status: blocked on slice 2.
 
 ### Slice 4 — per-conversation selector and active badge
 
-Status: blocked on slice 2; may proceed in parallel with slice 3.
+Status: built 2026-08-26; unexercised until the migration is applied.
 
 - Add dedicated owner-admin per-chat GET/PATCH route.
 - Add selector to the Character Chat conversation menu.
@@ -517,7 +523,7 @@ Status: blocked on slice 2; may proceed in parallel with slice 3.
 
 ### Slice 5 — wire the live narrator lanes
 
-Status: blocked on slices 1, 2 and 4.
+Status: built 2026-08-26; never run on a real exchange.
 
 - Resolve one exact instruction source/revision under the exchange lock.
 - Carry it into legacy one-on-one/ensemble narration.
@@ -530,7 +536,7 @@ Status: blocked on slices 1, 2 and 4.
 
 ### Slice 6 — take-level provenance
 
-Status: blocked on slice 5.
+Status: built 2026-08-26; never run on a real exchange.
 
 - Add prompt/model provenance to assistant messages/takes using backward-compatible schemas.
 - Preserve provenance when the current content becomes the first historical take.
@@ -541,7 +547,7 @@ Status: blocked on slice 5.
 
 ### Slice 7 — hardening and owner rollout
 
-Status: blocked on slices 1–6.
+Status: not started.
 
 Cover at minimum:
 

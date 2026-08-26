@@ -43,6 +43,8 @@ import { AvatarPanel } from "@/components/avatar";
 import { fileToAttachmentDataUrl } from "@/components/chat/attachment-file";
 import { PER_CHAT_DEFAULTS, type PerChatState } from "@/components/chat/chat-conversation-state";
 import { AgentReasoningSelect } from "@/components/chat/agent-reasoning-select";
+import { NarratorPromptBadge } from "@/components/chat/narrator-prompt-badge";
+import { NarratorPromptSelect, useNarratorPromptSelection } from "@/components/chat/narrator-prompt-select";
 import { SceneComposerSelect } from "@/components/chat/scene-composer-select";
 import { ChatPermissionsPanel } from "@/components/chat/chat-permissions-panel";
 import { ChatPickupStrip } from "@/components/chat/chat-pickup-strip";
@@ -248,6 +250,15 @@ export function ChatConversation({ chatId }: { chatId: string }) {
   // reload doesn't re-offer it.
   const [wantsSay, setWantsSay] = useState(PER_CHAT_DEFAULTS.wantsSay);
   const isAdmin = useIsAdmin();
+  // The conversation's narrator-prompt experiment (narrator-prompt-lab.plan.md
+  // slice 4), shared by the menu picker and the header badge so the two can never
+  // disagree about which instructions this chat is narrating with. Admin-gated —
+  // a player issues neither request. Deliberately NOT in `PerChatState`: the hook
+  // stamps the value with its own chat id, so a switch reads as loading rather
+  // than as the previous conversation's pick, and this operational configuration
+  // never joins the resettable per-chat surface (scenario presets and the state
+  // tools must not touch it).
+  const narratorPrompt = useNarratorPromptSelection(chatId, isAdmin);
   // The scene-image disclosure: collapsed by default at every width — the
   // transcript keeps the room; a tap remembers the choice for this conversation.
   const [scenesOpen, setScenesOpen] = useState(PER_CHAT_DEFAULTS.scenesOpen);
@@ -1129,6 +1140,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
     <ConversationMenu
       chatModel={chatModel}
       onChatModelChange={saveChatModel}
+      narratorPromptControl={isAdmin ? <NarratorPromptSelect selection={narratorPrompt} /> : undefined}
       agentReasoningControl={isAdmin ? <AgentReasoningSelect chatId={chatId} /> : undefined}
       sceneComposerControl={isAdmin ? <SceneComposerSelect chatId={chatId} /> : undefined}
       hasState={chatState !== null}
@@ -1264,6 +1276,11 @@ export function ChatConversation({ chatId }: { chatId: string }) {
               {/* Auto-title: an unnamed conversation is titled by its character. */}
               <p className="truncate text-sm text-paper-100">{title || name}</p>
               {title ? <p className="truncate text-[11px] text-paper-500">{name}</p> : null}
+              {/* The active narrator-prompt experiment (narrator-prompt-lab.plan.md
+                  slice 4) — under the name, so it is visible with the menu CLOSED and
+                  never competes with the title for width. Admin + active selection only,
+                  so an ordinary player's header is unchanged. */}
+              {isAdmin ? <NarratorPromptBadge template={narratorPrompt.active} /> : null}
             </div>
           </>
         ) : (
@@ -2028,6 +2045,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
 function ConversationMenu({
   chatModel,
   onChatModelChange,
+  narratorPromptControl,
   agentReasoningControl,
   sceneComposerControl,
   hasState,
@@ -2049,6 +2067,8 @@ function ConversationMenu({
 }: {
   chatModel: string;
   onChatModelChange: (modelId: string) => void;
+  /** Owner-admin-only narrator-prompt experiment picker; absent for ordinary users. */
+  narratorPromptControl?: ReactNode;
   /** Owner-admin-only experiment selector; absent for ordinary users. */
   agentReasoningControl?: ReactNode;
   /** Owner-admin-only scene-composer model picker; absent for ordinary users. */
@@ -2091,6 +2111,9 @@ function ConversationMenu({
           className="h-8 text-xs"
         />
       </label>
+      {/* The narrator experiments sit together: which model narrates, then which
+          instructions it narrates by (narrator-prompt-lab.plan.md slice 4). */}
+      {narratorPromptControl}
       {agentReasoningControl}
       {sceneComposerControl}
       <div className="my-1 border-t border-ink-600" />

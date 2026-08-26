@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { narrativeCutSchema, type NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
+import type { SoloCutContext } from "@vesper/simulation-core/solo-cut";
+import {
+  narratorPromptUnits,
+  type NarratorInstructionSource,
+  type NarratorPromptNode,
+} from "@/contracts/narrator-prompts";
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
 import {
   beatHandlesForCut,
   buildSimHandleMap,
   buildSimRenderPrompt,
+  buildSimRenderPromptNodes,
   type SimRenderContext,
 } from "./sim-render";
+import {
+  buildSimSoloRenderPrompt,
+  buildSimSoloRenderPromptNodes,
+  type SimSoloRenderContext,
+} from "./sim-solo-render";
 
 /**
  * Snapshot + behavioural tests for the successor narrator prompt builder
@@ -239,5 +251,110 @@ describe("handle map determinism", () => {
     expect(buildSimHandleMap(cut)).toEqual(buildSimHandleMap(cut));
     // The builder exposes the same map it embeds in the prompt.
     expect(buildSimRenderPrompt(cut, BASE_CONTEXT).handleMap).toEqual(buildSimHandleMap(cut));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Narrator instruction override (narrator-prompt-lab.plan.md slice 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The successor half of the Prompt Lab boundary. The co-present and SOLO lanes
+ * consume the SAME resolved instruction source, which is the plan's explicit
+ * requirement: leaving the primary's physical scene must not silently restore
+ * production narrator behavior mid-conversation.
+ *
+ * What these kill: an override that reaches the committed cut, the deterministic
+ * handles, the player-authorship clauses in the CONVERSATION block, or the strict
+ * JSON schema — any of which turns a prompt experiment into a parse failure or an
+ * invented world fact rather than a different writing style.
+ */
+
+const SOLO_CUT: SoloCutContext = {
+  playerName: "Brian",
+  primaryName: "Nora",
+  playerSide: {
+    zoneLabel: "town square",
+    inTransit: false,
+    coPresent: [{ name: "Sable", activity: "selling wares" }],
+    heldItems: ["a small keepsake"],
+  },
+  vignette: {
+    primaryName: "Nora",
+    zoneLabel: "home",
+    inTransit: false,
+    activity: "preparing a meal",
+    routineMusts: ["Nora is at home and stays there this turn."],
+  },
+};
+
+const SOLO_CONTEXT: SimSoloRenderContext = { ...BASE_CONTEXT, storySecond: 8 * 3_600, calendarStart: null, solo: SOLO_CUT };
+
+const OVERRIDE: Extract<NarratorInstructionSource, { kind: "test" }> = {
+  kind: "test",
+  templateId: "tpl-1",
+  templateName: "Player Agency Minimal",
+  revisionId: "rev-1",
+  revision: 4,
+  body: "You are the narrator of a roleplaying game and embody every NPC. Resolve the beat before advancing the scene.",
+  bodyHash: "hash-1",
+  templateLanguage: "plain_v0",
+};
+
+/** The whole replacement law over one lane's classified tree. */
+function expectOnlyBehaviorReplaced(nodes: readonly NarratorPromptNode[], rendered: string): void {
+  const units = narratorPromptUnits(nodes).filter((unit) => unit.text.length > 0);
+  expect(units.some((unit) => unit.authority === "behavior")).toBe(true);
+  for (const unit of units) {
+    if (unit.authority === "behavior") expect(rendered, `behavior unit ${unit.id} survived`).not.toContain(unit.text);
+    else expect(rendered, `${unit.authority} unit ${unit.id} was dropped`).toContain(unit.text);
+  }
+  expect(rendered.split(OVERRIDE.body).length - 1).toBe(1);
+  expect(rendered).not.toMatch(/\n\n\n/);
+}
+
+describe("narrator instruction source (successor lanes)", () => {
+  it("is a no-op in production: an explicit production source changes nothing, co-present or solo", () => {
+    const production: NarratorInstructionSource = { kind: "production", instructionHash: "" };
+
+    expect(buildSimRenderPrompt(richCut(), { ...BASE_CONTEXT, instructionSource: production })).toEqual(
+      buildSimRenderPrompt(richCut(), BASE_CONTEXT),
+    );
+    expect(
+      buildSimRenderPrompt(richCut(), { ...BASE_CONTEXT, instructionSource: production }, {
+        attempt: 2,
+        correction: { missingBeats: [{ handle: "B1", summary: "Nora finishes plating the eggs." }], leaked: true },
+      }),
+    ).toEqual(
+      buildSimRenderPrompt(richCut(), BASE_CONTEXT, {
+        attempt: 2,
+        correction: { missingBeats: [{ handle: "B1", summary: "Nora finishes plating the eggs." }], leaked: true },
+      }),
+    );
+    expect(buildSimSoloRenderPrompt({ ...SOLO_CONTEXT, instructionSource: production })).toEqual(
+      buildSimSoloRenderPrompt(SOLO_CONTEXT),
+    );
+  });
+
+  it("replaces only the craft layer: committed truth, agency law and the JSON contract survive in both lanes", () => {
+    const context: SimRenderContext = { ...BASE_CONTEXT, instructionSource: OVERRIDE };
+    const { prompt } = buildSimRenderPrompt(richCut(), context);
+    expectOnlyBehaviorReplaced(buildSimRenderPromptNodes(richCut(), context), prompt);
+    expect(prompt).toContain("Return STRICT JSON");
+    expect(prompt).toContain("- B1: Nora finishes plating the eggs.");
+    expect(prompt).toContain("never put words, thoughts, or actions in their mouth");
+    expect(prompt).toContain("Inner thoughts");
+    expect(prompt).toContain("[Nora]");
+    expect(prompt).toContain("FINAL RULE");
+    expect(prompt).not.toContain("Shaping each reply");
+
+    const soloContext: SimSoloRenderContext = { ...SOLO_CONTEXT, instructionSource: OVERRIDE };
+    const solo = buildSimSoloRenderPrompt(soloContext).prompt;
+    expectOnlyBehaviorReplaced(buildSimSoloRenderPromptNodes(soloContext), solo);
+    expect(solo).toContain("Return STRICT JSON with exactly one field");
+    expect(solo).toContain("Nora is at home and stays there this turn.");
+    expect(solo).toContain("never put words, thoughts, or actions in their mouth");
+    expect(solo).toContain("This glimpse is for the reader only");
+    expect(solo).not.toContain("Shaping each reply");
   });
 });

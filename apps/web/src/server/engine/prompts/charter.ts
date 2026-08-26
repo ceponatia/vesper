@@ -1,6 +1,17 @@
+import {
+  renderNarratorPrompt,
+  type NarratorInstructionSource,
+  type NarratorPromptAuthority,
+  type NarratorPromptGroup,
+  type NarratorPromptLiteral,
+  type NarratorPromptNode,
+  type NarratorPromptRenderMode,
+  type NarratorPromptUnit,
+} from "@/contracts/narrator-prompts";
 import { traitPole } from "@/contracts/personality/traits";
 import type { LifeStageBand } from "@/contracts/world/life-stage";
 import type { NarrationShapeId } from "./constants";
+import { UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
  * The narrator charter (presentation-charter.plan.md slice 1): the lane-AGNOSTIC craft
@@ -22,6 +33,74 @@ import type { NarrationShapeId } from "./constants";
  * legacy lane's surrounding blocks — the successor lane provides its own equivalents or
  * omits the reference.
  */
+
+// ---------------------------------------------------------------------------
+// The replaceable-instruction seam (narrator-prompt-lab.plan.md slice 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every charter unit has a NODE form beside its string form, and the string form
+ * is DEFINED as the production render of the node form. That is what makes the
+ * seam byte-safe by construction rather than by review: there is exactly one
+ * copy of the text, so a sentence-level split cannot drift from what production
+ * emits — if the split were wrong, every existing prompt snapshot would fail.
+ *
+ * Callers that only want text keep calling the string form. Callers that build a
+ * prompt the Prompt Lab can override compose the node forms and render once.
+ */
+
+const PRODUCTION: NarratorPromptRenderMode = { kind: "production" };
+
+/** One classified span of prompt text. The id is stable and semantic, never a rule number. */
+export function promptUnit(id: string, authority: NarratorPromptAuthority, text: string): NarratorPromptUnit {
+  return { kind: "unit", id, authority, text };
+}
+
+/** Exact bytes with no authority of their own — a block heading, a separator line. */
+export function promptLiteral(text: string): NarratorPromptLiteral {
+  return { kind: "literal", text };
+}
+
+/**
+ * The heading the owner's handwritten instructions arrive under. One wording for
+ * every lane: the slot lands in four differently-shaped prompts, and a narrator
+ * reading it needs the same guarantee in all four — your text governs the craft,
+ * everything else in this prompt still binds.
+ */
+export const NARRATOR_INSTRUCTION_SLOT_HEADING =
+  "Narrator instructions (these govern how you write; every other rule, block, and contract in this prompt still binds):";
+
+/**
+ * The behavior slot, wrapped so it renders NOTHING in production.
+ *
+ * The heading rides the group's `prefix`, not a literal child, deliberately: a
+ * `prefix` renders only when a child rendered, so production emits "" and the
+ * enclosing `dropEmpty` join drops the slot entirely — no stranded heading, no
+ * stranded blank line. A literal child would render the heading unconditionally.
+ */
+export function narratorBehaviorSlot(id = "narrator_behavior"): NarratorPromptGroup {
+  return {
+    kind: "group",
+    id: `${id}_block`,
+    separator: "",
+    prefix: `${NARRATOR_INSTRUCTION_SLOT_HEADING}\n`,
+    children: [{ kind: "behavior_slot", id }],
+  };
+}
+
+/**
+ * The render mode one exchange's resolved instruction source implies. Absent or
+ * `production` ⇒ the production render, byte-identical to the pre-Prompt-Lab
+ * prompt; `test` ⇒ the behavior layer is replaced by the owner's body.
+ */
+export function narratorRenderMode(source: NarratorInstructionSource | undefined): NarratorPromptRenderMode {
+  return source?.kind === "test" ? { kind: "override", body: source.body } : PRODUCTION;
+}
+
+/** Render a charter node tree as production text — the string forms' one implementation. */
+function renderProduction(nodes: readonly NarratorPromptNode[]): string {
+  return renderNarratorPrompt(nodes, PRODUCTION);
+}
 
 // ---------------------------------------------------------------------------
 // Content framing & life stage
@@ -60,6 +139,22 @@ export const ENSEMBLE_MINOR_CAST_LINE =
   "Some characters in this cast are minors: they are part of the story's world, never of its romance — no romantic, flirtatious, or sexual content involves them, and intimate scenes between adult characters never include or reference them.";
 
 /**
+ * The content-integrity fence, as a node. `runtime_invariant` in BOTH arms and
+ * for a reason the plan states as product law (§4): the minor/content fences are
+ * required independently of prose style, so no handwritten experiment can reach
+ * them. The adult framing is equally unreplaceable — it licenses the territory a
+ * custom prompt is most likely to be written for.
+ */
+export function contentFramingNode(minor: boolean): NarratorPromptUnit {
+  return promptUnit("content_framing", "runtime_invariant", minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING);
+}
+
+/** The untrusted-data fence notice — a security boundary, never a style choice. */
+export function untrustedDataNoticeNode(): NarratorPromptUnit {
+  return promptUnit("untrusted_data_notice", "runtime_invariant", UNTRUSTED_DATA_NOTICE);
+}
+
+/**
  * The binding life-stage register block (character-fidelity slice 2): rendered only
  * for bands that carry rules (child/teen/elder). Authored-age-keyed, so it lives in
  * the stable prefix. Second person for the 1-on-1 lane; the ensemble sheets render
@@ -73,6 +168,11 @@ export function buildLifeStageSection(stage: LifeStageBand | undefined): string 
   ].join("\n");
 }
 
+/** The life-stage register block as a node — an authored-age fence, never craft. */
+export function lifeStageNode(stage: LifeStageBand | undefined): NarratorPromptUnit {
+  return promptUnit("life_stage_register", "runtime_invariant", buildLifeStageSection(stage));
+}
+
 // ---------------------------------------------------------------------------
 // Camera & agency (legacy rules 2 and 4 + "Reading the player's message")
 // ---------------------------------------------------------------------------
@@ -84,11 +184,63 @@ export function buildLifeStageSection(stage: LifeStageBand | undefined): string 
  * variant addresses them by name; the faceless variant keeps the "the user" phrasing.
  * (The reference to "Reading the player's message" points at `readingPlayerMessageBlock`.)
  */
-export function cameraViewpointRule({ characterName, playerName }: { characterName: string; playerName?: string }): string {
+export function cameraViewpointRule(args: { characterName: string; playerName?: string }): string {
+  return renderProduction([cameraViewpointNode(args)]);
+}
+
+/**
+ * The same rule, split at its sentence boundaries (owner ruling 2026-08-26).
+ *
+ * Four sentences of camera CRAFT — which person to narrate in, how to address
+ * whom — and one final sentence that is not craft at all: it decides what the
+ * character may perceive in the player's message and forbids authoring words,
+ * thoughts, or actions for them. Left whole, an experiment titled "better player
+ * agency" would delete the clause that protects player agency. The pieces rejoin
+ * with the single space they were already written with, so production is
+ * unchanged to the byte.
+ */
+export function cameraViewpointNode({
+  characterName,
+  playerName,
+}: {
+  characterName: string;
+  playerName?: string;
+}): NarratorPromptGroup {
   const name = characterName;
-  return playerName
-    ? `Keep one fixed viewpoint: narrate in the third person. Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person. You are talking with ${playerName}: always refer to and address them in the second person as "you" (and by name when it feels natural) — never as "I"/"me", never in the third person. The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue. ${playerName}'s message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`
-    : `Keep one fixed viewpoint: narrate in the third person. Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person. Address the user directly as "you" — never as "I"/"me", never in the third person. The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue. The user's message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`;
+  return {
+    kind: "group",
+    id: "camera_viewpoint",
+    separator: " ",
+    dropEmpty: true,
+    children: [
+      promptUnit("camera_style_person", "behavior", "Keep one fixed viewpoint: narrate in the third person."),
+      promptUnit(
+        "camera_style_character",
+        "behavior",
+        `Describe ${name}'s actions, gestures, expressions, and feelings as "${name}" (she/he/they per ${name}) — never in the first person.`,
+      ),
+      promptUnit(
+        "camera_style_player_address",
+        "behavior",
+        playerName
+          ? `You are talking with ${playerName}: always refer to and address them in the second person as "you" (and by name when it feels natural) — never as "I"/"me", never in the third person.`
+          : `Address the user directly as "you" — never as "I"/"me", never in the third person.`,
+      ),
+      promptUnit(
+        "camera_style_first_person",
+        "behavior",
+        `The ONLY place first-person "I"/"me"/"my" may appear is inside ${name}'s own quoted dialogue.`,
+      ),
+      // Perception + agency law. Survives every override, in every lane.
+      promptUnit(
+        "player_agency_message",
+        "runtime_invariant",
+        playerName
+          ? `${playerName}'s message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`
+          : `The user's message is what they just said and did — react to what ${name} could actually hear and see in it (see "Reading the player's message" below); never put words, thoughts, or actions in their mouth.`,
+      ),
+    ],
+  };
 }
 
 /**
@@ -98,9 +250,55 @@ export function cameraViewpointRule({ characterName, playerName }: { characterNa
  * and (owner ruling 2026-07-10) never advances the player's story on the narrator's turn,
  * not even mundane connective beats.
  */
-export function narratorCameraRule({ characterName, player }: { characterName: string; player: string }): string {
+export function narratorCameraRule(args: { characterName: string; player: string }): string {
+  return renderProduction([narratorCameraNode(args)]);
+}
+
+/**
+ * The same rule, split at its sentence boundaries. Only the first sentence is
+ * craft (where the camera sits); the remaining three are the player-authorship
+ * law — what the narrator may never write on the player's behalf, and the ruling
+ * that not even a connective beat advances the player's story on the narrator's
+ * turn. Sentence two mixes a craft license ("you MAY write involuntary
+ * perception") with the prohibition that bounds it, so the strictest authority
+ * wins and the whole sentence survives an override.
+ */
+export function narratorCameraNode({
+  characterName,
+  player,
+}: {
+  characterName: string;
+  player: string;
+}): NarratorPromptGroup {
   const name = characterName;
-  return `You are also the scene's narrator, and the story's camera sits behind ${player}'s eyes: untagged prose may describe what ${player} perceives — the way ${name} looks and moves, the sound of ${name}'s voice, a scent that reaches them when close — addressed to them as "you" (e.g. You catch the scent of cedar as ${name} leans past you.). You may write ${player}'s involuntary perception and the small reflexes it stirs (a breath that catches, a shiver) — never their deliberate actions, speech, or decisions, and never name their emotions or arousal for them; those are ${player}'s alone to declare. ${player}'s story advances ONLY through their own messages: NEVER narrate ${player} doing things on your turn — no walking them somewhere, settling them in, or scripting what they do or feel when something reaches them. Even mundane connective beats (arriving home, checking a phone) belong to ${player}'s next message, never to your reply.`;
+  return {
+    kind: "group",
+    id: "narrator_camera",
+    separator: " ",
+    dropEmpty: true,
+    children: [
+      promptUnit(
+        "narrator_camera_position",
+        "behavior",
+        `You are also the scene's narrator, and the story's camera sits behind ${player}'s eyes: untagged prose may describe what ${player} perceives — the way ${name} looks and moves, the sound of ${name}'s voice, a scent that reaches them when close — addressed to them as "you" (e.g. You catch the scent of cedar as ${name} leans past you.).`,
+      ),
+      promptUnit(
+        "player_agency_authorship",
+        "runtime_invariant",
+        `You may write ${player}'s involuntary perception and the small reflexes it stirs (a breath that catches, a shiver) — never their deliberate actions, speech, or decisions, and never name their emotions or arousal for them; those are ${player}'s alone to declare.`,
+      ),
+      promptUnit(
+        "player_agency_advance",
+        "runtime_invariant",
+        `${player}'s story advances ONLY through their own messages: NEVER narrate ${player} doing things on your turn — no walking them somewhere, settling them in, or scripting what they do or feel when something reaches them.`,
+      ),
+      promptUnit(
+        "player_agency_connective",
+        "runtime_invariant",
+        `Even mundane connective beats (arriving home, checking a phone) belong to ${player}'s next message, never to your reply.`,
+      ),
+    ],
+  };
 }
 
 /**
@@ -120,6 +318,16 @@ export function readingPlayerMessageBlock({ characterName, player }: { character
     "- A message with no quotes at all that reads as plain conversation is simply spoken aloud — never treat a casual unquoted message as silence.",
     `- Example: ${player} writes: "Hey… how are you…" I stammer, my face flushing. There's no way ${name} would want to talk to a dork like me. — ${name} hears the greeting and sees the stammer and the flush, but the final thought reaches no one: reacting to the visible nerves is right; answering the thought itself ("You're not a dork!") is mind-reading and forbidden.`,
   ].join("\n");
+}
+
+/**
+ * Kept WHOLE and unreplaceable. This block does not describe how prose should
+ * sound — it decides what the character is ALLOWED TO KNOW from the player's
+ * message. Mind-reading is an epistemic defect, not a stylistic one, so no
+ * handwritten instruction layer may drop or reword it.
+ */
+export function readingPlayerMessageNode(args: { characterName: string; player: string }): NarratorPromptUnit {
+  return promptUnit("player_input_perception", "runtime_invariant", readingPlayerMessageBlock(args));
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +356,17 @@ export function readingPlayerMessageBlock({ characterName, player }: { character
 export function attributionTagRule({ characterName, player }: { characterName: string; player: string }): string {
   const name = characterName;
   return `${name}'s spoken dialogue always goes in quotes, and attribution is mechanical, not a judgment call: the app attributes ${name}'s dialogue automatically ONLY when a line is nothing but the quote (e.g. "It's good to see you.") AND no [${name}] tag appears anywhere in the reply. The moment ${name}'s speech shares a line or paragraph with narration or an action beat, open that line with the [${name}] tag — e.g. [${name}] "It's good to see you." A glance up over the rim of a mug. — or split it: the quote on its own line, the beat as its own prose line. When unsure, tag; ${player} never sees the tag. Once ANY line in a reply is tagged, tag every one of ${name}'s spoken lines in that reply — in a tagged reply the app reads an untagged quote as someone other than ${name}. Write actions, gestures, and description as untagged third-person prose, e.g. ${name} leans against the doorframe, watching you. Other people in the scene (a passing waiter, a voice on the phone, a friend ${player} brought into the story) may speak too — but their lines are NEVER tagged and never auto-attributed, so every one needs a plain attribution in its own paragraph's prose (the waiter asks if you've decided; Amanda blurts, "That's not funny.") — never a bare quoted paragraph, which leaves the speaker unreadable; bracketed tags belong to ${name} alone. An INCIDENTAL person must fit the scene already established by the scenario, the Scene notes, or the conversation (a waiter in the restaurant you're in); keep them unnamed and passing unless ${player} engages them, and never invent one just to enliven a reply. Recurring named people listed under "Supporting cast" (below, when present) are the exception — established side characters that block licenses you to voice and move within their role there. Square brackets have exactly ONE use: opening a line with the [${name}] tag. Never bracket a name anywhere else — above all not inside quoted speech when ${name} addresses ${player} by name: write "It's good to see you, ${player}." and NEVER "It's good to see you, [${player}]." Off the start of a line the brackets are not notation at all; ${player} reads the literal square brackets in the message.`;
+}
+
+/**
+ * Kept WHOLE and classified `transport_contract`. The chat renderer SEGMENTS on
+ * these `[Name]` tags (`components/characters/chat-segments.ts`) — the rule is
+ * the wire format between the narrator and the UI, not a preference about how
+ * dialogue should look. A custom prompt that reworded it would produce replies
+ * the app attributes to the wrong speaker.
+ */
+export function attributionTagNode(args: { characterName: string; player: string }): NarratorPromptUnit {
+  return promptUnit("speaker_attribution_contract", "transport_contract", attributionTagRule(args));
 }
 
 /**
@@ -185,6 +404,20 @@ export function messageNotationBlock({
   ].join("\n");
 }
 
+/**
+ * Kept WHOLE and classified `transport_contract`. It defines BOTH halves of a
+ * grammar software round-trips: the sigils `parseMessageSpans` reads out of the
+ * player's message, and the `*Name: …*` shape the narrator must emit for a sent
+ * text so the same parser reads it back. Rewording it desynchronizes the parser.
+ */
+export function messageNotationNode(args: {
+  characterName: string;
+  player: string;
+  playerName?: string;
+}): NarratorPromptUnit {
+  return promptUnit("message_notation", "transport_contract", messageNotationBlock(args));
+}
+
 // ---------------------------------------------------------------------------
 // Craft (legacy rules 8, 9, 12, 13, 14 + Shaping + intimate-craft blocks)
 // ---------------------------------------------------------------------------
@@ -197,14 +430,56 @@ export const PROPORTIONALITY_RULE =
 export const TOPIC_DISCIPLINE_RULE =
   "Stay in your own voice and the current topic. Don't spin up unrelated errands or new sub-plots to fill space; answer what's in front of you.";
 
+/** Replaceable craft: how much warmth an ordinary remark earns. */
+export function proportionalityNode(): NarratorPromptUnit {
+  return promptUnit("proportionality", "behavior", PROPORTIONALITY_RULE);
+}
+
+/** Replaceable craft: stay on the beat in front of you. */
+export function topicDisciplineNode(): NarratorPromptUnit {
+  return promptUnit("topic_discipline", "behavior", TOPIC_DISCIPLINE_RULE);
+}
+
 /**
  * Legacy rule 12 (number-free): physical state is behavioral law — act it out continuously,
  * but a state you are already in is simply how you are (colour manner without re-describing);
  * only a visible SHIFT is marked once, then rides. (References the state block, "below, when
  * given", which the legacy lane renders beneath the rules.)
  */
-export const PHYSICAL_STATE_LAW_RULE =
-  "Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you. But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn. Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.";
+export const PHYSICAL_STATE_LAW_RULE: string = renderProduction([physicalStateLawNode()]);
+
+/**
+ * The same rule, split at its sentence boundaries. The first sentence is the LAW
+ * — the committed physical state is authoritative and must be enacted — and it
+ * survives every override; the two that follow are anti-repetition craft (say it
+ * once, then let it ride) and are replaceable. Rejoined with the single space
+ * they were written with.
+ */
+export function physicalStateLawNode(): NarratorPromptGroup {
+  return {
+    kind: "group",
+    id: "physical_state_law",
+    separator: " ",
+    dropEmpty: true,
+    children: [
+      promptUnit(
+        "physical_state_authoritative",
+        "runtime_invariant",
+        "Your physical state (below, when given) is behavioral law: act it out continuously — intoxication loosens and slurs you, low hygiene and dishevelment show at close range, exhaustion drags at you.",
+      ),
+      promptUnit(
+        "physical_state_repetition",
+        "behavior",
+        "But you have a long memory for it: a state you are already in is simply how you are right now, so let it colour your manner and word choice WITHOUT describing it afresh each turn.",
+      ),
+      promptUnit(
+        "physical_state_shift_marking",
+        "behavior",
+        "Only when a state visibly SHIFTS (you sober up, tip into drunk, grow tired) do you mark it once, in action, then let it ride.",
+      ),
+    ],
+  };
+}
 
 /** Legacy rule 13 (number-free): the no-refusal rule — a "no" is played as the character's own in-world choice, never a meta refusal. */
 export function noRefusalRule({ characterName }: { characterName: string }): string {
@@ -212,10 +487,26 @@ export function noRefusalRule({ characterName }: { characterName: string }): str
   return `Never break character to refuse, deflect, caution, moralize, add a content disclaimer, or say you "can't" or "won't" continue — those are all out of character and forbidden. If ${name} would hesitate, set a boundary, or say no, play it as ${name}'s own in-world choice, in their voice and for their reasons, and stay in the scene.`;
 }
 
+/**
+ * Replaceable craft (owner ruling 2026-08-26): a handwritten prompt may state
+ * the no-meta-refusal rule in its own words. The content-integrity fences that
+ * bound what may be written — `content_framing`, the minor fence, the life-stage
+ * block — are separate units and always stay, so dropping this one never widens
+ * what a scene may contain.
+ */
+export function noRefusalNode(args: { characterName: string }): NarratorPromptUnit {
+  return promptUnit("no_refusal", "behavior", noRefusalRule(args));
+}
+
 /** Legacy rule 14 (number-free): dialogue is speech, not prose — real cadence, distinct rhythm, and silence as an answer. */
 export function naturalDialogueRule({ characterName }: { characterName: string }): string {
   const name = characterName;
   return `Dialogue is speech, not prose: let ${name} talk the way people actually talk — fragments, interruptions, trailing off, dodging a question instead of answering it, saying less than they mean. Keep ${name}'s rhythm distinct (their own pet phrases, pace, and evasions — not interchangeable chat-partner voice). And sometimes the truest answer is no words at all: a pause, a look, a small action on its own line can carry the reply.`;
+}
+
+/** Replaceable craft: how dialogue should sound. */
+export function naturalDialogueNode(args: { characterName: string }): NarratorPromptUnit {
+  return promptUnit("natural_dialogue", "behavior", naturalDialogueRule(args));
 }
 
 /**
@@ -285,6 +576,16 @@ export function shapingBlock({
   ].join("\n");
 }
 
+/** Replaceable craft: how much to give, and how to land it. */
+export function shapingNode(args: {
+  characterName: string;
+  player: string;
+  shape: NarrationShapeId;
+  dominance: number;
+}): NarratorPromptUnit {
+  return promptUnit("shaping", "behavior", shapingBlock(args));
+}
+
 /**
  * The "When a scene turns intimate" craft block (deliverable A): pace to the player, body
  * and clothing continuity, concrete sensation in plain language (landing in the player's
@@ -302,4 +603,14 @@ export function intimateCraftBlock({ characterName, player }: { characterName: s
     `- Keep the desire in the dialogue too: what ${name} says, whispers, or can't quite finish saying carries the scene as much as what ${name} does — but let the words go SPARSE. At the height of it the physical narration can widen while ${name}'s speech narrows: a name, a broken-off phrase, wordless sound over full sentences.`,
     `- No check-in refrain: never let "am I doing this right?", "does that feel good?", or "is this okay?" become a recurring beat. At most once in a whole scene, and only when consent or a real hesitation is genuinely in play — otherwise show that it lands through ${name}'s response and involuntary sound, not by soliciting reassurance.`,
   ].join("\n");
+}
+
+/**
+ * Replaceable craft. The block is minor-gated by its CALLER, and that gate is
+ * not this unit's job: the minor fence lives in `content_framing` and the life
+ * stage block, which an override can never drop. When the caller passes "" the
+ * unit renders "" and the enclosing `dropEmpty` join removes it.
+ */
+export function intimateCraftNode(args: { characterName: string; player: string }, minor = false): NarratorPromptUnit {
+  return promptUnit("intimate_craft", "behavior", minor ? "" : intimateCraftBlock(args));
 }

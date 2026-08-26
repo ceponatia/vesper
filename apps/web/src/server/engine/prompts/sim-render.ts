@@ -12,23 +12,33 @@ import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { formatAge, type CharacterProfile } from "@/contracts/world/profile";
 import { speciesLorePhrase } from "@/contracts/species";
 import type { NarrativeCut } from "@vesper/simulation-core/contracts/narrative";
-import { DEFAULT_NARRATION_SHAPE, type NarrationShapeId } from "./constants";
-import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 import {
-  attributionTagRule,
+  renderNarratorPrompt,
+  type NarratorInstructionSource,
+  type NarratorPromptGroup,
+  type NarratorPromptNode,
+} from "@/contracts/narrator-prompts";
+import { DEFAULT_NARRATION_SHAPE, type NarrationShapeId } from "./constants";
+import { fenceUntrusted } from "./untrusted";
+import {
+  attributionTagNode,
   buildLifeStageSection,
-  cameraViewpointRule,
-  CONTENT_FRAMING,
-  CONTENT_FRAMING_MINOR_PRIMARY,
-  intimateCraftBlock,
-  messageNotationBlock,
-  narratorCameraRule,
-  naturalDialogueRule,
-  noRefusalRule,
-  PROPORTIONALITY_RULE,
-  readingPlayerMessageBlock,
-  shapingBlock,
-  TOPIC_DISCIPLINE_RULE,
+  cameraViewpointNode,
+  contentFramingNode,
+  intimateCraftNode,
+  messageNotationNode,
+  narratorBehaviorSlot,
+  narratorCameraNode,
+  narratorRenderMode,
+  naturalDialogueNode,
+  noRefusalNode,
+  promptLiteral,
+  promptUnit,
+  proportionalityNode,
+  readingPlayerMessageNode,
+  shapingNode,
+  topicDisciplineNode,
+  untrustedDataNoticeNode,
 } from "./charter";
 import {
   buildBioSection,
@@ -111,6 +121,17 @@ export interface SimRenderContext {
   zoneNames?: Record<string, string>;
   /** Active narration shape; defaults to DEFAULT_NARRATION_SHAPE. */
   narrationShape?: NarrationShapeId;
+  /**
+   * Whose narrator instructions this render follows (narrator-prompt-lab.plan.md
+   * §Narrator instruction source). Inherited by `SimSoloRenderContext`, so leaving the
+   * primary's physical scene cannot silently switch the conversation back to production
+   * instructions.
+   *
+   * Absent or `production` ⇒ byte-identical to today. A `test` source replaces the
+   * craft layer only: the committed cut, the deterministic handles, the strict JSON
+   * schema and the correction block are untouchable by construction.
+   */
+  instructionSource?: NarratorInstructionSource;
 }
 
 /** A per-attempt correction (attempt ≥2), naming exactly what the previous audit rejected. */
@@ -214,26 +235,37 @@ export function worldClockLabel(fromStorySecond: number, calendarStart: SimCalen
 }
 
 /** Block 1 — ROLE & SAFETY (content framing, camera law, no-refusal, perception). */
-function buildRoleBlock(args: {
+function buildRoleNode(args: {
   primaryName: string;
   playerName: string;
   minor: boolean;
-}): string {
+}): NarratorPromptGroup {
   const { primaryName, playerName, minor } = args;
-  return [
-    "ROLE & SAFETY",
-    minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING,
-    UNTRUSTED_DATA_NOTICE,
-    noRefusalRule({ characterName: primaryName }),
+  return simBlock("sim_role_block", [
+    promptLiteral("ROLE & SAFETY"),
+    contentFramingNode(minor),
+    untrustedDataNoticeNode(),
+    noRefusalNode({ characterName: primaryName }),
     // Epistemic viewpoint (what may be known) is the player actor and stays that way;
     // the PROSE CAMERA is the charter's — third person for the character, second for the player.
-    `The scene's knowledge is partitioned to ${playerName} (the player's character): only what ${playerName} could perceive or already knows is on the page. But the prose CAMERA is fixed by the rules below — the story is told about ${primaryName} in the third person and to ${playerName} in the second person.`,
-    cameraViewpointRule({ characterName: primaryName, playerName }),
-    narratorCameraRule({ characterName: primaryName, player: playerName }),
-    readingPlayerMessageBlock({ characterName: primaryName, player: playerName }),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    // The partition is an EPISTEMIC law, not a camera preference, so it never moves.
+    promptUnit(
+      "knowledge_partition",
+      "runtime_invariant",
+      `The scene's knowledge is partitioned to ${playerName} (the player's character): only what ${playerName} could perceive or already knows is on the page. But the prose CAMERA is fixed by the rules below — the story is told about ${primaryName} in the third person and to ${playerName} in the second person.`,
+    ),
+    cameraViewpointNode({ characterName: primaryName, playerName }),
+    narratorCameraNode({ characterName: primaryName, player: playerName }),
+    readingPlayerMessageNode({ characterName: primaryName, player: playerName }),
+  ]);
+}
+
+/**
+ * The successor lane's block join: `"\n\n"` with empties dropped, exactly the
+ * `.filter(Boolean).join("\n\n")` every block already used.
+ */
+export function simBlock(id: string, children: readonly NarratorPromptNode[]): NarratorPromptGroup {
+  return { kind: "group", id, separator: "\n\n", dropEmpty: true, children };
 }
 
 /** Block 2 — AUTHORED CANON (the primary's profile + the player persona). Shared with the solo cut. */
@@ -513,35 +545,63 @@ export function buildConversationBlock(args: {
 }
 
 /** Block 6 — OUTPUT CONTRACT & CRAFT (charter craft + the field-by-field JSON contract). */
-function buildOutputBlock(args: {
+function buildOutputNode(args: {
   primaryName: string;
   playerName: string;
   shape: NarrationShapeId;
   dominance: number;
   minor: boolean;
-}): string {
+}): NarratorPromptGroup {
   const { primaryName, playerName, shape, dominance, minor } = args;
-  return [
-    "OUTPUT CONTRACT & CRAFT",
-    shapingBlock({ characterName: primaryName, player: playerName, shape, dominance }),
-    PROPORTIONALITY_RULE,
-    TOPIC_DISCIPLINE_RULE,
-    naturalDialogueRule({ characterName: primaryName }),
-    attributionTagRule({ characterName: primaryName, player: playerName }),
-    messageNotationBlock({ characterName: primaryName, player: playerName, playerName }),
-    minor ? "" : intimateCraftBlock({ characterName: primaryName, player: playerName }),
-    [
-      "Return STRICT JSON with exactly these fields and NOTHING else:",
-      "- prose: the reply — the scene as narrated, obeying every rule above. Story ONLY: no handle (B1, E1, …),",
-      "  no id, and no field name from these instructions ever appears inside it.",
-      '- enactedBeatEventIds: an array of the beat HANDLES (e.g. "B1") your prose actually enacted, in meaning; [] if none.',
-      '- enactedArmedEffectIds: an array of the speech-act HANDLES (e.g. "E1") your prose actually delivered; [] if none.',
-      "- proposedSoftCanon: [] unless you are proposing a small reusable detail; otherwise leave it empty.",
-      "Handles (B1…, E1…) belong to those two id arrays ONLY — they must NEVER appear inside prose.",
-    ].join("\n"),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  return simBlock("sim_output_block", [
+    promptLiteral("OUTPUT CONTRACT & CRAFT"),
+    // The craft layer of this lane is exactly this block, so the owner's
+    // instructions open it — above the craft they replace, and above the JSON
+    // contract they cannot.
+    narratorBehaviorSlot("sim_narrator_behavior"),
+    shapingNode({ characterName: primaryName, player: playerName, shape, dominance }),
+    proportionalityNode(),
+    topicDisciplineNode(),
+    naturalDialogueNode({ characterName: primaryName }),
+    attributionTagNode({ characterName: primaryName, player: playerName }),
+    messageNotationNode({ characterName: primaryName, player: playerName, playerName }),
+    intimateCraftNode({ characterName: primaryName, player: playerName }, minor),
+    promptUnit(
+      "strict_json_contract",
+      "transport_contract",
+      [
+        "Return STRICT JSON with exactly these fields and NOTHING else:",
+        "- prose: the reply — the scene as narrated, obeying every rule above. Story ONLY: no handle (B1, E1, …),",
+        "  no id, and no field name from these instructions ever appears inside it.",
+        '- enactedBeatEventIds: an array of the beat HANDLES (e.g. "B1") your prose actually enacted, in meaning; [] if none.',
+        '- enactedArmedEffectIds: an array of the speech-act HANDLES (e.g. "E1") your prose actually delivered; [] if none.',
+        "- proposedSoftCanon: [] unless you are proposing a small reusable detail; otherwise leave it empty.",
+        "Handles (B1…, E1…) belong to those two id arrays ONLY — they must NEVER appear inside prose.",
+      ].join("\n"),
+    ),
+  ]);
+}
+
+/**
+ * The blocks outside the craft layer, as nodes.
+ *
+ * Deliberately ONE unit each rather than a sentence-level decomposition: none of
+ * them is replaceable, so finer granularity would only add ids nothing reads.
+ * `sim_conversation` takes `runtime_invariant` by the strictest-authority rule —
+ * it is mostly context, but the FINAL RULE paragraph and the "NEVER add further
+ * dialogue, thoughts, feelings, decisions, or actions" clause are player-agency
+ * law, and a block is classified by the strictest thing in it.
+ */
+export function buildCanonNode(args: Parameters<typeof buildCanonBlock>[0]): NarratorPromptNode {
+  return promptUnit("authored_canon", "runtime_context", buildCanonBlock(args));
+}
+
+export function buildPresentationStateNode(args: Parameters<typeof buildPresentationStateBlock>[0]): NarratorPromptNode {
+  return promptUnit("sim_presentation_state", "runtime_context", buildPresentationStateBlock(args));
+}
+
+export function buildConversationNode(args: Parameters<typeof buildConversationBlock>[0]): NarratorPromptNode {
+  return promptUnit("sim_conversation", "runtime_invariant", buildConversationBlock(args));
 }
 
 /** The per-attempt CORRECTION block (attempt ≥2) — names exactly what the last audit rejected. */
@@ -579,6 +639,24 @@ export function buildSimRenderPrompt(
   context: SimRenderContext = {},
   opts: { attempt?: number; correction?: SimRenderCorrection } = {},
 ): { system: string; prompt: string; handleMap: SimHandleMap } {
+  const prompt = renderNarratorPrompt(
+    buildSimRenderPromptNodes(cut, context, opts),
+    narratorRenderMode(context.instructionSource),
+  );
+  const system = SIM_RENDER_SYSTEM;
+  return { system, prompt, handleMap: buildSimHandleMap(cut) };
+}
+
+/**
+ * The classified node tree behind `buildSimRenderPrompt` — the same assembly, one
+ * step before rendering, so provenance can weigh it per authority layer and a test
+ * can assert which units an override keeps by id.
+ */
+export function buildSimRenderPromptNodes(
+  cut: NarrativeCut,
+  context: SimRenderContext = {},
+  opts: { attempt?: number; correction?: SimRenderCorrection } = {},
+): readonly NarratorPromptNode[] {
   const actorNames = context.actorNames ?? {};
   const nameOf = (actorId: string): string => actorNames[actorId] ?? actorId;
 
@@ -594,31 +672,40 @@ export function buildSimRenderPrompt(
   const dominance = profile ? effectiveTraitValue(profile.traits, "social.dominance") : 0;
 
   const { beats, effects } = buildSimHandles(cut);
-  const handleMap = buildSimHandleMap(cut);
 
   const attempt = opts.attempt ?? 1;
   const correctionBlock = attempt >= 2 && opts.correction ? buildCorrectionBlock(opts.correction) : "";
 
-  const prompt = [
-    buildRoleBlock({ primaryName, playerName, minor }),
-    buildCanonBlock({ primaryName, playerName, profile, player: context.player, minor }),
-    buildTruthBlock({ cut, context, beats, effects, nameOf }),
-    buildPresentationStateBlock({ primaryName, playerName, outfitLine: context.outfitLine, relationship: context.relationship }),
-    buildConversationBlock({ primaryName, playerName, context }),
-    buildOutputBlock({ primaryName, playerName, shape, dominance, minor }),
-    correctionBlock,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const system = [
-    "You are the narrator of a live scene in a committed simulated world. You render ONLY what the",
-    "committed truth below establishes — you never move anyone, create objects, reveal knowledge, or",
-    "decide outcomes; the world already happened and you are telling it. Every MUST ENACT beat appears",
-    "exactly once, in meaning; nothing FORBIDDEN appears in any form; failed attempts show only their",
-    "public face. Reply with the strict JSON object described at the end and nothing else — the reply's",
-    "prose is story only, and no handle, id, or field name from these instructions ever appears in it.",
-  ].join(" ");
-
-  return { system, prompt, handleMap };
+  return [
+    simBlock("sim_render_prompt", [
+      buildRoleNode({ primaryName, playerName, minor }),
+      buildCanonNode({ primaryName, playerName, profile, player: context.player, minor }),
+      // The committed cut: the one thing the narrator may never change.
+      promptUnit("committed_truth", "runtime_context", buildTruthBlock({ cut, context, beats, effects, nameOf })),
+      buildPresentationStateNode({
+        primaryName,
+        playerName,
+        outfitLine: context.outfitLine,
+        relationship: context.relationship,
+      }),
+      buildConversationNode({ primaryName, playerName, context }),
+      buildOutputNode({ primaryName, playerName, shape, dominance, minor }),
+      // The retry correction names what the audit rejected — a machine contract.
+      promptUnit("render_correction", "transport_contract", correctionBlock),
+    ]),
+  ];
 }
+
+/**
+ * The successor system message. It states the committed-truth law that governs every
+ * render, so it is `runtime_invariant` by nature and stays a plain string — there is
+ * no craft in it for a test prompt to replace.
+ */
+const SIM_RENDER_SYSTEM = [
+  "You are the narrator of a live scene in a committed simulated world. You render ONLY what the",
+  "committed truth below establishes — you never move anyone, create objects, reveal knowledge, or",
+  "decide outcomes; the world already happened and you are telling it. Every MUST ENACT beat appears",
+  "exactly once, in meaning; nothing FORBIDDEN appears in any form; failed attempts show only their",
+  "public face. Reply with the strict JSON object described at the end and nothing else — the reply's",
+  "prose is story only, and no handle, id, or field name from these instructions ever appears in it.",
+].join(" ");

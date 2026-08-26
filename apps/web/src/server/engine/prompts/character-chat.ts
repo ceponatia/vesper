@@ -34,25 +34,35 @@ import { formatCommsReply, parseMessageSpans } from "@/lib/message-spans";
 import type { ChatFeelingState } from "../chat-feeling";
 import type { ChatSensoryAllowance, SensoryFocusHint } from "../chat-intent";
 import { chatPhysicalGuidanceBlock } from "../chat-physical-guidance-render";
-import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
-import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 import {
-  attributionTagRule,
-  buildLifeStageSection,
-  cameraViewpointRule,
+  renderNarratorPrompt,
+  type NarratorInstructionSource,
+  type NarratorPromptGroup,
+  type NarratorPromptNode,
+} from "@/contracts/narrator-prompts";
+import { DEFAULT_NARRATION_SHAPE, NARRATION_SHAPE_PROFILES, type NarrationShapeId } from "./constants";
+import { fenceUntrusted } from "./untrusted";
+import {
+  attributionTagNode,
+  cameraViewpointNode,
+  contentFramingNode,
   CONTENT_FRAMING,
-  CONTENT_FRAMING_MINOR_PRIMARY,
   ENSEMBLE_MINOR_CAST_LINE,
-  intimateCraftBlock,
-  messageNotationBlock,
-  narratorCameraRule,
-  naturalDialogueRule,
-  noRefusalRule,
-  PHYSICAL_STATE_LAW_RULE,
-  PROPORTIONALITY_RULE,
-  readingPlayerMessageBlock,
-  shapingBlock,
-  TOPIC_DISCIPLINE_RULE,
+  intimateCraftNode,
+  lifeStageNode,
+  messageNotationNode,
+  narratorBehaviorSlot,
+  narratorCameraNode,
+  narratorRenderMode,
+  naturalDialogueNode,
+  noRefusalNode,
+  physicalStateLawNode,
+  promptUnit,
+  proportionalityNode,
+  readingPlayerMessageNode,
+  shapingNode,
+  topicDisciplineNode,
+  untrustedDataNoticeNode,
 } from "./charter";
 import {
   buildBioSection,
@@ -413,6 +423,18 @@ export interface CharacterChatPromptInput {
    * sensory allowance is not a fence. Absent/empty ⇒ zero bytes.
    */
   physicalGuidance?: readonly string[];
+  /**
+   * Whose narrator INSTRUCTIONS this exchange follows (narrator-prompt-lab.plan.md
+   * §Narrator instruction source), resolved once under the exchange lock and frozen
+   * for every attempt.
+   *
+   * Absent — and `{ kind: "production" }` — render the production prompt, byte for
+   * byte. A `test` source replaces the classified behavior/craft layer with the
+   * owner's handwritten body and leaves everything else exactly where it is:
+   * identity, persona, state, memory, per-turn ceilings, the perception rules, the
+   * `[Name]` attribution contract.
+   */
+  instructionSource?: NarratorInstructionSource;
 }
 
 /**
@@ -1556,63 +1578,120 @@ function buildSensoryFocusSection(
  *   (`*Name: …*`, which the parser round-trips from history). Static text — byte-identical
  *   across turns; the per-turn *derived* facts (who is texting whom, co-presence) ride a
  *   volatile tail note (`chatNotationNote`), never the stable prefix.
+ *
+ * Emitted as CLASSIFIED NODES since narrator-prompt-lab slice 1, not as a joined
+ * string: the numbers are generated from position, and a rule's craft sentences are
+ * separable from the agency/perception law riding in the same rule. The numbers in
+ * the notes above describe today's PRODUCTION order and are not addressable — under
+ * an instruction override the survivors renumber themselves.
  */
-const CHAT_RULES = (
+const chatRulesNodes = (
   name: string,
   shape: NarrationShapeId,
   playerName?: string,
   minor = false,
   opts: { dominance?: number } = {},
-): string => {
+): NarratorPromptGroup => {
   const player = playerName ?? "the user";
-  return [
-    "How to respond:",
-    `1. Stay fully in character as ${name}. Never break character, never mention being an AI, a model, or a chat app, never address the user as anyone but the person ${name} is talking to.`,
-    // Camera & agency (legacy rules 2 and 4) + the mechanical [Name] tag contract (rule 3),
-    // with their provenance, live in charter.ts (shared with the successor narrator lane).
-    `2. ${cameraViewpointRule({ characterName: name, playerName })}`,
-    `3. ${attributionTagRule({ characterName: name, player })}`,
-    `4. ${narratorCameraRule({ characterName: name, player })}`,
-    `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
-    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
-    // quota; the queued enactment measurement run validates the softened form. Rollback: restore these):
-    // "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
-    // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
-    "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the traits THIS beat makes relevant govern what you notice, withhold, say, and do — the strongest pulls should be felt in your word choice, rhythm, and how much you give — but a trait is something you possess, not something you perform: never demonstrate a set number of traits per reply, and never name, list, or recite one.",
-    '7. Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn. When a "Life stage" block is present above, its rules are binding and override any conflicting style elsewhere.',
-    // Rule 8 ("Respond directly to what ${name} just heard and saw before adding anything
-    // new") retired 2026-07-14 (chat-agent-improvements slice 5): it was a strictly weaker
-    // restatement of the "Resolve, then one move" bullet that opens the Shaping block below —
-    // the same instruction stated twice, once vaguely. The Shaping bullet keeps the teaching
-    // (and adds what "then" may be); rules 9+ shift up one. (Rollback: restore this line as
-    // rule 8 and renumber.)
-    `8. ${PROPORTIONALITY_RULE}`,
-    `9. ${TOPIC_DISCIPLINE_RULE}`,
-    // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the "one cue, earned"
-    // teaching now lives in the deterministic per-turn Sensory-allowance line; rollback: restore these
-    // two rules and the pipeline's chatCueInviteLine arm):
-    // `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
-    // `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
-    `10. Sensory and appearance detail is gated per turn: when a "Sensory allowance" line is present below, it states exactly what may land this turn — follow it. When it grants a cue, weave AT MOST ONE into a gesture or action, written as it arrives in ${player}'s senses (the scent that reaches them, the warmth they feel) — never listed, and never forced into ordinary, distant conversation. When no allowance line is present, default to none.`,
-    `11. Show, don't inventory: when your own movement this turn — entering, standing, adjusting your clothes — draws the eye, one concrete visual detail from ${player}'s eye is welcome (drawn from your Attributes and outfit, e.g. sleeves pushed up off flour-dusted forearms). Everything beyond that follows the Sensory allowance line. Never a head-to-toe description, never a detail repeated for an unchanged look.`,
-    `12. ${PHYSICAL_STATE_LAW_RULE}`,
-    `13. ${noRefusalRule({ characterName: name })}`,
-    `14. ${naturalDialogueRule({ characterName: name })}`,
-    `15. When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. ${name}'s side needn't be empty: Supporting-cast members who would plausibly be with ${name} may appear there — you may play them, and let them and ${name} carry their own threads forward. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
-    `16. When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
-    "",
-    // Craft: the Shaping block (resolve-then-one-move + worked example + per-shape length
-    // story + freshness), the "Reading the player's message" perception block, and the
-    // "Message notation" legend all live in charter.ts (shared with the successor lane).
-    shapingBlock({ characterName: name, player, shape, dominance: opts.dominance ?? 0 }),
-    "",
-    readingPlayerMessageBlock({ characterName: name, player }),
-    "",
-    messageNotationBlock({ characterName: name, player, playerName }),
-    // The intimate-craft block never renders for a minor character (character-fidelity
-    // slice 2) — the content framing already rules the territory out of scope.
-    ...(minor ? [] : ["", intimateCraftBlock({ characterName: name, player })]),
-  ].join("\n");
+  return {
+    kind: "group",
+    id: "chat_rules",
+    // Today's `[…, "", block, "", block].join("\n")` is exactly this join: an
+    // interleaved "" between two entries joined by "\n" IS a "\n\n" join. Modelled
+    // that way rather than as literal empties so an override that drops a craft
+    // block leaves no stranded blank line behind it.
+    separator: "\n\n",
+    dropEmpty: true,
+    children: [
+      // The owner's handwritten instructions land ABOVE the rulebook, so the
+      // surviving numbered rules read as the constraints that still bind it.
+      // Renders "" in production, and the join above then drops it entirely.
+      narratorBehaviorSlot(),
+      {
+        kind: "numbered_list",
+        id: "chat_rules_list",
+        heading: "How to respond:",
+        separator: "\n",
+        // Numbers are GENERATED from position — never authored into the text —
+        // so an override that drops craft rules renumbers 1…n contiguously
+        // instead of leaving gaps. Nothing may cite a rule by its number.
+        items: [
+          promptUnit(
+            "stay_in_character",
+            "behavior",
+            `Stay fully in character as ${name}. Never break character, never mention being an AI, a model, or a chat app, never address the user as anyone but the person ${name} is talking to.`,
+          ),
+          // Camera & agency (legacy rules 2 and 4) + the mechanical [Name] tag contract (rule 3),
+          // with their provenance, live in charter.ts (shared with the successor narrator lane).
+          cameraViewpointNode({ characterName: name, playerName }),
+          attributionTagNode({ characterName: name, player }),
+          narratorCameraNode({ characterName: name, player }),
+          promptUnit(
+            "narration_shape",
+            "behavior",
+            `${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
+          ),
+          // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 3 — the per-reply trait
+          // quota; the queued enactment measurement run validates the softened form. Rollback: restore these):
+          // "6. Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the two or three strongest pulls visibly shape THIS reply — your word choice, rhythm, what you choose to do, and how much you give — and never name, list, or recite a trait.",
+          // "7. Speak and act your age: let your age and life-stage shape your diction, references, patience, and energy — sound like someone of your years.",
+          promptUnit(
+            "personality_law",
+            "behavior",
+            "Your Personality, Voice, and Disposition above are behavioral law, not flavor to recite. The Disposition sliders decide how you actually act: whether you open up or deflect, lead or defer, push back or go along, warm quickly or stay guarded, hold steady or flare. Let the traits THIS beat makes relevant govern what you notice, withhold, say, and do — the strongest pulls should be felt in your word choice, rhythm, and how much you give — but a trait is something you possess, not something you perform: never demonstrate a set number of traits per reply, and never name, list, or recite one.",
+          ),
+          promptUnit(
+            "life_stage_register_use",
+            "behavior",
+            'Speak and act your age: sound like someone of your years — let your age and life-stage color your diction and references where the beat touches them, without making a show of your age every turn. When a "Life stage" block is present above, its rules are binding and override any conflicting style elsewhere.',
+          ),
+          // Rule 8 ("Respond directly to what ${name} just heard and saw before adding anything
+          // new") retired 2026-07-14 (chat-agent-improvements slice 5): it was a strictly weaker
+          // restatement of the "Resolve, then one move" bullet that opens the Shaping block below —
+          // the same instruction stated twice, once vaguely. The Shaping bullet keeps the teaching
+          // (and adds what "then" may be); rules 9+ shift up one. (Rollback: restore this line as
+          // rule 8 and renumber.)
+          proportionalityNode(),
+          topicDisciplineNode(),
+          // Pre-2026-07-10 wording (narrator-prompt-consolidation.plan.md slice 4 — the "one cue, earned"
+          // teaching now lives in the deterministic per-turn Sensory-allowance line; rollback: restore these
+          // two rules and the pipeline's chatCueInviteLine arm):
+          // `11. When you move close, ${player} notices you closely, or the moment turns intimate, you may work in one relevant sensory cue if you have one — scent, warmth, texture, the sound of your voice — woven into a gesture or action and written as it lands in ${player}'s senses (the scent that reaches them, the warmth they feel). One is enough. Do not force sensory detail into ordinary, distant conversation, and never list it.`,
+          // `12. Show, don't inventory: when ${player}'s attention lands on you — a look, a compliment, a mention of what you're wearing — or when you enter, move, or adjust your clothes, give one concrete visual detail from ${player}'s eye, drawn from your Attributes and outfit (e.g. the slit of a dress parting over a crossed leg, sleeves pushed up off flour-dusted forearms). Sight carries at any distance. One detail woven into the beat — never a head-to-toe description, never repeated for an unchanged look, and none at all when nothing draws the eye.`,
+          promptUnit(
+            "sensory_allowance_binding",
+            "runtime_invariant",
+            `Sensory and appearance detail is gated per turn: when a "Sensory allowance" line is present below, it states exactly what may land this turn — follow it. When it grants a cue, weave AT MOST ONE into a gesture or action, written as it arrives in ${player}'s senses (the scent that reaches them, the warmth they feel) — never listed, and never forced into ordinary, distant conversation. When no allowance line is present, default to none.`,
+          ),
+          promptUnit(
+            "show_dont_inventory",
+            "behavior",
+            `Show, don't inventory: when your own movement this turn — entering, standing, adjusting your clothes — draws the eye, one concrete visual detail from ${player}'s eye is welcome (drawn from your Attributes and outfit, e.g. sleeves pushed up off flour-dusted forearms). Everything beyond that follows the Sensory allowance line. Never a head-to-toe description, never a detail repeated for an unchanged look.`,
+          ),
+          physicalStateLawNode(),
+          noRefusalNode({ characterName: name }),
+          naturalDialogueNode({ characterName: name }),
+          promptUnit(
+            "apart_camera",
+            "behavior",
+            `When ${name} and ${player} are not in the same place — they parted, someone left, the scene split — your reply follows ${name} and ONLY ${name}: narrate what ${name} does, where ${name} goes, what ${name} feels and sends, like a scene cut to ${name}'s side of the world. ${name}'s side needn't be empty: Supporting-cast members who would plausibly be with ${name} may appear there — you may play them, and let them and ${name} carry their own threads forward. Never narrate ${player}'s side of the separation — not their trip home, their evening, or their phone lighting up; that is ${player}'s to write. ${name} reaches ${player} only through a channel that carries — a text on its own line as *${name}: her words here*, a call — and the reply ends on ${name}'s move, waiting for ${player}'s answer.`,
+          ),
+          promptUnit(
+            "attached_photos",
+            "runtime_invariant",
+            `When ${player}'s message carries attached photos, an "Attached photos" note below describes what ${name} sees in each. Treat them as real photos ${player} is showing or sending ${name} — react in character to what they show, weave what genuinely matters into the reply, and let ${name}'s disposition decide how much they land. Never inventory a photo back detail-by-detail, and never speak of an "image" or "attachment" — it is a photo ${name} is looking at.`,
+          ),
+        ],
+      },
+      // Craft: the Shaping block (resolve-then-one-move + worked example + per-shape length
+      // story + freshness), the "Reading the player's message" perception block, and the
+      // "Message notation" legend all live in charter.ts (shared with the successor lane).
+      shapingNode({ characterName: name, player, shape, dominance: opts.dominance ?? 0 }),
+      readingPlayerMessageNode({ characterName: name, player }),
+      messageNotationNode({ characterName: name, player, playerName }),
+      intimateCraftNode({ characterName: name, player }, minor),
+    ],
+  };
 };
 
 /**
@@ -1630,12 +1709,43 @@ export interface CharacterChatPromptParts {
 }
 
 /**
+ * The same split, one step before rendering: the CLASSIFIED node trees the prompt
+ * is assembled from (narrator-prompt-lab.plan.md slice 1).
+ *
+ * Exposed so the take-provenance work can weigh a prompt by authority layer
+ * (`narratorPromptAuthorityWeights`) without re-deriving the classification, and
+ * so a test can assert which units an override keeps by id rather than by
+ * grepping assembled prose. Each side is ONE group node, so rendering it is
+ * `renderNarratorPrompt(nodes.prefix, mode)`.
+ */
+export interface CharacterChatPromptNodes {
+  prefix: readonly NarratorPromptNode[];
+  tail: readonly NarratorPromptNode[];
+}
+
+/**
  * Build the system prompt embodying `name` from their saved profile, split into the
  * §9 stable prefix + volatile tail. Attribute applicability is checked against the
  * realized body (`realizeBody`) so a stale attribute (e.g. wings left on a character
  * after a species change) never leaks, mirroring images/prompts-*.ts and engine/scene.ts.
+ *
+ * Rendering is `input.instructionSource`'s call: absent or `production` ⇒ today's
+ * prompt to the byte; a `test` source swaps the behavior layer for the owner's body.
+ * The prefix/tail SPLIT is untouched either way — an override changes the prefix
+ * (a different template is a different cache key), but the prefix stays byte-stable
+ * across turns for a fixed source, which is what prefix caching actually needs.
  */
 export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): CharacterChatPromptParts {
+  const nodes = buildCharacterChatPromptNodes(input);
+  const mode = narratorRenderMode(input.instructionSource);
+  return {
+    prefix: renderNarratorPrompt(nodes.prefix, mode),
+    tail: renderNarratorPrompt(nodes.tail, mode),
+  };
+}
+
+/** The classified prefix/tail node trees behind `buildCharacterChatPromptParts`. */
+export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): CharacterChatPromptNodes {
   const { name, profile } = input;
   const displayName = name.trim() || "this character";
 
@@ -1765,28 +1875,37 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
   // Soft social-card framing (§6, D3): what the character values, never the card severity.
   const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 
-  const prefixSections = [
-    minor ? CONTENT_FRAMING_MINOR_PRIMARY : CONTENT_FRAMING,
-    UNTRUSTED_DATA_NOTICE,
-    identity,
-    ...buildPlayerSections(input.player, playerName ?? "the user"),
-    scenario,
-    buildBioSection(profile.bio),
-    profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : "",
-    profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : "",
-    buildMicroExemplarsSection(profile.microExemplars),
-    buildVoiceAnchorsSection(profile.voiceAnchors),
-    buildLifeStageSection(lifeStage),
-    dispositionSection,
-    buildRelationshipSection(input.state, displayName, playerName, profile.traits, minor),
-    socialFraming,
-    buildPreferencesSection(profile.preferences, playerName ?? "the user", minor),
-    attributeLines.length
-      ? `Attributes (who you are, and what ${playerName ?? "the user"} sees of you — express and show these naturally, never list them):\n${attributeLines.join("\n")}`
-      : "",
-    hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : "",
-    buildSensorySection(cues, displayName),
-    CHAT_RULES(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName, minor, {
+  // Everything outside the classified craft layer is emitted as ONE unit per
+  // section — authored/committed facts as `runtime_context`, fences and per-turn
+  // ceilings as `runtime_invariant`. Neither is replaceable, so decomposing them
+  // further buys nothing; what matters is that NOTHING here is `behavior`.
+  const prefixSections: NarratorPromptNode[] = [
+    contentFramingNode(minor),
+    untrustedDataNoticeNode(),
+    context("identity", identity),
+    ...buildPlayerSections(input.player, playerName ?? "the user").map((text, index) =>
+      context(`player_persona_${index + 1}`, text),
+    ),
+    context("scenario", scenario),
+    context("character_bio", buildBioSection(profile.bio)),
+    context("character_personality", profile.personality.trim() ? `Personality:\n${fenceUntrusted("personality", profile.personality)}` : ""),
+    context("character_voice", profile.voice?.trim() ? `Voice (how you sound):\n${fenceUntrusted("voice", profile.voice)}` : ""),
+    context("character_micro_exemplars", buildMicroExemplarsSection(profile.microExemplars)),
+    context("character_voice_anchors", buildVoiceAnchorsSection(profile.voiceAnchors)),
+    lifeStageNode(lifeStage),
+    context("character_disposition", dispositionSection),
+    context("relationship_law", buildRelationshipSection(input.state, displayName, playerName, profile.traits, minor)),
+    context("social_framing", socialFraming),
+    context("character_preferences", buildPreferencesSection(profile.preferences, playerName ?? "the user", minor)),
+    context(
+      "character_attributes",
+      attributeLines.length
+        ? `Attributes (who you are, and what ${playerName ?? "the user"} sees of you — express and show these naturally, never list them):\n${attributeLines.join("\n")}`
+        : "",
+    ),
+    context("phrasing_guidance", hints.size ? `Phrasing guidance:\n${[...hints].map((h) => `- ${h}`).join("\n")}` : ""),
+    context("sensory_cues", buildSensorySection(cues, displayName)),
+    chatRulesNodes(displayName, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName, minor, {
       // Slice 5: the forward-move rule owns the character's dominance posture.
       dominance: effectiveTraitValue(baseTraits, "social.dominance"),
     }),
@@ -1914,55 +2033,89 @@ export function buildCharacterChatPromptParts(input: CharacterChatPromptInput): 
     },
   ]);
 
-  const tailSections = [
-    priorSummary
-      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
-      : "",
-    input.memory ? buildMemorySection(input.memory) : "",
+  const tailSections: NarratorPromptNode[] = [
+    context(
+      "conversation_recap",
+      priorSummary
+        ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
+        : "",
+    ),
+    context("long_term_memory", input.memory ? buildMemorySection(input.memory) : ""),
     // Voice-exemplar ring (slice 8): "How you sound" few-shots kept past the summary horizon.
-    buildVoiceRingSection(input.state?.voiceExemplars ?? []),
-    stateSection,
+    context("voice_ring", buildVoiceRingSection(input.state?.voiceExemplars ?? [])),
+    context("current_state", stateSection),
     // Slice 5: confidence colors the drive-reveal posture (bold vs. hesitant disclosure).
-    input.state
-      ? buildDrivesSection(input.state, playerName ?? "the player", effectiveTraitValue(baseTraits, "temperament.confidence"))
-      : "",
-    sceneSection,
-    castSection,
-    plansSection,
+    context(
+      "drives",
+      input.state
+        ? buildDrivesSection(input.state, playerName ?? "the player", effectiveTraitValue(baseTraits, "temperament.confidence"))
+        : "",
+    ),
+    context("scene_memory", sceneSection),
+    context("supporting_cast", castSection),
+    context("plans", plansSection),
     // Daily rhythm (chat-offscreen-life §4): one compact standing line so time-of-day
     // texture and meanwhile beats ground in the character's actual routine.
-    input.state?.rhythm?.trim()
-      ? `Your daily rhythm (ground time-of-day texture and any life-meanwhile beat in it): ${input.state.rhythm.trim()}.`
-      : "",
+    context(
+      "daily_rhythm",
+      input.state?.rhythm?.trim()
+        ? `Your daily rhythm (ground time-of-day texture and any life-meanwhile beat in it): ${input.state.rhythm.trim()}.`
+        : "",
+    ),
     // What the player has on — volatile, so it sits here beside the character's own
     // wearing-line rather than in the cached prefix.
-    buildPlayerStateLine(input.player, playerName ?? "the player"),
+    context("player_state", buildPlayerStateLine(input.player, playerName ?? "the player")),
     // The exposure-earned intimate notes. Volatile: the gate flips with coverage/arousal,
     // so this can never live in the prefix. Minor fence: an authored minor contributes no
     // note and earns no player note either — the block is about the two of them together.
-    buildChatIntimateSection({
-      characters:
-        intimate && !minor && characterIntimateNote(profile) ? [{ label: "you are", note: characterIntimateNote(profile) }] : [],
-      ...(intimate && !minor && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
-      playerName: playerName ?? "the player",
-    }),
+    context(
+      "intimate_notes",
+      buildChatIntimateSection({
+        characters:
+          intimate && !minor && characterIntimateNote(profile) ? [{ label: "you are", note: characterIntimateNote(profile) }] : [],
+        ...(intimate && !minor && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
+        playerName: playerName ?? "the player",
+      }),
+    ),
     // State-derived overrides of the prefix's own blocks — data, not directives, so they
     // stay above the "Right now" digest with the rest of the standing state.
     // Minor fence: no state-driven loosening block for a minor character.
-    minor ? "" : buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
-    buildTransientAppearanceSection(input, stableResolved, realizedBody),
-    turnNotes,
+    context(
+      "disinhibition_shift",
+      minor ? "" : buildDisinhibitionSection(baseTraits, input.state?.meters ?? {}, everydayDisposition, intimateDisposition),
+    ),
+    context("transient_appearance", buildTransientAppearanceSection(input, stableResolved, realizedBody)),
+    // The "Right now" digest states outright that it OVERRIDES the standing rules for
+    // this turn — a per-turn ceiling, not craft, so no override may drop it.
+    promptUnit("turn_notes", "runtime_invariant", turnNotes),
     // Slice 7: the one-line voice re-anchor rides beside the mood pin, near generation.
-    buildVoiceReanchorLine(profile.voiceAnchors),
-    input.opening
-      ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
-      : buildResponseShapeLine(input),
+    context("voice_reanchor", buildVoiceReanchorLine(profile.voiceAnchors)),
+    context(
+      "response_directive",
+      input.opening
+        ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
+        : buildResponseShapeLine(input),
+    ),
   ];
 
   return {
-    prefix: prefixSections.filter(Boolean).join("\n\n"),
-    tail: tailSections.filter(Boolean).join("\n\n"),
+    prefix: [sectionGroup("chat_prefix", prefixSections)],
+    tail: [sectionGroup("chat_tail", tailSections)],
   };
+}
+
+/** An unreplaceable context section — the default for everything outside the craft layer. */
+function context(id: string, text: string): NarratorPromptNode {
+  return promptUnit(id, "runtime_context", text);
+}
+
+/**
+ * The `"\n\n"` join every prompt side already used, as a node. `dropEmpty` is what
+ * makes it identical to today's `.filter(Boolean).join("\n\n")` — and what keeps an
+ * override from leaving a blank line where a dropped craft block used to be.
+ */
+function sectionGroup(id: string, children: readonly NarratorPromptNode[]): NarratorPromptGroup {
+  return { kind: "group", id, separator: "\n\n", dropEmpty: true, children };
 }
 
 /**
@@ -2102,6 +2255,17 @@ export interface EnsemblePromptExtras {
   callback?: { summary: string; memberName: string; regard: number };
   /** One-turn sense-targeted focus aimed at the member the message studies (ruling 12). */
   sensoryFocus?: { hint: SensoryFocusHint; memberName: string };
+  /**
+   * Whose narrator instructions this ensemble exchange follows. Same contract as the
+   * 1-on-1 lane's `CharacterChatPromptInput.instructionSource`: absent or `production`
+   * ⇒ byte-identical output; a `test` source replaces only the craft layer, and the
+   * roster, presence law and `[Name]` tag contract stay exactly where they are.
+   *
+   * On `extras` rather than `input` because the ensemble frame is assembled from the
+   * extras the pipeline resolves per exchange, and `buildChatPromptPartsForRoster`
+   * forwards `input` unchanged to the 1-on-1 path when the roster collapses to one.
+   */
+  instructionSource?: NarratorInstructionSource;
 }
 
 /**
@@ -2134,6 +2298,20 @@ export function buildEnsembleChatPromptParts(
   members: readonly EnsembleMemberInput[],
   extras: EnsemblePromptExtras = {},
 ): CharacterChatPromptParts {
+  const nodes = buildEnsembleChatPromptNodes(input, members, extras);
+  const mode = narratorRenderMode(extras.instructionSource ?? input.instructionSource);
+  return {
+    prefix: renderNarratorPrompt(nodes.prefix, mode),
+    tail: renderNarratorPrompt(nodes.tail, mode),
+  };
+}
+
+/** The classified prefix/tail node trees behind `buildEnsembleChatPromptParts`. */
+export function buildEnsembleChatPromptNodes(
+  input: CharacterChatPromptInput,
+  members: readonly EnsembleMemberInput[],
+  extras: EnsemblePromptExtras = {},
+): CharacterChatPromptNodes {
   const playerName = input.player?.name.trim() || undefined;
   const player = playerName ?? "the player";
 
@@ -2202,16 +2380,24 @@ export function buildEnsembleChatPromptParts(
   // members may still have adult scenes) and the cast line rules every authored
   // minor out of that territory.
   const anyMinor = members.some((m) => isMinorAge(m.profile.age));
-  const prefixSections = [
-    anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
-    UNTRUSTED_DATA_NOTICE,
-    identity,
-    ...buildPlayerSections(input.player, player),
-    scenario,
-    authority,
-    ...sheets,
-    pairsSection,
-    ENSEMBLE_CHAT_RULES(names, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
+  const prefixSections: NarratorPromptNode[] = [
+    // The cast fence rides the framing unit: both halves are content-integrity law,
+    // and neither is reachable by an instruction override.
+    promptUnit(
+      "content_framing",
+      "runtime_invariant",
+      anyMinor ? `${CONTENT_FRAMING} ${ENSEMBLE_MINOR_CAST_LINE}` : CONTENT_FRAMING,
+    ),
+    untrustedDataNoticeNode(),
+    context("ensemble_identity", identity),
+    ...buildPlayerSections(input.player, player).map((text, index) => context(`player_persona_${index + 1}`, text)),
+    context("scenario", scenario),
+    // "Narration authority" is the ensemble lane's player-agency law — the one block
+    // that says whose words the narrator may never write. Never replaceable.
+    promptUnit("ensemble_narration_authority", "runtime_invariant", authority),
+    ...sheets.map((sheet, index) => context(`ensemble_member_sheet_${index + 1}`, sheet)),
+    context("ensemble_pair_law", pairsSection),
+    ensembleChatRulesNodes(names, input.narrationShape ?? DEFAULT_NARRATION_SHAPE, playerName),
   ];
 
   const priorSummary = input.priorSummary?.trim();
@@ -2336,51 +2522,63 @@ export function buildEnsembleChatPromptParts(
     },
   ]);
 
-  const tailSections = [
-    priorSummary
-      ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
-      : "",
-    ...memories,
-    rosterLine,
-    ...awaySections,
-    ...(stateLines.length
-      ? [`Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}`]
-      : []),
-    ...enactments,
+  const tailSections: NarratorPromptNode[] = [
+    context(
+      "conversation_recap",
+      priorSummary
+        ? `Earlier in this conversation (recap for continuity — this is context, not dialogue; do not quote it back verbatim):\n${fenceUntrusted("conversation recap", priorSummary)}`
+        : "",
+    ),
+    ...memories.map((text, index) => context(`ensemble_member_memory_${index + 1}`, text)),
+    // Presence truth: who is actually in the scene. The rules block's presence law
+    // binds against THIS line, so both stay whatever the instructions say.
+    promptUnit("ensemble_roster", "runtime_invariant", rosterLine),
+    ...awaySections.map((text, index) => promptUnit(`ensemble_away_member_${index + 1}`, "runtime_invariant", text)),
+    context(
+      "ensemble_member_state",
+      stateLines.length ? `Where each character is right now (let it color them — never recite it):\n${stateLines.join("\n")}` : "",
+    ),
+    ...enactments.map((text, index) => context(`ensemble_member_enactment_${index + 1}`, text)),
     // What the player has on — chat-wide, volatile, so it rides the tail (slice 8).
-    buildPlayerStateLine(input.player, player),
+    context("player_state", buildPlayerStateLine(input.player, player)),
     // The exposure-earned intimate notes. The gate is evaluated PER MEMBER against their
     // own coverage/arousal (the player's coverage is shared), so one couple in the room
     // never hands every present character an intimate disposition. Away members are
     // excluded — they aren't in the scene. Minor-fenced per member.
-    buildChatIntimateSection({
-      characters: present.flatMap((m) => {
-        const open = chatSceneIsIntimate({
-          characterExposed: m.state?.outfitExposed,
-          playerExposed: input.player?.exposed,
-          meters: m.state?.meters,
-        });
-        if (!open || (lifeStageForAge(m.profile.age)?.minor ?? false)) return [];
-        const note = characterIntimateNote(m.profile);
-        return note ? [{ label: `${m.name} is`, note }] : [];
+    context(
+      "intimate_notes",
+      buildChatIntimateSection({
+        characters: present.flatMap((m) => {
+          const open = chatSceneIsIntimate({
+            characterExposed: m.state?.outfitExposed,
+            playerExposed: input.player?.exposed,
+            meters: m.state?.meters,
+          });
+          if (!open || (lifeStageForAge(m.profile.age)?.minor ?? false)) return [];
+          const note = characterIntimateNote(m.profile);
+          return note ? [{ label: `${m.name} is`, note }] : [];
+        }),
+        // The player's note rides along once ANY present, non-minor member's gate opened.
+        ...(ensembleIntimate && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
+        playerName: player,
       }),
-      // The player's note rides along once ANY present, non-minor member's gate opened.
-      ...(ensembleIntimate && input.player?.intimacy?.trim() ? { playerNote: input.player.intimacy.trim() } : {}),
-      playerName: player,
-    }),
-    sceneSection,
-    castSection,
-    plansSection,
-    planPresenceLicense,
-    turnNotes,
-    input.opening
-      ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
-      : buildResponseShapeLine(input),
+    ),
+    context("scene_memory", sceneSection),
+    context("supporting_cast", castSection),
+    context("plans", plansSection),
+    context("plan_presence_license", planPresenceLicense),
+    promptUnit("turn_notes", "runtime_invariant", turnNotes),
+    context(
+      "response_directive",
+      input.opening
+        ? `Opening beat: ${player} has not spoken yet. Open the scene yourself — the present characters arrive in it, grounded in the scenario. A few lines, ending on a present moment that invites ${player} in. Do not narrate on ${player}'s behalf.`
+        : buildResponseShapeLine(input),
+    ),
   ];
 
   return {
-    prefix: prefixSections.filter(Boolean).join("\n\n"),
-    tail: tailSections.filter(Boolean).join("\n\n"),
+    prefix: [sectionGroup("ensemble_prefix", prefixSections)],
+    tail: [sectionGroup("ensemble_tail", tailSections)],
   };
 }
 
@@ -2633,41 +2831,127 @@ function ensembleMemberMemory(name: string, memory: NonNullable<CharacterChatPro
 }
 
 /**
- * The ensemble's rules block — the 1-on-1 CHAT_RULES rethought for a cast: universal
+ * The ensemble's rules block — the 1-on-1 rulebook rethought for a cast: universal
  * tag discipline (the renderer attributes per [Name] tag; in a group NOTHING is
  * auto-attributed), characters interacting with each other, presence law, and the
  * ported craft rules (proportion, freshness, sparse intimate dialogue).
+ *
+ * Two of the twelve are not craft and never move: the tag rule is the renderer's wire
+ * format, and presence law decides who is actually in the scene.
  */
-const ENSEMBLE_CHAT_RULES = (names: readonly string[], shape: NarrationShapeId, playerName?: string): string => {
+const ensembleChatRulesNodes = (
+  names: readonly string[],
+  shape: NarrationShapeId,
+  playerName?: string,
+): NarratorPromptGroup => {
   const player = playerName ?? "the user";
   const cast = names.join(", ");
-  return [
-    "How to respond:",
-    `1. Stay fully inside the story. Never break character, never mention being an AI, a model, or a chat app; ${player} is only ever addressed as the person in the scene.`,
-    `2. One fixed viewpoint: the camera sits behind ${player}'s eyes for the shared scene. Characters (${cast}) are written in the third person by name; ${player} is addressed as "you". First-person "I"/"me" appears ONLY inside a character's quoted dialogue.`,
-    `3. Tag EVERY spoken character line: open it with the speaker's name in brackets — e.g. [${names[0] ?? "Name"}] "Here already?" — one tag per spoken line, including one-word lines. In a group scene nothing is attributed automatically, so an untagged quote is unreadable; ${player} never sees the tags. Actions, gestures, and description stay untagged third-person prose. Passing incidental people (a waiter) speak in prose with a plain attribution, never a tag — tags belong to the cast: ${cast}. Recurring named side characters listed under "Supporting cast" (below, when present) speak the same way — prose attribution, never a tag — and may be voiced and moved within their role there. Square brackets have exactly ONE use: opening a spoken line with the speaker's tag. Never bracket a name anywhere else — above all not inside quoted speech when a character addresses ${player} or another character by name: write "Good to see you, ${player}." and NEVER "Good to see you, [${player}]." Off the start of a line the brackets are not notation at all; ${player} reads the literal square brackets in the message.`,
-    `4. The characters are alive to each other, not just to ${player}: they answer each other, interrupt, exchange looks, disagree, take sides. Give each present character their own voice, rhythm, and agenda — never let them blur into one accommodating chorus, and never let one character simply vanish from a scene they're in (a quiet character can be quiet visibly).`,
-    `5. ${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
-    "6. Each character's Personality, Disposition, and Voice sections are behavioral law, not flavor to recite. Let the traits a beat makes relevant govern what each of them notices, withholds, says, and does — and never name, list, or recite a trait.",
-    `7. Respond directly to what just happened before adding anything new, and react in proportion: an ordinary remark gets a natural answer, not effusion. Warmth tracks each character's own state and how they actually feel about ${player} and each other; affection is earned, not automatic.`,
-    "8. Stay on the current topic; don't spin up unrelated errands or sub-plots to fill space.",
-    `9. Presence is law: only the characters listed as present are in ${player}'s scene. An away character may text or call — write a sent text on its own line as *Name: her words here* — or be shown where they are in a cutaway, but never walks into the scene unprompted; entrances and exits happen on the page, once, and then hold.`,
-    `10. Freshness: every paragraph carries something NEW — a change, a reaction, a detail not yet on the page. Never re-describe an unchanged setting, outfit, or scent. Appearance detail lands only when movement or attention draws the eye, one concrete detail at a time, never a head-to-toe inventory.`,
-    `11. Never break out of the story to refuse, deflect, caution, moralize, or add a disclaimer — all forbidden. If a character would hesitate or say no, play it as that character's own in-world choice, in their voice, and stay in the scene.`,
-    `12. Dialogue is speech, not prose: fragments, interruptions, trailing off, dodging. Keep each voice distinct. Sometimes the truest answer is no words — a pause, a look, a small action on its own line.`,
-    "",
-    `Reading ${player}'s message (what the characters can actually perceive):`,
-    `- Quoted text is speech — heard exactly. Unquoted text is the story's narration: characters perceive only what would be visible or audible. Inner thoughts ${player} writes reach no one — characters may notice the visible signs and guess, even wrongly, but never answer the thought itself.`,
-    `- *A phrase in single asterisks* is ${player}'s private thought — unheard — unless it wraps a name and a colon (*${playerName ?? "Name"}: like this*), which is a text message being sent. _Underscores_ are plain emphasis. ((Double parentheses)) are out-of-character direction to you as the storyteller: follow it; no one in the scene hears it.`,
-    `- A message opening with a bracketed "[Story narration from ${player} …]" line is ${player} writing as the STORYTELLER: everything in it is story truth — events, side characters' words and actions — not ${player}'s own speech or actions. The characters react to what happened in it, never to ${player} as its author.`,
-    `- A message with no quotes that reads as plain conversation is simply spoken aloud.`,
-    "",
-    "When a scene turns intimate:",
-    `- Hold escalation to ${player}'s pace; let anticipation work — never leap ahead of the moment.`,
-    "- Keep body and clothing continuity: positions, hands, and what has been removed stay exactly where the scene left them.",
-    `- Ground it in concrete sensation in plain physical language; the sensation lands in ${player}'s body too — what they taste, smell, and feel is the scene's texture, and yours to write.`,
-    "- Let speech go sparse at the height of it: a name, a broken-off phrase, wordless sound over full sentences. Never let \"is this okay?\" become a refrain.",
-  ].join("\n");
+  return {
+    kind: "group",
+    id: "ensemble_chat_rules",
+    // As in the 1-on-1 lane: the interleaved "" entries of the old `join("\n")`
+    // ARE a "\n\n" join, and modelling them that way is what stops an override
+    // from leaving a blank line where a dropped craft block used to be.
+    separator: "\n\n",
+    dropEmpty: true,
+    children: [
+      narratorBehaviorSlot("ensemble_narrator_behavior"),
+      {
+        kind: "numbered_list",
+        id: "ensemble_chat_rules_list",
+        heading: "How to respond:",
+        separator: "\n",
+        items: [
+          promptUnit(
+            "ensemble_stay_in_character",
+            "behavior",
+            `Stay fully inside the story. Never break character, never mention being an AI, a model, or a chat app; ${player} is only ever addressed as the person in the scene.`,
+          ),
+          promptUnit(
+            "ensemble_camera_style",
+            "behavior",
+            `One fixed viewpoint: the camera sits behind ${player}'s eyes for the shared scene. Characters (${cast}) are written in the third person by name; ${player} is addressed as "you". First-person "I"/"me" appears ONLY inside a character's quoted dialogue.`,
+          ),
+          promptUnit(
+            "ensemble_speaker_attribution_contract",
+            "transport_contract",
+            `Tag EVERY spoken character line: open it with the speaker's name in brackets — e.g. [${names[0] ?? "Name"}] "Here already?" — one tag per spoken line, including one-word lines. In a group scene nothing is attributed automatically, so an untagged quote is unreadable; ${player} never sees the tags. Actions, gestures, and description stay untagged third-person prose. Passing incidental people (a waiter) speak in prose with a plain attribution, never a tag — tags belong to the cast: ${cast}. Recurring named side characters listed under "Supporting cast" (below, when present) speak the same way — prose attribution, never a tag — and may be voiced and moved within their role there. Square brackets have exactly ONE use: opening a spoken line with the speaker's tag. Never bracket a name anywhere else — above all not inside quoted speech when a character addresses ${player} or another character by name: write "Good to see you, ${player}." and NEVER "Good to see you, [${player}]." Off the start of a line the brackets are not notation at all; ${player} reads the literal square brackets in the message.`,
+          ),
+          promptUnit(
+            "ensemble_characters_alive",
+            "behavior",
+            `The characters are alive to each other, not just to ${player}: they answer each other, interrupt, exchange looks, disagree, take sides. Give each present character their own voice, rhythm, and agenda — never let them blur into one accommodating chorus, and never let one character simply vanish from a scene they're in (a quiet character can be quiet visibly).`,
+          ),
+          promptUnit(
+            "ensemble_narration_shape",
+            "behavior",
+            `${NARRATION_SHAPE_PROFILES[shape]} Resolve the immediate beat and end on a present moment (a line, a gesture, a look), never a summary or reflection.`,
+          ),
+          promptUnit(
+            "ensemble_personality_law",
+            "behavior",
+            "Each character's Personality, Disposition, and Voice sections are behavioral law, not flavor to recite. Let the traits a beat makes relevant govern what each of them notices, withholds, says, and does — and never name, list, or recite a trait.",
+          ),
+          promptUnit(
+            "ensemble_proportionality",
+            "behavior",
+            `Respond directly to what just happened before adding anything new, and react in proportion: an ordinary remark gets a natural answer, not effusion. Warmth tracks each character's own state and how they actually feel about ${player} and each other; affection is earned, not automatic.`,
+          ),
+          promptUnit(
+            "ensemble_topic_discipline",
+            "behavior",
+            "Stay on the current topic; don't spin up unrelated errands or sub-plots to fill space.",
+          ),
+          promptUnit(
+            "ensemble_presence_law",
+            "runtime_invariant",
+            `Presence is law: only the characters listed as present are in ${player}'s scene. An away character may text or call — write a sent text on its own line as *Name: her words here* — or be shown where they are in a cutaway, but never walks into the scene unprompted; entrances and exits happen on the page, once, and then hold.`,
+          ),
+          promptUnit(
+            "ensemble_freshness",
+            "behavior",
+            `Freshness: every paragraph carries something NEW — a change, a reaction, a detail not yet on the page. Never re-describe an unchanged setting, outfit, or scent. Appearance detail lands only when movement or attention draws the eye, one concrete detail at a time, never a head-to-toe inventory.`,
+          ),
+          promptUnit(
+            "ensemble_no_refusal",
+            "behavior",
+            `Never break out of the story to refuse, deflect, caution, moralize, or add a disclaimer — all forbidden. If a character would hesitate or say no, play it as that character's own in-world choice, in their voice, and stay in the scene.`,
+          ),
+          promptUnit(
+            "ensemble_natural_dialogue",
+            "behavior",
+            `Dialogue is speech, not prose: fragments, interruptions, trailing off, dodging. Keep each voice distinct. Sometimes the truest answer is no words — a pause, a look, a small action on its own line.`,
+          ),
+        ],
+      },
+      // The perception block: what the cast may KNOW from the player's message.
+      // Its notation bullet is inseparable from it here — the ensemble lane wrote
+      // the sigil grammar INTO the perception list rather than as its own legend,
+      // so the block is classified whole, at the strictest authority it carries.
+      promptUnit(
+        "ensemble_player_input_perception",
+        "runtime_invariant",
+        [
+          `Reading ${player}'s message (what the characters can actually perceive):`,
+          `- Quoted text is speech — heard exactly. Unquoted text is the story's narration: characters perceive only what would be visible or audible. Inner thoughts ${player} writes reach no one — characters may notice the visible signs and guess, even wrongly, but never answer the thought itself.`,
+          `- *A phrase in single asterisks* is ${player}'s private thought — unheard — unless it wraps a name and a colon (*${playerName ?? "Name"}: like this*), which is a text message being sent. _Underscores_ are plain emphasis. ((Double parentheses)) are out-of-character direction to you as the storyteller: follow it; no one in the scene hears it.`,
+          `- A message opening with a bracketed "[Story narration from ${player} …]" line is ${player} writing as the STORYTELLER: everything in it is story truth — events, side characters' words and actions — not ${player}'s own speech or actions. The characters react to what happened in it, never to ${player} as its author.`,
+          `- A message with no quotes that reads as plain conversation is simply spoken aloud.`,
+        ].join("\n"),
+      ),
+      promptUnit(
+        "ensemble_intimate_craft",
+        "behavior",
+        [
+          "When a scene turns intimate:",
+          `- Hold escalation to ${player}'s pace; let anticipation work — never leap ahead of the moment.`,
+          "- Keep body and clothing continuity: positions, hands, and what has been removed stay exactly where the scene left them.",
+          `- Ground it in concrete sensation in plain physical language; the sensation lands in ${player}'s body too — what they taste, smell, and feel is the scene's texture, and yours to write.`,
+          "- Let speech go sparse at the height of it: a name, a broken-off phrase, wordless sound over full sentences. Never let \"is this okay?\" become a refrain.",
+        ].join("\n"),
+      ),
+    ],
+  };
 };
 
 /**
