@@ -333,7 +333,6 @@ const FIX_INSTRUCTIONS = [
   "  3. Rarely — the write is genuinely not user-owned (admin-gated operator data,",
   "     or a row reached only through an owner-verified parent). Add an ALLOW_LIST",
   "     entry in this file with a one-line reason naming why it is safe.",
-  "See docs/developer-notes/security-authz.plan.md slice 6 (S4).",
 ].join("\n");
 
 /* ------------------------------------------------------------------------ *

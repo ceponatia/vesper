@@ -8,8 +8,7 @@ import {
 import { imageProfileOperationSchema, imageProfileTaskSchema } from "../models/image-model-profiles";
 
 /**
- * The fixed identity-reference trial's vocabulary and contracts
- * (docs/developer-notes/image-identity-packs.spec.trial.md).
+ * The fixed identity-reference trial's vocabulary and contracts.
  *
  * A trial run renders the SAME character, prompt fixture, and pinned profile
  * across different identity-reference ARMS, then collects blinded pairwise

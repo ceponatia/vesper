@@ -8,8 +8,7 @@ import { diag, type DiagnosticSink } from "./diagnostics";
  *
  * Living here does NOT widen where parsing happens. The application still owns
  * its database/request/LLM boundaries; a package reaches for this only when the
- * package itself owns the untrusted edge
- * (docs/developer-notes/monorepo-image-core.spec.foundation.md).
+ * package itself owns the untrusted edge.
  */
 export function parseOr<T>(schema: ZodType<T>, raw: unknown, fallback: T, sink?: DiagnosticSink, path?: string): T {
   const value = parseOrNull(schema, raw, sink, path);

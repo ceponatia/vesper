@@ -1,8 +1,7 @@
 import type { DetectedFaceCandidate } from "./identity-pack";
 
 /**
- * The face-detection seam
- * (docs/developer-notes/image-identity-packs.spec.derivation.md §"Detector contract").
+ * The face-detection seam.
  *
  * The interface lives here rather than in `src/contracts` because `detect()` takes
  * a Node `Buffer`, and nothing in the pure contracts layer references binary or

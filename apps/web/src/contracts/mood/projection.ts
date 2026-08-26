@@ -5,11 +5,10 @@ import { stageAtLeast } from "./affinity";
 import type { EmotionLabel } from "./emotion-label";
 
 /**
- * `deriveEmotionLabel` — the pure labeled-emotion projection
- * (docs/developer-notes/mood.spec.md §3/§4). A *read* over already-computed state:
- * no IO, no new stored state, and **total** (always returns a label). The narrator
- * keeps using the prose `deriveMoodDescriptor`; this is the discrete-label sibling
- * the avatar cue and a UI mood chip consume.
+ * `deriveEmotionLabel` — the pure labeled-emotion projection. A *read* over
+ * already-computed state: no IO, no new stored state, and **total** (always returns
+ * a label). The narrator keeps using the prose `deriveMoodDescriptor`; this is the
+ * discrete-label sibling the avatar cue and a UI mood chip consume.
  *
  * Two timescales, one read (§1): a **transient beat** (the latest social reaction)
  * wins briefly, else the **baseline** from the meter vector + affinity. All numbers

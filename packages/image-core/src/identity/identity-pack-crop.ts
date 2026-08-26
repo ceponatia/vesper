@@ -7,8 +7,7 @@ import {
 } from "./identity-pack-policy";
 
 /**
- * Pure identity-crop geometry
- * (docs/developer-notes/image-identity-packs.spec.derivation.md §"Crop geometry").
+ * Pure identity-crop geometry.
  *
  * Everything here is plain numbers in and plain numbers out: no decoding, no
  * detector, no file, no policy decision beyond the constants passed in. That is

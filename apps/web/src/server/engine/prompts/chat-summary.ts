@@ -2,11 +2,11 @@ import type { ChatTurn } from "../character-chat";
 import { fenceUntrusted, UNTRUSTED_DATA_NOTICE } from "./untrusted";
 
 /**
- * Chat-summary fold prompt (docs/developer-notes/character-chat-summary.plan.md;
- * docs/prompts.md conventions): role, what to produce, what NOT to do, the shape
- * that resists recursive-summarization fact loss — a short narrative recap plus
- * a durable "Established:" ledger carried forward near-verbatim. Single-concern
- * and small like the other agent prompts (./agents.ts, ./inner-note.ts).
+ * Chat-summary fold prompt (docs/prompts.md conventions): role, what to produce,
+ * what NOT to do, the shape that resists recursive-summarization fact loss — a
+ * short narrative recap plus a durable "Established:" ledger carried forward
+ * near-verbatim. Single-concern and small like the other agent prompts
+ * (./agents.ts, ./inner-note.ts).
  */
 
 export const CHAT_SUMMARY_SYSTEM = `You are the chat-recap editor. You keep a running summary of a long one-on-one conversation so the character never forgets what happened earlier once older lines scroll out of the live window. You are given the PRIOR running summary (may be empty) and the OLDEST stretch of conversation that is about to scroll out. Fold them into ONE updated running summary.

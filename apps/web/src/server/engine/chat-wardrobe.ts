@@ -37,10 +37,10 @@ import {
 } from "../images";
 
 /**
- * The chat wardrobe resolution seam (docs/developer-notes/chat-wardrobe-parity.plan.md).
- * The ONE place worn state is turned into what the prompt, scene image, and look-key
- * consume — a rendered garment phrase + coverage-computed exposure — reusing the session
- * lane's renderers (`wardrobeOutfitText`, `exposedRegions`) rather than re-forking them.
+ * The chat wardrobe resolution seam. The ONE place worn state is turned into what the
+ * prompt, scene image, and look-key consume — a rendered garment phrase +
+ * coverage-computed exposure — reusing the session lane's renderers
+ * (`wardrobeOutfitText`, `exposedRegions`) rather than re-forking them.
  *
  * Two paths, self-healing between them (migration ruling): when the chat holds structured
  * `wornItemIds` they are the truth (render the garments, COMPUTE exposure from coverage);

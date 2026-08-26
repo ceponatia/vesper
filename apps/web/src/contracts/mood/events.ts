@@ -5,10 +5,9 @@ import { stageAtLeast, stageAtMost } from "./affinity";
 import type { AtmosphereLabel } from "./atmosphere";
 
 /**
- * The event→mood table (docs/developer-notes/mood.spec.md §5): generalizes the lone
- * social-reaction nudge into typed event kinds scaled by the coupling matrix
- * (affinity / traits). Pure, like the reaction curve — constants are *starting values*
- * tuned in playtest; every path is clamped.
+ * The event→mood table: generalizes the lone social-reaction nudge into typed event
+ * kinds scaled by the coupling matrix (affinity / traits). Pure, like the reaction
+ * curve — constants are *starting values* tuned in playtest; every path is clamped.
  *
  * Two application modes (the impulse-vs-standing distinction):
  * - **Impulse** events (a discrete act this turn) apply a one-time signed delta:

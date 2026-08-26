@@ -2,12 +2,11 @@ import { z } from "zod";
 import { interactionConceptById } from "./interactions";
 
 /**
- * A character's bespoke like/dislike (docs/developer-notes/personality-and-state.spec.md
- * §6). `target` is an interaction concept id OR a family id; resolution matches a
- * classified socialAct against it (direct concept beats family). `intensity` is the
- * base magnitude (1–10) the response curve scales; `hint` overrides the concept's
- * default narrator flavour. Leaf fields are `.catch`ed so one bad value degrades the
- * entry instead of rejecting the whole `preferences` array.
+ * A character's bespoke like/dislike. `target` is an interaction concept id OR a family
+ * id; resolution matches a classified socialAct against it (direct concept beats family).
+ * `intensity` is the base magnitude (1–10) the response curve scales; `hint` overrides
+ * the concept's default narrator flavour. Leaf fields are `.catch`ed so one bad value
+ * degrades the entry instead of rejecting the whole `preferences` array.
  */
 export const preferenceValenceSchema = z.enum(["like", "dislike"]);
 export type PreferenceValence = z.infer<typeof preferenceValenceSchema>;

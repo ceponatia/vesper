@@ -6,8 +6,7 @@ import { traitRegistry } from "./traits";
 import { effectiveTraitValue, type TraitValue } from "./traits/value";
 
 /**
- * The disposition guardrail — refusing out-of-character player puppeting
- * (docs/developer-notes/personality-and-state.spec.md §6, Note 2). When the
+ * The disposition guardrail — refusing out-of-character player puppeting. When the
  * player's prose authors a *present NPC's* dialogue / affection / action, intake
  * classifies it into the shared concept vocabulary; this pure rule compares that
  * act's affective direction to the NPC's authored disposition and decides whether

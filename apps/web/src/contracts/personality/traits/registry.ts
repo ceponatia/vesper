@@ -4,11 +4,10 @@ import type { TraitCategory } from "./category-ids";
 import { axisRange, type PersonalityTraitDefinition, type TraitBand } from "./types";
 
 /**
- * The personality trait registry (docs/developer-notes/personality-and-state.spec.md
- * §3) — built on the shared registry spine (`contracts/registry`), with the
- * trait-specific surface (category lookup, band readout, lexicon resolution)
- * layered on. Separate from the attribute registry by design: traits must never
- * reach an image prompt.
+ * The personality trait registry — built on the shared registry spine
+ * (`contracts/registry`), with the trait-specific surface (category lookup, band
+ * readout, lexicon resolution) layered on. Separate from the attribute registry by
+ * design: traits must never reach an image prompt.
  */
 export interface TraitRegistry {
   readonly definitions: readonly PersonalityTraitDefinition[];

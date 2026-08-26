@@ -4,8 +4,7 @@ import { imageRenderControlsSchema, type ImageRenderControls } from "../models/i
 import type { ImageReferenceDropReason } from "../render-intent/render-intent";
 
 /**
- * The Advanced Image Lab's vocabulary and record shapes
- * (docs/developer-notes/qwen-advanced-image-subsystem.spec.md §Contracts).
+ * The Advanced Image Lab's vocabulary and record shapes.
  *
  * The lab is an admin-only bench: one experiment is one deliberate render whose
  * every input, setting, and outcome is written down, so a question nobody can

@@ -338,7 +338,7 @@ export const personaDetailSchema = personaSummarySchema.extend({
 });
 export type PersonaDetail = z.infer<typeof personaDetailSchema>;
 
-/** One line of a conversation transcript (docs/developer-notes/character-chat-standalone.spec.md). */
+/** One line of a conversation transcript. */
 /**
  * Alternate generations browsable on an assistant reply (character-chat-standalone.spec.md §4.1).
  *
@@ -2012,9 +2012,9 @@ export interface ChatStreamOutcome {
 
 /**
  * Send a message into a conversation and stream the character's reply
- * (plain-text token stream, docs/developer-notes/character-chat-standalone.spec.md).
- * `onChunk` fires per decoded delta; the reply is persisted server-side, so a
- * dropped stream still leaves the transcript whole on the next reload. Never throws.
+ * (plain-text token stream). `onChunk` fires per decoded delta; the reply is
+ * persisted server-side, so a dropped stream still leaves the transcript whole on
+ * the next reload. Never throws.
  *
  * Pass an `AbortSignal` to cancel the wait for a reply (Rerun): aborting stops the
  * client reading the stream but cannot stop inference already running — the server

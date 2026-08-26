@@ -332,9 +332,8 @@ export interface DroppedImageReference<T extends ImageRenderReferenceSpec> {
  * model takes control maps as ordinary numbered images in its primary reference
  * array, with the prompt saying which slot is the skeleton. Qwen Image Edit 2511
  * works exactly this way — the Stage 0 probes confirmed it honours pose and
- * depth sent that way (docs/developer-notes/qwen-advanced-image-subsystem.plan.md)
- * — so a control on that path is scarce like any other reference and is ordered
- * with them.
+ * depth sent that way — so a control on that path is scarce like any other
+ * reference and is ordered with them.
  */
 export type ControlReferenceTransport =
   | { kind: "dedicated_input"; field: string; arity: ImageBindingArity; maxItems: number }

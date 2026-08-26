@@ -19,7 +19,7 @@ import { projectIdentityPackPolicy } from "./identity-pack-store";
 
 /**
  * Profile-aware identity reference evaluation — the pack system's whole surface
- * to the render path (docs/developer-notes/image-identity-packs.spec.integration.md).
+ * to the render path.
  *
  * **What this module is, and is not.** It answers one question: given a character
  * and a profile's declared identity strategy, which authorized references MAY be

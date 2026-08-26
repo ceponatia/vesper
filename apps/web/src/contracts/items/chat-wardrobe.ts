@@ -3,13 +3,13 @@ import { garmentIdentitiesIn } from "./garment-nouns";
 import { clothingSubtypeLabel } from "./subtypes";
 
 /**
- * Chat wardrobe parity (docs/developer-notes/chat-wardrobe-parity.plan.md) — the pure
- * matching + worn-list reducer the archivist's garment-level add/remove proposals fold
- * through (rung 2). The chat lane holds a list of worn **item ids**; the archivist emits
- * free-text garment phrases ("she slips off her jacket"), so these helpers resolve each
- * phrase against the loaded item descriptors. Kept PURE (the caller does the item IO) so
- * the reducer is snapshot-testable and the whole fold degrades — a missing garment skips
- * with a diagnostic, never fails the turn (docs/resilience.md).
+ * Chat wardrobe parity — the pure matching + worn-list reducer the archivist's
+ * garment-level add/remove proposals fold through (rung 2). The chat lane holds a list
+ * of worn **item ids**; the archivist emits free-text garment phrases ("she slips off
+ * her jacket"), so these helpers resolve each phrase against the loaded item
+ * descriptors. Kept PURE (the caller does the item IO) so the reducer is
+ * snapshot-testable and the whole fold degrades — a missing garment skips with a
+ * diagnostic, never fails the turn (docs/resilience.md).
  */
 
 /** Minimal descriptor for matching a free-text garment phrase to a library item. */

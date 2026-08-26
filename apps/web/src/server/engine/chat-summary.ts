@@ -18,13 +18,13 @@ import { withKeyedLock } from "./keyed-lock";
 import { buildChatSummaryFoldPrompt, CHAT_SUMMARY_SYSTEM } from "./prompts/chat-summary";
 
 /**
- * The rolling chat-summary engine (docs/developer-notes/character-chat-summary.plan.md).
- * A detached `chat_summary` background job folds the oldest unsummarized
- * exchanges of a sessionless character chat into a running prose summary,
- * advancing a watermark so the chat prompt can carry continuity past the
- * verbatim window. Cloned from the inner-note job shape: a small generateChecked
- * call, clamp-everything, degrade to a no-op (resilience §3) — the worst case is
- * exactly the old flat last-40 window. Never blocks or fails a reply.
+ * The rolling chat-summary engine. A detached `chat_summary` background job
+ * folds the oldest unsummarized exchanges of a sessionless character chat into
+ * a running prose summary, advancing a watermark so the chat prompt can carry
+ * continuity past the verbatim window. Cloned from the inner-note job shape: a
+ * small generateChecked call, clamp-everything, degrade to a no-op (resilience
+ * §3) — the worst case is exactly the old flat last-40 window. Never blocks or
+ * fails a reply.
  */
 
 /** The seam between summarized (≤ watermark) and verbatim (> watermark) messages. */

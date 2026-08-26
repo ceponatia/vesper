@@ -36,7 +36,6 @@ export const heritageDefinitionSchema = z.object({
    * an ordinary scene), via `speciesIntimacyNote`. **Replaces** the species'
    * `intimacy` when present (falls back to it when empty) — the same merge rule
    * `lore` uses. Empty ⇒ falls back to the species note.
-   * See docs/developer-notes/intimacy-notes.spec.md.
    */
   intimacy: z.string().default(""),
   /** Additive feature groups switched on **on top of** the species defaults. */
@@ -108,7 +107,7 @@ export const speciesDefinitionSchema = z.object({
    * `lore` (always-on identity/culture → narrator) and `appearance` (morphology →
    * image models). Kept to a sentence or two — emitted under a length budget. Empty ⇒
    * nothing surfaced (human, the unmarked baseline, ships empty). A heritage's note
-   * **replaces** this when present. See docs/developer-notes/intimacy-notes.spec.md.
+   * **replaces** this when present.
    */
   intimacy: z.string().default(""),
   /**

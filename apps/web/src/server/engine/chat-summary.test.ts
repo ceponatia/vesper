@@ -8,9 +8,9 @@ import {
   CHARACTER_CHAT_VERBATIM_KEEP,
 } from "./constants";
 
-// Pure core of the rolling chat summary (docs/developer-notes/character-chat-summary.plan.md).
-// The fold decision, the length clamp, and the "did it actually fold" gate are
-// all pure — the DB-bound processChatSummary is covered in the int suite.
+// Pure core of the rolling chat summary. The fold decision, the length clamp, and
+// the "did it actually fold" gate are all pure — the DB-bound processChatSummary
+// is covered in the int suite.
 
 const TRIGGER = CHARACTER_CHAT_SUMMARIZE_AT * 2;
 const KEEP = CHARACTER_CHAT_VERBATIM_KEEP * 2;

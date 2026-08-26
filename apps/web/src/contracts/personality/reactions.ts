@@ -3,11 +3,10 @@ import { interactionConceptById } from "./interactions";
 import type { Preference, PreferenceValence } from "./preference";
 
 /**
- * Social-reaction resolution + the affinity-/mood-aware response curve
- * (docs/developer-notes/personality-and-state.spec.md §6). Pure: no IO, no engine
- * imports. The tuning constants live here, not in engine/constants.ts, because
- * `src/contracts` is IO-free and may not import server modules; the merge applies
- * its own per-turn ±AFFINITY_DELTA_CLAMP on top of whatever this returns.
+ * Social-reaction resolution + the affinity-/mood-aware response curve. Pure: no IO,
+ * no engine imports. The tuning constants live here, not in engine/constants.ts,
+ * because `src/contracts` is IO-free and may not import server modules; the merge
+ * applies its own per-turn ±AFFINITY_DELTA_CLAMP on top of whatever this returns.
  */
 
 /** A classified social act from intake: a concept id aimed at a target character. */

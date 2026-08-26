@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 /**
- * `AtmosphereLabel` — scene tone, *not* a character's sentiment
- * (docs/developer-notes/mood.spec.md §5, avatar-3d.spec.md §2). A tense room and a
+ * `AtmosphereLabel` — scene tone, *not* a character's sentiment. A tense room and a
  * calm companion coexist: atmosphere is an **input** to mood (trait-damped), never
  * an override.
  *

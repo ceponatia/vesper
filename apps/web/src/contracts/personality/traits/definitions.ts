@@ -1,10 +1,10 @@
 import type { PersonalityTraitDefinition } from "./types";
 
 /**
- * Starter trait vocabulary (docs/developer-notes/personality-and-state.spec.md §3).
- * The registry is the contract, not this list — adding a trait is a one-entry data
- * edit + the registry-invariant test. Grouped by category (kept in one file while
- * the set is small; split per category file like attributes if it grows).
+ * Starter trait vocabulary. The registry is the contract, not this list — adding a
+ * trait is a one-entry data edit + the registry-invariant test. Grouped by category
+ * (kept in one file while the set is small; split per category file like attributes
+ * if it grows).
  *
  * Most traits are **disposition guidance** in v1 (they render as bands in the cached
  * disposition block and steer the forge); their *state coupling* wires in progressively

@@ -188,11 +188,10 @@ import { chatSkipNote } from "./prompts/character-chat";
 import { buildChatPulsePrompt, CHAT_PULSE_SYSTEM } from "./prompts/chat-state";
 
 /**
- * The character-chat light-state engine (docs/developer-notes/character-chat-state.spec.md,
- * time model re-ruled by character-chat-standalone.spec.md §8, D3/D8).
- * Grows the sessionless 1-on-1 chat into a state-aware quick chat by reusing the
- * pure contracts — meters, affinity stages, conditions, and the §6 social-reaction
- * curve — with one new table and at most one cheap structured pulse per exchange.
+ * The character-chat light-state engine. Grows the sessionless 1-on-1 chat into a
+ * state-aware quick chat by reusing the pure contracts — meters, affinity stages,
+ * conditions, and the §6 social-reaction curve — with one new table and at most
+ * one cheap structured pulse per exchange.
  * In-game time is the ONLY clock: a per-exchange tick decays meters within a visit,
  * player time skips (`applyTimeSkip`) are the one between-scene lever, and no time
  * passes between visits at all. The pulse classifies the player's act and refreshes

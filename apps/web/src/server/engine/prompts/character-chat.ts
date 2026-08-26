@@ -91,10 +91,10 @@ export interface CharacterChatPromptInput {
   name: string;
   profile: CharacterProfile;
   /**
-   * Running recap of the conversation OLDER than the verbatim window
-   * (docs/developer-notes/character-chat-summary.plan.md). Context only — carries
-   * continuity past the message window. Empty/undefined ⇒ no recap block (a fresh
-   * chat, or summarization off), so the prompt is unchanged from before.
+   * Running recap of the conversation OLDER than the verbatim window. Context
+   * only — carries continuity past the message window. Empty/undefined ⇒ no recap
+   * block (a fresh chat, or summarization off), so the prompt is unchanged from
+   * before.
    */
   priorSummary?: string;
   /**

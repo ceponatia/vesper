@@ -13,9 +13,7 @@ import { paddingBetween } from "./identity-pack-crop";
 import { IDENTITY_BLUR_ALGORITHM_VERSION, INTRINSIC_POLICY_V1 } from "./identity-pack-policy";
 
 /**
- * Pure identity-pack measurement and evaluation
- * (docs/developer-notes/image-identity-packs.spec.derivation.md §"Intrinsic
- * quality measurement" and §"Versioned reference policy").
+ * Pure identity-pack measurement and evaluation.
  *
  * The split this module enforces: MEASURING is permanent, JUDGING is not. A pack
  * stores what was observed — face box, padding, blur score, detected count — and
