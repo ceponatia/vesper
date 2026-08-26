@@ -189,4 +189,41 @@ describe.runIf(ready)("a transfer-bearing settle commits as one write", () => {
     expect(anchor.found).toBe(true);
     expect(anchor.state?.bodySurface.transfers).toBeUndefined();
   });
+
+  /**
+   * The settlement runs on ONE guard decision, taken under a `for update` lock
+   * on the prompting message before any write. Falsified against the six
+   * independent `exists (select 1 from character_chat_messages …)` guards it
+   * replaced: under READ COMMITTED each of those takes its own snapshot, so a
+   * Clear/Reset landing mid-settlement let the first upsert apply, every later
+   * write no-op, and the transaction COMMIT the difference — a debit with no
+   * credit and no anchor to retake from. Kills equally the "just return
+   * quietly" fix, which no caller could tell apart from a successful settle
+   * while the settlement's diagnostics claimed material had moved.
+   */
+  it("writes nothing and rejects when the prompting message is already gone", async () => {
+    const sink = new DiagnosticCollector();
+    const baseline = seedChatState(richProfile());
+    await persistChatState(chat.chatId, fixture.characterId, baseline);
+    const scenario = await loadChatScenario(chat.chatId);
+    if (scenario === null) throw new Error("fixture has no scenario");
+
+    await expect(
+      persistSurfaceTransferSettlement({
+        chatId: chat.chatId,
+        characterId: fixture.characterId,
+        // Names no row — the Clear/Reset already took the exchange this
+        // settlement belongs to.
+        promptMessageId: "deleted_prompt_message00",
+        state: { ...baseline, bodySurface: debitedSurface() },
+        scenario,
+        preExchangeState: baseline,
+        preExchangeScenario: scenario,
+      }),
+    ).rejects.toThrow();
+
+    const after = await loadChatState(chat.chatId, fixture.characterId, sink);
+    expect(after?.bodySurface.deposits).toBeUndefined();
+    expect(after?.bodySurface.transfers).toBeUndefined();
+  });
 });

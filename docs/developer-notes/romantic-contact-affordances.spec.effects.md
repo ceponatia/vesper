@@ -762,6 +762,20 @@ does not happen. Recording refuses on a standing key and refuses at capacity
 rather than evicting, since evicting a receipt would make the transfer it
 recorded runnable a second time.
 
+**The stored key is validated per entry, not per record** (review finding,
+2026-08-26). `z.record`'s key schema rejects the whole RECORD rather than the
+entry that carried a bad key, and every one of these modules is
+`.optional().catch(undefined)` — so a single stored key that was empty or past
+the id bound used to swallow the failure and leave the record ABSENT, taking
+every valid sibling with it and saying nothing. For `transfers` that answers
+"never transferred" for a transfer that already committed, which is the second
+debit this section forbids, arrived at from the one direction the quarantine
+rule was written to close. The same shape had the same defect on `deposits`,
+where a lost record is §7's unowned sink, and on `marks`. All three now keep an
+unusable key under its own identity holding the shared quarantine marker:
+dropping it would claim the entry never existed, and truncating it would give
+two different events one slot.
+
 #### The atomic persistence seam is conditional
 
 Owner ruling (2026-08-26): with no transfer in an exchange, persistence stays
@@ -797,6 +811,22 @@ live exchange — the four independent writes run exactly as they always have.
 Fire-and-forget follow-ups such as the sketch and look enqueues stay outside the
 transaction, since they are not part of the conserved equation and a detached job
 must never hold one open or roll one back.
+
+**The settlement runs on one guard decision, taken under a row lock before any
+write** (review finding, 2026-08-26). Each of the settlement's writes carries the
+ordinary settle's `exists (select 1 from character_chat_messages …)` guard, and
+under READ COMMITTED each of those subqueries takes its own snapshot — so a
+Clear/Reset deleting the prompting message part-way through could let the first
+upsert land while every later write silently no-ops, and the transaction would
+still commit the difference. That is this section's own half-applied state
+reached from the other direction: a debit with no credit, and a rollback anchor
+that was never written, so the retake has nothing to restore. The transaction
+now locks the prompting message with `for update` before writing anything and
+throws when it is already gone, which collapses six independent decisions into
+one and makes a concurrent delete wait on the lock instead of racing the
+statements. The per-statement guards stay — they are the ordinary settle's own,
+and forking the two paths would buy nothing — but they are now backed by that
+single locked decision.
 
 ---
 
@@ -1136,6 +1166,15 @@ as independent statements would leave the debit standing, the credit missing,
 and the transfer's receipt persisted on the debited surface — the one state no
 retry can detect and no retake can undo. The success case proves the mirror:
 debit, layer store and both rollback anchors land together.
+
+A third case covers the guard decision: a settlement whose prompting message no
+longer exists rejects and leaves the state row untouched, which kills the
+implementation that returns quietly — indistinguishable from a successful settle
+to every caller, while the settlement's own diagnostics claim material moved.
+The interleaving race itself is deliberately untested: a concurrent delete cannot
+be scheduled between two statements of a transaction from the test runner, and
+the blocking behaviour the fix relies on is Postgres semantics rather than this
+code's.
 
 That suite runs under `pnpm test:int`, which is a manual gate rather than an
 automatic one, so the claim is checked when its surface moves rather than on

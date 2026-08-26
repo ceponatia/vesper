@@ -285,7 +285,6 @@ export function bodySurfaceMarkBandFloor(band: BodySurfaceMarkBand): number {
  * identity is two different events sharing one slot.
  */
 export const BODY_SURFACE_MARK_ID_MAX_LENGTH = 512;
-const markIdKeySchema = z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH);
 
 /**
  * One committed mark — the VALID shape. `magnitude`, `createdAtMinutes`, and
@@ -316,21 +315,58 @@ export function isInvalidMarkSlot(slot: BodySurfaceMarkSlot): slot is BodySurfac
 }
 
 /**
- * Item-lenient and quarantining, exactly like the wetness record: one corrupt
- * mark can neither void the record nor become a visible mark, and a stored kind
- * outside the vocabulary (the smuggled-scratch case) fails the item and lands
- * in quarantine rather than reading as the nearest supported thing.
+ * The record shape all three identity-keyed modules share — marks, deposits and
+ * transfer receipts. Item-lenient and quarantining exactly like the wetness
+ * record: one corrupt mark can neither void the record nor become a visible
+ * mark, and a stored kind outside the vocabulary (the smuggled-scratch case)
+ * fails the item and lands in quarantine rather than reading as the nearest
+ * supported thing.
+ *
+ * **The KEY is validated per item, deliberately, because a record-level key
+ * rejection is silently catastrophic.** `z.record`'s key schema rejects the
+ * whole RECORD, not the entry that carried the bad key — and every field that
+ * uses this shape is `.optional().catch(undefined)`, so one stored key that is
+ * empty or past `BODY_SURFACE_MARK_ID_MAX_LENGTH` used to swallow the failure
+ * and leave the record ABSENT, deleting every valid sibling with nothing on the
+ * record to say so. What that costs is different in each module:
+ *
+ * - `transfers` — an absent record makes `bodySurfaceTransferCommitted` answer
+ *   `false` for a transfer that already committed, so the settlement debits and
+ *   credits a second time. That defeats effects spec §9's "a retry cannot
+ *   transfer twice" in the exact direction this module is built to avoid: the
+ *   item-level quarantine answers `true` on purpose, so an unreadable receipt
+ *   SUPPRESSES a re-run, and a record-level rejection threw that decision away.
+ * - `deposits` — one bad key and every deposit on that body silently vanishes,
+ *   which is the unowned sink §7 says must not exist; §9's conservation law
+ *   leans on §7 being true.
+ * - `marks` — same shape, same class.
+ *
+ * So an entry whose key fails the bounds keeps its OWN key and holds
+ * `BODY_SURFACE_INVALID_ENTRY`. Not dropped — absence is a claim here ("no
+ * mark", "clean", "never transferred"), and laundering unknown into it is the
+ * thing the marker exists to prevent. Not truncated either, for the reason the
+ * owner transaction refuses an over-long key rather than shortening it: a
+ * truncated identity is two different events sharing one slot.
+ *
+ * The per-module cap still bounds the record, so a corrupt blob full of junk
+ * keys cannot grow the jsonb.
  */
-const marksRecordSchema = z
-  .record(markIdKeySchema, z.unknown())
-  .transform((raw) => {
-    const marks: Record<string, BodySurfaceMarkSlot> = {};
-    for (const [markId, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_MARKS)) {
-      const parsed = bodySurfaceMarkSchema.safeParse(value);
-      marks[markId] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
+function bodySurfaceKeyedRecordSchema<TEntry>(entrySchema: z.ZodType<TEntry>, maxEntries: number) {
+  return z.record(z.string(), z.unknown()).transform((raw) => {
+    const record: Record<string, TEntry | BodySurfaceInvalidEntry> = {};
+    for (const [key, value] of Object.entries(raw).slice(0, maxEntries)) {
+      if (key.length < 1 || key.length > BODY_SURFACE_MARK_ID_MAX_LENGTH) {
+        record[key] = BODY_SURFACE_INVALID_ENTRY;
+        continue;
+      }
+      const parsed = entrySchema.safeParse(value);
+      record[key] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
     }
-    return marks;
+    return record;
   });
+}
+
+const marksRecordSchema = bodySurfaceKeyedRecordSchema(bodySurfaceMarkSchema, BODY_SURFACE_MAX_MARKS);
 
 // ---------------------------------------------------------------------------
 // Deposits — vocabulary and shape (effects spec §7; owner ruling 2026-08-25)
@@ -381,17 +417,8 @@ export function isInvalidDepositSlot(slot: BodySurfaceDepositSlot): slot is Body
   return "status" in slot;
 }
 
-/** Item-lenient and quarantining, exactly like the wetness and marks records. */
-const depositsRecordSchema = z
-  .record(z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH), z.unknown())
-  .transform((raw) => {
-    const deposits: Record<string, BodySurfaceDepositSlot> = {};
-    for (const [depositId, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_DEPOSITS)) {
-      const parsed = bodySurfaceDepositSchema.safeParse(value);
-      deposits[depositId] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
-    }
-    return deposits;
-  });
+/** Item-lenient and quarantining — key included — exactly like the marks record. */
+const depositsRecordSchema = bodySurfaceKeyedRecordSchema(bodySurfaceDepositSchema, BODY_SURFACE_MAX_DEPOSITS);
 
 /**
  * The identity a deposit is stored under: substance, place, and the minute it
@@ -450,17 +477,16 @@ export function isInvalidTransferReceiptSlot(
   return "status" in slot;
 }
 
-/** Item-lenient and quarantining, exactly like the three records beside it. */
-const transfersRecordSchema = z
-  .record(z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH), z.unknown())
-  .transform((raw) => {
-    const transfers: Record<string, BodySurfaceTransferReceiptSlot> = {};
-    for (const [key, value] of Object.entries(raw).slice(0, BODY_SURFACE_MAX_TRANSFER_RECEIPTS)) {
-      const parsed = bodySurfaceTransferReceiptSchema.safeParse(value);
-      transfers[key] = parsed.success ? parsed.data : BODY_SURFACE_INVALID_ENTRY;
-    }
-    return transfers;
-  });
+/**
+ * Item-lenient and quarantining, exactly like the three records beside it — and
+ * the module where the shared shape's per-item KEY check matters most, since an
+ * absent record here reads as "never transferred" and licenses the double debit
+ * §9 forbids.
+ */
+const transfersRecordSchema = bodySurfaceKeyedRecordSchema(
+  bodySurfaceTransferReceiptSchema,
+  BODY_SURFACE_MAX_TRANSFER_RECEIPTS,
+);
 
 export const bodySurfaceStateSchema = z.object({
   /**

@@ -11,6 +11,7 @@ import {
   bodySurfaceWetnessEntry,
   BODY_SURFACE_DRY_RATE_PER_HOUR,
   BODY_SURFACE_INVALID_ENTRY,
+  BODY_SURFACE_MARK_ID_MAX_LENGTH,
   BODY_SURFACE_MAX_LOCATIONS,
   BODY_SURFACE_MAX_MARKS,
   BODY_SURFACE_MAX_TRANSFER_RECEIPTS,
@@ -71,6 +72,47 @@ describe("the schema quarantines rather than healing", () => {
     });
     expect(level(parsed, "hair", 10)).toBe(6_000);
     expect(level(parsed, "chest", 10)).toBe("invalid");
+  });
+
+  /**
+   * The same claim about the KEY, across all three keyed modules.
+   *
+   * Falsified against the record-level key schema each one used to carry
+   * (`z.record(z.string().min(1).max(BODY_SURFACE_MARK_ID_MAX_LENGTH), …)`): an
+   * unusable key failed the whole RECORD before any entry was parsed, the
+   * field's `.catch(undefined)` swallowed the failure, and every valid sibling
+   * vanished with it. For `transfers` that answers "never transferred" for a
+   * transfer that already committed, which is the second debit §9 forbids; for
+   * `deposits` it is §7's unowned sink.
+   */
+  const keyedModules: readonly {
+    module: "marks" | "deposits" | "transfers";
+    entry: Record<string, unknown>;
+    readsAsPresent: (state: BodySurfaceState, key: string) => boolean;
+  }[] = [
+    {
+      module: "marks",
+      entry: { locationId: "forearms", kind: "pressure", magnitude: 5_000, createdAtMinutes: 0 },
+      readsAsPresent: (state, key) => bodySurfaceMarkAt(state, key, 0).status !== "none",
+    },
+    {
+      module: "deposits",
+      entry: { locationId: "hands", kind: "mud", amount: 5_000, createdAtMinutes: 0 },
+      readsAsPresent: (state, key) => bodySurfaceDepositAt(state, key, 0).status !== "none",
+    },
+    { module: "transfers", entry: { amount: 5_000, atMinutes: 0 }, readsAsPresent: bodySurfaceTransferCommitted },
+  ];
+
+  it.each(keyedModules)("quarantines an unusable KEY in $module without voiding its siblings", ({ module, entry, readsAsPresent }) => {
+    for (const unusable of ["", "k".repeat(BODY_SURFACE_MARK_ID_MAX_LENGTH + 1)]) {
+      const parsed = bodySurfaceStateSchema.parse({ wetness: {}, [module]: { readable: entry, [unusable]: entry } });
+      expect(parsed[module]?.readable).toEqual(entry);
+      // Quarantined under its OWN key: dropped would claim the entry never
+      // existed, and an unreadable transfer identity that reads as PRESENT is
+      // what suppresses the re-run.
+      expect(parsed[module]?.[unusable]).toEqual(BODY_SURFACE_INVALID_ENTRY);
+      expect(readsAsPresent(parsed, unusable)).toBe(true);
+    }
   });
 
   it("round-trips the marker: persisting 'we lost this' is the honest record", () => {

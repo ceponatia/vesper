@@ -1015,6 +1015,31 @@ whether it bites.
 - *How it should be resolved:* an owner ruling once one of the two gaps closes
   for its own reasons. There is nothing to decide while both are open.
 
+**Should a corrupt wetness key be allowed to read as dry?**
+
+- *What is unknown:* whether `wetness` should get the per-entry key handling the
+  three identity-keyed modules received on 2026-08-26, and if so whether its key
+  schema's `.trim()` stays. Measured against the real schema while fixing the
+  others: one stored key that is empty or over its 64-character bound loses the
+  WHOLE wetness record, and a padded key such as `"  hair  "` is silently
+  rewritten on load.
+- *Why it matters:* this is the same defect class as the three that were fixed,
+  but the consequence is worse rather than milder. Absence is not neutral in this
+  module — the owner's own law says an absent location is honestly DRY — so one
+  unusable key turns "we do not know" into "she is dry" for every location on
+  that body, which is exactly the laundering the quarantine marker exists to
+  prevent, and dry hair carries mobility that wet hair does not. It was left
+  alone because folding it into the shared construction is a real fork, not a
+  mechanical change: a different key bound, a different degraded default, and a
+  trim that currently rewrites stored keys and would have to be kept
+  deliberately or dropped deliberately.
+- *How it should be resolved:* an owner ruling on the trim — normalise a padded
+  key on load, or quarantine it — after which the fix is the same three lines the
+  other three modules took. Noted alongside it, and not acted on: a stored key of
+  literally `__proto__` is assigned rather than defined, so it sets the record's
+  prototype instead of an own property. Pre-existing, unchanged by the 2026-08-26
+  fix, and negligible in effect, since no real identity collides with it.
+
 Every other question this plan once carried — the romantic surface's rollout,
 the sensory package boundary, whether the shared observation contract should
 carry a channel, who owns residue and marks, which effect to prove first, the

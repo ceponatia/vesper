@@ -3380,6 +3380,29 @@ export interface ChatSurfaceTransferInput {
  * half-applied state the atomicity law exists to forbid. Both anchors and both
  * rows commit together or the exchange writes nothing.
  *
+ * ONE GUARD DECISION, taken under a row lock before any write. Each of the six
+ * writes below carries the ordinary settle's `exists (select 1 from
+ * character_chat_messages …)` guard, and under READ COMMITTED each of those
+ * subqueries takes its OWN snapshot. So a Clear/Reset that deletes the prompting
+ * message part-way through the settlement can let the first upsert land while
+ * every later write silently no-ops — and the transaction still COMMITS the
+ * difference. That is the same half-applied shape §9 forbids, arrived at from
+ * the other direction: a debit with no credit, and a rollback anchor that was
+ * never written, so the retake has nothing to restore and "removes both sides or
+ * neither" becomes unprovable. The `for update` lock below collapses the six
+ * independent decisions into one: the message either exists when we take the
+ * lock — in which case a concurrent delete BLOCKS on it for this transaction's
+ * duration instead of racing it statement by statement, and all six guards are
+ * guaranteed to agree — or it is already gone, and we throw before writing
+ * anything. Throwing, not returning: a silent return is indistinguishable from a
+ * successful settle to every caller, and this settlement's own diagnostics would
+ * then claim material moved when nothing was written.
+ *
+ * The per-statement guards STAY. They are the same guards the ordinary settle
+ * uses, they cost nothing, and dropping them here would fork the two paths for
+ * no gain — they are simply backed by one locked decision now rather than six
+ * independent ones.
+ *
  * The ordinary, transfer-free settle deliberately does NOT come through here
  * (owner ruling 2026-08-26). It runs on every exchange in the chat lane, and
  * wrapping four writes that already succeed independently in a transaction would
@@ -3421,6 +3444,23 @@ export async function persistSurfaceTransferSettlement(args: {
   };
 }): Promise<void> {
   await db().transaction(async (tx) => {
+    // The single guard decision (see the doc comment): lock the prompting
+    // message BEFORE any write, so the six per-statement guards below can no
+    // longer disagree with each other mid-transaction. A concurrent delete now
+    // waits on this lock rather than landing between two of them.
+    const [prompt] = await tx
+      .select({ id: characterChatMessages.id })
+      .from(characterChatMessages)
+      .where(eq(characterChatMessages.id, args.promptMessageId))
+      .limit(1)
+      .for("update");
+    if (!prompt) {
+      // The exchange this settlement belongs to is gone (Clear/Reset). Abort
+      // before writing anything: rolling back is the only outcome that leaves
+      // neither half of the transfer standing, and throwing is what stops the
+      // caller from recording a settle that never happened.
+      throw new Error(`surface transfer settlement: prompting message ${args.promptMessageId} no longer exists`);
+    }
     // Order mirrors the ordinary settle exactly: the upserts first, then the
     // anchors. `savePreExchangeSnapshot` is a targeted UPDATE that assumes the
     // state row already exists, so it can only ever follow its own upsert.
