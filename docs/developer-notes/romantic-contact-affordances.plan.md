@@ -1,6 +1,10 @@
 # Romantic contact affordances — grounded contact, permission, and effects
 
-Status: active — reconciled to `main` 2026-08-18; owner rulings folded 2026-08-22
+Status: active — Tracks A, B, and C are all waiting on the owner: a reviewed
+movement corpus, an evidence-capturing live rerun that needs a deploy plus a
+flag window, and a product judgment on visual contact narration. The next work
+a developer can start without any of those is Track D item 17, the shared
+nonvisual sensory owners (§19). Reconciled to `main` 2026-08-26.
 
 Outcome: A player can touch a character and have the game itself settle what
 happened — who moved, what was in the way, whether that character had allowed it
@@ -36,7 +40,9 @@ The quality bar is that this reads as ordinary chat rather than a parallel mode.
 Players write plain prose; there is no contact syntax to learn. Every switch
 governing the work defaults to off, and with a switch off the lane must behave
 exactly as it did before the work behind it existed — not merely quietly, but
-identically.
+identically. One part of the work deliberately has no switch at all: material
+on skin is ordinary body state rather than contact work, and it is live for
+every chat (§19, item 15).
 
 ---
 
@@ -127,20 +133,21 @@ say whether a touch actually happened — leaving only prose that asserts one.
 
 Delivery state of what this work owns:
 
-| Responsibility                                     | State                                                   |
-| -------------------------------------------------- | ------------------------------------------------------- |
-| Attempt, resolution, and commitment separation     | Live in character chat                                  |
-| Contact lifecycle and its durable record           | Live; regenerating a turn prunes cleanly                |
-| Scene participants, posture, support, reach        | Live                                                    |
-| Player movement and affectionate hand contact      | Live; still refuses romantic framing outright           |
-| Deterministic character-authored contact endings   | Live, and frozen as the floor                           |
-| Player romantic contact producer                   | Proven live 2026-08-18; flags reverted, rollout pending |
-| Directional romantic-touch permission owner        | Proven live 2026-08-18; flags reverted, rollout pending |
-| Character-authored movement, start, update         | Built; authority on hold pending reviewed evidence      |
-| Foot mechanics                                     | Built as fixtures; deliberately unregistered            |
-| Contact effects                                    | First proof (pressure mark) built 2026-08-22, switch off |
-| Material on skin — mud, blood, dust, cosmetics     | Merged 2026-08-25, ungated; not yet seen on a real turn  |
-| Intimate-region mechanics                          | Not built; blocked on several owners                    |
+| Responsibility                                   | State                                                   |
+| ------------------------------------------------ | ------------------------------------------------------- |
+| Attempt, resolution, and commitment separation   | Live in character chat                                  |
+| Contact lifecycle and its durable record         | Live; regenerating a turn prunes cleanly                |
+| Scene participants, posture, support, reach      | Live                                                    |
+| Player movement and affectionate hand contact    | Live; still refuses romantic framing outright           |
+| Deterministic character-authored contact endings | Live, and frozen as the floor                           |
+| Player romantic contact producer                 | Proven live 2026-08-18; flags reverted, rollout pending |
+| Directional romantic-touch permission owner      | Proven live 2026-08-18; flags reverted, rollout pending |
+| Character-authored movement, start, update       | Built; authority on hold pending reviewed evidence      |
+| Foot mechanics                                   | Built as fixtures; deliberately unregistered            |
+| Contact effects — pressure mark                  | First proof built 2026-08-22; switch stays off          |
+| Material on skin — mud, blood, dust, cosmetics   | Merged 2026-08-25, ungated; unseen on a real turn       |
+| Contact effects — conserved transfer             | Built 2026-08-26; fixture-only, no lane proposes one    |
+| Intimate-region mechanics                        | Not built; blocked on several owners                    |
 
 ---
 
@@ -189,9 +196,13 @@ computed in fixtures but must not reach live narration.
 **A future physiology owner must own swelling, temperature, and comparable
 current body facts** before contact may consume them.
 
-**Still without any owner:** scratches and skin damage. Material transfer and
-garment operations have owners in principle, but neither can be committed until
-those owners grow the transaction that does it.
+**Still without any owner:** scratches and skin damage.
+
+**Material transfer and garment operations now have committing owners.** The
+transfer transaction was built 2026-08-26, and a contact-induced garment change
+is a typed operation the wardrobe owner validates and commits. What is missing
+is a lane that can name both sides of a transfer, so no real chat proposes one
+(§19, item 16).
 
 This section exists to stop the same fact being modelled twice. Contact may
 consume or propose changes to any of the owners above. It may never persist its
@@ -507,8 +518,8 @@ one expiry rule — and conserved transfer is the second, because taking materia
 from one surface and putting it on another atomically is a larger piece of
 architecture than a first proof should carry. Detail:
 [observations, effects, and sensory routing](romantic-contact-affordances.spec.effects.md).
-That companion spec is reconciled to the 2026-08-22 mark-first, body-surface,
-and modality-specific sensory rulings.
+That companion spec is reconciled through the 2026-08-26 conserved-transfer
+rulings and owns the build state of every effect slice.
 
 ---
 
@@ -698,8 +709,11 @@ metadata, or diagnostics, and it never authors the player's reaction.
 
 ## 19. Development stages
 
-Five tracks. Track B is the only one whose remaining work is the owner's; the
-rest are queued engineering or a hold awaiting evidence.
+Five tracks, and most of what remains is not engineering. Track A is a hold
+awaiting a reviewed corpus, Track B's next step is an owner-run live rerun,
+Track C's is a product judgment, and Track E is blocked on that rerun. **The
+one item a developer can pick up today is Track D item 17, the shared nonvisual
+sensory owners.**
 
 ### Track A — operational review of already-built character movement authority
 
@@ -783,8 +797,9 @@ asks a character to reposition voluntarily.
 
 ### Track C — visual contact continuity and presentation
 
-Status: items 12–13 built 2026-08-22; item 14 next — nothing here was required
-for the Track B rerun.
+Status: items 12–13 built 2026-08-22; item 14 next, and it is a product
+judgment rather than a build — nothing here was required for the Track B
+rerun.
 
 12. Add a first-class visual contact relation sourced from `CommittedContactRead`,
     so that "her hand is on your shoulder" can be rendered from structured truth
@@ -805,10 +820,13 @@ for the Track B rerun.
 
 ### Track D — grounded contact effects and richer domains
 
-Status: in progress — the pressure-mark first proof was built 2026-08-22 behind
-a default-off switch, the residue/deposit owner shipped 2026-08-25, and the
-conserved-transfer second proof was built 2026-08-26 and is fixture-only; the
-sensory owners and the foot/intimate registration work remain.
+Status: in progress — items 15–16 are built and none of it runs in production:
+the pressure-mark proof 2026-08-22 behind a default-off switch, the
+residue/deposit owner merged 2026-08-25 and ungated but never exercised on a
+real exchange, and the conserved-transfer proof 2026-08-26 and fixture-only.
+**Item 17, the shared nonvisual sensory owners, is next — and it is the one
+item in this plan that needs no deploy, no paid run, and no owner ruling to
+start.** Items 18–19 follow it.
 
 15. Expand the body-surface owner to cover surface material and temporary
     condition — deposits, residue, and contact marks beside the existing wetness
@@ -832,29 +850,23 @@ sensory owners and the foot/intimate registration work remain.
     ruling still unbuilt.
 16. Add effect transactions: the temporary pressure mark first, conserved
     transfer second, with garment changes delegated to wardrobe. Status: built
-    2026-08-26 — awaiting a flag enable for the mark and two other domains'
-    owners for transfer; neither runs in production today. The
-    pressure-mark transaction was built and proven 2026-08-22 (commit, no
-    double-commit on retry, clean removal on regenerate, readable afterward) and
-    its switch stays off. Conserved transfer was built 2026-08-26 and is
-    **fixture-only**, exactly as owner ruling (2026-08-25) said it would be: no
-    pairing the chat lane can actually produce has an implemented owner on both
-    sides, so nothing in production proposes a transfer.
+    2026-08-26 — the pressure mark waits on its default-off switch, and conserved
+    transfer is **fixture-only**, having closed the last of the three gaps that
+    blocked it by committing a transfer-bearing exchange's rows in one database
+    transaction. Neither runs in production today.
 
-    What the transfer build settles is the hard part — a transaction that debits
-    one surface, credits every layer the material crosses and the surface
-    underneath, and either lands all of that exactly or discards the whole thing.
-    Of the three gaps that had to close first, it closed one: an exchange
-    carrying a transfer now commits every row it touched in a single database
-    transaction, while every other exchange keeps the writes it always had. The
-    two that remain are why it stays fixture-only — the player and ensemble
-    members still have no body-surface owner, and the chat lane still cannot name
-    a worn layer in a way that layer's owner would accept. Both are named in the
-    [effects spec](romantic-contact-affordances.spec.effects.md) §15 stage 8, and
-    the built shape and its rulings are recorded there in §9.
+    Fixture-only was the expected outcome, not a shortfall: owner ruling
+    (2026-08-25) already said no pairing the chat lane can produce has an
+    implemented owner on both sides. Two gaps stay open and both belong to other
+    domains — the player and ensemble members have no body-surface owner, and the
+    chat lane cannot name a worn layer in a way that layer's owner would accept.
+    Whether the chat lane should ever produce a transfer is an open question
+    (§23). The built shape, the gap list, and every ruling behind them are in the
+    [effects spec](romantic-contact-affordances.spec.effects.md) §9 and §15.
 17. Build the shared nonvisual sensory presentation owner as sibling packages
     beside visual state, before any touch, smell, or taste cue reaches live
-    narration. Status: queued.
+    narration. Status: next — the first item on this plan that a developer can
+    start without a deploy, a live window, or an owner ruling.
 18. Register only foot phenomena whose complete truth and perception path
     exists; keep the rest fixture-only. Status: queued.
 19. Expand calibration from the foot fixtures using semantic bands and
@@ -862,8 +874,9 @@ sensory owners and the foot/intimate registration work remain.
 
 ### Track E — intimate contact
 
-Status: blocked on the Track B rerun, the exact future scopes, and the missing
-physiology, body-surface, and sensory owners.
+Status: blocked on the Track B rerun, the exact future scopes, the missing
+physiology and sensory owners, and the body-surface work still outstanding —
+surface products, and any owner at all for the player and ensemble members.
 
 20. Define the exact scopes beyond romantic touch alongside the action families
     that need them.

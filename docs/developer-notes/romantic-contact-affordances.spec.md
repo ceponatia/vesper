@@ -1,7 +1,7 @@
 # Romantic contact affordances — technical index
 
-Status: **current implementation map, reconciled to `main` on 2026-08-18;
-owner rulings folded 2026-08-22.**
+Status: **current implementation map, reconciled to `main` on 2026-08-26; owner
+rulings folded through 2026-08-26.**
 This document is the short technical entry point. Domain-specific laws live in
 the companion specs; historical build detail remains in git history and the
 audit/trial records rather than being repeated here.
@@ -48,31 +48,35 @@ binding action outcome   visual-state read     effect proposal
 Contact owns the physical interaction. It does **not** own visual attention,
 visual memory, narrator repetition, garment state, body residue, or permission.
 
-## Capability matrix — `main` 2026-08-18
+## Capability matrix — true as of 2026-08-26
 
-| Capability                               | Character chat                  | Successor                           | Notes                                                                         |
-| ---------------------------------------- | ------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------- |
-| Scene participants/control               | Built                           | Engine-owned equivalent             | Chat scene seeds player/NPC control explicitly.                               |
-| Proximity/facing/reach                   | Built                           | Engine-owned equivalent             | Chat relations require continuous co-presence.                                |
-| Posture/support                          | Built coarse read               | Richer engine state                 | No general fine-pose solver.                                                  |
-| Player approach/depart                   | Built                           | Engine command path                 | Player lane only authors the player's body.                                   |
-| Player affectionate hand contact         | Built/live lane                 | Not this adapter                    | Deterministic allow-list; romantic framing still vetoed.                      |
-| Player romantic contact                  | Proven live 2026-08-18, gated   | Not claimed                         | Closed caress/stroke/cup family, nine loci; ships if the rerun passes.        |
-| Contact lifecycle                        | Built                           | No parity claim here                | Stable active contact projection + start/update/end commits.                  |
-| Contact persistence/retake               | Built                           | Engine-specific                     | Character chat uses `chat_contact_events`.                                    |
-| NPC deterministic contact endings        | Built                           | Engine-specific                     | Frozen live floor.                                                            |
-| NPC movement/start/update decisions      | Built, authority gated          | N/A                                 | Shadow window opened 2026-08-10; repository has no final acceptance artifact. |
-| Directional `romantic_touch` owner       | Built, gated                    | No parity claim                     | Exact direction/scope; withdrawal invalidates dependent contacts.             |
-| Body-surface wetness                     | Built owner/read                | Lane-specific                       | Visual state now consumes whole-body wetness, not hair only.                  |
-| Body residue/contact marks               | Owner ruled, unbuilt            | Not relied on                       | Ruled 2026-08-22 into body-surface state; suppressed until built.             |
-| Visual contact body language             | Built partial                   | Visual-state adapter can read scene | Hand occupation + committed contact motion.                                   |
-| Full visual contact relation             | **Missing**                     | **Missing**                         | Needed for structured `hand on shoulder` style positive visual detail.        |
-| Visual visibility/attention/memory       | Built in visual state           | Built lane-neutral contracts        | Per-subject visibility; narrator projection exists.                           |
-| Positive visual-state narration          | Per-chat, off by default        | Consumer-specific                   | Not a contact flag.                                                           |
-| Tactile/olfactory/gustatory presentation | **Missing shared owner**        | **Missing shared owner**            | Sibling owners ruled 2026-08-22; never contact-local cue memory.              |
-| Foot mechanics                           | Built pure domain, unregistered | Unwired                             | Register only after its required owners/routes exist.                         |
-| Contact effects                          | Not built                       | Not built                           | Requires owner transactions.                                                  |
-| Intimate mechanics                       | Not built                       | Not built                           | Requires future exact scopes + state/perception owners.                       |
+| Capability                               | Character chat                  | Successor                | Notes                                                       |
+| ---------------------------------------- | ------------------------------- | ------------------------ | ----------------------------------------------------------- |
+| Scene participants/control               | Built                           | Engine-owned equivalent  | Chat scene seeds player/NPC control explicitly.             |
+| Proximity/facing/reach                   | Built                           | Engine-owned equivalent  | Chat relations require continuous co-presence.              |
+| Posture/support                          | Built coarse read               | Richer engine state      | No general fine-pose solver.                                |
+| Player approach/depart                   | Built                           | Engine command path      | Player lane only authors the player's body.                 |
+| Player affectionate hand contact         | Built/live lane                 | Not this adapter         | Deterministic allow-list; romantic framing vetoed.          |
+| Player romantic contact                  | Proven live 2026-08-18, gated   | Not claimed              | Caress/stroke/cup family, nine loci; rerun decides rollout. |
+| Contact lifecycle                        | Built                           | No parity claim          | Active-contact projection + start/update/end commits.       |
+| Contact persistence/retake               | Built                           | Engine-specific          | Character chat uses `chat_contact_events`.                  |
+| NPC deterministic contact endings        | Built                           | Engine-specific          | Frozen live floor.                                          |
+| NPC movement/start/update decisions      | Built, authority gated          | N/A                      | Shadow window open since 2026-08-10; no reviewed corpus.    |
+| Directional `romantic_touch` owner       | Built, gated                    | No parity claim          | Exact direction/scope; withdrawal ends dependent contacts.  |
+| Body-surface wetness                     | Built owner/read                | Lane-specific            | Whole-body wetness, not hair only.                          |
+| Body contact marks                       | Built, gated                    | Not relied on            | Pressure marks; commit leg behind `CHAT_CONTACT_EFFECTS`.   |
+| Body-surface deposits/residue            | Built, ungated                  | Not relied on            | Merged 2026-08-25; no live exchange has run it.             |
+| Surface products on skin                 | Owner ruled, unbuilt            | Not relied on            | The one undelivered part of the 2026-08-22 ruling.          |
+| Conserved surface transfer               | Built, fixture-only             | Not relied on            | No lane resolves a source read or a layer path.             |
+| Scratch/skin damage                      | **No owner**                    | **No owner**             | Not a mark kind; a stored scratch quarantines.              |
+| Contact effect transactions              | Built, none live                | Not built                | Mark gated off; nothing proposes a transfer.                |
+| Visual contact body language             | Built                           | Adapter can read scene   | Hand occupation + committed contact motion.                 |
+| Full visual contact relation             | Built 2026-08-22                | No parity claim          | `body_language.contact_relation`; not offered to images.    |
+| Visual visibility/attention/memory       | Built in visual state           | Lane-neutral contracts   | Per-subject visibility; narrator projection exists.         |
+| Positive visual-state narration          | Per-chat, off by default        | Consumer-specific        | Not a contact flag.                                         |
+| Tactile/olfactory/gustatory presentation | **Missing shared owner**        | **Missing shared owner** | Sibling owners ruled 2026-08-22; never contact-local.       |
+| Foot mechanics                           | Built pure domain, unregistered | Unwired                  | Register only after its required owners/routes exist.       |
+| Intimate mechanics                       | Not built                       | Not built                | Requires future exact scopes + state/perception owners.     |
 
 ## Flags
 
@@ -97,9 +101,25 @@ visual memory, narrator repetition, garment state, body residue, or permission.
   - default off.
 - `CHAT_ROMANTIC_PERMISSION_DEV_OVERRIDE=on`
   - separate admin/test capability.
+- `CHAT_CONTACT_EFFECTS=on`
+  - enables the pressure-mark commit leg only;
+  - effective only with contact actions;
+  - default off.
 
 Visual-state narrator output is controlled by visual state's **per-chat** switch,
 not by a contact environment flag.
+
+### Deliberately unswitched paths
+
+Two effect paths have no flag at all, and each omission is a ruling:
+
+- **body-surface deposits/residue** — ungated by owner ruling 2026-08-25:
+  material on skin is ordinary body state like wetness, and gating it would make
+  it unrememberable for continuity work unrelated to contact. It therefore
+  activates for every chat on the next deploy;
+- **conserved surface transfer** — needs no switch because no chat-lane producer
+  resolves a source material read or an owner-addressable layer path, so nothing
+  outside fixtures can propose one.
 
 ### Last documented deployment observation
 
@@ -111,9 +131,14 @@ The plan family last verified production flags on 2026-08-10:
 - NPC scene decision authority: off;
 - romantic permission: off.
 
+The 2026-08-18 romantic proof turned romantic permission on for a controlled
+window and reverted it afterwards, so that list remains the standing picture.
+Contact effects have never been enabled in any environment.
+
 That is dated deployment evidence, not a guarantee about the current environment.
 The codebase itself cannot prove whether the shadow review has since been
-completed outside the repository.
+completed outside the repository, and no deployed exchange has yet exercised the
+ungated deposits path.
 
 ## Shared contact contracts
 
@@ -130,6 +155,7 @@ Key types/laws:
 - `ContactResolution` — `committable`, `explicit_transition_required`,
   `rejected`, or `unresolved`;
 - `CommittedContactRead` — active physical truth after commit;
+- `ContactEffectProposal` — a requested owner mutation, never truth itself;
 - lifecycle start/update/end commits — durable state changes;
 - exact action-kind -> permission-scope mapping;
 - target-agency decisions distinct from actor control;
@@ -147,7 +173,12 @@ apps/web/src/server/engine/chat-contact-reply.ts
 apps/web/src/server/engine/chat-npc-scene-*.ts
 apps/web/src/server/engine/chat-permission-*.ts
 apps/web/src/server/engine/chat-pipeline.ts
+apps/web/src/server/engine/chat-state.ts
 ```
+
+Effect owner transactions are pure and live under `contracts/` instead; the
+settle fold that commits them is in `chat-state.ts`. Detail:
+[effects spec](romantic-contact-affordances.spec.effects.md) §§7–9.
 
 ### Player side
 
@@ -248,7 +279,11 @@ Existing integration:
 - `visual-state/body-language.ts`
   - projects scene posture/support/facing;
   - derives hand occupation from active committed contacts;
-  - projects committed contact motion.
+  - projects committed contact motion;
+  - projects the full `body_language.contact_relation` feature from
+    `CommittedContactRead` (built 2026-08-22), which is what a structured
+    `hand on shoulder` line renders from. Narrator-eligible behind the per-chat
+    visual-state switch; deliberately not offered to image selection yet.
 - `visual-state/observations.ts`
   - adapts resolved `AffordanceObservation` values into visual-state features;
   - carries the observation repeat family into visual-state selection.
@@ -259,15 +294,9 @@ Existing integration:
 - `chat-visual-state-cues.ts`
   - is the single narrator renderer for visual-state facts.
 
-### Required addition before rich positive visual contact narration
-
-Add a visual-state contact relation feature sourced from `CommittedContactRead`.
-The current hand-occupation/motion projection does not fully encode a
-human-resolvable source-participant/source-locus -> target-participant/target-locus
-relation.
-
-This feature belongs in visual state because it is a **view of committed contact**,
-not another contact store.
+The relation feature lives in visual state because it is a **view of committed
+contact**, not another contact store. Detail:
+[effects spec](romantic-contact-affordances.spec.effects.md) §5.
 
 ## Sensory-channel boundary
 
@@ -275,7 +304,9 @@ The existing lane-neutral `AffordanceObservation` type does not carry a sensory
 channel. The current visual-state bridge assumes the observations it receives are
 visual candidates.
 
-Therefore new contact phenomena use a channel-tagged domain result until routing:
+Therefore new contact phenomena use a channel-tagged domain result, built
+2026-08-22 in `contracts/affordances/contact/phenomena.ts`. No producer emits a
+phenomenon yet, so the seam is real but unused:
 
 ```ts
 type ContactPerceptionChannel =
@@ -309,23 +340,25 @@ The contact core may propose effects, but current truth stays with the state own
 Already owned:
 
 - body-surface wetness;
+- body-surface deposits/residue, including dirt, blood, and cosmetics;
+- temporary contact/pressure marks;
 - garment presentation/condition/deposits/damage;
 - active contact itself.
 
 Still missing on the body side:
 
-- general residue/product inventory;
-- dirt/blood/cosmetics contamination;
-- contact/pressure marks;
+- surface products on skin;
+- scratch/skin damage;
 - swelling/visible fatigue;
 - general contact temperature/physiology reads needed by later domains.
 
-The first three have a designated owner (ruled 2026-08-22): they expand
-`BodySurfaceState` beside its existing wetness, split by module rather than
-into new subsystems. Contact marks and deposits are built; surface products are
-not, and swelling/fatigue and temperature/physiology stay with a future
-physiology owner. Detail:
-[effects spec](romantic-contact-affordances.spec.effects.md).
+Surface products keep the designated owner ruled 2026-08-22: they expand
+`BodySurfaceState` beside wetness, deposits, and marks, split by module rather
+than into new subsystems. They are the one part of that ruling still unbuilt.
+Scratch/skin damage has no owner at all, is not a member of the mark-kind
+vocabulary, and a stored scratch quarantines rather than reads.
+Swelling/fatigue and temperature/physiology stay with a future physiology owner.
+Detail: [effects spec](romantic-contact-affordances.spec.effects.md).
 
 Consequences:
 
@@ -351,7 +384,13 @@ and restores it. Contact remains physical truth only.
 
 ## Revised implementation sequence
 
+Per-step delivery history belongs to the
+[plan](romantic-contact-affordances.plan.md) §19; each track here carries one
+status line so a reader can see what is left without opening it.
+
 ### Parallel track A — already-built NPC authority
+
+Status: blocked on a reviewed shadow corpus and the owner's cost/quality ruling.
 
 1. Review the shadow corpus and telemetry.
 2. Record owner quality/cost ruling.
@@ -359,33 +398,34 @@ and restores it. Contact remains physical truth only.
 
 ### Track B — permission proof
 
+Status: built 2026-08-18 — awaiting the owner-run live rerun at step 8.
+
 4. Add a **separate narrow player romantic action producer**; do not weaken the
-   affectionate detector. Status: built 2026-08-18.
+   affectionate detector.
 5. Reuse the shared resolver/lifecycle with `actionKind: "romantic"` and the
-   existing permission read. Status: built 2026-08-18 with step 4.
+   existing permission read.
 6. Prove grant/no-grant/reverse-direction/wrong-scope/withdrawal/retake cases.
-   Status: built 2026-08-18 — pure tests drive the real permission seam; retake
-   restoration stays with the `chat-permission.int.test.ts` integration layer.
+   Pure tests drive the real permission seam; retake restoration stays with the
+   `chat-permission.int.test.ts` integration layer.
 7. Run the first controlled player -> NPC romantic live proof.
-   Status: **passed 2026-08-18** on Fly version 209; flags reverted afterwards.
-   Refusal, geometry refusal, commit, withdrawal and retake all behaved. Report:
-   `romantic-contact-affordances.trial.romantic-proof.md`.
 8. Rerun the live proof against the closed silent-refusal and naming gaps with
    the evidence-capturing instrument (`scripts/trial/romantic-contact/`).
-   Status: next — owner-run.
-9. Rollout of this specific surface. Status: owner-ruled 2026-08-22 —
-   test-only until the rerun passes; ships if it does.
+9. Rollout of this specific surface, contingent on step 8.
 
 Track B does not require general NPC authority unless the fixture asks an NPC to
 voluntarily reposition.
 
 ### Track C — visual continuity
 
+Status: built 2026-08-22 — awaiting the step 12 narration evaluation.
+
 10. Add visual-state contact relation projection.
 11. Route only visual contact observations into visual state.
 12. Trial optional positive visual narration under the existing per-chat switch.
 
 ### Track D — richer mechanics/effects
+
+Status: in progress — steps 13–14 built, neither live; step 15 next.
 
 13. Expand `BodySurfaceState` into the deposits/residue and marks owner before
     the phenomena that require it (ruled 2026-08-22).
@@ -396,6 +436,9 @@ voluntarily reposition.
 16. Register only foot phenomena whose complete truth + perception path exists.
 
 ### Track E — intimate
+
+Status: blocked on the Track B rerun, the exact future scopes, and the missing
+physiology and sensory owners.
 
 17. Define the exact scopes with their action families, per the 2026-08-22
     scope-model ruling in the permission spec.

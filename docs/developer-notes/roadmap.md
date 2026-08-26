@@ -34,12 +34,9 @@ or flag enable) · **shipped — <date>** (the whole plan delivered and accepted
 - **Romantic contact affordances — foot-first grounded contact** —
   [plan](romantic-contact-affordances.plan.md) ·
   [spec index](romantic-contact-affordances.spec.md) — the romantic player
-  surface still waits on its evidence-capturing live rerun; visual contact
-  continuity and visual-only routing are built, the first pressure-mark effect
-  proof is built behind its default-off switch, skin has an ungated owner for
-  the material it carries that no deployed exchange has exercised yet, and the
-  conserved-transfer proof is built but fixture-only — leaving the sensory
-  owners while NPC shadow review runs independently.
+  surface, the movement-authority review, and positive visual contact narration
+  all now wait on the owner rather than on code; the shared nonvisual sensory
+  owners are the next developer-actionable piece.
 
 - **Constraint-first narrator physical guidance** —
   [plan](narrator-physical-guidance.plan.md) ·

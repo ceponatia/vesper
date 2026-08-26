@@ -57,6 +57,7 @@ Current delivery state:
 | Temporary contact marks                    | Built 2026-08-22 inside the body-surface owner             |
 | Pressure-mark first proof                  | Built 2026-08-22 behind default-off `CHAT_CONTACT_EFFECTS` |
 | Conserved transfer second proof            | Built 2026-08-26; fixture-only, no lane can propose one    |
+| Atomic cross-row settle boundary           | Built 2026-08-26; only a transfer-bearing settle uses it   |
 | Scratch/skin damage                        | No owner yet                                               |
 | Tactile/olfactory/gustatory presentation   | Future sibling sensory owners; not live                    |
 

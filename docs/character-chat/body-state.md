@@ -46,7 +46,13 @@ lane does.
     Repairing it to `0` would be worse than useless: dry hair is *more* mobile than wet
     hair, so a corrupt row would have bought a wind-motion cue. The adapter maps `invalid`
     onto the affordance result law's `invalid`, files `affordance.input.invalid`, and the
-    hair domain (for which wetness is structural) falls silent.
+    hair domain (for which wetness is structural) falls silent. The three
+    identity-keyed modules below quarantine an unusable **key** the same way, under its
+    own identity: `z.record` rejects the whole record when a key fails, and these keys are
+    optional-with-fallback, so a per-record key check would empty the record and take every
+    valid sibling with it — silently answering "no mark", "clean", or "never transferred".
+    An unusable key is neither dropped (absence is a claim here) nor truncated (that gives
+    two events one slot). Wetness itself still checks its key per record.
   - **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
     `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
     standing in a continuing downpour read bone dry after a few story hours, because
