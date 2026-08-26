@@ -860,8 +860,10 @@ start.** Items 18–19 follow it.
     implemented owner on both sides. Two gaps stay open and both belong to other
     domains — the player and ensemble members have no body-surface owner, and the
     chat lane cannot name a worn layer in a way that layer's owner would accept.
-    Whether the chat lane should ever produce a transfer is an open question
-    (§23). The built shape, the gap list, and every ruling behind them are in the
+    Owner ruling (2026-08-26): it stays fixture-only while either gap stands, and
+    no narrow live producer is built to work around them; whether to promote it
+    once one closes is still an open question (§23). The built shape, the gap
+    list, and every ruling behind them are in the
     [effects spec](romantic-contact-affordances.spec.effects.md) §9 and §15.
 17. Build the shared nonvisual sensory presentation owner as sibling packages
     beside visual state, before any touch, smell, or taste cue reaches live
@@ -997,22 +999,24 @@ comfortable. That is a known, one-directional cost — silence where a commit
 would have been acceptable, never the reverse — and the rerun is what measures
 whether it bites.
 
-**What should happen when a surface's material record is full?**
+**Is twelve deposits the right ceiling for one garment?**
 
-- *What is unknown:* the two owners of the same shared substance vocabulary
-  disagree. A garment at capacity evicts its oldest deposit to make room; a body
-  surface at capacity declines the new one and reports it. Nothing has decided
-  which is right, and the eviction path is untested in either direction. The
-  conserved credits added on 2026-08-26 refuse outright, so there are now three
-  behaviours in play.
-- *Why it matters:* mud on a sleeve and mud on the forearm beneath it are the
-  same substance to every reader, so a record that quietly drops the oldest fact
-  on one surface and rejects the newest on the other will read as a continuity
-  bug rather than a policy. Eviction is also the more dangerous default, because
-  it destroys a fact nobody asked to remove.
-- *How it should be resolved:* an owner ruling on one capacity policy for
-  material records, then a single change that applies it to both owners, with the
-  eviction path covered by a test whichever way it lands. Detail:
+- *What is unknown:* whether a garment's twelve-record bound is comfortable over
+  a long conversation. A garment carries material across many part scopes — a
+  sleeve, a hem and a collar can each hold their own substance — so its twelve
+  fill faster than a single body location's, and past the ceiling it now declines
+  new material instead of quietly dropping the oldest fact.
+- *Why it matters:* the capacity policy is settled and the ceiling is not. Too
+  low a bound makes a heavily used garment go deaf to new material, which reads
+  as a continuity bug in the other direction: the mud that lands on her cuff in
+  the last hour is simply never recorded.
+- *How it should be resolved:* by reading how often the
+  `garment_op.deposit_capacity` refusal actually fires in real conversations,
+  rather than by guessing a larger number. That refusal exists to be the
+  instrument, and explicit cleaning already frees capacity, so the honest
+  sequence is measure, then raise. The capacity policy itself was ruled on
+  2026-08-26 — one law for both surface owners, no owner may make room by
+  destroying another material fact — and the reasoning is recorded in the
   [effects spec](romantic-contact-affordances.spec.effects.md) §9.
 
 **Should the chat lane ever produce a conserved transfer at all?**
@@ -1025,39 +1029,70 @@ whether it bites.
   substantial pieces of work owned by other domains. Committing to a live
   transfer producer would pull both forward; leaving it fixture-only means the
   transaction sits proven and unused, which is cheap but easy to forget.
-- *How it should be resolved:* an owner ruling once one of the two gaps closes
-  for its own reasons. There is nothing to decide while both are open.
+- *How it should be resolved:* owner ruling (2026-08-26) — production stays
+  fixture-only while either ownership gap remains, and no narrow live producer is
+  built to work around them. Anything cheap enough to dodge those gaps would have
+  to manufacture one of the two truths the design explicitly refuses to
+  manufacture: a surface reading for a body that has no owner, or a layer address
+  for a layer whose owner cannot name it. The lifecycle rule follows from that —
+  no live producer while either blocker stands; reconsider promotion the moment
+  either one closes for its own reasons; and until then the pure transfer suites
+  and the Postgres transfer proof are required regression coverage, not
+  scaffolding for a feature that never shipped.
+- *Proposed, and deliberately not built — a mandatory canary for the strongest
+  proof:* the best evidence the conservation law has is the Postgres test that
+  injects a write failure and proves the debit and its receipt roll back
+  together. It lives in
+  `apps/web/src/server/engine/chat-state-fidelity.int.test.ts`, which is guarded
+  by `describe.runIf(ready)` and skips itself when no integration database is
+  present, and it runs in **no mandatory CI lane**: `pnpm test:engine`'s curated
+  file list does not name it, and `pnpm test:int` is never invoked by CI at all.
+  That is not an oversight — the CI workflow's EXCLUSION 1 deliberately places
+  the whole legacy character-chat integration surface outside the engine lane as
+  a measured cost decision, and this repo's standing rule is that the engine lane
+  stays a subset of the integration surface. Promoting this proof to a mandatory
+  canary is therefore a real CI-architecture change with EC2 cost attached, not a
+  glob edit, which is why it is written down here rather than done. A stronger
+  optional tripwire alongside it: encode the two remaining blockers as
+  machine-readable capability answers instead of prose, so a test asserts today's
+  `owner_unavailable` / `path_unavailable` results and starts failing the moment
+  another domain implements one — forcing someone to revisit this question rather
+  than relying on memory.
 
-**Should a corrupt wetness key be allowed to read as dry?**
+**Should the other three surface records poison absence the way wetness now
+does?**
 
-- *What is unknown:* whether `wetness` should get the per-entry key handling the
-  three identity-keyed modules received on 2026-08-26, and if so whether its key
-  schema's `.trim()` stays. Measured against the real schema while fixing the
-  others: one stored key that is empty or over its 64-character bound loses the
-  WHOLE wetness record, and a padded key such as `"  hair  "` is silently
-  rewritten on load.
-- *Why it matters:* this is the same defect class as the three that were fixed,
-  but the consequence is worse rather than milder. Absence is not neutral in this
-  module — the owner's own law says an absent location is honestly DRY — so one
-  unusable key turns "we do not know" into "she is dry" for every location on
-  that body, which is exactly the laundering the quarantine marker exists to
-  prevent, and dry hair carries mobility that wet hair does not. It was left
-  alone because folding it into the shared construction is a real fork, not a
-  mechanical change: a different key bound, a different degraded default, and a
-  trim that currently rewrites stored keys and would have to be kept
-  deliberately or dropped deliberately.
-- *How it should be resolved:* an owner ruling on the trim — normalise a padded
-  key on load, or quarantine it — after which the fix is the same three lines the
-  other three modules took. Noted alongside it, and not acted on: a stored key of
-  literally `__proto__` is assigned rather than defined, so it sets the record's
-  prototype instead of an own property. Pre-existing, unchanged by the 2026-08-26
-  fix, and negligible in effect, since no real identity collides with it.
+- *What is unknown:* marks, deposits and transfer receipts each quarantine an
+  unusable key under its own identity, but they carry the single shared marker
+  and their absence inference is untouched — an absent key still answers "no
+  mark", "clean", or "never transferred". Wetness went further on 2026-08-26,
+  because an unassignable key could have named any location. Whether the same
+  reasoning applies to the other three has not been decided.
+- *Why it matters:* each of those absence defaults is a claim too. The sharpest
+  case is the transfer receipt, whose absence answers "this transfer never
+  committed" — and a committed transfer that reads as never-committed runs a
+  second time, which is the double debit the conservation design exists to
+  forbid, reached from the one direction the quarantine rule was written to
+  close. A lost mark or a lost deposit is milder but still launders "we do not
+  know" into "there is nothing there".
+- *How it should be resolved:* an owner ruling on whether an unusable key in
+  those three records should poison their absence inference as well, weighed
+  against the cost of every read of an otherwise healthy record answering
+  `invalid` because of one corrupt sibling. Noted alongside it, and not acted on:
+  a stored key of literally `__proto__` is assigned rather than defined in all
+  four records, so it sets the record's prototype instead of an own property.
+  Pre-existing, unchanged by the 2026-08-26 fixes, and negligible in effect,
+  since no real identity collides with it. The wetness ruling and its four scoped
+  decisions are recorded in the
+  [effects spec](romantic-contact-affordances.spec.effects.md) §9.
 
 Every other question this plan once carried — the romantic surface's rollout,
 the sensory package boundary, whether the shared observation contract should
 carry a channel, who owns residue and marks, which effect to prove first, the
 shape of future permission scopes, and whether a relationship change should
-revoke permission — was resolved by owner rulings on 2026-08-22 and is recorded
+revoke permission — was resolved by owner rulings on 2026-08-22. Two more closed
+on 2026-08-26: what happens when a surface's material record is full, and
+whether a corrupt wetness key may read as dry. All of them are recorded
 in this plan and in the reconciled companion
 [effects spec](romantic-contact-affordances.spec.effects.md) and
 [permission spec](romantic-contact-affordances.spec.permission.md). Their future

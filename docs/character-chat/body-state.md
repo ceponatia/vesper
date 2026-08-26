@@ -36,23 +36,37 @@ lane does.
   garment-condition precedent: reading integrates forward and never mutates, writes touch
   only the locations a proposal named, and `updatedAtMinutes` therefore stays a truthful
   freshness stamp for the cause. **Primary character only** this release — `hair` is the
-  one owned location. Two laws about not letting a gap become a physical claim, then the
+  one owned location. Three laws about not letting a gap become a physical claim, then the
   modules that ride beside wetness in the same state:
-  - **Absent, dry, and invalid are three answers.** An absent entry is honestly dry
-    (nothing ever recorded wetting it). A stored entry whose `level`/`updatedAtMinutes`
-    fails parsing is **quarantined** as `{ status: "invalid" }` — persisted verbatim,
-    never pruned, and healed only by the next authoritative write — and
-    `bodySurfaceWetnessAt` returns an explicit `invalid` read the caller must handle.
-    Repairing it to `0` would be worse than useless: dry hair is *more* mobile than wet
-    hair, so a corrupt row would have bought a wind-motion cue. The adapter maps `invalid`
-    onto the affordance result law's `invalid`, files `affordance.input.invalid`, and the
-    hair domain (for which wetness is structural) falls silent. The three
-    identity-keyed modules below quarantine an unusable **key** the same way, under its
-    own identity: `z.record` rejects the whole record when a key fails, and these keys are
-    optional-with-fallback, so a per-record key check would empty the record and take every
-    valid sibling with it — silently answering "no mark", "clean", or "never transferred".
-    An unusable key is neither dropped (absence is a claim here) nor truncated (that gives
-    two events one slot). Wetness itself still checks its key per record.
+  - **Absent, dry, and invalid are three answers, and the wrong one is a physical claim.**
+    A stored entry whose `level`/`updatedAtMinutes` fails parsing is **quarantined** as
+    `{ status: "invalid" }` — persisted verbatim, never pruned, healed only by the next
+    authoritative write — and `bodySurfaceWetnessAt` returns an explicit `invalid` read the
+    caller must handle. Repairing it to `0`, or dropping it so absence answers instead, would
+    be worse than useless: losing wetness does not merely forget that hair was soaked, it
+    asserts that hair is dry, and dry hair carries mobility that wet hair does not — a corrupt
+    row would have bought a wind-motion cue. The adapter maps `invalid` onto the affordance
+    result law's `invalid`, files `affordance.input.invalid`, and the hair domain (for which
+    wetness is structural) falls silent.
+  - **Keys are validated per entry, and an unusable wetness key poisons absence.**
+    `z.record` rejects the whole *record* when one key fails, which would empty a character's
+    wetness and take every valid sibling with it, so wetness and the three identity-keyed
+    modules below each check their keys entry by entry. A key that is empty, longer than its
+    module's bound (64 characters for a body location), or that would need trimming is
+    **refused, not normalised**: a stored `"  hair  "` is never turned into the real `hair`
+    (that gives two events one slot) and never dropped either, since absence is a claim here.
+    It quarantines under its own raw identity carrying a second marker,
+    `{ status: "invalid", scope: "key" }`, because persisted authority is read under exactly
+    the identity it was written under. **So an absent location is honestly dry only while
+    every stored key is assignable** — where one is not, every absent location in that record
+    reads `invalid`, since an unassignable key could have named any location. The asymmetry is
+    the load-bearing part: a corrupt *value* has known scope and poisons nothing but its own
+    location; only an unassignable *key* poisons absence. The two markers are a superset
+    relationship — the predicate for "is this unreadable" answers true for both, so no caller
+    can spend either as a level. Two consequences while debugging: `pruneDryBodySurface`
+    prunes nothing at all in a record holding an unusable key, so pruning still cannot change
+    what any read returns; and a write still heals its own location, because a present key
+    outranks the poison.
   - **Standing outdoor precipitation HOLDS wetness** (`surfaceDryingSuspended` —
     `precipitationActive`, i.e. raining *and* not indoors). Without it a soaked character
     standing in a continuing downpour read bone dry after a few story hours, because
@@ -81,9 +95,15 @@ lane does.
     store**, so mud on a sleeve and mud on the forearm beneath it are one vocabulary. Each
     entry carries a location, a fixed-point amount, the minute it landed, and a free-text
     cause; per-entry quarantine, the 12-entry bound and the absent-until-first-commit key
-    rule all match `marks`. Ungated, unlike marks — material on skin is ordinary body
-    state, not a contact effect. The read projects as `body_surface.deposit` current-state
-    features (heaviest deposit per location, banded), which is what retired the
+    rule all match `marks`. **At that bound a new identity is refused, never evicted** — one
+    material-capacity law across both surface owners, so the garment store's ordinary deposit
+    path drops with `garment_op.deposit_capacity` rather than destroying a material fact to
+    make room. Deepening an identity that already stands still works at capacity: the check
+    guards growth, not update, and explicit cleaning is what frees capacity. The parse-time
+    bound on a stored deposit array is a different thing — it trims a corrupt or oversized
+    blob, and never makes room for a write. Ungated, unlike marks — material on skin is
+    ordinary body state, not a contact effect. The read projects as `body_surface.deposit`
+    current-state features (heaviest deposit per location, banded), which is what retired the
     `dirt_on_skin` and `blood_on_skin` unsupported-fact rows.
     - **Material never leaves on its own.** Wetness dries and marks fade because a surface
       is returning to its resting state; a deposit is a substance, and a surface that

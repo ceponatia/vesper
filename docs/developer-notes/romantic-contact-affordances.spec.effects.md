@@ -712,11 +712,14 @@ turns the opaque path handle into an owner address — so contact never learns
 what a layer is made of or how its owner names a part of it.
 
 `accept_transfer` is deliberately not a mode on `deposit`. `deposit` compiles a
-sentence: it max-merges, and at capacity it evicts the oldest record. Both are
-correct for a sentence and both destroy material here. The conserved credit adds,
+sentence, so it MAX-MERGES: "there is mud on her sleeve" establishes *at least*
+that much material, and raising to the larger of the two is the right reading of
+a sentence. It is the wrong reading of a conserved credit, which would silently
+absorb whatever the source lost. The conserved credit adds,
 refuses on saturation (`garment_op.transfer_saturated`), refuses at capacity
 rather than evicting a record this transfer never touched
-(`garment_op.transfer_capacity`), and refuses a non-positive or over-unit amount
+(`garment_op.transfer_capacity` — `deposit` now refuses there too, under the one
+capacity law below), and refuses a non-positive or over-unit amount
 (`garment_op.transfer_invalid_amount`). Its substance does not degrade to
 `unknown` the way `deposit`'s does: on the ordinary path an unnameable substance
 is honest, but here the substance is already owner-backed on the source side, so
@@ -730,15 +733,44 @@ Idempotency is explicitly **not** this reducer's job — a conserving add is by
 construction not idempotent, and the transaction dedupes before anything reaches
 it.
 
-Building this leg surfaced a divergence between the two surface owners that
-predates it: at capacity the garment deposit owner **evicts** the oldest record,
-while the body-surface deposit owner declines the new one and its producer
-reports `chat_surface.deposit_capacity`. They share the substance vocabulary, so
-mud on a sleeve and mud on the forearm beneath it behave differently when the
-record is full, and the eviction path has no test in either direction. The two
-conserved credits refuse outright, which makes the divergence three-way.
-Recorded as an open question in the
-[plan](romantic-contact-affordances.plan.md) §23.
+#### One material-capacity law for both surface owners
+
+Owner ruling (2026-08-26): **an owner may update a record it already holds, or
+add a new one while there is room, but may never make room by destroying another
+material fact. At capacity a new independent material fact is refused.**
+
+Building the credit leg surfaced a divergence it did not create. The garment
+owner contradicted itself inside one file: `acceptGarmentTransfer` refused at
+capacity because evicting destroys material that was never part of this
+transaction, while `applyDeposit` beside it dropped the oldest deposit through a
+`.slice(-GARMENT_MAX_DEPOSITS)` — no diagnostic, no trace row, and no test
+anywhere exercising the thirteenth deposit. The body-surface deposit owner
+already refused and reported. That is three behaviours over one shared substance
+vocabulary, so mud on a sleeve and mud on the forearm beneath it answered
+differently once the record filled.
+
+`applyDeposit` now refuses a NEW identity at capacity with
+`garment_op.deposit_capacity`, and the write-path slice is gone. Deepening an
+EXISTING identity still works at capacity, exactly as the conserved credits
+allow — the check guards GROWTH, not update. The thirteenth-deposit case is now
+covered in both directions, and the test was falsified against the old eviction
+behaviour before the fix landed.
+
+Two things the ruling deliberately does not do:
+
+- **`GARMENT_MAX_DEPOSITS` stays at 12.** The objection to refusing is real: a
+  garment accumulates material across many part scopes over a long conversation,
+  so its twelve fill faster than a body location's, and a full garment could go
+  quietly deaf to new material. The honest response to saturation is to measure
+  before resizing rather than to resume deleting history — the new refusal
+  diagnostic is that instrument, and explicit cleaning already frees capacity
+  (`applyClean` drops any deposit falling under the removal floor). Whether 12 is
+  the right bound for a garment is an open question in the
+  [plan](romantic-contact-affordances.plan.md) §23.
+- **The parse-time slice in `garment-instance.ts` stays.** It bounds a corrupt or
+  oversized stored blob on load; it never makes room for a write. Truncating
+  untrusted persisted data and evicting a committed fact to admit a newer one are
+  different acts, and only the second destroys something an owner recorded.
 
 #### The idempotency receipt lives in the debited surface's own state
 
@@ -776,6 +808,51 @@ where a lost record is §7's unowned sink, and on `marks`. All three now keep an
 unusable key under its own identity holding the shared quarantine marker:
 dropping it would claim the entry never existed, and truncating it would give
 two different events one slot.
+
+**Wetness is the same defect class and needed one more law** (owner ruling
+2026-08-26). It is the fourth record in this shape and the worst of the four,
+because its absence default is a physical CLAIM rather than a quiet "nothing
+here". Measured against the real schema while fixing the other three: one stored
+key that was empty or past its 64-character bound voided a whole character's
+wetness state, valid siblings included, and the field's `.catch({})` left nothing
+behind to say so; a padded key such as `"  hair  "` was silently trimmed into the
+real `hair` identity. Losing the record does not merely forget that hair was
+soaked — it asserts that hair is dry, and dry hair carries mobility that wet hair
+does not, so a corrupt jsonb row bought a wind-motion cue.
+
+Keys are now validated per entry here too, and an unassignable key quarantines
+under its own raw identity holding a SECOND marker,
+`BODY_SURFACE_UNUSABLE_KEY_ENTRY` (`{ status: "invalid", scope: "key" }`). It is
+a superset of the value marker, so no caller can spend either as a level. The
+half unique to this module is that **an unassignable key poisons the absence
+inference**: every absent location in that record reads `invalid` rather than
+dry, because an unassignable key could have named any location. Quarantining the
+row is necessary and not sufficient — with `"  hair  "` sitting in quarantine, a
+caller asking for `hair` would still find absence and absence would still say
+dry. The asymmetry is deliberate and load-bearing: a corrupt VALUE has known
+scope, so it poisons nothing beyond the location its key names.
+
+Four scoped decisions came with the ruling:
+
+- **The trim is refused at the key path rather than removed from
+  `locationKeySchema`.** That schema is also the value type for mark and deposit
+  `locationId`, and changing those is a separate ruling.
+- **`pruneDryBodySurface` returns its input untouched on a poisoned record.**
+  Pruning a dried-out entry there would move a true `known 0` into a poisoned
+  `invalid`, falsifying the prune's own law that it cannot change what any read
+  returns.
+- **A zero write on a poisoned record still deletes the entry**, so that location
+  returns to reading `invalid`. Silence is the conservative answer, and retaining
+  the zero would break the absent-entry-is-dry discipline the prune depends on.
+- **The read returns the existing `invalid` status rather than a fourth one.**
+  Every consumer already handles `invalid` conservatively — the hair domain
+  treats wetness as structural and falls silent, the visual adapter files
+  `affordance.input.invalid` — so a new member would buy nothing they could act
+  on.
+
+The other three records still carry the single marker and still leave their
+absence inference alone; whether they should follow wetness is an open question
+in the [plan](romantic-contact-affordances.plan.md) §23.
 
 #### The atomic persistence seam is conditional
 
@@ -1150,7 +1227,11 @@ pass.
 The garment credit leg's own four laws — it adds rather than max-merging,
 saturation refuses instead of clamping, a full record refuses instead of
 evicting, and a zero leg refuses — are covered beside `deposit` in
-`items/garment-condition.test.ts`.
+`items/garment-condition.test.ts`. The capacity law is now shared with `deposit`
+rather than distinguishing the two, and the same suite covers both directions of
+the thirteenth deposit: a new identity is refused with
+`garment_op.deposit_capacity`, and an identity the record already holds still
+deepens.
 
 The body-surface owner's own halves — the conserving pair's refusals and
 take-everything behaviour, and the receipt module's duplicate, capacity, horizon

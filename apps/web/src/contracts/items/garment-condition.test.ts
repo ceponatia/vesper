@@ -538,6 +538,49 @@ describe("deposit", () => {
     expect(result.applied).toBe(0);
     expectDiagnostics(result.sink, ["garment_op.part_unresolved"]);
   });
+
+  /**
+   * A garment carrying `GARMENT_MAX_DEPOSITS` distinct facts — one helping of
+   * mud per story minute, laid down through the real routed path.
+   */
+  function twelveDeposits(): ChatGarmentStore {
+    let store = storeOf(COTTON_TOP);
+    for (let minute = 0; minute < GARMENT_MAX_DEPOSITS; minute += 1) {
+      store = run(store, [mudOnHem], minute).store;
+    }
+    return store;
+  }
+
+  /**
+   * The 13th deposit — one material-capacity law across both surface owners
+   * (romantic-contact-affordances.spec.effects.md §9; owner ruling 2026-08-26),
+   * and the case nothing exercised in either direction until it changed.
+   *
+   * Falsified against the behaviour this replaced, where `applyDeposit` ended in
+   * `.slice(-GARMENT_MAX_DEPOSITS)`: the 13th landed, the oldest mud silently
+   * vanished, and nothing anywhere said a recorded fact had been destroyed.
+   */
+  it("refuses a 13th deposit rather than evicting a standing one", () => {
+    const store = twelveDeposits();
+    const before = JSON.stringify(store);
+    const result = run(store, [mudOnHem], GARMENT_MAX_DEPOSITS);
+    expect(result.applied).toBe(0);
+    expectDiagnostics(result.sink, ["garment_op.deposit_capacity"]);
+    expect(JSON.stringify(result.store)).toBe(before);
+  });
+
+  it("still deepens a deposit that already stands when the record is full", () => {
+    // Capacity guards GROWTH, not update — the same asymmetry `accept_transfer`
+    // holds below. A blanket "full" test would make a garment at twelve stop
+    // registering more of what is already on it.
+    const result = run(twelveDeposits(), [{ ...mudOnHem, degree: "extreme" }], GARMENT_MAX_DEPOSITS - 1);
+    expect(result.applied).toBe(1);
+    expectCleanSink(result.sink);
+    expect(result.condition.deposits).toHaveLength(GARMENT_MAX_DEPOSITS);
+    expect(result.condition.deposits.find((deposit) => deposit.atMinutes === GARMENT_MAX_DEPOSITS - 1)?.intensity).toBe(
+      GARMENT_UNIT_ONE,
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -551,10 +594,12 @@ describe("deposit", () => {
  *
  * Every case below is falsified by the obvious wrong implementation — reusing
  * `applyDeposit`, or "harmonising" the new reducer with it. That path
- * max-merges, clamps at the unit, and evicts the oldest record at capacity. All
- * three are correct for `deposit`, which compiles a sentence, and all three
- * destroy material here, where the number was already computed by a transaction
- * that recorded the matching loss on the source side.
+ * max-merges and clamps at the unit: both are correct for `deposit`, which
+ * compiles a sentence, and both destroy material here, where the number was
+ * already computed by a transaction that recorded the matching loss on the
+ * source side. Capacity is no longer one of the differences — both paths refuse
+ * rather than evict (owner ruling 2026-08-26), which is why the deposit block
+ * above carries that case for its own lane.
  *
  * Driven through `nextGarmentCondition` rather than the `run` helper because
  * `applyGarmentOperations` does not route `accept_transfer` yet; the laws under

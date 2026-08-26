@@ -613,17 +613,54 @@ function cleanedDeposit(
   return { ...deposit, intensity: residue, extent: Math.min(deposit.extent, residue) };
 }
 
+/**
+ * Record an ORDINARY deposit — the sentence-compiling path, where "there is mud
+ * on her sleeve" establishes *at least* that much material at that scope, which
+ * is why an identity that already stands is MAX-MERGED rather than added to
+ * (`acceptGarmentTransfer` below owns the conserved arithmetic, and the two must
+ * never be collapsed behind one name).
+ *
+ * At capacity a NEW identity is REFUSED (`garment_op.deposit_capacity`) rather
+ * than evicting the oldest record. One material-capacity law now holds across
+ * both surface owners (romantic-contact-affordances.spec.effects.md §9; owner
+ * ruling 2026-08-26): an owner may update a record it already holds, or add one
+ * while there is room, but may NEVER make room by destroying another material
+ * fact. This path used to `.slice(-GARMENT_MAX_DEPOSITS)`, which read as a
+ * policy and behaved as a continuity bug — the mud on her sleeve vanishing
+ * because six other things happened to that garment, with no diagnostic, no
+ * trace and nothing to tell a narrator the fact had ever existed.
+ *
+ * Deepening an EXISTING identity still works at capacity, exactly as
+ * `acceptGarmentTransfer` allows: the check guards GROWTH, not update.
+ *
+ * `GARMENT_MAX_DEPOSITS` stays at 12 deliberately, and the objection to
+ * refusing is real — a garment accumulates material across many part scopes
+ * over a long chat, so its twelve fill faster than a body location's, and a
+ * full garment could go quietly deaf to new material. The answer is to MEASURE
+ * before resizing, not to resume deleting history: this refusal diagnostic is
+ * the instrument, and explicit cleaning already frees capacity (`applyClean`
+ * drops any deposit falling under `GARMENT_DEPOSIT_REMOVAL_FLOOR`). Raise the
+ * number when the diagnostic says the ceiling is wrong, not before.
+ */
 function applyDeposit(
   condition: GarmentConditionState,
   operation: Extract<GarmentOperation, { kind: "deposit" }>,
   scope: ConditionScope,
   atMinutes: number,
-): GarmentConditionState {
+  sink?: DiagnosticSink,
+): GarmentConditionState | null {
   const intensity = GARMENT_DEGREE_BAND_VALUES[operation.degree];
   // A base-scoped deposit is whole-garment; `partIds: []` on the record says so.
   const partIds = scope.base ? [] : [...scope.partIds].sort();
   const id = depositIdFor(partIds, operation.depositKind, atMinutes);
   const existing = condition.deposits.find((deposit) => deposit.id === id);
+  if (!existing && condition.deposits.length >= GARMENT_MAX_DEPOSITS) {
+    return drop(
+      sink,
+      "garment_op.deposit_capacity",
+      `garment already carries ${GARMENT_MAX_DEPOSITS} deposits — deposit dropped rather than evicting one`,
+    );
+  }
   const merged: GarmentDeposit = existing
     ? {
         ...existing,
@@ -641,9 +678,10 @@ function applyDeposit(
         freshness: GARMENT_UNIT_ONE,
         atMinutes,
       };
-  const deposits = [...condition.deposits.filter((deposit) => deposit.id !== id), merged].slice(
-    -GARMENT_MAX_DEPOSITS,
-  );
+  // No `.slice(-GARMENT_MAX_DEPOSITS)`, and its absence is the law: the capacity
+  // check above already refused the only case that could grow the list, so the
+  // slice has nothing left to do except hide a bug by eating a record.
+  const deposits = [...condition.deposits.filter((deposit) => deposit.id !== id), merged];
   // A deposit SOILS where it landed: the affected scope can be no cleaner than
   // what the deposit leaves. That is how a hem stain makes the whole garment
   // read soiled without ever writing the base.
@@ -677,11 +715,12 @@ function applyDeposit(
  *   (`garment_op.transfer_saturated`). Clamping to `GARMENT_UNIT_ONE` is the
  *   same silent discard with better manners.
  * - **Capacity REFUSES rather than evicting**
- *   (`garment_op.transfer_capacity`), matching the body-surface owner
- *   (`contracts/state/body-surface.ts`) and diverging on purpose from
- *   `applyDeposit`'s `.slice(-GARMENT_MAX_DEPOSITS)`. Evicting the oldest record
- *   to make room destroys material that was never part of this transaction —
- *   the transfer would "conserve" by deleting someone else's mud.
+ *   (`garment_op.transfer_capacity`) — the one material-capacity law
+ *   `applyDeposit` above and the body-surface owner
+ *   (`contracts/state/body-surface.ts`) also hold (owner ruling 2026-08-26).
+ *   Evicting the oldest record to make room destroys material that was never
+ *   part of this transaction — the transfer would "conserve" by deleting
+ *   someone else's mud.
  * - **A non-positive or over-unit amount REFUSES**
  *   (`garment_op.transfer_invalid_amount`). A zero leg is a planner bug, not a
  *   no-op to wave through: §9's transaction is an equation, and a leg that moves
@@ -908,7 +947,13 @@ export function nextGarmentCondition(
       case "deposit": {
         const resolved = resolveScope(blueprint, operation.partIds, operation.kind, options.sink);
         if (!resolved) return null;
-        return applyDeposit(integrated, operation, expandRootScope(resolved, integrated), options.atMinutes);
+        return applyDeposit(
+          integrated,
+          operation,
+          expandRootScope(resolved, integrated),
+          options.atMinutes,
+          options.sink,
+        );
       }
       case "accept_transfer": {
         const resolved = resolveScope(blueprint, operation.partIds, operation.kind, options.sink);

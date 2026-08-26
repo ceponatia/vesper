@@ -17,6 +17,7 @@ import {
   BODY_SURFACE_MAX_TRANSFER_RECEIPTS,
   BODY_SURFACE_TRANSFER_RECEIPT_HORIZON_MINUTES,
   BODY_SURFACE_UNIT_ONE,
+  BODY_SURFACE_UNUSABLE_KEY_ENTRY,
   acceptBodySurfaceDeposit,
   bodySurfaceTransferCommitted,
   commitBodySurfaceDeposit,
@@ -63,6 +64,10 @@ describe("the schema quarantines rather than healing", () => {
     expect(parsed.wetness.hair).toEqual(BODY_SURFACE_INVALID_ENTRY);
     // The distinction the whole marker exists for: absent is DRY, this is UNKNOWN.
     expect(level(parsed, "hair", 0)).toBe("invalid");
+    // The ASYMMETRY, and it must stay: a corrupt VALUE has known scope — the
+    // location its key names — so an absent sibling is still honestly dry. Only
+    // an unassignable KEY poisons absence (the case below), because only an
+    // unassignable key could have named any location at all.
     expect(level(parsed, "chest", 0)).toBe(0);
   });
 
@@ -113,6 +118,35 @@ describe("the schema quarantines rather than healing", () => {
       expect(parsed[module]?.[unusable]).toEqual(BODY_SURFACE_INVALID_ENTRY);
       expect(readsAsPresent(parsed, unusable)).toBe(true);
     }
+  });
+
+  /**
+   * The same class in WETNESS, where it costs more than anywhere else, plus the
+   * half that is unique to this module (owner ruling 2026-08-26).
+   *
+   * Falsified against the old `z.record(locationKeySchema, …)` on three counts:
+   * an empty or over-long key failed the whole RECORD and `wetness`'s
+   * `.catch({})` handed back `{}`, so the valid sibling vanished — and here that
+   * does not merely forget a soaking, it ASSERTS dryness, which is the mobility
+   * dry hair has and wet hair does not. A padded key was silently trimmed into
+   * the real `hair` identity, inventing an authority nobody wrote. And
+   * quarantining the bad key alone would still not be enough: with `"  hair  "`
+   * in quarantine, asking for `hair` finds absence, and absence used to mean dry
+   * — so the corrupt row bought the convenient answer anyway.
+   */
+  it.each(["", "k".repeat(65), "  hair  "])("quarantines the unusable wetness key %j and poisons absence", (unusable) => {
+    const parsed = bodySurfaceStateSchema.parse({
+      wetness: {
+        chest: { level: 6_000, updatedAtMinutes: 10, cause: "rain" },
+        [unusable]: { level: 4_000, updatedAtMinutes: 10 },
+      },
+    });
+    expect(level(parsed, "chest", 10)).toBe(6_000);
+    // Under its OWN raw identity — never trimmed into `hair`, never dropped.
+    expect(parsed.wetness[unusable]).toEqual(BODY_SURFACE_UNUSABLE_KEY_ENTRY);
+    // The ruling: an unassignable key could have named any location, so absence
+    // in this record is no longer honestly dry.
+    expect(level(parsed, "hair", 10)).toBe("invalid");
   });
 
   it("round-trips the marker: persisting 'we lost this' is the honest record", () => {
