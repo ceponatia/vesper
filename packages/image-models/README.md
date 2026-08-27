@@ -17,9 +17,7 @@ exposes. Adapters own **behavior**; the probe owns **field truth**. A model with
 no adapter renders exactly as it does today — `adapterForImageModel` returning
 nothing is the ordinary answer, not an error.
 
-Plan and rationale:
-[image-model-adapters.plan.md](../../docs/developer-notes/image-model-adapters.plan.md)
-and its [spec](../../docs/developer-notes/image-model-adapters.spec.md).
+Model behavior reference: [docs/image-models/](../../docs/image-models/README.md).
 How the application uses the image system: [docs/images/](../../docs/images/README.md).
 
 ## The three pieces

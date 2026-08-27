@@ -39,8 +39,6 @@ field changes meaning, and never edit a committed round's file to match a new
 shape.
 
 Why this exists: the affordance-cue campaign (three live rounds, $6.29) left its
-numbers only as a hand transcription into
-[`body-attribute-affordances.trial.md`](../../../../docs/developer-notes/body-attribute-affordances.trial.md)
-§Rematch log, because `data/` is gitignored. Slice 0 of
-[narrator-physical-guidance.plan.md](../../../../docs/developer-notes/narrator-physical-guidance.plan.md)
-closed that hole before the next campaign spends anything.
+numbers only as a hand transcription into a trial document, because `data/` is
+gitignored. That hole was closed before the next campaign spends anything: the
+results committed here are now the durable record.

@@ -11,10 +11,7 @@ returns events, or an honest refusal.
 | `src/lib/`        | The pure kernels every projector, store and replay runs through   |
 | `src/test-support/` | Envelope, space and material fixtures the suites share          |
 
-Design and rationale: [engine.spec.md](../../docs/developer-notes/engine.spec.md).
 Current contracts, in prose: [docs/engine/](../../docs/engine/README.md).
-The extraction that produced this package:
-[monorepo-simulation-core.spec.md](../../docs/developer-notes/monorepo-simulation-core.spec.md).
 
 ## Why it exists
 
@@ -66,7 +63,7 @@ Two rules the whole domain rests on:
 ## Boundary
 
 The rules are the workspace's, not this package's — see
-[the guardrails spec](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md)
+[docs/architecture.md](../../docs/architecture.md)
 and `packages/image-core/README.md` §Boundary for the full statement. In short:
 
 - no `@/` imports and no relative path climbing out of this package; consumers

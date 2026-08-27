@@ -11,8 +11,7 @@ per-conversation switch that gates the feature in production.
 
 Round 1 (2026-08-17) ran and returned `invalid_induction`; slice 7 then closed on
 the mechanism rather than on a measured benefit, and the feature shipped as a
-per-conversation switch that is off by default. Record:
-[`visual-state.trial.md`](../../../docs/developer-notes/visual-state.trial.md).
+per-conversation switch that is off by default.
 
 This harness is kept, not retired: the question it asks is still open, and the
 matrix is the expensive half of asking it again.

@@ -4,8 +4,6 @@ The Replicate transport. Everything here is about talking to
 `api.replicate.com`; nothing here knows that Vesper has characters, chats, a
 database, or a Next.js application.
 
-Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
-What moved and why: [spec.replicate.md](../../docs/developer-notes/monorepo-image-core.spec.replicate.md).
 How the application drives it: [docs/images/providers.md](../../docs/images/providers.md).
 
 ## Server-only, and configured from outside

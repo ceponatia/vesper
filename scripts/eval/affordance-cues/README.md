@@ -9,10 +9,8 @@ Round 1 (2026-07-29) ran and failed to decide anything: the control arm
 contradicted at 0.13/exchange, so the cue arm had nothing to reduce. The
 **rematch** rebuilds the instrument — a bait matrix, a split judge, and an
 induction gate that refuses to render a verdict until the baits demonstrably
-tempt. Round-1 record:
-[`body-attribute-affordances.trial.md`](../../../docs/developer-notes/body-attribute-affordances.trial.md).
-Rematch design (the authority for everything below):
-[`body-attribute-affordances.trial.rematch.md`](../../../docs/developer-notes/body-attribute-affordances.trial.rematch.md).
+tempt. The round-1 record and the rematch design were retired with the
+working-doc tier; this README is now the authority for what the harness does.
 
 ## Run
 

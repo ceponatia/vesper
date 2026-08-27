@@ -4,9 +4,8 @@ The provider-neutral image engine. Everything here answers a question about
 **images**; nothing here knows that Vesper has characters, chats, a database, or
 a Next.js application.
 
-Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/finished/monorepo-image-core.plan.md).
 How the application uses it: [docs/images/](../../docs/images/README.md).
-Boundary enforcement rationale: [monorepo-image-core.spec.guardrails.md](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md).
+Boundary enforcement rationale: [docs/architecture.md](../../docs/architecture.md).
 
 ## Boundary
 
@@ -46,7 +45,7 @@ package-graph direction and cycles, root-barrel wildcards, and this package's
 browser/server portability. `pnpm lint:package-resolution` separately imports the
 package by name through the installed workspace. Both run in CI's static-checks
 job; the rules and their rationale are in
-[the guardrails spec](../../docs/developer-notes/finished/monorepo-image-core.spec.guardrails.md).
+[docs/architecture.md](../../docs/architecture.md).
 
 The dependency direction is deliberate: the application depends on the package,
 never the reverse. When code here appears to need something from the application,
@@ -74,8 +73,7 @@ Practical consequences:
 - **Diagnostics are reported, not persisted.** `DiagnosticSink` comes from
   `@vesper/contracts`, the one definition the whole repository shares; this
   package reports degradation through it and never decides what becomes of the
-  record. See
-  [spec.foundation.md](../../docs/developer-notes/finished/monorepo-image-core.spec.foundation.md).
+  record. See [docs/resilience.md](../../docs/resilience.md).
 - **Boundary parsing is not this package's job.** `@vesper/contracts` also owns
   `parseOr`, but nothing here parses untrusted data: a registry row or an
   identity pack arrives already parsed, at the application boundary that owns it.

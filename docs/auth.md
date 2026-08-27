@@ -247,7 +247,7 @@ because the edit surfaces need every column; everyone else gets the projection.
   description/ambient/scale/area/affordances/imageId; item
   kind/description/definition/imageId; social card description/definition.
 - The character **`profile` jsonb is itself projected** — `toPublicCharacterProfile`
-  in [`contracts/world/profile.ts`](../src/contracts/world/profile.ts), beside the
+  in [`contracts/world/profile.ts`](../apps/web/src/contracts/world/profile.ts), beside the
   field definitions so adding a profile field puts the reviewer next to the
   decision (security-authz.plan.md OQ2, ruled **conservative
   private-by-default**). A public preview shows **presentation only**: `bio`,

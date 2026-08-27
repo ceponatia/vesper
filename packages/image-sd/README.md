@@ -17,8 +17,6 @@ ordinary image profile, a Stable Diffusion render goes through
 current Vesper behavior with no code change. Stable Diffusion enters Vesper as an
 optional model-family capability, never as a second image system.
 
-Plan and rationale:
-[sd-rendering-package.plan.md](../../docs/developer-notes/sd-rendering-package.plan.md).
 How the application uses the image system: [docs/images/](../../docs/images/README.md).
 
 ## Boundary

@@ -10,8 +10,6 @@ primitive groups live here and nothing else:
 | `hash.ts`         | FNV-1a, the one non-cryptographic string hash, golden-pinned       |
 | `fixed-point.ts`  | The fixed-point integration kernel both lanes drift meters with    |
 
-Plan and rationale: [monorepo-image-core.plan.md](../../docs/developer-notes/monorepo-image-core.plan.md).
-What belongs here: [spec.foundation.md](../../docs/developer-notes/monorepo-image-core.spec.foundation.md).
 How the application uses both: [docs/resilience.md](../../docs/resilience.md).
 
 ## Why it exists
@@ -54,7 +52,7 @@ only when the package itself owns the trust boundary.
 ## Boundary
 
 The rules are the workspace's, not this package's — see
-[the guardrails spec](../../docs/developer-notes/monorepo-image-core.spec.guardrails.md)
+[docs/architecture.md](../../docs/architecture.md)
 and `packages/image-core/README.md` §Boundary for the full statement. In short:
 
 - one public code import path, `@vesper/contracts`, whose root barrel lists every

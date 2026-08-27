@@ -10,8 +10,7 @@ ComfyUI, pinned model assets, recipes, build configuration, and deployment
 checks.
 
 For the package boundary and the broader Stable Diffusion design, see
-[`../README.md`](../README.md) and
-[`sd-rendering-package.plan.md`](../../../docs/developer-notes/sd-rendering-package.plan.md).
+[`../README.md`](../README.md).
 
 ## What the renderer currently supports
 
@@ -64,8 +63,8 @@ edit it by hand.
 | `sdxl/identity-portrait-w095` | Stage 3 stronger PuLID trial arm                              |
 
 The Stage 3 PuLID trial selected `sdxl/identity-portrait` at 0.80 as the
-**provisional** identity recipe; the result, limitations, and evidence are in
-[`sd-rendering-package.trial.md`](../../../docs/developer-notes/sd-rendering-package.trial.md).
+**provisional** identity recipe; the graded evidence is in
+[`evidence/sd-identity-matrix-r1/`](../../../evidence/sd-identity-matrix-r1/README.md).
 
 **`sdxl/lora-portrait` was added after the deployed build was pushed.** The
 predictor refuses a recipe id that is not in the image's `recipes.json`, so the
@@ -307,7 +306,5 @@ atomically. The registry/version process is documented in
 ## Related documentation
 
 - [`@vesper/image-sd` README](../README.md) — package ownership and boundaries.
-- [`sd-rendering-package.plan.md`](../../../docs/developer-notes/sd-rendering-package.plan.md) — remaining implementation plan.
-- [`sd-rendering-package.trial.md`](../../../docs/developer-notes/sd-rendering-package.trial.md) — current identity-strength verdict and limitations.
 - [`docs/images/providers.md`](../../../docs/images/providers.md) — model registry, probing, profiles, and version promotion.
 - [`evidence/sd-identity-matrix-r1/README.md`](../../../evidence/sd-identity-matrix-r1/README.md) — Stage 3 identity-matrix evidence structure.
