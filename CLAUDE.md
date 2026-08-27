@@ -3,11 +3,11 @@
 - `AGENTS.md` is a symlink of `CLAUDE.md`; update `CLAUDE.md` only. Note this only works on Linux, not Windows. AGENTS.md will be blank on Windows.
 - This app is under active development. Do not preserve legacy behavior by default; prefer deleting obsolete code over deprecation wrappers.
 
-## Documentation
+## Documentation & work state
 
-- Documented system-by-system in `docs/`. **Read `docs/README.md` first**, then the relevant system doc, and update it in the same change when behavior or patterns shift.
-- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`** (`.claude/skills/vesper-docs/`). It owns the reference/working split, canonical ownership, `Outcome:` lines, residue guardrails, templates, and validation.
-  - **Reference docs say what is true now** (present tense, dateless, no plans or history). **Working docs say what is planned or in progress** (dated, directional, status-carrying). Split a file that tries to be both.
+- **GitHub owns work state; the repository owns technical truth.** Plans, status, sequencing, dependencies, and open questions live on the [Vesper Development board](https://github.com/users/ceponatia/projects/7) and its issues — never in repo documents. Plan documents are retired: a plan-sized effort is a parent issue with sub-issues, dependencies are native blocked-by relations, and a blocking open question is a `decision-needed` issue.
+- Documented system-by-system in `docs/`. **Read `docs/README.md` first**, then the relevant system doc, and update it in the same change when behavior or patterns shift. Durable docs state present-tense law and carry no status, no remaining work, and no blockers.
+- **Invoke the `vesper-docs` skill before writing or editing any Markdown under `docs/`, before filing or restructuring issues, and whenever deciding where information belongs** (`.claude/skills/vesper-docs/`). It owns the routing table (issue vs reference page vs ADR), the no-dynamic-state rule, issue and sub-issue conventions with verified commands, templates, and validation.
 
 ## Architecture
 
