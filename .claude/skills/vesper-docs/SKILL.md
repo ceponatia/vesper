@@ -1,398 +1,195 @@
 ---
 name: vesper-docs
-description: Create, review, and migrate Vesper documentation across both tiers — reference docs in docs/ and working docs in docs/developer-notes/ (plans, specs, trials, audits, roadmap). Use when writing or editing any Markdown under docs/, adding or closing out a plan, or restructuring documentation.
+description: Where information lives in Vesper — GitHub Issues and the project board own all work state (plan documents are retired), repo docs state durable technical law, ADRs record contested decisions. Use when writing or editing any Markdown under docs/, when about to record a plan, status, or progress anywhere, when filing or structuring issues and sub-issues, or when deciding whether something belongs in an issue, a reference page, or an ADR.
 ---
 
-# Vesper documentation
+# Where information lives
 
-Vesper documents in two tiers, and the split is the whole discipline:
+**GitHub owns work state; the repository owns technical truth; git owns
+history.**
 
-- **Reference docs (`docs/`)** describe the app **as it is now**. Present tense,
-  dateless, no plans, no history.
-- **Working docs (`docs/developer-notes/`)** describe **what we are doing about
-  it**. Dated, directional, status-carrying.
-
-A reader who wants to know how something works reads the reference tier. A
-reader who wants to know what is coming reads the working tier. When those two
-jobs collide in one file, split the file — never blur the tier.
-
-The always-loaded rules live in the root `CLAUDE.md`, `docs/README.md`, and
-`docs/developer-notes/CLAUDE.md`. This skill is the procedure for applying
-them, plus the five rules they do not state in full: canonical ownership, the
-Outcome line, the progress ladder, the residue guardrail, and the validation
-checklist.
-
-## Operating rules
-
-1. **Read before writing.** `docs/README.md` and the `README.md` of any folder
-   you touch; `docs/developer-notes/CLAUDE.md` for working docs. For an edit to
-   an existing topic, read the whole topic family (`ls docs/developer-notes/ |
-   grep <topic>`) before changing one file in it.
-2. **One canonical owner per fact.** Every outcome, invariant, and contract is
-   defined in exactly one document; everything else links to it. If two
-   documents define the same thing, stop and designate the owner before
-   rewriting either. Never resolve a conflict by making both sides agree —
-   delete one side and link to the other.
-3. **Every plan opens with a Status line and an Outcome line.** See
-   [The Outcome line](#the-outcome-line).
-4. **Every new plan is written from the plan template.** `templates/plan.md` is
-   the only allowed plan structure: every numbered section present — filled
-   with `N/A — <why>` when it does not apply, never deleted — and no sections
-   beyond the template. Template gaps go to the project owner, not around the
-   template. See [The plan template](#the-plan-template).
-5. **Uncertainty has one home: the owning plan's `## Open questions`.** A spec,
-   audit, trial, or reference doc may raise a question, but it must also appear
-   in the plan. Resolving one means removing it from the plan and recording the
-   ruling in the detail doc.
-6. **Never write conversation into a document.** See
-   [The residue guardrail](#the-residue-guardrail).
-7. **Record every finished piece of work one rung up.** A finished slice goes in
-   its spec, and a finished spec in its plan — in the same change that finishes
-   it. See [The progress ladder](#the-progress-ladder).
-8. **Never mark work shipped because code exists.** A merged PR, a passing test,
-   a spec, or a written slice does not close a plan. `shipped` means the WHOLE
-   plan is delivered *and accepted*; a behavior claim additionally requires a
-   trial or evidence doc that says what was observed. Built-but-unaccepted is its
-   own state and must be written as such.
-9. **Prefer deletion to preservation.** Superseded docs get removed, not
-   annotated. This repo does not keep a legacy tier, and git history is the
-   archive.
-10. **Tables follow the formatting rules or become lists.** See
-    [Table formatting](#table-formatting). Both tiers, no exceptions.
-11. **Reference docs carry no dates, no slice numbers, and no future tense.** If
-    you are writing "will", "planned", or "once we", you are writing a plan and
-    it belongs in the working tier.
-
-## Artifact ownership
-
-Working tier — `docs/developer-notes/`:
-
-- **`<topic>.plan.md`** — owns the Outcome line, why the work matters, what the
-  owner gets, product boundaries and non-goals, the delivery slices and their
-  order, **a one-line delivery status per slice or stage** (see
-  [Stage-status lines](#stage-status-lines)), success criteria, **which of its
-  specs are complete**, and **all** open questions. Written in plain English for
-  a non-technical product reader. Must not own type shapes, algorithms, schema
-  sketches, file trees, implementation pseudocode, or a slice-by-slice build
-  narrative.
-- **`<topic>.spec.md` / `<topic>.spec.<area>.md`** — owns contracts, type
-  shapes, ownership rules, algorithms, persistence decisions, diagnostics, code
-  organization, migrations, fixtures, and **the implementation status of every
-  slice it governs** — built, built-but-unaccepted, or remaining. Written for
-  coding agents. Must not own priority, product rationale beyond a one-line
-  pointer, or open product questions.
-- **`<topic>.trial.md`** — owns the stakeholder verdict: the decision,
-  player-visible outcomes, limitations, and next steps, in plain English. Must
-  not own chat or message identifiers, timestamps, logs, diagnostic names, or
-  internal state.
-- **`<topic>.trial.evidence.md`** — owns exactly what the trial doc may not:
-  identifiers, timings, diagnostic codes, verification history.
-- **`<topic>.audit.md`** — owns findings about the code as it stood on a stated
-  date. Must not own the plan to fix them; a fix worth doing becomes a plan.
-- **`<topic>.followups.md`** — owns post-ship corrections to a shipped topic.
-- **`roadmap.md`** — owns priority order and nothing else. Its `## To be
-  Planned` section is the owner's intake; agents never add to or reword it.
-
-Reference tier — `docs/`:
-
-- **`docs/README.md`** — owns the reading order and the documentation rules for
-  this tier.
-- **`docs/<system>.md`** or **`docs/<system>/`** — owns the current patterns and
-  invariants of one live system. Must not own rollout plans, dates, or history.
-- **`docs/contracts/`** — owns the registries and extension points (attributes,
-  meters, fact kinds, body locations) and how to extend them.
-- **`docs/guide/`** — owns task-oriented manual pages for a person using the app.
-- **`docs/image-models/`** — owns per-model external API reference.
-
-## The progress ladder
-
-Finished work is recorded **one rung up**, in the same change that finishes it.
-Landed work its governing doc does not mention is unfinished work: the next agent
-rebuilds it, or plans around a gap that closed weeks ago.
-
-| Finished | Recorded in | As                                 |
-| -------- | ----------- | ---------------------------------- |
-| A slice  | its spec    | implementation status + any ruling |
-| A spec   | its plan    | one line, not a build narrative    |
-
-**Intent lives in the plan; state lives in the spec.** The plan says which slices
-exist and what each one makes true — that is the delivery order and it does not
-change when code lands. The spec says whether they are built. A plan that grows a
-slice-by-slice build history has taken over its spec's job, and the two will
-disagree within a month.
-
-A plan with no spec owns its own slice status until it grows one. The moment it
-does, that status moves and the plan keeps only the per-spec line and the
-stage-status lines below.
-
-### Stage-status lines
-
-Owner ruling (2026-08-11): every delivery stage or slice listed in a plan
-carries a **one-line status marker** directly under its heading (or at the head
-of its bullet), so switching between slices never requires re-reading the whole
-topic family to learn what is already done.
-
-```markdown
-### Stage 1 — controlled portraits
-
-Status: built 2026-08-11 — awaiting owner trial runs on the deployed bench.
+```text
+GitHub Project   what matters now — Status, Horizon, Priority, Area, Effort
+GitHub Issues    what we intend, what blocks it, decisions needed, experiments, acceptance
+Repo docs        what the system currently guarantees
+Git history      how we got here
 ```
 
-The vocabulary: `complete — <date>`, `built <date> — awaiting <what>`,
-`in progress`, `next`, `queued`, `blocked on <what>`, `void — <why>`. One line,
-no build narrative, no slice history — the spec remains the owner of build
-detail and of any ruling the build settled, and when the two disagree the spec
-is authoritative and the plan's line is the summary to correct. This is
-stage-level **delivery** state (the same ladder rung as "which of its specs are
-complete"), not a duplicate of the spec's implementation table.
+The test for every artifact: **an agent picking up an issue must be able to act
+from that issue, at most one parent issue, one 100–200-line reference page, and
+the code.** If a task requires reading six historical documents first, the
+information is in the wrong place — move it, don't add a seventh.
 
-### Built is not accepted
+The board is **Vesper Development** — project `7`, owner `ceponatia`, id
+`PVT_kwHOARzdw84BhlWR`. Its README holds the field and label conventions; the
+commands below are the verified essentials.
 
-Between "the code is merged" and "the plan is done" there is a real state, and it
-has to be written down: every slice built, nothing left to code, waiting on a
-paid trial, an owner review, or a flag enable. Record it in the governing doc and
-**name what is being waited on**. A plan in that state carries
-`Status: awaiting acceptance — <what>`. It is not `shipped`, and it keeps its
-roadmap line.
+## The routing table
 
-The failure this prevents is the quiet one: work that reads as done because the
-PR merged, so nobody runs the trial that was the whole point of building it.
+One home per kind of information. Never write the same fact into two homes —
+status in an issue body, a slice list in a doc, or a dependency in prose
+re-creates exactly the drift this system deleted.
 
-### The index stays short
+| Information                  | Home                                          |
+| ---------------------------- | --------------------------------------------- |
+| Outcome, product intent      | parent issue                                  |
+| Current status               | project field, set at triage                  |
+| Implementation sequence      | sub-issues, in order                          |
+| Individual work items        | issues and sub-issues                         |
+| Dependencies                 | native blocked-by relations                   |
+| Design reasoning             | issue comments; a `research` issue            |
+| Owner rulings                | issue comment; ADR only if it becomes law     |
+| Open questions that block    | a `decision-needed` issue                     |
+| Acceptance criteria          | the issue that closes on them                 |
+| Technical laws               | a reference page under `docs/`                |
+| History, research residue    | closed issues, merged PRs, git                |
 
-No slice list, no rulings, no build history — those stay in the plan and its
-specs, which is why a roadmap entry links to them. `roadmap.md` is an index, and
-an entry that grows past a sentence or two is a plan leaking into it.
+## Work state: issues, sub-issues, the board
 
-## The Outcome line
+**Plan documents are retired.** Never create a `*.plan.md`, a roadmap file, or
+any document whose job is to say what happens next. A plan-sized effort is a
+**parent issue**; anything smaller is an issue or a sub-issue.
 
-Every `.plan.md` opens with its title, then `Status:`, then `Outcome:` — one
-sentence, before any prose.
-
-```markdown
-# Scene image spatial fidelity
-
-Status: next (planned 2026-08-07)
-
-Outcome: A player can see a scene image that matches where the characters
-actually are, so that the picture stops contradicting the text they just read.
-```
-
-The sentence names **a person**, **a concrete new ability**, and **an
-observable consequence**. The person is a player, the owner, or a developer
-working in this repo — never a system. Internal work gets an honest internal
-outcome ("A developer can change the attribute registry without touching the
-schema, so that adding a trait stops requiring a migration"), not an invented
-player benefit.
-
-Rejected shapes:
-
-- **A system as the subject** — "The narrator receives constraint cues" names no
-  person and no benefit.
-- **Trust claims as the benefit** — "so that the app is more robust/reliable/
-  polished" is unobservable. Say what changes on screen or in the workflow.
-- **Unexplained internal vocabulary** — if the sentence needs "LOD", "affordance
-  compiler", or "identity pack" to parse, rewrite it for a reader who has never
-  seen this repo. The term can appear later in the document, defined.
-- **A restatement of the work** — "so that scene images use the spatial index"
-  describes the implementation, not the result.
-
-The Outcome line is the plan's property. The roadmap's entry for the plan keeps
-its own bold title and prose hook, but the hook **must not contradict the
-Outcome line** — when the plan's outcome changes, check the roadmap line in the
-same edit.
-
-Non-plan docs do not carry an Outcome line. They carry a Status line saying what
-they are: `Status: companion to <plan>`, `Status: detail for <plan>`,
-`Status: reference (audit run <date>)`, `Status: closed — <verdict> <date>`.
-
-## The plan template
-
-`templates/plan.md` (beside this file) is the **mandatory structure for every
-new `.plan.md`**. Owner ruling (2026-08-22): the template is enforced, not
-advisory.
-
-- **Every numbered section appears in the finished plan**, in template order,
-  under the template's headings. There is no such thing as a section that is
-  skipped for brevity.
-- **A section that does not apply is filled, not removed.** Write
-  `N/A — <why it does not apply>` under the heading. A bare `N/A` is
-  acceptable; the reason is better, because it proves the section was
-  considered rather than skipped.
-- **No sections beyond the template.** If a plan needs a section the template
-  does not define, ask the project owner to upgrade the template (via
-  `AskUserQuestion` in an interactive session; otherwise record it under the
-  plan's `## 23. Risks and open questions` and say the template is waiting on
-  an owner ruling). The point is that a template gap gets fixed for every
-  future plan — or ruled out — rather than worked around in one document.
-- The template's trailing **"Planning rules for agents" section is writer
-  instruction**, not plan content. It is the one part of the template that does
-  not appear in the finished plan.
-- **Plans written before the template (adopted 2026-08-22) are migrated in
-  dedicated tasks**, one plan at a time, on the owner's request. When editing a
-  pre-template plan for any other reason, keep its existing structure — do not
-  restructure it to the template as a side effect of another change.
-
-## Document length
-
-**The ~400-line guideline is a reference-tier rule only.** It exists because
-`docs/` is read by a person orienting themselves, and a long reference doc
-buries the thing they came for. A `docs/<system>.md` past ~400 lines gets
-promoted to `docs/<system>/` with a `README.md` index plus one file per
-sub-topic (`docs/README.md` has the procedure).
-
-**Working docs under `docs/developer-notes/` have no line limit.** A plan, spec,
-trial, or audit is as long as its subject requires, and a 900-line spec is not a
-defect — splitting one to hit a number produces artificial seams that scatter a
-single argument across files and make the topic harder to follow, not easier.
-
-Split a working doc when its **content** justifies it, never its length:
-
-- A spec covering several genuinely separate domains, where a reader needs one
-  and not the others → `<topic>.spec.<area>.md`.
-- A topic whose parts are edited independently by different work → a hub plus
-  unit docs, the way the engine gate and spec-cluster docs are organized
-  (`docs/developer-notes/CLAUDE.md` §"Engine gate docs").
-- A plan carrying spec-grade technical detail → that detail moves to the spec.
-  This is a boundary fix that happens to shorten the plan, not a length fix.
-
-Do not open a split-for-length pass over `docs/developer-notes/`, and do not
-report a working doc as oversized on line count alone.
-
-## Table formatting
-
-A Markdown table is read far more often in the raw `.md` file than in a
-renderer. A table whose source is a ragged wall of pipes is worse than no table
-at all — that is the problem these rules exist to solve. **Optimize for the raw
-file, not the rendered output.**
-
-Structure — decide whether it should be a table at all:
-
-- Prefer **2–4 columns**. Split a very wide table into several narrower ones.
-- Keep cells short — **roughly 50–70 characters** is a useful soft limit.
-- Prefer short phrases over sentences inside cells.
-- **If several cells need long prose, do not use a table.** Use headings and
-  bullets. This is the common case in plans and specs, and a list is the right
-  answer there — do not force the content into a grid.
-- No paragraphs, bullet lists, or multi-line code blocks inside a cell. If a
-  cell needs several short items, join them with `<br>`.
-
-Source formatting — non-negotiable once you have a table:
-
-- Every row is **exactly one physical line**. Never wrap a row across lines.
-- Never insert a newline inside a cell.
-- **Pad cells with spaces so the pipes align vertically** in the raw file.
-- The separator row uses the same column widths as the rest.
-- Escape a literal pipe inside cell content as `\|`.
-
-Aligned, so the source reads as a grid:
+A parent issue is the agent's map — 30–50 lines, this shape (the "Feature or
+plan" issue form produces it):
 
 ```markdown
-| Gate | Status              | Owns                          |
-| ---- | ------------------- | ----------------------------- |
-| 5    | CLOSED — 2026-07-20 | Bodies, materials             |
-| 6    | CLOSED — 2026-07-21 | Dual level of detail          |
-| 7    | draft               | Institutions — not committed  |
+**Outcome:** A player can <do something concrete> so that <observable consequence>.
+
+## Current state        — built vs accepted, honestly distinguished
+## Scope                — what this covers; delivery order as sub-issues
+## Acceptance           — the trial, review, or enable that makes it Done
+## Constraints & rulings — dated: `Owner ruling (2026-08-26): …`
+## References           — the reference pages this work implements
 ```
 
-Any table you touch gets brought into this shape as part of the edit — the same
-way a table you touch used to get converted to a list.
+- **Sub-issues are the implementation stages**, created when work on the parent
+  actually starts — not speculatively. Finishing a stage closes its sub-issue;
+  nothing else needs updating, because nothing else records it.
+- **A discovered prerequisite is a new sub-issue plus a blocked-by relation** on
+  the work it gates — never a prose note. Dependencies are structural: there is
+  deliberately no "Blocked" status; blocked work is visible through its
+  relations.
+- **A blocking open question is a `decision-needed` issue**: the plausible
+  choices, their consequences, links to the code. Close it when the owner
+  rules; record the ruling as a dated comment. If the ruling changes durable
+  law, update those lines in the reference page in the same change.
+- **Research lives in a `research` issue and usually dies with it.** Once
+  decided: rationale worth keeping → ADR (rarely), resulting behavior →
+  reference page, resulting work → issues, everything else → closed-issue
+  history. Measured trials and benchmarks are the exception — reproducibility
+  can justify a durable evidence artifact in the repo.
+- **Fields are set on the board at triage** (Status, Horizon, Priority, Area,
+  Effort) — never restated in bodies or docs. New issues auto-add to the board
+  as Inbox within a few minutes; Inbox means untriaged, not forgotten.
+- **Built is not accepted.** Awaiting Acceptance is a Status, and the issue
+  names what it waits on. Closing an issue asserts delivered *and* accepted.
+- Filing something you noticed in passing: add the `agent-found` label.
+- **GitHub Discussions are not used** (owner ruling 2026-08-26): part of the
+  agent fleet cannot read them, so a decision parked there is a silo. Decisions
+  and research conversations are issues.
 
-## The residue guardrail
+### Commands (verified against this repo, gh ≥ 2.89)
 
-Before finishing any document, search it for conversation that leaked into the
-record. Rewrite or delete:
+```bash
+# File work. Labels: bug, technical-debt, performance, security, documentation,
+# research, evaluation, decision-needed, agent-found.
+gh issue create --repo ceponatia/vesper --title "..." --body-file body.md --label research
 
-- Address to a reader in the room — "as discussed", "you said", "your feedback",
-  "as you requested", "per your note", "let me know", "I understand".
-- Deferred thinking presented as content — "we need to figure out", "still needs
-  to be decided", "TBD" left standing in a plan body.
-- Agent narration — "the agent will", "I checked and", "this was harder than
-  expected", review commentary about the work rather than the product.
-- Undefined internal vocabulary used as if the reader shares the conversation
-  it came from.
+# Auto-add reaches the board within minutes; to set fields immediately, add it
+# yourself. Field and option ids come from field-list.
+gh project item-add 7 --owner ceponatia --url <issue-url> --format json --jq .id
+gh project field-list 7 --owner ceponatia --format json
+gh project item-edit --project-id PVT_kwHOARzdw84BhlWR --id <item-id> \
+  --field-id <field-id> --single-select-option-id <option-id>
 
-Each one converts into a structured home instead: a **Context** or
-**What the owner gets** paragraph, a **Non-goal**, a decision recorded in the
-spec, or an entry under the plan's **`## Open questions`**.
+# Make B a sub-issue of A — REST wants database ids, not issue numbers.
+CHILD=$(gh api repos/ceponatia/vesper/issues/<B> --jq .id)
+gh api -X POST repos/ceponatia/vesper/issues/<A>/sub_issues -F sub_issue_id=$CHILD
 
-Owner rulings are the exception worth preserving, and they get recorded as
-rulings — "Owner ruling (2026-08-05): at `exact` LOD the primary stays
-mechanically inert" — not as remembered dialogue.
+# Mark N blocked by M.
+BLOCKER=$(gh api repos/ceponatia/vesper/issues/<M> --jq .id)
+gh api -X POST repos/ceponatia/vesper/issues/<N>/dependencies/blocked_by -F issue_id=$BLOCKER
+```
 
-## Workflows
+Close an issue by landing its PR with `Closes #N` in the body — the board's
+automation moves it to Done and archives it after two quiet weeks.
 
-### Writing a new plan
+## Durable docs: reference pages
 
-1. Check `roadmap.md` first. Work the top of `## Next` unless told otherwise;
-   out-of-order work still gets a roadmap line before you start.
-2. Copy `templates/plan.md` — the mandatory plan template
-   ([The plan template](#the-plan-template)). Fill Status and Outcome before any
-   prose — if you cannot write the Outcome line, the work is not understood well
-   enough to plan. Then fill every numbered section: `N/A — <why>` where one
-   does not apply, no deletions, no additions, and remove the template's
-   trailing "Planning rules for agents" section once followed.
-3. Put every technical decision in `<topic>.spec.md` from the start. A plan that
-   grows type names is a plan that needed a spec three paragraphs ago.
-4. Add the `roadmap.md` line under `## Next` or `## Active`. If the idea came
-   from `## To be Planned`, remove it from there in the same change.
+A reference page states **what the system currently guarantees** — boring,
+present-tense law an agent can check code against. It tells no story of how the
+feature was built, lists no alternatives, and records no progress. Template:
+`templates/reference-doc.md`.
 
-### Editing an existing topic
+- **Shape:** one paragraph of orientation; an "Owns / does not own" section
+  naming the boundary and the owning page for what it excludes; then laws as
+  short declarative bullets grouped by aspect. Target 100–200 lines (the
+  reference tier's ~400-line promotion rule in `docs/README.md` still governs).
+- **One canonical owner per fact.** If two pages define the same thing, stop
+  and designate the owner — delete the other side and link to the owner. Never
+  resolve a conflict by making both sides agree.
+- **Docs do not link into work state.** No issue or PR references as content —
+  git blame is the provenance. Issues point at docs, not the reverse.
 
-1. List the family: `ls docs/developer-notes/ | grep <topic>`.
-2. Identify the canonical owner of the thing you are changing. Edit that file.
-3. Update the docs whose meaning changed — not every doc that mentions the topic.
-4. If behavior shipped, update the matching **reference** doc in `docs/` in the
-   same change. A shipped behavior that only exists in a plan is undocumented.
+### The no-dynamic-state rule
 
-### Closing out a slice
+A durable doc may **never** contain: `Status:` lines · "next" / "remaining
+work" / "not started" · slice or stage numbers · rollout checklists · roadmap
+priority · current blockers · "awaiting owner" · PR or issue state. All of that
+is board state.
 
-The common case, and it never touches the roadmap. In the same change that lands
-the code:
+The distinction that matters — an architectural **requirement** belongs in the
+page; **project state** does not:
 
-1. Update the **spec**'s implementation status: this slice is built, or built and
-   waiting on something you name. Record any ruling the build settled.
-2. If the slice completed everything a spec governs, add or update that spec's
-   line in the **plan**.
-3. If behavior changed for a user, update the matching **reference** doc in
-   `docs/` — a shipped behavior that only exists in a plan is undocumented.
-4. Correct the plan's own text where the build contradicted it. A plan that still
-   describes a blocker the slice removed will send the next agent around it.
+- Belongs: "A transfer requires an addressable body-surface owner on both
+  participants."
+- Does not: "Blocked because player body-surface ownership isn't implemented
+  yet."
 
-If the roadmap's one-line hook for the plan now says something untrue — it named
-this slice as the next work, or as a blocker — fix that line and nothing else.
+### Style guards
 
-### Closing out a plan
+- **No conversation in the record:** no "as discussed" / "you said" / "let me
+  know", no agent narration, no standing `TBD` — an undecided thing is a
+  `decision-needed` issue, not a placeholder. Owner rulings appear as dated
+  ruling lines, not remembered dialogue.
+- **Tables are read raw:** 2–4 columns, short cells, every row one physical
+  line, pipes padded so the source aligns, literal pipes escaped `\|`. If
+  several cells need prose, it is a list, not a table.
 
-Only when the whole plan is delivered **and accepted**. In one change: set the
-plan's `Status:` to `shipped — <date>` with a note naming leftovers and where
-they went, and remove its entry from `roadmap.md`.
+## ADRs — sparingly
 
-If the code is all written but acceptance has not happened, this is not that
-change. Set `Status: awaiting acceptance — <what>`, record it in the spec too,
-and leave the roadmap entry in place.
+`docs/decisions/NNN-<slug>.md`, template `templates/adr.md`: Decision, Context,
+Alternatives considered, Why this choice, Consequences — 30–100 lines.
 
-### Migrating or cleaning existing docs
+An ADR exists to **prevent re-litigation**, not to record history. "Touch,
+smell and taste are sibling owners; do not collapse them into one sensory
+system" earns one, because someone will propose collapsing them again. "Use 30
+days instead of 60" does not — that number belongs in the relevant reference
+page. Most owner rulings never become ADRs.
 
-1. **Inventory before wording.** Determine the canonical owner, every inbound
-   link, and the current implementation status. Do not improve prose first.
-2. **Designate the owner** when two docs claim the same fact. Rewrite the owner;
-   reduce the other to a link, or delete it.
-3. **Extract, don't annotate.** Residue becomes an open question or a decision.
-   Superseded content is deleted, not marked deprecated.
-4. **Synthesize then remove.** When a working page's unique information has been
-   folded into its canonical owner, delete the page. Do not create an archive
-   tier for it — git history is the archive.
-5. **Verify links last**, after the moves settle.
+## Transition — until #280 lands
+
+Issue #280 restructures `docs/` into `docs/architecture/`,
+`docs/systems/<area>/`, and `docs/decisions/`, converts surviving specs into
+reference pages, and retires the remaining working docs. Until it lands:
+
+- `docs/developer-notes/` still exists as a **legacy holding area** — its local
+  `CLAUDE.md` states the rules. Create nothing there.
+- Surviving `*.plan.md` files are **frozen**: the issues seeded from them
+  (#207–#232) own their live state. Never update a plan file for progress, and
+  never delete one piecemeal — retirement is #280's job, wholesale.
+- Specs under `docs/developer-notes/` remain live technical contracts: edit
+  them when behavior changes, and strip dynamic state from every section you
+  touch rather than adding any.
+- Do not begin the restructure opportunistically. Repointing seeded issues,
+  moving evidence, and the systems tree land together under #280.
 
 ## Validation
 
-There is no automated docs checker in this repo, and a documentation-only change
-runs no code gates — there are no local git hooks, and CI's gates cover code
-paths (root `CLAUDE.md`). Validate by hand before finishing:
+Before finishing any change this skill governed:
 
-- **Every relative link in `docs/` resolves.** Not just the ones you touched —
-  archiving breaks links in files you never opened. Run it, do not eyeball it:
+- **Every relative link in `docs/` resolves** — run it, don't eyeball it:
 
   ```bash
   python3 -c "
@@ -400,54 +197,28 @@ paths (root `CLAUDE.md`). Validate by hand before finishing:
   n=0
   for f in glob.glob('docs/**/*.md',recursive=True):
       d=os.path.dirname(f)
-      for m in re.finditer(r'\]\(([^)#]+\.md)(?:#[^)]*)?\)',open(f).read()):
+      for m in re.finditer(r'\]\(([^)#]+\.md)(?:#[^)]*)?\)',open(f,encoding='utf-8').read()):
           t=m.group(1)
           if not t.startswith('http') and not os.path.exists(os.path.normpath(os.path.join(d,t))):
               n+=1; print('BROKEN',f,'->',t)
   print('broken:',n)"
   ```
 
-  Expected output is `broken: 0`. When a repoint is needed, the fix is almost
-  always one more `../` (the doc moved a level deeper), not a renamed target.
-- **No reference doc links into `docs/developer-notes/`.** A plain-text mention
-  in backticks is the correct form, so the check must match link *targets* only —
-  an unanchored `developer-notes` grep flags the correct form as a violation:
+- **No reference doc links into `docs/developer-notes/`** (plain-text backtick
+  mentions are the correct form):
 
   ```bash
   grep -rnE '\]\([^)]*developer-notes' docs --include="*.md" | grep -v "^docs/developer-notes/"
   ```
-- `roadmap.md` links resolve and its entries do not contradict each plan's
-  `Status:` line.
-- Every live plan has a Status line and an Outcome line, and every delivery
-  stage or slice you touched carries its one-line status marker
-  ([Stage-status lines](#stage-status-lines)).
-- Every plan **created in this change** follows the plan template: all numbered
-  sections present in order, `N/A — <why>` where one does not apply, no
-  sections the template does not define, and the template's "Planning rules
-  for agents" trailer removed ([The plan template](#the-plan-template)).
-  Pre-template plans you merely edited are exempt until their dedicated
-  migration task.
-- **Every piece of dev work in this change is recorded one rung up** — the slice
-  in its spec, the completed spec in its plan. Anything built but not yet
-  accepted says so, and names what it waits on.
-- A plan left `roadmap.md` **only** if the whole plan completed and was
-  accepted, never because a slice landed.
-- Every table you touched obeys [Table formatting](#table-formatting): pipes
-  aligned in the raw source, one physical line per row, no newlines in cells,
-  2–4 columns, short cells — or it is a list instead.
-- No residue phrases (see the guardrail) in any plan or trial body.
-- Reference docs you touched stay present-tense and dateless.
-- **Reference-tier only:** a `docs/` doc over ~400 lines is promoted to a folder
-  per `docs/README.md`. **The line guideline does not apply to
-  `docs/developer-notes/`** — see [Document length](#document-length).
 
-If the change also touches code, the normal CI gates apply on its PR; the docs
-checks above are additional, not a substitute.
+- **No dynamic state in any durable doc you touched** — check against the
+  banned list above, and search touched files for `Status:`, `slice`,
+  `remaining`, `awaiting`, `blocked on`.
+- **No new files under `docs/developer-notes/`.**
+- **Issues you filed are complete:** on the board with fields set, sub-issues
+  linked to their parent, dependencies wired as relations, labels applied.
+- Tables you touched are aligned or converted to lists; no residue phrases in
+  anything you wrote.
 
-## Templates
-
-In `templates/` beside this file: `plan.md`, `spec.md`, `trial.md`, `audit.md`,
-`reference-doc.md`. Copy the file and keep the section order. `plan.md` is **mandatory and complete** — every numbered section appears
-in the finished plan, `N/A — <why>` where one does not apply, nothing added
-([The plan template](#the-plan-template)). For the other templates, delete
-sections that genuinely do not apply rather than leaving them empty.
+Documentation-only changes run no code gates (root `CLAUDE.md`); these checks
+are the review.
