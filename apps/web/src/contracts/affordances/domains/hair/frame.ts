@@ -81,13 +81,12 @@ export const hairImpulseEventKinds = ["shake", "sudden_turn", "run", "impact", "
  * narrating either as weather is a direct contradiction of the scene. Only
  * `rain_exposure` may ever say rain.
  *
- * Naming the non-rain causes at all is the round-R2 finding
- * (`docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log): a
- * wet read that stayed silent about a committed bath let the narrator reach for
- * the storm it could hear at the window — the cue arm misattributed wetness at
- * twice the control's rate. Silence about a KNOWN cause is not conservative;
- * only silence about an unknown one is, so an impulse kind (a shake, a gust)
- * maps to nothing and unknown provenance still says nothing at all.
+ * Naming the non-rain causes at all is the round-R2 finding: a wet read that
+ * stayed silent about a committed bath let the narrator reach for the storm it
+ * could hear at the window — the cue arm misattributed wetness at twice the
+ * control's rate. Silence about a KNOWN cause is not conservative; only silence
+ * about an unknown one is, so an impulse kind (a shake, a gust) maps to nothing
+ * and unknown provenance still says nothing at all.
  */
 export const hairWettingEventKinds = ["rain_exposure", "immersion", "splash"] as const;
 export type HairWettingEventKind = (typeof hairWettingEventKinds)[number];

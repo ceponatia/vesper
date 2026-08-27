@@ -17,12 +17,11 @@ import {
 } from "./identity";
 
 /**
- * E3.4 slice 1 — engagements as attention reservations (engine.spec §18.1–18.2,
- * §11.3). A conversation is a world activity: it claims attention, it cannot
- * place one body in two physical scenes, and it never freezes the rest of the
- * world. The live-scene arbiter, pressure acknowledgment, winding-down
- * choreography, NarrativeCut compilation, and ArmedEffect confirmation build
- * on this substrate in the next E3.4 slice.
+ * E3.4 slice 1 — engagements as attention reservations. A conversation is a
+ * world activity: it claims attention, it cannot place one body in two physical
+ * scenes, and it never freezes the rest of the world. The live-scene arbiter,
+ * pressure acknowledgment, winding-down choreography, NarrativeCut compilation,
+ * and ArmedEffect confirmation build on this substrate in the next E3.4 slice.
  */
 
 export const engagementChannels = ["co_present", "text", "voice", "video", "mixed"] as const;
@@ -186,7 +185,7 @@ export const acknowledgePressureCommandResultSchema = createCommandResultSchema(
   acknowledgePressureRejectionCodeSchema,
 );
 
-// --- Engagement event family (engine.spec §9.2) ------------------------------
+// --- Engagement event family -------------------------------------------------
 
 const engagementOpenedPayloadSchema = z
   .object({

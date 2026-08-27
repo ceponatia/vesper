@@ -177,11 +177,9 @@ describe("affordance-cues trial matrix", () => {
 
 describe("the rematch matrix — bait + anchor", () => {
   /**
-   * The rematch's own self-checks
-   * (`docs/developer-notes/body-attribute-affordances.trial.rematch.md`
-   * §"Scenario contract"). They are written self-contained here rather than
-   * borrowed from `run.ts`, so the fixture half stays provable in `pnpm test`
-   * whatever the runner is doing.
+   * The rematch's own self-checks. They are written self-contained here rather
+   * than borrowed from `run.ts`, so the fixture half stays provable in
+   * `pnpm test` whatever the runner is doing.
    */
 
   it("is 10–12 scenarios of 3–4 exchanges, with the spec's family spread", () => {

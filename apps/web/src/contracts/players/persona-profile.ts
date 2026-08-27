@@ -91,14 +91,14 @@ export function emptyPersonaProfile(): PersonaProfile {
  * so its only non-blank creator is an API client, and one that sends `identity.gender`
  * with no anatomy wants the anatomy that gender activates. A supplied config always
  * wins; re-deriving one after creation (including one the author deliberately emptied)
- * needs the provenance flag that `docs/developer-notes/intimate-defaulting.md` §1 owns
- * and is deliberately not done here.
+ * needs a provenance flag this profile does not yet carry, and is deliberately not
+ * done here.
  *
  * Before this existed a persona was born at the schema default `intimateRegions: []`
  * and stayed there forever, so every character-shaped consumer reached through
  * {@link personaToCharacterProfile} — the realized-body filter, attribute gating, the
  * scene image queue — saw a player body with no intimate anatomy at all. That is audit
- * finding E1 re-occurring on the player's own avatar (intimate-defaulting.md §3b).
+ * finding E1 re-occurring on the player's own avatar.
  */
 export function seedNewPersonaProfile(profile: PersonaProfile): PersonaProfile {
   const attributes =

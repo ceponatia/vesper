@@ -14,7 +14,7 @@ import type { SoftCanonEntry } from "../contracts/soft-canon";
 import { canonicalValueKey } from "./knowledge";
 
 /**
- * E4.4 — the pure memory kernel (engine.spec §24). Projectors turn persisted
+ * E4.4 — the pure memory kernel. Projectors turn persisted
  * source rows into REDACTED documents deterministically — text templates
  * only, no model — and the ranker orders an already-eligible candidate set.
  * Similarity never decides witness, truth, validity, or access (§24.1): by

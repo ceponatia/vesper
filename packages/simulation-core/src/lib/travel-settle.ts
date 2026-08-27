@@ -1,14 +1,14 @@
 import type { SpaceProjection } from "../contracts/space";
 
 /**
- * Post-move travel settling (world-ui.plan.md slice 4, engine.spec §17 / A7) —
- * PURE. Once a move has committed and its journey exists, two small decisions
- * follow: how far to drain the clock so the arrival trigger fires, and — after
- * the drain — whether anyone is still stranded in transit and where the branch
- * clock would have to reach to finish them offline. Both are read-only functions
- * of the SETTLED space projection, so the composed departure/accompany loop and
- * the travel-chip route load the projection ONCE and thread it here rather than
- * re-materializing it per query (sim-read-seam-guards.plan.md slice 3).
+ * Post-move travel settling — PURE. Once a move has committed and its journey
+ * exists, two small decisions follow: how far to drain the clock so the arrival
+ * trigger fires, and — after the drain — whether anyone is still stranded in
+ * transit and where the branch clock would have to reach to finish them
+ * offline. Both are read-only functions of the SETTLED space projection, so the
+ * composed departure/accompany loop and the travel-chip route load the
+ * projection ONCE and thread it here rather than re-materializing it per query
+ * (sim-read-seam-guards.plan.md slice 3).
  *
  * No IO, no env, no db (src/lib purity): the caller loads the projection, logs
  * the diagnostic, and escalates the durable job; this only decides the numbers.

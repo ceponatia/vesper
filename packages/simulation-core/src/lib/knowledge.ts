@@ -22,7 +22,7 @@ import { composeSimulationId } from "../contracts/identity";
 import type { Observation } from "../contracts/perception";
 
 /**
- * E4.2 — the pure knowledge kernel (engine.spec §21). Assertions and beliefs
+ * E4.2 — the pure knowledge kernel. Assertions and beliefs
  * are DERIVED, exactly like §20 observations: `applyDisclosureEvent` is a
  * deterministic fold over (disclosure event, that event's observations), so
  * live incremental updates and a fork's full replay mint identical rows.
@@ -107,7 +107,7 @@ function assertBeliefTransition(from: BeliefStatus, to: BeliefStatus, id: string
 }
 
 // ---------------------------------------------------------------------------
-// MakeDisclosure resolution (engine.spec §21, §7)
+// MakeDisclosure resolution
 // ---------------------------------------------------------------------------
 
 interface KnowledgeBranchMeta {
@@ -312,7 +312,7 @@ export function resolveMakeDisclosure(
 }
 
 // ---------------------------------------------------------------------------
-// The knowledge fold (engine.spec §21.1–21.2)
+// The knowledge fold
 // ---------------------------------------------------------------------------
 
 /**

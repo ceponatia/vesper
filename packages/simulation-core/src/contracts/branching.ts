@@ -428,10 +428,10 @@ export function isBodyEvent(event: SimulationBranchEvent): event is SimulationBo
 }
 
 /**
- * The item-condition family (E5.3 slice 3, engine.spec §26.7). A parallel
- * family rather than folded into `materialEventTypeList`: fork replay wants
- * its own fold (item condition state is its own projection, not the
- * materials one), exactly the reason the body family got its own list.
+ * The item-condition family (E5.3 slice 3). A parallel family rather than
+ * folded into `materialEventTypeList`: fork replay wants its own fold (item
+ * condition state is its own projection, not the materials one), exactly the
+ * reason the body family got its own list.
  */
 const itemConditionEventTypeList = [
   "item_condition_initialized",
@@ -454,17 +454,16 @@ export function isItemConditionEvent(
 }
 
 /**
- * The household family (E5.4, engine.spec §26.8–26.11): households,
- * membership, fungible material lots, means bands, restock routines, and
- * promotion. All row kinds fold from ONE projection (`HouseholdsProjection`),
- * so unlike bodies/item-condition this single list spans several store-layer
- * tables — fork replay still scans `inherited` per row kind (a lot touch
- * names a locus, not a single scalar id), not through this predicate alone.
- * `item_instantiated_from_promotion` is the one member also handled by
- * `lib/simulation/materials.ts` (it creates a `sim_items` row) — it is still
- * listed here because the households projection itself does not fold it
- * (promotion mutates lots via its own `material_lot_adjusted` companion
- * event, already covered above).
+ * The household family (E5.4): households, membership, fungible material
+ * lots, means bands, restock routines, and promotion. All row kinds fold from
+ * ONE projection (`HouseholdsProjection`), so unlike bodies/item-condition
+ * this single list spans several store-layer tables — fork replay still scans
+ * `inherited` per row kind (a lot touch names a locus, not a single scalar
+ * id), not through this predicate alone. `item_instantiated_from_promotion`
+ * is the one member also handled by `lib/simulation/materials.ts` (it creates
+ * a `sim_items` row) — it is still listed here because the households
+ * projection itself does not fold it (promotion mutates lots via its own
+ * `material_lot_adjusted` companion event, already covered above).
  */
 const householdEventTypeList = [
   "household_created",
@@ -487,7 +486,7 @@ export function isHouseholdEvent(event: SimulationBranchEvent): event is Simulat
 }
 
 /**
- * The relationship-ledger family (E5.5, engine.spec §21.3–21.4):
+ * The relationship-ledger family (E5.5):
  * `relationship_entry_authored`/`relationship_change_recorded` (derived-and-
  * authored ledger entries, Slice 1) and `consent_escalation_resolved`
  * (Slice 3 — its accept/decline outcome folds into a `permission_granted`/

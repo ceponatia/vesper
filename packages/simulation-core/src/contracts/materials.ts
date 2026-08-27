@@ -21,10 +21,10 @@ import {
 } from "./identity";
 
 /**
- * E5.3 slice 1 — the honest material lane (engine.spec §26.1–26.4). Every item
- * has exactly one holding locus; containers are items; ownership is social, not
- * physical. This contract replaces the Gate 1 `transfer_item` v1 stand-in
- * (pseudo-container rows, captured witness sets) wholesale — no legacy wrappers.
+ * E5.3 slice 1 — the honest material lane. Every item has exactly one holding
+ * locus; containers are items; ownership is social, not physical. This contract
+ * replaces the Gate 1 `transfer_item` v1 stand-in (pseudo-container rows,
+ * captured witness sets) wholesale — no legacy wrappers.
  *
  * Slice 2 (§26.5–26.6) adds resource reservations (activities.ts) and
  * consumption: `consume_item` and the completion path of a `consume`-

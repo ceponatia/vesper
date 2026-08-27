@@ -8,8 +8,7 @@ import {
 } from "@/contracts/affordances/domains/hair/fixtures";
 
 /**
- * Scenario matrices for the slice-5 narrator trial
- * (`docs/developer-notes/body-attribute-affordances.plan.md` §"Slice 5 — narrator trial").
+ * Scenario matrices for the affordance-cue narrator trial.
  *
  * TWO matrices live here, selected by `scenarioMatrix(name)`:
  *
@@ -17,8 +16,7 @@ import {
  *   They are the regression baseline: if a calibration change stops them firing,
  *   that is a real signal, so they keep running in `pnpm test` untouched.
  * - `REMATCH_SCENARIOS` (`--matrix rematch`) — the bait + anchor matrix built
- *   after round 1 measured nothing
- *   (`docs/developer-notes/body-attribute-affordances.trial.rematch.md`).
+ *   after round 1 measured nothing.
  *
  * Both share the same two silence controls, as the same objects.
  *

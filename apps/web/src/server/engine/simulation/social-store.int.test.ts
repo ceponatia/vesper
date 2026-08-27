@@ -44,7 +44,7 @@ import {
 } from "./social-store";
 
 /**
- * E5.5 slice 1 durable relationship-ledger substrate (engine.spec §21.3):
+ * E5.5 slice 1 durable relationship-ledger substrate:
  * `record_relationship_entry`/`record_relationship_change` end to end,
  * speech-act/disclosure-derived entries landing through the recorder on REAL
  * `confirm_narrator_result` commands (mirrors narrative-store.int.test.ts's

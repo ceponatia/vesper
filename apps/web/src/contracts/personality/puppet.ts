@@ -15,8 +15,7 @@ import { effectiveTraitValue, type TraitValue } from "./traits/value";
  * Pure: no IO, no engine imports. Reads `tags` + `preferences` + the `warmth`
  * **trait** scalar (Slice 3); affinity + mood join once they exist. The guardrail
  * fires on *contradiction only* — consistent, in-disposition narration passes (a v1
- * leniency; the broader puppet-handling system is deferred — see
- * docs/developer-notes/npc-puppeting.deferred.md).
+ * leniency; the broader puppet-handling system is deferred).
  */
 
 /** A player-puppeted NPC behaviour from intake: a present NPC + the concept it amounts to. */

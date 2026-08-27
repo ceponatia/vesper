@@ -32,8 +32,7 @@ import {
 import { gradeContactCase, judgeContactReply, type ContactCaseGrade, type ContactProseVerdict } from "./oracle";
 
 /**
- * The romantic contact rollout rerun
- * (`docs/developer-notes/romantic-contact-affordances.trial.romantic-proof.md`).
+ * The romantic contact rollout rerun.
  *
  * The first proof was run by hand through the UI and written up from what the
  * screen showed. It found the thing that matters — a refusal renders no narrator

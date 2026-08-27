@@ -73,8 +73,8 @@ import { InjectedSimulationCrash, submitDurableTransferItem } from "./material-s
 import { advanceBranchStoryTime } from "./scheduler-store";
 
 /**
- * E5.4 slice 1 durable households/lots/means substrate (engine.spec
- * §26.8–26.10), on the shared `simulationSuiteHarness` scaffold.
+ * E5.4 slice 1 durable households/lots/means substrate, on the shared
+ * `simulationSuiteHarness` scaffold.
  *
  * `sim_household_members` has no direct `branch_id -> sim_branches` cascade
  * FK (unlike `sim_households`/`sim_material_lots`/`sim_means_bands`, which

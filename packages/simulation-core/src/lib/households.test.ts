@@ -82,9 +82,9 @@ import {
 } from "./households";
 
 /**
- * E5.4 slice 1 — households, fungible lots, conservation, and means bands
- * (engine.spec §26.8–26.10). Mirrors materials.test.ts's shape: pure view
- * builders + command builders, no IO.
+ * E5.4 slice 1 — households, fungible lots, conservation, and means bands.
+ * Mirrors materials.test.ts's shape: pure view builders + command builders,
+ * no IO.
  */
 
 const WORLD = "world-e5-4";

@@ -10,13 +10,13 @@ import {
 import { observationConfidenceSchema } from "./perception";
 
 /**
- * E4.4 — RAG memory documents (engine.spec §24). A memory document is a
- * REDACTED, indexable representation of something a viewpoint may recall —
- * never an authority record. Every document carries its source id/kind, its
- * branch + sequence interval, its eligibility surface, validity/supersedence
- * intervals, and schema/model versions, so eligibility is always resolved
- * relationally BEFORE any similarity ranking (§24.1) and similarity can never
- * decide witness, truth, validity, or access.
+ * E4.4 — RAG memory documents. A memory document is a REDACTED, indexable
+ * representation of something a viewpoint may recall — never an authority
+ * record. Every document carries its source id/kind, its branch + sequence
+ * interval, its eligibility surface, validity/supersedence intervals, and
+ * schema/model versions, so eligibility is always resolved relationally
+ * BEFORE any similarity ranking (§24.1) and similarity can never decide
+ * witness, truth, validity, or access.
  */
 
 export const MEMORY_INDEX_CONSUMER_KIND = "memory_index" as const;

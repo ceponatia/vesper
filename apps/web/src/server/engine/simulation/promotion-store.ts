@@ -28,7 +28,7 @@ import {
 import { actorLodRowInsert } from "./lod-store";
 
 /**
- * E6.4 durable actor-promotion authority (engine.spec §27.2, §27.7). One
+ * E6.4 durable actor-promotion authority. One
  * command on the shared `runSimulationCommand` shell commits the whole
  * causation-chained train atomically: the cohort's conserved reservation
  * debit, the `sim_characters` row (the only mid-branch path one comes to

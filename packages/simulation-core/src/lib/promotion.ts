@@ -29,7 +29,7 @@ import { cohortCanMaterializeAt, cohortDerivationVersionForEvents } from "./coho
 import { sortedUnique } from "./hash";
 
 /**
- * E6.4 — the pure actor-promotion kernel (engine.spec §27.2, §27.7): the
+ * E6.4 — the pure actor-promotion kernel: the
  * §26.10 five-step item shape generalized to actors. One resolver produces
  * the whole causation-chained train — the conserved reservation debit, the
  * materialization (with any sampled detail captured so replay never

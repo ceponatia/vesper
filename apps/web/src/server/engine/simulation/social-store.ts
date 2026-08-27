@@ -65,7 +65,7 @@ import type { SimTx } from "./trigger-projector";
 type DbExecutor = Db | SimTx;
 
 /**
- * E5.5 slice 1 durable relationship-ledger authority (engine.spec §21.3):
+ * E5.5 slice 1 durable relationship-ledger authority:
  * `record_relationship_entry` and `record_relationship_change`, the two
  * privileged authoring commands. Modeled on `household-store.ts`'s
  * `create_household`/`set_household_membership` shape — both commands are

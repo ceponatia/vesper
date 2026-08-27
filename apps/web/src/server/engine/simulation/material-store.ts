@@ -85,7 +85,7 @@ import {
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
- * E5.3 slice 1 durable material authority (engine.spec §26.1–26.4). Modeled on
+ * E5.3 slice 1 durable material authority. Modeled on
  * body-store.ts / activity-store.ts, NOT on the Gate 1 `item-transfer-store.ts`
  * this replaces: every command runs through the shared `runSimulationCommand`
  * shell (§11.1) rather than a hand-rolled transaction, so observation/knowledge/

@@ -1,14 +1,13 @@
 # Retrieval eval harness
 
-The measurement harness for memory retrieval quality
-(`docs/developer-notes/character-chat-standalone.spec.md` §6.3 #6) — the precondition the
-§6.3 work (the `FACT_MIN_SCORE` relevance floor, pinned force-include, per-query embedding
-+ RRF fusion) is tuned against, and the **permanent regression harness for retrieval
-changes**: run it before and after touching `src/server/memory/` retrieval code or the
-`constants.ts` knobs.
+The measurement harness for memory retrieval quality — the precondition the
+retrieval-relevance work (the `FACT_MIN_SCORE` relevance floor, pinned force-include,
+per-query embedding + RRF fusion) is tuned against, and the **permanent regression
+harness for retrieval changes**: run it before and after touching
+`src/server/memory/` retrieval code or the `constants.ts` knobs.
 
 It seeds chat-shaped fixture corpora (`fixtures.ts` — 1-on-1 romance-chat flavored, see
-`docs/character-chat.md`) into **throwaway chat memory groups** (id prefix
+`docs/character-chat/`) into **throwaway chat memory groups** (id prefix
 `eval-retrieval-`) through the REAL write path (`addFacts` / `appendEpisode`), retrieves
 through the REAL fused retrievers (`retrieveFactsFused` / `retrieveEpisodesFused`), scores
 the results against per-fixture expectations, and **always deletes the scope again**

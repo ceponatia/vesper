@@ -17,7 +17,7 @@ import {
 import { composeSimulationId } from "../contracts/identity";
 
 /**
- * E6.3 — the pure cohort kernel (engine.spec §27.1, §27.6): creation and
+ * E6.3 — the pure cohort kernel: creation and
  * conserved adjustment resolvers, the analytic presence read (zero rows,
  * zero triggers — population at a zone is a pure function of authored
  * windows and the clock), and the replay fold. No IO, no clock, no model.

@@ -21,7 +21,7 @@ A candidate action reaches scoring only after surviving a legality pass
 rooted in controller authority, physical locus and route, active claims and
 activity compatibility, access/privacy/consent, resource and body
 capability, actor knowledge and perceived cues, commitments and deadlines,
-and world-type safety rules (engine.spec §19.1). An action illegal under any
+and world-type safety rules. An action illegal under any
 of these checks never reaches scoring at all — the funnel narrows before
 utility runs, so utility never has to reason about actions the world already
 forbids.
@@ -31,12 +31,12 @@ forbids.
 There is no single multi-factor scoring formula. Each escalation site scores its
 own narrow candidate set: the routine controller weighs circadian sleep pressure
 against a flat obligation penalty plus a meal weight, and the narrative-departure
-escalation ranks unresolved pressures on deadline lateness alone. The broader
-factor set §19.2 describes — goal progress, habit and role, safety risk, effort
-cost, interruption cost, a seeded variation term — is **not implemented**.
+escalation ranks unresolved pressures on deadline lateness alone. A broader
+factor set — goal progress, habit and role, safety risk, effort cost,
+interruption cost, a seeded variation term — is **not implemented**.
 The score breakdown can be kept as an audit explanation, but it never
 contains or claims to expose a model's private reasoning — deterministic
-scoring has no reasoning to leak in the first place (engine.spec §19.2).
+scoring has no reasoning to leak in the first place.
 
 ### The routine controller
 
@@ -45,12 +45,12 @@ when nobody is watching a scene closely — get their moment-to-moment behavior
 from a durable routine controller rather than ad hoc scheduling. A
 routine-policy alarm arms when such an actor's body is being tracked, and
 fires at the actor's next routine boundary: the start of the sleep window, or
-the start of any authored meal rhythm window, whichever comes first
-(engine.spec §19.2.1). Firing re-validates that the actor is still eligible
+the start of any authored meal rhythm window, whichever comes first. Firing
+re-validates that the actor is still eligible
 (still at the coarse level of detail, body tracked, not already asleep)
 before resolving anything, and resolution is entirely deterministic — the
 routine controller never consults the model deliberator described below; a
-routine choice is a no-model decision by definition (engine.spec §19.2.1).
+routine choice is a no-model decision by definition.
 
 The candidate set is closed and small:
 
@@ -63,7 +63,7 @@ The candidate set is closed and small:
 Vocabulary order is the tie order: a later candidate must strictly outscore
 the current winner, so any tie collapses back to `hold`. A candidate scores
 zero outside its own rhythm window, so a routine firing at the wrong time of
-day can never turn a hold into an unscheduled nap (engine.spec §19.2.1).
+day can never turn a hold into an unscheduled nap.
 
 Scoring detail:
 
@@ -73,19 +73,18 @@ Scoring detail:
   bedtime, though heavy sleep debt still eventually outranks the obligation
   as pressure keeps climbing. The penalty attaches to sleep rather than to
   `hold`, so an evening obligation cannot also starve an instant midday meal
-  along the way (engine.spec §19.2.1).
+  along the way.
 - `eat_meal` scores a flat value inside its window, high enough to beat
   routine bedtime when a sleep and meal window happen to overlap but below
   what heavily overdue sleep eventually reaches. Eating is instantaneous, so
-  no obligation penalty ever applies to it (engine.spec §19.2.1).
+  no obligation penalty ever applies to it.
 
 Eligibility for `eat_meal` additionally requires finding a real, unreserved
 food item authored with a meal-source consumption effect, owned by nobody or
 by the actor, not sealed inside an inaccessible container, and rooted at the
 actor or the actor's zone — an item the actor is already holding is
 preferred over one in the zone, with a lexicographic id break settling any
-remaining tie. Routine behavior never eats against someone else's ownership
-(engine.spec §19.2.1).
+remaining tie. Routine behavior never eats against someone else's ownership.
 
 Every decision — every candidate's score, the winner, the admitting level of
 detail, and the chosen sleep condition or meal item — persists as a decision
@@ -95,7 +94,7 @@ state machinery a player-directed sleep or meal command would use, so a
 routine decision and a commanded one are indistinguishable in the resulting
 record. A hold or a completed meal re-arms the controller for the next
 boundary, and a missed window self-heals at the following one rather than
-requiring recovery logic (engine.spec §19.2.1).
+requiring recovery logic.
 
 ### Escalating to a model
 
@@ -106,12 +105,12 @@ holds at once: the actor is at a level of detail that supports model
 inference, at least two legal candidates remain, their score gap sits below
 a configured threshold, the outcome is actually consequential, the branch
 still has model budget, and a deterministic fallback exists if the call
-fails (engine.spec §19.3).
+fails.
 
 The prompt the deliberator sees carries opaque candidate IDs and bounded
 evidence rather than raw game state. It can select one ID and attach a short
 rationale summary that the player never sees, but any new action text it
-writes is ignored (engine.spec §19.3) — the deliberator chooses among
+writes is ignored — the deliberator chooses among
 candidates the deterministic layer already generated; it can never invent an
 action of its own.
 
@@ -119,13 +118,13 @@ action of its own.
 
 Perception is the gate between something happening in the world and an actor
 being able to act on, remember, or discuss it: for every event it computes
-whether that event produces evidence for a given viewpoint (engine.spec
-§20). The gate is **deliberately coarse in v1**: it grades by how the evidence
+whether that event produces evidence for a given viewpoint. The gate is
+**deliberately coarse in v1**: it grades by how the evidence
 arrived, not by who the witness is. A fixed table maps event type, channel
 (sight, sound, touch, smell, device, social) and zone/location co-presence onto
 a confidence and detail tier. Lighting, cover, distance, barriers, attention,
-impairment, salience and communicated-information authentication are named by
-§20 but are not computed — they are deferred to a bumped derivation version.
+impairment, salience and communicated-information authentication are not
+computed — they are deferred to a bumped derivation version.
 
 Where an event does produce evidence, that evidence is a first-class row:
 
@@ -147,12 +146,11 @@ Where an event does produce evidence, that evidence is a first-class row:
 An event can produce zero, one, or many observations — a shout in a plaza
 may be witnessed by everyone present and by no one behind a closed door a
 room away. Eligibility computed this way has to be read back explicitly by
-every query that needs it, never assumed just because a row exists
-(engine.spec §20).
+every query that needs it, never assumed just because a row exists.
 
 Not every momentary sensory detail earns a durable row: persistence is
 reserved for observations that go on to affect belief, memory, action
-choice, relationships, evidence, or narration continuity (engine.spec §20).
+choice, relationships, evidence, or narration continuity.
 A detail nothing will ever ask about again does not need to outlive the
 moment it happened.
 

@@ -606,10 +606,10 @@ reply immediately.
   `id + owner_id` and no-ops with a `chat.delete_denied` warn when nothing matches, and
   the character traversal is itself owner-scoped — a cross-owner participant row is
   skipped, and that chat survives. **A successor chat's world dies with it**
-  (successor-world-lifecycle.plan.md, engine.spec §39 ruling 31): when the chat row
-  carries a `sim_branch_id`, the world resolves through `sim_branches` and its
-  `sim_worlds` row is deleted in the same transaction — cascades take the branch and
-  every branch-scoped row. A set-but-dangling branch id degrades
+  (successor-world-lifecycle.plan.md): when the chat row carries a `sim_branch_id`,
+  the world resolves through `sim_branches` and its `sim_worlds` row is deleted in
+  the same transaction — cascades take the branch and every branch-scoped row. A
+  set-but-dangling branch id degrades
   (`chat.delete_sim_branch_missing` warn, chat still deletes); the leaked world is
   reclaimed by the admin orphan sweeper. Character deletion inherits this through
   the same traversal.

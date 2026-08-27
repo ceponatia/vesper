@@ -1,8 +1,6 @@
 # Romantic contact rollout rerun
 
-The instrument for the second romantic contact proof. The plan and the standing
-verdict live in
-`docs/developer-notes/romantic-contact-affordances.trial.romantic-proof.md`.
+The instrument for the second romantic contact proof.
 
 The first proof was run by hand through the UI and written up from what the
 screen showed. It found the thing that matters — a refusal renders no narrator

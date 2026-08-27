@@ -29,7 +29,7 @@ import {
 } from "@/server/test-support";
 
 /**
- * E6.1 durable actor-LOD ledger (engine.spec §27–§28): `assign_actor_lod` end
+ * E6.1 durable actor-LOD ledger: `assign_actor_lod` end
  * to end — defaults, assignment, idempotency, authorization, the §27.3
  * demotion guards against a live engagement, and fork-mid-ledger parity.
  * Runs on the shared `simulationSuiteHarness` scaffold (probe + legacy-player

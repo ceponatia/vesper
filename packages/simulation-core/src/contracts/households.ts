@@ -16,7 +16,7 @@ import {
 import { simulationMaterialItemSchema } from "./materials";
 
 /**
- * E5.4 — households, means, and money at LOD (engine.spec §26.8–26.11).
+ * E5.4 — households, means, and money at LOD.
  * Households are first-class branch-scoped entities; fungible material lots
  * are branch-scoped accounts with fixed-point/count conserved quantities;
  * means bands are a coarse read for low-detail subjects; promotion (§27.2) is

@@ -22,7 +22,7 @@ import {
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E6.3 durable cohort authority (engine.spec §27.6). Two commands on the
+ * E6.3 durable cohort authority. Two commands on the
  * shared `runSimulationCommand` shell; the row is a projection of
  * `cohort_created` / `cohort_adjusted` events, presence is a pure lib read
  * over loaded rows (`cohortPresenceAt` / `zonePresenceAt` — zero rows, zero

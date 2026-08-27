@@ -10,7 +10,7 @@ import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.3 — the durable soft-canon ledger (engine.spec §23.4). Rows are derived
+ * E4.3 — the durable soft-canon ledger. Rows are derived
  * projections of soft_canon_* events, written in the same transaction that
  * commits them: the §11.1 shell calls `recordCommandSoftCanon` after the
  * observation and knowledge recorders. Every event carries its full post-fold

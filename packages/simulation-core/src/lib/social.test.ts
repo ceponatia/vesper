@@ -59,7 +59,7 @@ type DisclosureContentInput = z.input<typeof disclosureContentSchema>;
 type RelationshipLedgerPayloadInput = z.input<typeof relationshipLedgerPayloadSchema>;
 
 /**
- * E5.5 slice 1 — the pure social-ledger kernel (engine.spec §21.3–21.4):
+ * E5.5 slice 1 — the pure social-ledger kernel:
  * `deriveRelationshipLedgerEntries`'s fold, `deriveRelationshipRead`'s
  * decayed trust/attraction/resentment projection, and `resolveConsentCoverage`'s
  * fail-closed gate (uncalled by any live path yet, tested standalone).

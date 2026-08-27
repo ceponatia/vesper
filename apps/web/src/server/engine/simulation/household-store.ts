@@ -57,10 +57,9 @@ import { InjectedSimulationCrash } from "./material-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
- * The E5.4 IDENTITY-and-POLICY household commands (engine.spec §26.8, §26.10,
- * §26.11): who a household is, who belongs to it, what means band a subject
- * holds, and how a restock routine is configured. Modeled on
- * material-store.ts — every command runs through the shared
+ * The E5.4 IDENTITY-and-POLICY household commands: who a household is, who
+ * belongs to it, what means band a subject holds, and how a restock routine is
+ * configured. Modeled on material-store.ts — every command runs through the shared
  * `runSimulationCommand` shell (§11.1) rather than a hand-rolled transaction,
  * so observation/knowledge/soft-canon/memory folds come free.
  *

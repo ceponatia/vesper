@@ -6,9 +6,9 @@ The feature was originally called **Shadow Parity**. That name is retired in use
 
 ## Tracking and authority
 
-Engine Comparison originated in **R4 — shadow mode under chat** in `docs/developer-notes/finished/engine.rollout.plan.md`. R4 exited on 2026-07-22 after the recorder, fixed corpus, analyzer, and review surface were proven, but the setup still depended on manually supplying a simulation branch and actor mappings. The 2026-08-22 comparison-session provisioning work is a **post-exit productization of that same R4 system**: it supplies the missing in-app front door without changing the comparison semantics R4 established.
+Engine Comparison originated in **R4 — shadow mode under chat** of the successor engine rollout. R4 exited on 2026-07-22 after the recorder, fixed corpus, analyzer, and review surface were proven, but the setup still depended on manually supplying a simulation branch and actor mappings. The 2026-08-22 comparison-session provisioning work is a **post-exit productization of that same R4 system**: it supplies the missing in-app front door without changing the comparison semantics R4 established.
 
-The live authority and lane-separation contract remains `docs/developer-notes/engine.spec.operations.md` §37.1 and §37.5. This directory is the current operator documentation. The finished R4 plan remains historical evidence of the July exit rather than being rewritten to pretend this UI existed then.
+The authority and lane-separation contract still governs: no fact ever has two authorities at once, the per-chat `engine_authority` flag names which lane holds a chat, and `successor_rag_eligibility` is read independently of that flag. This directory is the current operator documentation.
 
 ## What the system is for
 

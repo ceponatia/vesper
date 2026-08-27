@@ -35,7 +35,7 @@ The two kinds of boundary are enforced differently, because they promise differe
 - does the `@vesper/*` graph stay acyclic **and** flow one way through its layers;
 - does a package that promises browser/server portability stay out of the Node-only graph.
 
-A package's public surface is whatever its `exports` map enumerates: the root entry, plus any exact subpath it chooses to publish. Enumerated is the operative word — a `*` pattern is rejected, because a wildcard surface is a filesystem import wearing a package name, and every published entry file lists named exports rather than `export *`. `pnpm lint:package-resolution` then imports every declared entry through the installed workspace, by the specifier a consumer would write, so a broken or stale `exports` map cannot hide behind a tool alias. Both run in CI's static-checks job. The rules and the reasoning behind them: `monorepo-image-core.spec.guardrails.md`.
+A package's public surface is whatever its `exports` map enumerates: the root entry, plus any exact subpath it chooses to publish. Enumerated is the operative word — a `*` pattern is rejected, because a wildcard surface is a filesystem import wearing a package name, and every published entry file lists named exports rather than `export *`. `pnpm lint:package-resolution` then imports every declared entry through the installed workspace, by the specifier a consumer would write, so a broken or stale `exports` map cannot hide behind a tool alias. Both run in CI's static-checks job.
 
 ## Directory layout
 
@@ -118,7 +118,7 @@ components →  contracts (types only), never server/*
 Two lanes live under `server/engine`: the **character-chat** lane (`chat-*` files —
 [character-chat/](character-chat/README.md)) and the **successor simulation engine**
 (`sim-*` files + `simulation/`, an event-sourced world model — contracts in
-[engine/](engine/README.md), normative contract in `docs/developer-notes/engine.spec.md`).
+[engine/](engine/README.md)).
 These are the only two lanes — there is no world/session lane. The simulation lane's
 pure half — its identities, envelopes, projection contracts and replay kernels — is
 the `@vesper/simulation-core` package; `server/engine/simulation/` keeps everything

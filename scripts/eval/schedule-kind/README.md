@@ -1,6 +1,6 @@
 # Schedule-kind shadow spike
 
-Gate 0 experiment for `docs/developer-notes/engine.plan.md`. It asks whether the
+Gate 0 experiment for the successor simulation engine. It asks whether the
 current free-text `ScheduleEntry.activity` values can be classified precisely enough to
 justify later typed schedule effects.
 

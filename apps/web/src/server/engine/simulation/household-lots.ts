@@ -63,7 +63,7 @@ import { InjectedSimulationCrash } from "./material-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
- * The E5.4 LOT-side household commands (engine.spec §26.9–26.11): the four
+ * The E5.4 LOT-side household commands: the four
  * that move material quantity — adjust, transfer, promotion, and the
  * trigger-dispatched restock cycle. Their identity/policy siblings
  * (create_household, set_household_membership, set_means_band,

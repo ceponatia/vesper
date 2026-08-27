@@ -67,7 +67,7 @@ import { loadSoftCanonProjection } from "./soft-canon-recorder";
 import { loadSpaceRows, spaceProjectionFromRows, submitDurableMoveActor } from "./space-store";
 
 /**
- * E4.3 — the live-scene turn seam (engine.spec §18.3, §22–23): drain due
+ * E4.3 — the live-scene turn seam: drain due
  * world work through the turn span, let deterministic policy (with an
  * optional §19.3-admitted deliberator) commit departures, compile one full
  * §22.1 cut, and persist it immutable. Confirmation validates the narrator's

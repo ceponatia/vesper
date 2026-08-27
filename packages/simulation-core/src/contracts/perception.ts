@@ -11,11 +11,11 @@ import {
 } from "./identity";
 
 /**
- * E4.1 — typed perception (engine.spec §20). An Observation records that one
- * committed event produced evidence for one witness, through one channel, at
- * one confidence and detail tier. Observations are DERIVED — a pure function
- * of the event stream — so replay reproduces every row bit-for-bit and a
- * rebuilt branch cannot disagree with the live one about who saw what.
+ * E4.1 — typed perception. An Observation records that one committed event
+ * produced evidence for one witness, through one channel, at one confidence
+ * and detail tier. Observations are DERIVED — a pure function of the event
+ * stream — so replay reproduces every row bit-for-bit and a rebuilt branch
+ * cannot disagree with the live one about who saw what.
  *
  * Only material observations persist (§20): rows that can affect belief,
  * memory, action choice, relationships, or narration continuity. Bookkeeping

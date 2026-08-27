@@ -89,7 +89,7 @@ const openCommitmentStatuses: readonly CommitmentStatus[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// CreateCommitment resolution (engine.spec §15.1–15.2)
+// CreateCommitment resolution
 // ---------------------------------------------------------------------------
 
 interface CommitmentBranchMeta {
@@ -374,7 +374,7 @@ export function resolveCreateCommitment(
 }
 
 // ---------------------------------------------------------------------------
-// RaisePressure resolution (engine.spec §15.2, §9.3)
+// RaisePressure resolution
 // ---------------------------------------------------------------------------
 
 export interface RaisePressureResolutionView extends CommitmentBranchMeta {
@@ -513,7 +513,7 @@ export function resolveRaisePressure(
 }
 
 // ---------------------------------------------------------------------------
-// Deadline resolution (engine.spec §15.3–15.4, ruling 6)
+// Deadline resolution
 // ---------------------------------------------------------------------------
 
 export interface CommitmentDeadlineResolutionView extends CommitmentBranchMeta {

@@ -1,9 +1,8 @@
 # Affordance-cue narrator trial
 
-The owner-gated live comparison for **slice 5** of
-`docs/developer-notes/body-attribute-affordances.plan.md`: does the
-`CHAT_AFFORDANCE_CUES` narrator cue path **reduce contradictions of committed
-physical state** without costing repetition or prose naturalness?
+The owner-gated live comparison for the `CHAT_AFFORDANCE_CUES` narrator cue
+path: does it **reduce contradictions of committed physical state** without
+costing repetition or prose naturalness?
 
 Round 1 (2026-07-29) ran and failed to decide anything: the control arm
 contradicted at 0.13/exchange, so the cue arm had nothing to reduce. The
@@ -81,8 +80,8 @@ in. Generation runs through `streamCharacterChat` — the real chat narrator, on
 chat lane's default model, at the production temperature — and each arm carries
 its own history, so repetition is measured over what that arm actually said.
 
-**Judging is split** (rematch §Judge redesign), because one comparative call
-cannot report an absolute rate:
+**Judging is split**, because one comparative call cannot report an absolute
+rate:
 
 1. **Per-arm contradiction audit** — 2 calls per scenario, temperature 0,
    **arm-blind**: the judge sees ONE transcript, presented as "the narrator's

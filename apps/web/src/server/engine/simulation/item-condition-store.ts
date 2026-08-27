@@ -209,9 +209,9 @@ export interface ItemConditionLazyInit {
 }
 
 /**
- * Lazy item-condition initialization (engine.spec §26.7 — "there is no
- * dedicated command"): loaded if rows already exist, otherwise built purely
- * in memory (registry defaults at the branch's current story second) with an
+ * Lazy item-condition initialization — there is no dedicated command: rows are
+ * loaded if they already exist, otherwise built purely in memory (registry
+ * defaults at the branch's current story second) with an
  * `item_condition_initialized` event at `branch.headSequence + 1` for the
  * caller to persist BEFORE calling its own causing resolver at the returned
  * (post-init) headSequence — mirrors the composition

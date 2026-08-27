@@ -35,7 +35,7 @@ import {
 } from "./body-rows";
 
 // ---------------------------------------------------------------------------
-// E5.2 — the durable read surface (engine.spec §25.1 layer 3)
+// E5.2 — the durable read surface
 // ---------------------------------------------------------------------------
 
 export interface DurableEnergyRead {

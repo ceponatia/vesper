@@ -14,7 +14,7 @@ import type { PhysicalLocus, SpaceProjection } from "../contracts/space";
 import { applySpaceEvent } from "./space";
 
 /**
- * E4.1 — the pure perception engine (engine.spec §20). One deterministic rule
+ * E4.1 — the pure perception engine. One deterministic rule
  * table decides, for every committed event, who perceived it, through which
  * channel, and how well. It replaces the interim Gate 3 witness rule
  * (participant / captured payload set / shared location at compile time) as

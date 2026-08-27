@@ -35,7 +35,7 @@ import type { SimulationBranchEvent } from "../contracts/branching";
 /**
  * E3.1 pure space kernel: deterministic route planning, the move/arrival
  * resolvers, and the projectors replay uses to rebuild space state from
- * events. No IO, no clock, no ambient randomness (engine.spec §31–32).
+ * events. No IO, no clock, no ambient randomness.
  */
 
 export interface SpaceTopology {
@@ -61,7 +61,7 @@ function zoneLocationId(topology: SpaceTopology, zoneId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Route planning (engine.spec §13.3)
+// Route planning
 // ---------------------------------------------------------------------------
 
 export type RoutePlanFailureReason = "no_route" | "route_access_denied" | "travel_mode_unavailable";
@@ -96,7 +96,7 @@ function comparePaths(left: readonly string[], right: readonly string[]): number
  * direction (a hallway works both ways; one-way semantics can join the link
  * contract when a scenario demands them). Ties break by zone id at selection
  * and by lexicographic link-id path at relaxation, so equal-cost topologies
- * produce one canonical route (engine.spec §32: no iteration-order accidents).
+ * produce one canonical route — no iteration-order accidents.
  */
 function searchRoute(
   topology: SpaceTopology,
@@ -225,7 +225,7 @@ export function planRoute(
 }
 
 // ---------------------------------------------------------------------------
-// MoveActor resolution (engine.spec §14.1, §17)
+// MoveActor resolution
 // ---------------------------------------------------------------------------
 
 interface SpaceBranchMeta {
@@ -521,7 +521,7 @@ export function resolveMoveActor(
 }
 
 // ---------------------------------------------------------------------------
-// Journey arrival resolution (engine.spec §9.3, §17.1)
+// Journey arrival resolution
 // ---------------------------------------------------------------------------
 
 export interface JourneyArrivalResolutionView extends SpaceBranchMeta {

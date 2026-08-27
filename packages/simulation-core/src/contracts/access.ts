@@ -15,16 +15,16 @@ import {
 } from "./identity";
 
 /**
- * E3.5 — layered access (engine.spec §14). Routes plan over public links
- * (E3.1); the last private hop — a front door, a bedroom threshold — is a
- * separate validated action: `attempt_entry` through one adjacent link,
- * granted by an AccessGrant or, where the world type permits it, forced as an
- * explicit, witnessed, consequential act (ruling 3 — never auto-succeeding
- * over a person; this is spatial transgression only, and interpersonal
- * consent remains an untouched separate precondition). Missing or malformed
- * grant data fails closed (§13.1). Storyteller relocation is the one
- * privileged bypass: a distinct audited command family (§7, ruling 4), never
- * a hidden flag on ordinary movement.
+ * E3.5 — layered access. Routes plan over public links (E3.1); the last
+ * private hop — a front door, a bedroom threshold — is a separate validated
+ * action: `attempt_entry` through one adjacent link, granted by an
+ * AccessGrant or, where the world type permits it, forced as an explicit,
+ * witnessed, consequential act (ruling 3 — never auto-succeeding over a
+ * person; this is spatial transgression only, and interpersonal consent
+ * remains an untouched separate precondition). Missing or malformed grant
+ * data fails closed (§13.1). Storyteller relocation is the one privileged
+ * bypass: a distinct audited command family (§7, ruling 4), never a hidden
+ * flag on ordinary movement.
  */
 
 export const accessGrantBases = ["owner", "resident", "employee", "invitation", "key", "forced"] as const;
@@ -60,7 +60,7 @@ export function grantAdmitsEntry(
   return true;
 }
 
-// --- AttemptEntry command (engine.spec §14.1, §14.3) --------------------------
+// --- AttemptEntry command -----------------------------------------------------
 
 const attemptEntryPayloadSchema = z
   .object({
@@ -120,7 +120,7 @@ export type AttemptEntryRejectionCode = z.infer<typeof attemptEntryRejectionCode
 export type AttemptEntryCommandResult = z.infer<typeof attemptEntryCommandResultSchema>;
 export type ZoneEnteredEvent = z.infer<typeof zoneEnteredEventSchema>;
 
-// --- Storyteller relocation (engine.spec §7, ruling 4) ------------------------
+// --- Storyteller relocation (ruling 4) ----------------------------------------
 
 const storytellerRelocatePayloadSchema = z
   .object({

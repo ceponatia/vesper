@@ -42,7 +42,7 @@ import { softCanonEntryFromRow } from "./soft-canon-recorder";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.4 — outbox-driven memory indexing (engine.spec §24.3). Every accepted
+ * E4.4 — outbox-driven memory indexing. Every accepted
  * command enqueues one obligation per indexable event AFTER authoritative
  * commit; a consumer later projects redacted documents from the persisted
  * source rows. Indexing failure retries through the outbox and shows up as

@@ -6,7 +6,7 @@ and the limits the design deliberately does not cross.
 
 ## Package boundaries
 
-The engine occupies three directories, one per authority layer (engine.spec §31):
+The engine occupies three directories, one per authority layer:
 
 | Directory                                 | Owns                                                  |
 | ----------------------------------------- | ----------------------------------------------------- |
@@ -37,15 +37,12 @@ surface, dependencies, and test setup are documented in its own contract,
 
 ## Public API surface
 
-engine.spec §30 sketches the public surface as a dozen generically-named
-entry points (`submitCommand`, `advanceTo`, `getActorPerspective`,
-`rerenderCut`, `forkForRetake`, …); the code took a different shape instead
-and none of those names exist. Every caller reaches the engine through
+Every caller reaches the engine through
 `apps/web/src/server/engine/simulation/index.ts`, the barrel other
 application modules import through, which exports a domain-scoped function
-per command or read rather than one generic entry point — intent-oriented
-in the same sense §30 means (callers submit commands and read projected
-state, never write a field directly), just shaped as many functions:
+per command or read rather than one generic entry point. The surface is
+intent-oriented — callers submit commands and read projected state, never
+write a field directly — just shaped as many functions:
 
 - **Command submission** — one `submitDurable*` per domain (`submitDurableOpenEngagement`, `submitDurableMoveActor`, `submitDurableCreateCommitment`, `submitDurableMakeDisclosure`, `submitDurableTransferItem`, and dozens more), all running through the shared `runSimulationCommand` transaction shell
 - **Branch state** — `assembleBranchState`, `readDurableBranchState`
@@ -56,14 +53,13 @@ state, never write a field directly), just shaped as many functions:
 - **Time** — `advanceBranchStoryTime`
 - **Audit** — `explainItemPlacement`
 
-There is no `getActorPerspective`, `getNarrativeCut`, or `rerenderCut`
-equivalent — a caller loads a cut by id (`loadPersistedCut`) or narrative
-state by branch (`assembleBranchState`/`readDurableBranchState`) rather than
-requesting a perspective or a rerender through a dedicated entry point.
+There is no perspective or rerender entry point: a caller loads a cut by id
+(`loadPersistedCut`) or narrative state by branch
+(`assembleBranchState`/`readDurableBranchState`) instead.
 
 No public entry exposes a raw setter — "set NPC location," "mark schedule
 kept," "write current meter" — without a privileged migration or storyteller
-capability (engine.spec §30). The reason is causal, not stylistic: every
+capability. The reason is causal, not stylistic: every
 state change the engine will admit traces back to a command and the events
 it produced. A setter that skipped that path would leave state with no
 event behind it, which replay could not reproduce and a fork could not
@@ -86,7 +82,7 @@ mapped. Two chat-scoped routes carry that traffic, both gated by
 `GET /api/chats/[chatId]` computes `isSimRoutedAuthority` once, server-side,
 and writes the result into the bootstrap payload as a plain `simRouted`
 boolean; the conversation UI only reads that field, so a character-chat
-conversation never even attempts the simulation-only read (engine.spec §30).
+conversation never even attempts the simulation-only read.
 
 | Route                                  | Handler            | Returns                                               |
 | -------------------------------------- | ------------------ | ----------------------------------------------------- |
@@ -154,7 +150,7 @@ The purity boundary in [Package boundaries](#package-boundaries) is what
 makes replay reproducible, not merely modular: because `contracts/` and
 `lib/` touch no database, network, file, clock, model, or global random
 source, replaying the same event log through the same kernels always
-produces the same projected state (engine.spec §31). That guarantee is what
+produces the same projected state. That guarantee is what
 lets a fork or a rebuild trust a from-scratch replay as the ground truth
 against any accelerator built on top of it.
 
@@ -164,10 +160,9 @@ derivation version on the event it produced, rather than depending on the
 draw being reproducible on its own (detailed under
 [Deliberate limits](#deliberate-limits) below).
 
-The full numeric and performance contract — integer story time, explicit
-sort order for deterministic collections, banned hidden `Date` /
-`Math.random` / locale / floating-rounding behavior, and the profiling bar a
-native rewrite would have to clear — is engine.spec §32.
+The numeric contract underneath it: story time is an integer, deterministic
+collections carry an explicit sort order, and hidden `Date`, `Math.random`,
+locale-dependent, and floating-point-rounding behavior are banned.
 
 ## Deliberate limits
 
@@ -191,8 +186,8 @@ would break replay or the causal chain above:
   a forked replay resurrects an alarm the cancellation was meant to keep dead.
 - **A trigger never sets location directly.** Movement is always a journey
   plus its arrival trigger; a scheduler outcome that wrote a location
-  directly would bypass the movement laws that keep spatial state consistent
-  (engine.spec §17).
+  directly would bypass the movement laws that keep spatial state
+  consistent.
 - **Deterministic draws are recorded, never re-rolled.** Any consumer of a
   deterministic draw records its stream, index, value, and derivation
   version on the event that consumed it, so replay reproduces the recorded

@@ -13,7 +13,7 @@ import { db, simEvents, simObservations, simPhysicalLoci, simZones, type Db } fr
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.1 — the durable observation log (engine.spec §20). Every accepted
+ * E4.1 — the durable observation log. Every accepted
  * command's transaction ends by deriving who perceived its events and
  * inserting the rows here, so perception is committed atomically with the
  * truth it perceives. Rows are pure derivations of the event stream — the

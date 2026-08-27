@@ -7,8 +7,7 @@ import {
 } from "./oracle";
 
 /**
- * The romantic contact rollout oracle
- * (`docs/developer-notes/romantic-contact-affordances.trial.romantic-proof.md`).
+ * The romantic contact rollout oracle.
  *
  * These exist because the oracle is the instrument the rollout ruling is made
  * with. A decision instrument that is wrong in the lenient direction reports a

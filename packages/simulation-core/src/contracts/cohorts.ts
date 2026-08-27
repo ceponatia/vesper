@@ -8,14 +8,14 @@ import {
 import { cohortIdSchema, commandIdSchema, storySecondSchema, zoneIdSchema } from "./identity";
 
 /**
- * E6.3 — population cohorts: the aggregate lane's substrate (engine.spec
- * §27.1, §27.6). A cohort is a branch-scoped CONSERVED COUNT of unnamed
- * background people — one row no matter how many it holds — whose presence
- * at a zone derives analytically from authored windows at read time: zero
- * rows written, zero triggers armed, zero model calls, ever. Population
- * changes only through events (`cohort_created` / `cohort_adjusted`), which
- * is what lets E6.4's actor promotion reserve conserved quantities from it
- * (§27.2 step 2) without ever contradicting aggregate history.
+ * E6.3 — population cohorts: the aggregate lane's substrate. A cohort is a
+ * branch-scoped CONSERVED COUNT of unnamed background people — one row no
+ * matter how many it holds — whose presence at a zone derives analytically
+ * from authored windows at read time: zero rows written, zero triggers
+ * armed, zero model calls, ever. Population changes only through events
+ * (`cohort_created` / `cohort_adjusted`), which is what lets E6.4's actor
+ * promotion reserve conserved quantities from it (§27.2 step 2) without
+ * ever contradicting aggregate history.
  */
 
 export const cohortDerivationVersion = "cohort-v1" as const;

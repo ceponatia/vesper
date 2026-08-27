@@ -31,7 +31,7 @@ import {
  * fail-closed enforcement that reads them is E3.5's job.
  */
 
-/** Route derivations that cause history record this version (engine.spec §6.4, §13.3). */
+/** Route derivations that cause history record this version. */
 export const GATE3_ROUTE_VERSION = "gate3-route-v1" as const;
 export const gate3RouteVersionSchema = z.literal(GATE3_ROUTE_VERSION).brand<"DerivationVersion">();
 
@@ -55,7 +55,7 @@ export const privacyPolicySchema = z.enum(privacyPolicies);
 export const linkStates = ["open", "closed", "locked", "blocked"] as const;
 export const linkStateSchema = z.enum(linkStates);
 
-// --- Topology (engine.spec §13.1) ------------------------------------------
+// --- Topology --------------------------------------------------------------
 
 export const coordinateSchema = z
   .object({
@@ -130,7 +130,7 @@ export const linkSchema = z
     path: ["toZoneId"],
   });
 
-// --- Physical locus (engine.spec §13.2) ------------------------------------
+// --- Physical locus --------------------------------------------------------
 
 /**
  * Exactly one locus per actor per branch. An in-transit actor is not at the
@@ -162,7 +162,7 @@ export const physicalLocusSchema = z.discriminatedUnion("kind", [
     }),
 ]);
 
-// --- Route planning (engine.spec §13.3) ------------------------------------
+// --- Route planning --------------------------------------------------------
 
 /** Ordered path; hop order is meaningful, so this is not a sorted set. */
 const routeLinkIdsSchema = z
@@ -209,7 +209,7 @@ export const routeResultSchema = z
     path: ["expectedDurationSeconds"],
   });
 
-// --- Journey (engine.spec §17) ---------------------------------------------
+// --- Journey ---------------------------------------------------------------
 
 export const journeyStatuses = [
   "planned",
@@ -256,7 +256,7 @@ export const journeySchema = z
     path: ["currentLinkIndex"],
   });
 
-// --- MoveActor command (engine.spec §14.1) ---------------------------------
+// --- MoveActor command -----------------------------------------------------
 
 const moveActorPayloadSchema = z
   .object({
@@ -344,7 +344,7 @@ export const moveTogetherRejectionCodes = [
 export const moveTogetherRejectionCodeSchema = z.enum(moveTogetherRejectionCodes);
 export const moveTogetherCommandResultSchema = createCommandResultSchema(moveTogetherRejectionCodeSchema);
 
-// --- ArriveJourney command (engine.spec §9.3) -------------------------------
+// --- ArriveJourney command --------------------------------------------------
 
 /**
  * The command a journey-arrival trigger dispatches at its due story second.
@@ -377,7 +377,7 @@ export const arriveJourneyCommandResultSchema = createCommandResultSchema(
   arriveJourneyRejectionCodeSchema,
 );
 
-// --- Movement event family (engine.spec §9.2) ------------------------------
+// --- Movement event family -------------------------------------------------
 
 const journeyPlannedPayloadSchema = z
   .object({

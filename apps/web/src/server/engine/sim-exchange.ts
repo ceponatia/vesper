@@ -100,7 +100,7 @@ import {
 /**
  * The actor pair's ACTUAL standing scene: any open co-present engagement
  * holding both mapped actors, no matter which chat (or storyteller tool)
- * opened it. One body, one physical scene (engine.spec §11.3) means a
+ * opened it. One body, one physical scene means a
  * per-chat derived id cannot be trusted to find it — a second chat mapped
  * to the same pair would mint a NEW open command and be refused
  * `participant_already_engaged` forever (the R3 live-session bug). Returns

@@ -8,13 +8,12 @@ import { commandIdSchema, composeSimulationId, storySecondSchema, worldCharacter
 import { simulationLodSchema } from "./lod";
 
 /**
- * E6.2 — the background-life routine controller (engine.spec §19.1–19.2,
- * §27–28). Named actors at `event` simulation LOD advance their routine at
- * material transitions only: a `routine_policy_due` alarm fires at the
- * actor's own rhythm boundary, deterministic policy scores the legal
- * candidates with versioned fixed-point weights, and the chosen outcome
- * commits atomically through the ordinary body law — zero model calls, zero
- * per-minute work.
+ * E6.2 — the background-life routine controller. Named actors at `event`
+ * simulation LOD advance their routine at material transitions only: a
+ * `routine_policy_due` alarm fires at the actor's own rhythm boundary,
+ * deterministic policy scores the legal candidates with versioned
+ * fixed-point weights, and the chosen outcome commits atomically through
+ * the ordinary body law — zero model calls, zero per-minute work.
  */
 
 /**

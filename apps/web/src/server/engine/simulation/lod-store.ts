@@ -47,7 +47,7 @@ import {
 import { applyTriggerScheduledEvent, type SimTx } from "./trigger-projector";
 
 /**
- * E6.1 durable actor-LOD authority (engine.spec §27–§28). One command on the
+ * E6.1 durable actor-LOD authority. One command on the
  * shared `runSimulationCommand` shell; the ledger row is a projection of
  * `actor_lod_assigned` events, and `readEffectiveActorLod` is the one read
  * seam every consumer (the §19.3 deliberator call sites today, the E6.2

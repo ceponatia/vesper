@@ -9,7 +9,7 @@ import { db, simNarrativeCuts, type Db } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.3 — the persisted NarrativeCut rows (engine.spec §22.3). A cut row is
+ * E4.3 — the persisted NarrativeCut rows. A cut row is
  * immutable and addressable: this module can insert and read, never update.
  * Rerender and narrator-failure retry (ruling 8) are `loadPersistedCut` — a
  * pure read that provably creates no events, no rows, and no memories.

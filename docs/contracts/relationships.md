@@ -65,7 +65,7 @@ Two **composed** disposition lines ride alongside the law block (both `law.ts`, 
 
 ## Disposition (personality)
 
-`contracts/personality/` holds an NPC's authored disposition: **atomic traits** that parameterize dynamics, plus **social reactions** decided deterministically (`docs/developer-notes/personality-and-state.spec.md` §3/§6). Everything here is registries + pure resolvers, all IO-free.
+`contracts/personality/` holds an NPC's authored disposition: **atomic traits** that parameterize dynamics, plus **social reactions** decided deterministically. Everything here is registries + pure resolvers, all IO-free.
 
 ### Interaction concepts (`interactions.ts`)
 

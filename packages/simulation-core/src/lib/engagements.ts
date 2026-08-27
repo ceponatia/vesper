@@ -98,7 +98,7 @@ function assertEngagementTransition(from: EngagementState, to: EngagementState, 
 }
 
 // ---------------------------------------------------------------------------
-// OpenEngagement resolution (engine.spec §18.1, §11.3)
+// OpenEngagement resolution
 // ---------------------------------------------------------------------------
 
 interface EngagementBranchMeta {
@@ -244,7 +244,7 @@ export function resolveOpenEngagement(
 }
 
 // ---------------------------------------------------------------------------
-// EndEngagement resolution (engine.spec §18.2)
+// EndEngagement resolution
 // ---------------------------------------------------------------------------
 
 export interface EndEngagementResolutionView extends EngagementBranchMeta {

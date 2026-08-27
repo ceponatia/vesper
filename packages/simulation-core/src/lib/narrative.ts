@@ -71,7 +71,7 @@ export function deriveArmedEffectId(cutId: string, effect: ProposedArmedEffect):
 }
 
 // ---------------------------------------------------------------------------
-// Departure policy (engine.spec §18.3 steps 4–6, §15.3 — deterministic)
+// Departure policy (deterministic)
 // ---------------------------------------------------------------------------
 
 export interface DeparturePolicyInput {
@@ -138,7 +138,7 @@ export function departureCandidates(
 }
 
 // ---------------------------------------------------------------------------
-// Beat classification (engine.spec §22.1 mustEnact / allowedTransitions)
+// Beat classification (mustEnact / allowedTransitions)
 // ---------------------------------------------------------------------------
 
 type BeatDisposition = { kind: "hard" | "allowed"; summary: string } | null;
@@ -287,7 +287,7 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
 }
 
 // ---------------------------------------------------------------------------
-// Forbidden claims (engine.spec §22.2 — typed, plus contextual bans)
+// Forbidden claims (typed, plus contextual bans)
 // ---------------------------------------------------------------------------
 
 const baseForbiddenClaims: readonly Omit<ForbiddenClaim, "subjectActorIds">[] = [
@@ -324,7 +324,7 @@ const baseForbiddenClaims: readonly Omit<ForbiddenClaim, "subjectActorIds">[] = 
 ];
 
 // ---------------------------------------------------------------------------
-// Cut compilation (engine.spec §22.1 — the full contract)
+// Cut compilation
 // ---------------------------------------------------------------------------
 
 export interface CompileNarrativeCutInput {

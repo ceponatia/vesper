@@ -2639,7 +2639,7 @@ export const narratorPromptRevisions = pgTable(
 
 
 // ---------------------------------------------------------------------------
-// Successor simulation authority (engine.spec.md)
+// Successor simulation authority
 // ---------------------------------------------------------------------------
 
 /**
@@ -2988,7 +2988,7 @@ export const simItems = pgTable(
     containerCapacityCount: bigint("container_capacity_count", { mode: "number" }),
     containerAccess: jsonb("container_access").$type<ContainerAccessPolicy>(),
     /**
-     * E5.3 slice 3 (engine.spec §26.7): whether wear/cleanliness are tracked
+     * E5.3 slice 3: whether wear/cleanliness are tracked
      * for this item. Meters/modifiers lazily initialize the first time a
      * condition-touching operation reaches a tracked item — this flag alone
      * gates whether that ever happens.
@@ -3426,7 +3426,7 @@ export const simSnapshots = pgTable(
 );
 
 /**
- * E3.1 authoritative space (engine.spec §13). Topology rows are branch-scoped
+ * E3.1 authoritative space. Topology rows are branch-scoped
  * seeded statics like sim_characters — no event mutates them yet, so a fork
  * copies them; loci and journeys are event-projected state.
  */
@@ -3583,7 +3583,7 @@ export const simActionDefinitions = pgTable(
 );
 
 /**
- * E3.2 activity instances (engine.spec §16.2). Claims are projected from
+ * E3.2 activity instances. Claims are projected from
  * these rows — an actor's held claims are the claims of their non-terminal
  * activities — so a crashed worker can never orphan a claim (§16.3).
  */
@@ -3631,7 +3631,7 @@ export const simActivities = pgTable(
 );
 
 /**
- * E3.3 commitments (engine.spec §15). The window and derivation columns are
+ * E3.3 commitments. The window and derivation columns are
  * captured at creation (the creating event records them too); status is the
  * §15.4 machine driven by the notice and deadline triggers.
  */
@@ -3698,7 +3698,7 @@ export const simCommitments = pgTable(
   ],
 );
 
-/** E3.3 temporal pressures (engine.spec §15.2), one per commitment notice. */
+/** E3.3 temporal pressures, one per commitment notice. */
 export const simTemporalPressures = pgTable(
   "sim_temporal_pressures",
   {
@@ -3734,7 +3734,7 @@ export const simTemporalPressures = pgTable(
 );
 
 /**
- * E3.4 engagements (engine.spec §18.1). Attention claims are projected from
+ * E3.4 engagements. Attention claims are projected from
  * these rows exactly as activity claims are — a crashed worker cannot orphan
  * a conversation's hold on its participants.
  */
@@ -3813,7 +3813,7 @@ export const simShadowDivergences = pgTable(
 );
 
 /**
- * E3.5 access grants (engine.spec §14). Malformed rows fail closed at read
+ * E3.5 access grants. Malformed rows fail closed at read
  * time — a grant that does not parse admits no one.
  */
 export const simAccessGrants = pgTable(
@@ -3841,7 +3841,7 @@ export const simAccessGrants = pgTable(
 );
 
 /**
- * E4.1 observation log (engine.spec §20): one row per (event, witness),
+ * E4.1 observation log: one row per (event, witness),
  * derived deterministically from the event stream — a rebuilt branch mints
  * identical rows, which is why observation ids are derived, not random.
  * No FK to sim_events: a forked child holds observations for ancestor-branch
@@ -3894,7 +3894,7 @@ export const simObservations = pgTable(
 );
 
 /**
- * E4.2 assertions (engine.spec §21.1): claims made on a branch — possibly
+ * E4.2 assertions: claims made on a branch — possibly
  * false; canon truth stays in sim_events. Rows are derived deterministically
  * from disclosure events (ids embed the originating event), so a rebuilt
  * branch mints identical rows. No FK to sim_events for the same reason as
@@ -3941,7 +3941,7 @@ export const simAssertions = pgTable(
 );
 
 /**
- * E4.2 beliefs (engine.spec §21.2): one actor's held stance toward an
+ * E4.2 beliefs: one actor's held stance toward an
  * assertion, with provenance — the observations it rests on and the chain of
  * tellers it travelled through. Superseded rows keep their history; the
  * active row is the holder's current stance.
@@ -3995,7 +3995,7 @@ export const simBeliefs = pgTable(
 );
 
 /**
- * E4.3 persisted NarrativeCuts (engine.spec §22). A cut row is IMMUTABLE and
+ * E4.3 persisted NarrativeCuts. A cut row is IMMUTABLE and
  * addressable: rerender re-reads it and creates nothing; a failed narrator
  * render retries from the same row (ruling 8); armed speech acts confirm
  * against it by id (§23.3). There is deliberately no update path and no
@@ -4037,7 +4037,7 @@ export const simNarrativeCuts = pgTable(
 );
 
 /**
- * E4.3 soft canon (engine.spec §23.4, ruling 14): the bounded expiring store
+ * E4.3 soft canon (ruling 14): the bounded expiring store
  * of narrator-established details. Rows are derived — every soft_canon_*
  * event carries its full post-fold snapshot, so live upsert and fork replay
  * mint identical rows. Expiry is read-time (valid_until), never a status
@@ -4084,7 +4084,7 @@ export const simSoftCanon = pgTable(
 );
 
 /**
- * E4.4 memory documents (engine.spec §24): redacted, indexable recall
+ * E4.4 memory documents: redacted, indexable recall
  * representations derived from persisted source rows by the memory-index
  * outbox consumer. Eligibility, validity, and privacy are resolved
  * relationally at query time (§24.1) — this table never widens what any
@@ -4170,7 +4170,7 @@ export const simJourneys = pgTable(
 );
 
 /**
- * E5.1 body meters (engine.spec §25.2). One row per actor × meter; the value
+ * E5.1 body meters. One row per actor × meter; the value
  * is fixed-point (10 000 ≡ 1.0) and `last_integrated_at` is the last MATERIAL
  * write — queries integrate analytically from here and never persist, which
  * is what makes partition invariance structural.
@@ -4207,7 +4207,7 @@ export const simBodyMeters = pgTable(
   ],
 );
 
-/** E5.1 body conditions (engine.spec §25.1): categorical, sourced, self-expiring. */
+/** E5.1 body conditions: categorical, sourced, self-expiring. */
 export const simBodyConditions = pgTable(
   "sim_body_conditions",
   {
@@ -4239,7 +4239,7 @@ export const simBodyConditions = pgTable(
 );
 
 /**
- * E5.2 rhythm rows (engine.spec §25.5) — authored branch-scoped daily
+ * E5.2 rhythm rows — authored branch-scoped daily
  * windows, copied to fork children like action definitions. Sleep windows
  * anchor the circadian curve; wash windows are window-crossing self-care.
  */
@@ -4308,7 +4308,7 @@ export const simBodyModifiers = pgTable(
 );
 
 /**
- * E5.3 slice 3 item condition meters (engine.spec §26.7). Wear and
+ * E5.3 slice 3 item condition meters. Wear and
  * cleanliness ride the SAME §25 fixed-point kernel `sim_body_meters` does —
  * this is an item-scoped mirror, not a reuse of that table: one row per item
  * × meter, value fixed-point (10 000 ≡ 1.0), `last_integrated_at` the last
@@ -4356,7 +4356,7 @@ export const simItemConditionMeters = pgTable(
  * E5.3 slice 3 item condition modifiers — the §25.3 modifier contract,
  * item-scoped, mirroring `sim_body_modifiers` minus `condition_id` AND
  * `visibility`: items have no categorical conditions in v1, so every
- * modifier is applied and retired directly (engine.spec §26.7 — e.g. the
+ * modifier is applied and retired directly (e.g. the
  * worn-window cleanliness modifier `buildWornWindowTransition` builds), and
  * every modifier this substrate ever creates is hard-coded `"obvious"`
  * visibility (see the registry doc comment in
@@ -4411,7 +4411,7 @@ export const simItemConditionModifiers = pgTable(
 
 // ---------------------------------------------------------------------------
 // E5.4 — households, fungible lots, conservation, means bands, and the
-// restock routine (engine.spec §26.8–26.11).
+// restock routine.
 //
 // Why lots and means-bands get a synthetic persistence-layer key but
 // households and membership don't: a lot's locus is a *discriminated*
@@ -4436,7 +4436,7 @@ export const simItemConditionModifiers = pgTable(
 // ---------------------------------------------------------------------------
 
 /**
- * E5.4 households (engine.spec §26.8) — a shared domestic unit. `residence_zone_ids`
+ * E5.4 households — a shared domestic unit. `residence_zone_ids`
  * is a sorted-unique jsonb array (small, v1 households are small; mirrors how
  * `container_access`'s allow-list is stored inline rather than as a join table).
  */
@@ -4658,7 +4658,7 @@ export const simHouseholdRestockRoutines = pgTable(
 );
 
 /**
- * E5.5 relationship ledger (engine.spec §21.3). Append-only — no update path
+ * E5.5 relationship ledger. Append-only — no update path
  * except the derived-vs-authored distinction and payload are fixed at insert.
  * `entry_id` is derived (never caller identity) but IS the natural PK
  * (unlike E5.4's lots/means-bands, an entry has no discriminated-nullable-
@@ -4702,7 +4702,7 @@ export const simRelationshipLedger = pgTable(
 );
 
 /**
- * E6.1 actor LOD ledger (engine.spec §27–§28). One row per assigned actor —
+ * E6.1 actor LOD ledger. One row per assigned actor —
  * an actor with no row reads the versioned registry defaults, so the table
  * stays sparse (background casts arm nothing, mirrors `sim_body_rhythms`'
  * assumed-rhythm rule). Live/evented: `assign_actor_lod` upserts this row and
@@ -4733,7 +4733,7 @@ export const simActorLods = pgTable(
 );
 
 /**
- * E6.3 population cohorts (engine.spec §27.6): one branch-scoped row per
+ * E6.3 population cohorts: one branch-scoped row per
  * conserved background count. State is fully evented (`cohort_created` /
  * `cohort_adjusted`); fork children rebuild rows from inherited events, and
  * presence at a zone is an analytic read over `presence_windows` — never a

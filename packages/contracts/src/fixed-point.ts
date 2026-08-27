@@ -1,9 +1,9 @@
 /**
  * The shared fixed-point integration kernel — pure integer numerics, no domain.
  *
- * Extracted from the simulation body kernel (engine.spec §25.2) so BOTH lanes
- * run one implementation: the successor's meter/item-condition substrate and the
- * chat lane's garment gradients (clothing-state-graph.plan.md §"Condition vector,
+ * Extracted from the simulation body kernel so BOTH lanes run one
+ * implementation: the successor's meter/item-condition substrate and the chat
+ * lane's garment gradients (clothing-state-graph.plan.md §"Condition vector,
  * regional overrides, and marks" — *"Reuse the successor §25 fixed-point
  * integration kernel rather than creating floating-point turn math; generalize
  * its pure numerics if needed; do not make chat depend on successor persistence
@@ -21,7 +21,7 @@
  * persistence. It is four ideas:
  *
  * 1. `exp2NegativeFixedPoint` — deterministic `2^(-x)` with no libm
- *    transcendentals (§32), so two machines agree bit for bit;
+ *    transcendentals, so two machines agree bit for bit;
  * 2. `proportionalDecayStep` — exponential approach toward a target over an
  *    elapsed span, by half-life;
  * 3. `linearDriftStep` — constant-rate approach toward (or flight from) a
@@ -31,7 +31,7 @@
  * Every step is CLOSED FORM over the elapsed span. That is what makes a large
  * skip and an equivalent partition agree: there is no intermediate rounding to
  * diverge, provided the caller integrates from its last MATERIAL write and never
- * persists a query (the §25.2 law both lanes inherit).
+ * persists a query (the law both lanes inherit).
  *
  * The unit scale is a parameter, not a constant, because the two lanes name it
  * differently (`METER_FIXED_POINT_ONE` / `GARMENT_UNIT_ONE`) while agreeing it
@@ -44,7 +44,7 @@ export const FIXED_POINT_ONE = 10_000;
 const SECONDS_PER_HOUR = 3_600;
 
 // ---------------------------------------------------------------------------
-// Deterministic fixed-point 2^(-x) (engine.spec §32 — no libm transcendentals)
+// Deterministic fixed-point 2^(-x) — no libm transcendentals
 // ---------------------------------------------------------------------------
 
 // Exported — E5.5's social.ts reuses this scale constant directly for its own
@@ -111,7 +111,7 @@ export function scaleFixedPoint(value: number, coefficient: number, one: number 
 }
 
 // ---------------------------------------------------------------------------
-// Analytic drift steps (engine.spec §25.2)
+// Analytic drift steps
 // ---------------------------------------------------------------------------
 
 /**

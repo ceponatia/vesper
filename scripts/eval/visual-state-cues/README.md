@@ -1,10 +1,9 @@
 # Visual-state narrator trial
 
-The owner-gated live comparison for **slice 7** of
-`docs/developer-notes/visual-state.plan.md`: does visual-state narration — a
-must-not-contradict **fence** plus at most two change-gated **cues** — reduce
-contradictions of committed visual state without costing repetition,
-naturalness, or hidden-detail discipline?
+The owner-gated live comparison for **slice 7** of the visual-state work: does
+visual-state narration — a must-not-contradict **fence** plus at most two
+change-gated **cues** — reduce contradictions of committed visual state without
+costing repetition, naturalness, or hidden-detail discipline?
 
 The harness always builds both arms itself, so it does not read the
 per-conversation switch that gates the feature in production.

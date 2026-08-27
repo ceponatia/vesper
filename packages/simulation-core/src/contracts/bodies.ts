@@ -14,11 +14,11 @@ import {
 } from "./identity";
 
 /**
- * E5.1 — the unified body substrate (engine.spec §25.1–25.3, plan §"Gate 5
- * build order"). Three layers, never conflated: SUBSTRATE (stored fixed-point
- * body facts moved only by drift and sources), RESOLUTION (analytic drift
- * laws, one modifier contract, thresholds as material events), and READ
- * (E5.2's pure perception-gated projections — no read lives here).
+ * E5.1 — the unified body substrate. Three layers, never conflated:
+ * SUBSTRATE (stored fixed-point body facts moved only by drift and sources),
+ * RESOLUTION (analytic drift laws, one modifier contract, thresholds as
+ * material events), and READ (E5.2's pure perception-gated projections — no
+ * read lives here).
  *
  * Meter membership is registry DATA under ruling 15: the parity meters land
  * as entries in {@link bodyMeterRegistryV1}, and adding satiation, hydration,
@@ -26,7 +26,7 @@ import {
  * never a schema migration.
  */
 
-// --- Fixed-point vocabulary (engine.spec §32) --------------------------------
+// --- Fixed-point vocabulary --------------------------------------------------
 
 /** Meter values are integers in 1/10 000 units: 10 000 ≡ the chat lane's 1.0. */
 export const METER_FIXED_POINT_ONE = 10_000 as const;
@@ -47,7 +47,7 @@ export const bodyRegistryVersions = [bodyDerivationVersion] as const;
 export const bodyRegistryVersionSchema = z.enum(bodyRegistryVersions);
 export type BodyRegistryVersion = z.infer<typeof bodyRegistryVersionSchema>;
 
-// --- Meter registry (engine.spec §25.2; ruling 15) ---------------------------
+// --- Meter registry (ruling 15) ----------------------------------------------
 
 /** The chat taxonomy's meter classes (chat-meter-economy.spec §The meter taxonomy). */
 export const bodyMeterClasses = ["reserve", "load", "valence", "rate", "phase"] as const;
@@ -358,7 +358,7 @@ export const bodyModifierSpecSchema = z
   .strict();
 export type BodyModifierSpec = z.infer<typeof bodyModifierSpecSchema>;
 
-// --- Rhythm rows (engine.spec §25.5; ruling 15 — E5.2) -----------------------
+// --- Rhythm rows (ruling 15 — E5.2) ------------------------------------------
 
 /**
  * Authored branch-scoped rhythm windows — the character's own daily life as
@@ -454,7 +454,7 @@ export interface ScheduledBodyAdjustment {
   operation: BodySourceOperation;
 }
 
-// --- Read vocabulary (engine.spec §25.1 layer 3; ruling 15 — E5.2) -----------
+// --- Read vocabulary (layer 3; ruling 15 — E5.2) -----------------------------
 
 /**
  * Read-owned band vocabulary. Energy joins mood as a meter with NO registry
@@ -516,7 +516,7 @@ export const COLLAPSE_SLEEP_SECONDS = 28_800 as const;
 /** How far ahead the collapse alarm solves; re-solved on every material event. */
 export const COLLAPSE_SOLVE_HORIZON_SECONDS = 604_800 as const;
 
-// --- Source vocabulary (engine.spec §25.1 layer 2) ---------------------------
+// --- Source vocabulary (layer 2) ---------------------------------------------
 
 export const bodySourceKinds = [
   "meal",
@@ -538,7 +538,7 @@ export const bodySourceOperationSchema = z.discriminatedUnion("kind", [
 ]);
 export type BodySourceOperation = z.infer<typeof bodySourceOperationSchema>;
 
-// --- Captured derivation (engine.spec §6.4) ----------------------------------
+// --- Captured derivation -----------------------------------------------------
 
 const observerActorIdsSchema = createStableStringSetSchema(
   worldCharacterIdSchema,
@@ -762,7 +762,7 @@ export const resolveBodyCollapseCommandResultSchema = createCommandResultSchema(
   resolveBodyCollapseRejectionCodeSchema,
 );
 
-// --- Body event family (engine.spec §9.2) ------------------------------------
+// --- Body event family -------------------------------------------------------
 
 const bodyInitializedPayloadSchema = z
   .object({

@@ -79,7 +79,7 @@ import {
 } from "../contracts/scheduler";
 
 /**
- * E5.1 pure body kernel (engine.spec §25.1–25.3). The substrate law: a meter
+ * E5.1 pure body kernel. The substrate law: a meter
  * moves only through analytic drift and material sources; QUERIES NEVER
  * PERSIST. Every derived value is computed from the last material write in
  * one closed-form step, so a large skip and equivalent partitions produce the
@@ -104,7 +104,7 @@ function compareStableText(left: string, right: string): number {
 export { EXP2_SCALE, exp2NegativeFixedPoint };
 
 // ---------------------------------------------------------------------------
-// Piecewise analytic integration (engine.spec §25.2)
+// Piecewise analytic integration
 // ---------------------------------------------------------------------------
 
 /** Alarms are re-solved on every material event; past this horizon none is armed. */
@@ -438,7 +438,7 @@ export function bodyConditionExpiryUniquenessKey(conditionId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// E5.2 — rhythm self-care and the sleep coupling (engine.spec §25.4–25.5)
+// E5.2 — rhythm self-care and the sleep coupling
 // ---------------------------------------------------------------------------
 
 /**
@@ -753,7 +753,7 @@ function rearmThresholdTrigger(input: {
 }
 
 // ---------------------------------------------------------------------------
-// InitializeActorBody (engine.spec §25.1; seeds the substrate for one actor)
+// InitializeActorBody (seeds the substrate for one actor)
 // ---------------------------------------------------------------------------
 
 export interface InitializeActorBodyResolutionView extends BodyBranchMeta {
@@ -857,7 +857,7 @@ export function resolveInitializeActorBody(
 }
 
 // ---------------------------------------------------------------------------
-// ApplyBodySource (engine.spec §25.1 layer 2 — material sources)
+// ApplyBodySource (layer 2 — material sources)
 // ---------------------------------------------------------------------------
 
 export interface BodyMeterResolutionView extends BodyBranchMeta {
@@ -1237,7 +1237,7 @@ export function resolveApplyBodySource(
 }
 
 // ---------------------------------------------------------------------------
-// ApplyBodyModifier (engine.spec §25.3 — the one modifier contract)
+// ApplyBodyModifier (the one modifier contract)
 // ---------------------------------------------------------------------------
 
 export interface ApplyBodyModifierResolution {
@@ -1518,7 +1518,7 @@ export function resolveApplyBodyModifier(
 }
 
 // ---------------------------------------------------------------------------
-// ApplyBodyCondition (engine.spec §25.1 — categorical, sourced, self-expiring)
+// ApplyBodyCondition (categorical, sourced, self-expiring)
 // ---------------------------------------------------------------------------
 
 export interface ApplyBodyConditionResolutionView extends BodyBranchMeta {

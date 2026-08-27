@@ -19,10 +19,10 @@ import { meterDeltaFixedPointSchema } from "./bodies";
 import { consentScopeKeySchema } from "./social";
 
 /**
- * E3.2 — typed actions, activities, and claims (engine.spec §16, plan §"Gate 3
- * build order"). An action definition is authored, versioned data; an activity
- * instance is one attempted action over story time whose claims are acquired
- * atomically at start and released by every terminal phase.
+ * E3.2 — typed actions, activities, and claims. An action definition is
+ * authored, versioned data; an activity instance is one attempted action over
+ * story time whose claims are acquired atomically at start and released by
+ * every terminal phase.
  *
  * Deliberate E3.2 boundaries: resource costs join with Gate 5 materials;
  * privacy/consent requirements join with E3.5's access layer; the §16.4 graded
@@ -37,7 +37,7 @@ import { consentScopeKeySchema } from "./social";
  * uses (`materials.ts`'s `buildConsumptionBodyEffects`).
  */
 
-// --- Claims (engine.spec §16.2) --------------------------------------------
+// --- Claims ----------------------------------------------------------------
 
 export const attentionWeights = ["full", "partial"] as const;
 export const attentionWeightSchema = z.enum(attentionWeights);
@@ -69,7 +69,7 @@ export function activityClaimsConflict(
   return heldFullAttention && requestedFullAttention;
 }
 
-// --- Action definition (engine.spec §16.1) ---------------------------------
+// --- Action definition -----------------------------------------------------
 
 /** Fixed now; a duration distribution variant joins when a scenario funds it. */
 export const durationRuleSchema = z.discriminatedUnion("kind", [
@@ -170,7 +170,7 @@ export const simulationActionDefinitionSchema = z
 
 export type SimulationActionDefinition = z.infer<typeof simulationActionDefinitionSchema>;
 
-// --- Activity instance (engine.spec §16.2–16.3) ----------------------------
+// --- Activity instance -----------------------------------------------------
 
 export const activityPhases = [
   "queued",
@@ -338,7 +338,7 @@ export const cancelActivityCommandResultSchema = createCommandResultSchema(
   cancelActivityRejectionCodeSchema,
 );
 
-// --- Activity event family (engine.spec §9.2) ------------------------------
+// --- Activity event family -------------------------------------------------
 
 const witnessActorIdsSchema = createStableStringSetSchema(
   worldCharacterIdSchema,

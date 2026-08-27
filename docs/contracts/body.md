@@ -65,8 +65,6 @@ These are all `coverageRelevant: false` — a garment over `pelvis` / `chest` al
 - `INTIMATE_REGION_GROUPS = breasts · vulva · penis · testicles` — the **toggleable** regions. Body-config gating (`species/realize.ts`) keys on membership here (via `isIntimateRegionGroup`), so only these can be switched off.
 - `INTIMATE_ATTRIBUTE_CATEGORIES = breasts · vulva · penis · testicles · anus · perineum` — the **moderation/exposure** set (a superset). A category here is withheld from chat unless the turn's focus targets the region and from images unless the caller opts in and the region reads exposed. The two extras (anus · perineum) are universal but still exposure-sensitive.
 
-The full aionchat anatomy vocabulary that didn't port in T1 (buttocks, groin, abdomen, nose, …) is catalogued in `docs/developer-notes/supplemental-anatomy.phase4.md`.
-
 ## Body-config: which anatomy a character has
 
 A character's body-config is the set of intimate regions and additive features they actually have. Two profile fields hold it, both riding the profile JSONB (no migration):

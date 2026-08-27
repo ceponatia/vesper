@@ -40,7 +40,7 @@ import { loadMaterialResolutionView } from "./material-store";
 import { applyTriggerScheduledEvent } from "./trigger-projector";
 
 /**
- * E6.2 — the durable routine controller (engine.spec §19.1–19.2, §27–28).
+ * E6.2 — the durable routine controller.
  * `run_routine_policy` is trigger-dispatched at an event-LOD actor's rhythm
  * boundary, re-validates everything at fire time, records the §19.2 decision,
  * and commits the chosen outcome atomically through the ordinary law — the

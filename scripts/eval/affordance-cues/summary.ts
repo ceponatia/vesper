@@ -6,8 +6,7 @@ import { AUDIT_DIMENSIONS, type AuditDimension, type DimensionVerdict } from "./
 import type { ArmId } from "./harness";
 
 /**
- * The COMMITTABLE audit record for a narrator trial round
- * (`docs/developer-notes/narrator-physical-guidance.plan.md` §Slice 0).
+ * The COMMITTABLE audit record for a narrator trial round.
  *
  * `run.ts` writes the full `trial.json` — every prompt, every reply, every judge
  * answer — into `data/`, which is gitignored, so the only surviving record of

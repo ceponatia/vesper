@@ -23,7 +23,7 @@ import {
 } from "@/server/test-support";
 
 /**
- * E6.3 durable cohort authority (engine.spec §27.6): create/adjust end to
+ * E6.3 durable cohort authority: create/adjust end to
  * end — zone validation, conservation, idempotency, authorization, the
  * cohort means band, fork parity, and the aggregate no-work guarantee (a
  * cohort never arms a trigger). Runs on the shared `simulationSuiteHarness`

@@ -3,10 +3,7 @@
 This doc covers what a character in the successor simulation engine knows and
 believes, how that spreads between characters, how relationship state and
 interpersonal consent are tracked, and how the engine recalls any of it back
-into a scene. The normative contract is `engine.spec §21` (assertions,
-beliefs, gossip, relationships) and `engine.spec §24` (RAG and memory); this
-doc explains the current behavior in plain terms and cites the spec rather
-than restating it.
+into a scene.
 
 ## How it works
 
@@ -17,8 +14,7 @@ An assertion is an append-only record of a claimed proposition: a
 event) asserted it, when, an optional validity window, and a lifecycle status
 — active, contradicted, superseded, or retracted. An assertion can be false.
 The engine does not collapse assertions into one canonical truth for the
-world; a false claim is still a real assertion, tracked like any other
-(engine.spec §21.1).
+world; a false claim is still a real assertion, tracked like any other.
 
 ### Beliefs: what a character actually holds
 
@@ -28,8 +24,7 @@ was learned from, its own believed-from/until window, and its own lifecycle —
 active, doubted, rejected, superseded — independent of the assertion's
 lifecycle. That independence matters: an assertion can be superseded while a
 belief traced to it stays active until something explicitly updates it, so a
-character can keep believing something the world has already moved past
-(engine.spec §21.2).
+character can keep believing something the world has already moved past.
 
 Gossip is not a separate mechanism. It's a `DisclosureMade` event plus the
 listener's own observation and belief update. Each hop preserves provenance
@@ -42,8 +37,8 @@ record, not something applied silently between hops.
 Trust, attraction, and resentment are never stored as a running number.
 Every read is a projection computed at read time over a persisted,
 branch-scoped, append-only ledger of directional entries — the same
-recompute-don't-persist pattern the meter system uses for reads (engine.spec
-§21.3). Each ledger entry is directional (`fromActorId` toward `toActorId`,
+recompute-don't-persist pattern the meter system uses for reads. Each ledger
+entry is directional (`fromActorId` toward `toActorId`,
 always two distinct actors) and carries its own causal provenance.
 
 The entry-kind vocabulary is closed and versioned:
@@ -84,8 +79,8 @@ trust/attraction/resentment read crosses some threshold.
 
 Interpersonal consent for touch, closeness, or intimacy is gated through the
 same ledger, never implied by spatial state or narrative framing — a
-deliberately separate concern from spatial or property transgression
-(engine.spec §21.4). A closed, versioned, world-type `ConsentScopeKey`
+deliberately separate concern from spatial or property transgression. A
+closed, versioned, world-type `ConsentScopeKey`
 (`closeness`, `kiss`, `touch_intimate`, `undress`, `sex`, and other authored
 scopes) names the class of action a boundary or permission covers.
 
@@ -128,7 +123,7 @@ authored backfill of pre-branch history or storyteller retcon.
 ### Recall: eligibility before relevance
 
 Retrieval runs as a fixed pipeline, and eligibility is decided before
-anything is ranked by similarity (engine.spec §24.1):
+anything is ranked by similarity:
 
 1. authenticate the world, branch, principal, and viewpoint;
 2. filter by source kind, branch, sequence, validity interval, supersedence,
@@ -148,7 +143,7 @@ because it reads as semantically close to the query.
 There are exactly six eligible source classes: observed events, active
 assertions, beliefs, dialogue episodes the actor participated in or learned
 about, bounded soft canon, and authored lore explicitly available to the
-viewpoint (engine.spec §24.2). Public world records are not a seventh class —
+viewpoint. Public world records are not a seventh class —
 `public` is a *visibility* mode over soft-canon and lore documents. Relationship
 facts are not a class either: they become recallable only when someone witnessed
 the underlying event, and then only as a generic observation carrying a redacted
@@ -166,7 +161,7 @@ Each indexed document carries the source id and kind, its branch and sequence
 interval, the viewpoint or visibility eligibility it was indexed under, its
 valid and superseded intervals, the embedding model and document schema
 versions it was built with, and redacted text produced only from data the
-source was authorized to expose (engine.spec §24.3).
+source was authorized to expose.
 
 ## Invariants
 
@@ -192,16 +187,16 @@ source was authorized to expose (engine.spec §24.3).
 
 The relationship ledger's entry-kind vocabulary and the `ConsentScopeKey`
 vocabulary are both closed, versioned, and registry-as-data: adding one is a
-data edit to the vocabulary list, not a schema migration (engine.spec §21.3,
-§21.4). The RAG source classes work the same way (engine.spec §24.2) —
-widening what a character can recall means declaring a new source class and
-its eligibility rule, not changing the ranking pipeline.
+data edit to the vocabulary list, not a schema migration. The RAG source
+classes work the same way — widening what a character can recall means
+declaring a new source class and its eligibility rule, not changing the
+ranking pipeline.
 
 ## Degradation
 
 If indexing falls behind or fails outright, world simulation keeps running —
 recall quality degrades rather than blocking play, and the lag surfaces as a
-diagnostic instead of going silently stale (engine.spec §24.3). The failure
+diagnostic instead of going silently stale. The failure
 direction is deliberately asymmetric: a model call must never see a
 less-restricted document just because a more specific index wasn't ready, so
 degraded recall only ever narrows what's visible. This follows the same

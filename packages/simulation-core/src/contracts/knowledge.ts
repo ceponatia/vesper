@@ -21,13 +21,13 @@ import {
 import { observationConfidenceSchema } from "./perception";
 
 /**
- * E4.2 — assertions, beliefs, disclosure, and gossip (engine.spec §21). An
- * Assertion is a claim someone made — it may be false; canon truth lives in
- * events, never here. A Belief is one actor's held stance toward an assertion,
- * with provenance: which observations it rests on and through whom it
- * travelled. Gossip is a `disclosure_made` event plus the listeners'
- * observations and belief updates — each hop preserves provenance through an
- * explicit event, so "who told whom" is always reconstructible.
+ * E4.2 — assertions, beliefs, disclosure, and gossip. An Assertion is a claim
+ * someone made — it may be false; canon truth lives in events, never here. A
+ * Belief is one actor's held stance toward an assertion, with provenance: which
+ * observations it rests on and through whom it travelled. Gossip is a
+ * `disclosure_made` event plus the listeners' observations and belief updates —
+ * each hop preserves provenance through an explicit event, so "who told whom"
+ * is always reconstructible.
  *
  * Both ledgers are DERIVED projections of the event stream (like §20
  * observations): every id is deterministic, every update is a pure fold, and
@@ -59,7 +59,7 @@ const subjectIdsSchema = createStableStringSetSchema(
 /** Claimed values are opaque JSON — compared structurally, never interpreted. */
 export const claimedValueSchema = z.json();
 
-// --- Assertion (engine.spec §21.1) ------------------------------------------
+// --- Assertion --------------------------------------------------------------
 
 export const assertionStatuses = ["active", "contradicted", "superseded", "retracted"] as const;
 export const assertionStatusSchema = z.enum(assertionStatuses);
@@ -103,7 +103,7 @@ export const assertionSchema = z
 
 export type Assertion = z.infer<typeof assertionSchema>;
 
-// --- Belief (engine.spec §21.2) ----------------------------------------------
+// --- Belief ------------------------------------------------------------------
 
 export const beliefStatuses = ["active", "doubted", "rejected", "superseded"] as const;
 export const beliefStatusSchema = z.enum(beliefStatuses);

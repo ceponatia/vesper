@@ -127,7 +127,7 @@ export function chatGarmentCuesEnabled(): boolean {
 }
 
 /**
- * The AFFORDANCE NARRATION switch (body-attribute-affordances.plan.md slice 5) —
+ * The AFFORDANCE NARRATION switch (slice 5) —
  * **default-off permanently: the trial closed 2026-07-29 and the flag PARKED OFF.**
  *
  * Slice 5 was explicitly a *trial* ("compare contradiction rate, repetition,
@@ -136,17 +136,15 @@ export function chatGarmentCuesEnabled(): boolean {
  * campaign under a frozen protocol whose terminal state is two consecutive rounds
  * with a VALID induction gate in which the cue arm fails the decision rule. Both
  * valid rounds failed (the cue arm never reduced contradictions), so per the
- * pre-committed rule this flag parks OFF — see
- * `docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log. This is
- * not "off until we get around to it": turning it on is a decision the campaign
- * already made, against.
+ * pre-committed rule this flag parks OFF. This is not "off until we get around to
+ * it": turning it on is a decision the campaign already made, against.
  *
- * The narrator-facing policy is replaced, not retried, by
- * `docs/developer-notes/narrator-physical-guidance.plan.md` — constraints,
- * premise corrections and resolved action outcomes, with positive detail gated on
- * a committed state change behind its own separately-measured flag. The cue
- * renderer stays as a closed-experiment reference and as the eval harness's cue
- * arm (`src/server/engine/chat-affordance-cues.ts`).
+ * The narrator-facing policy is replaced, not retried, by constraint-first
+ * narrator physical guidance — constraints, premise corrections and resolved
+ * action outcomes, with positive detail gated on a committed state change behind
+ * its own separately-measured flag. The cue renderer stays as a closed-experiment
+ * reference and as the eval harness's cue arm
+ * (`src/server/engine/chat-affordance-cues.ts`).
  *
  * OFF (the default, and anything other than `on`) is today's behavior to the
  * byte: no affordance read is taken at all — no adapter call, no cue rendering,

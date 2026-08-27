@@ -24,7 +24,7 @@ new item, never a resurrection of the old row.
 Containers are themselves items, so holding chains nest (an item in a bag, the bag held
 by an actor). Every chain resolves to a **root locus** — an actor or a zone — through a
 depth-capped walk (8) with cycle rejection at transfer time; there are no synthetic
-container rows standing in for actors or locations. engine.spec §26.1.
+container rows standing in for actors or locations.
 
 ## Containers and access
 
@@ -36,8 +36,6 @@ reserved vocabulary, not yet schema). Access policy is fail-closed and checked o
 - `holder_only` — only the actor at the chain's root;
 - `allow_list` — a named actor set.
 
-engine.spec §26.2.
-
 ## Ownership vs. holding
 
 Ownership is a nullable `ownerActorId` on the item, distinct from where it physically
@@ -45,7 +43,6 @@ sits, changed only by an `item_ownership_set` event. Holding law is physical and
 blocked by ownership — you can move an item you don't own. A transfer performed by
 someone other than the recorded owner is flagged `againstOwnership: true` on the event;
 any consequence flows through the social ledger, not through rejecting the move.
-engine.spec §26.3.
 
 ## Transfer law
 
@@ -65,7 +62,7 @@ trusting the state it was scheduled against.
 Material events derive their observations through the same perception rule table
 used elsewhere in the engine — an obvious hand-off is seen by anyone in the zone, while
 a worn-slot change hidden under clothing stays reserved for finer-grained perception
-later. engine.spec §26.4.
+later.
 
 ## Resource costs and reservations
 
@@ -83,7 +80,7 @@ way claims are, held for every claim-holding phase and released the moment the
 activity ends, so no reservation can outlive its activity. Anyone other than the
 reserving activity's own machinery who tries to transfer, consume, or destroy a
 reserved item is rejected with `item_reserved`, and completion re-validates the
-reservation again at fire time before it actually consumes anything. engine.spec §26.5.
+reservation again at fire time before it actually consumes anything.
 
 ## Consumption
 
@@ -95,7 +92,7 @@ These are causation-chained to the consumption event and integrated through the 
 meter kernel [bodies.md](bodies.md) uses, in the same transaction, so threshold and
 collapse alarms retire and re-arm exactly as they would for any other body event. A
 meal is a material event with a body effect: one command, one atomic record, never a
-follow-up write. engine.spec §26.6.
+follow-up write.
 
 ## Item condition
 
@@ -116,7 +113,7 @@ crossings — going grimy, going worn-out — are registry data and alarm throug
 `item_condition_threshold_due` trigger, witnessed by co-location with the item's root
 locus when the crossing is marked noticeable. Raw item-meter values never enter a
 narrative cut directly; a read is perception-gated the same way a body meter's raw
-value is. engine.spec §26.7.
+value is.
 
 ## Households and membership
 
@@ -137,7 +134,7 @@ embodied at a zone, that zone is one of the household's residence zones, and the
 access policy admits the actor — the same physical-presence discipline as an ordinary
 item transfer, deliberately not a remote-banking shortcut. Storyteller and system
 authoring commands are exempt from this co-location check, the same way other
-privileged commands sidestep ordinary movement rules. engine.spec §26.8.
+privileged commands sidestep ordinary movement rules.
 
 ## Fungible material lots and conservation
 
@@ -178,7 +175,6 @@ deliberately breaks conservation — a means-band-funded restock (see below) cre
 stock with no debited counterpart anywhere, because a low-detail household's "budget"
 is a coarse band, not a tracked account. Every other reason either has a linked
 counterpart event in the same transaction or is an explicit, audited authoring act.
-engine.spec §26.9.
 
 ## Means: bands and promotion
 
@@ -195,7 +191,7 @@ A means subject — an actor or a household (and, at coarser scope, a population
 Absent either, the read is the explicit degraded default `unknown` — a diagnostic code,
 never a fabricated figure. Precedence is structural rather than a toggle: a lot wins
 the instant it exists, and setting a means band on an already lot-tracked subject is
-legal narrative color that the means read simply never consults. engine.spec §26.10.
+legal narrative color that the means read simply never consults.
 
 **Promotion.** `promote_item_from_stock` is the only path by which an aggregate
 material fact — "there's clothing stock in the shop" — becomes a concrete `sim_items`
@@ -218,7 +214,6 @@ narratively-established detail explicitly, which bypasses sampling for that fiel
 item can come to exist in `sim_items` only through the branch seed or this event; a
 narrator can describe an aggregate fact without promoting it, but can't hand a player
 or NPC command a concrete item reference until `promote_item_from_stock` has run.
-engine.spec §26.10.
 
 ## Household restock routine
 
@@ -240,7 +235,7 @@ normal); and the funding source can cover the top-up (otherwise deferred as
 silently swallowed one). On success it debits the funding source and credits the stock
 lot up to target in one transaction (`household_restock_fulfilled`), then re-arms the
 next cycle regardless of outcome, so a deferred cycle keeps trying rather than going
-quiet. engine.spec §26.11.
+quiet.
 
 ## Related
 
@@ -248,5 +243,3 @@ quiet. engine.spec §26.11.
   both run on, and the character-side model materials feed into.
 - [../contracts/items.md](../contracts/items.md) — the item and wardrobe registry
   (`ItemDefinition`, coverage, visibility) that engine items are instances of.
-- engine.spec §26 (`docs/developer-notes/engine.spec.bodies-materials.md`) — the
-  normative source for everything in this document.

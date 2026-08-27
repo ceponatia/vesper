@@ -8,12 +8,12 @@ import {
 import { commandIdSchema, storySecondSchema, worldCharacterIdSchema } from "./identity";
 
 /**
- * E6.1 — the per-actor dual-LOD ledger (engine.spec §27–§28). Simulation LOD
- * (how much deterministic work the engine performs for an actor) and inference
- * LOD (how much model attention an actor may receive) are independent axes on
- * one branch-scoped, fully-evented row per actor. LOD is a performance choice,
- * not permission to violate invariants (§27.1) — an unassigned actor reads the
- * versioned registry defaults, which reproduce pre-Gate-6 behavior exactly.
+ * E6.1 — the per-actor dual-LOD ledger. Simulation LOD (how much deterministic
+ * work the engine performs for an actor) and inference LOD (how much model
+ * attention an actor may receive) are independent axes on one branch-scoped,
+ * fully-evented row per actor. LOD is a performance choice, not permission to
+ * violate invariants (§27.1) — an unassigned actor reads the versioned
+ * registry defaults, which reproduce pre-Gate-6 behavior exactly.
  */
 
 export const actorLodDerivationVersion = "actor-lod-v1" as const;

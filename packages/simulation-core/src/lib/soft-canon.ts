@@ -13,7 +13,7 @@ import {
 import { canonicalValueKey } from "./knowledge";
 
 /**
- * E4.3 — the pure soft-canon kernel (engine.spec §23.4, ruling 14). Proposals
+ * E4.3 — the pure soft-canon kernel. Proposals
  * pass conflict, privacy, scope, duplication, and world-type checks against a
  * lock-consistent entry view; every accepted proposal yields the full
  * post-fold entry snapshot (§6.4 capture), so the durable fold is a trivial

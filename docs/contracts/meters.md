@@ -55,7 +55,7 @@ Mood is surfaced not as raw threshold hints but as a **derived descriptor**: `de
 
 #### The mood module — labeled emotion + event→mood (`apps/web/src/contracts/mood/`)
 
-A second, discrete read sits beside the prose descriptor (see `docs/developer-notes/mood.spec.md`):
+A second, discrete read sits beside the prose descriptor:
 
 - **`EmotionLabel`** — the locked app-wide 11-label vocabulary (`neutral`/`happy`/`affectionate`/`playful`/`flustered`/`concerned`/`sad`/`angry`/`afraid`/`surprised`/`aroused`; `aroused` is gated on an *intimate frame*, not undress). Owned here; the avatar cue + UI mood chip import it.
 - **`deriveEmotionLabel`** — a pure, **total** projection: a *transient beat* (the latest `EvaluatedReaction`) wins briefly, else a *baseline* from a derived `activation` axis (energy/stress/arousal) × valence + affinity stage + conditions. Surfaced via the shared `MoodChip` on the **character-chat strip** (`chatStateSnapshot` → `ChatStateSnapshot.emotion`, with the character's dominance + intimate-capable context).

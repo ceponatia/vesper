@@ -31,7 +31,7 @@ import { submitDurableAssignActorLod } from "./lod-store";
 import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 
 /**
- * E6.4 durable actor promotion and dependency wake (engine.spec §27.2, §27.7):
+ * E6.4 durable actor promotion and dependency wake:
  * the five-step promotion end to end — reservation debit, materialization
  * (character + locus + landing LOD in one transaction), presence legality,
  * conservation across the read, idempotency, fork parity on both sides of the

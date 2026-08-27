@@ -3,7 +3,7 @@
  * pure layer. They live in their own module (rather than any one event family's
  * kernel) so every projector, replay, and store can depend on identical
  * canonicalization without a cross-family import. No IO, no clock, no ambient
- * randomness (engine.spec §31–32).
+ * randomness.
  *
  * The checksum itself is the repository-wide FNV-1a from `@vesper/contracts`
  * (the application reaches the same function through `@/lib/hash`); what this

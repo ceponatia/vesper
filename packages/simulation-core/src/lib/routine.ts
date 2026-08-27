@@ -38,11 +38,11 @@ import {
 import { buildConsumptionBodyEffects, buildItemConsumedEvent, type ConsumptionBodyView } from "./materials";
 
 /**
- * E6.2 — the pure routine-controller kernel (engine.spec §19.1–19.2, §28
- * no-model tier). Deterministic candidate generation, versioned fixed-point
- * scoring, and the resolved event train — the chosen outcome commits through
- * the ordinary body law (`buildSleepConditionTrain`, the §26.6 consumption
- * builders), never a special path. No IO, no clock, no model.
+ * E6.2 — the pure routine-controller kernel (the no-model tier).
+ * Deterministic candidate generation, versioned fixed-point scoring, and the
+ * resolved event train — the chosen outcome commits through the ordinary body
+ * law (`buildSleepConditionTrain`, the §26.6 consumption builders), never a
+ * special path. No IO, no clock, no model.
  */
 
 // ---------------------------------------------------------------------------

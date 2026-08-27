@@ -22,12 +22,11 @@ import {
  * The always-on positive-cue projection this module renders failed its trial: two
  * consecutive rounds with a valid induction gate in which the cue arm did not
  * reduce contradictions of committed physical state (rematch campaign, frozen
- * decision rule — `docs/developer-notes/body-attribute-affordances.trial.md`
- * §Rematch log). Do not revive, rename, or default-enable it, and do not "fix" it
+ * decision rule). Do not revive, rename, or default-enable it, and do not "fix" it
  * by adding cues; its replacement is a different shape entirely — constraint-first
  * narrator physical guidance, where committed truth mostly says what the narrator
  * must NOT claim and a positive detail requires an independently earned state
- * change (`docs/developer-notes/narrator-physical-guidance.plan.md`).
+ * change.
  *
  * The renderer stays for two reasons: it is the reference for the wording the
  * campaign did validate (cause-true provenance + band-accurate degree, R2's one
@@ -165,8 +164,7 @@ function subjectPhrase(
  * How wet the subject is, as one adjective — taken from the observation's OWN
  * wetness descriptor, never from its intensity band.
  *
- * The two are different questions, and conflating them is the round-R2 defect
- * (`docs/developer-notes/body-attribute-affordances.trial.md` §Rematch log): the
+ * The two are different questions, and conflating them is the round-R2 defect: the
  * hair band measures CLUMPING (`clumpStrength` = wetness × clump affinity ×
  * surface friction), so fine silky hair reads `subtle` while soaked through, and
  * a cue that took its adjective from the band handed the narrator "damp strands"

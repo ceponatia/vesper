@@ -23,7 +23,7 @@ import {
 } from "./identity";
 
 /**
- * E5.3 slice 3 — item condition: wear and cleanliness (engine.spec §26.7).
+ * E5.3 slice 3 — item condition: wear and cleanliness.
  * Wear and cleanliness ride the SAME §25 fixed-point kernel bodies use
  * (registry-as-data, analytic drift, one modifier contract, material
  * thresholds) under an item-scoped registry version and item-scoped tables —
@@ -41,7 +41,7 @@ export const itemConditionRegistryVersions = [itemConditionRegistryVersion] as c
 export const itemConditionRegistryVersionSchema = z.enum(itemConditionRegistryVersions);
 export type ItemConditionRegistryVersion = z.infer<typeof itemConditionRegistryVersionSchema>;
 
-// --- Meter registry (engine.spec §26.7) ---------------------------------------
+// --- Meter registry -----------------------------------------------------------
 
 /**
  * v1 registry. `cleanliness` is a "rate" meter that DOES NOT drift at rest —
@@ -161,7 +161,7 @@ export const itemConditionsProjectionSchema = z
   .strict();
 export type ItemConditionsProjection = z.infer<typeof itemConditionsProjectionSchema>;
 
-// --- Captured derivation (engine.spec §6.4, item modifier ids) ---------------
+// --- Captured derivation (item modifier ids) ---------------------------------
 
 const itemConditionObserverActorIdsSchema = createStableStringSetSchema(
   worldCharacterIdSchema,
@@ -184,7 +184,7 @@ export type ItemConditionIntegrationDerivation = z.infer<
   typeof itemConditionIntegrationDerivationSchema
 >;
 
-// --- Source vocabulary (engine.spec §26.7) ------------------------------------
+// --- Source vocabulary --------------------------------------------------------
 
 export const itemConditionSourceKinds = ["use", "clean", "adjustment"] as const;
 export const itemConditionSourceKindSchema = z.enum(itemConditionSourceKinds);
@@ -266,7 +266,7 @@ export const resolveItemConditionThresholdCommandResultSchema = createCommandRes
   resolveItemConditionThresholdRejectionCodeSchema,
 );
 
-// --- Item condition event family (engine.spec §9.2, §26.7) -------------------
+// --- Item condition event family ---------------------------------------------
 
 const itemConditionInitializedPayloadSchema = z
   .object({

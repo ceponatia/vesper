@@ -1,9 +1,8 @@
 import { CHAT_CAPABILITY_UNAVAILABLE_CODE } from "@/contracts";
 
 /**
- * Routing parity for sim-routed chats (presentation-charter.plan.md §4;
- * engine.spec.operations.md §39 ruling 18): decide what one chat POST kind means
- * for a chat whose authority is the successor engine. **No operation on a
+ * Routing parity for sim-routed chats (ruling 18): decide what one chat POST kind
+ * means for a chat whose authority is the successor engine. **No operation on a
  * sim-routed chat ever falls back to the legacy narrator** — every kind either
  * maps to a successor exchange mode or is refused with a clear error.
  *

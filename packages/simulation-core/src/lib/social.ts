@@ -31,10 +31,9 @@ import { EXP2_SCALE, exp2NegativeFixedPoint } from "./bodies";
 import { sortedUnique } from "./hash";
 
 /**
- * E5.5 — the pure social-ledger kernel (engine.spec §21.3–21.4): the
- * derived-and-authored ledger fold, the trust/attraction/resentment read, and
- * the consent-coverage gate. No IO, no clock, no ambient randomness (engine.spec
- * §31–32).
+ * E5.5 — the pure social-ledger kernel: the derived-and-authored ledger
+ * fold, the trust/attraction/resentment read, and the consent-coverage gate.
+ * No IO, no clock, no ambient randomness.
  *
  * Slice 1 folded `speech_act_delivered`, `disclosure_made`, `engagement_ended`,
  * `relationship_entry_authored`, and `relationship_change_recorded`. Slice 2

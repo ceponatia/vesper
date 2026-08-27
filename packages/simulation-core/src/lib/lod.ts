@@ -26,7 +26,7 @@ import {
 import { buildRoutinePolicyTrigger, nextRoutineBoundarySecond } from "./routine";
 
 /**
- * E6.1 — the pure actor-LOD kernel (engine.spec §27–§28): the effective read
+ * E6.1 — the pure actor-LOD kernel: the effective read
  * (assigned row or registry defaults), the assignment resolver with the §27.3
  * demotion guards, and the replay fold. No IO, no clock, no model.
  */

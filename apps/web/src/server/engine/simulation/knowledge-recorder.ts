@@ -18,7 +18,7 @@ import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E4.2 — the durable knowledge ledgers (engine.spec §21). Assertion and
+ * E4.2 — the durable knowledge ledgers. Assertion and
  * belief rows are derived projections of disclosure events, written in the
  * same transaction that commits the event: the §11.1 shell calls
  * `recordCommandKnowledge` right after the §20 observation recorder, so the

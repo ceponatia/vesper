@@ -2,10 +2,7 @@
 
 How the successor simulation engine is run safely once it is live: retakes,
 branches and replay; resilience and security; observability; testing
-approach; and migration practice. The normative source is
-`engine.spec.operations.md`
-(§29, §33–§38) — this doc explains current behavior in plain prose and cites
-section numbers rather than restating them. API shape, package boundaries,
+approach; and migration practice. API shape, package boundaries,
 and the TypeScript numeric contract belong to the sibling
 [boundaries.md](boundaries.md).
 
@@ -13,8 +10,7 @@ and the TypeScript numeric contract belong to the sibling
 
 ### Operation vocabulary
 
-Four distinct operations get confused if the UI doesn't distinguish them
-(engine.spec §29.1):
+Four distinct operations get confused if the UI doesn't distinguish them:
 
 | Operation           | What it does                                                        |
 | -------------------- | -------------------------------------------------------------------- |
@@ -27,13 +23,13 @@ Legacy character chat is a separate, permanently live lane rather than a
 transitional state, and it has its own rollback rule: a group regenerate
 snapshots and restores every member's mutable pre-drift state, never only
 the primary's, and a reach-back rerun that cannot restore all causal state
-is rejected or run as a branch instead (engine.spec §29.2).
+is rejected or run as a branch instead.
 
 ### Forking a branch
 
 A fork records the parent branch ID, the fork sequence and story second, the
 parent's ruleset and event schema versions, the initiating principal and
-reason, and the inherited snapshot checksum (engine.spec §29.3). Events
+reason, and the inherited snapshot checksum. Events
 created after the fork are never shared by mutable reference between parent
 and child, and memory or embedding queries apply branch ancestry rules and
 sequence bounds so a query never crosses into a sibling branch's history.
@@ -75,7 +71,7 @@ that produced that event, entirely through ancestry and read-only.
 The engine's trust-boundary and diagnostic patterns follow
 [../resilience.md](../resilience.md): `parseOr` at every boundary,
 diagnostics over exceptions, degraded defaults over failed turns. What the
-engine adds on top of that baseline (engine.spec §33):
+engine adds on top of that baseline:
 
 - Invalid model output resolves to a deterministic fallback rather than
   blocking the turn.
@@ -110,23 +106,21 @@ authorization boundary.
 The engine treats all of the following as untrusted, each crossing schema
 and capability checks before it can cause state: player prose, narrator and
 agent output, imported character and schedule prose, RAG documents, soft
-canon, migration files, and webhook or external-world inputs
-(engine.spec §34.1).
+canon, migration files, and webhook or external-world inputs.
 
 ### Prompt injection
 
 Retrieved text is quoted data, never instruction. The context compiler
 labels each piece of context with its source class and provenance, and
 authored or remembered text cannot grant capabilities, change viewpoint, or
-ask the model to reveal private context (engine.spec §34.2).
+ask the model to reveal private context.
 
 ### Cross-world and cross-branch access
 
 Every query joins through an authorized world and branch identity — an
 opaque ID copied from another world is never sufficient authority on its
 own — and caches and embeddings carry tenancy and branch keys so a lookup
-can't accidentally serve another world's or branch's data
-(engine.spec §34.3).
+can't accidentally serve another world's or branch's data.
 
 ### Unsupported player assertions
 
@@ -134,27 +128,25 @@ Player text that claims an impossible fact ("Mara is suddenly beside me,"
 "I already have her key," "the door was open") is classified as speech,
 imagination, an attempted storyteller action, or an unsupported action
 proposal — never as a fact. None of those classifications can mutate a
-projection (engine.spec §34.4).
+projection.
 
 ### Privacy
 
 The context compiler redacts private data before it reaches the model.
 Denials render through `PublicFailurePresentation` rather than leaking
 their private cause. Audit systems may retain the private cause behind a
-denial; ordinary prompts, logs, embeddings, and UI errors may not
-(engine.spec §34.5).
+denial; ordinary prompts, logs, embeddings, and UI errors may not.
 
 ## Observability
 
 ### Per-command trace
 
-engine.spec §35.1 describes a per-command trace: admission and
-authorization result, starting and ending branch version, due-trigger
-count, kernel and projection duration, event count and types, outbox
-count, the selected policy candidate, model calls/tokens/latency, the
-NarrativeCut ID and hash, and any retries, degraded paths, or rejection
-code. None of it is collected — `command-runner.ts` contains no logging or
-tracing calls. The only durable record of a command is its `sim_commands`
+No per-command trace is collected: admission and authorization result,
+starting and ending branch version, due-trigger count, kernel and projection
+duration, event count and types, outbox count, the selected policy candidate,
+model calls/tokens/latency, the NarrativeCut ID and hash, and any retries,
+degraded paths, or rejection code all go unrecorded — `command-runner.ts`
+contains no logging or tracing calls. The only durable record of a command is its `sim_commands`
 row: branch ID, idempotency key, command ID, type, schema version,
 expected version, principal kind, the command envelope, status
 (`accepted`/`rejected`/`conflict`), result, and submitted/completed
@@ -162,13 +154,12 @@ timestamps — a replay and idempotency record, not a trace.
 
 ### System metrics
 
-engine.spec §35.2 describes standing metrics: command and narrator p50/p95,
+No standing metrics are collected either — not command and narrator p50/p95,
 branch lock wait, scheduler queue depth and overdue age, triggers processed
 per story day, projection lag and rebuild time, outbox retry age, event and
 snapshot growth, memory eligibility set size and top-k latency, model calls
 and tokens per turn and per actor-day, deterministic fallback frequency,
-and perspective-leak / impossible-claim test failures. None of these are
-collected as standing metrics. The only related computation
+nor perspective-leak / impossible-claim test failures. The only related computation
 (`summarizeLatency`, `openQueueDepths`) lives in `soak-harness.ts`, a soak-test
 harness that reports on one run rather than a running collector. No metrics library —
 prom-client, statsd, OpenTelemetry — is a dependency anywhere in the
@@ -176,20 +167,20 @@ workspace.
 
 ### Explainability
 
-engine.spec §35.3 describes explain answers for why an actor is present,
-why an NPC left, why entry was denied, why an actor holds a belief, why a
-commitment became late, why a memory entered the prompt, and what changed
-between two branch sequences. `audit-store.ts` implements exactly one of
-these: `explainItemPlacement`, which walks a projection fact back through
+`audit-store.ts` implements exactly one explain surface:
+`explainItemPlacement`, which walks a projection fact back through
 the event that placed it, the command that produced the event, and — when
 the event was scheduler-dispatched — the trigger and the event and command
-that set it. The other explain surfaces do not exist.
+that set it. There is no explain answer for why an actor is present, why an
+NPC left, why entry was denied, why an actor holds a belief, why a commitment
+became late, why a memory entered the prompt, or what changed between two
+branch sequences.
 
 ## Testing
 
 General layers, commands, and the verification gate are documented in
 [../testing.md](../testing.md); this section covers what the engine adds on
-top of that baseline (engine.spec §36).
+top of that baseline.
 
 - **Unit** — every command validator, every legal and illegal state
   transition, route and access predicates, modifier ordering and expiry,
@@ -229,7 +220,7 @@ A fixed set of scenarios each assert a required result end to end:
 Paired, blinded baseline/treatment comparisons run across a fixed bank of
 12–20 scenarios with multiple model samples, scored on voice, chemistry,
 continuity, pacing, causal enactment, contradiction, exposition,
-perspective leakage, and player/NPC agency (engine.spec §36.5). Acceptance
+perspective leakage, and player/NPC agency. Acceptance
 requires zero deterministic perspective leaks, at least 80 percent relevant
 must-enact coverage, no forced irrelevant-state mention, no median voice or
 chemistry decline, no material p95 latency increase without a measured
@@ -244,20 +235,20 @@ chat is bound to its own simulated world and is authoritative according to
 its chat's `engine_authority` flag. New interaction patterns still prove
 out in the chat lane first; a chat-lane domain moves behind a successor
 adapter only once the successor contract for that domain exists, and no
-fact ever has two authorities at once (engine.spec §37.1).
+fact ever has two authorities at once.
 
 ### Authored schedules
 
 Rhythm and schedule entries carry a typed kind and, where applicable, a
 stable destination reference. There is no text inference over authored
 schedule prose: untyped text stays unknown and never causes a hard location
-or body event on its own (engine.spec §37.2).
+or body event on its own.
 
 ### Events
 
 Every event type carries a schema version, stamped as a fixed `z.literal`
-on the envelope. engine.spec §37.3 describes a pure upcaster per event
-type; none exists — there is no upcast or migration hook anywhere in the
+on the envelope. There is no pure upcaster per event type — no upcast or
+migration hook exists anywhere in the
 engine. When semantics change, the practical options are freezing the old
 branch on its original ruleset or running an explicit migration that
 emits its own auditable events.
@@ -266,7 +257,7 @@ emits its own auditable events.
 
 Projection schemas can be rebuilt, and embeddings can be deleted and
 regenerated from their authorized source rows — neither operation changes
-domain history (engine.spec §37.4).
+domain history.
 
 ### Feature flags
 
@@ -275,14 +266,14 @@ flag, not a per-world or per-branch one; `sim_worlds` and `sim_branches`
 carry no authority column. It holds one of four values: `legacy_chat`,
 `successor_shadow`, `successor_narrative_view`, `successor_authoritative`.
 A separate boolean column on the same table, `successor_rag_eligibility`,
-is read independently of the authority flag (engine.spec §37.5). The
+is read independently of the authority flag. The
 application displays or logs which authority served each turn.
 
 ## Validating a migration before it ships
 
 Before a chat-lane domain moves behind a successor adapter, the engine
 de-risks the move with a small, deletable spike rather than committing to
-the full adapter up front (engine.spec §38). Representative spike shapes:
+the full adapter up front. Representative spike shapes:
 checking whether existing witness data is enough to filter eligibility
 before vector ranking; measuring a heuristic's precision and unknown rate
 against a shadow audit before trusting it to drive hard effects; adding one
@@ -305,5 +296,3 @@ scenarios.
 - [@vesper/simulation-core](../../packages/simulation-core/README.md) — the durable
   authority transaction and the forks/snapshots/audit contract this doc's
   Retakes section describes.
-- `engine.spec.operations.md`
-  — the normative source for this entire document.

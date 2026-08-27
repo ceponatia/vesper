@@ -44,14 +44,14 @@ reason to know about it — a memory, an observation, an assertion, or a
 belief the actor could plausibly hold. A calendar entry the player can see
 is not automatically something the NPC knows; if the source becomes
 unavailable, a new cue has to be perceived before pressure can act on it
-again (engine.spec §15.1). This keeps an authored deadline from turning
+again. This keeps an authored deadline from turning
 into an NPC that mysteriously already knows what's coming.
 
 A destination is optional. A commitment with nowhere to travel to still has
 a deadline, but with no locus to check arrival against it can only ever
 resolve `kept` (an explicit fulfillment before the deadline) or `missed`
 (the deadline passes with nothing filed) — never `late`, since lateness
-presumes travel in progress (engine.spec §15.1).
+presumes travel in progress.
 
 A commitment may also name the actor it runs toward — `promisedToActorId` —
 when the obligation is interpersonal rather than solo. A commitment naming
@@ -78,8 +78,7 @@ Commitment status moves through a fixed lifecycle:
 A `missed` commitment is never rewritten in place — its own row stays
 `missed` forever. Repair means creating a new commitment of the same kind,
 for the same actor, that names the missed one as what it repairs; the
-repair is additional evidence, not a correction of the record (engine.spec
-§15.4).
+repair is additional evidence, not a correction of the record.
 
 ### Pressure
 
@@ -95,7 +94,7 @@ worked out backward from the arrival deadline: subtract the minimum route
 duration, then preparation time, then the reliability buffer. That backward
 calculation has to be redone whenever a material input changes — a
 different route, a later preparation estimate — or the actor either leaves
-too early on stale assumptions or, worse, too late (engine.spec §15.2).
+too early on stale assumptions or, worse, too late.
 
 As a deadline approaches, pressure moves through a consistent arc regardless
 of what the commitment is: it enters the actor's look-ahead horizon, becomes
@@ -108,7 +107,7 @@ consequence event. Nothing about this makes the actor disappear at the
 deadline — a player request to stay changes the decision's weighting, not
 the travel time or the underlying obligation. Once a pressure has been
 acknowledged, it is not re-raised every turn unless its severity or
-assumptions change (engine.spec §15.3) — otherwise every turn near a
+assumptions change — otherwise every turn near a
 deadline repeats the same warning.
 
 ## Actions and activities
@@ -130,7 +129,7 @@ Aliases and display labels belong to language interpretation, not legality
 — naming an action something friendlier does not change what it takes to
 perform it. Any authored field that implies an enforcement rule has to
 actually be enforced or removed; an inert field that looks like a
-constraint but isn't checked is not acceptable (engine.spec §16.1). Consent
+constraint but isn't checked is not acceptable. Consent
 gating follows the same discipline: an action definition can name at most
 one consent scope, and starting an action that names one without a
 covering consent record is rejected before any claim or resource is
@@ -146,7 +145,7 @@ an activity atomically acquires whichever exclusive claims it needs;
 completing, failing, or cancelling it releases them. Because claims are
 projected from activity events rather than held only in memory, a crashed
 worker can never leave a claim orphaned — replaying the events reconstructs
-exactly what should still be held (engine.spec §16.2, §16.3).
+exactly what should still be held.
 
 An activity's phase moves through:
 
@@ -158,9 +157,12 @@ An activity's phase moves through:
 | paused      | active, interrupted, cancelled, failed            |
 | interrupted | active, cancelled, failed                         |
 | completed   | terminal                                          |
-| failed ### Compatibility while an activity is underway
+| failed      | terminal                                          |
+| cancelled   | terminal                                          |
 
-The graded matrix §16.4 describes — conversation-while-cooking, hands-free calls
+### Compatibility while an activity is underway
+
+A graded compatibility matrix — conversation-while-cooking, hands-free calls
 while driving, messages queuing unread for a sleeping actor — is **not built**.
 The engine enforces one generic rule instead: a full-attention claim, on the body
 or on attention, blocks joining any engagement on any channel, and a partial or
@@ -168,7 +170,7 @@ absent claim does not. Nothing distinguishes driving from cooking, and nothing
 separates text from voice.
 
 Message delivery and an actor perceiving that message remain different events, so
-a delivered message never implies it was read (engine.spec §16.4).
+a delivered message never implies it was read.
 
 ## Engagements and live-scene arbitration
 
@@ -181,7 +183,7 @@ has already surfaced to the player. Branch version is not one of its fields — 
 is pinned onto the compiled NarrativeCut instead. A co-present
 engagement needs the participants to actually share a compatible physical
 locus; a remote one needs channel access and message delivery but not
-co-location (engine.spec §18.1).
+co-location.
 
 | From         | Legal next states                |
 | ------------ | -------------------------------- |
@@ -194,7 +196,7 @@ co-location (engine.spec §18.1).
 Ending an engagement releases its attention claims but does not relocate
 any participant — nothing about ending a scene teleports an NPC away. And
 `winding_down` is itself a playable state, not a promise that the NPC stays
-until the player agrees to let the scene end (engine.spec §18.2).
+until the player agrees to let the scene end.
 
 ### Reconciliation
 
@@ -210,7 +212,7 @@ deterministically (with a narrow allowance for a single deliberator call at
 high level of detail on a close choice); commit the resulting commands as
 one batch; compile the committed sequence into one immutable narrative cut;
 stream prose from that cut; commit only the narrator's explicitly enacted
-effects; and index the results into memory (engine.spec §18.3).
+effects; and index the results into memory.
 
 The point of running all of this before rendering is that the narrator
 never gets to invent an outcome — it is not the narrator that decides a
@@ -225,15 +227,14 @@ sequence and is not retroactively woven into that prose — the next turn is
 what reconciles it. If an external event and the streaming cut would both
 need the same body or claim, the command layer has to have rejected one of
 them before either cut was compiled, so the two can never both hold the
-same exclusive claim (engine.spec §18.4).
+same exclusive claim.
 
 A narrator timeout or an invalid response is a presentation failure, not a
 world rollback — whatever hard outcomes the cut already committed stay
 authoritative regardless of what happens to the prose. The system can retry
 the same model against the same cut, fall back to a smaller model, render a
 minimal deterministic transition, or surface a retry to the player, but it
-never implicitly reruns the simulation to produce a different outcome
-(engine.spec §18.5).
+never implicitly reruns the simulation to produce a different outcome.
 
 ## Related
 

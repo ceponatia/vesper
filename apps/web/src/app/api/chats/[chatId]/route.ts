@@ -290,13 +290,12 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
     const overBudget = await dailyBudgetRejection("provider_text_day", user, req);
     if (overBudget) return overBudget;
 
-    // Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md
-    // §39 rulings 18-19): authority is resolved ONCE, before kind dispatch. On a
-    // sim-routed chat EVERY operation has successor semantics or is refused — the
-    // legacy pipeline below is unreachable for it. `send` drives a turn;
-    // continue/open run an utterance-free turn (time advances). Retakes/reruns,
-    // attachments, and legacy action chips are refused until the capability
-    // manifest can advertise honest successor semantics for them.
+    // Routing parity (rulings 18-19): authority is resolved ONCE, before kind
+    // dispatch. On a sim-routed chat EVERY operation has successor semantics or
+    // is refused — the legacy pipeline below is unreachable for it. `send` drives
+    // a turn; continue/open run an utterance-free turn (time advances).
+    // Retakes/reruns, attachments, and legacy action chips are refused until the
+    // capability manifest can advertise honest successor semantics for them.
     const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
     if (simRouted) {
       const decision = decideSimOperation({

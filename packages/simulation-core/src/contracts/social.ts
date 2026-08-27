@@ -18,12 +18,12 @@ import {
 
 /**
  * E5.5 — the social ledger: promises, favors, debts, boundaries, and consent
- * (engine.spec §21.3–21.4, ruling 16). A relationship-ledger entry is a typed,
- * directional, causally-provenanced fact — derived automatically from an event
- * already in the branch's history, or authored explicitly by a privileged
- * command for facts the live mechanics do not yet produce. Trust, attraction,
- * and resentment are READ-time projections over the ledger (§6.4: only
- * material transitions write; reads recompute), never persisted numbers.
+ * (ruling 16). A relationship-ledger entry is a typed, directional,
+ * causally-provenanced fact — derived automatically from an event already in
+ * the branch's history, or authored explicitly by a privileged command for
+ * facts the live mechanics do not yet produce. Trust, attraction, and
+ * resentment are READ-time projections over the ledger (§6.4: only material
+ * transitions write; reads recompute), never persisted numbers.
  *
  * Consent is ledger-gated and fail-closed (ruling 16): a `consent_covered`
  * action precondition (contracts/simulation/activities.ts) checks the same
@@ -233,7 +233,7 @@ export const relationshipLedgerWeightRegistryV1: Readonly<
 };
 
 /** Per-axis analytic half-life in story seconds — resentment fades fastest,
- * trust slowest; all tunable, all documented (engine.spec §6.4). */
+ * trust slowest; all tunable. */
 export const RELATIONSHIP_AXIS_HALF_LIFE_SECONDS: Record<RelationshipAxisKey, number> = {
   trust: 2_592_000, // 30 days
   attraction: 864_000, // 10 days

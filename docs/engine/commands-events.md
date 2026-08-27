@@ -5,8 +5,7 @@ envelopes, the authority checks a command passes through, the transaction that
 makes acceptance atomic, and the scheduler that turns due triggers back into
 commands. Identity, story time, and the engine's core invariants are covered in
 [kernel.md](kernel.md); this doc covers the causal seam between them. The
-normative source is `engine.spec.kernel.md` §8–§12 (cited below as
-`engine.spec §N`); the TypeScript contracts live in
+TypeScript contracts live in
 [@vesper/simulation-core](../../packages/simulation-core/README.md).
 
 ## Command envelope
@@ -31,7 +30,7 @@ rather than each family inventing its own shape:
   capabilities, not trusted outright.
 - `type`, `schemaVersion`, `payload` — the typed, versioned request body.
 
-A command's outcome is an exhaustive three-way union (engine.spec §8):
+A command's outcome is an exhaustive three-way union:
 **accepted** (`branchVersion`, `firstSequence`/`lastSequence`, `eventIds`),
 **rejected** (`code`, `publicReason`, `legalAlternativeCommandTypes`), or
 **conflict** (`currentVersion`, `retryable`). Rejections may be kept in an
@@ -47,7 +46,7 @@ Every event family shares one envelope factory the same way commands do,
 carrying `id`, `worldId`, `branchId`, `sequence`, `storySecond`, `type`,
 `schemaVersion`, `rulesetVersion`, optional `derivationVersion` and
 `causationId`, `correlationId`, sorted-and-unique `actorIds`/`entityIds`,
-optional `locationId`, and the typed `payload` (engine.spec §9.1). Reference
+optional `locationId`, and the typed `payload`. Reference
 sets are sorted and deduplicated so insertion order can never leak into replay
 behavior. `recordedAtWallClock` is operational/audit metadata only — replay
 determinism runs entirely on `storySecond`, `sequence`, `payload`,
@@ -57,8 +56,8 @@ on wall-clock time.
 ### Event families
 
 Events are named for the causal concept they represent; the catalog never
-collapses distinct concepts into a generic `StateChanged` event (engine.spec
-§9.2). A representative slice of the family catalog:
+collapses distinct concepts into a generic `StateChanged` event. A
+representative slice of the family catalog:
 
 | Family       | Example events                                       |
 | ------------ | ---------------------------------------------------- |
@@ -98,8 +97,7 @@ may resolve into `ActorArrived`, `JourneyDelayed`, or `JourneyInterrupted`
 depending on state at evaluation time; a `commitment_notice_due` trigger may or
 may not emit `PressureRaised`, depending on whether the actor can remember or
 perceive the commitment. Triggers are mutable operational records that get
-claimed, rescheduled, and discarded; domain events are immutable history
-(engine.spec §9.3).
+claimed, rescheduled, and discarded; domain events are immutable history.
 
 ## Authority flow: from command to event
 
@@ -125,8 +123,8 @@ implementations that can drift apart.
 ## Persistence model
 
 PostgreSQL is the authority store. Snapshots, projections, and vector indexes
-are caches over it — the event stream is the historical record (engine.spec
-§10.4). The core authority tables:
+are caches over it — the event stream is the historical record. The core
+authority tables:
 
 | Table         | Holds                                                        |
 | ------------- | ------------------------------------------------------------ |
@@ -141,7 +139,7 @@ are caches over it — the event stream is the historical record (engine.spec
 The database enforces uniqueness on branch+sequence, event ID, branch+
 idempotency key, and each active trigger's logical key (so duplicate scheduling
 can't produce duplicate outcomes); one further uniqueness rule protects a
-physical-placement invariant that kernel.md owns (engine.spec §10.1).
+physical-placement invariant that kernel.md owns.
 
 Core projections (`sim_characters`, `sim_items`, `sim_physical_loci`,
 `sim_item_holdings`, `sim_commitments`, `sim_engagements`, and similar) are
@@ -151,15 +149,14 @@ registry is fine for identity bookkeeping. Async projections — search
 documents, embeddings, episode summaries, analytics — may lag behind the
 event stream, but every one must be rebuildable from source branch and
 sequence, and every embedding row must name the event, assertion,
-observation, or record it represents; prose without provenance is invalid
-(engine.spec §10.2–§10.3).
+observation, or record it represents; prose without provenance is invalid.
 
 A snapshot exists purely to speed up replay: it carries branch, sequence,
 projection schema version, ruleset version, a deterministic checksum, and the
 source event range, and can be discarded at any time without losing history.
 Tests periodically rebuild projections from zero rather than from a snapshot,
 because a snapshot can silently hide a replay defect that only shows up on a
-full rebuild (engine.spec §10.4).
+full rebuild.
 
 ## Transaction protocol
 
@@ -169,8 +166,8 @@ clock to each due trigger's own due second, resolves it through its own
 command transaction, and repeats until nothing remains due at the boundary —
 writing `storySecond` as it goes; a caller such as the arbiter's turn
 preparation (`arbiter-store.ts`) runs this drain before building the command.
-engine.spec §11.1 places trigger reconciliation inside the locked command
-transaction; the locked transaction never loads or reconciles due triggers.
+The locked command transaction itself never loads or reconciles due
+triggers.
 
 Accepted, state-changing work then serializes on a branch row — different
 branches proceed fully concurrently, but one branch has exactly one ordered
@@ -199,12 +196,12 @@ idempotency *after* acquiring the lock, not just before, so two concurrent
 retries of the same command can't both race through the lock-free fast path
 and double-resolve.
 
-engine.spec §11.2 describes a deterministic policy handing a close,
-consequential choice to a deliberator without holding the lock: it would read
-branch version V, release all locks, ask the deliberator to pick one
-candidate, and submit that pick as a command carrying `expectedVersion: V`,
-with the transaction revalidating the pick against current state on
-conflict. This is not implemented — no `ResolveNpcChoice` command exists.
+A deterministic policy handing a close, consequential choice to a deliberator
+without holding the lock would read branch version V, release all locks, ask
+the deliberator to pick one candidate, and submit that pick as a command
+carrying `expectedVersion: V`, with the transaction revalidating the pick
+against current state on conflict. That handoff is not implemented — no
+`ResolveNpcChoice` command exists.
 `packages/simulation-core/src/contracts/deliberation.ts` defines only the
 admission-gating contract (inference LOD, score-gap threshold,
 consequentiality, model budget) and states it makes zero live model calls
@@ -218,7 +215,7 @@ activity's attention policy allows it. An external event committed while
 narration is streaming simply receives a later sequence — it does not rewrite
 the NarrativeCut already in flight, and shows up in the next one instead — and
 the engine never holds a database transaction open for the duration of a
-streaming response (engine.spec §11.3).
+streaming response.
 
 ## Scheduler
 
@@ -226,7 +223,7 @@ streaming response (engine.spec §11.3).
 
 Due triggers drain in `dueStorySecond` ascending, then `priority` ascending
 (lower number is more urgent), then `stableOrder` ascending, then trigger ID
-ascending, and this order is part of the ruleset version (engine.spec §12.1).
+ascending, and this order is part of the ruleset version.
 `stableOrder` is checked before trigger ID deliberately: a trigger ID is a
 derived hash, so breaking ties by it would be deterministic but arbitrary,
 while `stableOrder` reflects the sequence triggers were actually scheduled in.
@@ -242,9 +239,9 @@ resulting events and reschedule any new triggers, and repeat until nothing is
 due — then set the clock to T1. The scheduler never scans every actor or
 every minute to find what's due.
 
-engine.spec §12.2 also describes analytically integrating affected rates up
-to each trigger and again over the remaining span before the final clock set.
-This is not implemented — no continuous rate exists to integrate. Body
+Analytically integrating affected rates up to each trigger, and again over
+the remaining span before the final clock set, is not implemented — no
+continuous rate exists to integrate. Body
 meters instead integrate lazily, on read and on write, in `body-reads.ts` and
 `body-store.ts`; the drain loop above is the seam reserved for analytical
 rate integration once a continuous rate exists.
@@ -254,19 +251,19 @@ resolves is easy to get wrong and important: an event takes its story second
 from the branch clock at the moment it's appended, so jumping straight to T1
 and draining afterward would stamp every drained event with T1 instead of its
 true due second — silently breaking the requirement that one long advance and
-several smaller ones produce the same result (engine.spec §12.2).
+several smaller ones produce the same result.
 
 ### Catch-up bounds and determinism
 
 A command may declare a maximum trigger count and a wall-clock compute budget
 for catch-up. Exceeding either persists a safe partial boundary and returns
 `catch_up_required` (or continues in a background worker) rather than skipping
-triggers or approximating an exact-LOD actor's outcome (engine.spec §12.3).
+triggers or approximating an exact-LOD actor's outcome.
 For equal seed, inputs, and ruleset, `advance(T0, T3)` produces the same
 material event and projection result as running `advance(T0, T1)`,
 `advance(T1, T2)`, `advance(T2, T3)` in sequence — only non-material,
 declared-excluded bookkeeping events may differ between the two, and the
-engine prefers not to emit those at all (engine.spec §12.4).
+engine prefers not to emit those at all.
 
 ### Trigger creation
 

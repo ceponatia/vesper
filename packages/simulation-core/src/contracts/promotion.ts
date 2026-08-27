@@ -15,14 +15,14 @@ import {
 } from "./identity";
 
 /**
- * E6.4 — actor promotion out of the aggregate (engine.spec §27.2, §27.7). The
- * §26.10 item-promotion shape generalized to actors: `promote_actor_from_cohort`
- * is the ONLY path a named actor comes to exist mid-branch. It reserves a
- * conserved unit from the source cohort (§27.2 step 2), samples any detail the
- * caller did not supply from a named deterministic stream with the draw
- * captured on the event (step 3), emits `actor_materialized_from_aggregate`
- * (step 4), and may only materialize where the analytic presence read admits a
- * person — a promoted actor can never contradict aggregate history (step 5).
+ * E6.4 — actor promotion out of the aggregate. The §26.10 item-promotion shape
+ * generalized to actors: `promote_actor_from_cohort` is the ONLY path a named
+ * actor comes to exist mid-branch. It reserves a conserved unit from the
+ * source cohort (§27.2 step 2), samples any detail the caller did not supply
+ * from a named deterministic stream with the draw captured on the event (step
+ * 3), emits `actor_materialized_from_aggregate` (step 4), and may only
+ * materialize where the analytic presence read admits a person — a promoted
+ * actor can never contradict aggregate history (step 5).
  */
 
 export const actorPromotionDerivationVersion = "actor-promotion-v1" as const;

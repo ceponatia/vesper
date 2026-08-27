@@ -27,7 +27,7 @@ import { submitDurableAssignActorLod } from "./lod-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 
 /**
- * E6.2 durable routine controller (engine.spec §19.1–19.2, §27–28): entering
+ * E6.2 durable routine controller: entering
  * event LOD arms the routine alarm, the scheduler drain puts the actor to
  * sleep at bedtime through the ordinary body law, the expiry wakes them with
  * a sleep credit, the cycle re-arms itself indefinitely, engagements hold,

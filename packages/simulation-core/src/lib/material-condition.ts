@@ -59,7 +59,7 @@ import {
 import { compareStableText, simulationHash } from "./hash";
 
 /**
- * E5.3 slice 3 — the pure item-condition kernel (engine.spec §26.7). Wear and
+ * E5.3 slice 3 — the pure item-condition kernel. Wear and
  * cleanliness ride the SAME §25 fixed-point machinery bodies use — this file
  * reuses `integrateMeterValue`, `solveNextThresholdCrossing`,
  * `modifiersLiveAt`, and `thresholdCrossed` from `./bodies` AS-IS rather than

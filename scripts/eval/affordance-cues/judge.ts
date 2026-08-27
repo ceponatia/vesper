@@ -3,9 +3,7 @@ import { generateChecked } from "@/server/ai";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 
 /**
- * The LLM judge for the slice-5 narrator trial — rematch shape
- * (`docs/developer-notes/body-attribute-affordances.trial.rematch.md` §Judge
- * redesign).
+ * The LLM judge for the affordance-cue narrator trial — rematch shape.
  *
  * Round 1 asked ONE call to do two incompatible jobs: measure each arm and pick
  * a favourite. A comparative call cannot report an absolute rate — the judge

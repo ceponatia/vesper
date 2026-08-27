@@ -3,8 +3,7 @@ import { generateChecked } from "@/server/ai";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 
 /**
- * The grading oracle for the romantic contact rollout rerun
- * (`docs/developer-notes/romantic-contact-affordances.trial.romantic-proof.md`).
+ * The grading oracle for the romantic contact rollout rerun.
  *
  * The first proof was graded by reading the replies. That was enough to find the
  * headline finding but not to SETTLE it: "the prose still described the caress

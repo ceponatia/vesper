@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { decideSimOperation, SIM_UNSUPPORTED_CODE, type ChatPostKind } from "./sim-routing";
 
 /**
- * Routing parity decision (presentation-charter.plan.md §4; engine.spec.operations.md
- * §39 ruling 18): every POST kind on a sim-routed chat maps to a successor mode or a
- * refusal — the legacy narrator is never a fallback. Falsified against the old fork,
- * where only a plain send reached the successor engine.
+ * Routing parity decision (ruling 18): every POST kind on a sim-routed chat maps to
+ * a successor mode or a refusal — the legacy narrator is never a fallback.
+ * Falsified against the old fork, where only a plain send reached the successor
+ * engine.
  */
 describe("decideSimOperation", () => {
   const plain = { hasAttachments: false, hasAction: false };

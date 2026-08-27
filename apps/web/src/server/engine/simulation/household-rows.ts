@@ -42,7 +42,7 @@ import { InjectedSimulationCrash } from "./material-store";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * The E5.4 household ROW layer (engine.spec §26.8–26.11): every
+ * The E5.4 household ROW layer: every
  * `sim_households` / `sim_household_members` / `sim_material_lots` /
  * `sim_means_bands` / `sim_household_restock_routines` mapping, the
  * branch-scoped authority context the resolvers read through, the lazy lot

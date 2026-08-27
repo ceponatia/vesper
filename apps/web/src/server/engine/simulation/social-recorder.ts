@@ -10,7 +10,7 @@ import { branchEventFromRow } from "./observation-store";
 import type { SimTx } from "./trigger-projector";
 
 /**
- * E5.5 slice 1 — the relationship-ledger recorder (engine.spec §21.3). Lives
+ * E5.5 slice 1 — the relationship-ledger recorder. Lives
  * apart from `social-store.ts` (the command handlers) for the same reason
  * `knowledge-recorder.ts` lives apart from `knowledge-store.ts` — the
  * command-transaction shell (`command-runner.ts`) imports the recorder

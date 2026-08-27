@@ -18,12 +18,12 @@ import {
 import { observationConfidenceSchema } from "./perception";
 
 /**
- * E4.3 — soft canon (engine.spec §23.4, ruling 14). A soft-canon entry is a
- * narrator-invented detail ("the cafe's espresso machine hisses", "Mara calls
- * the player 'stray'") that survived validation and may be reused by later
- * renders. It is presentation-lane state, never hard truth: no entry may
- * encode movement, possession, injury, access, or another actor's private
- * state, and promotion to authored canon is always an explicit, audited event.
+ * E4.3 — soft canon (ruling 14). A soft-canon entry is a narrator-invented
+ * detail ("the cafe's espresso machine hisses", "Mara calls the player
+ * 'stray'") that survived validation and may be reused by later renders. It is
+ * presentation-lane state, never hard truth: no entry may encode movement,
+ * possession, injury, access, or another actor's private state, and promotion
+ * to authored canon is always an explicit, audited event.
  *
  * Rows are DERIVED like §20 observations and §21 knowledge: the confirm
  * command captures the full post-fold entry snapshot in each event (§6.4), so
@@ -144,7 +144,7 @@ export function resolveSoftCanonRules(worldTypeId: string): SoftCanonRules {
   return worldTypeSoftCanonRules[worldTypeId] ?? defaultSoftCanonRules;
 }
 
-// --- Proposal (engine.spec §23.4) --------------------------------------------
+// --- Proposal ----------------------------------------------------------------
 
 /**
  * What the narrator emits (no source cut — the trust boundary stamps it; a

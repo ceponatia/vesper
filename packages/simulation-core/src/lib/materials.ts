@@ -58,10 +58,10 @@ export {
 } from "./material-locus";
 
 /**
- * E5.3 slice 1 pure material kernel (engine.spec §26.1–26.4): the transfer /
- * destroy / ownership resolvers over a lock-consistent authority view, the
- * strict-contiguity projector, replay, seed assembly, and the projection
- * invariants. No IO, no clock, no ambient randomness (engine.spec §31–32).
+ * E5.3 slice 1 pure material kernel: the transfer / destroy / ownership
+ * resolvers over a lock-consistent authority view, the strict-contiguity
+ * projector, replay, seed assembly, and the projection invariants. No IO,
+ * no clock, no ambient randomness.
  *
  * Slice 2 (§26.5–26.6) adds `resolveConsumeItemFromView` and the shared
  * `buildConsumptionBodyEffects` helper `lib/simulation/activities.ts`'s

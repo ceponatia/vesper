@@ -7,7 +7,7 @@ import type { FactKind, FactSubjectKind } from "@/contracts/facts/taxonomy";
  * force-include, per-query embedding + RRF fusion).
  *
  * Each fixture is a small chat-shaped memory corpus (1-on-1 romance-chat
- * flavored, docs/character-chat.md) plus queries and expectations:
+ * flavored, docs/character-chat/) plus queries and expectations:
  *
  * - `expectRelevant` — fact/episode keys that SHOULD be retrieved by the
  *   fixture's queries (a miss is a recall failure).

@@ -53,8 +53,9 @@ When a chat is routed to the successor engine (its `engine_authority` is past th
 view threshold, branch-linked, and actor-mapped — the GET envelope's
 `chat.simRouted` flag), the POST fork resolves authority **once, before kind
 dispatch**: every operation has successor semantics or is refused, and the legacy
-pipeline (`submitChatMessage`) is unreachable for it (presentation-charter.plan.md
-§4; engine.spec.operations.md §39 rulings 18-19). The successor response keeps the existing plain-text transport. It sends
+pipeline (`submitChatMessage`) is unreachable for it
+(presentation-charter.plan.md §4). The successor response keeps the existing
+plain-text transport. It sends
 invisible heartbeats while world resolution, generation, and the full-cut audit
 run; after the audit accepts one telling, that approved prose is revealed in
 small paced chunks so the reply grows in the bubble instead of arriving as one

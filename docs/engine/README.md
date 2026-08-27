@@ -34,22 +34,6 @@ spine every other page assumes: a command produces events, events project into
 state, and story time advances deterministically so the same inputs replay to
 the same world.
 
-## Where the normative contract lives
-
-These pages explain the engine. The **normative contract** — the precise
-MUST/SHOULD wording, with globally stable section numbers — lives in
-`docs/developer-notes/engine.spec.md` and its cluster files.
-
-The two are cited together throughout the codebase. Source comments reference
-sections as `engine.spec §N`, and those numbers never renumber, which is what
-makes them safe to embed in code. When a page here says what the engine does and
-you need the exact rule it is obeying, follow the § citation.
-
-The split is deliberate: a reference page can be rewritten for clarity whenever
-it helps, while the numbered contract stays stable for the code that points at
-it. Where the two ever disagree, the spec is authoritative and the page is the
-one to correct.
-
 ## What the engine does not own
 
 - **Character chat.** The legacy lane has its own pipeline, state model and

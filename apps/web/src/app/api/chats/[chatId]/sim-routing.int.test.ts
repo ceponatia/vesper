@@ -5,10 +5,9 @@ import { characterProfileSchema } from "@/contracts";
 import { characterChatMessages, db, simBranches, simEvents } from "@/server/db";
 
 /**
- * Routing parity (presentation-charter.plan.md §4; engine.spec.operations.md §39
- * rulings 18-19): on a sim-routed chat every POST kind either has successor
- * semantics or is refused — never the character-chat narrator. AI_FAKE ⇒ zero
- * live model calls (the deterministic render). Self-skips without a database.
+ * Routing parity (rulings 18-19): on a sim-routed chat every POST kind either has
+ * successor semantics or is refused — never the character-chat narrator. AI_FAKE ⇒
+ * zero live model calls (the deterministic render). Self-skips without a database.
  */
 
 const authState = vi.hoisted(() => ({

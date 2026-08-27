@@ -74,11 +74,10 @@ import {
 import { compareStableText, sortedUnique } from "./hash";
 
 /**
- * E5.4 slice 1 — the pure households/lots/means kernel (engine.spec
- * §26.8–26.10): row-key helpers, lot arithmetic, §26.8 access/reachability,
- * the §26.10 means read, the five slice-1 command resolvers, and the
- * households projector/replay/seed. No IO, no clock, no ambient randomness
- * (engine.spec §31–32).
+ * E5.4 slice 1 — the pure households/lots/means kernel: row-key helpers,
+ * lot arithmetic, §26.8 access/reachability, the §26.10 means read, the
+ * five slice-1 command resolvers, and the households projector/replay/seed.
+ * No IO, no clock, no ambient randomness.
  *
  * Unlike `material-condition.ts` (E5.3 slice 3), this file needs no split
  * file and no dependency on `material-locus.ts`/`materials.ts`: lot loci

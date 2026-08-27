@@ -17,11 +17,11 @@ import {
 import { gate3RouteVersionSchema } from "./space";
 
 /**
- * E3.3 — commitments and temporal pressure (engine.spec §15, plan §"Gate 3
- * build order"). A commitment is an obligation with earliest/target/latest
- * boundaries; pressure derives from it deterministically; a schedule boundary
- * never sets location (spec §3.1 invariant 5) — the deadline trigger only
- * *evaluates* where the actor actually is.
+ * E3.3 — commitments and temporal pressure. A commitment is an obligation
+ * with earliest/target/latest boundaries; pressure derives from it
+ * deterministically; a schedule boundary never sets location (spec §3.1
+ * invariant 5) — the deadline trigger only *evaluates* where the actor
+ * actually is.
  *
  * Deliberate E3.3 boundaries: the ruled per-commitment `flexibility` dial is
  * stored and drives severity now, and richer decision behavior (warn,
@@ -39,7 +39,7 @@ import { gate3RouteVersionSchema } from "./space";
  * (§15.4: history is not rewritten — the original stays `missed` forever).
  */
 
-// --- Vocabulary (engine.spec §15.1, ruling 2) -------------------------------
+// --- Vocabulary (ruling 2) --------------------------------------------------
 
 export const commitmentKinds = ["shift", "appointment", "promise", "reservation", "routine"] as const;
 export const commitmentKindSchema = z.enum(commitmentKinds);
@@ -96,7 +96,7 @@ export const commitmentKnowledgeSourceSchema = z.discriminatedUnion("kind", [
 export const pressureSeverities = ["background", "salient", "urgent", "hard"] as const;
 export const pressureSeveritySchema = z.enum(pressureSeverities);
 
-// --- Commitment (engine.spec §15.1) -----------------------------------------
+// --- Commitment -------------------------------------------------------------
 
 const commitmentWindowSchema = z
   .object({
@@ -149,7 +149,7 @@ export const commitmentSchema = z
 export type Commitment = z.infer<typeof commitmentSchema>;
 export type CommitmentKnowledgeSource = z.infer<typeof commitmentKnowledgeSourceSchema>;
 
-// --- Temporal pressure (engine.spec §15.2) ----------------------------------
+// --- Temporal pressure ------------------------------------------------------
 
 export const temporalPressureSchema = z
   .object({
@@ -339,7 +339,7 @@ export const fulfillCommitmentCommandResultSchema = createCommandResultSchema(
   fulfillCommitmentRejectionCodeSchema,
 );
 
-// --- Commitment event family (engine.spec §9.2) ------------------------------
+// --- Commitment event family -------------------------------------------------
 
 const commitmentCreatedPayloadSchema = z
   .object({

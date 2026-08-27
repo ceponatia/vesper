@@ -57,7 +57,7 @@ import {
 /**
  * E3.2 pure activity kernel: start/complete/cancel resolution, claim
  * arithmetic over the activity set, and the projectors replay uses. No IO, no
- * clock, no ambient randomness (engine.spec §31–32).
+ * clock, no ambient randomness.
  *
  * E5.3 slice 2 (§26.5–26.6) adds resource-cost reservation at start and
  * consume-disposition consumption at completion, both reusing `materials.ts`'s
@@ -123,7 +123,7 @@ function assertActivityTransition(from: ActivityPhase, to: ActivityPhase, activi
 }
 
 // ---------------------------------------------------------------------------
-// StartActivity resolution (engine.spec §16.1–16.3)
+// StartActivity resolution
 // ---------------------------------------------------------------------------
 
 interface ActivityBranchMeta {
@@ -408,7 +408,7 @@ export function resolveStartActivity(
 }
 
 // ---------------------------------------------------------------------------
-// CompleteActivity resolution (engine.spec §9.3, §16.3)
+// CompleteActivity resolution
 // ---------------------------------------------------------------------------
 
 export interface CompleteActivityResolutionView extends ActivityBranchMeta {
@@ -676,7 +676,7 @@ export function resolveCompleteActivity(
 }
 
 // ---------------------------------------------------------------------------
-// CancelActivity resolution (engine.spec §16.3)
+// CancelActivity resolution
 // ---------------------------------------------------------------------------
 
 export interface CancelActivityResolutionView extends ActivityBranchMeta {
