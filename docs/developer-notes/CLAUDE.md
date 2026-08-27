@@ -9,9 +9,9 @@ What remains here is awaiting issue #280's restructure into
 Invoke the `vesper-docs` skill before any edit here. Rules while this folder
 exists:
 
-- **Create nothing here.** New work of any size is a parent issue on the board;
-  new durable law is a reference page under `docs/` (skill template
-  `reference-doc.md`).
+- **Create nothing here.** New work goes on the board — a plan-sized effort as
+  a parent issue, anything smaller as an ordinary issue; new durable law is a
+  reference page under `docs/` (skill template `reference-doc.md`).
 - **Never update a `*.plan.md`.** Plan files are frozen artifacts; the issues
   seeded from them (#207–#232) own their live state, and recording progress in
   a plan re-creates the drift the migration removed. They are retired wholesale
