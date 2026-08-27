@@ -1,0 +1,84 @@
+name: Bug
+description: Something behaves wrong, breaks, or degrades when it should not.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Project fields — Status, Horizon, Priority, Area, Effort — are set on the
+        [board](https://github.com/users/ceponatia/projects/7) after filing. Don't guess them here.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The observed behavior, in plain English.
+      placeholder: The chat reply arrived with the character still wearing the jacket she took off two turns earlier.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: Numbered steps. If it is intermittent, say how often it happens and what seems to trigger it.
+      placeholder: |
+        1. Open an existing chat with a character wearing a jacket
+        2. Send "take off your jacket"
+        3. Send two more ordinary messages
+        4. The jacket is described as worn again
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where it happens
+      description: UI behavior is judged against the Fly deploy; local dev is still valid for non-UI work.
+      options:
+        - Fly deploy (vesper.fly.dev)
+        - Local dev
+        - Both
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Which lane
+      description: The two chat lanes behave differently and rarely share a root cause.
+      options:
+        - Legacy character chat
+        - Successor chat (engine-authoritative world)
+        - Images — generation, prompts, or models
+        - Library and authoring
+        - Admin and settings
+        - Other or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics or degraded output
+      description: |
+        Diagnostic codes, a degraded default that fired, console or server output. Vesper prefers
+        degrading to failing, so a bug often shows up as a diagnostic rather than an error.
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Chat and message ids, timestamps, screenshots, or the seed and model for an image bug.
+    validations:
+      required: false
